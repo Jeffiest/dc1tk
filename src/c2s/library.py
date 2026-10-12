@@ -328,7 +328,9 @@ def library_text(library, model):
                   for path in library["user_paths"]}
     if len(numberings) == 1:
         found = sdk.numbered(found, numberings.pop())
-    presented = notes.annotate_functions(sdk.present_functions(functions, found, params), model["translations"])
+    # sound banks the scripts that include the library pass it, when they agree
+    sounds = {"seed": sdk.library_sounds(model.get("sound_uses", {}).get(library["path"], []))}
+    presented = notes.annotate_functions(sdk.present_functions(functions, found, params, sounds=sounds), model["translations"])
     return source.library_text(library["table"], presented, header, library["doc"])
 
 
@@ -407,6 +409,7 @@ def script_program(program, path, model):
     functions = []
     padding_of = {}
     hidden = []
+    hidden_by_library = []
     position = 0
     while position < len(renamed["functions"]):
         if position not in included:
@@ -415,6 +418,7 @@ def script_program(program, path, model):
             continue
         library, count = included[position]
         functions.append({"kind": "include", "path": library["path"], "system": False})
+        hidden_by_library.append((library, renamed["functions"][position:position + count]))
         for function in renamed["functions"][position:position + count]:
             hidden.append(function)
             if function["padding"] is not None:
@@ -423,13 +427,31 @@ def script_program(program, path, model):
     split = dict(renamed, functions=functions, padding_of=padding_of)
     entry = definitions.script_entry({"scripts": model["scripts"]}, path)
     scripted = names.with_script(split, entry, names.global_uses(hidden), forced)
-    presented = sdk.present(scripted, sdk.numbered(context, sdk.numbering_of(entry)), params)
+    # the included code under the global names the script gives it, for the sound pass
+    global_names = names.global_mapping(split, entry or {}, names.global_uses(hidden), forced)
+    shown_hidden = [dict(function, body=names.renamed_variables(function["body"], global_names))
+                    for function in hidden if function["kind"] == "function"]
+    sounds = {"out": {}}
+    presented = sdk.present(scripted, sdk.numbered(context, sdk.numbering_of(entry)), params, shown_hidden, sounds)
+    record_sound_uses(model, hidden_by_library, global_names, sounds["out"])
     triggers = model.get("triggers", {}).get(str(Path(path).parent.as_posix()), {})
     if triggers:
         programs = [dict(entry, note="; ".join(triggers[original["no"]])) if original["no"] in triggers else entry
                     for entry, original in zip(presented["programs"], program["programs"])]
         presented = dict(presented, programs=programs)
     return notes.annotate(presented, model["translations"])
+
+
+# Keeps what a script passes each library it includes (sdk.passed_sounds), for library_text.
+def record_sound_uses(model, hidden_by_library, global_names, passed):
+    if not passed:
+        return
+    for library, functions in hidden_by_library:
+        own = {function["name"] for function in functions}
+        used = {global_names.get(name, name) for name in names.global_uses(functions)}
+        mine = {"params": {key: kinds for key, kinds in passed["params"].items() if key[0] in own},
+                "globals": {name: kinds for name, kinds in passed["globals"].items() if name in used}}
+        model.setdefault("sound_uses", {}).setdefault(library["path"], []).append(mine)
 
 
 def absorb(path, headers, declarations, seen):

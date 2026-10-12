@@ -199,10 +199,14 @@ value is.
   load with one character (`CHARA_I01_H01_STEVE`), used only in that
   folder's scripts.
 - `play_se(id, n)` plays entry n of the bank `id` was read from, so the
-  decompiler follows the variable within a function: after
-  `id = get_system_sound_id()` or `get_sound_id(SE_BANK_BASE, &id)` (or
-  `SE_BANK_BATTLE`), n prints from `system_se`, `base_se` or `battle_se`
-  (`play_se(snd_id, SE_TREASURE_GET)`).
+  decompiler follows the variable: after `id = get_system_sound_id()` or
+  `get_sound_id(SE_BANK_BASE, &id)` (or `SE_BANK_BATTLE`), n prints from
+  `system_se`, `base_se` or `battle_se` (`play_se(snd_id, SE_TREASURE_GET)`),
+  and after `load_sound(..., &id)` from that bank's `se_<bank>` enum. It
+  follows the id through branches (after an `if`, only a bank every path
+  agrees on), globals, the functions it is passed to and helpers that
+  return it through a pointer, and into a library when every script that
+  includes the library passes it the same bank.
 
 ## Unregistered numbers
 

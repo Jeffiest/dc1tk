@@ -715,7 +715,10 @@ def typed_literals(node, kinds, found):
     return out
 
 
-def present_functions(functions, found, params_by_kind=None):
+# hidden: the included library functions of a script, which are not shown but whose sound flow
+# counts. sounds: {"seed": what the scripts that include a library pass it (library_sounds),
+# "out": filled with what this script passes the hidden functions and the globals they use}.
+def present_functions(functions, found, params_by_kind=None, hidden=(), sounds=None):
     if found is None:
         return functions
     function_kinds = function_kinds_of(params_by_kind or {})
@@ -730,24 +733,86 @@ def present_functions(functions, found, params_by_kind=None):
                      if function["kind"] == "function" else function for function in functions]
     inlines = ordered_inlines(found)
     function_names = {function["name"] for function in functions if function["kind"] == "function"}
-    prepared = []
-    for function in functions:
-        if function["kind"] == "function":
-            function = dict(function, body=assets.named(old_numbered(function["body"], found), found))
-            function = named_locals(function, found, function_names)
-            function = dict(function, body=folded(function["body"], found, inlines, set()))
-        prepared.append(function)
-    sounds = program_sounds(prepared, found)
+    prepared = [prepared_function(function, found, function_names, inlines) for function in functions]
+    sounds = sounds or {}
+    hidden = [prepared_function(function, found, function_names, inlines)
+              for function in sound_related(hidden, functions, found)]
+    seen = {}
+    known = program_sounds(prepared + hidden, found, sounds.get("seed"), seen)
+    if "out" in sounds:
+        sounds["out"].update(passed_sounds(hidden, known, seen))
     out = []
     for function in prepared:
         if function["kind"] == "function":
-            body = named_sounds(function["body"], found, sound_banks(function, sounds), sound_flow(function, sounds))
+            body = named_sounds(function["body"], found, sound_banks(function, known), sound_flow(function, known))
             body = typed_literals(body, variable_kinds(function), found)
             if found["float_names"] and not shadowing(function, found["float_names"].values()):
                 body = named_floats(body, found)
             function = dict(function, body=body)
         out.append(function)
     return out
+
+
+def calls_in(node, out):
+    if isinstance(node, list):
+        for item in node:
+            calls_in(item, out)
+    elif isinstance(node, dict):
+        if node.get("kind") in ("native", "call"):
+            out.add((node["kind"], node["name"]))
+        for value in node.values():
+            calls_in(value, out)
+    return out
+
+
+# The hidden functions the sound pass needs: those that call a sound native, or call a function
+# (shown or hidden) that does, directly or further down.
+def sound_related(hidden, shown, found):
+    functions = [function for function in list(hidden) + list(shown) if function["kind"] == "function"]
+    calls = {function["name"]: calls_in(function["body"], set()) for function in functions}
+    related = {name for name, made in calls.items()
+               if any(kind == "native" and found["by_original"].get(callee, {}).get("name", callee) in SOUND_NATIVES
+                      for kind, callee in made)}
+    grown = True
+    while grown:
+        grown = False
+        for name, made in calls.items():
+            if name not in related and any(kind == "call" and callee in related for kind, callee in made):
+                related.add(name)
+                grown = True
+    return [function for function in hidden if function["kind"] == "function" and function["name"] in related]
+
+
+def prepared_function(function, found, function_names, inlines):
+    if function["kind"] != "function":
+        return function
+    function = dict(function, body=assets.named(old_numbered(function["body"], found), found))
+    function = named_locals(function, found, function_names)
+    return dict(function, body=folded(function["body"], found, inlines, set()))
+
+
+# What a script shows about the library code it includes: the banks it passes each parameter of
+# the hidden functions, and the bank each global they use holds (UNKNOWN_BANK when not one).
+def passed_sounds(hidden, known, seen):
+    names_hidden = {function["name"] for function in hidden}
+    params = {key: kinds for key, kinds in seen.get("params", {}).items() if key[0] in names_hidden}
+    used = {name for function in hidden for name in names.variables(function["body"], [])
+            if name not in {variable["name"] for variable in function["params"] + function["locals"]}}
+    globals_ = {name: {known["globals"].get(name, UNKNOWN_BANK)} for name in used
+                if name in seen.get("globals", {}) or name in known["globals"]}
+    return {"params": params, "globals": globals_}
+
+
+# The seed for a library's sound pass from what each script that includes it passes (passed_sounds
+# per script): a parameter or global every script agrees on keeps that bank, others are unknown.
+def library_sounds(passed):
+    seed = {"params": collections.defaultdict(set), "globals": collections.defaultdict(set)}
+    for found in passed:
+        for field in ("params", "globals"):
+            for key, kinds in found.get(field, {}).items():
+                seed[field][key] |= set(kinds)
+    return {field: {key: (next(iter(kinds)) if len(kinds) == 1 else UNKNOWN_BANK) for key, kinds in values.items()}
+            for field, values in seed.items()}
 
 
 # The context for a script its definition entry marks as built for an older native table, or a
@@ -829,6 +894,8 @@ SOUND_ENTRY_ARGS = {"play_se": (0, 1), "stop_se": (0, 1), "pause_se": (0, 1), "s
                     "set_se_pan": (0, 1), "set_se_pitch": (0, 1), "get_se_status": (0, 1), "play_actor_se": (1, 2),
                     "play_actor_se_after": (2, 3)}
 EVENT_PORT = "event port"
+# The natives the sound pass reads.
+SOUND_NATIVES = set(SOUND_ENTRY_ARGS) | {"load_sound", "get_sound_id", "get_system_sound_id", "get_sound_port_bank"}
 # What the sound pass records for a variable that is written, or a parameter passed, something it
 # cannot follow; a variable seen with it is never settled.
 UNKNOWN_BANK = "?"
@@ -872,11 +939,16 @@ def loaded_bank(node, found):
 # bank every call passes for a parameter, the bank a helper writes through a pointer parameter, and
 # the event port's bank when the program loads only one there. A few rounds settle it, as one fact
 # can lead to another (a helper's out-parameter feeding a global).
-def program_sounds(functions, found):
+def program_sounds(functions, found, seed=None, seen=None):
+    seed = seed or {}
     known = {"globals": {}, "params": {}, "outs": {}, "port": None}
     for _ in range(4):
         info = {"globals": collections.defaultdict(set), "params": collections.defaultdict(set),
                 "outs": collections.defaultdict(set), "port": set()}
+        # what the scripts that include a library pass it counts as one more caller
+        for field in ("globals", "params"):
+            for key, kind in seed.get(field, {}).items():
+                info[field][key].add(kind)
         for function in functions:
             if function["kind"] == "function":
                 flow = dict(sound_flow(function, known), info=info)
@@ -886,6 +958,8 @@ def program_sounds(functions, found):
         if learned == known:
             break
         known = learned
+    if seen is not None:
+        seen.update(info)
     return known
 
 
@@ -957,24 +1031,25 @@ def pointer_target(node, flow):
 # pointer parameters, and collects what the function shows about globals, parameters and outputs.
 def named_sounds(nodes, found, banks, flow=None):
     out = []
-    known = flow["known"] if flow else {"outs": {}}
-    info = flow.get("info") if flow else None
     for node in nodes:
         kind = node["kind"]
         if kind == "if":
-            # each branch starts from the banks before it, and after the if a variable keeps the
-            # bank every path that goes on agrees on
+            # each branch starts from the banks after the condition, and after the if a variable
+            # keeps the bank every path that goes on agrees on
+            node = dict(node, cond=sound_expression(node["cond"], found, banks, flow))
             then_banks, else_banks = dict(banks), dict(banks)
             then = named_sounds(node["then"], found, then_banks, flow)
             otherwise = None if node["else"] is None else named_sounds(node["else"], found, else_banks, flow)
             node = dict(node, then=then, **{"else": otherwise})
             merge_banks(banks, [(then_banks, then), (else_banks, otherwise or [])])
         elif kind == "while":
+            node = dict(node, cond=sound_expression(node["cond"], found, banks, flow))
             body_banks = dict(banks)
             node = dict(node, body=named_sounds(node["body"], found, body_banks, flow))
             merge_banks(banks, [(body_banks, []), (dict(banks), [])])
         elif kind == "expr" and node["expr"]["kind"] == "assign":
-            target, value = node["expr"]["target"], node["expr"]["value"]
+            target, value = node["expr"]["target"], sound_expression(node["expr"]["value"], found, banks, flow)
+            node = dict(node, expr=dict(node["expr"], value=value))
             source = value["name"] if value["kind"] == "var" else None
             written = pointer_target(target, flow) or assigned_var(target)
             if written and source in banks:
@@ -985,29 +1060,53 @@ def named_sounds(nodes, found, banks, flow=None):
             else:
                 forget_bank(banks, written, flow)
         elif kind in ("native", "call"):
-            args = node["args"]
-            positions = SOUND_ENTRY_ARGS.get(node["name"])
-            if positions and len(args) > positions[1] and assigned_var(args[positions[0]]) in banks:
-                bank, entry = positions
-                named = named_literal(args[entry], banks[assigned_var(args[bank])], found)
-                node = dict(node, args=args[:entry] + [named] + args[entry + 1:])
-            if kind == "call":
-                for position, arg in enumerate(args):
-                    if arg["kind"] == "var" and info is not None:
-                        info["params"][(node["name"], position)].add(banks.get(arg["name"], UNKNOWN_BANK))
-                    elif arg["kind"] == "addr" and (node["name"], position) in known["outs"]:
-                        set_bank(banks, assigned_var(arg), known["outs"][(node["name"], position)], flow)
-                    elif arg["kind"] == "addr":
-                        # the function may write anything through the pointer
-                        banks.pop(assigned_var(arg), None)
-            else:
+            node = sound_expression(node, found, banks, flow)
+            if kind == "native":
                 for target, bank in native_banks(node, found, banks, flow).items():
                     if bank is None:
                         forget_bank(banks, target, flow)
                     else:
                         set_bank(banks, target, bank, flow)
+        elif kind in ("expr", "return") and isinstance(node.get(("expr" if kind == "expr" else "value")), dict):
+            key = "expr" if kind == "expr" else "value"
+            node = dict(node, **{key: sound_expression(node[key], found, banks, flow)})
         out.append(node)
     return out
+
+
+# Names the entries of the sound natives in an expression, and follows the banks the script's
+# functions it calls are passed and write through their pointer parameters. Inner calls first, as
+# they run first.
+def sound_expression(node, found, banks, flow):
+    if isinstance(node, list):
+        return [sound_expression(item, found, banks, flow) for item in node]
+    if not isinstance(node, dict) or node.get("kind") in ("if", "while"):
+        return node
+    node = {key: sound_expression(value, found, banks, flow) if key in ("args", "left", "right", "operand", "value", "target", "expr") else value
+            for key, value in node.items()}
+    kind = node.get("kind")
+    if kind not in ("native", "call"):
+        return node
+    args = node["args"]
+    positions = SOUND_ENTRY_ARGS.get(node["name"])
+    if positions and len(args) > positions[1] and assigned_var(args[positions[0]]) in banks:
+        bank, entry = positions
+        named = named_literal(args[entry], banks[assigned_var(args[bank])], found)
+        node = dict(node, args=args[:entry] + [named] + args[entry + 1:])
+    if kind == "call":
+        known = flow["known"] if flow else {"outs": {}}
+        info = flow.get("info") if flow else None
+        for position, arg in enumerate(args):
+            if arg["kind"] not in ("addr", "int") and info is not None:
+                # a number passed for a bank says there is none (-1), not another bank
+                passed = banks.get(arg["name"], UNKNOWN_BANK) if arg["kind"] == "var" else UNKNOWN_BANK
+                info["params"][(node["name"], position)].add(passed)
+            elif arg["kind"] == "addr" and (node["name"], position) in known["outs"]:
+                set_bank(banks, assigned_var(arg), known["outs"][(node["name"], position)], flow)
+            elif arg["kind"] == "addr":
+                # the function may write anything through the pointer
+                banks.pop(assigned_var(arg), None)
+    return node
 
 
 # The variables a native call writes and the bank each then holds (None for anything else).
@@ -1070,10 +1169,10 @@ def present_inline(inline, found):
     return dict(inline, body=folded(inline["body"], found, [], pointers))
 
 
-def present(program, found, params_by_kind=None):
+def present(program, found, params_by_kind=None, hidden=(), sounds=None):
     if found is None or "asm" in program:
         return program
     programs = [dict(entry, no=found["program_names"].get(entry["no"], entry["no"])) for entry in program["programs"]]
     includes = [{"kind": "include", "path": path, "system": True} for path in found["includes"]]
     return dict(program, natives=None, programs=programs,
-                functions=includes + present_functions(program["functions"], found, params_by_kind))
+                functions=includes + present_functions(program["functions"], found, params_by_kind, hidden, sounds))

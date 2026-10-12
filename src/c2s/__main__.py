@@ -138,11 +138,11 @@ def run_decompile_disc(args, tables, defs, headers):
     renamed = {library_entry["path"]: pathnames.named_library(library_entry["path"], naming)
                for library_entry in model["libraries"].values()}
     model = pathnames.with_named_libraries(model, naming)
-    texts = library.library_texts(model)
+    library_paths = [library_entry["path"] for library_entry in model["libraries"].values()]
     for path in paths:
         plain = Path(path).with_suffix(source.EXTENSION).as_posix()
         renamed[plain] = pathnames.named_script(plain, naming)
-    written = list(texts) + [renamed[Path(path).with_suffix(source.EXTENSION).as_posix()] for path in paths] + [source.EDITOR_FLAGS]
+    written = library_paths + [renamed[Path(path).with_suffix(source.EXTENSION).as_posix()] for path in paths] + [source.EDITOR_FLAGS]
     if generated is not None:
         written.append("include/" + disc.HEADER)
     blocked = tree.overwrites(out, written) if out.is_dir() else []
@@ -153,15 +153,16 @@ def run_decompile_disc(args, tables, defs, headers):
     if generated is not None:
         (out / "include").mkdir(parents=True, exist_ok=True)
         (out / "include" / disc.HEADER).write_text(generated, encoding="utf-8")
-    for path, text in texts.items():
-        (out / path).parent.mkdir(parents=True, exist_ok=True)
-        (out / path).write_text(text, encoding="utf-8")
     for path in paths:
         table = natives.table_for(path, defs["tables"])
         program = decompile.decompile(stb.read((root / path).read_bytes()), table, tables)
         target = out / renamed[Path(path).with_suffix(source.EXTENSION).as_posix()]
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.text(library.script_program(program, path, model)), encoding="utf-8")
+    # libraries last: the scripts that include one tell its sound pass what they pass it
+    for path, text in library.library_texts(model).items():
+        (out / path).parent.mkdir(parents=True, exist_ok=True)
+        (out / path).write_text(text, encoding="utf-8")
     (out / source.EDITOR_FLAGS).write_text(source.editor_flags(args.sdk, defs["sets"]), encoding="utf-8")
     removed = []
     if prefix == ".":
@@ -176,7 +177,7 @@ def run_decompile_disc(args, tables, defs, headers):
             print("removed %d file%s the decompiler no longer writes" % (len(removed), "" if len(removed) == 1 else "s"))
     tree.record(out, written, tree.headers_hash(headers_used), removed)
     pathnames.record(out, renamed)
-    print("%d scripts and %d library files written to %s" % (len(paths), len(texts), out))
+    print("%d scripts and %d library files written to %s" % (len(paths), len(library_paths), out))
     return 0
 
 

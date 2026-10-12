@@ -123,14 +123,15 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
 
 ## Next: what numbers mean
 
-1. **The last sound effects.** 92% of `play_se` and `stop_se` entries
-   print as names: the system, base and battle banks, the 210 banks
-   scripts load, followed through copies, globals, parameters and
-   helpers' out-parameters within a script. Still numbers: about 270 in
-   libraries whose bank arrives as a parameter from the scripts that
-   include them (a library is shown once for all of them), and dungeon
-   scripts reading the event port the engine filled with the battle music
-   (`EV_200_000` entry 0, see [the sound notes](definitions/pal/notes/sounds.md)).
+1. **The last sound effects.** 97% of the entries passed to `play_se`
+   and its kin (8,611 of 8,858) print as names: the system, base and
+   battle banks, the 210 banks scripts load, followed through copies,
+   branches, globals, calls and helpers' out-parameters, and into library
+   code when every script that includes it passes the same bank. About
+   180 of the rest read the event port the engine filled with the battle
+   music in dungeons (`EV_200_000` entry 0, see
+   [the sound notes](definitions/pal/notes/sounds.md)); the others are
+   helpers whose callers pass different banks.
 2. **Villager slots.** Slots each map folder's scripts always load with
    one character are named per folder in `disc.h` (`CHARA_I01_H01_STEVE`),
    as are the engine's fixed slots (`CHARA_PLAYER`). Villager slots change

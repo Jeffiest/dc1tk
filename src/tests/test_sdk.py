@@ -304,18 +304,39 @@ def test_banks_reach_entries_through_parameters_and_out_parameters():
               "body": [load]}
     player = {"kind": "function", "name": "play_fanfare", "params": [{"name": "bank", "array": False}], "locals": [],
               "body": [{"kind": "native", "name": "play_se", "args": [var("bank"), {"kind": "int", "value": 0}]}]}
+    # calls are expressions, as the decompiler makes them
+    call = lambda name, args: {"kind": "expr", "expr": {"kind": "call", "name": name, "args": args}}
     caller = {"kind": "function", "name": "on_start", "params": [], "locals": [{"name": "id"}],
-              "body": [{"kind": "call", "name": "load_fanfare", "args": [{"kind": "addr", "target": var("id")}]},
-                       {"kind": "call", "name": "play_fanfare", "args": [var("id")]}]}
+              "body": [call("load_fanfare", [{"kind": "addr", "target": var("id")}]), call("play_fanfare", [var("id")])]}
     known = sdk.program_sounds([loader, player, caller], found)
     shown = sdk.named_sounds(player["body"], found, sdk.sound_banks(player, known), sdk.sound_flow(player, known))
     assert shown[0]["args"][1] == var("SE_SP_000_FANFARE")
     # a caller that passes something the pass cannot follow leaves the parameter unsettled
     other = {"kind": "function", "name": "on_end", "params": [], "locals": [{"name": "id"}],
              "body": [{"kind": "expr", "expr": {"kind": "assign", "target": var("id"), "value": {"kind": "call", "name": "get", "args": []}}},
-                      {"kind": "call", "name": "play_fanfare", "args": [var("id")]}]}
+                      call("play_fanfare", [var("id")])]}
     known = sdk.program_sounds([loader, player, caller, other], found)
     assert ("play_fanfare", 0) not in known["params"]
+
+
+def test_a_library_takes_the_banks_every_script_that_includes_it_passes():
+    found = {"enums": {"se_sp_000_pal": {0: "SE_SP_000_FANFARE"}}, "constants": {}, "sound_set_banks": {}}
+    var = lambda name: {"kind": "var", "name": name}
+    load = {"kind": "native", "name": "load_sound",
+            "args": [var("SND_PORT_MENU"), {"kind": "string", "text": "snd2/sp/sp_000.snd"}], "result": var("id")}
+    helper = {"kind": "function", "name": "play_fanfare", "params": [{"name": "bank", "array": False}], "locals": [],
+              "body": [{"kind": "native", "name": "play_se", "args": [var("bank"), {"kind": "int", "value": 0}]}]}
+    caller = {"kind": "function", "name": "on_start", "params": [], "locals": [{"name": "id"}],
+              "body": [load, {"kind": "expr", "expr": {"kind": "call", "name": "play_fanfare", "args": [var("id")]}}]}
+    seen = {}
+    known = sdk.program_sounds([caller, helper], found, None, seen)
+    passed = sdk.passed_sounds([helper], known, seen)
+    assert passed["params"] == {("play_fanfare", 0): {"se_sp_000"}}
+    seed = sdk.library_sounds([passed, passed])
+    assert sdk.program_sounds([helper], found, seed)["params"] == {("play_fanfare", 0): "se_sp_000"}
+    # a script that passes something else leaves the library's parameter a number
+    seed = sdk.library_sounds([passed, {"params": {("play_fanfare", 0): {sdk.UNKNOWN_BANK}}}])
+    assert sdk.program_sounds([helper], found, seed)["params"] == {}
 
 
 def test_banks_after_an_if_are_those_its_paths_agree_on():
