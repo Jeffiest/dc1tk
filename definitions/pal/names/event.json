@@ -115,7 +115,7 @@
     "next_floor",
     "flag"
    ],
-   "doc": "Handles the floor exit. If locked it asks for the Key Handle (item 337) from the item menu. If open it asks whether to leave, shows medal messages, and moves to the next floor. Leaving floor 1 before flag 101 goes to the Dining Room scene and leaving floor 5 before flag 9 goes to the Mayor's Office."
+   "doc": "Handles the floor exit. If locked it asks for the Key Handle (item 337) from the item menu. If open, the Ridepod and Monica's monster form (characters 2 and 3) only get a refusal message; Max or Monica are asked whether to leave, see any medal messages and move to the next floor. Leaving floor 1 before flag 101 goes to the Dining Room scene and leaving floor 5 before flag 9 goes to the Mayor's Office."
   },
   "00b1a6450bd31d01": {
    "name": "open_shop_menu",
@@ -155,7 +155,7 @@
    "doc": "Loads monster data 601, plays event 108 and loads the s06_1 event script."
   },
   "013683b4bcbaa1e8": {
-   "name": "play_red_time_gate_scene",
+   "name": "play_max_time_gate_scene",
    "loose": "e08d382dc067d7eb",
    "params": [
     "world_x",
@@ -178,7 +178,7 @@
     "stone_y",
     "stone_z"
    ],
-   "doc": "Time travel cutscene using Max's Atlamillia and the red time gate: the character strikes the time warp pose, the Atlamillia flares and the screen whitens. Flag 612 selects the later-game sound and skips the longer intro, and the caption is shown by show_time_travel_caption afterwards."
+   "doc": "Time travel cutscene in which Max raises the Atlamillia at a time gate. use_red_gate picks the red gate models, otherwise the blue ones (enter_blue_time_gate uses it that way when Max travels alone). With show_both_characters Monica stands beside Max whichever of them is active, and any party NPC is shown too. Max strikes the time warp pose, the Atlamillia flares, the glare grows and the screen fades to white, then show_time_travel_caption(1) runs. After flag 612 it uses the later sound bank, other camera angles, hides the Atlamillia shine and skips the 30-frame pause."
   },
   "0137dd141960b677": {
    "name": "talk_to_fisherman_for_bait",
@@ -1759,7 +1759,8 @@
    "locals": [
     "chapter"
    ],
-   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Uses the talk camera and returns Ferdinand to standing."
+   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Turns the two to face each other without the talk camera, then returns Ferdinand to standing and ends the event.",
+   "loose": "be392eaf1aea2ac4"
   },
   "0a4e0c3291273719": {
    "name": "warp_to_s18_event_332",
@@ -3852,7 +3853,7 @@
     "frames"
    ],
    "loose": "16074ef66afa7c94",
-   "doc": "Runs a voiced message with lip sync until the player closes it or max_frames pass, then resets lip sync and closes the window. Returns the frames used."
+   "doc": "Runs the message already open in window with the talk lip sync and its button prompt hidden, until the player ends the fully shown message with confirm or cancel or max_frames frames pass, then resets the lip sync, restores the prompt and closes the window. It does not play or wait for a voice itself, though a press while the text is still revealing stops a playing voice stream. Returns the frames used."
   },
   "1614958c0fbf4f17": {
    "name": "play_launch_camera_shake_scene",
@@ -4289,7 +4290,7 @@
     "hit"
    ],
    "loose": "18460055a891d8a2",
-   "doc": "Spheda golf swing check at x, y, z sweeping from start_angle to end_angle (radians): casts lines from the ball to both ends of the swing arc and across it. Returns -1 when a wall is between the ball and either end, 0 when the swing arc is blocked or has no floor under its ends, 1 when it is clear."
+   "doc": "Spheda golf swing check for a ball at x, y, z. It takes a point 16 units out and 8 up at start_angle (radians) and a second point 0.5 radians further toward end_angle (0.3 radians back the other way when end_angle is on the negative side, the same point when they are equal). Returns -1 when a wall is between the ball and either point, 0 when the line between the two points is blocked or either point has no floor within 16 units below it, and 1 when the swing is clear."
   },
   "18488d48e236cfed": {
    "name": "play_event_255_light",
@@ -8350,6 +8351,30 @@
    "loose": "ef5846ca45c88787",
    "doc": "Gerald's line once he has joined: outside chapter 8 he warns that guns are not toys, in chapter 8 he says he will help Need and Cedric (Starble) rebuild the world. Then talk_to_npc."
   },
+  "2d1d30a31c849ff3": {
+   "name": "finish_spheda_shot",
+   "params": [
+    "holed_in"
+   ],
+   "locals": [
+    "sphida_bonus_mode",
+    "sphida_hole",
+    "sphida_par",
+    "sphida_hole_2",
+    "dungeon_stage",
+    "dungeon_floor",
+    "floor_info",
+    "x",
+    "y",
+    "z",
+    "sphida_par_2",
+    "x_2",
+    "y_2",
+    "z_2"
+   ],
+   "doc": "Ends a Spheda golf shot; holed_in is 1 when the ball went in. It resets Max's motion, the camera and the shot effects. In bonus mode a holed ball scores the strokes left + 3 (except on hole 8) and loads the next hole, or returns to the course menu when the hole is 8. In normal mode, holing out on a floor whose Spheda clear info is 1 sets floor flag 128, adds a medal and shows message 2010. Running out of balls shows message 2003; in bonus mode that shows the total score and returns to the course menu on hole 8, or says the sphere vanished and loads the next hole otherwise.",
+   "loose": "246583b815a478c5"
+  },
   "2d235fa3f89962d4": {
    "name": "talk_to_monster",
    "loose": "0d18ce7033967c78",
@@ -8550,7 +8575,7 @@
    "loose": "2e51f1608c502aee",
    "params": [],
    "locals": [],
-   "doc": "Prepares a floor warp: resets the event system with init_event, deletes the Spheda ball characters, fades out at once and waits one frame."
+   "doc": "Prepares a floor warp: resets the event system with init_event, deletes the Spheda characters in slots 8 to 23 and clears the Spheda game (cleanup_spheda), fades out at once and waits one frame."
   },
   "2e9ecb46355b3424": {
    "name": "play_e105c_laugh_talk",
@@ -9201,7 +9226,7 @@
    ],
    "loose": "4b152293d0bb315d",
    "params": [],
-   "doc": "Returns how many of the 14 candle parts in the Palm Brinks church (map part p08_i01h07, i01h07_13-m7 to m21) are currently visible; used by Bruno's candle quest."
+   "doc": "Returns how many of the 14 candle parts in the Palm Brinks church (map part p08_i01h07, i01h07_13-m7 to m21 without m13) are currently visible; used by Bruno's candle quest."
   },
   "3290ca7c007eb2c8": {
    "name": "play_lin_tribute_ending_with_star",
@@ -9653,7 +9678,7 @@
    "loose": "9b166027829d8884",
    "params": [],
    "locals": [],
-   "doc": "Shows the hint that the spinning meter is stopped with the O button, in message window 1 at the bottom, without waiting."
+   "doc": "Shows the hint that the spinning coin is stopped with the O button, in message window 1 at the bottom, without waiting."
   },
   "35d1c572e321aced": {
    "name": "talk_waiting_npc",
@@ -9818,7 +9843,7 @@
    ],
    "loose": "b407eab693df019e",
    "params": [],
-   "doc": "Max or Monica shake their head at the camera after missing a catch while fishing. Returns 0 at once for the other characters."
+   "doc": "Refusal reaction after the wrong item is picked from the use-item menu: loads the miss motion pack for Max or Monica, turns the player toward the camera over 6 frames and plays the no-no head shake. Does nothing and returns 0 for the Ridepod and Monica's monster form (characters 2 and 3)."
   },
   "3747b3513a57ce67": {
    "name": "play_train_takeoff_scene",
@@ -9913,7 +9938,7 @@
    "loose": "37827e0ab4734b9a",
    "params": [],
    "locals": [],
-   "doc": "Deletes the Spheda ball characters."
+   "doc": "Calls delete_spheda_charas: deletes the Spheda characters in slots 8 to 23, removes image 0 and clears the Spheda game."
   },
   "378768995bd5dd91": {
    "name": "play_bridge_report_scene_at_station",
@@ -10891,7 +10916,7 @@
     "unused_value",
     "trial_version_2"
    ],
-   "doc": "Handles an exit of the floor: the first time asks for the Fairy Saw (item 339) to open it. Once open, asks whether to go through and moves to the floor chosen by get_next_floor for this exit."
+   "doc": "Handles an exit of the floor: while it is shut, asks for the Fairy Saw (item 339) to open it. Once open, the Ridepod and Monica's monster form (characters 2 and 3) only get a refusal message; otherwise it asks whether to go through, shows any medal messages, sets the floor given by get_next_floor for this exit and opens the floor select menu (in the trial version it sets the exit flag instead)."
   },
   "3d9bcc216da6522c": {
    "name": "play_villagers_freed_then_continue",
@@ -11796,7 +11821,7 @@
     "party_slot"
    ],
    "loose": "3d4da23f59390f97",
-   "doc": "Station conversation with a party-able NPC. talk_mode picks the NPC (1, 2 and 3 select specific ones, 0 reads it from a local counter). Returns 1 if the NPC is already the partner. Otherwise it frames the NPC at a train seat or where they stand, shows a name box and a menu with options to take them along, hear a hint, and per-NPC extras such as shops, repairs or scoop reports. Taking the NPC sets them as in-party and opens the party select menu."
+   "doc": "Talk menu with a party-capable NPC: talk_mode 1, 2 or 3 picks Cedric, Borneo or Erik where they stand, 0 reads the NPC from npc's local counter and seats them from the train seat table. Returns 1 at once if they are already the party NPC. Otherwise it puts the camera in front of the NPC and offers: take them along (sets them in-party and opens the party select menu, refused while Lin is the party NPC), talk, and per-NPC extras such as repairs, shops, Pau's hint or the monster book. Returns 1 after the party select menu, a shop or the hint; Cedric's repairs, Donny's shop 6 and leaving the menu return nothing."
   },
   "415c375e48a04ac1": {
    "name": "play_board_train_late",
@@ -13365,7 +13390,7 @@
    ],
    "loose": "45509f505a63b02c",
    "params": [],
-   "doc": "Sets the player's standing motion for the active character. Steve (character 2) uses the legs or caterpillar track stand motion depending on his movement type; the others use the plain stand."
+   "doc": "Sets the player's standing motion for the active character. Steve (character 2) gets the legs stand motion for move type 1 or the caterpillar track stand for move type 2, and no motion change for any other move type; the others use the plain stand."
   },
   "4a1e4d1b1aae4001": {
    "name": "vanish_spiral_rock_9",
@@ -14036,7 +14061,8 @@
    "locals": [
     "chapter"
    ],
-   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Uses the talk camera and returns Ferdinand to standing."
+   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Turns the two to face each other without the talk camera, then returns Ferdinand to standing and ends the event.",
+   "loose": "be392eaf1aea2ac4"
   },
   "4e0ae9cf3d6b06f5": {
    "name": "clean_up_e280_scene_and_jump_to_s02",
@@ -15236,7 +15262,7 @@
     "partner_slot"
    ],
    "loose": "3d4da23f59390f97",
-   "doc": "Menu for talking to a party NPC on the train. Positions the camera and player, then offers asking them to join, talking, and repairs or a shop for some members. Returns 1 when the NPC is already the party member or the player left to the party menu."
+   "doc": "Talk menu with a party-capable NPC: member_override 1, 2 or 3 picks Cedric, Borneo or Erik where they stand, 0 reads the NPC from npc's local counter and seats them from the train seat table. Returns 1 at once if they are already the party NPC. Otherwise it puts the camera in front of the NPC and offers: take them along (sets them in-party and opens the party select menu, refused while Lin is the party NPC), talk, and per-NPC extras such as repairs, shops, Pau's hint or the monster book. Returns 1 after the party select menu, a shop or the hint; Cedric's repairs, Donny's shop 6 and leaving the menu return nothing."
   },
   "54151d894c52bc96": {
    "name": "enter_edit_mode_187",
@@ -15357,7 +15383,7 @@
    ],
    "loose": "b9065afe15ca881a",
    "params": [],
-   "doc": "Shows the partner's hint line in window 3 for the current point in the story. It checks story flags from the latest (final boss, Griffon's palace, Lapis stones, Gundor volcano and so on) back to the earliest and shows the first that matches, with a generic nudge to explore otherwise. Returns 0."
+   "doc": "Lays out the partner's hint line for the current point in the story in window 3 with show_message, for the caller to open. It checks story flags from the latest (final boss, Griffon's palace, Lapis stones, Gundor volcano and so on) back to the earliest and uses the first that matches, with a generic nudge to explore otherwise. Returns 0, except after the generic nudge, which returns nothing."
   },
   "54b7e98f62887e38": {
    "name": "start_linda_boss_fight",
@@ -16272,7 +16298,7 @@
     "player"
    ],
    "loose": "b23ea907b434135f",
-   "doc": "Turns the player to face the NPC and shows the NPC's talk message window."
+   "doc": "Turns the player to face npc, then shows the text already laid out in window 0 (message -1) as a bubble from npc to the player, waits for the player to dismiss it and closes the window. Callers lay the line out with show_message first."
   },
   "5aceaf44fee682c8": {
    "name": "show_pending_event_hint",
@@ -16778,7 +16804,7 @@
    ],
    "loose": "5de7a533c836f8da",
    "locals": [],
-   "doc": "Runs play_lipsync_timed on window for frames frames (-1 runs until the voice stream ends), which then stops the stream. Leaves closing the window to the caller."
+   "doc": "Runs play_lipsync_timed on window for frames frames (a 60 Hz count scaled by 50/60; -1 runs until the voice stream ends) without closing the window early. It does not stop or close the stream and leaves closing the window to the caller."
   },
   "5de8d80f19e320d7": {
    "name": "play_shot",
@@ -17153,7 +17179,8 @@
    "locals": [
     "chapter"
    ],
-   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Uses the talk camera and returns Ferdinand to standing."
+   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Turns the two to face each other without the talk camera, then returns Ferdinand to standing and ends the event.",
+   "loose": "be392eaf1aea2ac4"
   },
   "600344198c544877": {
    "name": "warp_to_boss_floor_after_story_526",
@@ -18520,7 +18547,7 @@
     "handle_rot_x",
     "handle_rot_y"
    ],
-   "doc": "Walk-in cutscene when a floor starts: the map piece rises and Max runs in, with either the floor transition map (show_map_transition set) or the dungeon logo, and shows the seal pictures and messages if the floor is red, blue or white sealed."
+   "doc": "Walk-in cutscene when a floor starts: the d01w09_3 gate piece rises and bounces back down while the player character runs in, with either the floor transition map (show_map_transition set) or the dungeon logo fading in. On a sealed floor it fades in the red, blue or white seal picture and afterwards shows the seal messages; a red seal switches control to Monica and a blue seal to Max."
   },
   "68d1124147af7223": {
    "name": "play_broken_flower_scene",
@@ -19343,7 +19370,7 @@
    "loose": "441db39a348c6a00",
    "params": [],
    "locals": [],
-   "doc": "Stops the player and shows a notice message in the help window, then restores the speech bubble window mode."
+   "doc": "Stops the player, applies the window message preset and opens window 0 in versatile window mode on the text already laid out there (message -1), then switches window 0 back to speech bubble mode."
   },
   "6cd1ea55ab2074e0": {
    "name": "play_train_rush_then_jump_to_s31",
@@ -19727,7 +19754,7 @@
     "jitter"
    ],
    "loose": "6fa702b6dc5f0950",
-   "doc": "Runs the Spheda power gauge. Returns 1 if the player cancels, 0 once a shot is set. A button press stops the gauge; its accuracy code scales power and shifts yaw (a perfect hit gives 1.1 times power), the analog stick gives curve and spin, and the code is stored in result_code[0]."
+   "doc": "Runs the Spheda power gauge. Returns 1 when the player cancels with the second button before the first press or the gauge runs back empty (result 5), and 0 once a shot is set. Presses of the first button stop the gauge; its accuracy code scales power and shifts yaw (a perfect 0 gives 1.1 times power, 4 for running past gives none), the analog stick gives curve and spin, and the code is stored in result_code[0]."
   },
   "6fb316c20d6447c5": {
    "name": "ask_bridge_jump_from_spot_5",
@@ -20548,7 +20575,7 @@
    ],
    "loose": "9054de79d574a4b2",
    "locals": [],
-   "doc": "Milane's talk before she can be recruited: her shop only sells blades and she dislikes guns. Then talk_to_npc."
+   "doc": "Milane's talk before she can be recruited: her shop specializes in blades, and though it stocks guns too, firearms are not her thing. Then talk_to_npc."
   },
   "746243ba141ede20": {
    "name": "talk_to_firbit_villager",
@@ -21054,7 +21081,7 @@
    ],
    "loose": "13fd85166ab9bcb3",
    "params": [],
-   "doc": "Sets up the forest's event points from the story counter (counter 3): disables them all, then shows the exit piece and next_floor point at 8 or more, the ear pickup between 2 and 6, the Poison Apple pickups (slots 13, 15 to 17) while the apple is not held, and the one story trigger for the current step (fc_e220 without a fishing rod, fc_e230 until the apple scene, fc_e235 at 3, item_e245 at 5, fc_e247 at 6 which also hides the villagers, fc_e253 at 7 once flag 250 is set)."
+   "doc": "Sets up the forest's event points from the story counter (counter 3): disables them all, then shows the exit piece and next_floor point at 8 or more and the ear pickup between 2 and 6. After the Poison Apple scene (flag 230) and before step 5 it shows the Poison Apple pickup and slots 13 and 15 to 17 while no apple is held, or hides those slots when one is. fc_e220 is enabled at step 2 or less without a fishing rod, plus the story trigger for the current step: fc_e230 until the apple scene, fc_e235 at 3, item_e245 at 5, fc_e247 at 6 which also hides the villagers, fc_e253 at 7 once flag 250 is set."
   },
   "779aac83b7ad2df3": {
    "name": "talk_aunt_polly_to_monica",
@@ -23879,7 +23906,7 @@
    "locals": [
     "frames_waited"
    ],
-   "doc": "Shows a bubble message in a window slot and waits until the player closes it."
+   "doc": "Shows text_id in message message_slot as a bubble forced into screen slot window_slot with both its points at bubble_x, bubble_y, waits until the player closes it and sets the slot back to automatic. Returns the frames waited."
   },
   "87e6436152048a8f": {
    "name": "run_boss_loss_game_over",
@@ -26455,7 +26482,7 @@
    "doc": "Plays the buggy chase scene, fades in and starts the buggy sub game."
   },
   "974f336e2d32bd4b": {
-   "name": "activate_chara_slot",
+   "name": "set_chara_active_by_no",
    "params": [
     "chara_no",
     "slot"
@@ -26464,7 +26491,7 @@
     "chara_id"
    ],
    "loose": "974f336e2d32bd4b",
-   "doc": "Finds the scene character with number chara_no and activates it when slot is nonzero or deactivates it when slot is 0 (the second parameter is an on/off flag, not a slot)."
+   "doc": "Finds the scene character with number chara_no (slots 8 to 63) and activates it when the second argument is nonzero or deactivates it when it is 0 (that argument is an on/off flag, not a slot)."
   },
   "9753a24f42f97e77": {
    "name": "give_grape_juice_after_conda_scene",
@@ -27480,7 +27507,7 @@
     "prev_chara"
    ],
    "loose": "3d4da23f59390f97",
-   "doc": "Menu for talking to a party NPC on the train. Positions the camera and player, then offers asking them to join, talking, and repairs or a shop for some members. Returns 1 when the NPC is already the party member or the player left to the party menu."
+   "doc": "Talk menu with a party-capable NPC: npc_mode 1, 2 or 3 picks Cedric, Borneo or Erik where they stand, 0 reads the NPC from chara's local counter and seats them from the train seat table. Returns 1 at once if they are already the party NPC. Otherwise it puts the camera in front of the NPC and offers: take them along (sets them in-party and opens the party select menu, refused while Lin is the party NPC), talk, and per-NPC extras such as repairs, shops, Pau's hint or the monster book. Returns 1 after the party select menu, a shop or the hint; Cedric's repairs, Donny's shop 6 and leaving the menu return nothing."
   },
   "9d1947d032b11aee": {
    "name": "use_condor_perch_2",
@@ -31979,7 +32006,7 @@
     "bgm_no"
    ],
    "loose": "9ff671221fd3f2d0",
-   "doc": "Game over sequence: stops the music, plays the character's defeat pose, and shows a game over screen with the optional voice line. If another character can take over it opens the character change menu and returns. Otherwise returns 1 after reviving at full health (when revive is 1) or 0 after setting the exit flag."
+   "doc": "Runs the game over for the active character: stops the battle music, plays the defeat pose (the death face for Max and Monica, the breakdown for the ride pod) and loads the game over music. If another character can take over, it shows the knocked-out message from show_game_over_message, opens the character change menu, restores the field music and returns 0. Otherwise it plays voice first when voice is 0 or more, slides in the game over screen and waits for a button press, then fades out and either revives the player at full health and weapon durability and returns 1 (revive 1) or sets the exit flag and returns 0. With the debug flag set it refills HP and weapons and resumes play instead, returning 0."
   },
   "b58a338e357f6555": {
    "name": "play_knock_scene_and_enter_house",
@@ -32594,7 +32621,7 @@
     "npc_id"
    ],
    "loose": "cd1951307d5bf883",
-   "doc": "Closes the party NPC view: restores the message window options, either closes window 1 (is_event) or sets the NPC name preset, ends the event, and for a non-event view puts the NPC back in its train seat with place_train_npc."
+   "doc": "Closes a party NPC talk view: turns off the eye view parts and restores the window 1 options. For a fixed NPC (is_event is the talk menu's mode 1 to 3, Cedric, Borneo or Erik standing on the map) it closes window 1; for a seated NPC (mode 0) it sets the NPC name preset on window 1. Then it ends the event and puts a seated NPC back in its train seat with place_train_npc."
   },
   "b8a7a2dba545c3e7": {
    "name": "ask_item_question",
@@ -33207,7 +33234,8 @@
    "locals": [
     "chapter"
    ],
-   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Uses the talk camera and returns Ferdinand to standing."
+   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Turns the two to face each other without the talk camera, then returns Ferdinand to standing and ends the event.",
+   "loose": "be392eaf1aea2ac4"
   },
   "bbb90901ff662ab1": {
    "name": "play_retry_scene_and_enter_dungeon",
@@ -33617,7 +33645,8 @@
    "locals": [
     "chapter"
    ],
-   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Uses the talk camera and returns Ferdinand to standing."
+   "doc": "Ferdinand's two-part talk to Monica about food, with a different single line in chapter 8. Turns the two to face each other without the talk camera, then returns Ferdinand to standing and ends the event.",
+   "loose": "be392eaf1aea2ac4"
   },
   "be72a2c74e0e2761": {
    "name": "open_door_instantly",
@@ -33794,7 +33823,7 @@
     "target_y",
     "target_z"
    ],
-   "doc": "Runs variant 1 to 5 of event 105c, the follow-up scenes about the Energy Pack backpack invention. Saves and restores the camera and player position around it."
+   "doc": "Runs shot 1 to 5 of event 105c, Cedric's follow-up scenes about the Energy Pack backpack invention (shot 3 does nothing; shot 5 stops the BGM and restarts it afterwards). Sets flag 105, and saves and restores the camera and Steve's (slot 25) position and rotation around it."
   },
   "bf8fae321a963df8": {
    "name": "play_ending_movie_and_exit",
@@ -34161,11 +34190,11 @@
    "locals": [
     "joined_member",
     "flag_520",
-    "flag_532",
+    "gaspard_backstory_seen",
     "event_522_seen"
    ],
    "loose": "4577f7baa87594a5",
-   "doc": "Time travel through the blue time gate at the given spot. With Monica in the party she warps with both characters shown (play_blue_time_gate_scene). Otherwise Max warps alone through the same gate (play_red_time_gate_scene with the blue gate), first playing the blue Atlamillia glow scene once (flag 522) when flag 520 is set and flag 532 is not."
+   "doc": "Time travel through the blue time gate at the given spot. With Monica in the party she warps with both characters shown (play_blue_time_gate_scene). Otherwise Max warps alone through the same gate (play_max_time_gate_scene with the blue gate), first playing the blue Atlamillia glow scene once (flag 522) when flag 520 is set and flag 532 is not."
   },
   "c16873efe2e4061b": {
    "name": "play_starglass_time_travel_scene",
@@ -34418,7 +34447,7 @@
     "choice"
    ],
    "loose": "68931633261942ec",
-   "doc": "Starts a talk with npc, shows question mes_no with choice_count options and the cursor on cursor, then ends the talk and returns the choice. set_camera and restore control the camera and turning back."
+   "doc": "Starts a talk with npc (the player and npc turn to face each other, with the talk camera when set_camera is set), asks question mes_no in window 0 as a bubble from npc with choice_count options and the cursor on line cursor, then ends the talk: with restore set the npc turns back to its original yaw, it is set standing, the event ends, and with set_camera set a 10-frame crossfade starts. Returns the chosen line, or -1 when the player cancels."
   },
   "c2a1071909c1ca4a": {
    "name": "play_map_start_scene_for_previous_map",
@@ -39582,7 +39611,7 @@
     "prev_chara"
    ],
    "loose": "3d4da23f59390f97",
-   "doc": "Talk menu with a train-car NPC (a fixed one for Cedric, Borneo or Erik when mode is 1, 2 or 3): returns 1 at once if they are already the party NPC. Otherwise it puts the camera in front of the NPC and offers: take them along (opens the party select menu, refused while Lin is the party NPC), talk, and per-NPC extras such as repairs, shops, menus or hints. Returns 1 when something was done."
+   "doc": "Talk menu with a party-capable NPC: mode 1, 2 or 3 picks Cedric, Borneo or Erik where they stand, 0 reads the NPC from the chara's local counter and seats them from the train seat table. Returns 1 at once if they are already the party NPC. Otherwise it puts the camera in front of the NPC and offers: take them along (sets them in-party and opens the party select menu, refused while Lin is the party NPC), talk, and per-NPC extras such as repairs, shops, Pau's hint or the monster book. Returns 1 after the party select menu, a shop or the hint; Cedric's repairs, Donny's shop 6 and leaving the menu return nothing."
   },
   "ddef3f2159c7d1cb": {
    "name": "tally_tournament_and_award_prize",
@@ -40388,7 +40417,7 @@
     "language_again"
    ],
    "loose": "3affb8619f027d72",
-   "doc": "Shows the finish banner after a fight: stops the music, plays the victory sound, and has the camera follow the player (higher when chr_no is 2) while the banner sprite grows, then restores camera control and music. Skippable."
+   "doc": "Shows the finish banner after a fight: stops the battle music and BGM, plays the enemy wipeout fanfare, and has the camera follow the player (higher when chr_no is 2, the Ridepod) while the player turns to the camera and the banner shrinks from five times its size and fades in over 60 frames, then slides to the lower left. Skippable; afterwards restores camera control, starts BGM 193 and crossfades back."
   },
   "e2dbecd6bc3d73e9": {
    "name": "play_ending_movie_and_end_card",
@@ -40493,7 +40522,7 @@
    ],
    "loose": "1b127a8cb11fef16",
    "params": [],
-   "doc": "Generic villager talk. Looks up the villager's message group, then handles the shop keepers (1012, 1015, 1018) with the shop greeting, a guard (50) with a refusal, and chapter-specific lines for others."
+   "doc": "Default talk handler for town villagers. Shop NPCs 1012, 1015 and 1018 open a shop, NPC 50 refuses passage, and in chapter 1 NPCs 2, 63 and 65 talk about the train (depends on whether it is running); in chapter 8 NPCs 61 and 80 talk about Monica (depends on her return flag). Anyone else shows a greeting plus the message-table line for the villager, with the Monica variant when Monica is active."
   },
   "e35a972d9d78160a": {
    "name": "talk_to_pau_about_shingala",
@@ -40984,7 +41013,7 @@
     "next_floor",
     "unused_value"
    ],
-   "doc": "Interaction with a condor perch. The player offers Giant Meat (item 341) and chooses whether to be carried to the next floor; on yes it clears monsters, plays the carry-away scene, shows any medal results, updates the floor info and starts the next floor. The companion characters (2 and 3) just comment."
+   "doc": "Interaction with a condor perch. Max or Monica offers Giant Meat (item 341) and chooses whether to be carried off; on yes it clears monsters, plays the carry-away scene, shows any medal results, updates the floor info and opens the floor select menu for the next floor, and on no the meat is given back. The Ridepod and Monica's monster form (characters 2 and 3) only get a refusal message."
   },
   "e5b6d4e05a0ea9d8": {
    "name": "play_fortress_rise_scene",
@@ -41173,6 +41202,45 @@
    "params": [],
    "doc": "Sets flag 540. In the Paznos hall Galen Agaris (the phorn model) gives the order to fire as the golems arrive, with a sound and a fade out. Skippable; loads and removes its own models."
   },
+  "e6e70fbfad950d38": {
+   "name": "run_party_npc_talk",
+   "params": [
+    "chara",
+    "fixed_npc"
+   ],
+   "locals": [
+    "npc_id",
+    "party_chara",
+    "name_width",
+    "x",
+    "y",
+    "z",
+    "rot_x",
+    "yaw",
+    "rot_z",
+    "seat",
+    "cam_x",
+    "cam_y",
+    "cam_z",
+    "ref_x",
+    "ref_y",
+    "ref_z",
+    "player_x",
+    "player_y",
+    "player_z",
+    "player_rot_x",
+    "player_yaw",
+    "player_rot_z",
+    "choice",
+    "mes_no",
+    "chapter",
+    "name_mes",
+    "choice_count",
+    "partner_chara"
+   ],
+   "doc": "Talk menu with a party-capable NPC: fixed_npc 1, 2 or 3 picks Cedric, Borneo or Erik where they stand, 0 reads the NPC from the chara's local counter and seats them from the train seat table. Returns 1 at once if they are already the party NPC. Otherwise it puts the camera in front of the NPC and offers: take them along (sets them in-party and opens the party select menu, refused while Lin is the party NPC), talk, and per-NPC extras such as repairs, shops, Pau's hint or the monster book. Returns 1 after the party select menu, a shop or the hint; Cedric's repairs, Donny's shop 6 and leaving the menu return nothing.",
+   "loose": "92acedde24ad6d5d"
+  },
   "e6e789f4d294dbf0": {
    "name": "play_gaspard_death_scene",
    "loose": "acf573d5f244949a",
@@ -41301,7 +41369,7 @@
     "snd_id"
    ],
    "loose": "ccb4124af647b03a",
-   "doc": "Menu for a locked treasure chest: open it with Donny if he is the party NPC, use the Treasure Chest Key item (297), force it, or give up. Forcing triggers the trap bits of chest_type: bit 8 poisons the active character and cuts HP by 70 percent, bit 16 blows up the chest, bit 32 wrecks both weapons' durability. Clears lock bit 2 when unlocked. Returns 1 when the chest stays closed."
+   "doc": "Menu for a locked treasure chest. The first choice is Donny opening it when he is the party NPC, otherwise using the Treasure Chest Key (item 297); the others force it or give up. Forcing sets off the trap bits of chest_type: bit 8 poisons Max (or Monica when she or her monster form is in control) and cuts HP by 70 percent, bit 16 blows up the chest, bit 32 wrecks both weapons' durability. The chest still opens after the poison or weapon trap but not after the explosion. Clears lock bit 2 when opened or forced. Returns 1 when the chest stays closed."
   },
   "e79033a2e82be9b9": {
    "name": "finish_spheda_shot_and_give_prize",

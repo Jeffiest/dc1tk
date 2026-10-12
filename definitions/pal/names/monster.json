@@ -1441,7 +1441,7 @@
   "08061cb0ef61dda6": {
    "name": "restore_life_and_wait_frame",
    "loose": "08061cb0ef61dda6",
-   "doc": "Counts hits and restores life, then waits one frame. Every wait in this script goes through it."
+   "doc": "Counts hits and restores life, then waits one frame. Most waits in this script go through it."
   },
   "08117fb9c8555ac9": {
    "name": "wait_target_detected",
@@ -3475,7 +3475,7 @@
     "monster_count",
     "target_angle"
    ],
-   "doc": "Close range choice: mostly walk up and swing, otherwise summon sprouts, stand, or walk toward the target."
+   "doc": "Close range choice: 85 percent of the time walks up to within 65 units of the target and swings. Otherwise, when the target is within 70 units and fewer than 7 monsters exist, it summons sprouts 60 percent of the time, and then either walks up to the target (70 percent) or stands watching for it to come into view for up to 45 frames (30 percent). The walk in a fixed direction is never reached, because its roll test (roll < 100) is always true."
   },
   "155310a2a91cfea3": {
    "name": "fly_sideways_updating",
@@ -6501,7 +6501,7 @@
     "frames"
    ],
    "loose": "27d5ace00b740a3d",
-   "doc": "Starts turning toward the target at speed_deg, then is meant to wait until the heading matches the target angle. In this toolkit the target angle and heading reads use old native numbers, so the wait does not follow the turn: it can end at once or run up to 360 frames, and the turn is stopped when it ends. Returns the frames waited."
+   "doc": "Meant to turn toward the target at speed_deg and wait until facing it, but in this toolkit's old numbering start_turn_to_target starts no turn, the target angle read gets the monster's x position instead, and wait_turn_to_angle never reads the heading, so the monster does not turn: the wait ends at once or runs the full 360 frames, depending on those leftover values. Returns the frames waited."
   },
   "27f85ae3fce05108": {
    "name": "fly_random_forward",
@@ -12551,7 +12551,7 @@
    ],
    "loose": "baadb5b28eac7289",
    "params": [],
-   "doc": "If the player is disguised as any monster, runs face_target_while_disguised until the disguise ends: the monster stands and turns toward its target whenever it is more than 60 degrees off. Does nothing otherwise. The monster kind it passes is not used."
+   "doc": "If the player is disguised in a form this monster's kind recognises as its own (get_player_disguise is not -1), runs face_target_while_disguised until that ends: the monster stands and turns toward its target whenever it is more than 60 degrees off. Does nothing otherwise. The monster kind it passes is not used."
   },
   "493c514a1f2bb97e": {
    "name": "fly_sideways",
@@ -21711,7 +21711,7 @@
     "tolerance"
    ],
    "loose": "f1350ebeaaf45a4a",
-   "doc": "Waits for the monster to face angle_deg within 3 degrees (the code compares the turn speed in radians against 3, so a larger tolerance practically never applies), for the turn to finish, or for max_frames. Stops turning and returns the frames waited."
+   "doc": "Waits, running the aggro update each frame, until the monster's yaw is within 3 degrees of angle_deg (the code compares the turn speed in radians against 3, so a larger tolerance practically never applies), until it is within one frame's turn (turn_speed_deg) of angle_deg measured across the 180 degree wrap, or until max_frames pass. It does not start the turn itself. Stops turning and returns the frames waited."
   },
   "7baa63ec900e8b73": {
    "name": "on_stun",
@@ -27272,7 +27272,7 @@
    ],
    "loose": "fc4cc0623ebe1ea3",
    "params": [],
-   "doc": "If the player is disguised as a monster, runs face_player_while_disguised for this monster kind until the disguise ends; otherwise returns at once."
+   "doc": "If the player is disguised in a form this monster's kind recognises as its own (get_player_disguise is not -1), runs face_player_while_disguised until that ends, standing and turning to face the player whenever it is more than 60 degrees off; otherwise returns at once. The monster kind it passes is not used."
   },
   "9c1633a0f2a4cc71": {
    "name": "set_aggro_near_range",
@@ -36365,7 +36365,7 @@
    "loose": "308f39e17bf63a06",
    "params": [],
    "locals": [],
-   "doc": "Advances one frame: refreshes aggro from damage, ticks and clears the aggro timer, and increments the frame counter."
+   "doc": "Advances one frame: refreshes aggro from damage taken and, while aggro is on, ticks its timer and turns aggro off when the timer runs out; then adds one to the frame counter in monster variable 7 and waits a frame."
   },
   "d234c5a57018d741": {
    "name": "turn_and_fly_to_target_spot_updating",
@@ -37241,7 +37241,7 @@
     "result"
    ],
    "loose": "c4082e26d1bb38bb",
-   "doc": "Moves to the point beside the target at angle_deg, at the monster's current distance from it. Returns -1 when less than 100 units are clear and the stop distance does not fit, otherwise the wait result."
+   "doc": "Walks without turning to the point angle_deg around the target from the monster's own position, at the monster's current distance from the target, so a small angle steps sideways around it. Only the monster's facing is probed, up to 100 units: if less is clear, the walk is cut to that distance along the travel direction, and -1 is returned without moving when it is under twice stop_dist. Otherwise returns 1 once the target is within stop_dist, 2 when the walk ends, 0 after max_frames, and stops moving."
   },
   "d6e88c73503e1420": {
    "name": "fly_sideways",
@@ -38976,7 +38976,7 @@
   "e2256979db7ef5c9": {
    "name": "wait_frame_tracking_damage",
    "loose": "e2256979db7ef5c9",
-   "doc": "Runs the damage and timer tracking and waits one frame. Every wait in this file goes through it."
+   "doc": "Runs the damage and timer tracking and waits one frame. Most waits in this file go through it."
   },
   "e22781691600af62": {
    "name": "move_around_point",

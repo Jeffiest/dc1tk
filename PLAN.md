@@ -96,9 +96,12 @@ definitions.
      up with Dr. Jaming in d04b01, a Griffon collapse called a stabbing,
      Sun's confession to Alexandra described as another scene, wrong
      flags, characters and text languages).
-   Every function has now had one audit; the larger files got a lighter
-   pass in places, so a second look at the most-called functions would
-   still find errors.
+   Every function has now had one audit. A second look at the 360
+   most-called functions found 3 wrong names (`activate_chara_slot` also
+   switches characters off, so it is `set_chara_active_by_no`; the red time
+   gate scene is Max's, either gate) and 55 wrong docs (return values left
+   out, branches misread, a lip sync said to close the stream). The less
+   called functions got one pass only.
 2. **Fewer numbered names.** About 2,700 function definitions on the disc
    end in a number. Most are copy numbers: a function that appears twice in
    a file (`resume_guard_and_dodge_after_shot_3`), or two functions given
