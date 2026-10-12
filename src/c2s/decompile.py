@@ -231,9 +231,11 @@ def block(state, index, stop, loops):
     statements = []
     ins = state["ins"]
     while index < stop:
+        # where each statement starts, as an instruction index in the function, for line notes
+        start = index
         if ins[index]["name"] == "NOP":
             statement, index = loop(state, index, stop, loops)
-            statements.append(statement)
+            statements.append(dict(statement, start=start))
             continue
         values, index, item = expression(state, index, stop)
         if item is None:
@@ -243,21 +245,21 @@ def block(state, index, stop, loops):
             if len(values) != 1:
                 fail("condition leaves values")
             statement, index = conditional(state, values[0], index, stop, loops)
-            statements.append(statement)
+            statements.append(dict(statement, start=start))
             continue
         if name == "JMP":
             if values or item["arg2"] != 0 or not loops:
                 fail("jump outside a loop")
             label = ins[target(state, index)]["arg1"]
             if label == loops[-1]["end"]:
-                statements.append({"kind": "break"})
+                statements.append({"kind": "break", "start": start})
             elif label == loops[-1]["top"]:
-                statements.append({"kind": "continue"})
+                statements.append({"kind": "continue", "start": start})
             else:
                 fail("jump that is neither break nor continue")
             index += 1
             continue
-        statements.append(simple_statement(values, item, state))
+        statements.append(dict(simple_statement(values, item, state), start=start))
         index += 1
     return statements
 

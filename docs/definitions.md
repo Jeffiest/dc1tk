@@ -11,9 +11,6 @@ anyone with the binaries gets the same readable source.
 serves other versions of the game (NTSC, Japanese), Dark Cloud 1 once its
 engine is supported, and mods.
 
-Sections marked **(planned)** describe parts of the format that are
-specified but not built yet; everything else works today.
-
 ## Engine and content
 
 Knowledge splits in two, and only the second kind lives in a definition set.
@@ -41,7 +38,7 @@ its target by something that can be computed from the binary.
 | Message | message id and the text file the script loads |
 | Number | the kind of the place it appears (see value kinds) |
 | Library | fingerprint of its member list |
-| Line in a function (planned) | function fingerprint and instruction offset |
+| Line in a function | function fingerprint and instruction index |
 
 **Function fingerprints** (`src/c2s/fingerprint.py`) are the foundation, so
 their definition is fixed and versioned. The fingerprint is a SHA-1 over:
@@ -139,7 +136,9 @@ function and its variables:
       "loose": "41d7c09a2e6b3f15",
       "doc": "Baker dialogue; picks lines by quest progress.",
       "params": ["npc", "player"],
-      "locals": ["active_chara", "quest_state"]
+      "locals": ["active_chara", "quest_state"],
+      "types": {"quest_state": "enum quest_state"},
+      "returns": "void"
     }
   }
 }
@@ -160,10 +159,22 @@ on every disc file. Names that clash with a native, helper, constant or
 keyword get a suffix too, as do parameter and local names that repeat or
 hide a function the body calls.
 
-Planned fields: `types` gives a variable a value kind or enum, so numbers
-assigned to it, compared with it and passed for it print as names;
-`returns` overrides the inferred return type; `notes` attaches comments to
-lines by instruction offset.
+`types` gives variables a value kind or an enum (by the names in `params`
+and `locals`, or their default names). The variable is declared with it
+(`enum quest_state quest_state;`), and numbers assigned to it, compared
+with it, and passed for a parameter of that kind print as the enum's
+names. In source, declare a variable with a kind or enum and `learn`
+records it; it compiles as the kind's base type. `returns` overrides the
+inferred return type (`void` only where no return gives a value); `learn`
+records a declared return type that differs from what the decompiler
+infers.
+
+`notes` attaches comments to lines: `{"4": "22 is the town theme."}` puts
+`// note: 22 is the town theme.` above the statement that starts at
+instruction 4 of the function. In source, write a comment starting
+`note:` on its own line above a statement; `learn` records it with the
+statement's instruction index. Other comments are the decompiler's own
+(dialogue, glosses, trigger points) and are not learned.
 
 ### Scripts
 

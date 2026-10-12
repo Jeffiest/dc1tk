@@ -31,6 +31,7 @@ typedef int flag;
 typedef int bgm_file;
 typedef int sound_set;
 typedef int system_se;
+typedef int chara_slot;
 typedef int npc_id;
 typedef int monster_kind;
 typedef string chara_pack;
@@ -1217,6 +1218,18 @@ enum scene_status {
     SCENE_CHARA_NO_MODEL = 512,
 };
 
+// Scene character slots the engine always fills the same way (charasetup.cpp, LoadGameObject).
+// 1 to 5 hold the controlled character's weapons or the Ridepod's parts; villagers take 8 to 23
+// and 24 to 31 in an order that changes with the story, and scripts reuse those slots for their
+// own characters, so those have no names.
+enum chara_slot_engine {
+    CHARA_PLAYER = 0,
+    CHARA_TIME_GATE_MARKER = 120,
+    CHARA_TIME_GATE_BASE = 121,
+    CHARA_SAVE_POINT = 122,
+    CHARA_SAVE_BOOK = 123,
+};
+
 // Scene sound bank whose id _GET_SND_ID reads: CScene se_env_id, se_base_id (1 to 3),
 // se_battle_id, or a sound source through GetSeSrcID.
 enum se_bank {
@@ -1406,7 +1419,7 @@ extern void set_current_dir(OPTIONAL(string dir)) NATIVE(17);
 // Removes a scene character and clears any event object handles that refer to it. Its texture
 // block is freed too unless delete_texture is 0 (default 1).
 // Original name: _DELETE_CHARA.
-extern void delete_chara(int chara, OPTIONAL(int delete_texture)) NATIVE(18);
+extern void delete_chara(chara_slot chara, OPTIONAL(int delete_texture)) NATIVE(18);
 
 // Loads an extra motion pack into an already loaded scene character, using memory stack stack_no.
 // cfg_name names the entry inside the pack (such as "info.cfg"). A single argument is instead an
@@ -1426,7 +1439,7 @@ extern void set_rain(int on) NATIVE(21);
 
 // Removes the extra motions that were added to a scene character with load_chara_motion.
 // Original name: _DEL_EXT_MOTION.
-extern void delete_chara_ext_motion(int chara) NATIVE(22);
+extern void delete_chara_ext_motion(chara_slot chara) NATIVE(22);
 
 // Does nothing in the retail game.
 // Original name: _SET_MARKER.
@@ -1524,7 +1537,7 @@ extern int get_free_item_slot(void) NATIVE(42);
 
 // Returns the scale factor that fits a scene character's bounding box to a cube of half-size size.
 // Original name: _GET_ADJUST_POLYGON_SCALE.
-extern float get_chara_fit_scale(int chara, float size) NATIVE(43);
+extern float get_chara_fit_scale(chara_slot chara, float size) NATIVE(43);
 
 // Plays a full-screen movie file (.PSS) to the end before returning, using memory stack stack_no,
 // and draws captions when enabled. init_sound 0 skips initialising the sound library (default 1).
@@ -1780,7 +1793,7 @@ extern int get_prev_submap_no(void) NATIVE(97);
 
 // Sets which scene character rain splashes come off. -1 clears the splash particles.
 // Original name: _SET_RAIN_CHARA_NO.
-extern void set_rain_chara(int chara) NATIVE(98);
+extern void set_rain_chara(chara_slot chara) NATIVE(98);
 
 // Finds a placed part by name on the active edit map and writes its position and Y rotation.
 // Original name: _GET_EDIT_PARTS_POS.
@@ -1788,127 +1801,127 @@ extern void get_edit_part_pos(string part_name, float *x, float *y, float *z, fl
 
 // Writes the position of a scene character.
 // Original name: _GET_CHARA_POS.
-extern void get_chara_pos(int chara, float *x, float *y, float *z) NATIVE(100);
+extern void get_chara_pos(chara_slot chara, float *x, float *y, float *z) NATIVE(100);
 
 // Writes the screen position in pixels of a point at 85% of a scene character's height, where a
 // speech balloon would go.
 // Original name: _GET_CHARA_TALK_POS.
-extern void get_chara_screen_pos(int chara, int *screen_x, int *screen_y) NATIVE(101);
+extern void get_chara_screen_pos(chara_slot chara, int *screen_x, int *screen_y) NATIVE(101);
 
 // Turns a scene character's yaw toward a world point by at most max_turn radians, taking the
 // shorter way. Call it once per frame in a loop to turn smoothly.
 // Original name: _TURN_CHARA.
-extern void turn_chara_toward(int chara, float x, float y, float z, float max_turn) NATIVE(102);
+extern void turn_chara_toward(chara_slot chara, float x, float y, float z, float max_turn) NATIVE(102);
 
 // Places a scene character at a world position. Called with a single argument, that argument is
 // instead the key of a stored argument block holding the character and position.
 // Original name: _SET_CHARA_POS.
-extern void set_chara_pos(int chara, float x, float y, OPTIONAL(float z)) NATIVE(103);
+extern void set_chara_pos(chara_slot chara, float x, float y, OPTIONAL(float z)) NATIVE(103);
 
 // Sets a scene character's rotation in radians around the x, y and z axes; each angle is wrapped
 // into -pi to pi. Called with a single argument, that argument is the key of a stored argument
 // block holding the character and rotation.
 // Original name: _SET_CHARA_ROT.
-extern void set_chara_rot(int chara, float x, float y, OPTIONAL(float z)) NATIVE(104);
+extern void set_chara_rot(chara_slot chara, float x, float y, OPTIONAL(float z)) NATIVE(104);
 
 // Reads a scene character's rotation in radians around the x, y and z axes into three out
 // parameters.
 // Original name: _GET_CHARA_ROT.
-extern void get_chara_rot(int chara, any x, any y, any z) NATIVE(105);
+extern void get_chara_rot(chara_slot chara, any x, any y, any z) NATIVE(105);
 
 // Starts a motion or motion sequence on a scene character by name. flags: 1 pauses on the current
 // frame, 2 holds the last frame instead of looping, 4 restarts from the first frame without
 // blending. When step is given and not -1 and flag 4 is set, the motion is applied at once and
 // advances step frames per tick; reset non-zero clears the current motion first.
 // Original name: _SET_MOTION.
-extern void set_chara_motion(int chara, string motion_name, OPTIONAL(enum chara_motion_flag flags, float step, int reset)) NATIVE(106);
+extern void set_chara_motion(chara_slot chara, string motion_name, OPTIONAL(enum chara_motion_flag flags, float step, int reset)) NATIVE(106);
 
 // Sets how many motion frames a scene character's current motion advances each tick.
 // Original name: _SET_STEP.
-extern void set_chara_motion_step(int chara, float step) NATIVE(107);
+extern void set_chara_motion_step(chara_slot chara, float step) NATIVE(107);
 
 // Turns a texture animation group on a scene character's texture block on or off. With on = 1 it
 // starts the named group; with on = 0 it stops the named group, or every group when no name is
 // given.
 // Original name: _SET_TEX_ANIM.
-extern void set_chara_texture_anim(int chara, int on, OPTIONAL(string anim_name)) NATIVE(108);
+extern void set_chara_texture_anim(chara_slot chara, int on, OPTIONAL(string anim_name)) NATIVE(108);
 
 // Sets a scene character's scale along x, y and z (1.0 is normal size). Called with a single
 // argument, that argument is the key of a stored argument block holding the character and scale.
 // Original name: _SET_SCALE.
-extern void set_chara_scale(int chara, float x, float y, float z) NATIVE(109);
+extern void set_chara_scale(chara_slot chara, float x, float y, float z) NATIVE(109);
 
 // Makes the follower character's root frame follow the named model frame (bone) of chara, without
 // parenting it, so it moves with that bone.
 // Original name: _SET_REFERENCE.
-extern void attach_chara_to_frame(int chara, string frame_name, int follower) NATIVE(110);
+extern void attach_chara_to_frame(chara_slot chara, string frame_name, int follower) NATIVE(110);
 
 // Stops a character's root frame following another model's frame, undoing attach_chara_to_frame on
 // the follower.
 // Original name: _DEL_REFERENCE.
-extern void detach_chara_from_frame(int chara) NATIVE(111);
+extern void detach_chara_from_frame(chara_slot chara) NATIVE(111);
 
 // Sets the no-cull attribute on a scene character's shadow frame so the shadow is not clipped off
 // screen (1) or is culled normally (0). The code reads the second argument whenever any argument
 // is passed, so pass it explicitly.
 // Original name: _SHADOW_CLIP_OFF.
-extern void set_shadow_no_cull(int chara, OPTIONAL(int no_cull)) NATIVE(112);
+extern void set_shadow_no_cull(chara_slot chara, OPTIONAL(int no_cull)) NATIVE(112);
 
 // Returns the yaw in radians that faces a scene character toward a world point, ignoring height.
 // Returns 0 when the point is directly above or below the character.
 // Original name: _GET_COORDINATE_ANGLE.
-extern float get_chara_angle_to(int chara, float x, float y, float z) NATIVE(113);
+extern float get_chara_angle_to(chara_slot chara, float x, float y, float z) NATIVE(113);
 
 // Returns a scene character's body width from its model info.
 // Original name: _GET_CHARA_WIDTH.
-extern float get_chara_width(int chara) NATIVE(114);
+extern float get_chara_width(chara_slot chara) NATIVE(114);
 
 // Returns a scene character's body height from its model info, in world units.
 // Original name: _GET_CHARA_HEIGHT.
-extern float get_chara_height(int chara) NATIVE(115);
+extern float get_chara_height(chara_slot chara) NATIVE(115);
 
 // Returns a scene character's body depth from its model info.
 // Original name: _GET_CHARA_WEIGHT.
-extern float get_chara_depth(int chara) NATIVE(116);
+extern float get_chara_depth(chara_slot chara) NATIVE(116);
 
 // Shows (1) or hides (0) a scene character. With fade = 1 it fades in or out instead of popping,
 // changing alpha by fade_speed per frame (default 0.1, so 10 frames).
 // Original name: _SET_CHARA_SHOW.
-extern void set_chara_visible(int chara, int visible, OPTIONAL(int fade, float fade_speed)) NATIVE(117);
+extern void set_chara_visible(chara_slot chara, int visible, OPTIONAL(int fade, float fade_speed)) NATIVE(117);
 
 // Reads whether a scene character is shown into visible. The fade flag is written only when argc
 // is 2, and then to the slot after visible, so as shipped a three-argument call never receives it.
 // Original name: _GET_CHARA_SHOW.
-extern void get_chara_visible(int chara, int *visible, OPTIONAL(int *fade)) NATIVE(118);
+extern void get_chara_visible(chara_slot chara, int *visible, OPTIONAL(int *fade)) NATIVE(118);
 
 // Turns the stepping of a scene character's cloth and hair animation on (1) or off (0).
 // Original name: _CHARA_DA_ENABLE.
-extern void set_chara_cloth_anim(int chara, int on) NATIVE(119);
+extern void set_chara_cloth_anim(chara_slot chara, int on) NATIVE(119);
 
 // Returns how far a scene character's current motion has played, from 0.0 to 1.0. Fails unless
 // called with two arguments.
 // Original name: _GET_MOT_NOW_WAIT.
-extern float get_chara_motion_progress(int chara) NATIVE(120);
+extern float get_chara_motion_progress(chara_slot chara) NATIVE(120);
 
 // Returns 1 when a scene character's motion reaches its last frame within the next two ticks or no
 // motion plays, else 0.
 // Original name: _CHECK_MOTION_END.
-extern int check_chara_motion_end(int chara) NATIVE(121);
+extern int check_chara_motion_end(chara_slot chara) NATIVE(121);
 
 // Like set_chara_motion but for an action character, setting the motion on it and on every part
 // chained onto it. Flags: 1 pause, 2 hold last frame, 4 restart without blending.
 // Original name: _ACTCHR_SET_MOTION.
-extern void set_chain_chara_motion(int chara, string motion_name, OPTIONAL(enum chara_motion_flag flags, float step, int reset)) NATIVE(122);
+extern void set_chain_chara_motion(chara_slot chara, string motion_name, OPTIONAL(enum chara_motion_flag flags, float step, int reset)) NATIVE(122);
 
 // Sets an action character's second sound bank, the loaded sound id its motions play extra sound
 // effects from.
 // Original name: _SET_CHARA_EX_SOUNDID.
-extern void set_chara_extra_sound(int chara, int sound) NATIVE(123);
+extern void set_chara_extra_sound(chara_slot chara, int sound) NATIVE(123);
 
 // Copies an action character's sound settings (sound banks and footsteps) to every part chained
 // onto it.
 // Original name: _ACTCHR_SOUND_INFO_COPY.
-extern void copy_chara_sound_info(int chara) NATIVE(124);
+extern void copy_chara_sound_info(chara_slot chara) NATIVE(124);
 
 // Opens a message window on a message. An int is a message number: from the text file loaded with
 // load_message_file if any, else from the town NPC talk text for window 0, else from the event
@@ -2116,7 +2129,7 @@ extern void init_asq(int slot) NATIVE(300);
 // Does nothing in the retail build: the body reads no arguments and reports success. Parameters
 // follow how the disc calls it.
 // Original name: _ASQ_SYNC_CHARA.
-extern void sync_asq_chara(int slot, int chara) NATIVE(301);
+extern void sync_asq_chara(chara_slot slot, int chara) NATIVE(301);
 
 // Does nothing in the retail build: the body reads no arguments and reports success. Parameters
 // follow how the disc calls it.
@@ -2449,7 +2462,7 @@ extern void delay_camera_chara(int frames) NATIVE(433);
 // line to the look-at point, for a number of frames. frames = -1 keeps it there until the camera
 // sequence is cleared.
 // Original name: _CMRS_CHARA_ATTACH.
-extern void attach_chara_to_camera(int chara, float dist, int frames) NATIVE(434);
+extern void attach_chara_to_camera(chara_slot chara, float dist, int frames) NATIVE(434);
 
 // Queues moving only the camera eye to a world position at an even speed over a number of frames.
 // Original name: _CMRS_MOVE_POS.
@@ -3027,7 +3040,7 @@ extern int get_npc_train_value(int column, int npc) NATIVE(573);
 // Registers a villager in a scene character slot. With a place number it starts at that villager
 // place's position and facing; without, a blank place is allocated from scene memory stack 4.
 // Original name: _REGISTER_VILLAGER.
-extern void register_villager(int slot, npc_id villager, OPTIONAL(int place)) NATIVE(574);
+extern void register_villager(chara_slot slot, npc_id villager, OPTIONAL(int place)) NATIVE(574);
 
 // Switches between two named part groups on the active maps for the first-person view. Nonzero
 // shows the first group and hides the second; 0 does the reverse.
@@ -3084,17 +3097,17 @@ extern void get_fishing_tournament_value(enum fish_tour_get_command command, any
 // Sets the camera distance beyond which a character is not drawn, in world units, on the character
 // and all its linked parts.
 // Original name: _SET_CHARA_FAR_DIST.
-extern void set_chara_draw_distance(int chara, float distance) NATIVE(585);
+extern void set_chara_draw_distance(chara_slot chara, float distance) NATIVE(585);
 
 // Turns scene lighting on or off for a character's model, or for one named frame of it. Off draws
 // it flat with neutral color 128.
 // Original name: _SET_MODEL_LIGHT_SWITCH.
-extern void set_chara_lighting(int chara, int on, OPTIONAL(string frame_name)) NATIVE(586);
+extern void set_chara_lighting(chara_slot chara, int on, OPTIONAL(string frame_name)) NATIVE(586);
 
 // Sets the flat color of a character's model, or of one named frame of it. Each channel runs 0 to
 // 255 with 128 as neutral.
 // Original name: _SET_MODEL_LIGHT_COLOR.
-extern void set_chara_flat_color(int chara, float r, float g, float b, float a, OPTIONAL(string frame_name)) NATIVE(587);
+extern void set_chara_flat_color(chara_slot chara, float r, float g, float b, float a, OPTIONAL(string frame_name)) NATIVE(587);
 
 // Returns the extra mode flag, nonzero while a bonus mode started from the title screen is being
 // played.
@@ -3438,7 +3451,7 @@ extern void set_movie_caption(enum movie_caption_mode mode, int value, OPTIONAL(
 // current position and facing as its home spot. The spot record is allocated from the numbered
 // scene memory stack.
 // Original name: _REGISTER_VILLAGER2.
-extern void register_villager_here(int chara, int villager_slot, enum memory_stack memory_stack) NATIVE(670);
+extern void register_villager_here(chara_slot chara, int villager_slot, enum memory_stack memory_stack) NATIVE(670);
 
 // Runs a fishing tournament command. 0 sets the tournament rank to value (kept within 0 to 100), 1
 // clears the recorded entries, 2 loads the tournament prize list, 3 advances the tournament
@@ -3891,12 +3904,12 @@ extern void add_sword_trail_point(float edge_x, float edge_y, float edge_z, floa
 
 // Moves a character by an offset added to its current position, in world units.
 // Original name: _ADD_CHARA_POS.
-extern void add_chara_pos(int chara, float dx, float dy, float dz) NATIVE(1019);
+extern void add_chara_pos(chara_slot chara, float dx, float dy, float dz) NATIVE(1019);
 
 // Turns a character by adding to its current rotation, in radians. Each axis is wrapped into
 // -pi..pi.
 // Original name: _ADD_CHARA_ROT.
-extern void add_chara_rot(int chara, float rx, float ry, float rz) NATIVE(1020);
+extern void add_chara_rot(chara_slot chara, float rx, float ry, float rz) NATIVE(1020);
 
 // Puts a treasure box in the first free slot of the dungeon at x, y, z, turned by angle radians,
 // holding count of item number item (count defaults to 1).
@@ -3949,29 +3962,29 @@ extern int convert_chara_no(int short_no) NATIVE(1029);
 // stack. capacity is how many recorded points it keeps and division how many smoothed points are
 // made between two; both colours start at 128, 128, 128, 128.
 // Original name: _SWE_INIT.
-extern void init_chara_trail(int chara, int slot, enum memory_stack stack_no, int capacity, int division) NATIVE(1030);
+extern void init_chara_trail(chara_slot chara, int slot, enum memory_stack stack_no, int capacity, int division) NATIVE(1030);
 
 // Sets the RGBA colours of the two edges of a character's weapon trail, each 0 to 255 with 128 as
 // neutral. Fails if the trail slot is empty.
 // Original name: _SWE_SET_COLOR.
-extern void set_chara_trail_color(int chara, int slot, int r0, int g0, int b0, int a0, int r1, int g1, int b1, int a1) NATIVE(1031);
+extern void set_chara_trail_color(chara_slot chara, int slot, int r0, int g0, int b0, int a0, int r1, int g1, int b1, int a1) NATIVE(1031);
 
 // Maps a character's weapon trail with the named texture from texture block tex_block, using the
 // texel rectangle starting at u, v with the given width and height. Fails if the trail slot is
 // empty or the texture is not found.
 // Original name: _SWE_SET_TEXTURE.
-extern void set_chara_trail_texture(int chara, int slot, int tex_block, string tex_name, int u, int v, int width, int height) NATIVE(1032);
+extern void set_chara_trail_texture(chara_slot chara, int slot, int tex_block, string tex_name, int u, int v, int width, int height) NATIVE(1032);
 
 // Starts a character's weapon trail between two named model frames, such as the blade's base and
 // tip. length is how many smoothed points stay fully opaque, hold_frames how long it stays before
 // fading and fade_frames how long the fade takes.
 // Original name: _SWE_START_EFFECT.
-extern void start_chara_trail(int chara, int slot, string from_frame, string to_frame, int length, int fade_frames, int hold_frames) NATIVE(1033);
+extern void start_chara_trail(chara_slot chara, int slot, string from_frame, string to_frame, int length, int fade_frames, int hold_frames) NATIVE(1033);
 
 // Sets the scene type of a character slot. Type 1 is hit by attacks aimed at the player, 3 by
 // attacks aimed at monsters, and 4 is drawn in the later effect pass after the other characters.
 // Original name: _SET_CHARA_TYPE.
-extern void set_chara_scene_type(int chara, enum scene_chara_type type) NATIVE(1034);
+extern void set_chara_scene_type(chara_slot chara, enum scene_chara_type type) NATIVE(1034);
 
 // Reads a field of the event that started the script into the out variables. field: 0 flag, 1
 // event number, 2 point number, 3-5 event args 1-3, 6 map event check type, 7 map event number, 8
@@ -4083,7 +4096,7 @@ extern void set_geostone_flag(int on) NATIVE(1055);
 // Attaches the geostone model to a named frame of a character's model so it follows it, such as
 // "item" for a held item.
 // Original name: _GEOSTONE_SET_REFERENCE.
-extern void attach_geostone(int chara, string frame_name) NATIVE(1056);
+extern void attach_geostone(chara_slot chara, string frame_name) NATIVE(1056);
 
 // Detaches the geostone model from the character frame set by attach_geostone.
 // Original name: _GEOSTONE_DEL_REFERENCE.
@@ -4165,17 +4178,17 @@ extern float get_circle_motion_frame(void) NATIVE(1073);
 
 // Sets the current motion frame of a character, such as to sync it with get_circle_motion_frame.
 // Original name: _SET_CHARA_MOT_NOWT.
-extern void set_chara_motion_frame(int chara, float frame) NATIVE(1074);
+extern void set_chara_motion_frame(chara_slot chara, float frame) NATIVE(1074);
 
 // Advances a character's motion one step: changes to its pending motion, blends into it and poses
 // the model.
 // Original name: _CHARA_NORMAL_DRIVE.
-extern void update_chara_motion(int chara) NATIVE(1075);
+extern void update_chara_motion(chara_slot chara) NATIVE(1075);
 
 // Puts a character's cloth and hair back to rest on its model, then simulates them for 10 steps so
 // they settle.
 // Original name: _CHARA_RESET_DA.
-extern void reset_chara_cloth(int chara) NATIVE(1076);
+extern void reset_chara_cloth(chara_slot chara) NATIVE(1076);
 
 // Switches the dungeon player to another character, reloading its model, icons and sounds. Fails
 // if that character is already active.
@@ -4521,11 +4534,11 @@ extern void clear_event_running(void) NATIVE(1234);
 
 // Sets the character id stored in scene character slot.
 // Original name: _SET_CHARA_NO.
-extern void set_slot_chara_id(int slot, int chara_id) NATIVE(1235);
+extern void set_slot_chara_id(chara_slot slot, int chara_id) NATIVE(1235);
 
 // Returns the character id stored in scene character slot, or -1 when the slot does not exist.
 // Original name: _GET_CHARA_NO.
-extern int get_slot_chara_id(int slot) NATIVE(1236);
+extern int get_slot_chara_id(chara_slot slot) NATIVE(1236);
 
 // Searches the villager and talk slots of the scene for chara_id and returns its slot number, or
 // -1.

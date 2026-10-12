@@ -135,9 +135,62 @@ def renamed_variables(node, mapping):
     return out
 
 
+RETURN_TYPES = ("void", "int", "float")
+
+
+def returns_value(nodes):
+    for node in nodes:
+        if node["kind"] == "return" and node["value"] is not None:
+            return True
+        if node["kind"] == "if" and (returns_value(node["then"]) or returns_value(node["else"] or [])):
+            return True
+        if node["kind"] == "while" and returns_value(node["body"]):
+            return True
+    return False
+
+
+# The value kinds an entry gives variables ("types": {"track": "bgm_file"}), keyed by the names the
+# entry gives them, or their default names; each lands on the variable in that position.
+def with_types(function, entry):
+    types = entry.get("types") or {}
+    if not types:
+        return function
+
+    def kinds(variables, names):
+        out = []
+        for position, variable in enumerate(variables):
+            name = names[position] if position < len(names) else variable["name"]
+            out.append(dict(variable, kind=types[name]) if name in types else variable)
+        return out
+
+    return dict(function, params=kinds(function["params"], entry.get("params", [])),
+                locals=kinds(function["locals"], entry.get("locals", [])))
+
+
+# Puts line notes ({instruction index: text}) on the statements that start at those instructions.
+def with_notes(nodes, notes):
+    out = []
+    for node in nodes:
+        if str(node.get("start")) in notes:
+            node = dict(node, note=notes[str(node["start"])])
+        if node["kind"] == "if":
+            node = dict(node, then=with_notes(node["then"], notes),
+                        **{"else": None if node["else"] is None else with_notes(node["else"], notes)})
+        elif node["kind"] == "while":
+            node = dict(node, body=with_notes(node["body"], notes))
+        out.append(node)
+    return out
+
+
 def with_variables(function, entry, reserved=frozenset()):
     if entry.get("doc"):
         function = dict(function, doc=entry["doc"])
+    # a declared return type; void only where no return gives a value
+    if entry.get("returns") in RETURN_TYPES and (entry["returns"] != "void" or not returns_value(function["body"])):
+        function = dict(function, returns=entry["returns"])
+    function = with_types(function, entry)
+    if entry.get("notes"):
+        function = dict(function, body=with_notes(function["body"], entry["notes"]))
     mapping = variable_mapping(function, entry, reserved)
     if not mapping:
         return function

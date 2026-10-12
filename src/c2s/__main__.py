@@ -73,7 +73,7 @@ def run_decompile(args):
         return run_decompile_disc(args, tables, defs, headers)
     table = chosen_table(args, args.stb, defs)
     program = decompile.decompile(stb.read(Path(args.stb).read_bytes()), table, tables)
-    found = sdk.header_context(table, headers, tables, defs["include"])
+    found = sdk.with_sound_sets(sdk.header_context(table, headers, tables, defs["include"]), defs)
     program_names = found["program_names"] if found is not None else {}
     entries = names.with_loose(names.merged(defs["names"]), names.loose_map(program))
     named = names.apply(program, entries, sdk.reserved(found), program_names)
@@ -160,7 +160,18 @@ def run_decompile_disc(args, tables, defs, headers):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.text(library.script_program(program, path, model)), encoding="utf-8")
     (out / source.EDITOR_FLAGS).write_text(source.editor_flags(args.sdk, defs["sets"]), encoding="utf-8")
-    tree.record(out, written, tree.headers_hash(headers_used))
+    removed = []
+    if prefix == ".":
+        # a whole-disc decompile replaces the tree: files the last one wrote and this one does not
+        # (a library the definitions moved) go, unless someone edited them
+        old = tree.stale(out, written)
+        tree.remove_files(out, old["unedited"])
+        removed = old["unedited"]
+        for path in old["edited"]:
+            print("kept %s: the decompiler no longer writes it, but it was edited" % path)
+        if removed:
+            print("removed %d file%s the decompiler no longer writes" % (len(removed), "" if len(removed) == 1 else "s"))
+    tree.record(out, written, tree.headers_hash(headers_used), removed)
     pathnames.record(out, renamed)
     print("%d scripts and %d library files written to %s" % (len(paths), len(texts), out))
     return 0

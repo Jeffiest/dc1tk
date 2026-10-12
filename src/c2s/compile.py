@@ -277,6 +277,9 @@ def native_number(state, name):
 
 
 def statement(state, node):
+    if node.get("note") and state.get("notes") is not None:
+        # a line note, at the index of the statement's first instruction
+        state["notes"][str(sum(1 for line in state["lines"][1:] if line.startswith("    ")))] = node["note"]
     try:
         statement_code(state, node)
     except ValueError as error:
@@ -409,8 +412,11 @@ def function_lines(function, context):
         "next_label": 0,
         "next_slot": size,
         "loops": [],
+        "notes": {} if context.get("notes") is not None else None,
     }
     block(state, function["body"])
+    if state["notes"]:
+        context["notes"][function["name"]] = state["notes"]
     emit(state, "push 0")
     emit(state, "ret")
     if state["next_slot"] != size:
@@ -444,7 +450,7 @@ def header_line(program):
     return line
 
 
-def to_asm(program, tables):
+def to_asm(program, tables, notes=None):
     if "asm" in program:
         return program["asm"]
     if program["main"] is None:
@@ -458,6 +464,7 @@ def to_asm(program, tables):
                       for function in program["functions"]},
         "natives": {native["name"]: native["no"] for native in table["natives"]},
         "buffer": b"",
+        "notes": notes,
     }
     for entry in program["programs"]:
         if entry["function"] not in context["functions"]:
@@ -478,5 +485,6 @@ def to_asm(program, tables):
     return "\n".join(lines) + "\n"
 
 
-def compile_program(program, tables):
-    return asm.assemble(to_asm(sdk.resolve(program, tables), tables), tables)
+# notes, when given, collects each function's line notes: {function: {instruction index: text}}.
+def compile_program(program, tables, notes=None):
+    return asm.assemble(to_asm(sdk.resolve(program, tables), tables, notes), tables)

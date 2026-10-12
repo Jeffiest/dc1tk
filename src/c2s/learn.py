@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from c2s import compile, definitions, fingerprint, library, names, natives, parse, pathnames, sdk, source, stb
+from c2s import compile, decompile, definitions, fingerprint, library, names, natives, parse, pathnames, sdk, source, stb
 
 DEFAULT_NAME = re.compile(r"^(f_[0-9a-f]+|func_\d+|program_\d+|shared_\d+|start|[a-z0-9_]+_\d+_\d+)$")
 DEFAULT_VARIABLE = re.compile(r"^[av]\d+$")
@@ -13,8 +13,19 @@ def is_default_name(name, program_names):
     return bool(DEFAULT_NAME.match(name)) or (name.startswith("on_") and name[3:] in program_names)
 
 
-def learned_entry(function, program_names):
+BASE_TYPES = ("int", "float", "string")
+
+
+def learned_entry(function, program_names, inferred=None):
     entry = {}
+    # a value kind or enum a variable is declared with
+    types = {variable["name"]: variable["type"] for variable in function["params"] + function["locals"]
+             if variable["type"] not in BASE_TYPES}
+    if types:
+        entry["types"] = types
+    # a return type the decompiler would not have chosen
+    if inferred is not None and function.get("returns") in ("void", "int", "float") and function["returns"] != inferred:
+        entry["returns"] = function["returns"]
     if not is_default_name(function["name"], program_names):
         entry["name"] = function["name"]
     params = [param["name"] for param in function["params"]]
@@ -45,13 +56,18 @@ def script_entries(path, tables, headers, rules):
     expanded = library.expand(program, library.read_includes(program, path), dict(headers, **definitions.source_headers(path)))
     table = expanded["natives"] or natives.table_for(Path(path).resolve().as_posix(), rules)
     expanded["natives"] = table
-    prints = fingerprint.both_fingerprints(stb.read(compile.compile_program(expanded, tables)), table)
+    notes = {}
+    script = stb.read(compile.compile_program(expanded, tables, notes))
+    prints = fingerprint.both_fingerprints(script, table)
     found = prints["exact"]
+    decompiled = decompile.decompile(script, table, tables)
+    inferred = [function.get("returns") for function in decompiled.get("functions", [])
+                if function["kind"] in ("function", "asm")] if "asm" not in decompiled else []
     context = sdk.context(expanded["declarations"], table, tables)
     functions = [function for function in expanded["functions"] if function["kind"] in ("function", "asm")]
     entries = {}
     seen = set()
-    for function, offset in zip(functions, sorted(found)):
+    for position, (function, offset) in enumerate(zip(functions, sorted(found))):
         if function["kind"] != "function":
             continue
         # A function the file holds twice decompiles once under its name and again under an alias
@@ -59,7 +75,9 @@ def script_entries(path, tables, headers, rules):
         if found[offset] in seen:
             continue
         seen.add(found[offset])
-        entry = learned_entry(function, context["programs"])
+        entry = learned_entry(function, context["programs"], inferred[position] if position < len(inferred) else None)
+        if notes.get(function["name"]):
+            entry["notes"] = notes[function["name"]]
         if entry:
             entries[found[offset]] = dict(entry, loose=prints["loose"][offset])
     return table, entries, script_entry(program), library_entries(functions, found, table, expanded["library_docs"])

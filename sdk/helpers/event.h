@@ -4,6 +4,9 @@
 #ifndef C2S_HELPERS_EVENT_H
 #define C2S_HELPERS_EVENT_H
 
+// The value kind of a scene character slot, as event.h declares it.
+typedef int chara_slot;
+
 // Clears the actor's sequence and makes it drive the event object handle with the same number.
 static inline void init_actor(int actor)
 {
@@ -12,7 +15,7 @@ static inline void init_actor(int actor)
 }
 
 // Binds a handle to a scene character and sets up the actor of the same number to drive it.
-static inline void init_chara_actor(int actor, int chara)
+static inline void init_chara_actor(int actor, chara_slot chara)
 {
     bind_handle_chara(actor, chara);
     clear_actor_seq(actor);
@@ -46,7 +49,7 @@ static inline void init_map_part_actor(int actor, any part)
 
 // Binds a handle to a scene character and sets up an actor with a different number to drive that
 // handle.
-static inline void bind_actor_to_chara(int actor, int handle, int chara)
+static inline void bind_actor_to_chara(int actor, int handle, chara_slot chara)
 {
     bind_handle_chara(handle, chara);
     clear_actor_seq(actor, chara);
@@ -55,7 +58,7 @@ static inline void bind_actor_to_chara(int actor, int handle, int chara)
 
 // Activates a scene character, binds a handle to it and sets up the actor of the same number to
 // drive it.
-static inline void activate_chara_actor(int actor, int chara)
+static inline void activate_chara_actor(int actor, chara_slot chara)
 {
     set_chara_active(chara);
     bind_handle_chara(actor, chara);
@@ -65,7 +68,7 @@ static inline void activate_chara_actor(int actor, int chara)
 
 // Loads a character pack on memory stack 5, activates it and sets up the handle and actor of the
 // same number to drive it.
-static inline void load_chara_actor(int actor, string pack, int chara)
+static inline void load_chara_actor(int actor, string pack, chara_slot chara)
 {
     load_chara(5, pack, "info.cfg", chara);
     set_chara_active(chara);
@@ -75,34 +78,34 @@ static inline void load_chara_actor(int actor, string pack, int chara)
 }
 
 // Loads a character pack into a scene character slot on memory stack 5.
-static inline void load_scene_chara(int chara, string pack)
+static inline void load_scene_chara(chara_slot chara, string pack)
 {
     load_chara(5, pack, "info.cfg", chara);
 }
 
 // Loads a character pack into a scene character slot on memory stack 5 and activates it.
-static inline void load_active_chara(int chara, string pack)
+static inline void load_active_chara(chara_slot chara, string pack)
 {
     load_chara(5, pack, "info.cfg", chara);
     set_chara_active(chara);
 }
 
 // Loads a character pack into a scene character slot on memory stack 5 and leaves it inactive.
-static inline void load_inactive_chara(int chara, string pack)
+static inline void load_inactive_chara(chara_slot chara, string pack)
 {
     load_chara(5, pack, "info.cfg", chara);
     set_chara_active(0, chara);
 }
 
 // Loads an extra motion pack into a scene character on memory stack 5.
-static inline void add_chara_motions(int chara, string pack)
+static inline void add_chara_motions(chara_slot chara, string pack)
 {
     load_chara_motion(5, pack, "info.cfg", chara);
 }
 
 // Loads a party member's current skins onto an event character on memory stack 5, and its weapon
 // as character weapon.
-static inline void load_party_equipment(int member, int chara, int weapon)
+static inline void load_party_equipment(int member, chara_slot chara, int weapon)
 {
     load_equip_model(5, member, 4, "info.cfg", chara);
     load_equip_model(5, member, 3, "info.cfg", chara);
@@ -111,7 +114,7 @@ static inline void load_party_equipment(int member, int chara, int weapon)
 
 // Loads a party member's base pack into a scene character on memory stack 5 with its current
 // skins, and its weapon as character weapon.
-static inline void load_party_member(int member, string pack, int chara, int weapon)
+static inline void load_party_member(int member, string pack, chara_slot chara, int weapon)
 {
     load_chara(5, pack, "info.cfg", chara);
     load_equip_model(5, member, 4, "info.cfg", chara);
@@ -120,13 +123,13 @@ static inline void load_party_member(int member, string pack, int chara, int wea
 }
 
 // Makes a scene character active.
-static inline void activate_chara(int chara)
+static inline void activate_chara(chara_slot chara)
 {
     set_chara_active(1, chara);
 }
 
 // Makes a scene character inactive, so it is neither stepped nor drawn.
-static inline void deactivate_chara(int chara)
+static inline void deactivate_chara(chara_slot chara)
 {
     set_chara_active(0, chara);
 }
@@ -161,14 +164,14 @@ static inline void turn_actor_to_yaw(int actor, float yaw, int frames)
 }
 
 // Places a scene character at a world position facing the yaw angle in radians.
-static inline void place_chara(int chara, float x, float y, float z, float yaw)
+static inline void place_chara(chara_slot chara, float x, float y, float z, float yaw)
 {
     set_chara_pos(chara, x, y, z);
     set_chara_rot(chara, 0.0, yaw, 0.0);
 }
 
 // Turns a scene character to a yaw angle in radians, level on the other axes.
-static inline void set_chara_yaw(int chara, float yaw)
+static inline void set_chara_yaw(chara_slot chara, float yaw)
 {
     set_chara_rot(chara, 0.0, yaw, 0.0);
 }

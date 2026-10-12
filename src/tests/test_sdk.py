@@ -268,3 +268,28 @@ def test_sound_entries_take_the_names_of_the_bank_their_id_came_from():
     shown = source.text(sdk.present(names.apply(program, {}, sdk.reserved(found), found["program_names"]), found))
     assert "play_se(flag, SE_TREASURE_GET);" in shown
     assert "play_se(flag, 18);" in shown
+
+
+def test_unregistered_numbers_of_an_old_table_name_their_native():
+    found = {"by_original": {}, "old_direct": {80: 76}, "raw_table": True, "by_number": {76: "add_motion_se"},
+             "old_groups": {}}
+    assert sdk.meant_native({"name": "_EXT_80", "base": None}, found) == "add_motion_se"
+    assert sdk.meant_native({"name": "_EXT_80", "base": None}, dict(found, raw_table=False)) is None
+
+
+def test_entries_of_loaded_banks_take_their_bank_names():
+    found = {"enums": {"se_sp_000_pal": {0: "SE_SP_000_FANFARE"}, "se_ev_283_000_pal": {3: "SE_EV_283_000_DOOR"}},
+             "constants": {}, "sound_set_banks": {2237: "EV_283_000"}}
+    var = lambda name: {"kind": "var", "name": name}
+    num = lambda value: {"kind": "int", "value": value}
+    body = [{"kind": "native", "name": "load_sound", "args": [var("SND_PORT_MENU"), {"kind": "string", "text": "snd2/sp/sp_000.snd"}],
+             "result": var("menu")},
+            {"kind": "native", "name": "play_se", "args": [var("menu"), num(0)]},
+            {"kind": "native", "name": "load_sound", "args": [num(2237), {"kind": "addr", "target": var("scene")}]},
+            {"kind": "native", "name": "play_se", "args": [var("scene"), num(3)]},
+            {"kind": "native", "name": "get_sound_port_bank", "args": [var("SND_PORT_EVENT")], "result": var("port")},
+            {"kind": "native", "name": "play_actor_se", "args": [num(1), var("port"), num(3)]}]
+    shown = sdk.named_sounds(body, found, {})
+    assert shown[1]["args"][1] == var("SE_SP_000_FANFARE")
+    assert shown[3]["args"][1] == var("SE_EV_283_000_DOOR")
+    assert shown[5]["args"][2] == var("SE_EV_283_000_DOOR")

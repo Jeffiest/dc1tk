@@ -122,6 +122,14 @@ DIRECT get_monster_var2(&turn_target);  // old numbering, meant as get_target_an
 set_dungeon_flag(turn_target, speed);  // old numbering, meant as turn_to
 ```
 
+Two action scripts, `c01win` (an old build of Max's script) and `f204a`,
+were compiled against an older action table too. Aligning their calls with
+those of their current twins (`c01`, the other `f` scripts) pins down 16
+numbers, recorded as `old_direct` in `action.json`; the definition set
+marks both `"raw"`, so their calls, `_EXT_` ones included, name the native
+they were written for (`_EXT_80(...)  // old numbering, meant as
+add_motion_se`).
+
 ## Constants
 
 Besides the enums taken from the ChronicleTwo decomp, the SDK names the

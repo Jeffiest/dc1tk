@@ -67,7 +67,11 @@ This is [`docs/examples/greeting/greeting.c`](examples/greeting/greeting.c), a m
 [examples](examples/README.md) show the same script at each stage of decompiling.
 
 - Types are `int`, `float` and `string`, with `int x[4]` for a local array
-  and `int x[]` or `int *x` for an array or variable passed by pointer.
+  and `int x[]` or `int *x` for an array or variable passed by pointer. A
+  variable can also be declared with a value kind or enum from the headers
+  (`bgm_file track;`, `enum se_bank bank;`): it is the kind's base type,
+  and the definitions remember it, so the decompiler prints the numbers it
+  holds as names.
   The decompiler declares locals at the top of a function, in slot order.
 - Functions have C return types. The decompiler makes a function `void` when
   it never returns a value and nothing uses its result, `float` when it

@@ -99,11 +99,16 @@ def expression(node):
 
 def statement(node, depth):
     lines = bare_statement(node, depth)
+    if node.get("note"):
+        width = 100 - len(INDENT * depth) - len("// ")
+        rows = textwrap.wrap("note: " + node["note"], width, break_on_hyphens=False)
+        lines = [INDENT * depth + "// " + row for row in rows] + lines
     if node.get("comment"):
         if len(lines) == 1:
             lines = [lines[0] + "  // " + node["comment"]]
         else:
-            lines = [INDENT * depth + "// " + node["comment"]] + lines
+            # a blank comment line keeps a note its own paragraph, which is how the parser finds it
+            lines = [INDENT * depth + "// " + node["comment"]] + ([INDENT * depth + "//"] if node.get("note") else []) + lines
     return lines
 
 
@@ -157,7 +162,7 @@ def block(statements, depth):
 
 
 def parameter(param):
-    return "%s %s%s" % (param["type"], param["name"], "[]" if param["array"] else "")
+    return "%s %s%s" % (param.get("kind") or param["type"], param["name"], "[]" if param["array"] else "")
 
 
 def parameter_list(texts):
@@ -186,7 +191,7 @@ def function_text(function):
     lines.append("{")
     for declared in function["locals"]:
         size = "" if declared["size"] is None else "[%d]" % declared["size"]
-        lines.append("%s%s %s%s;" % (INDENT, declared["type"], declared["name"], size))
+        lines.append("%s%s %s%s;" % (INDENT, declared.get("kind") or declared["type"], declared["name"], size))
     if function["locals"] and function["body"]:
         lines.append("")
     lines += block(function["body"], 1)

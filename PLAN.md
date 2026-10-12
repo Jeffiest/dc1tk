@@ -122,12 +122,6 @@ design (see [docs/definitions.md](docs/definitions.md)).
    (map folder, slot) pairs scripts load, 369 always hold the same pack and
    could be named per folder.
 
-## Next: definitions format
-
-The rest of the proposal in [docs/definitions.md](docs/definitions.md):
-line notes anchored to an instruction offset, `types` to give a variable a
-value kind or enum, and `returns` to override an inferred return type.
-
 ## Later
 
 - **Automated emulator test.** A built image has been booted in PCSX2 by
@@ -148,11 +142,6 @@ value kind or enum, and `returns` to override an inferred return type.
   twins pin down 18 of its numbers (`old_direct` in
   `src/c2s/tables/monster.json`); the rest, mostly in `b02a1` and
   `p00_23a`, have no twin.
-- Old action scripts. `c01win` (an old build of Max's script) and `f204a`
-  were compiled against an older action table: their calls decode as the
-  wrong natives or as `_EXT_` calls that do nothing. Their twins
-  (`c01`, the other `f` scripts) could pin the mapping down as they did for
-  monsters.
 - Calls to numbers the engine does not register (`_EXT_67`, `_EXT_6` and
   others) do nothing: the VM finds no function and goes on. What they did
   in the table they were written for is unknown.

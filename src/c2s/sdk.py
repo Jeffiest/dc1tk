@@ -157,7 +157,7 @@ def substituted(node, bindings, outs):
     if (node.get("kind") == "deref" and node["operand"].get("kind") == "var"
             and node["operand"]["name"] in outs):
         return bindings[node["operand"]["name"]]["target"]
-    return {key: substituted(value, bindings, outs) for key, value in node.items() if key != "line"}
+    return {key: substituted(value, bindings, outs) for key, value in node.items() if key not in ("line", "start")}
 
 
 def expanded_inline(inline, args):
@@ -270,6 +270,8 @@ def statement(node, found, temps=None):
     temps = [] if temps is None else temps
     before = []
     result = before + resolved_statement(node, found, temps, before)
+    if node.get("note") and result and not result[0].get("note"):
+        result[0] = dict(result[0], note=node["note"])
     line = node.get("line")
     if line is None:
         return result
@@ -303,14 +305,32 @@ def sized_locals(function, found):
     return sized
 
 
+BASE_TYPES = ("int", "float", "string")
+
+
+# A variable declared with a value kind (bgm_file) or an enum (enum se_bank) has the kind's base
+# type, int for an enum; the kind stays on it, for the decompiler's types.
+def typed(variable, kinds):
+    kind = variable["type"]
+    if kind in BASE_TYPES:
+        return variable
+    base = "int" if kind.startswith("enum ") else kinds.get(kind)
+    if base not in BASE_TYPES:
+        raise ValueError("%s: unknown type %s" % (variable["name"], kind))
+    return dict(variable, type=base, kind=kind)
+
+
 def resolve(program, tables):
     if "asm" in program:
         return program
     found = context(program.get("declarations", EMPTY), program["natives"], tables)
     global_names = {declared["name"] for declared in program["globals"]}
+    kinds = program.get("declarations", EMPTY).get("kinds", {})
     functions = []
     for function in program["functions"]:
         if function["kind"] == "function":
+            function = dict(function, params=[typed(param, kinds) for param in function["params"]],
+                            locals=[typed(declared, kinds) for declared in function["locals"]])
             body = with_constants(function["body"], found["constants"], variable_names(function, global_names))
             temps = []
             function = dict(function, body=statements(body, found, temps), locals=sized_locals(function, found))
@@ -347,8 +367,8 @@ def matches(pattern, node, params, bindings):
         if node.get("kind") not in ("var", "index"):
             return False
         return bound(pattern["operand"]["name"], {"kind": "addr", "target": node}, bindings)
-    keys = set(pattern) - {"line"}
-    if keys != set(node) - {"line"}:
+    keys = set(pattern) - {"line", "start"}
+    if keys != set(node) - {"line", "start"}:
         return False
     return all(matches(pattern[key], node[key], params, bindings) for key in keys)
 
@@ -547,10 +567,48 @@ def function_kinds_of(params_by_kind):
     return found
 
 
+# The name an enum type's constants are looked up by: enum se_bank reads as the kind se_bank.
+def kind_name(kind):
+    return kind[len("enum "):] if kind.startswith("enum ") else kind
+
+
+def variable_kinds(function):
+    return {variable["name"]: kind_name(variable["kind"]) for variable in function["params"] + function["locals"]
+            if variable.get("kind")}
+
+
+COMPARED = ("==", "!=", "<", "<=", ">", ">=")
+
+
+# Names the numbers assigned to a variable with a value kind, and compared with it.
+def typed_literals(node, kinds, found):
+    if not kinds:
+        return node
+    if isinstance(node, list):
+        return [typed_literals(item, kinds, found) for item in node]
+    if not isinstance(node, dict):
+        return node
+    out = {key: typed_literals(value, kinds, found) for key, value in node.items()}
+    kind = out.get("kind")
+    if kind == "assign" and out["target"]["kind"] == "var" and out["target"]["name"] in kinds:
+        out["value"] = named_literal(out["value"], kinds[out["target"]["name"]], found)
+    elif kind == "binary" and out["op"] in COMPARED:
+        for side, other in (("left", "right"), ("right", "left")):
+            if out[side]["kind"] == "var" and out[side]["name"] in kinds:
+                out[other] = named_literal(out[other], kinds[out[side]["name"]], found)
+    return out
+
+
 def present_functions(functions, found, params_by_kind=None):
     if found is None:
         return functions
     function_kinds = function_kinds_of(params_by_kind or {})
+    # parameters a definition set gives a value kind (types)
+    for function in functions:
+        if function["kind"] == "function":
+            for position, param in enumerate(function["params"]):
+                if param.get("kind"):
+                    function_kinds.setdefault(function["name"], {})[position] = kind_name(param["kind"])
     if function_kinds:
         functions = [dict(function, body=call_named(function["body"], found, function_kinds))
                      if function["kind"] == "function" else function for function in functions]
@@ -561,6 +619,7 @@ def present_functions(functions, found, params_by_kind=None):
             function = dict(function, body=old_numbered(function["body"], found))
             function = named_locals(function, found)
             body = named_sounds(folded(function["body"], found, inlines, set()), found, {})
+            body = typed_literals(body, variable_kinds(function), found)
             if found["float_names"] and not shadowing(function, found["float_names"].values()):
                 body = named_floats(body, found)
             function = dict(function, body=body)
@@ -590,6 +649,9 @@ def numbering_of(entry):
 # twins elsewhere on the disc show what they stand for.
 def meant_native(node, found):
     declared = found["by_original"].get(node["name"])
+    if declared is None and re.fullmatch(r"_EXT_\d+", node["name"]):
+        # a number the engine does not register, as the decompiler names it
+        declared = {"no": int(node["name"][5:]), "base": None}
     if declared is None:
         return None
     if node["base"] is None and found.get("old_table") and declared["no"] in found["old_groups"]:
@@ -639,9 +701,51 @@ def assigned_var(node):
     return None
 
 
-# Names the entry number of play_se(id, n) when id was read from the system bank
-# (get_system_sound_id) or a scene bank (get_sound_id(SE_BANK_BASE, &id)) earlier in the function:
-# banks maps each such variable to the kind of its entries, and any other write to it forgets it.
+# Natives that take a bank id and an entry of it, by the positions of the two.
+SOUND_ENTRY_ARGS = {"play_se": (0, 1), "stop_se": (0, 1), "pause_se": (0, 1), "set_se_volume": (0, 1),
+                    "set_se_pan": (0, 1), "set_se_pitch": (0, 1), "get_se_status": (0, 1), "play_actor_se": (1, 2),
+                    "play_actor_se_after": (2, 3)}
+EVENT_PORT = "event port"
+
+
+# A context with the definition set's event bank of each sound set, keyed by number.
+def with_sound_sets(found, defs):
+    if found is None or not defs.get("sound_set_banks"):
+        return found
+    return dict(found, sound_set_banks={int(number): bank for number, bank in defs["sound_set_banks"].items()})
+
+
+def bank_kind(stem):
+    return "se_" + stem.lower()
+
+
+def literal_value(node, found):
+    if node["kind"] == "int":
+        return node["value"]
+    if node["kind"] == "var":
+        value = found["constants"].get(node["name"])
+        if isinstance(value, dict) and value.get("kind") == "int":
+            return value["value"]
+    return None
+
+
+# The bank load_sound loads: a path names its bank by file stem ("snd2/sp/sp_000.snd" is SP_000), a
+# number is a sound set whose event bank it loads (sound_set_banks, from the definition set).
+def loaded_bank(node, found):
+    args = node["args"]
+    source = args[1] if len(args) > 2 or args[1]["kind"] != "addr" else args[0]
+    if source["kind"] == "string":
+        stem = source["text"].replace("\\", "/").rsplit("/", 1)[-1].split(".", 1)[0]
+        return bank_kind(stem) if stem else None
+    number = literal_value(source, found)
+    bank = found.get("sound_set_banks", {}).get(number)
+    return bank_kind(bank) if bank else None
+
+
+# Names the entry number of play_se(id, n) and its kin by the bank the id was read from earlier in
+# the function: the system bank (get_system_sound_id), a scene bank (get_sound_id(SE_BANK_BASE,
+# &id)), a bank load_sound loaded, or the event port's latest bank (get_sound_port_bank). banks maps
+# each such variable to the kind of its entries; any other write to it forgets it.
 def named_sounds(nodes, found, banks):
     out = []
     for node in nodes:
@@ -653,18 +757,37 @@ def named_sounds(nodes, found, banks):
             node = dict(node, body=named_sounds(node["body"], found, banks))
         elif kind == "expr" and node["expr"]["kind"] == "assign":
             banks.pop(assigned_var(node["expr"]["target"]), None)
-        elif kind == "native":
+        elif kind in ("native", "call"):
             args = node["args"]
-            if node["name"] == "play_se" and len(args) > 1 and assigned_var(args[0]) in banks:
-                node = dict(node, args=[args[0], named_literal(args[1], banks[assigned_var(args[0])], found)] + args[2:])
-            for written in [node.get("result")] + [arg for arg in args if arg["kind"] == "addr"]:
-                banks.pop(assigned_var(written), None)
-            if node["name"] == "get_system_sound_id" and assigned_var(node.get("result")):
-                banks[assigned_var(node["result"])] = "system_se"
-            elif node["name"] == "get_sound_id" and len(args) > 1 and assigned_var(args[1]):
-                bank = args[0]["name"] if args[0]["kind"] == "var" else args[0].get("value")
-                if bank in SOUND_BANKS:
-                    banks[assigned_var(args[1])] = SOUND_BANKS[bank]
+            positions = SOUND_ENTRY_ARGS.get(node["name"])
+            if positions and len(args) > positions[1] and assigned_var(args[positions[0]]) in banks:
+                bank, entry = positions
+                named = named_literal(args[entry], banks[assigned_var(args[bank])], found)
+                node = dict(node, args=args[:entry] + [named] + args[entry + 1:])
+            if kind == "native":
+                for written in [node.get("result")] + [arg for arg in args if arg["kind"] == "addr"]:
+                    banks.pop(assigned_var(written), None)
+                result = assigned_var(node.get("result"))
+                if node["name"] == "get_system_sound_id" and result:
+                    banks[result] = "system_se"
+                elif node["name"] == "get_sound_id" and len(args) > 1 and assigned_var(args[1]):
+                    bank = args[0]["name"] if args[0]["kind"] == "var" else args[0].get("value")
+                    if bank in SOUND_BANKS:
+                        banks[assigned_var(args[1])] = SOUND_BANKS[bank]
+                elif node["name"] == "load_sound" and len(args) >= 2:
+                    loaded = loaded_bank(node, found)
+                    target = result or (assigned_var(args[-1]) if args[-1]["kind"] == "addr" else None)
+                    # the two-argument form, load_sound(set, &id), loads on the event port
+                    has_port = len(args) > 2 or args[1]["kind"] != "addr"
+                    port = (args[0]["name"] if args[0]["kind"] == "var" else args[0].get("value")) if has_port else "SND_PORT_EVENT"
+                    if loaded and target:
+                        banks[target] = loaded
+                    if loaded and port in ("SND_PORT_EVENT", literal_value({"kind": "var", "name": "SND_PORT_EVENT"}, found)):
+                        banks[EVENT_PORT] = loaded
+                elif node["name"] == "get_sound_port_bank" and result and EVENT_PORT in banks:
+                    port = args[0]["name"] if args and args[0]["kind"] == "var" else None
+                    if port in (None, "SND_PORT_EVENT"):
+                        banks[result] = banks[EVENT_PORT]
         out.append(node)
     return out
 

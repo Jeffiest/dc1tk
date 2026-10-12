@@ -39,7 +39,8 @@ def survey(path, program):
 def model_for(root, paths, tables, defs, headers=None):
     files = []
     shapes = {}
-    contexts = {table: sdk.header_context(table, headers or {}, tables, defs["include"]) for table in tables}
+    contexts = {table: sdk.with_sound_sets(sdk.header_context(table, headers or {}, tables, defs["include"]), defs)
+                for table in tables}
     kind_params = {}
     script_files = {}
     exact_to_loose = {}

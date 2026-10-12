@@ -49,16 +49,38 @@ def headers_hash(texts):
 
 # Records the files just written, keeping the record of any others (a folder decompiled into a
 # tree that holds more), and the hash of the headers they were written with.
-def record(tree, paths, headers=None):
+def record(tree, paths, headers=None, removed=()):
     root = Path(tree)
     found = read_record(tree) or {}
-    files = dict(found.get("files", {}))
+    files = {path: value for path, value in found.get("files", {}).items() if path not in removed}
     files.update({path: file_hash(root / path) for path in paths})
     entry = {"note": "What the decompiler wrote, so the tools can tell edits from its output. Do not edit.",
              "files": dict(sorted(files.items()))}
     if headers is not None or "headers" in found:
         entry["headers"] = headers if headers is not None else found["headers"]
     (root / ORIGINALS).write_text(json.dumps(entry, indent=1) + "\n", encoding="utf-8")
+
+
+# Files an earlier decompile wrote that this one does not, such as a library whose definition set
+# now gives it another path: {"unedited": [...], "edited": [...]}. The unedited ones can go.
+def stale(tree, written):
+    root = Path(tree)
+    recorded = originals(tree) or {}
+    found = {"unedited": [], "edited": []}
+    for path in sorted(set(recorded) - set(written)):
+        if (root / path).is_file():
+            found["unedited" if file_hash(root / path) == recorded[path] else "edited"].append(path)
+    return found
+
+
+def remove_files(tree, paths):
+    root = Path(tree)
+    for path in paths:
+        (root / path).unlink()
+        folder = (root / path).parent
+        while folder != root and folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+            folder = folder.parent
 
 
 def status(tree):

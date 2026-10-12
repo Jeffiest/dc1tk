@@ -111,3 +111,77 @@ def test_libraries_are_keyed_by_the_functions_they_hold():
     entries = learn.library_entries(functions, found, "event", {"lib/x.c": "Shared helpers."})
     assert entries == {library.library_fingerprint("event", ["f1", "f2"]): {"path": "lib/x.c", "doc": "Shared helpers."},
                        library.library_fingerprint("event", ["f3"]): {"path": "lib/y.c"}}
+
+
+TYPED_HEADER = """#include <c2s.h>
+#pragma natives event
+typedef int music;
+enum music_pal {
+    MUSIC_TOWN = 22,
+};
+extern void load_bgm(int file) NATIVE(610);
+"""
+
+TYPED = """#include <event.h>
+
+PROGRAM(100, on_init);
+MAIN(on_init);
+
+void on_init(void)
+{
+    music track;
+
+    track = 22;
+    if (track == 22) {
+        load_bgm(track);
+    }
+}
+"""
+
+
+def test_types_declared_in_source_come_back_with_their_names():
+    headers = {"event.h": TYPED_HEADER, "c2s.h": "#define NATIVE(...)\n"}
+    tables = natives.load()
+    with tempfile.TemporaryDirectory() as folder:
+        script = Path(folder) / "typed.c"
+        script.write_text(TYPED, encoding="utf-8")
+        learn.learn(script, Path(folder) / "defs", tables, headers, [])
+        entries = names.merged(names.load(Path(folder) / "defs/names"))
+        assert [entry.get("types") for entry in entries.values()] == [{"track": "music"}]
+        data = compile.compile_program(library.expand(parse.parse(TYPED), {}, headers), tables)
+        assert data == compile.compile_program(library.expand(parse.parse(TYPED.replace("music track", "int track")), {},
+                                                              headers), tables)
+        found = sdk.header_context("event", headers, tables)
+        program = decompile.decompile(stb.read(data), "event", tables)
+        text = source.text(sdk.present(names.apply(program, entries, sdk.reserved(found), found["program_names"]), found))
+        assert "    music track;\n" in text and "track = MUSIC_TOWN;" in text and "track == MUSIC_TOWN" in text
+
+
+def test_a_declared_return_type_is_learned_when_it_differs():
+    headers = {"event.h": TYPED_HEADER, "c2s.h": "#define NATIVE(...)\n"}
+    text = TYPED.replace("void on_init(void)", "float scale(void)\n{\n    return 2;\n}\n\nvoid on_init(void)")
+    with tempfile.TemporaryDirectory() as folder:
+        script = Path(folder) / "typed.c"
+        script.write_text(text, encoding="utf-8")
+        learn.learn(script, Path(folder) / "defs", natives.load(), headers, [])
+        entries = names.merged(names.load(Path(folder) / "defs/names")).values()
+        assert [entry.get("returns") for entry in entries if entry.get("name") == "scale"] == ["float"]
+        assert all("returns" not in entry for entry in entries if entry.get("name") == "on_init")
+
+
+def test_line_notes_come_back_above_their_statements():
+    headers = {"event.h": TYPED_HEADER, "c2s.h": "#define NATIVE(...)\n"}
+    text = TYPED.replace("    if (track == 22) {", "    // note: 22 is the town theme.\n    if (track == 22) {")
+    tables = natives.load()
+    with tempfile.TemporaryDirectory() as folder:
+        script = Path(folder) / "noted.c"
+        script.write_text(text, encoding="utf-8")
+        learn.learn(script, Path(folder) / "defs", tables, headers, [])
+        entries = names.merged(names.load(Path(folder) / "defs/names"))
+        assert [entry.get("notes") for entry in entries.values()] == [{"4": "22 is the town theme."}]
+        data = compile.compile_program(library.expand(parse.parse(text), {}, headers), tables)
+        found = sdk.header_context("event", headers, tables)
+        program = decompile.decompile(stb.read(data), "event", tables)
+        shown = source.text(sdk.present(names.apply(program, entries, sdk.reserved(found), found["program_names"]), found))
+        assert "    // note: 22 is the town theme.\n    if (track == MUSIC_TOWN) {" in shown
+        assert compile.compile_program(library.expand(parse.parse(shown), {}, headers), tables) == data

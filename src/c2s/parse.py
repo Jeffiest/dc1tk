@@ -11,6 +11,9 @@ PRECEDENCE = {
 }
 LOGICAL = ("&&", "||")
 TYPES = ("int", "float", "string")
+# Words that start a statement, which a value kind's name can never be.
+STATEMENT_WORDS = {"return", "if", "else", "while", "for", "do", "switch", "case", "default", "break", "continue",
+                   "goto", "wait", "end", "skip_end", "print", "sizeof", "AT", "DIRECT", "void", "const", "static"}
 CAST_TYPES = ("int", "float")
 RETURN_TYPES = ("void", "int", "float", "string")
 NATIVE_TYPES = ("int", "float", "string", "any")
@@ -599,9 +602,18 @@ def switch(state):
     return {"kind": "switch", "value": value, "cases": cases, "line": line}
 
 
+NOTE = "note:"
+
+
 def statement(state):
     line = peek(state)["line"]
-    return [node if "line" in node else dict(node, line=line) for node in statement_nodes(state)]
+    # a "// note: ..." comment right above a statement is a line note the definitions keep
+    doc = peek(state).get("doc", "")
+    nodes = [node if "line" in node else dict(node, line=line) for node in statement_nodes(state)]
+    notes = [paragraph for paragraph in doc.split("\n") if paragraph.lower().startswith(NOTE)]
+    if nodes and notes:
+        nodes[0] = dict(nodes[0], note=notes[-1][len(NOTE):].strip())
+    return nodes
 
 
 def statement_nodes(state):
@@ -729,10 +741,30 @@ def declarators(state, kind):
 
 def declaration_ahead(state):
     token = peek(state)
-    if token["kind"] != "name" or token["text"] not in TYPES:
+    if token["kind"] != "name":
         return False
+    if token["text"] == "enum":
+        return peek(state, 1)["kind"] == "name" and peek(state, 2)["kind"] == "name"
     following = peek(state, 1)
-    return following["kind"] == "name" or (following["kind"] == "op" and following["text"] == "*")
+    if token["text"] in TYPES:
+        return following["kind"] == "name" or (following["kind"] == "op" and following["text"] == "*")
+    if token["text"] in STATEMENT_WORDS:
+        return False
+    # a value kind or typedef from a header (bgm_file track;), which sdk.resolve reads as its base type
+    return following["kind"] == "name" and peek(state, 2).get("text") in (";", "=", "[", ",")
+
+
+# A variable's type: int, float or string, or a value kind or enum (enum se_bank) that sdk.resolve
+# turns into the type it stands for.
+def variable_type(state):
+    if at(state, "enum"):
+        take(state)
+        return "enum " + expect_kind(state, "name")["text"]
+    kind = expect_kind(state, "name")["text"]
+    if kind in ("void", "any"):
+        state["pos"] -= 1
+        fail(state, "unknown type " + kind)
+    return kind
 
 
 # A local declaration anywhere in a function. Every local gets a slot in the function's frame, so a
@@ -742,7 +774,7 @@ def declaration(state):
     scope = state.get("scope")
     if scope is None:
         fail(state, "declarations belong inside functions")
-    kind = take(state)["text"]
+    kind = variable_type(state)
     statements = []
     for declared in declarators(state, kind):
         entry = {"name": declared["name"], "type": kind, "size": declared["size"]}
@@ -779,7 +811,7 @@ def parameters(state):
     params = []
     if not no_parameters(state):
         while True:
-            kind = type_name(state, TYPES)
+            kind = variable_type(state)
             pointer = at(state, "*")
             if pointer:
                 take(state)

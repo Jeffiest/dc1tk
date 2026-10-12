@@ -11,12 +11,15 @@ MANIFEST = "definitions.json"
 
 def empty():
     return {"sets": [], "names": {}, "strings": {}, "tables": [], "language": "en", "include": [], "scripts": {}, "executable": {},
-            "text": {}, "libraries": {}, "paths": {}, "disc": {}}
+            "text": {}, "libraries": {}, "paths": {}, "disc": {}, "sound_set_banks": {}}
 
 
 # The scripts of the disc a set was made from, by path and hash, so tools can tell whether a disc
 # is that one (disc_differences).
 DISC = "disc.json"
+# The event sound bank of each sound set (column 15 of snd2/MAP_index.txt), which load_sound(n)
+# loads: {"2237": "EV_283_000"}.
+SOUNDS = "sounds.json"
 
 
 def script_hash(data):
@@ -121,6 +124,9 @@ def load(directories):
                 found["libraries"][key] = dict(found["libraries"].get(key, {}), **entry)
         for path, entry in load_scripts(directory / "scripts").items():
             found["scripts"][path] = dict(found["scripts"].get(path, {}), **entry)
+        sounds = directory / SOUNDS
+        if sounds.is_file():
+            found["sound_set_banks"].update(json.loads(sounds.read_text(encoding="utf-8"))["sound_set_event_banks"])
         disc = directory / DISC
         if disc.is_file():
             found["disc"].update(json.loads(disc.read_text(encoding="utf-8"))["scripts"])

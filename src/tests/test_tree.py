@@ -65,3 +65,19 @@ def test_fork_gives_chosen_scripts_their_own_copy():
         assert '#include "lib/shared.c"' in (root / "map/b.c").read_text(encoding="utf-8")
         copy = (root / "lib/shared_a.c").read_text(encoding="utf-8")
         assert copy.startswith("// Copy of lib/shared.c for map/a.c") and copy.endswith(FILES["lib/shared.c"])
+
+
+def test_files_a_decompile_no_longer_writes_are_stale_unless_edited():
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        for path in ("lib/a/old.c", "lib/a/kept.c", "map/s.c"):
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text("// " + path + "\n", encoding="utf-8")
+        tree.record(root, ["lib/a/old.c", "lib/a/kept.c", "map/s.c"])
+        (root / "lib/a/kept.c").write_text("// edited\n", encoding="utf-8")
+        found = tree.stale(root, ["map/s.c"])
+        assert found == {"unedited": ["lib/a/old.c"], "edited": ["lib/a/kept.c"]}
+        tree.remove_files(root, found["unedited"])
+        tree.record(root, ["map/s.c"], removed=found["unedited"])
+        assert not (root / "lib/a/old.c").exists() and (root / "lib/a/kept.c").exists()
+        assert "lib/a/old.c" not in tree.originals(root)

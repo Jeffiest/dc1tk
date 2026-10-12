@@ -254,7 +254,10 @@ python3 cli.py defs learn decompiled definitions/pal
 
 `learn` compiles each script, matches functions by their bytecode
 fingerprint, and records any name, parameter or local name, doc comment, or
-global name that differs from the decompiler's defaults. A function that
+global name that differs from the decompiler's defaults; a variable's value
+kind or enum (`bgm_file track;`), a changed return type, a `// note: ...`
+comment above a statement, and the file name and top comment of each
+library. A function that
 appears in several files takes the copy you edited; the aliases the
 decompiler gives a second copy in one file (`start_event_for_program_506`,
 `do_nothing_2`) are not learned as names. See
