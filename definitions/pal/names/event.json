@@ -1089,7 +1089,7 @@
    "doc": "Last shot of the hint scene: Cedric tells Max to bring back some good pictures."
   },
   "06b9e8bf212c1953": {
-   "name": "show_partner_message_52",
+   "name": "show_partner_leaves_message",
    "locals": [
     "mes_no",
     "partner",
@@ -1098,7 +1098,7 @@
    ],
    "loose": "06b9e8bf212c1953",
    "params": [],
-   "doc": "Shows a system message about the current party partner: message 52 when there is no partner, otherwise message 54 if the partner's status has bit 4 set and 53 if not, with the partner's name filled in. Returns 1."
+   "doc": "Shows the system message for the current party partner leaving: message 52 when there is no partner, otherwise 54 if the partner is a town resident (NPC_STATUS_RESIDENT) and 53 if not, with the partner's name filled in. Returns 1."
   },
   "06bd1f5eb1f727af": {
    "name": "start_g01c_script",
@@ -2108,6 +2108,19 @@
     "handle_z"
    ],
    "doc": "Plays the scene in which a moon flower gate blooms open after the Queen's Watering Pot is used: the player's character steps up, five petal parts turn and the flower character plays its out motion. The gate_index (0 to 2) picks which set of map parts is used."
+  },
+  "0bf802cfce406719": {
+   "name": "talk_parn_joined_in_studio",
+   "params": [
+    "npc",
+    "player"
+   ],
+   "locals": [
+    "chapter",
+    "active_chr"
+   ],
+   "doc": "Parn's talk in his studio after he has joined: outside chapter 8 Monica hears that girls cannot understand a man chasing his ideals and Max is offered his painting ability; in chapter 8 he muses on how deep painting is. Then talk_to_npc.",
+   "loose": "9ff3cb22c49326df"
   },
   "0bf8ca30f07a7fbd": {
    "name": "talk_to_npc_with_crossfade",
@@ -3420,6 +3433,19 @@
    ],
    "doc": "Loads sound set 8694 and plays battle music 190 while either of counter 17 bits 1 and 2 is unset, otherwise the calm track 193."
   },
+  "13c6a00cff868040": {
+   "name": "talk_parn_joined_in_studio",
+   "params": [
+    "npc",
+    "player"
+   ],
+   "locals": [
+    "chapter",
+    "active_chr"
+   ],
+   "doc": "Parn's talk in his studio after he has joined: outside chapter 8 Monica hears that girls cannot understand a man chasing his ideals and Max is offered his painting ability; in chapter 8 he muses on how deep painting is. Then talk_to_npc.",
+   "loose": "9ff3cb22c49326df"
+  },
   "13c6fbf9385d2351": {
    "name": "print_map_numbers",
    "loose": "6f1e6ef2e6166092",
@@ -3809,6 +3835,19 @@
    "name": "play_circus_opening_scenes",
    "loose": "9fc021b1c19b28ea",
    "doc": "Program 151: plays both circus show scenes, then loads event script i03h02/i03h02_2.stb as program 151."
+  },
+  "161f80032b0e91a8": {
+   "name": "talk_parn_joined_in_studio",
+   "params": [
+    "npc",
+    "player"
+   ],
+   "locals": [
+    "chapter",
+    "active_chr"
+   ],
+   "doc": "Parn's talk in his studio after he has joined: outside chapter 8 Monica hears that girls cannot understand a man chasing his ideals and Max is offered his painting ability; in chapter 8 he muses on how deep painting is. Then talk_to_npc.",
+   "loose": "9ff3cb22c49326df"
   },
   "16380754c7411fe3": {
    "name": "play_train_arrives_by_door_side",
@@ -4267,6 +4306,11 @@
     "voice_id"
    ],
    "doc": "Plays a narration voice clip with its subtitle and waits until it finishes."
+  },
+  "18910de0866bfbbe": {
+   "name": "show_debug_test_message",
+   "doc": "Debug test program: shows the placeholder message \"oshare\" (stylish) and waits for it to be dismissed.",
+   "loose": "3f8d4b8b1621ffed"
   },
   "1893e69d49d0052c": {
    "name": "open_star_barrier",
@@ -5504,6 +5548,11 @@
    "name": "use_east_transfer_gate",
    "loose": "1ef80b41f2779780",
    "doc": "Transfer gate menu, entered at the east gate."
+  },
+  "1f13b57d2ef17d7c": {
+   "name": "show_debug_test_message",
+   "doc": "Debug test program: shows the placeholder message \"dodoon\" (ta-da) and waits for it to be dismissed.",
+   "loose": "3f8d4b8b1621ffed"
   },
   "1f24d34f63c2a0a6": {
    "name": "play_e105c_picture_talk",
@@ -11800,6 +11849,19 @@
    "loose": "85f4746059634553",
    "doc": "Plays the Ixion unveiling scene and jumps to map s37 at entry 500 without reloading the BGM. Returns 0."
   },
+  "429a38bb548a6ca8": {
+   "name": "talk_parn_joined_in_studio",
+   "params": [
+    "npc",
+    "player"
+   ],
+   "locals": [
+    "chapter",
+    "active_chr"
+   ],
+   "doc": "Parn's talk in his studio after he has joined: outside chapter 8 Monica hears that girls cannot understand a man chasing his ideals and Max is offered his painting ability; in chapter 8 he muses on how deep painting is. Then talk_to_npc.",
+   "loose": "9ff3cb22c49326df"
+  },
   "42b574f9dadced0f": {
    "name": "open_clown_chest",
    "params": [
@@ -16734,7 +16796,7 @@
    "doc": "Asks whether to leave by the west path. On yes Max runs off along a path and the screen fades, returning 1; on no he walks a few steps and returns 0."
   },
   "5f08b66ba4425c44": {
-   "name": "talk_train_member_13",
+   "name": "talk_erik_train_member",
    "locals": [
     "talk_chara_id",
     "party_chara",
@@ -16746,7 +16808,7 @@
    ],
    "loose": "da17b98016f66b1b",
    "params": [],
-   "doc": "Talk with the demolitions party NPC at the train. When he is the current party member, shows his chatter plus chapter-specific remarks until the related events are seen; otherwise opens the party member menu for him."
+   "doc": "Talk with Erik, the demolitions expert, at the train. When he is the current party member, shows his chatter plus chapter-specific remarks until the related events are seen; otherwise opens the party member menu for him."
   },
   "5f618ffaa0151083": {
    "name": "debug_play_train_passing_demo",
@@ -20285,7 +20347,7 @@
    "doc": "Plays a voice line with a message window: opens the voice wav on stream 1, waits for it to be ready, shows the window while the stream plays through run_voice_message, then closes both."
   },
   "7498384b7c61f70b": {
-   "name": "exit_house_to_m01",
+   "name": "hide_cedric_and_exit_to_m01",
    "loose": "28ff114110ab1c58",
    "locals": [
     "flag"
@@ -21619,13 +21681,13 @@
    "doc": "Milane's quest offer to Monica: she says Monica must build up a sword twice before she is taken seriously and hands her a Gladius, shows the item message and opens the overflow menu if needed. A system message explains the requirement. Ends the event and sets quest 10 to accepted."
   },
   "7c76924f70945378": {
-   "name": "show_system_message_60",
+   "name": "show_game_over_message",
    "params": [
     "index"
    ],
    "loose": "7c76924f70945378",
    "locals": [],
-   "doc": "Shows system message number 60 plus index in the second message window. Returns 1."
+   "doc": "Shows game-over system message 60 plus index in the second message window (run_game_over passes the active character: 0 Maximilian, 1 Monica, 2 ride pod, 4 for the monster form when Monica can take over). Returns 1."
   },
   "7c932258cc4a0bcc": {
    "name": "play_osmond_hologram_scene",
@@ -28403,6 +28465,19 @@
    "params": [],
    "locals": [],
    "doc": "Tilts the train's door and step map pieces (s3601_16, 17 and 12 variants) by plus or minus 30 or 90 degrees to open pose, and hides the s3601_14 pieces 2 to 5."
+  },
+  "a4b7806d81b79c26": {
+   "name": "talk_parn_joined_in_studio",
+   "params": [
+    "npc",
+    "player"
+   ],
+   "locals": [
+    "chapter",
+    "active_chr"
+   ],
+   "doc": "Parn's talk in his studio after he has joined: outside chapter 8 Monica hears that girls cannot understand a man chasing his ideals and Max is offered his painting ability; in chapter 8 he muses on how deep painting is. Then talk_to_npc.",
+   "loose": "9ff3cb22c49326df"
   },
   "a4baec42f7b10ff3": {
    "name": "open_cleared_room_door",
@@ -38003,6 +38078,19 @@
    ],
    "doc": "Cedric explains the materials for the Energy Pack: 20 Scraps of Metal, 1 Thick Hide and 2 Hunks of Copper, from the item shop across the street. Returns 0."
   },
+  "d716c802a45d0f58": {
+   "name": "talk_parn_joined_in_studio",
+   "params": [
+    "npc",
+    "player"
+   ],
+   "locals": [
+    "chapter",
+    "active_chr"
+   ],
+   "doc": "Parn's talk in his studio after he has joined: outside chapter 8 Monica hears that girls cannot understand a man chasing his ideals and Max is offered his painting ability; in chapter 8 he muses on how deep painting is. Then talk_to_npc.",
+   "loose": "9ff3cb22c49326df"
+  },
   "d71fe5729ee2c86e": {
    "name": "play_dead_end_scene",
    "loose": "99b05f1138fd8103",
@@ -38811,6 +38899,11 @@
     "frames_waited"
    ],
    "doc": "Waits up to max_frames for the message in the slot to be closed by the player, then closes message 0. Returns the frames waited."
+  },
+  "dcb8e182f23644ab": {
+   "name": "show_debug_test_message",
+   "doc": "Debug test program: shows a placeholder \"kita\" message with button-icon tokens and waits for it to be dismissed.",
+   "loose": "3f8d4b8b1621ffed"
   },
   "dcbe5cac4eb1d2f0": {
    "name": "play_shigura_rescue_and_farewell_scene",
@@ -40186,11 +40279,11 @@
    "doc": "Asks whether to move the character to the Spheda ball. On yes, finds a standing spot near the ball that is clear of treasure chests, places the player facing the ball and resets the follow camera."
   },
   "e4c22012040f457e": {
-   "name": "show_wrong_item_stub_2",
+   "name": "show_wrong_item_debug_message",
    "loose": "3f8d4b8b1621ffed",
    "params": [],
    "locals": [],
-   "doc": "Shows a placeholder message that the item is wrong and waits for it to be dismissed."
+   "doc": "Shows the placeholder debug message \"wrong item\" and waits for it to be dismissed."
   },
   "e4c2a68d522860d7": {
    "name": "play_halloween_walk_scene",
@@ -40957,7 +41050,7 @@
    "doc": "Asks whether to leave the venue. On yes it cleans up and jumps to map s45 (Palm Brinks Square)."
   },
   "e8a1e5f907e051b9": {
-   "name": "play_shot_ride_out_2",
+   "name": "play_shot_steve_walks_through_doors",
    "params": [
     "snd_id"
    ],

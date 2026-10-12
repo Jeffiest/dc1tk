@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for a bomb (bakudan) explosion, using the shared dungeon_3 effect code."
+ "doc": "Effect for the hand-thrown bomb item (手投げ爆弾): it follows the owner's item point while held, and the shared thrown-item code lobs it to the target."
 }

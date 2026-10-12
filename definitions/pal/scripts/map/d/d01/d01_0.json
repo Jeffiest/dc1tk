@@ -1,3 +1,3 @@
 {
- "doc": "Main script for Dungeon 1, the Underground Channel. It covers floor loading and warps, Donny's help calls, the exit gate and key doors, treasure chests, the clear-floor sequence with medals, the Spheda ball game and several story warps to the Norune map s06 and the s43 and s51 maps."
+ "doc": "Main script for dungeon d01, the Underground Channel. It loads floors and handles Donny's receiver calls, the exit gates opened with the Key Handle, the Channel Key doors, treasure chests (locked, trapped, mimic and Happy Clown), the floor-clear medals and the Spheda ball game. Story and boss programs warp to the s06 Channel Pump Room (Linda), the d01b01 boss room (Halloween), the s43 circus tent and s51 Raybrandt Castle."
 }

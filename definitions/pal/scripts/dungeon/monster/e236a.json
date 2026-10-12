@@ -1,5 +1,5 @@
 {
- "doc": "Regular melee monster script with its own copies of the movement helpers, so many native calls decompile with unrelated names. It fights with a lunging swing (attack 1) and a knockback charge (attack 2), dodges by stepping back or sideways and guards. While calm it keeps its distance and circles; once the player is within 175 units it attacks.",
+ "doc": "Unused melee AI named after a Mimic model, with its own copies of the movement helpers in the raw numbering (so many native calls decompile with unrelated names). It lunges (attack 1), charges with knockback (attack 2), steps back or aside and guards, circling while calm and attacking within 175 units. The monster table runs e228a for every Mimic kind, including model e236a.",
  "globals": [
   "home_x",
   "home_y",

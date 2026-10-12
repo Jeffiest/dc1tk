@@ -1,5 +1,5 @@
 {
- "doc": "Dungeon monster script built from the shared library without any guard handler. It dodges with a backstep and sidestep and fights through the shared enraged loop.",
+ "doc": "Unused melee AI named after a King Mimic model (identical to e231a and e235a): shared routines that fight without guarding, with backstep and sidestep dodges. The monster table runs e229a for every King Mimic kind, including the one with model e233a.",
  "globals": [
   "home_x",
   "home_y",

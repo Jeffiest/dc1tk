@@ -77,7 +77,10 @@ definitions.
    like `setup_monster_628_boss_arena` (the Metal Flotsam fight). Still
    unaudited: map scripts' own functions, dialogue scenes, and the later
    files of each scene group, which got a lighter pass.
-2. **Review script docs.** Not audited. Library docs were (164 corrected,
+2. **Review the rest of the docs.** Script docs were audited (204
+   corrected: Monica's monster forms, event effects, wrong maps and
+   bosses, duplicate and unused scripts), all but a few monsters. Library
+   docs were (164 corrected,
    70 libraries renamed: language variants read as floors, docs listing
    content the file lacks), all but about 100 small monster libraries; so
    were the 185 story flags (35 renamed, 91 comments corrected, flag 51
@@ -88,7 +91,10 @@ definitions.
    a file (`resume_guard_and_dodge_after_shot_3`), or two functions given
    the same name (`do_nothing_2`); some numbers are part of the name
    (`enter_i01h01_event_105`). Give copies that callers tell apart, and
-   same-named functions that differ, their own names.
+   same-named functions that differ, their own names. The 80 most-called were
+   reviewed: 17 renamed (`show_system_message_60` is
+   `show_game_over_message`); the rest carry an event, analysis or exit
+   number, or are identical stubs (`do_nothing_2`, `unlock_interrupts_3`).
 4. **`defs learn` for constants.** It learns function names, variables,
    docs, script docs, globals, and library paths and docs. Constants in
    `include/` headers and library globals are still edited by hand.
@@ -142,6 +148,11 @@ value kind or enum, and `returns` to override an inferred return type.
   twins pin down 18 of its numbers (`old_direct` in
   `src/c2s/tables/monster.json`); the rest, mostly in `b02a1` and
   `p00_23a`, have no twin.
+- Old action scripts. `c01win` (an old build of Max's script) and `f204a`
+  were compiled against an older action table: their calls decode as the
+  wrong natives or as `_EXT_` calls that do nothing. Their twins
+  (`c01`, the other `f` scripts) could pin the mapping down as they did for
+  monsters.
 - Calls to numbers the engine does not register (`_EXT_67`, `_EXT_6` and
   others) do nothing: the VM finds no function and goes on. What they did
   in the table they were written for is unknown.

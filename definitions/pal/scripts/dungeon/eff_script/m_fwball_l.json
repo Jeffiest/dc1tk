@@ -1,3 +1,3 @@
 {
- "doc": "Effect of a wind ball that fades in, waits and then flies on an arc."
+ "doc": "Effect for a wind ball that fades in, waits and then flies on an arc. It has no entry in the game executable's effect table, so nothing can spawn it by name; probably unused."
 }

@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for the e216 spin attack. It places a looping model on the owner and adds a knockback hit in front of it."
+ "doc": "Effect for the Himarra spin attack (e216a): places a looping model on the owner and adds a knockback hit in front of it. Monica's Himarra transformation (f216a) uses it too."
 }

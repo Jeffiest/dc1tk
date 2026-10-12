@@ -1,3 +1,3 @@
 {
- "doc": "Action script for a playable monster form in the dungeon. The confirm button plays a normal attack and the square button fires a venom projectile whose strength comes from the main weapon."
+ "doc": "Action script for Monica's Froggy monster transformation (e203a). Confirm does a normal attack and square fires a venom projectile whose strength comes from the main weapon."
 }

@@ -1,5 +1,5 @@
 {
- "doc": "Map script for the village map g01 in the Georama part of the game. It plays the knock-on-the-door, tree-planting and find-the-tree-expert scenes, sets up doors, NPCs and Georama editing from story flags, and lets the player leave to the station or to Jurak Mall.",
+ "doc": "Sindain (g01), the first Georama town. It plays the Toryon tree-planting scene (event 250), knocking at Rococo's house (209) and the find-the-tree-expert scene (254), hands over the Georama starter parts, loads the g01b and g01c scene scripts, sets up doors, NPCs and Georama editing from story flags, and has the exits to Sindain Station (s02) and the red gate to Jurak Mall (f01).",
  "globals": [
   "left_speaker_value",
   "right_speaker_value"

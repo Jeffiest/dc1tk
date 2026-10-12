@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for Seagra, the group of six linked pieces (monster handles 24 to 29) of the p01 boss. Each piece shares a state machine through monster variables: it slams the ground with a dust ring, then goes limp while its boss-c map part is shown, and recovers with an electric shock effect once it has been hit or the partner is far away. Each piece refills its life every frame and only counts hits.",
+ "doc": "Boss script for Shingala (kind 514; Seagra in the Japanese effect names), run by each of the six linked pieces (monster handles 24 to 29) of the p01 boss. The pieces share a state machine through monster variables: each slams the ground with a dust ring, goes limp while its boss-c map part is shown, and recovers with an electric shock once hit or when its partner is far away. Each piece refills its life every frame and only counts hits.",
  "globals": [
   "unused_value",
   "unused2",

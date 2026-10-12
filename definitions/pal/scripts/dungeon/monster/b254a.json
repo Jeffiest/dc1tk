@@ -1,5 +1,5 @@
 {
- "doc": "Monster AI for b254a, a sword-swinging enemy that comes in a group. Each death adds to a shared counter, and when the fourth one dies event script 510 runs. It wanders, runs at the player, slashes and swings, and dodges backward.",
+ "doc": "Monster script for the event Griffon Soldiers (kind 523, a separate kind from the regular e254a ones), sword fighters that come in a group of four. Each death adds to a shared counter, and when the fourth dies event script 510 runs; they wander, run at the player, slash, swing and dodge backward.",
  "globals": [
   "spawn_x",
   "spawn_y",

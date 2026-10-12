@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for e114a, a flying enemy that shoots wind shots. It hovers, circles and side-steps around the player and fires a wind projectile at close and medium range.",
+ "doc": "Older stand-alone AI for the Wind Gemron model: a flying enemy that hovers, circles and fires wind shots at close and medium range. The monster table runs eJema for every Gemron kind (112 to 131), so this script appears unused.",
  "globals": [
   "home_x",
   "home_y",

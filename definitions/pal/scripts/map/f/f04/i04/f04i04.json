@@ -1,3 +1,3 @@
 {
- "doc": "Interior map f04i04 in the f04 area. It only resets the camera behind the player on entry and runs the standard villager talk handler."
+ "doc": "Ridepod parts shop interior in the Gundorada Workshop (f04i04). It only resets the camera behind the player on entry; the shopkeeper's talk goes through the shared villager talk handler."
 }

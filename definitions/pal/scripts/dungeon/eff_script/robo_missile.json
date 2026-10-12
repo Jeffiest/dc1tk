@@ -1,3 +1,3 @@
 {
- "doc": "Homing missile effect for robot enemies, with a smoke trail drawn by sprites. It explodes on a wall or hit."
+ "doc": "Effect script registered as the wine barrel shot (model Shell): a missile that flies 48 units a frame, turns toward the target and trails smoke sprites, exploding on a wall or hit or after 90 frames. No script spawns the wine barrel shot, so it appears unused; the robot missiles of Halloween (p00_10a) use polm."
 }

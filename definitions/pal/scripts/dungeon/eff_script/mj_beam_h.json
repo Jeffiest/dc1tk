@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for a rainbow butterfly fire pillar, the hit effect of a boss beam. It spawns a doubled-size pillar with a radius 20 attack."
+ "doc": "Effect registered as the demon beam hit (\"demon beam H\"), spawned along the path of majin_beam. It plays the rainbow butterfly fire pillar at double scale with a radius 20 attack, the same pillar the b02a butterfly boss leaves behind."
 }

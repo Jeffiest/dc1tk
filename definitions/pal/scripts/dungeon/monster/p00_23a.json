@@ -1,5 +1,5 @@
 {
- "doc": "Boss script for the lava creature (effects named M Gil) fought on a circular arena of radius 600 with eight magma pools. It alternates between a surface phase, where it walks to the ring, slams the ground with shockwaves and roars out fireballs, and a magma phase, where it dives into the nearest pool, fires flame volleys and surfaces to rest. Below 50% and 20% life it gains more flame shots. Its skin color heats and cools with the phase, and event 570 plays on its death.",
+ "doc": "Boss script for Monster Gaspard (kind 511; its effects are named M Gil), fought on a circular arena of radius 600 with eight magma pools. It alternates a surface phase (walks to the ring, slams Vanguard shockwaves, fires flame shots) with a magma phase (dives into the nearest pool, fires flame volleys and surfaces to rest), adding flame shots below 50% and 20% life. Its skin heats and cools with the phase, and event 570 plays on its death.",
  "globals": [
   "scratch_x",
   "scratch_y",

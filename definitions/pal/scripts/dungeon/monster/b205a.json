@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for b205a, the Torentos tree monster, which swings at the player and summons small sprout monsters (610) from a smoke puff while fewer than 7 monsters exist. Death runs event script 600.",
+ "doc": "Boss script for Trentos (kind 609), the Demon Shaft tree boss. It swings at the player and, from a puff of Tore's smoke, summons Kortlenns (kind 610, b204a) while fewer than 7 monsters exist. Death runs event script 600.",
  "globals": [
   "unused_value",
   "unused2",

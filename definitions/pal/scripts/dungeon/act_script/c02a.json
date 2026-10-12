@@ -1,5 +1,5 @@
 {
- "doc": "Action script for Monica as a playable character in dungeons. It registers her sword attack hit boxes, blade trails and footstep sounds, and runs her state machine: five-hit sword combo, mid-range attack, charge attack, back flip, magic aiming with L1, guarding and throwing with R1, and item use.",
+ "doc": "Variant of Monica's dungeon action script (c02a.stb) beside c02_monica.c (c02.stb). It registers her sword hit boxes, blade trails and footstep sounds and runs the same five-hit combo, mid-range attack, charge attack, back flip, L1 magic aiming, R1 guard and throw and item use, but has no reset or stopped program and no magic charge build-up.",
  "globals": [
   "magic_charge_effect"
  ]

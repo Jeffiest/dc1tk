@@ -1,4 +1,4 @@
 {
- "doc": "Monster script for b02a3, a scenery object that does nothing in combat: it ignores guard, damage and knockdown, and only turns in place forever. It applies a texture after a fade and advances a sequence counter on death.",
+ "doc": "Unused copy of a Butterfly AI stub (identical to b02a2 and b02a4 to b02a7): empty guard, damage, knockdown and dodge hooks, an update that only turns in place, and a death hook that advances a sequence counter. The monster table runs b02a1 for the Butterfly kinds 502 to 508, so no kind uses this script.",
  "numbering": "raw"
 }

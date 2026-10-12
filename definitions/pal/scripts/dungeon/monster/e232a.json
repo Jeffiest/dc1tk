@@ -1,5 +1,5 @@
 {
- "doc": "Monster AI for e232a, built from shared monster code. It guards, recoils, dodges melee and shots by sidestepping, and fights in an enraged loop forever.",
+ "doc": "Unused melee AI named after a Mimic model (identical to e230a and e234a): shared melee routines with backstep and sidestep dodges and attacks 1 and 2. The monster table runs e228a for every Mimic kind, including the one with model e232a.",
  "globals": [
   "home_x",
   "home_y",

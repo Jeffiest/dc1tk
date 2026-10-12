@@ -1,3 +1,3 @@
 {
- "doc": "Map script for house interior h06 in i01. On entry it places the player at the door facing into the room, and talking runs the villager handler."
+ "doc": "Police station interior in Palm Brinks (i01h06), Sheriff Blinkhorn's office. On entry it places the player at the door facing into the room; talking runs the shared villager handler."
 }

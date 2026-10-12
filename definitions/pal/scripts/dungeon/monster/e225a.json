@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for a flying enemy that spits water balls (water shot effects) and bites with a normal attack. It picks between chasing, strafing, circling the target and shooting depending on its distance to the target (under 90, 90 to 150, 150 to 190, or wandering beyond). Being knocked down makes it fly back and get up.",
+ "doc": "Older stand-alone AI for the Aqua Element model: a flyer that spits water shots and bites, choosing chase, strafe, circle or shoot by distance. The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
  "globals": [
   "unused_value",
   "unused2",

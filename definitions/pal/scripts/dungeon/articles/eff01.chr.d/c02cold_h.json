@@ -1,3 +1,3 @@
 {
- "doc": "Effect article script for a cold hit effect. It only includes the shared dungeon effect playback code."
+ "doc": "Hit effect of Monica's ice magic, played where the ice bolt lands. It only runs the shared ice hit routine."
 }

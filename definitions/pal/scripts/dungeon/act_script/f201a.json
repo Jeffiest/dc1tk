@@ -1,3 +1,3 @@
 {
- "doc": "Action script for a player-controlled monster form with a kick and a throw object. The confirm button starts a standing attack and the square button starts a dodge attack that lunges forward. It registers the two attack hit areas and body collisions and reuses the shared act script libraries for damage, knockdown and death."
+ "doc": "Action script for Monica's Sewer Rat monster transformation (e201a). Confirm does a standing attack and square a forward-lunging dodge attack; damage, knockdown and death use the shared act script libraries."
 }

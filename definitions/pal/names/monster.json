@@ -40877,7 +40877,7 @@
    "doc": "Locks the monster, plays knocked flying, stays down 15 frames and gets up, then sets monster variable 0 to 1."
   },
   "ebe8b5524a5ed32b": {
-   "name": "play_melee_attack_1",
+   "name": "play_attack_1_and_wait",
    "loose": "d501617e46024cf4",
    "params": [],
    "locals": [],

@@ -1,3 +1,3 @@
 {
- "doc": "Effect for the fire pillar explosion produced at the owner's eff1 point, with a knockback attack."
+ "doc": "Effect for a fire pillar explosion at the owner's eff1 point with a knockback attack, named for the Kotore. It has no entry in the game executable's effect table, so nothing can spawn it by name; probably unused."
 }

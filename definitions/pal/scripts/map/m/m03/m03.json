@@ -1,3 +1,3 @@
 {
- "doc": "Overworld map script for m03. Event 109a shows Cedric, and the story_109a program plays a walk-away scene and enters interior i03h01a."
+ "doc": "Palm Brinks square variant used only for event 109a: Cedric appears at a fixed spot, and the story_109a program plays his walk-away scene and enters Mayor Need's office (i03h01a)."
 }

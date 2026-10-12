@@ -1,3 +1,3 @@
 {
- "doc": "Event script for the mayor's house (i03h01a) in Palm Brinks. It plays two scenes with Cedric and Mayor Need: story 109a, where Cedric demands that Need tell him what he is hiding, and story 109b, where Cedric scolds Need for being useless as mayor and Need agrees to reopen the railroad and leave town to see the outside world. It also contains the shared villager talk handlers for the town."
+ "doc": "Scene script for Mayor Need's office in Palm Brinks City Hall (i03h01a). Story 109a has Cedric burst in and demand the truth from Need; story 109b has Cedric scold him until Need agrees to reopen the Blackstone Railroad, then jumps to the station (i02h01). It also carries the shared town villager talk handlers."
 }

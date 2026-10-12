@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for Monica's ice ball shot (large). The ball arcs forward, bounces back if it hits a guard, and explodes into the ice hit effect when it touches an enemy or a wall."
+ "doc": "Effect for the monster ice shot (氷弾Ｌ). The ball arcs forward, is sent back if the player guards it, and explodes into the ice hit effect when it touches a character or a wall."
 }

@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for b204a, a Kotoren, a small monster that charges at the player and blows itself up on contact. When the last one explodes, the dungeon runs event script 510.",
+ "doc": "Monster script for Kortlenn (kind 610), the walking bomb that Trentos (b205a) summons. It charges at the player and blows itself up on contact; when the last one explodes, the dungeon runs event script 510.",
  "globals": [
   "spawn_x",
   "spawn_y",

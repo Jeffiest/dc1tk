@@ -1,3 +1,3 @@
 {
- "doc": "Action script for the f03a sword monsters in dungeons. It sets up their melee hit boxes and sword trails per monster form and plays the standard damage reaction when stopped."
+ "doc": "Action script for Monica's monster transformations into Skeleton Soldier, Hornhead, Master Jacket, Rare Jacket, Whitebeard and Oyakata (monster ids 176, 177, 180, 183, 186, 187). It registers each form's sword hit boxes and trails; the shared loop moves with the stick, attacks on confirm and square, and handles guard, lift and throw."
 }

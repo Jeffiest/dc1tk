@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for a smoke puff effect used by monster e107. Eight smoke sprites rise and fade."
+ "doc": "Effect script for the e107 dust cloud (\"sand dust e107\"): eight smoke sprites that rise, spin, grow and fade for 150 frames. The s06 channel pump room uses it in the elephant boss scenes."
 }

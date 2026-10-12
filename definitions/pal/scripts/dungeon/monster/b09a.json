@@ -1,5 +1,5 @@
 {
- "doc": "Dungeon boss b09a, a dual-blade fighter. It dashes, sidesteps, taunts, slashes, lunges and throws cross cutters depending on distance. When its life drops below 0.34 event script 501 plays, and its death is turned into a life restore to 0.34 instead.",
+ "doc": "Boss script for the second Emperor Griffon form (kind 616), a dual-blade fighter that dashes, sidesteps, taunts, slashes, lunges and throws cross cutters depending on distance. When his life drops below 0.34 event script 501 plays, and his death is turned into a life restore to 0.34 instead.",
  "globals": [
   "home_x",
   "home_y",

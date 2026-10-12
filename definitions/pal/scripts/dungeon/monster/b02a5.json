@@ -1,4 +1,4 @@
 {
- "doc": "Monster script for a b02a5 part that has no hit reactions of its own. Its update only repeats a turn, and its death and landing handlers run shared helper routines.",
+ "doc": "Unused copy of a Butterfly AI stub (identical to b02a2 to b02a4, b02a6 and b02a7): empty guard, damage, knockdown and dodge hooks, an update that only turns in place, and a death hook that advances a sequence counter. The monster table runs b02a1 for the Butterfly kinds 502 to 508, so no kind uses this script.",
  "numbering": "raw"
 }

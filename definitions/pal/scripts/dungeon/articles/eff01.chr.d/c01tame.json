@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for a charge-up model that follows its owner while its activation model plays."
+ "doc": "Effect for the glow of Max's charge attack (ユリス溜め攻撃): a model that follows Max while its activation motion plays."
 }

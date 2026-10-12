@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for a flying dungeon enemy that shoots ice balls, charges at the player behind a guard and dodges sideways. It fights more aggressively while it has rage hits left.",
+ "doc": "Older stand-alone AI for the Ice Gemron model: a flying enemy that shoots ice balls, charges behind a guard and dodges sideways. The monster table runs eJema for every Gemron kind (112 to 131), so this script appears unused.",
  "globals": [
   "saved_x",
   "saved_y",

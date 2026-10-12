@@ -1,5 +1,5 @@
 {
- "doc": "Dungeon monster script that uses the shared melee monster library (backstep and sidestep dodges, attacks 1 and 2 with knockback). Only its dodge handlers are defined here.",
+ "doc": "Unused melee AI named after a Mimic model (identical to e232a and e234a): shared melee routines with backstep and sidestep dodges and attacks 1 and 2. The monster table runs e228a for every Mimic kind, including the one with model e230a.",
  "globals": [
   "home_x",
   "home_y",

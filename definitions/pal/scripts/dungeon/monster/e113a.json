@@ -1,5 +1,5 @@
 {
- "doc": "Dungeon monster AI for a flying enemy that shoots thunder balls. It keeps distance, circles or sidesteps around the player and fires a thunder shot from dcol0.",
+ "doc": "Older stand-alone AI for the Thunder Gemron model: a flying enemy that keeps its distance, circles and fires thunder shots from dcol0. The monster table runs eJema for every Gemron kind (112 to 131), so this script appears unused.",
  "globals": [
   "unused_value",
   "unused2",

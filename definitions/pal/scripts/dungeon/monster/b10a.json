@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for the Griffon boss. It idles and wanders, then picks a shockwave slam, a two-arm swing, a lunge or a dodge step depending on distance to the player, and runs boss death event 502.",
+ "doc": "Boss script for the third Emperor Griffon form (kind 617). He idles and wanders, then picks a shockwave slam, a two-arm swing, a lunge or a dodge step by distance to the player, and runs boss death event 502.",
  "globals": [
   "home_x",
   "home_y",

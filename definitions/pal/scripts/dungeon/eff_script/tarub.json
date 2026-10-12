@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for a barrel hit: a single smoke sprite rises from a random spot around the work position and fades over 150 frames."
+ "doc": "Effect script registered as the barrel shot test effect: one smoke sprite rises from a random spot around the work position and fades over 150 frames. Nothing spawns it."
 }

@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for a ground enemy that fights without guarding (update is fight_without_guard_loop). Most behaviour comes from shared libraries; this file adds dodge handlers that turn toward the attacker and lock out interrupts.",
+ "doc": "Unused melee AI named after a King Mimic model (identical to e231a and e233a): shared routines that fight without guarding, with backstep and sidestep dodges. The monster table runs e229a for every King Mimic kind, including the one with model e235a.",
  "globals": [
   "unused_value",
   "unused2",

@@ -1,5 +1,5 @@
 {
- "doc": "Boss monster script b40a. It wanders, then fights by distance to the target with lunges, a second claw attack and volleys of rockets fired from the dcol2 point, and plays with the target at high life. Its death runs event script 503.",
+ "doc": "Boss script for Uther (kind 606, model e40e), a Demon Shaft boss version of Arthur. He wanders, then fights by distance with lunges, a second claw attack and volleys of rockets fired from the dcol2 point, and plays with the target at high life. His death runs event script 503.",
  "globals": [
   "spawn_x",
   "spawn_y",

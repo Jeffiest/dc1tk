@@ -1,5 +1,5 @@
 {
- "doc": "Dungeon monster AI for a flying enemy that fires holy shots. It circles and sidesteps around the player and shoots from range.",
+ "doc": "Older stand-alone AI for the Holy Gemron model: a flying enemy that circles and sidesteps around the player and fires holy shots from range. The monster table runs eJema for every Gemron kind (112 to 131), so this script appears unused.",
  "globals": [
   "unused_value",
   "unused2",

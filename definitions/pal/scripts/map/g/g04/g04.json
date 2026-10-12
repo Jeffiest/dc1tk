@@ -1,3 +1,3 @@
 {
- "doc": "Event script for the Heim Rada field map g04. It holds the time gate warp scene (red and blue gate rings around Max and Monica, then a white-out and a caption that they jumped to the future), the arrival run-in scenes, the prompts for leaving to Heim Rada Stop (s10) and for entering dungeon 4, and the checks for pending story events 548, 552, 556 and 560. Using the gate sends the player on to Gundorada Workshop (f04), or to s39 when event 560 is pending."
+ "doc": "Heim Rada (g04), the third Georama town. It plays the arrival run-in scenes and the time gate warp (red and blue gate rings, a white-out and a caption about jumping to the future) that sends the player to the Gundorada Workshop (f04), or to the Operations Room (s39) when event 560 is pending. It also has the exits to Heim Rada Stop (s10) and Mount Gundor (dungeon stage 4) and the hint for pending events 548 to 560."
 }

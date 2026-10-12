@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for the pother article of the eff01 character. Play and finish do nothing beyond the shared dungeon_24 routine."
+ "doc": "Dust cloud effect (砂煙): a rising puff of dust particles. The finish handler is empty."
 }

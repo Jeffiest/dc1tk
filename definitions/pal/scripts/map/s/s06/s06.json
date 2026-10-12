@@ -1,3 +1,3 @@
 {
- "doc": "The elephant boss floor of the early story. It plays the arena entry, the elephant falling after the boss fight, Flotsam fleeing and taunting, the Ridepod tutorial, and handles the exit door and the trip to the underground water channel and Palm Brinks edit mode."
+ "doc": "Channel Pump Room (s06), the Underground Channel arena where Max and Steve fight Flotsam's elephant Linda. It plays the arena entry and Linda's intro (event 107), the elephant falling, Max's victory and the Ridepod tutorial (108a) or Flotsam's taunt after running away (108b), and hands off to the s06b and s06c scene scripts. It also has the floor exit door, the return to the Underground Channel and the Palm Brinks Georama edit mode."
 }

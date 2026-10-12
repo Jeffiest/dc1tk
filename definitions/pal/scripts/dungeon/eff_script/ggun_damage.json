@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for the explosion that appears when the buggy's gun damages something. It plays the buggy explosion motion for 47 frames."
+ "doc": "Effect for the warship damage explosion (軍艦ダメージ) shown on the Death Ark boss and its Armory and Machine Gun parts when they are hit. It plays the explosion motion for 47 frames."
 }

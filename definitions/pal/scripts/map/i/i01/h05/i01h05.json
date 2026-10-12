@@ -1,3 +1,3 @@
 {
- "doc": "Event script for building h05 in map i01. On map start it places the player at a fixed spot facing the door, and villagers use the shared talk handler."
+ "doc": "Morton's sundries shop interior in Palm Brinks (i01h05). On map start it places the player facing the door; talking uses the shared villager talk handler."
 }

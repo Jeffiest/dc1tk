@@ -1,3 +1,3 @@
 {
- "doc": "Dungeon boss d05b01, a sword and magic user (Gil effects and Giltoni shield) that fights around an arena centered at (-2195, 488, -475). It casts magic bolts, double slashes, a mid-range lunge and a moonsault, and on death plays event script 560."
+ "doc": "Boss script for the second Gaspard fight (kind 512, model b18a), a sword and magic user with Gil magic and the Giltoni shield, fighting around an arena centered at (-2195, 488, -475). He casts magic bolts, double slashes, lunges at mid range and moonsaults, and on death plays event script 560."
 }

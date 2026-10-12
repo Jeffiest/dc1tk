@@ -1,3 +1,3 @@
 {
- "doc": "Monster script for a small enemy that attacks by a suicide charge at the player's position. It stays passive otherwise and charges after being knocked down or after a dodge once enraged."
+ "doc": "Unused small suicide-charger AI (no monster kind runs it): it stays passive and charges at the player's position after being knocked down, or after a dodge once enraged."
 }

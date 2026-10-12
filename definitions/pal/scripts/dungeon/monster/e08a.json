@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for e08a. It starts a looping sound on init, and its dodges and knock-flying reactions adjust the visible monster limits; it has no attack of its own, so it behaves as a passive monster using shared monster includes.",
+ "doc": "Unused passive monster stub (identical to e09a, and no monster kind runs it): a looping sound on init, a brief guard, get-up reactions after knockdown and stun, struggling when lifted, and no attack. Its old-numbered helpers end up changing the floor's visible monster limit.",
  "globals": [
   "unused_value",
   "unused2",

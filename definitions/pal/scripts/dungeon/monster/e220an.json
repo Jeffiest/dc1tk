@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for e220an, a Vanguard that charges the player and releases a ground shockwave, and shoots bullets from its nose. It fights by distance, circling or approaching when far, and charges instead of dodging ranged attacks.",
+ "doc": "Monster script for the Memo Eater family's Burger, Stormy and Ladha (kinds 69 to 71). They charge the player and release a Vanguard shockwave, shoot bullets from the nose, fight by distance (circling or approaching when far) and charge instead of dodging ranged attacks.",
  "globals": [
   "spawn_x",
   "spawn_y",

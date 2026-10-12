@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for the c02 charge-up (tame) effect. Play uses a shared routine that follows the owner."
+ "doc": "Effect for the glow of Monica's sword charge attack (モニカ溜め攻撃): a model that follows Monica while the charge is active."
 }
