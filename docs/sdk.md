@@ -192,6 +192,12 @@ value is.
   `enum bgm_file_pal` and `enum sound_set_pal`, named from the music files'
   cfg titles and the rows of `snd2/MAP_index.txt`; `system_se`
   (`play_system_se`) from `enum system_se_pal`.
+- `chara_slot` (the scene character slot most character natives and
+  helpers take) names the slots the engine fills (`enum chara_slot_engine`:
+  `CHARA_PLAYER`, the time gate and save point), and a whole-disc
+  decompile adds to `disc.h` the slots each map folder's scripts always
+  load with one character (`CHARA_I01_H01_STEVE`), used only in that
+  folder's scripts.
 - `play_se(id, n)` plays entry n of the bank `id` was read from, so the
   decompiler follows the variable within a function: after
   `id = get_system_sound_id()` or `get_sound_id(SE_BANK_BASE, &id)` (or

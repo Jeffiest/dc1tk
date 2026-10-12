@@ -34,10 +34,12 @@ def disc_hashes(root):
 
 # How an extracted disc differs from the one the loaded sets were made from: scripts that differ,
 # that the disc lacks, and that the sets do not know. Empty lists when no set records a disc.
-def disc_differences(root, defs):
+def disc_differences(root, defs, prefix=""):
     if not defs["disc"]:
         return {"differ": [], "missing": [], "unknown": []}
-    found = disc_hashes(root)
+    found = {prefix + path: value for path, value in disc_hashes(root).items()}
+    expected = {path: value for path, value in defs["disc"].items() if path.startswith(prefix)}
+    defs = dict(defs, disc=expected)
     return {"differ": sorted(path for path, value in found.items() if path in defs["disc"] and defs["disc"][path] != value),
             "missing": sorted(path for path in defs["disc"] if path not in found),
             "unknown": sorted(path for path in found if path not in defs["disc"])}

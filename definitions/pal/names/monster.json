@@ -2046,7 +2046,7 @@
     "result",
     "unused2"
    ],
-   "doc": "Turns to an absolute angle, then moves dist units that way and waits."
+   "doc": "Turns to the world heading angle_deg at turn_speed_deg, then walks dist units along it at move_speed (at least move_speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "0c69b1aea01efb1b": {
    "name": "wait_until_player_undisguised",
@@ -2067,7 +2067,7 @@
    ],
    "loose": "6c896653d33c5a29",
    "params": [],
-   "doc": "If the player is currently disguised as a monster, hovers in place via hover_idle_while_player_disguised until the disguise ends; otherwise returns at once."
+   "doc": "If the player is disguised in a form this monster's kind recognises as its own (get_player_disguise is not -1), hovers in place via hover_idle_while_player_disguised until the disguise ends; otherwise returns at once."
   },
   "0ca6b0beb8edbd3c": {
    "name": "strafe_or_wait",
@@ -3073,7 +3073,7 @@
     "result",
     "unused2"
    ],
-   "doc": "Turns to angle_deg, then walks dist units in that direction until within stop_dist of the end or max_frames pass."
+   "doc": "Despite the parameter names, the first argument is the turn speed in degrees and the second the walk speed. Turns to the world heading angle_deg, then walks dist units along it (at least the walk speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "12afd01ed9e0e8df": {
    "name": "setup_curse_bullet_attack",
@@ -3398,7 +3398,7 @@
     "clear_dist",
     "result"
    ],
-   "doc": "Turns toward and walks to a point on a circle around the target; returns -1 if blocked."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. If less than 100 units are clear ahead, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "144aacfd7980729f": {
    "name": "move_beside_target",
@@ -4167,7 +4167,7 @@
   "19987bd3b171aa2f": {
    "name": "make_damageable_and_halt",
    "loose": "19987bd3b171aa2f",
-   "doc": "Clears the no-damage attribute, forbids guard and dodge, stops moving and turning and resets the motion. Under this script's old native numbering set_photo_window is set_attrib, set_visible_monster_limit is set_mask_flag and get_attack is reset_motion."
+   "doc": "Meant to clear the no-damage attribute, forbid guard and dodge, stop moving and turning and reset the motion. The calls are in this script's old native numbering, and the engine runs the natives the numbers select (set_photo_window, set_visible_monster_limit, get_attack and so on), so none of that happens."
   },
   "199a24c4de790196": {
    "name": "stand_for_frames",
@@ -4646,7 +4646,7 @@
     "move_result",
     "unused2"
    ],
-   "doc": "Turns to angle_deg, then walks that distance, stopping when the target is within stop_distance. Returns the wait result."
+   "doc": "Turns to the world heading angle_deg at turn_speed_deg, then walks distance units along it at speed (at least speed + 1), checking the death flag each frame. A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_distance, 2 when the walk ends, 0 after max_frames."
   },
   "1c70b59ca1bbab55": {
    "name": "circle_or_wait_near_target",
@@ -4716,7 +4716,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle within angle_range and walks a random distance, shortened by the clearance check. Returns -1 if there is no room."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "1c958cf9521e6c87": {
    "name": "fight_while_enraged",
@@ -4811,7 +4811,7 @@
     "move_end",
     "target_dist"
    ],
-   "doc": "Waits while moving until the target is closer than dist (returns 1), the move ends (returns 2 or 1) or max_frames passes (returns 0). Stops moving on return except on timeout."
+   "doc": "Waits up to max_frames for a move_to walk. Returns 1 as soon as the target is within stop_dist, 2 when the walk reaches its point, 0 on timeout; stops moving on 1 or 2 but not on timeout."
   },
   "1d163a7871887428": {
    "name": "dodge_melee_with_counter",
@@ -6291,7 +6291,7 @@
     "unused_value",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for the given number of frames."
+   "doc": "Turns toward the target every frame for the given number of frames, then stops turning. The speed goes to the turn unconverted, so it is in radians per frame; the values callers give, such as 5, make the monster face the target almost at once."
   },
   "26400d3228795075": {
    "name": "hover_in_direction",
@@ -6501,7 +6501,7 @@
     "frames"
    ],
    "loose": "27d5ace00b740a3d",
-   "doc": "Starts turning toward the target at speed_deg, then waits until the heading matches the target angle. Returns the frames spent."
+   "doc": "Starts turning toward the target at speed_deg, then is meant to wait until the heading matches the target angle. In this toolkit the target angle and heading reads use old native numbers, so the wait does not follow the turn: it can end at once or run up to 360 frames, and the turn is stopped when it ends. Returns the frames waited."
   },
   "27f85ae3fce05108": {
    "name": "fly_random_forward",
@@ -7220,7 +7220,7 @@
    "locals": [
     "target_angle"
    ],
-   "doc": "Starts turning toward the target at turn_speed and returns at once."
+   "doc": "Meant to start turning toward the target at turn_speed radians per frame, but in this old numbering the turn call lands on no native, so the monster does not turn."
   },
   "2ba201c44fe63bcb": {
    "name": "strafe_or_idle_when_crowded",
@@ -7382,7 +7382,7 @@
     "unused2"
    ],
    "loose": "3b9c9f179dcb0e54",
-   "doc": "Turns to angle_deg, then walks distance units in that direction at move_speed, waiting until the target comes within near_dist or max_frames pass. Returns the wait result and stops moving."
+   "doc": "Turns to angle_deg, then walks distance units (at least move_speed + 1) in that direction at move_speed, waiting until the target comes within near_dist or max_frames pass. A heading below turn_speed degrees, including every negative one, is first increased by turn_speed. Returns the wait result and stops moving."
   },
   "2c468cb9ec708b75": {
    "name": "turn_to_target_random",
@@ -7556,7 +7556,7 @@
     "result",
     "unused2"
    ],
-   "doc": "Turns to a heading and walks dist units along it. Returns the result of wait_move_until_near."
+   "doc": "Despite the parameter names, the first argument is the turn speed in degrees and the second the walk speed. Turns to the world heading angle_deg, then walks dist units along it (at least the walk speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "2d47efa6cf414e0e": {
    "name": "record_last_hit_and_damage",
@@ -8624,7 +8624,7 @@
    ],
    "loose": "d62d6870ff3c009a",
    "params": [],
-   "doc": "If the player is currently disguised as a monster, runs this monster's idle behaviour for that disguise (idle_while_player_disguised); does nothing otherwise."
+   "doc": "If the player is disguised in a form this monster's kind recognises as its own (get_player_disguise is not -1), runs this monster's idle behaviour for that disguise (idle_while_player_disguised); does nothing otherwise."
   },
   "3331c626395da35e": {
    "name": "wait_frames_checking_death",
@@ -9539,7 +9539,7 @@
     "result"
    ],
    "loose": "68695b822acf5eb4",
-   "doc": "Turns by a random amount up to angle_range (converted to radians twice, so 360 gives about 6 degrees), then walks a random 0 to dist_range units ahead, plus base_dist and move_speed when 100 units ahead are clear. Returns -1 when no more than clearance is clear, otherwise the wait result."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "381060cbff57d8f0": {
    "name": "turn_random_side",
@@ -9687,7 +9687,7 @@
     "unused_value",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for the given number of frames, then stops turning."
+   "doc": "Meant to turn toward the target every frame for the given number of frames. In this toolkit the target angle read and the turn call use old native numbers (the turn call does nothing), so the monster only waits the frames without turning, then stops turning."
   },
   "38837e9d195d5868": {
    "name": "on_update",
@@ -9851,7 +9851,7 @@
    ],
    "loose": "395ef8a66b3b5e48",
    "locals": [],
-   "doc": "Waits the given number of frames with a bare wait. In this script it behaves the same as wait_frames_update, whose per-frame wait has no aggro update either."
+   "doc": "Waits the given number of frames with a bare wait; zero or negative waits nothing."
   },
   "3983016368cba8e2": {
    "name": "wander_or_return_home",
@@ -9995,7 +9995,7 @@
     "roll",
     "frames"
    ],
-   "doc": "Turns toward the target, offset left or right by offset_deg with offset_chance percent probability. Returns the frames spent."
+   "doc": "Meant to turn toward the target, offset left or right by offset_deg with offset_chance percent probability, and wait up to 360 frames. In this toolkit the target angle read and the turn call use old native numbers (the turn call does nothing), so the monster does not turn. Returns the frames waited."
   },
   "3a9f6121cc3fad39": {
    "name": "stand_idle_frames",
@@ -10209,7 +10209,7 @@
     "unused_e",
     "result"
    ],
-   "doc": "Turns to face the target, then walks to the point ahead at the target distance. Returns 1 if the stop distance was reached, 2 if the walk ended early, 0 on timeout."
+   "doc": "Turns to face the target, then walks straight along that heading as far as the target's distance, without checking for walls. Returns 1 if the target comes within stop_dist, 2 when the walk reaches its point, 0 on timeout."
   },
   "3b97f3bdf5846e6d": {
    "name": "get_up_after_throw",
@@ -10747,7 +10747,7 @@
     "turn_rad",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for a number of frames."
+   "doc": "Turns toward the target every frame for the given number of frames, then stops turning. Despite the parameter name, turn_speed_deg goes to the turn unconverted, so it is in radians per frame; the values callers give, such as 4.2, make the monster face the target almost at once."
   },
   "3f54d9f1752de115": {
    "name": "run_normal_ai",
@@ -10950,7 +10950,7 @@
     "result"
    ],
    "loose": "aa82dc1b405e63c4",
-   "doc": "Walks to a point on a circle of radius around the target at angle_deg from it, after turning toward it. Probes the path ahead and shortens the walk to the free distance, returning -1 when less than stop_dist is free; otherwise returns the wait result and stops."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. Only move_speed + stop_dist units ahead are probed: if less is clear, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "40666d6d2075e8bf": {
    "name": "wait_target_in_view",
@@ -11429,7 +11429,7 @@
     "result",
     "unused2"
    ],
-   "doc": "Turns toward the angle and then walks the given distance that way, stopping near the target or at the frame limit. Returns the wait result."
+   "doc": "Turns to the world heading angle_deg at turn_speed_deg, then walks dist units along it at move_speed (at least move_speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "42ad5124ae2e43b4": {
    "name": "fight_target_at_range",
@@ -12309,7 +12309,7 @@
     "result",
     "unused_b"
    ],
-   "doc": "Turns to angle_deg, then walks dist units that way. Despite the parameter names, the first argument is the turn speed in degrees and the second the walk speed. Returns 1 if the target came within stop_dist, 2 if the walk finished, 0 on timeout."
+   "doc": "Despite the parameter names, the first argument is the turn speed in degrees and the second the walk speed. Turns to the world heading angle_deg, then walks dist units along it (at least the walk speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "47eb978a7ab5e352": {
    "name": "stop_after_landing",
@@ -12551,7 +12551,7 @@
    ],
    "loose": "baadb5b28eac7289",
    "params": [],
-   "doc": "When the player is disguised as this monster's own kind, runs the disguise-facing routine so the monster turns toward its target. Does nothing otherwise."
+   "doc": "If the player is disguised as any monster, runs face_target_while_disguised until the disguise ends: the monster stands and turns toward its target whenever it is more than 60 degrees off. Does nothing otherwise. The monster kind it passes is not used."
   },
   "493c514a1f2bb97e": {
    "name": "fly_sideways",
@@ -12795,7 +12795,7 @@
     "result"
    ],
    "loose": "4a4d7d24b43a50e5",
-   "doc": "Walks to a point at radius from the target, angle_deg around it, turning to face the point first. Shortens the walk to the clear distance and returns -1 when blocked, otherwise the wait result."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. Only move_speed + stop_dist units ahead are probed: if less is clear, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "4a5797fccf64200c": {
    "name": "summon_monster_with_smoke",
@@ -13485,7 +13485,7 @@
     "clear_dist",
     "result"
    ],
-   "doc": "Turns toward a point at angle_deg and radius around the target and walks there."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. If less than 100 units are clear ahead, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "4e8904bc4117da2a": {
    "name": "on_update",
@@ -14989,7 +14989,7 @@
     "angle_rad",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for the given number of frames."
+   "doc": "Turns toward the target every frame for the given number of frames, then stops turning. Despite the parameter name, turn_speed_deg goes to the turn unconverted, so it is in radians per frame; the values callers give, such as 4.2, make the monster face the target almost at once."
   },
   "572ef22fbdb4b4c5": {
    "name": "explode_flower_bomb",
@@ -15323,7 +15323,7 @@
     "clear_dist",
     "result"
    ],
-   "doc": "Walks to the point radius units from the target at angle_deg around it, returning -1 if that path is blocked. Otherwise returns the result of wait_move_until_near."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. Only move_speed + stop_dist units ahead are probed: if less is clear, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "593c3c3672349b65": {
    "name": "fly_around_target",
@@ -15371,7 +15371,7 @@
     "result",
     "unused2"
    ],
-   "doc": "Turns to a heading and walks dist units along it. Returns the result of wait_move_until_near."
+   "doc": "Meant to turn to the world heading angle_deg and walk dist units along it (at least the walk speed + 1), returning 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames. Despite the parameter names, the first argument is the turn speed in degrees and the second the walk speed, and a heading below the turn speed (including every negative heading) is first increased by the turn speed. This copy uses an old call numbering, so its position, move and stop calls do not do what they are meant to."
   },
   "5972c8036bf4fdd6": {
    "name": "idle_if_player_disguised",
@@ -16649,7 +16649,7 @@
     "result"
    ],
    "loose": "5f1af9b4fe36de91",
-   "doc": "Walks to a point at radius from the target, angle_deg around it, turning to face the point first. Shortens the walk to the clear distance and returns -1 when blocked, otherwise the wait result."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. Only move_speed + stop_dist units ahead are probed: if less is clear, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "5f3a510a2104f4d8": {
    "name": "lob_bomb_then_fuse",
@@ -16995,7 +16995,7 @@
     "result"
    ],
    "loose": "614d123b4ccad7ff",
-   "doc": "Turns by a random amount up to angle_range (converted to radians twice, so 360 gives about 6 degrees), then walks a random 0 to dist_range units ahead, plus base_dist and move_speed when 100 units ahead are clear. Returns -1 when no more than clearance is clear, otherwise the wait result."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "614e1f0fa898eab6": {
    "name": "walk_toward_target",
@@ -17100,7 +17100,7 @@
     "clear_dist",
     "result"
    ],
-   "doc": "Turns toward a point at the given angle and radius around the target and walks to it. Returns -1 when there is no room."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. Only move_speed + stop_dist units ahead are probed: if less is clear, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "6233f95b1c931a6c": {
    "name": "act_at_medium_range",
@@ -17272,7 +17272,7 @@
     "unused_b"
    ],
    "loose": "62f818515cc95191",
-   "doc": "Turns to the absolute heading angle_deg at turn_speed_deg, then walks dist units straight ahead at move_speed (dist is raised to move_speed plus 1 at minimum) keeping its height. Returns 1 if the target comes within stop_dist, 2 if the walk ends, 0 on timeout."
+   "doc": "Turns to the world heading angle_deg at turn_speed_deg, then walks dist units along it at move_speed (at least move_speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "630f92c05399eaa4": {
    "name": "set_cutscene_lock",
@@ -17336,7 +17336,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle within angle_range and walks a random distance, shortened by the clearance check. Returns -1 if there is no room."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "6331c4fcf980cef3": {
    "name": "hover_while_player_disguised",
@@ -18236,7 +18236,7 @@
     "clear_dist",
     "result"
    ],
-   "doc": "Turns toward and walks to a point on a circle around the target."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. If less than 100 units are clear ahead, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "68a79439c1969ce9": {
    "name": "wander_or_return_home",
@@ -18777,7 +18777,7 @@
     "rot_y",
     "target_angle"
    ],
-   "doc": "Returns 1 if the target is closer than max_dist and within half_angle_deg of where the monster faces."
+   "doc": "Meant to return 1 when the target is closer than max_dist and within half_angle_deg of the monster's facing, else 0. In this toolkit the three reads use old native numbers: the heading read does nothing and the distance and angle reads call unrelated natives, so the result does not reflect where the target is."
   },
   "6b4b0a4e051edde6": {
    "name": "wait_move_end_timeout",
@@ -19056,7 +19056,7 @@
     "result"
    ],
    "loose": "999d8e2e5660e101",
-   "doc": "Turns toward and walks to the point radius away from the target at angle_deg around it. Cuts the path to the clear distance ahead when under 100 units are clear, returning -1 if that is too short. Returns 1 if the target comes within stop_dist, 2 if the walk ends, 0 on timeout."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. If less than 100 units are clear ahead, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "6d0cc42504863fdf": {
    "name": "walk_to_random_nearby_point",
@@ -19799,7 +19799,7 @@
     "limit",
     "tolerance_rad"
    ],
-   "doc": "Waits until the heading is within the tolerance of the given angle in degrees, or max_frames pass. Returns the frames waited."
+   "doc": "Waits until the monster's yaw is within the larger of 3 degrees and the given tolerance of the angle (both in degrees), or max_frames pass, then stops turning. Returns the frames waited."
   },
   "7138ebe8179519f1": {
    "name": "recoil_from_hit",
@@ -20889,7 +20889,7 @@
    ],
    "loose": "76b50e9e9cfc9a7f",
    "params": [],
-   "doc": "Stops the turn by making the monster's current yaw its turn target and setting the turn speed to 0."
+   "doc": "Written in the b02a raw numbering, where the calls shown (check_pause_flags, set_dungeon_flag) stand for get_rot and turn_to: meant to stop the turn by turning to the current yaw at speed 0."
   },
   "76b7ade63017ed86": {
    "name": "on_init",
@@ -21017,7 +21017,7 @@
     "result"
    ],
    "loose": "77a8229998612d8a",
-   "doc": "Walks to a point at radius from the target, angle_deg around it, turning to face the point first. Cuts the walk short when less than 100 units are clear and returns -1 when blocked, otherwise the wait result."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. If less than 100 units are clear ahead, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "77c681b400182d50": {
    "name": "act_at_far_range",
@@ -21198,7 +21198,7 @@
     "unused2",
     "move_result"
    ],
-   "doc": "Turns by a random angle and walks forward by a random distance, returning -1 if the way ahead is too short."
+   "doc": "Meant to turn up to max_turn_deg degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about max_turn_deg/57, always to the same side. If 100 units ahead are clear it walks min_distance + speed plus a random 0 to max_extra_distance units; if less is clear but more than stop_clearance it walks just the random amount; otherwise it returns -1 without moving. stop_clearance is also the stop distance of the wait: returns 1 if the target comes within it, 2 when the walk ends, 0 after max_frames."
   },
   "78631c437f7a4b55": {
    "name": "charge_target",
@@ -21277,7 +21277,7 @@
     "move_done",
     "dist"
    ],
-   "doc": "Waits up to max_frames for the current move to end. Returns 1 as soon as the target is closer than stop_dist or the move ends as arrived, 2 when it ends otherwise, 0 on timeout."
+   "doc": "Waits up to max_frames for a move_to walk. Returns 1 as soon as the target is within stop_dist, 2 when the walk reaches its point, 0 on timeout; stops moving on 1 or 2 but not on timeout."
   },
   "78c88a396d51097c": {
    "name": "read_last_hit",
@@ -24678,7 +24678,7 @@
     "turn_speed_rad",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for the given number of frames."
+   "doc": "Turns toward the target every frame for the given number of frames, then stops turning. The speed goes to the turn unconverted, so it is in radians per frame; the values callers give, such as 5, make the monster face the target almost at once."
   },
   "8cdde590289203ce": {
    "name": "wait_for_move_end",
@@ -24901,7 +24901,7 @@
     "target_angle"
    ],
    "loose": "8e4dbf0bd4a6460d",
-   "doc": "Returns 1 when the target is closer than max_dist and within half_angle_deg of the monster's facing, else 0."
+   "doc": "Returns 1 when the target is closer than max_dist and within half_angle_deg of the monster's facing, else 0. The angle test does not wrap at plus or minus 180 degrees, so a target just across that line from the facing counts as out of view."
   },
   "8eb10a1edb054097": {
    "name": "turn_until_facing_angle",
@@ -25406,7 +25406,7 @@
     "motion_time",
     "frames"
    ],
-   "doc": "Waits until the motion time is within tolerance of time (default 0.03 when tolerance is -1) and returns the frames waited."
+   "doc": "Meant to wait until the motion progress is within tolerance of time (0.03 when tolerance is -1), but the old-numbered progress read runs as get_no_damage_count, so it waits until that hit count is within tolerance of time, which for a time between the tolerance and 1 - tolerance never happens. Returns the frames waited."
   },
   "918f83acdf10e01b": {
    "name": "cast_curse_shot",
@@ -26684,7 +26684,7 @@
     "frames",
     "motion_done"
    ],
-   "doc": "Waits until the motion time is within tolerance of time (default 0.03 when tolerance is -1) and returns the frames waited."
+   "doc": "Waits frame by frame until the motion progress (0 to 1) is within tolerance of time (0.03 when tolerance is -1) or the motion ends. Returns the frames waited."
   },
   "97ffa90b275704a5": {
    "name": "walk_in_direction",
@@ -26706,7 +26706,7 @@
     "unused_b"
    ],
    "loose": "97ffa90b275704a5",
-   "doc": "Turns to heading angle_deg, then walks dist units along it (at least move_speed + 1). Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
+   "doc": "Turns to the world heading angle_deg at turn_speed_deg, then walks dist units along it at move_speed (at least move_speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "9802f61a8fb0c384": {
    "name": "on_init",
@@ -27016,7 +27016,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns a random amount within the angle range and walks a random distance near the base distance, if the way ahead is clear. Returns -1 when blocked."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "99e429a50f5e1935": {
    "name": "walk_in_direction",
@@ -27038,7 +27038,7 @@
     "result",
     "unused2"
    ],
-   "doc": "Turns to angle_deg, then walks dist units in that direction until within stop_dist of the end or max_frames pass."
+   "doc": "Despite the parameter names, the first argument is the turn speed in degrees and the second the walk speed. Turns to the world heading angle_deg, then walks dist units along it (at least the walk speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "9a0675d2692089a1": {
    "name": "wait_move_until_near_target",
@@ -27861,7 +27861,7 @@
     "unused5",
     "result"
    ],
-   "doc": "Turns to the target and walks the distance to it straight ahead; returns -1 if the path is blocked."
+   "doc": "Turns to face the target, then walks straight along that heading as far as the target's distance. Returns -1 without moving when the clear distance ahead is under move_speed plus stop_dist, otherwise 1 if the target comes within stop_dist, 2 if the walk ends, 0 on timeout."
   },
   "9f35dd8a211a095f": {
    "name": "turn_to_target_random",
@@ -28097,7 +28097,7 @@
     "result",
     "unused2"
    ],
-   "doc": "Turns to an angle then walks the given distance along it."
+   "doc": "Turns to the world heading angle_deg at turn_speed_deg, then walks dist units along it at move_speed (at least move_speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "a045f22a629fbc7d": {
    "name": "set_defense_by_facing",
@@ -28200,7 +28200,7 @@
     "unused_e",
     "result"
    ],
-   "doc": "Turns to face the target and walks straight ahead the target's distance. Returns -1 without moving if the way ahead is blocked."
+   "doc": "Turns to face the target, then walks straight along that heading as far as the target's distance. Returns -1 without moving when the clear distance ahead is under move_speed plus stop_dist, otherwise 1 if the target comes within stop_dist, 2 if the walk ends, 0 on timeout."
   },
   "a0c80a206093beba": {
    "name": "wait_until_facing_angle",
@@ -28216,7 +28216,7 @@
     "max_frames_copy",
     "tolerance_rad"
    ],
-   "doc": "Waits until the monster's yaw is within the tolerance of the given angle in degrees, the turn rate says it is on the shortest side, or max_frames pass. Returns the frames waited and stops turning."
+   "doc": "Waits until the monster's yaw is within the larger of 3 degrees and the given tolerance of the angle (both in degrees), or max_frames pass, then stops turning. Returns the frames waited."
   },
   "a0d8d8af25dcca22": {
    "name": "circle_or_dash_with_tornado",
@@ -29182,7 +29182,7 @@
     "target_dist",
     "angle"
    ],
-   "doc": "Walks 30 degrees to the right or left around the target, invulnerable during the middle of the step. a0 is the move speed."
+   "doc": "Turns to the target, then walks 30 degrees to the right or left around it at the same distance at the given move speed, taking no damage for up to 9 frames of the move before stopping and waiting for the motion to end. The waits before and during the move end early when the target is within 40 units and 45 degrees of the facing."
   },
   "a7b40362ea4960ac": {
    "name": "play_idle_motion_watching_target",
@@ -29434,7 +29434,7 @@
     "rot_z",
     "target_angle"
    ],
-   "doc": "Returns 1 if the target lies within half of arc radians of the facing direction shifted by offset."
+   "doc": "Meant to return 1 when the monster faces within arc/2 radians of the target direction shifted by offset, else 0. It is written in an old call numbering: the rotation read has no native at its number and does nothing, and the target angle read returns the monster's x position instead, so the result does not reflect the facing."
   },
   "aa1c1dd775becf9a": {
    "name": "explode_on_landing",
@@ -29537,7 +29537,7 @@
    "locals": [
     "stun_left"
    ],
-   "doc": "Shows the stun stars and waits until they are gone."
+   "doc": "Meant to show the stun stars and wait until they are gone. In this toolkit both calls use old native numbers that reach unrelated natives, so no stars are shown and the wait does not follow the stun."
   },
   "ab0f9bfcbdfdb202": {
    "name": "fire_rocket_barrage",
@@ -29966,7 +29966,7 @@
     "clear_dist",
     "result"
    ],
-   "doc": "Turns toward and walks to a point on a circle around the target."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. Only move_speed + stop_dist units ahead are probed: if less is clear, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "ad32b3666ef52555": {
    "name": "fight_close_range",
@@ -30034,7 +30034,7 @@
     "result",
     "unused_b"
    ],
-   "doc": "Turns to angle_deg, then walks dist units that way, until near the end or max_frames pass."
+   "doc": "Despite the parameter names, the first argument is the turn speed in degrees and the second the walk speed. Turns to the world heading angle_deg, then walks dist units along it (at least the walk speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "ad690663eae09434": {
    "name": "turn_toward_target_with_offset_chance",
@@ -30115,7 +30115,7 @@
    "locals": [
     "frames"
    ],
-   "doc": "Turns to the absolute angle in degrees at the given turn speed and waits until the turn is done."
+   "doc": "Turns to the absolute heading angle_deg at turn_speed_deg degrees per frame, wrapping both to the -180 to 180 range, and waits until the heading is reached or about 360 divided by the speed frames pass. Returns the frames waited."
   },
   "adef6cd6864b1184": {
    "name": "chase_target_flying",
@@ -30843,7 +30843,7 @@
     "clear_dist",
     "result"
    ],
-   "doc": "Turns toward and walks to a point on a circle around the target. Returns -1 if a wall is in the way."
+   "doc": "Turns to face the point radius units from the target at angle_deg around it (0 is the side facing this monster), then walks there at move_speed. Only move_speed + stop_dist units ahead are probed: if less is clear, the walk is cut to the clear distance, and -1 is returned without moving when that is under twice stop_dist. Otherwise waits up to max_frames and returns 1 once the target is within stop_dist, 2 when the walk ends, 0 on timeout, and stops moving."
   },
   "b26af16665246e50": {
    "name": "turn_and_slash_combo",
@@ -31797,7 +31797,7 @@
     "max_frames_copy",
     "tolerance_rad"
    ],
-   "doc": "Waits until the monster's yaw is within the tolerance of the given angle in degrees, the turn rate says it is on the shortest side, or max_frames pass. Returns the frames waited and stops turning."
+   "doc": "Waits until the monster's yaw is within the larger of 3 degrees and the given tolerance of the angle (both in degrees), or max_frames pass, then stops turning. Returns the frames waited."
   },
   "b8b6dca8910fd22e": {
    "name": "walk_random_direction",
@@ -31827,7 +31827,7 @@
     "result"
    ],
    "loose": "b8b6dca8910fd22e",
-   "doc": "Meant to turn up to angle_range degrees, but converts the random turn to radians twice, so it turns only 0 to about angle_range/57 degrees (always to the same side). If 100 units ahead are clear it walks base_dist plus move_speed plus a random amount up to dist_range; if less is clear but more than clearance it walks just the random amount; otherwise returns -1. Returns the wait_move_until_near result."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "b8c9ed1623a5b2f0": {
    "name": "choose_close_range_action",
@@ -31872,7 +31872,7 @@
     "unused_b"
    ],
    "loose": "eab224bb0a79d931",
-   "doc": "Turns to heading angle_deg, then walks dist units along it (at least move_speed + 1). Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
+   "doc": "Turns to the world heading angle_deg at turn_speed_deg, then walks dist units along it at move_speed (at least move_speed + 1). A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "b90d46c374ce73c2": {
    "name": "chase_target_in_steps",
@@ -32283,7 +32283,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle within angle_range and walks a random distance, giving up with -1 if the path ahead is clearer than clearance allows. Otherwise returns the result of wait_move_until_near."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "bb5fdaa4adb8a2b1": {
    "name": "walk_to_point_with_slams",
@@ -32570,7 +32570,7 @@
     "unused2",
     "unused3"
    ],
-   "doc": "Flies toward a point at a fixed height above the ground, stopping on arrival or collision."
+   "doc": "Flies in a straight line toward x, z at speed units per frame, aiming at height units above the ground under the monster at the start (y is ignored). Vertical motion stops for good once the monster would be 60 or more units above the ground, or at ground level. Each frame goes through wait_frame_checking_phase. Returns 1 within speed plus near_dist of the point, the check_flight_step result (-1 wall ahead, -2 too high or no ground) if a step is blocked, or 0 after max_frames."
   },
   "be068325cb7ff62c": {
    "name": "turn_toward_target_until_motion_progress",
@@ -32722,7 +32722,7 @@
     "turn_rad",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for a number of frames."
+   "doc": "Turns toward the target every frame for the given number of frames, then stops turning. Despite the parameter name, turn_speed_deg goes to the turn unconverted, so it is in radians per frame; the values callers give, such as 4.2, make the monster face the target almost at once."
   },
   "be8bc2ec784dbb93": {
    "name": "die_and_drop_loot",
@@ -33865,7 +33865,7 @@
    "locals": [
     "target_angle"
    ],
-   "doc": "Turns the monster to face the target immediately."
+   "doc": "Meant to turn the monster to face the target at once, but it is written in an old call numbering: the first call reads the monster's position and the second has no native at its number, so the monster does not turn at all."
   },
   "c5564712bd8b7798": {
    "name": "idle_around_target",
@@ -34419,7 +34419,7 @@
     "unused5",
     "result"
    ],
-   "doc": "Turns toward the target and walks straight ahead as far as the target is away, stopping within stop_dist of it. Returns -1 without moving if the first move_speed plus stop_dist units ahead are blocked."
+   "doc": "Turns to face the target, then walks straight along that heading as far as the target's distance. Returns -1 without moving when the clear distance ahead is under move_speed plus stop_dist, otherwise 1 if the target comes within stop_dist, 2 if the walk ends, 0 on timeout."
   },
   "c7ab45fd24d22bf2": {
    "name": "arc_toward_target_then_fuse",
@@ -34500,7 +34500,7 @@
     "target_speed"
    ],
    "loose": "c806437ad39d102f",
-   "doc": "Returns 1 when the target is within view_dist and inside the half_angle_deg cone around the monster's facing, or within hear_dist while moving faster than min_speed; else 0."
+   "doc": "Returns 1 when the target is closer than view_dist and the monster's yaw is within half_angle_deg of the direction to the target, or when the target is closer than hear_dist and moving faster than min_speed; else 0. The cone test does not wrap angles, so it can miss a target whose direction lies across the 180 degree seam from the monster's yaw."
   },
   "c82377e7fa00dab6": {
    "name": "wander_around_home",
@@ -35866,7 +35866,7 @@
    "locals": [
     "frames"
    ],
-   "doc": "Turns to the given angle in degrees at the given speed and waits until done."
+   "doc": "Turns to the absolute heading angle_deg at turn_speed_deg degrees per frame, wrapping both to the -180 to 180 range, and waits until the heading is reached or about 360 divided by the speed frames pass. Returns the frames waited."
   },
   "cf8bab4dbc87b56e": {
    "name": "read_attack_enabled",
@@ -37330,7 +37330,7 @@
    ],
    "loose": "d75811011174b748",
    "params": [],
-   "doc": "Stops the current turn by turning to the monster's present yaw at speed 0."
+   "doc": "Meant to stop the current turn by turning to the monster's present yaw at speed 0, but in this old numbering both calls land on no native, so it does nothing."
   },
   "d788981e9fbfc160": {
    "name": "turn_by_angle_and_wait",
@@ -37623,7 +37623,7 @@
     "target_angle"
    ],
    "loose": "d9727a6cbad405f3",
-   "doc": "Returns 1 when the monster's heading is within half_arc_deg of the target angle, otherwise 0."
+   "doc": "Returns 1 when the monster's heading is within half_arc_deg of the target angle, otherwise 0. The angle test does not wrap at plus or minus 180 degrees, so a target just across that line from the heading counts as outside the arc."
   },
   "d9914b6f70a4be29": {
    "name": "sidestep_invulnerable",
@@ -37697,7 +37697,7 @@
     "move_done",
     "dist"
    ],
-   "doc": "Waits for a move to end, stopping when the target is within stop_dist or after max_frames. Returns 1 if near or finished early, 2 if the move ended, 0 on timeout."
+   "doc": "Waits up to max_frames for a move_to walk, restoring life each frame. Returns 1 as soon as the target is within stop_dist, 2 when the walk reaches its point, 0 on timeout; stops moving on 1 or 2 but not on timeout."
   },
   "da0b3b5e1a5a3738": {
    "name": "wait_move_end_update",
@@ -38377,7 +38377,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle and walks a random distance, returning -1 if a wall is too close in that direction."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "de36274faca15191": {
    "name": "dash_step_right",
@@ -39702,7 +39702,7 @@
   "e5b3e295205eee37": {
    "name": "wait_frame_checking_death",
    "loose": "62f36cad4ea7a40b",
-   "doc": "Checks the death flag, then waits a frame. Used in place of a bare wait by the movement helpers."
+   "doc": "Waits one frame, but first, if monster variable 64 (the death flag) is set, plays the death sequence with the item drops and never returns. Used in place of a bare wait by the movement helpers."
   },
   "e5bdea2b6d0c9683": {
    "name": "wait_turn_watch_target",
@@ -40097,7 +40097,7 @@
    "locals": [
     "result"
    ],
-   "doc": "Turns to an absolute angle and waits until it is reached."
+   "doc": "Turns to the absolute heading angle_deg at turn_speed_deg degrees per frame, wrapping both to the -180 to 180 range, and waits until the heading is reached or about 360 divided by the speed frames pass. Returns the frames waited."
   },
   "e79873798bf7e8bc": {
    "name": "finish_throw_and_return_true",
@@ -40154,7 +40154,7 @@
     "move_end",
     "target_dist"
    ],
-   "doc": "Waits while a move order runs. Returns 1 when the target is within stop_dist or the move ends, 2 if movement was blocked, 0 on timeout."
+   "doc": "Waits up to max_frames for a move_to walk, checking for death each frame. Returns 1 as soon as the target is within stop_dist, 2 when the walk reaches its point, 0 on timeout; stops moving on 1 or 2 but not on timeout."
   },
   "e7bd3925f50d3cda": {
    "name": "back_step_and_cast",
@@ -40671,7 +40671,7 @@
     "unused_value",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for the given number of frames, then stops turning."
+   "doc": "Turns toward the target every frame for the given number of frames, then stops turning. Despite the parameter name, turn_speed_deg goes to the turn unconverted, so it is in radians per frame; the values callers give, such as 4.2, make the monster face the target almost at once."
   },
   "ea860b153d9dffb9": {
    "name": "turn_to_random_side_of_current_heading",
@@ -41675,7 +41675,7 @@
     "unused2",
     "unused3"
    ],
-   "doc": "Flies in a straight line to a point held ground_offset above the ground at the destination, for up to max_frames. Keeps the height within 45 of the ground; returns 1 on arrival, a collision code if blocked, 0 on timeout."
+   "doc": "Flies in a straight line toward target_x, target_z at speed units per frame, aiming at ground_offset above the ground under the monster at the start (target_y is ignored). Vertical motion stops for good once the monster would be 45 or more units above the ground, or at ground level. Returns 1 within speed plus tolerance of the point, the check_flight_step result (-1 wall ahead, -2 too high or no ground) if a step is blocked, or 0 after max_frames."
   },
   "f051f60625f17c4d": {
    "name": "wait_until_facing",
@@ -41749,7 +41749,7 @@
     "frames"
    ],
    "loose": "f0c664f37750f762",
-   "doc": "Turns to the absolute heading angle_deg at turn_speed_deg degrees per frame (using the old-numbered turn native), wrapping both to -180 to 180, and waits for the heading or about 360 divided by the speed frames. Returns the frames waited."
+   "doc": "Meant to turn to the absolute heading angle_deg at turn_speed_deg degrees per frame and wait until it is reached, but in this toolkit the turn call (and the heading read in wait_turn_to_angle) use old native numbers that do nothing, so the monster does not turn and the call mostly just waits up to about 360 divided by the speed frames. Returns the frames waited."
   },
   "f0e857067522bb65": {
    "name": "run_monster_ai",
@@ -42013,12 +42013,12 @@
    ],
    "loose": "6077fb3d185a1d7b",
    "params": [],
-   "doc": "Runs only while the player is disguised as a monster: hovers in idle for the monster's kind."
+   "doc": "If the player is disguised as any monster, runs hover_idle_while_player_disguised until the disguise ends: the monster settles to hover just above the ground and turns to face the target whenever it is more than 90 degrees off. Does nothing otherwise."
   },
   "f2c29e6b7ec02200": {
    "name": "wait_frame_checking_death",
    "loose": "b1285b084520a654",
-   "doc": "Checks the death flag and waits one frame. Used in place of a plain wait throughout this script."
+   "doc": "Waits one frame, but first, if monster variable 64 (the death flag) is set, plays the death sequence and never returns. Used in place of a plain wait throughout this script."
   },
   "f2c82dde190bd7a7": {
    "name": "wander_when_idle",
@@ -42410,7 +42410,7 @@
     "extra_dist",
     "pos"
    ],
-   "doc": "Dodge: turns to the target, then backs away to a point 100 to 110 units farther from it, taking no damage while the walk-back motion plays."
+   "doc": "Dodge: walks while turning to face the target, then plays the walk-back motion taking no damage for its first 24 frames. At frame 17 it starts moving at move_speed toward a point 100 to 110 units farther from the target, but stops moving at frame 24, so it covers only about 7 frames of movement. Then waits for the motion to end and stands."
   },
   "f49ef170a953e14e": {
    "name": "swipe_at_target",
@@ -42978,7 +42978,7 @@
     "move_done",
     "dist"
    ],
-   "doc": "Waits up to max_frames for the current move to end. Returns 1 as soon as the target is closer than stop_dist, 2 when the move ends, 0 on timeout."
+   "doc": "Meant to wait up to max_frames for a move_to walk, returning 1 when the target is within stop_dist, 2 when the walk ends and 0 on timeout. In this toolkit the move-end, distance and stop calls use old native numbers that reach unrelated natives, so the result does not track the walk and the monster is never stopped."
   },
   "f814ab4f138d5492": {
    "name": "walk_around_point",
@@ -43717,7 +43717,7 @@
     "turn_speed",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for the given number of frames, then stops turning."
+   "doc": "Turns toward the target every frame for the given number of frames, then stops turning. The speed goes to the turn unconverted, so it is in radians per frame; the values callers give, such as 5, make the monster face the target almost at once."
   },
   "fcb996335663d349": {
    "locals": [
@@ -43876,7 +43876,7 @@
     "unused_b",
     "result"
    ],
-   "doc": "Turns by a random angle and walks a random distance that way. Returns -1 if a wall is too close ahead."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "fda4d97b73189f44": {
    "name": "lunge_at_target",
@@ -43942,7 +43942,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle and walks a random distance, unless a wall is too close ahead (returns -1)."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side (under 57 it does not turn). If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. clearance is also the stop distance of the wait: returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "fe408c74da047cc7": {
    "name": "fight_by_range_until_target_leaves",
@@ -44061,7 +44061,7 @@
     "target_angle"
    ],
    "loose": "fe7fb0a82019db97",
-   "doc": "Starts turning toward the target at turn_speed and returns without waiting."
+   "doc": "Starts turning toward the target at turn_speed radians per frame and returns without waiting."
   },
   "fe8d846e42d3dda8": {
    "name": "fight_target_by_distance",

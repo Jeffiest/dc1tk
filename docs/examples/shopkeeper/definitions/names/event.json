@@ -1,0 +1,34 @@
+{
+ "functions": {
+  "2d40b2d56afadce1": {
+   "doc": "Puts the shopkeeper behind her counter.",
+   "loose": "66f26960d9f24081"
+  },
+  "6d03981d1ce7d88a": {
+   "name": "give_gift",
+   "doc": "Hands over the free item, names it in the message and marks it given in the save.",
+   "loose": "8295e3a4bb0fefac"
+  },
+  "835546f55903419f": {
+   "name": "say",
+   "params": [
+    "line"
+   ],
+   "locals": [
+    "closed"
+   ],
+   "doc": "Shows a message and waits until the player closes it.",
+   "loose": "835546f55903419f"
+  },
+  "d467a082c763e9f6": {
+   "name": "on_talk",
+   "locals": [
+    "bridge_repaired",
+    "friendship",
+    "gift_given"
+   ],
+   "doc": "Talks to the player: the bridge flag, the saved friendship counter and the gift flag pick the line, and the visit count adds a remark from the third talk on.",
+   "loose": "9888292404b850ae"
+  }
+ }
+}

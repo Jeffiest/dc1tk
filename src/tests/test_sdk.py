@@ -293,3 +293,20 @@ def test_entries_of_loaded_banks_take_their_bank_names():
     assert shown[1]["args"][1] == var("SE_SP_000_FANFARE")
     assert shown[3]["args"][1] == var("SE_EV_283_000_DOOR")
     assert shown[5]["args"][2] == var("SE_EV_283_000_DOOR")
+
+
+def test_banks_reach_entries_through_parameters_and_out_parameters():
+    found = {"enums": {"se_sp_000_pal": {0: "SE_SP_000_FANFARE"}}, "constants": {}, "sound_set_banks": {}}
+    var = lambda name: {"kind": "var", "name": name}
+    load = {"kind": "native", "name": "load_sound",
+            "args": [var("SND_PORT_MENU"), {"kind": "string", "text": "snd2/sp/sp_000.snd"}, var("out")]}
+    loader = {"kind": "function", "name": "load_fanfare", "params": [{"name": "out", "array": True}], "locals": [],
+              "body": [load]}
+    player = {"kind": "function", "name": "play_fanfare", "params": [{"name": "bank", "array": False}], "locals": [],
+              "body": [{"kind": "native", "name": "play_se", "args": [var("bank"), {"kind": "int", "value": 0}]}]}
+    caller = {"kind": "function", "name": "on_start", "params": [], "locals": [{"name": "id"}],
+              "body": [{"kind": "call", "name": "load_fanfare", "args": [{"kind": "addr", "target": var("id")}]},
+                       {"kind": "call", "name": "play_fanfare", "args": [var("id")]}]}
+    known = sdk.program_sounds([loader, player, caller], found)
+    shown = sdk.named_sounds(player["body"], found, sdk.sound_banks(player, known), sdk.sound_flow(player, known))
+    assert shown[0]["args"][1] == var("SE_SP_000_FANFARE")

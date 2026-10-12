@@ -1377,7 +1377,7 @@ extern void init_event(void) NATIVE(8);
 // loads the model without its outline. A single argument is instead an id of a stored argument
 // list holding the first four values.
 // Original name: _LOAD_CHARA.
-extern void load_chara(enum memory_stack stack_no, chara_pack pack_path, string cfg_name, int chara, OPTIONAL(int no_outline)) NATIVE(9);
+extern void load_chara(enum memory_stack stack_no, chara_pack pack_path, string cfg_name, chara_slot chara, OPTIONAL(int no_outline)) NATIVE(9);
 
 // With one argument, makes that scene character active so it is stepped and drawn. With two
 // arguments, the first is on/off and the second the character: 0 deactivates it, non-zero
@@ -1425,7 +1425,7 @@ extern void delete_chara(chara_slot chara, OPTIONAL(int delete_texture)) NATIVE(
 // cfg_name names the entry inside the pack (such as "info.cfg"). A single argument is instead an
 // id of a stored argument list.
 // Original name: _LOAD_MOTION.
-extern void load_chara_motion(enum memory_stack stack_no, chara_pack pack_path, string cfg_name, int chara) NATIVE(19);
+extern void load_chara_motion(enum memory_stack stack_no, chara_pack pack_path, string cfg_name, chara_slot chara) NATIVE(19);
 
 // Requests a jump to another map once the event ends. map is a map number or a map name string;
 // jump_point is the entry point (-1 for the default) and event_no is the event started on arrival

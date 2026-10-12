@@ -457,7 +457,7 @@
    ],
    "loose": "024f55d5f8bf31c0",
    "locals": [],
-   "doc": "Plays voice stream wav number voice on stream 1 once it is ready, lip-syncing for the given number of frames, then closes the stream."
+   "doc": "Plays voice stream wav number voice on stream 1 once it is ready, with no message window, running the lip sync until the voice ends (frames -1, the usual call) or for frames frames scaled by 50/60, then closes the stream."
   },
   "0264bfc593c8f9a5": {
    "name": "give_auction_money_to_stewart",
@@ -1087,7 +1087,7 @@
     "standby_busy"
    ],
    "loose": "06ae1e56b8007fea",
-   "doc": "Plays one voiced line: loads and prepares stream 1 for voice, shows the matching message, plays the stream with lip sync for frames frames, then closes the window and stream."
+   "doc": "Plays one voiced line: loads and prepares stream 1 for voice, shows the matching message in window 0 and plays the stream with lip sync until the voice ends (frames -1) or for frames frames, a 60 Hz count scaled by 50/60. The player cannot skip it. Then closes the window and stream."
   },
   "06b8a080bd1c2a1d": {
    "name": "play_cedric_hint_ending_shot",
@@ -3821,7 +3821,7 @@
     "choice"
    ],
    "loose": "9a971df08e3e7e9d",
-   "doc": "Asks the player whether to start Blinkhorn's race, with the first choice agreeing. Declining shows the wait-for-you reply, sets counter 7 to 0 and returns 0. Accepting shows the start call, starts the on-screen stopwatch and sets counter 7 to 1."
+   "doc": "Asks whether to start Blinkhorn's race, with the first choice agreeing; cancelling counts as declining. Declining shows the come-back-later reply, sets the NPC standing, ends the talk, sets counter 7 to 0 and returns 0. Accepting shows the start call, ends the talk, starts the on-screen stopwatch and sets counter 7 to 1, returning no value."
   },
   "15e9053e9a49e428": {
    "name": "play_ixion_briefing_only",
@@ -5077,7 +5077,7 @@
    ],
    "loose": "1b9ac884b824c003",
    "params": [],
-   "doc": "Shopkeeper greeting before the shop menu. Reads which NPC is talking and shows a greeting that depends on the NPC and language, setting a first-meeting flag for some of them, then opens the shop."
+   "doc": "Shopkeeper greeting before the shop menu. Reads which NPC is talking; in Japanese it shows a line for that NPC and sets the first-meeting flag of the three stand-in shopkeepers, while in any other language it only says \"Welcome.\" and sets no flag. Then runs the NPC talk and opens that NPC's shop menu."
   },
   "1c04416cb9679c0f": {
    "name": "preview_twin_intro_scene",
@@ -5413,7 +5413,7 @@
     "choice"
    ],
    "loose": "9a971df08e3e7e9d",
-   "doc": "Sheriff Blinkhorn's race offer: asks whether to try. Declining sets counter 7 to 0 and returns 0; accepting starts the on-screen stopwatch, sets counter 7 to 1 and ends the talk."
+   "doc": "Asks whether to start Blinkhorn's race, with the first choice agreeing; cancelling counts as declining. Declining shows the come-back-later reply, sets the NPC standing, ends the talk, sets counter 7 to 0 and returns 0. Accepting shows the start call, ends the talk, starts the on-screen stopwatch and sets counter 7 to 1, returning no value."
   },
   "1e169807d9667a83": {
    "name": "play_palace_returned_to_present_scene",
@@ -5977,7 +5977,7 @@
    ],
    "loose": "20a68df882d34c8f",
    "locals": [],
-   "doc": "Shows a message with a speech bubble from speaker to listener and runs a choice with choice_count options and the starting cursor. Returns the chosen option."
+   "doc": "Waits two frames, shows message mes_no in window as a bubble from speaker to listener and runs run_message_choice with choice_count options and the cursor on line cursor. Returns the chosen line, or -1 if the player cancels."
   },
   "20a6dac47062f1d0": {
    "name": "go_to_s31_after_second_phase",
@@ -6327,7 +6327,7 @@
    ],
    "loose": "228c1b291a4f0c96",
    "locals": [],
-   "doc": "Shows the voice message text in the dialog window and runs the voice message window for the same message, so the line is shown while the voice plays."
+   "doc": "Plays voice line voice with its text in message window 0: lays out message number voice, opens and preloads the voice stream, shows the window while the voice plays and waits until the player confirms the last page (with captions off, until the voice ends), then closes the window and the stream."
   },
   "229b435d801aea66": {
    "name": "setup_event_340_actors",
@@ -7140,7 +7140,7 @@
     "yaw"
    ],
    "loose": "ac8903a2b54bafd0",
-   "doc": "Turns a character in place to target_yaw over a time proportional to the angle, using the walk motion when the turn is larger than 0.5 radian, then returns to stand. The final call only reads the rotation and does not set it."
+   "doc": "Turns a character in place toward target_yaw at about 8 frames per radian (no frames when already facing it), using the walk motion when the turn is larger than 0.5 radian, then returns to stand. The final call only reads the rotation and does not set it, so the character stops one step short of target_yaw."
   },
   "260db275bfcb4bc5": {
    "name": "play_stream_message",
@@ -7798,7 +7798,7 @@
    ],
    "loose": "28d4c138665ee456",
    "locals": [],
-   "doc": "Runs run_voice_lipsync on window for frames frames (or until the voice stream ends when frames is -1), without closing the window early."
+   "doc": "Runs run_voice_lipsync on window for frames frames (or until the voice stream ends when frames is -1), without closing the window early, then stops stream 1."
   },
   "28ed2bce9cca794c": {
    "name": "start_paznos_launch_on_story",
@@ -8541,7 +8541,7 @@
    "loose": "2e51f1608c502aee",
    "params": [],
    "locals": [],
-   "doc": "Prepares a floor warp: removes the Spheda minigame, fades out at once and waits one frame."
+   "doc": "Prepares a floor warp: resets the event system with init_event, deletes the Spheda ball characters, fades out at once and waits one frame."
   },
   "2e9ecb46355b3424": {
    "name": "play_e105c_laugh_talk",
@@ -8855,6 +8855,19 @@
     "menu_result_3"
    ],
    "doc": "Plays the dungeon BGM, opens the dungeon map menu for dungeon 2, stores the chosen floor and starts it."
+  },
+  "30854034689fa3c8": {
+   "name": "greet_and_open_shop",
+   "locals": [
+    "talk_chara",
+    "talk_chara_id",
+    "language",
+    "met_baker",
+    "met_sword_sister",
+    "met_priest_friend"
+   ],
+   "doc": "Shopkeeper greeting before the shop menu. Reads which NPC is talking; in Japanese it shows a line for that NPC and sets the first-meeting flag of the three stand-in shopkeepers, while in any other language it only says \"Welcome.\" and sets no flag. Then runs the NPC talk and opens that NPC's shop menu.",
+   "loose": "1b9ac884b824c003"
   },
   "3092d1dc656d1234": {
    "name": "ask_to_leave_village",
@@ -9302,7 +9315,7 @@
     "angle_diff"
    ],
    "loose": "4827329806b80602",
-   "doc": "Conversation staging: turns the player and the NPC to face each other (walking if they are not already facing), waits 20 frames, runs the NPC's talk with lip sync, then turns the NPC back to its original facing. Second parameter is unused."
+   "doc": "Conversation staging: turns the player and the NPC to face each other (walking if they are not already facing), waits 20 frames, then shows the text already laid out in message window 0 (message -1 lays out nothing, so call show_message first) as a bubble from the NPC with lip sync and waits for the player to dismiss it, then turns the NPC back to its original facing. Second parameter is unused."
   },
   "337994e926d384d6": {
    "name": "start_boss_floor",
@@ -9991,7 +10004,7 @@
     "result"
    ],
    "loose": "37f4469395742782",
-   "doc": "Shows message mes_no in the window, moves it to slot pos and places its bubble at x, y. Returns the value the message call reports."
+   "doc": "Shows message mes_no in the window (-1 lays out nothing, used to open an empty window before a voice line or menu), moves it to slot pos and places its bubble at screen point x, y. Returns the number of characters laid out."
   },
   "380c8054e0040f4d": {
    "name": "setup_s06_map",
@@ -10642,7 +10655,7 @@
     "differs"
    ],
    "loose": "e0085653ca7aef8f",
-   "doc": "Turns the player and the NPC to face each other, plays the NPC's talk motion (plain for style 0, flustered for style 1), shows the message and turns the NPC back to its original facing."
+   "doc": "Conversation staging: turns the player and the NPC to face each other (walking if they are not already facing), waits 20 frames, then shows the text already laid out in message window 0 (message -1 lays out nothing, so call show_message first) as a bubble from the NPC with lip sync and waits for the player to dismiss it, then turns the NPC back to its original facing. Second parameter is unused."
   },
   "3c2504f7bfa7814b": {
    "name": "play_walk_ahead_and_hint_scene",
@@ -11584,7 +11597,7 @@
     "orig_yaw",
     "player"
    ],
-   "doc": "Starts a conversation with an NPC, shows one message and ends it."
+   "doc": "Runs a full NPC talk: turns the player and npc to face each other (with set_camera, framing a talk camera with a crossfade), shows message mes_no in window 0 with a bubble from npc to player and waits for the player to dismiss it, then sets npc standing and ends the event with finish_event (crossfading again with set_camera). With restore set, npc is first turned back to the yaw it had before the talk."
   },
   "406c58f2e6a5c929": {
    "name": "play_robot_scene_then_jump_to_s30",
@@ -12373,7 +12386,7 @@
     "partner_name_mes"
    ],
    "loose": "44e4eeb56d743e3d",
-   "doc": "Shows system message 50 with the given party character's name filled in. Always uses message 50, since the partner variant is unreachable. Returns 1."
+   "doc": "Shows system message 50 in window 1 with the given party character's name filled in, waits for the player to dismiss it and closes it. Always uses message 50, since the partner variant is unreachable. Returns 1."
   },
   "44ff2e2e8056b559": {
    "name": "arrive_from_paus_house",
@@ -14624,7 +14637,7 @@
     "npc_yaw"
    ],
    "loose": "d30c636876816665",
-   "doc": "Turns the player and the NPC toward each other with a walk and a gradual rotation. If set_camera is nonzero it also frames a talk camera with a crossfade."
+   "doc": "Turns the player and the NPC in place toward each other over 8 frames per radian of the larger turn, playing the walk motion for whichever turns half a radian or more, then leaves the player standing and the NPC in its talk motion. If set_camera is nonzero it first frames a talk camera with a crossfade."
   },
   "511d44fdc85bd6a2": {
    "name": "ask_to_leave_floor",
@@ -14664,7 +14677,7 @@
     "steps"
    ],
    "loose": "90471cea25bb8115",
-   "doc": "Turns chara smoothly to target_yaw over 10 frames, using the walk motion for a turn of more than half a radian and the stand motion otherwise, then sets the exact yaw."
+   "doc": "Turns chara smoothly to target_yaw in 10 steps over 11 frames, using the walk motion for a turn of more than half a radian and the stand motion otherwise, then sets the exact yaw. The motion is left as set, and handle 0 is left bound to chara."
   },
   "514348e9c09f7122": {
    "name": "choose_dungeon_from_gate",
@@ -16206,7 +16219,7 @@
    ],
    "loose": "5aa6c3f2cd2d43e1",
    "locals": [],
-   "doc": "Plays a voiced line with no message window: opens and prepares stream 1 for voice, plays it for frames frames of voice timing and closes it."
+   "doc": "Plays a voiced line with no message window: opens and prepares stream 1 for voice, runs the lip sync until the voice ends (frames -1, the usual call) or for frames frames, then stops and closes the stream."
   },
   "5aa902c1196e83b4": {
    "name": "play_palace_returned_scene",
@@ -16420,7 +16433,7 @@
     "running"
    ],
    "loose": "5bddbaa2cf80a888",
-   "doc": "Runs lip sync and the talk motion for a message window while stream 1 plays, switching mouth animation on when the stream is audible. Ends after frames frames, or when the stream stops if frames is -1, and closes the window at close_frame. Returns the frames elapsed."
+   "doc": "Runs lip sync and the talk motion for a message window while stream 1 plays, switching the mouth animation with the stream's audible state and hiding the window prompt until it ends. frames is a 60 Hz count scaled by 50/60; it ends after that many frames, or when the stream stops if frames is -1. A positive close_frame is ignored: because of a bug it is replaced by the scaled frames times 50/60, so the window closes at that frame instead (and never early when frames is -1). Does not stop the stream. Returns the frames elapsed."
   },
   "5bf0580963c6a439": {
    "name": "get_stick_vertical_direction",
@@ -16747,7 +16760,7 @@
    ],
    "loose": "5de7a533c836f8da",
    "locals": [],
-   "doc": "Runs play_lipsync_timed for frames frames and leaves closing the window to the caller."
+   "doc": "Runs play_lipsync_timed on window for frames frames (-1 runs until the voice stream ends), which then stops the stream. Leaves closing the window to the caller."
   },
   "5de8d80f19e320d7": {
    "name": "play_shot",
@@ -17315,7 +17328,7 @@
     "saved_okuri"
    ],
    "loose": "615efa04455fbedd",
-   "doc": "Plays a voiced line: opens the voice stream, shows the message with lip sync for the given frames, holds for hold_frames (scaled from 60 to 50 Hz) and closes the window. Restores the message prompt setting around the lip sync."
+   "doc": "Plays a voiced line in window 0: opens and plays the voice stream, shows the message with lip sync until the voice ends (frames -1) or for frames frames (scaled by 50/60), restores the message prompt, then holds for hold_frames and closes the stream and window. hold_frames is scaled by 50/60 twice (here and in wait_frames) plus one frame, so 10 waits 7 frames. The prompt is left off afterwards."
   },
   "6182e094b130134d": {
    "name": "warp_through_time_gate",
@@ -19919,7 +19932,7 @@
    ],
    "loose": "70ac87ed762ed115",
    "locals": [],
-   "doc": "Waits until the stream is ready, then plays it."
+   "doc": "Waits for the opened event voice stream to finish opening, prepares it with prepare_stream and waits for that too, then plays it. Call it after open_stream or open_stream_wav, without preparing the stream yourself."
   },
   "70b5255eef94a065": {
    "name": "setup_ball_stance",
@@ -20582,7 +20595,7 @@
     "standby_busy"
    ],
    "loose": "749394616698ee70",
-   "doc": "Plays a voice line with a message window: opens the voice wav on stream 1, waits for it to be ready, shows the window while the stream plays through run_voice_message, then closes both."
+   "doc": "Plays voice line voice in message window 0: opens and preloads the voice stream, opens the window on the text it already holds (message -1 lays out nothing, so lay the text out first with show_message, as play_voice_message does), plays the voice and waits through run_voice_message until the player confirms or, with captions off, the voice ends, then closes the window and the stream."
   },
   "7498384b7c61f70b": {
    "name": "hide_cedric_and_exit_to_m01",
@@ -22077,7 +22090,7 @@
    ],
    "loose": "308c734c6fab7d63",
    "locals": [],
-   "doc": "Runs the game over sequence with no message (-1) and returns its result. revive is passed through."
+   "doc": "Runs the game over sequence with no voice line (voice -1) and returns its result. revive is passed through."
   },
   "7db19ed9d40ea1c4": {
    "name": "play_beam_volley_then_go_to_s70",
@@ -22183,7 +22196,7 @@
     "choice"
    ],
    "loose": "9a971df08e3e7e9d",
-   "doc": "Asks whether to start Blinkhorn's race. Declining ends the talk and sets counter 7 to 0; accepting starts the stopwatch and sets counter 7 to 1."
+   "doc": "Asks whether to start Blinkhorn's race, with the first choice agreeing; cancelling counts as declining. Declining shows the come-back-later reply, sets the NPC standing, ends the talk, sets counter 7 to 0 and returns 0. Accepting shows the start call, ends the talk, starts the on-screen stopwatch and sets counter 7 to 1, returning no value."
   },
   "7e2a996e6636f7d4": {
    "name": "play_floor_clear_scene",
@@ -22309,7 +22322,7 @@
     "result"
    ],
    "loose": "7eae5483eac109a9",
-   "doc": "Returns whether the given pad button is pressed; a thin wrapper over check_pad_button."
+   "doc": "Returns the state of logical pad button button (0 to 127, a binding number rather than a pad bit), nonzero when it fires this frame; a thin wrapper over check_pad_button."
   },
   "7eaf2f7531419c80": {
    "name": "play_opening_town_run_scene",
@@ -23094,7 +23107,7 @@
     "choice"
    ],
    "loose": "8345c6354b3bf01d",
-   "doc": "Opens message mes_no at the given position, runs a choice list of choice_count entries starting on the cursor entry, clears the window slot and returns the chosen index."
+   "doc": "Opens message mes_no in window at the given position, runs the choice menu with choice_count options and the cursor on cursor, then clears the message slot. Returns the chosen line, or -1 when the player cancels."
   },
   "8348e9d4093d28f3": {
    "name": "play_gundor_departure_and_leave_for_heim_rada",
@@ -23240,7 +23253,7 @@
     "mode"
    ],
    "loose": "83bbea2881b6bd37",
-   "doc": "Runs a choice cursor in a message window: starting at cursor, moves it with the stick or d-pad within choice_count rows, plays cursor sounds, confirms on the confirm button and closes the window. Returns the chosen row, or -1 when cancelled unless no_cancel is set."
+   "doc": "Runs a choice cursor in a message window: shows the text at once, waits for the window to be ready, then moves the cursor with the stick or d-pad (left and right in window mode 5, up and down otherwise), with a sound per move, until confirm, and closes the window. cursor and the result are window line numbers; moves keep the cursor between the window's first selectable line and choice_count - 1 lines below it. Cancel closes the window and returns -1 unless no_cancel is set, when it only plays the cancel sound."
   },
   "83c06803006c0aa0": {
    "name": "open_spheda_menu_and_start_course",
@@ -25841,7 +25854,7 @@
     "frames"
    ],
    "loose": "94459a542307e5d2",
-   "doc": "Waits for message input with lip sync on, and returns the frames waited. extra_pressed[0] is set to 1 when the optional extra button (1 or 2) is what ended the message."
+   "doc": "Waits until the player dismisses the message in window, with lip sync on: a press during printing shows the text at once, a press at a page break turns the page, and confirm or cancel on the fully shown last page ends the wait. With extra_button 1 Square, or with 2 Select, also ends it, and extra_pressed[0] is then 1 (otherwise 0). Returns the frames waited."
   },
   "9448d10b9ab8dbfa": {
    "name": "handle_locked_chest",
@@ -26067,7 +26080,7 @@
     "frames_used"
    ],
    "loose": "958fb6424c8f5c1d",
-   "doc": "Opens a message window and waits up to the given number of frames for it to close, then clears the message slot. Returns the frames waited."
+   "doc": "Opens message mes_no in window at screen slot pos with its bubble at x, y, then waits for the player to dismiss it for at most frames frames (scaled by 50/60 for PAL), closes the window and clears its slot. Returns the frames waited."
   },
   "959a7e6dd3cb981b": {
    "name": "open_overflow_menu_if_full",
@@ -26142,7 +26155,7 @@
     "choice"
    ],
    "loose": "9a971df08e3e7e9d",
-   "doc": "Sheriff Blinkhorn's race offer: asks whether to try. Declining sets counter 7 to 0 and returns 0; accepting starts the on-screen stopwatch, sets counter 7 to 1 and ends the talk."
+   "doc": "Asks whether to start Blinkhorn's race, with the first choice agreeing; cancelling counts as declining. Declining shows the come-back-later reply, sets the NPC standing, ends the talk, sets counter 7 to 0 and returns 0. Accepting shows the start call, ends the talk, starts the on-screen stopwatch and sets counter 7 to 1, returning no value."
   },
   "95e48aeaeca4c67e": {
    "name": "talk_parn_after_joining",
@@ -26295,7 +26308,7 @@
     "choice"
    ],
    "loose": "9a971df08e3e7e9d",
-   "doc": "Sheriff Blinkhorn's race offer: asks whether to try. Declining sets counter 7 to 0 and returns 0; accepting starts the on-screen stopwatch, sets counter 7 to 1 and ends the talk."
+   "doc": "Asks whether to start Blinkhorn's race, with the first choice agreeing; cancelling counts as declining. Declining shows the come-back-later reply, sets the NPC standing, ends the talk, sets counter 7 to 0 and returns 0. Accepting shows the start call, ends the talk, starts the on-screen stopwatch and sets counter 7 to 1, returning no value."
   },
   "96aacce5569d21f4": {
    "name": "resume_energy_pack_request",
@@ -27084,7 +27097,7 @@
     "step",
     "steps"
    ],
-   "doc": "Turns the player and the NPC toward each other over a number of frames proportional to the angle, using walk or talk motions, optionally setting a conversation camera."
+   "doc": "Resets the event system with init_event and binds handle 0 to the NPC, then turns the player and the NPC in place toward each other over 8 frames per radian of the larger turn, playing the walk motion for whichever turns half a radian or more, and leaves the player standing and the NPC in its talk motion. If set_camera is nonzero it first frames a talk camera with a crossfade."
   },
   "9ac2af83d6a2cfff": {
    "name": "play_ticket_scene_and_return",
@@ -27118,7 +27131,7 @@
     "busy_standby"
    ],
    "loose": "9aef2c3837b3033e",
-   "doc": "Plays a voice line from a stream with its text shown, for the given frames, then closes the window and stream."
+   "doc": "Plays voice stream voice in message window 0 with the message of the same number shown in slot 8, runs the lip sync for frames frames (-1 waits until the stream ends), then closes the window and stream. Takes no player input."
   },
   "9aefefd5c0945d2d": {
    "name": "ask_to_go_next_floor",
@@ -27705,7 +27718,7 @@
    ],
    "loose": "9e9528ffa3135d68",
    "locals": [],
-   "doc": "Shows message mes_no in window as a bubble from speaker to listener and runs the choice menu with choice_count options and the cursor on cursor. Returns the chosen index."
+   "doc": "Waits two frames, shows message mes_no in window as a bubble from speaker to listener and runs run_message_choice with choice_count options and the cursor on line cursor. Returns the chosen line, or -1 if the player cancels."
   },
   "9eb1eb6937732e86": {
    "name": "take_gate_exit_2",
@@ -29180,7 +29193,7 @@
     "snd_id"
    ],
    "loose": "a75e806bb9a86827",
-   "doc": "Shows the item received message: message 10 for one, message 11 with the count for more, with the item name filled in and the system jingle. Returns 0 without showing anything when count is not positive, otherwise 1."
+   "doc": "Shows the item received message in window 1: message 10 for one, message 11 with the count for more, with the item name filled in and the system jingle, then waits for the player to dismiss it and closes it. Returns 0 without showing anything when count is not positive, otherwise 1."
   },
   "a774ea5d04ff530f": {
    "name": "show_emperor_griffon_image",
@@ -32557,7 +32570,7 @@
     "choice"
    ],
    "loose": "b8a7a2dba545c3e7",
-   "doc": "Asks a yes/no question with message question + 70 and the item name filled in. Returns the choice, with the cursor starting on the second option."
+   "doc": "Asks a yes/no question in window 1 with message question + 70 and the item's name filled in, with the cursor starting on the second option. Returns 0 for the first option, 1 for the second, or -1 when the player cancels."
   },
   "b8cd3deda20fc749": {
    "name": "start_d03_dungeon_if_player_agrees",
@@ -33543,7 +33556,7 @@
     "confirm"
    ],
    "loose": "be08d5f62832f1e6",
-   "doc": "Polls the buttons while a voice message window is open. Confirm or cancel plays the matching sound; on a finished page (state 5) it advances, at the end (state 3) it returns 1, and during playback it speeds the text up and sets lip_state[0] to 2. Returns 0 otherwise."
+   "doc": "Polls the buttons while a voice message window is open. Confirm or cancel plays the matching sound; at a page break (state 5) it turns the page, when the message is fully shown (state 3) it returns 1, and while text is still revealing it shows the rest at once, idles the lip sync motion and sets lip_state[0] to 2. Returns 0 otherwise. Unlike poll_message_input it does not stop the voice stream."
   },
   "be1a585ab46621f1": {
    "name": "play_event_109",
@@ -33832,7 +33845,7 @@
     "silent",
     "running"
    ],
-   "doc": "Runs the voice lip sync on the message window until the voice stream stops or the frame limit passes, optionally closing the window at close_frame. Returns the frames elapsed."
+   "doc": "Runs the voice lip sync on the message window, hiding the window prompt meanwhile. With frames -1 it runs until the voice stream stops; otherwise it runs exactly frames frames whether or not the stream has stopped. Closes the window at close_frame (-1 for never). Does not stop the stream. Returns the frames elapsed."
   },
   "c0052c572bb38ddf": {
    "name": "load_moonflower_beam_actors",
@@ -34410,7 +34423,7 @@
     "choice"
    ],
    "loose": "9a971df08e3e7e9d",
-   "doc": "Asks whether to start Blinkhorn's race. Declining ends the talk and sets counter 7 to 0; accepting starts the stopwatch and sets counter 7 to 1."
+   "doc": "Asks whether to start Blinkhorn's race, with the first choice agreeing; cancelling counts as declining. Declining shows the come-back-later reply, sets the NPC standing, ends the talk, sets counter 7 to 0 and returns 0. Accepting shows the start call, ends the talk, starts the on-screen stopwatch and sets counter 7 to 1, returning no value."
   },
   "c2c380d204a66eed": {
    "name": "enter_room_3_and_fight",
@@ -35057,7 +35070,7 @@
     "player"
    ],
    "loose": "95e6dc3a4d98772e",
-   "doc": "Runs a full NPC talk: starts the talk (turning the NPC and optionally the camera), shows the message mes_no with a bubble between NPC and player, and finishes the talk, restoring the NPC's facing."
+   "doc": "Runs a full NPC talk: turns the player and npc to face each other (with set_camera, framing a talk camera with a crossfade), shows message mes_no in window 0 with a bubble from npc to player and waits for the player to dismiss it, then sets npc standing and ends the event with finish_event (crossfading again with set_camera). With restore set, npc is first turned back to the yaw it had before the talk."
   },
   "c5bcdecf2ae3d763": {
    "name": "setup_train_car_scene",
@@ -35827,7 +35840,7 @@
     "button3"
    ],
    "loose": "c93c3c57006fe951",
-   "doc": "Reads one frame of message input. Returns 0 while nothing happens, 1 when confirm or cancel ends a finished message, and 2 or 3 when the optional extra button (1 for Square, 2 for Select) ends it. Pressing on a page waiting for input turns the page; pressing during text printing skips the printing. Also toggles the lip sync when no voice is playing."
+   "doc": "Reads one frame of message input without waiting. Returns 0 while nothing happens, 1 when confirm or cancel ends a fully shown message, and 2 or 3 when the optional extra button (1 for Square, 2 for Select) ends it. Pressing at a page break turns the page; pressing while text is still revealing shows it at once and stops any playing voice stream. Also idles the lip sync when no voice is playing."
   },
   "c9509e1c0e9dcddd": {
    "name": "trigger_defeat_sequence",
@@ -38174,7 +38187,7 @@
     "mode"
    ],
    "loose": "d5adcf0fc6c1694e",
-   "doc": "Runs a choice cursor in a message window: starting at cursor, moves it with the stick or d-pad within choice_count rows, plays cursor sounds, confirms on the confirm button and closes the window. Returns the chosen row, or -1 when cancelled unless no_cancel is set."
+   "doc": "Runs a choice cursor in a message window: shows the text at once, waits for the window to be ready, then moves the cursor with the stick or d-pad (left and right in window mode 5, up and down otherwise), with a sound per move, until confirm, and closes the window. cursor and the result are window line numbers; moves keep the cursor between the window's first selectable line and choice_count - 1 lines below it. Cancel closes the window and returns -1 unless no_cancel is set, when it only plays the cancel sound."
   },
   "d5b0ac3e5a8ef686": {
    "name": "talk_to_man_praising_palm_brinks",
@@ -38197,7 +38210,7 @@
     "choice"
    ],
    "loose": "d5b1d07336169e51",
-   "doc": "Opens message mes_no in window at the given position, runs the choice menu with choice_count options and the cursor on cursor, clears the message slot and returns the chosen index."
+   "doc": "Opens message mes_no in window at the given position, runs the choice menu with choice_count options and the cursor on cursor, then clears the message slot. Returns the chosen line, or -1 when the player cancels."
   },
   "d5c1ed66fb74ec1c": {
    "name": "cut_spider_web_with_slash_branch",
@@ -39762,7 +39775,7 @@
     "se_bank"
    ],
    "loose": "df5e65a00fe5979a",
-   "doc": "Shows the item get message with the system sound: message 10 for one item, message 11 with the count for more. Returns 1, or 0 when count is not above zero."
+   "doc": "Shows the item get message in window 1 with the system sound: message 10 for one item, message 11 with the count for more, then waits for the player to dismiss it and closes it. Returns 1, or 0 without showing anything when count is not above zero."
   },
   "df664e9839f353c8": {
    "name": "talk_to_station_npc",
@@ -40834,7 +40847,7 @@
     "ref_z"
    ],
    "loose": "e531ed4d2c5adfec",
-   "doc": "Starts a talk with an NPC: places the player 30 units in front of the NPC, faces them, and frames the talk camera. The third parameter is unused."
+   "doc": "Starts a talk with an NPC: resets the event system with init_event, binds handle 0 to the NPC, places the player 30 units in front of the NPC facing it, and frames the talk camera. The NPC is not turned. The third parameter is unused."
   },
   "e532e1798474115d": {
    "name": "block_demo_and_keep_music",
@@ -41197,7 +41210,7 @@
     "frames"
    ],
    "loose": "e70b870d86ae68b1",
-   "doc": "Shows message mes_no and waits for input with Square also accepted. extra_pressed[0] is set to 1 when Square ended it. Returns the frames waited."
+   "doc": "Opens message mes_no in window at the given position, waits for the player with Square also accepted, then closes the window. extra_pressed[0] is set to 1 when Square ended it, else 0. Returns the frames waited."
   },
   "e725228d4d014497": {
    "name": "play_palace_falls_then_jump_to_s30",
@@ -41378,7 +41391,7 @@
     "running"
    ],
    "loose": "e7f3c0eb18d0a264",
-   "doc": "Runs the lip sync for a voice stream. Starts the talk motion and animation, follows the stream's audible state, and stops after max_frames (or when the stream ends if -1). Closes the message window at close_frame. Returns the frames spent."
+   "doc": "Runs the lip sync for a voice stream on stream 1, hiding the window prompt meanwhile. Starts the talk motion and animation and follows the stream's audible state. With max_frames -1 it runs until the stream ends; otherwise it runs exactly max_frames frames, even past the end of the stream. Closes the message window at close_frame (-1 for never). Then stops stream 1 and returns the frames spent."
   },
   "e811d62f5f6a1ce7": {
    "name": "play_winged_creature_night_scene",
@@ -42757,7 +42770,7 @@
    "locals": [
     "saved_okuri"
    ],
-   "doc": "Plays a voice message with its text, then keeps the window open for the given hold frames before closing."
+   "doc": "Plays a voiced line in window 0 with lip sync until the voice ends (frames -1) or for frames frames, then keeps the window open for hold_frames plus one frame before closing it and the stream. The prompt is left off afterwards."
   },
   "f073297d87104d2d": {
    "name": "play_utan_moves_boulder_scene",
@@ -44834,7 +44847,7 @@
     "differs"
    ],
    "loose": "d548ad03cf3e288b",
-   "doc": "Conversation staging: turns the player and the NPC to face each other (walking if they are not already facing), waits 20 frames, runs the NPC's talk with lip sync, then turns the NPC back to its original facing. Second parameter is unused."
+   "doc": "Conversation staging: turns the player and the NPC to face each other (walking if they are not already facing), waits 20 frames, then shows the text already laid out in message window 0 (message -1 lays out nothing, so call show_message first) as a bubble from the NPC with lip sync and waits for the player to dismiss it, then turns the NPC back to its original facing. Second parameter is unused."
   },
   "fc5b9fb42406d7d6": {
    "name": "play_paznos_launch_scene",

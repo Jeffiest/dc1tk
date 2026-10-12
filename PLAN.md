@@ -112,17 +112,18 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
 
 ## Next: what numbers mean
 
-1. **The last sound effects.** `play_se` entries print as names for the
-   system, base and battle banks and for the 210 banks scripts load (1,297
-   names). Still numbers: about 370 calls whose bank arrives through a
-   global, a parameter or a helper's out-parameter (the decompiler only
-   follows a bank within a function), and the ambient (SR) and object (OB)
-   banks (see [the sound notes](definitions/pal/notes/sounds.md)).
-2. **Script-loaded character slots.** Slot 0 and the time gate and save
-   point slots print as names, and villagers are found by id
-   (`find_villager_slot(NPC_CLOWN)`). The slots scripts load themselves
-   are numbers: of 643 (map folder, slot) pairs, 369 always hold the same
-   pack and could be named per folder; the rest change with the scene (see
+1. **The last sound effects.** 92% of `play_se` and `stop_se` entries
+   print as names: the system, base and battle banks, the 210 banks
+   scripts load, followed through copies, globals, parameters and
+   helpers' out-parameters within a script. Still numbers: about 270 in
+   libraries whose bank arrives as a parameter from the scripts that
+   include them (a library is shown once for all of them), and dungeon
+   scripts reading the event port the engine filled with the battle music
+   (`EV_200_000` entry 0, see [the sound notes](definitions/pal/notes/sounds.md)).
+2. **Villager slots.** Slots each map folder's scripts always load with
+   one character are named per folder in `disc.h` (`CHARA_I01_H01_STEVE`),
+   as are the engine's fixed slots (`CHARA_PLAYER`). Villager slots change
+   with the story and stay numbers; scripts find villagers by id (see
    [the character notes](definitions/pal/notes/characters.md)).
 
 ## Later
@@ -133,10 +134,6 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
   without a person watching.
 - **Other versions.** The NTSC and Japanese discs as definition sets; Dark
   Cloud 1 as a second engine.
-- **More examples.** `docs/examples` shows one made-up script. Add original
-  examples of a cutscene, a monster AI and a town talk handler, written
-  for the docs rather than taken from the disc (the test that checks
-  them assumes event scripts; it would take the table from each script).
 
 ## Open questions
 

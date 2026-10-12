@@ -1,0 +1,9 @@
+{
+ "name": "patrol-example",
+ "description": "Definitions for the made-up patrol example",
+ "engine": "dc2",
+ "extends": [],
+ "language": "en",
+ "include": [],
+ "tables": []
+}

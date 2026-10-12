@@ -1,0 +1,9 @@
+{
+ "name": "shopkeeper-example",
+ "description": "Definitions for the made-up shopkeeper example",
+ "engine": "dc2",
+ "extends": [],
+ "language": "en",
+ "include": [],
+ "tables": []
+}

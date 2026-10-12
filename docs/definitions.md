@@ -368,7 +368,8 @@ The easiest way to write definitions is to edit decompiled code:
    that differs from the decompiler's defaults, and the file name and top
    comment of each library file (into `libraries.json`). Because names do
    not change bytecode, any edit that still compiles to the same function
-   teaches the definition set.
+   teaches the definition set. Docs come back wrapped at 100 columns, so an annotated
+   script written another way decompiles to the same words on other lines.
 4. Commit the definition set.
 
 To see where things stand:

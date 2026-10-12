@@ -1,0 +1,9 @@
+{
+ "name": "cutscene-example",
+ "description": "Definitions for the made-up cutscene example",
+ "engine": "dc2",
+ "extends": [],
+ "language": "en",
+ "include": [],
+ "tables": []
+}

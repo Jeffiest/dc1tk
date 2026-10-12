@@ -3,7 +3,7 @@ import hashlib
 import re
 from pathlib import Path, PurePosixPath
 
-from c2s import decompile, definitions, disc, maps, messages, names, natives, notes, parse, sdk, source, stb
+from c2s import decompile, definitions, disc, maps, messages, names, natives, notes, parse, sdk, slots, source, stb
 
 MINIMUM_USERS = 2
 
@@ -46,10 +46,12 @@ def model_for(root, paths, tables, defs, headers=None):
     exact_to_loose = {}
     script_strings = {}
     script_prints = {}
+    slot_loads = {}
     for path in paths:
         table = natives.table_for(path, defs["tables"])
         program = decompile.decompile(stb.read((Path(root) / path).read_bytes()), table, tables)
         entry, found = survey(path, program)
+        slots.survey(slot_loads, path, program)
         files.append(entry)
         exact_to_loose.update(names.loose_map(program))
         script_prints[path] = names.ordered_fingerprints(program)
@@ -74,6 +76,7 @@ def model_for(root, paths, tables, defs, headers=None):
     model["script_files"] = script_files
     model["language_code"] = defs["text"].get("languages", {}).get(defs["language"])
     model["disc_names"] = disc.tables(root, defs)
+    model["folder_slots"] = slots.names(slot_loads, model["disc_names"].get("chara_pack", {}))
     model["message_cache"] = {}
     model["exact_to_loose"] = exact_to_loose
     model["script_prints"] = script_prints
@@ -375,7 +378,7 @@ def library_texts(model):
 def script_program(program, path, model):
     if "asm" in program or any(function["kind"] == "asm" for function in program["functions"]):
         return program
-    context = model["contexts"].get(program["natives"])
+    context = slots.in_folder(model["contexts"].get(program["natives"]), path, model.get("folder_slots", {}))
     program_names = context["program_names"] if context is not None else {}
     found = names.fingerprints(program)
     known = dict(model.get("own_names", {}), **model["class_names"])

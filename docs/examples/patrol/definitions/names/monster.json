@@ -1,0 +1,48 @@
+{
+ "functions": {
+  "314057dfee2f8380": {
+   "name": "wait_for_motion",
+   "locals": [
+    "done"
+   ],
+   "doc": "Waits until the current motion reaches its last frame.",
+   "loose": "314057dfee2f8380"
+  },
+  "3908c03da35438c3": {
+   "doc": "Reels back from a staggering hit and waits until the reaction ends.",
+   "loose": "a4a4a4a7511dea53"
+  },
+  "84082490ee64fc16": {
+   "locals": [
+    "target_dist",
+    "angle"
+   ],
+   "doc": "Each frame: swipe at a target in reach, turn toward one that is near, or wander.",
+   "loose": "bd4a5e10d9036f3b"
+  },
+  "851d53055c960e6b": {
+   "name": "wander",
+   "locals": [
+    "home_x",
+    "home_y",
+    "home_z",
+    "offset_x",
+    "offset_z",
+    "target_dist",
+    "frames",
+    "arrived"
+   ],
+   "doc": "Walks toward a random point near home until it arrives, the target comes close or three seconds pass.",
+   "loose": "b15be2e2816cf2ba"
+  },
+  "d98d1bb90836d9d8": {
+   "locals": [
+    "x",
+    "y",
+    "z"
+   ],
+   "doc": "Makes the spot where the monster was placed its home and gives its swipe a hit.",
+   "loose": "6fbf0513e0f0da1e"
+  }
+ }
+}

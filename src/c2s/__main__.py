@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from c2s import (asm, compile, coverage, decompile, definitions, disc, extract, flags, index, learn, library, messages, names,
-                 maps, mods, natives, notes, parse, pathnames, play, rebuild, sdk, source, startat, stb, tree, verify, xref)
+                 maps, mods, natives, notes, parse, pathnames, play, rebuild, sdk, slots, source, startat, stb, tree, verify, xref)
 
 
 def run_extract(args):
@@ -121,16 +121,18 @@ def sibling_strings(program, path, code, found):
 def run_decompile_disc(args, tables, defs, headers):
     if not args.output:
         raise SystemExit("decompiling a directory needs -o OUT_DIR")
-    differences = definitions.disc_differences(args.stb, defs)
-    if differences["differ"] or differences["unknown"]:
-        print("warning: " + disc_match_text(args.stb, defs, differences))
     out = Path(args.output)
     root = disc_root(Path(args.stb) / "manifest.json") or Path(args.stb)
     prefix = Path(args.stb).resolve().relative_to(root.resolve()).as_posix()
+    # a folder of the disc is compared with that folder of the set's disc
+    differences = definitions.disc_differences(args.stb, defs, "" if prefix == "." else prefix + "/")
+    if differences["differ"] or differences["unknown"]:
+        print("warning: " + disc_match_text(args.stb, defs, differences))
     paths = [path if prefix == "." else prefix + "/" + path for path in verify.find_scripts(args.stb)]
     headers_used = headers
     defs, headers, generated = disc.with_header(str(root), defs, headers)
     model = library.model_for(str(root), paths, tables, defs, headers)
+    generated = slots.with_header(generated, model.get("folder_slots"))
     naming = pathnames.lookups(str(root), defs)
     renamed = {library_entry["path"]: pathnames.named_library(library_entry["path"], naming)
                for library_entry in model["libraries"].values()}

@@ -6,11 +6,13 @@ from c2s import asm, compile, decompile, definitions, library, names, natives, n
 EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
 
 
+# The example's bytecode and its native table (event, monster...), from the header it includes.
 def example_bytes(directory, defs):
     path = directory / (directory.name + ".c")
     program = parse.parse(path.read_text(encoding="utf-8"))
     headers = definitions.header_texts(defs, sdk.SDK_DIR)
-    return compile.compile_program(library.expand(program, library.read_includes(program, path), headers), natives.load())
+    expanded = library.expand(program, library.read_includes(program, path), headers)
+    return compile.compile_program(expanded, natives.load()), expanded["natives"]
 
 
 def decompiled(data, table, defs, headers, path):
@@ -26,8 +28,7 @@ def decompiled(data, table, defs, headers, path):
 
 def stages(directory):
     defs = definitions.load([directory / "definitions"])
-    data = example_bytes(directory, defs)
-    table = "event"
+    data, table = example_bytes(directory, defs)
     script = directory.name + ".stb"
     return {
         directory.name + ".asm": asm.disassemble(stb.read(data), table, natives.load()),
