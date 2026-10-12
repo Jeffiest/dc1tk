@@ -12,7 +12,7 @@ FILES = {"map/m/t01.c": SCRIPT, "map/m/t02.c": SCRIPT.replace("PROGRAM(100", "PR
 
 def recorded(folder, files=FILES):
     root = make_tree(Path(folder) / "tree", files)
-    tree.record(root, list(files))
+    tree.record(root, list(files), tree.headers_hash({}))
     return root
 
 
@@ -129,3 +129,14 @@ def test_build_compiles_only_what_can_have_changed():
         (root / "lib/m/shared.c").write_text(LIBRARY, encoding="utf-8")
         found = rebuild.changes(root, iso_path, definitions.empty(), {}, natives.load(), texts)
         assert found["compiled"] == 1 and [change["source"] for change in found["scripts"]] == ["map/m/t01.c"]
+
+
+def test_a_header_change_makes_build_compile_everything_and_say_why():
+    with tempfile.TemporaryDirectory() as folder:
+        root = recorded(folder, dict(FILES, **{"include/disc.h": "#define X 1\n"}))
+        iso_path = disc_for(folder, root)
+        found = rebuild.changes(root, iso_path, definitions.empty(), {"extra.h": "#define Y 2\n"}, natives.load())
+        assert found["compiled"] == 2 and "headers differ" in found["all_because"]
+        (root / "include/disc.h").write_text("#define X 2\n", encoding="utf-8")
+        found = rebuild.changes(root, iso_path, definitions.empty(), {}, natives.load())
+        assert found["compiled"] == 2 and "include/disc.h" in found["all_because"]

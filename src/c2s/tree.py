@@ -28,20 +28,37 @@ def tracked(tree):
     return sorted(found)
 
 
-def originals(tree):
+def read_record(tree):
     path = Path(tree) / ORIGINALS
-    return json.loads(path.read_text(encoding="utf-8"))["files"] if path.is_file() else None
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+def originals(tree):
+    found = read_record(tree)
+    return None if found is None else found["files"]
+
+
+# The headers the tree was decompiled with, as one hash: the SDK and definition headers decide what
+# every script compiles to, so a change to them means every script must be compiled again.
+def headers_hash(texts):
+    digest = hashlib.sha256()
+    for name in sorted(texts):
+        digest.update(name.encode("utf-8") + b"\0" + texts[name].replace("\r\n", "\n").encode("utf-8") + b"\0")
+    return digest.hexdigest()
 
 
 # Records the files just written, keeping the record of any others (a folder decompiled into a
-# tree that holds more).
-def record(tree, paths):
+# tree that holds more), and the hash of the headers they were written with.
+def record(tree, paths, headers=None):
     root = Path(tree)
-    files = dict(originals(tree) or {})
+    found = read_record(tree) or {}
+    files = dict(found.get("files", {}))
     files.update({path: file_hash(root / path) for path in paths})
-    files = dict(sorted(files.items()))
-    note = "What the decompiler wrote, so the tools can tell edits from its output. Do not edit."
-    (root / ORIGINALS).write_text(json.dumps({"note": note, "files": files}, indent=1) + "\n", encoding="utf-8")
+    entry = {"note": "What the decompiler wrote, so the tools can tell edits from its output. Do not edit.",
+             "files": dict(sorted(files.items()))}
+    if headers is not None or "headers" in found:
+        entry["headers"] = headers if headers is not None else found["headers"]
+    (root / ORIGINALS).write_text(json.dumps(entry, indent=1) + "\n", encoding="utf-8")
 
 
 def status(tree):
@@ -105,9 +122,12 @@ def fork(tree, library, copy, scripts):
         raise SystemExit("%s already exists" % copy)
     if not copy.startswith("lib/") or not copy.endswith(source.EXTENSION):
         raise SystemExit("the copy must be a lib/...%s path" % source.EXTENSION)
-    line = '#include "%s"' % library
+    def includes_library(line):
+        match = index.INCLUDE.match(line)
+        return match is not None and match.group(1) == library
+
     missing = [script for script in scripts
-               if line not in (root / script).read_text(encoding="utf-8").split("\n")]
+               if not any(includes_library(line) for line in (root / script).read_text(encoding="utf-8").split("\n"))]
     if missing:
         raise SystemExit("these scripts do not include %s directly:\n  %s" % (library, "\n  ".join(missing)))
     text = (root / library).read_text(encoding="utf-8")
@@ -118,6 +138,7 @@ def fork(tree, library, copy, scripts):
     for script in scripts:
         path = root / script
         lines = path.read_text(encoding="utf-8").split("\n")
-        path.write_text("\n".join('#include "%s"' % copy if item == line else item for item in lines), encoding="utf-8")
+        path.write_text("\n".join(item.replace('"%s"' % library, '"%s"' % copy, 1) if includes_library(item) else item
+                                  for item in lines), encoding="utf-8")
     users = index.includers(index.outlines(tree)).get(library, [])
     return {"still_using_original": users}

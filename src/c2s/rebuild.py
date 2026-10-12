@@ -12,10 +12,10 @@ FILLER = "DMMY"
 # Compiles a script of the tree; text, when given, stands in for the file's own (build --start-at,
 # build --mod), table_path, its path without readable names, picks the native table, and overlay
 # holds mod files that stand in for the tree's libraries.
-def compiled(source_path, defs, headers, tables, text=None, table_path=None, overlay=None):
+def compiled(source_path, defs, headers, tables, text=None, table_path=None, overlay=None, sdk_dir=None):
     program = parse.parse(Path(source_path).read_text(encoding="utf-8") if text is None else text)
     headers = dict(headers, **definitions.source_headers(source_path))
-    program = library.expand(program, library.read_includes(program, str(source_path), overlay), headers)
+    program = library.expand(program, library.read_includes(program, str(source_path), overlay, sdk_dir), headers)
     if "asm" not in program and program["natives"] is None:
         program["natives"] = natives.table_for(table_path or Path(source_path).resolve().as_posix(), defs["tables"])
     return compile.compile_program(program, tables)
@@ -76,10 +76,26 @@ def replaced_member(data, names, new):
 # Scripts that cannot differ from the disc: unchanged since the decompiler wrote them, as are the
 # libraries they include, and replaced by no override. Every retail script compiles back to its own
 # bytes (cli.py verify), so build need not compile these. Empty for a tree with no record.
-def settled(source_dir, overrides):
-    recorded = tree.originals(source_dir)
-    if not recorded:
-        return set()
+def settled(source_dir, overrides, headers):
+    return settled_and_why(source_dir, overrides, headers)[0]
+
+
+# settled, and when it is empty because nothing can be trusted, why.
+def settled_and_why(source_dir, overrides, headers):
+    record = tree.read_record(source_dir)
+    if not record:
+        return set(), "the tree has no record of what was decompiled; decompile it again for fast builds"
+    if record.get("headers") != tree.headers_hash(headers):
+        return set(), "the SDK or definition headers differ from the ones the tree was decompiled with"
+    recorded = record["files"]
+    root = Path(source_dir)
+    for path in recorded:
+        if path.startswith("include/") and (not (root / path).is_file() or tree.file_hash(root / path) != recorded[path]):
+            return set(), "the tree's own header %s was edited" % path
+    return settled_scripts(source_dir, overrides, recorded), None
+
+
+def settled_scripts(source_dir, overrides, recorded):
     root = Path(source_dir)
     known = {}
 
@@ -96,9 +112,9 @@ def settled(source_dir, overrides):
 # The scripts whose compiled form differs from the disc. overrides holds whole-file texts that stand
 # in for tree files, mods' and build --start-at's, keyed by tree path; scripts only a mod has are
 # compiled too.
-def changes(source_dir, iso_path, defs, headers, tables, overrides=None, full=False):
+def changes(source_dir, iso_path, defs, headers, tables, overrides=None, full=False, sdk_dir=None):
     overrides = overrides or {}
-    skip = set() if full else settled(source_dir, overrides)
+    skip, why = (set(), "--full") if full else settled_and_why(source_dir, overrides, headers)
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
         index = {entry["path"]: entry for entry in disc["entries"]}
@@ -122,7 +138,8 @@ def changes(source_dir, iso_path, defs, headers, tables, overrides=None, full=Fa
                 skipped.append(relative)
                 continue
             try:
-                new = compiled(Path(source_dir) / relative, defs, headers, tables, overrides.get(relative), plain, overrides)
+                new = compiled(Path(source_dir) / relative, defs, headers, tables, overrides.get(relative), plain, overrides,
+                               sdk_dir)
             except ValueError as error:
                 raise ValueError("%s: %s" % (relative, error)) from None
             if new != original:
@@ -131,7 +148,8 @@ def changes(source_dir, iso_path, defs, headers, tables, overrides=None, full=Fa
     for change in found:
         data = rebuilt.get(change["top"], tops[change["top"]])
         rebuilt[change["top"]] = replaced_member(data, change["members"], change["data"])
-    return {"scripts": found, "files": rebuilt, "skipped": skipped, "compiled": len(scripts) - len(skip)}
+    return {"scripts": found, "files": rebuilt, "skipped": skipped, "compiled": len(scripts) - len(skip),
+            "all_because": why}
 
 
 def sectors(size):

@@ -161,6 +161,11 @@ def expression(state, node):
         emit(state, "%s %s" % (LOGICAL[node["op"]], label_name(state, label)))
         expression(state, node["right"])
         place_label(state, label)
+    elif kind == "compound":
+        compound(state, node)
+    elif kind == "via":
+        emit(state, "push 0")
+        emit(state, "load %s %d" % (POINTER_MODES[node["type"]], node["slot"]))
     elif kind == "ternary":
         expression(state, node["cond"])
         otherwise = new_label(state)
@@ -173,6 +178,30 @@ def expression(state, node):
         place_label(state, end)
     else:
         fail("unknown expression " + kind)
+
+
+# target op= value. A variable compiles as target = target op value. An element's address is worked
+# out once, into a hidden local, and the element is read and written through it, so an index with
+# side effects (a[i++] += 1) runs them once.
+def compound(state, node):
+    target = node["target"]
+    if target["kind"] == "var":
+        access(state, target, "addr")
+        expression(state, {"kind": "binary", "op": node["op"], "left": target, "right": node["value"]})
+        emit(state, "store")
+        return
+    name = target["name"] if target["kind"] == "index" else target["operand"].get("name")
+    symbol = lookup(state, name)
+    slot = temporary(state)
+    emit(state, "addr local %d" % slot)
+    access(state, target, "addr")
+    emit(state, "store")
+    emit(state, "pop")
+    emit(state, "push 0")
+    emit(state, "addr ptr_idx %d" % slot)
+    via = {"kind": "via", "slot": slot, "type": symbol["type"]}
+    expression(state, {"kind": "binary", "op": node["op"], "left": via, "right": node["value"]})
+    emit(state, "store")
 
 
 # A hidden local for the compiler's own use, past the function's declared locals.

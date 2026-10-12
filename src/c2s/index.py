@@ -27,6 +27,15 @@ def constants(texts):
     return found
 
 
+# The values of one enum the headers declare, such as the program numbers of enum program.
+def enum_values(texts, enum_name):
+    values = set()
+    for text in texts.values():
+        for body in re.findall(r"enum\s+%s\s*\{(.*?)\}" % re.escape(enum_name), text, re.S):
+            values |= set(constants({"": body}).values())
+    return values
+
+
 # The SDK, each definition set's include folder and the tree's own include folder (disc.h).
 def tree_headers(tree, defs, sdk_dir=sdk.SDK_DIR):
     texts = definitions.header_texts(defs, sdk_dir)

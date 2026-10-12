@@ -42,5 +42,5 @@ def test_the_catalog_says_how_the_game_uses_a_map_and_what_is_free():
         found = maps.catalog(root, Path(folder) / "no-disc", definitions.empty(), consts)
         assert found["s98"]["kinds"] == ["dungeon-style"] and found["s98"]["playable"]
         assert found["s97"]["kinds"] == ["town"] and not found["s97"]["playable"]
-        text = maps.detail("s98", found, root, Path(folder) / "no-disc", consts)
-        assert "free for a mod: 9001, 9002" in text and "starts program 9000" in text
+        text = maps.detail("s98", found, root, Path(folder) / "no-disc", dict(consts, ITEM_SOMETHING=9001), {9002})
+        assert "free for a mod: 9001, 9003" in text and "starts program 9000" in text

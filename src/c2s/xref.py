@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from c2s import disc, index, pathnames
+from c2s import additions, disc, index, pathnames
 
 # Cross-references in a decompiled source tree: what starts an event, what loads a map, and where a
 # monster kind is loaded and which AI script it runs. These are the links a mod has to keep intact
@@ -24,14 +24,10 @@ def map_of(target):
     return target.split("/", 1)[0] if isinstance(target, str) else target
 
 
-# Whether a tree path is one of map_name's scripts: under a folder named after it (map/s/s51/,
-# map/d/d01/) or a file named after it (s51.c, s51_1.c, s51b_1.c), going by its path without
+# Whether a tree path is one of map_name's scripts (see additions.in_map), by its path without
 # readable names.
 def in_map(tree, path, map_name):
-    parts = pathnames.unnamed(tree, path).split("/")
-    stem = Path(parts[-1]).stem
-    return map_name in parts[:-1] or stem == map_name or stem.startswith(map_name + "_") or \
-        (stem.startswith(map_name) and stem[len(map_name):len(map_name) + 1].isalpha())
+    return additions.in_map(pathnames.unnamed(tree, path), map_name)
 
 
 # The scripts a call runs in: its own file, or every script that includes the library it is in.

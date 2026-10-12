@@ -119,7 +119,7 @@ def summary(found):
     return "\n".join(lines)
 
 
-def detail(code, found, tree, extracted, consts):
+def detail(code, found, tree, extracted, consts, programs=()):
     entry = found.get(code)
     if entry is None:
         return "no map %s" % code
@@ -135,7 +135,7 @@ def detail(code, found, tree, extracted, consts):
     lines += ["", "programs (number, name):"]
     for number in sorted(entry["programs"]):
         lines.append("  %6d  %s" % (number, ", ".join(sorted(entry["programs"][number]))))
-    taken = set(entry["programs"]) | {value for value in consts.values() if isinstance(value, int)}
+    taken = set(entry["programs"]) | set(programs)
     free = [number for number in MOD_PROGRAMS if number not in taken][:5]
     lines.append("  free for a mod: %s ..." % ", ".join(str(number) for number in free))
     path = map_files(str(extracted)).get(code)

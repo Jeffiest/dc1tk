@@ -103,31 +103,29 @@ def record(tree, renamed):
     path.write_text(json.dumps({"note": note, "paths": dict(sorted(known.items()))}, indent=1) + "\n", encoding="utf-8")
 
 
+# What a tree records about its names, read once per version of the record: the unnamed path of
+# each renamed file, the same the other way round, and the folder renames those imply, both ways.
 @functools.lru_cache(maxsize=None)
-def recorded(tree, modified):
+def tables(tree, modified):
     path = Path(tree) / UNNAMED
-    return json.loads(path.read_text(encoding="utf-8"))["paths"] if path.is_file() else {}
+    unnamed_of = json.loads(path.read_text(encoding="utf-8"))["paths"] if path.is_file() else {}
+    named_folders = {}
+    for named_path, plain in unnamed_of.items():
+        for plain_folder, named_folder in zip(Path(plain).parents, Path(named_path).parents):
+            if plain_folder.as_posix() != ".":
+                named_folders[plain_folder.as_posix()] = named_folder.as_posix()
+    return {"unnamed": unnamed_of, "named": {plain: named_path for named_path, plain in unnamed_of.items()},
+            "named_folders": named_folders,
+            "unnamed_folders": {named_folder: plain for plain, named_folder in named_folders.items()}}
+
+
+def tree_tables(tree):
+    path = Path(tree) / UNNAMED
+    return tables(str(Path(tree).resolve()), path.stat().st_mtime_ns if path.is_file() else 0)
 
 
 def mapping(tree):
-    path = Path(tree) / UNNAMED
-    return recorded(str(Path(tree).resolve()), path.stat().st_mtime_ns if path.is_file() else 0)
-
-
-# Folder renames the recorded files imply, as {folder without names: named folder}.
-def folders(tree):
-    path = Path(tree) / UNNAMED
-    return recorded_folders(str(Path(tree).resolve()), path.stat().st_mtime_ns if path.is_file() else 0)
-
-
-@functools.lru_cache(maxsize=None)
-def recorded_folders(tree, modified):
-    found = {}
-    for named_path, plain in recorded(tree, modified).items():
-        for plain_folder, named_folder in zip(Path(plain).parents, Path(named_path).parents):
-            if plain_folder.as_posix() != ".":
-                found[plain_folder.as_posix()] = named_folder.as_posix()
-    return found
+    return tree_tables(tree)["unnamed"]
 
 
 def moved(path, renames):
@@ -142,22 +140,11 @@ def moved(path, renames):
 # The path a tree file would have without names (its disc path, for a script). A file the record
 # does not list, such as one a mod added, is placed by its folders.
 def unnamed(tree, path):
-    if path in mapping(tree):
-        return mapping(tree)[path]
-    return moved(path, unnamed_folders(str(Path(tree).resolve()), id(folders(tree))))
-
-
-@functools.lru_cache(maxsize=None)
-def unnamed_folders(tree, folders_id):
-    return {named_folder: plain for plain, named_folder in folders(tree).items()}
+    found = tree_tables(tree)
+    return found["unnamed"].get(path) or moved(path, found["unnamed_folders"])
 
 
 # The tree path of a file given its path without names.
 def named(tree, path):
-    found = reverse(str(Path(tree).resolve()), id(mapping(tree))).get(path)
-    return found if found is not None else moved(path, folders(tree))
-
-
-@functools.lru_cache(maxsize=None)
-def reverse(tree, mapping_id):
-    return {plain: named_path for named_path, plain in mapping(tree).items()}
+    found = tree_tables(tree)
+    return found["named"].get(path) or moved(path, found["named_folders"])

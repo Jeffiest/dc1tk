@@ -485,15 +485,13 @@ def inline_library(path, state, chain):
     return table
 
 
-# Where quoted includes are looked for after the script's own folder and each folder above it: the
-# libraries shipped with the SDK (sdk/modkit/...), which any script or mod can include.
-SHARED_LIBRARIES = sdk.SDK_DIR
 
 
 # The texts of a script's library includes and of the libraries they include, looked up from the
-# script's folder and each folder above it, then in the shared libraries. overlay, keyed by include
-# path, stands in for files on disk (build --mod).
-def read_includes(program, source_path, overlay=None):
+# script's folder and each folder above it, then in the SDK folder, whose libraries (modkit/...) any
+# script or mod can include. overlay, keyed by include path, stands in for files on disk
+# (build --mod).
+def read_includes(program, source_path, overlay=None, sdk_dir=None):
     texts = {}
     directory = Path(source_path).resolve().parent
     pending = [item["path"] for item in program.get("functions", []) if item["kind"] == "include" and not item["system"]]
@@ -503,7 +501,7 @@ def read_includes(program, source_path, overlay=None):
             continue
         text = overlay.get(path) if overlay else None
         if text is None:
-            for folder in [directory] + list(directory.parents) + [SHARED_LIBRARIES]:
+            for folder in [directory] + list(directory.parents) + [Path(sdk_dir or sdk.SDK_DIR)]:
                 candidate = folder / path
                 if candidate.is_file():
                     text = candidate.read_text(encoding="utf-8")

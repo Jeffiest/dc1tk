@@ -110,6 +110,7 @@ def run_decompile_disc(args, tables, defs, headers):
     root = disc_root(Path(args.stb) / "manifest.json") or Path(args.stb)
     prefix = Path(args.stb).resolve().relative_to(root.resolve()).as_posix()
     paths = [path if prefix == "." else prefix + "/" + path for path in verify.find_scripts(args.stb)]
+    headers_used = headers
     defs, headers, generated = disc.with_header(str(root), defs, headers)
     model = library.model_for(str(root), paths, tables, defs, headers)
     naming = pathnames.lookups(str(root), defs)
@@ -141,7 +142,7 @@ def run_decompile_disc(args, tables, defs, headers):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.text(library.script_program(program, path, model)), encoding="utf-8")
     (out / source.EDITOR_FLAGS).write_text(source.editor_flags(args.sdk, defs["sets"]), encoding="utf-8")
-    tree.record(out, written)
+    tree.record(out, written, tree.headers_hash(headers_used))
     pathnames.record(out, renamed)
     print("%d scripts and %d library files written to %s" % (len(paths), len(texts), out))
     return 0
@@ -165,7 +166,7 @@ def run_compile(args):
     if "asm" not in program and program["natives"] is None:
         program["natives"] = args.table
     headers = dict(definitions.header_texts(defs, args.sdk), **definitions.source_headers(args.source))
-    program = library.expand(program, library.read_includes(program, args.source), headers)
+    program = library.expand(program, library.read_includes(program, args.source, None, args.sdk), headers)
     if "asm" not in program and program["natives"] is None:
         program["natives"] = natives.table_for(Path(args.source).resolve().as_posix(), defs["tables"])
     output = args.output or str(Path(args.source).with_suffix(".stb"))
@@ -209,9 +210,11 @@ def run_build(args):
         for note in tree.library_notes(args.source, status):
             print("note: " + note)
     found = rebuild.changes(args.source, args.iso, defs, definitions.header_texts(defs, args.sdk), natives.load(args.natives),
-                            overrides, args.full)
-    print("compiled %d scripts; the rest are unchanged since decompiling%s"
-          % (found["compiled"], "" if not args.full else " (all compiled: --full)"))
+                            overrides, args.full, args.sdk)
+    if found["all_because"]:
+        print("compiled all %d scripts: %s" % (found["compiled"], found["all_because"]))
+    else:
+        print("compiled %d scripts; the rest are unchanged since decompiling" % found["compiled"])
     for path in found["skipped"]:
         print("not on the disc, skipped: %s" % path)
     for change in found["scripts"]:
@@ -275,7 +278,8 @@ def run_maps(args):
     if args.command == "maps":
         print(maps.summary(found))
     else:
-        print(maps.detail(args.name, found, args.source, args.extracted, consts))
+        programs = index.enum_values(index.tree_headers(args.source, defs, args.sdk), "program")
+        print(maps.detail(args.name, found, args.source, args.extracted, consts, programs))
     return 0
 
 

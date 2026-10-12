@@ -382,9 +382,14 @@ def primary(state):
     return node
 
 
+# target op= value, as in x += 2. The compiler works out the target's address once, so an index
+# with side effects (a[i++] += 1) runs them once.
+def compound(target, op, value):
+    return {"kind": "compound", "op": op, "target": target, "value": value}
+
+
 def stepped(target, op):
-    return {"kind": "assign", "target": target,
-            "value": {"kind": "binary", "op": op, "left": target, "right": {"kind": "int", "value": 1}}}
+    return compound(target, op, {"kind": "int", "value": 1})
 
 
 # x++ and x--: the variable steps, and the expression's value is the old one, worked back from the
@@ -462,7 +467,7 @@ def assignment(state):
     op = take(state)["text"]
     value = assignment(state)
     if op in COMPOUND:
-        value = {"kind": "binary", "op": COMPOUND[op], "left": left, "right": value}
+        return compound(left, COMPOUND[op], value)
     return {"kind": "assign", "target": left, "value": value}
 
 

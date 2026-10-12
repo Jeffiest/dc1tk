@@ -58,3 +58,10 @@ def test_several_mods_can_add_to_one_script_and_a_mod_needs_no_copies():
         assert clashes == {} and sorted(texts) == ["map/s/s17_valley/s17_1.c", "map/s/s17_valley/s17_2.c"]
         assert "PROGRAM(9000, go);\nPROGRAM(9001, go);\nMAIN" in texts["map/s/s17_valley/s17_2.c"]
         assert "adds to s17: program 9000" in mods.listing(Path(folder) / "mods", root)
+
+
+def test_wrapping_a_program_twice_in_one_mod_gives_each_wrapper_its_own_name():
+    once = additions.applied(SCRIPT, {"wrap": {"map_start": {"before": ["first"]}}}, "mine", CONSTS)
+    twice = additions.applied(once, {"wrap": {"map_start": {"before": ["second"]}}}, "mine", CONSTS)
+    assert "PROGRAM(map_start, mod_mine_map_start_2);" in twice
+    assert "void mod_mine_map_start_2(void)\n{\n    second();\n    mod_mine_map_start();\n}" in twice

@@ -249,7 +249,7 @@ def run_tests(mod_dir, tree_dir, defs, sdk_dir):
     program["main"] = program["main"] or (names[0] if names else None)
     standing_in = Path(tree_dir) / TESTS
     headers = dict(definitions.header_texts(defs, sdk_dir), **definitions.source_headers(standing_in))
-    program = library.expand(program, library.read_includes(program, standing_in, texts), headers)
+    program = library.expand(program, library.read_includes(program, standing_in, texts, sdk_dir), headers)
     table = vm.table_of(program)
     results = []
     for name in sorted(name for name in table if name.startswith("test_")):

@@ -74,6 +74,10 @@ def applied(text, addition, mod, consts, place=None):
         key = number_of(program, consts)
         calls = ["    %s();" % name for name in wrap.get("before", [])]
         wrapper = "mod_%s_%s" % (identifier(mod), identifier(program))
+        number = 2
+        while re.search(r"\b%s\s*\(" % re.escape(wrapper), text):
+            wrapper = "mod_%s_%s_%d" % (identifier(mod), identifier(program), number)
+            number += 1
         if key in existing:
             original = existing[key].group(2)
             line = existing[key]

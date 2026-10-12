@@ -5,7 +5,7 @@ from c2s import tree
 from tests.test_index import tree as make_tree
 
 FILES = {
-    "map/a.c": '#include "lib/shared.c"\nvoid a(void)\n{\n}\n',
+    "map/a.c": '#include "lib/shared.c"  // shared helpers\nvoid a(void)\n{\n}\n',
     "map/b.c": '#include "lib/shared.c"\nvoid b(void)\n{\n}\n',
     "lib/shared.c": "void shared(void)\n{\n}\n",
 }

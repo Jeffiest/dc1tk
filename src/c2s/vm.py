@@ -56,6 +56,8 @@ def number(value):
 
 
 def arithmetic(op, left, right):
+    if op in ("div", "mod") and right[1] == 0:
+        raise ZeroDivisionError("division by zero, which stops the game's VM")
     if op == "div" and left[0] == "int" and right[0] == "int":
         return ("int", truncated(left[1], right[1]))
     if op == "mod":
@@ -63,9 +65,9 @@ def arithmetic(op, left, right):
     if op in ("and", "or"):
         return ("int", left[1] & right[1] if op == "and" else left[1] | right[1])
     kind = "int" if left[0] == "int" and right[0] == "int" else "float"
-    result = {"add": left[1] + right[1], "sub": left[1] - right[1], "mul": left[1] * right[1],
-              "div": left[1] / right[1] if right[1] else 0}[op]
-    return (kind, result)
+    operations = {"add": lambda a, b: a + b, "sub": lambda a, b: a - b, "mul": lambda a, b: a * b,
+                  "div": lambda a, b: a / b}
+    return (kind, operations[op](left[1], right[1]))
 
 
 COMPARES = {"eq": lambda a, b: a == b, "ne": lambda a, b: a != b, "lt": lambda a, b: a < b,

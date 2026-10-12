@@ -172,3 +172,21 @@ def test_libraries_include_libraries_once_and_shared_ones_come_from_the_sdk():
         program = library.expand(script, texts, sdk.load_texts())
         assert [function["name"] for function in program["functions"]].count("b") == 1
         assert vm.run_function(vm.table_of(program), "f", [], [])[1] == 42
+
+
+def test_a_compound_assignment_works_out_its_target_once():
+    text = ("int f(void)\n{\n    int a[3] = {10, 20, 30};\n    int i = 0;\n\n    a[i++] += 5;\n    a[i++]++;\n"
+            "    return a[0] * 10000 + a[1] * 100 + i;\n}\n")
+    assert result(text) == 15 * 10000 + 21 * 100 + 2
+    floats = "float f(void)\n{\n    float v[2] = {1.5, 2.0};\n\n    v[1] *= 2.5;\n    return v[1];\n}\n"
+    assert result(floats) == 5.0
+
+
+def test_dividing_by_zero_stops_the_test_vm_as_it_stops_the_game():
+    for text in ("int f(int a)\n{\n    return 7 / a;\n}\n", "float f(int a)\n{\n    return 7.0 / a;\n}\n",
+                 "int f(int a)\n{\n    return 7 % a;\n}\n"):
+        try:
+            result(text, [0])
+        except ZeroDivisionError:
+            continue
+        raise AssertionError("divided by zero: " + text)
