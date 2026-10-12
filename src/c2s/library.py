@@ -439,6 +439,13 @@ def expand(program, texts, headers=None):
         if item["path"] not in texts:
             raise ValueError("cannot find included file " + item["path"])
         included = parse.parse(texts[item["path"]])
+        # A library's own #defines, enums, typedefs and helpers become the including script's, as
+        # with a C header.
+        for key, value in included.get("declarations", {}).items():
+            if isinstance(value, dict):
+                declarations.setdefault(key, {}).update(value)
+            else:
+                declarations.setdefault(key, []).extend(value)
         included_table = included["natives"]
         for sub in included["functions"]:
             if sub["kind"] == "include" and sub["system"]:

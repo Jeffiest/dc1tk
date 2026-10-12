@@ -1,6 +1,6 @@
 import re
 
-from c2s import asm, compile, natives, parse, sdk
+from c2s import asm, compile, library, natives, parse, sdk
 
 # A small interpreter for the assembly the compiler writes, so tests can check what compiled code
 # does, not only that it compiles. It follows the game's VM (runscript.cpp) for what tests use:
@@ -12,13 +12,22 @@ LABEL = re.compile(r"^(L_\w+):$")
 
 
 def assembled(text):
-    return compile.to_asm(sdk.resolve(parse.parse(text), natives.load()), natives.load())
+    program = library.expand(parse.parse(text), {}, sdk.load_texts())
+    return compile.to_asm(sdk.resolve(program, natives.load()), natives.load())
 
 
 def functions(text):
+    return lines_table(assembled(text))
+
+
+def table_of(program):
+    return lines_table(compile.to_asm(sdk.resolve(program, natives.load()), natives.load()))
+
+
+def lines_table(text):
     found = {}
     current = None
-    for line in assembled(text).split("\n"):
+    for line in text.split("\n"):
         line = line.strip()
         if line.startswith(".function "):
             words = line.split()

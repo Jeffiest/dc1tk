@@ -136,3 +136,11 @@ def test_errors_name_the_line():
     fails("void f(void)\n{\n#if 1\n}\n", "#if without #endif")
     fails("void f(void)\n{\n    int a;\n    float a;\n}\n", "declared again with another type")
     fails("void f(void)\n{\n    break;\n}\n", "break outside a loop or switch")
+
+
+def test_a_librarys_defines_reach_the_script_that_includes_it():
+    from c2s import library, sdk
+    script = parse.parse(HEAD + '#include "lib/sizes.c"\n\nint f(void)\n{\n    return twice(SIZE);\n}\n')
+    texts = {"lib/sizes.c": "#define SIZE 21\n\nint twice(int value)\n{\n    return value * 2;\n}\n"}
+    program = library.expand(script, texts, sdk.load_texts())
+    assert vm.run_function(vm.table_of(program), "f", [], [("int", 0)] * 4)[1] == 42
