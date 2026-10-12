@@ -652,14 +652,17 @@ def type_name(state, allowed):
     return kind
 
 
+# An array size: a number, or a constant's name. A name this file does not define is kept and
+# resolved with the constants of the headers and libraries the script includes (sdk.resolve).
 def array_size(state):
     token = take(state)
     if token["kind"] == "int":
         return int_value(token["text"])
-    if token["kind"] == "name" and isinstance(state.get("constants", {}).get(token["text"]), int):
-        return state["constants"][token["text"]]
+    if token["kind"] == "name":
+        known = state.get("constants", {}).get(token["text"])
+        return known if isinstance(known, int) else token["text"]
     state["pos"] -= 1
-    fail(state, "an array size is a number or a #define'd number")
+    fail(state, "an array size is a number or a constant")
 
 
 def initial_values(state):
@@ -696,7 +699,7 @@ def declarators(state, kind):
             if not isinstance(init, list):
                 fail(state, "%s[] needs a size or a list of values" % name)
             size = len(init)
-        if isinstance(init, list) and (size is None or len(init) > size):
+        if isinstance(init, list) and (size is None or (isinstance(size, int) and len(init) > size)):
             fail(state, "too many values for " + name)
         declared = {"name": name, "type": kind, "size": size, "init": init, "line": line}
         if pointer:

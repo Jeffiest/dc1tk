@@ -2,7 +2,7 @@ import shutil
 import struct
 from pathlib import Path
 
-from c2s import archive, compile, definitions, iso, library, natives, parse, pathnames, source
+from c2s import archive, compile, definitions, index, iso, library, natives, parse, pathnames, source, tree
 
 SCRIPT_SUFFIXES = (".stb", ".STB")
 VOLUME_SIZE = 80
@@ -73,11 +73,32 @@ def replaced_member(data, names, new):
     return data[:entry] + bytes(header) + inner + bytes(-len(inner) % archive.PACK_ALIGN) + data[old_end:]
 
 
+# Scripts that cannot differ from the disc: unchanged since the decompiler wrote them, as are the
+# libraries they include, and replaced by no override. Every retail script compiles back to its own
+# bytes (cli.py verify), so build need not compile these. Empty for a tree with no record.
+def settled(source_dir, overrides):
+    recorded = tree.originals(source_dir)
+    if not recorded:
+        return set()
+    root = Path(source_dir)
+    known = {}
+
+    def unchanged(path):
+        if path not in known:
+            known[path] = (path in recorded and path not in overrides and (root / path).is_file()
+                           and tree.file_hash(root / path) == recorded[path])
+        return known[path]
+
+    return {path for path, entry in index.outlines(source_dir).items()
+            if not index.is_library(path) and unchanged(path) and all(unchanged(item) for item in entry["includes"])}
+
+
 # The scripts whose compiled form differs from the disc. overrides holds whole-file texts that stand
 # in for tree files, mods' and build --start-at's, keyed by tree path; scripts only a mod has are
 # compiled too.
-def changes(source_dir, iso_path, defs, headers, tables, overrides=None):
+def changes(source_dir, iso_path, defs, headers, tables, overrides=None, full=False):
     overrides = overrides or {}
+    skip = set() if full else settled(source_dir, overrides)
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
         index = {entry["path"]: entry for entry in disc["entries"]}
@@ -92,20 +113,25 @@ def changes(source_dir, iso_path, defs, headers, tables, overrides=None):
             if where is None:
                 skipped.append(relative)
                 continue
+            if relative in skip:
+                continue
             if where["top"] not in tops:
                 tops[where["top"]] = archive.read_entry(f, disc, index[where["top"]])
             original = read_member(tops[where["top"]], where["members"])
             if original is None:
                 skipped.append(relative)
                 continue
-            new = compiled(Path(source_dir) / relative, defs, headers, tables, overrides.get(relative), plain, overrides)
+            try:
+                new = compiled(Path(source_dir) / relative, defs, headers, tables, overrides.get(relative), plain, overrides)
+            except ValueError as error:
+                raise ValueError("%s: %s" % (relative, error)) from None
             if new != original:
                 found.append(dict(where, source=relative, data=new))
     rebuilt = {}
     for change in found:
         data = rebuilt.get(change["top"], tops[change["top"]])
         rebuilt[change["top"]] = replaced_member(data, change["members"], change["data"])
-    return {"scripts": found, "files": rebuilt, "skipped": skipped}
+    return {"scripts": found, "files": rebuilt, "skipped": skipped, "compiled": len(scripts) - len(skip)}
 
 
 def sectors(size):

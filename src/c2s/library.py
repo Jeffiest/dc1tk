@@ -421,43 +421,23 @@ def expand(program, texts, headers=None):
     if "asm" in program:
         return program
     headers = headers or {}
-    declarations = {key: dict(value) if isinstance(value, dict) else list(value)
-                    for key, value in dict(sdk.EMPTY, **program.get("declarations", {})).items()}
-    absorbed = {}
-    seen = set()
-    functions = []
-    table = program["natives"]
+    state = {
+        "declarations": {key: dict(value) if isinstance(value, dict) else list(value)
+                         for key, value in dict(sdk.EMPTY, **program.get("declarations", {})).items()},
+        "absorbed": {}, "seen": set(), "included": set(), "texts": texts, "headers": headers,
+        "functions": [], "table": program["natives"],
+    }
     for item in program["functions"]:
         if item["kind"] != "include":
-            functions.append(item)
-            continue
-        if item["system"]:
-            if item["path"] not in absorbed:
-                absorbed[item["path"]] = absorb(item["path"], headers, declarations, seen)
-            table = table or absorbed[item["path"]]
-            continue
-        if item["path"] not in texts:
-            raise ValueError("cannot find included file " + item["path"])
-        included = parse.parse(texts[item["path"]])
-        # A library's own #defines, enums, typedefs and helpers become the including script's, as
-        # with a C header.
-        for key, value in included.get("declarations", {}).items():
-            if isinstance(value, dict):
-                declarations.setdefault(key, {}).update(value)
-            else:
-                declarations.setdefault(key, []).extend(value)
-        included_table = included["natives"]
-        for sub in included["functions"]:
-            if sub["kind"] == "include" and sub["system"]:
-                if sub["path"] not in absorbed:
-                    absorbed[sub["path"]] = absorb(sub["path"], headers, declarations, seen)
-                included_table = included_table or absorbed[sub["path"]]
-            elif sub["kind"] == "include":
-                raise ValueError("%s includes another library, which is not supported" % item["path"])
-            else:
-                functions.append(sub)
-        if table is not None and included_table is not None and included_table != table:
-            raise ValueError("%s uses natives %s, not %s" % (item["path"], included_table, table))
+            state["functions"].append(item)
+        elif item["system"]:
+            header_table = absorbed_header(item["path"], state)
+            state["table"] = state["table"] or header_table
+        else:
+            included_table = inline_library(item["path"], state, [])
+            if state["table"] is not None and included_table is not None and included_table != state["table"]:
+                raise ValueError("%s uses natives %s, not %s" % (item["path"], included_table, state["table"]))
+    functions = state["functions"]
     padding_of = program.get("padding_of", {})
     defined = {function["name"] for function in functions}
     for name in padding_of:
@@ -465,23 +445,75 @@ def expand(program, texts, headers=None):
             raise ValueError("#pragma padding_of names unknown function " + name)
     functions = [dict(function, padding=padding_of[function["name"]]) if function["name"] in padding_of else function
                  for function in functions]
-    return dict(program, natives=table, functions=functions, padding_of={}, declarations=declarations)
+    return dict(program, natives=state["table"], functions=functions, padding_of={}, declarations=state["declarations"])
 
 
-# The texts of a script's library includes, looked up from its folder and each folder above it.
-# overlay, keyed by include path, stands in for files on disk (build --mod).
+def absorbed_header(path, state):
+    if path not in state["absorbed"]:
+        state["absorbed"][path] = absorb(path, state["headers"], state["declarations"], state["seen"])
+    return state["absorbed"][path]
+
+
+# Puts a library's functions where it is included, after the libraries it includes itself. Each
+# library is included once however many files include it, as if every library had #pragma once.
+# A library's own #defines, enums, typedefs and helpers become the script's, as with a C header.
+def inline_library(path, state, chain):
+    if path in chain:
+        raise ValueError("libraries include each other: " + " -> ".join(chain + [path]))
+    if path in state["included"]:
+        return None
+    if path not in state["texts"]:
+        raise ValueError("cannot find included file " + path)
+    state["included"].add(path)
+    included = parse.parse(state["texts"][path])
+    for key, value in included.get("declarations", {}).items():
+        if isinstance(value, dict):
+            state["declarations"].setdefault(key, {}).update(value)
+        else:
+            state["declarations"].setdefault(key, []).extend(value)
+    table = included["natives"]
+    for sub in included["functions"]:
+        if sub["kind"] == "include" and sub["system"]:
+            header_table = absorbed_header(sub["path"], state)
+            table = table or header_table
+        elif sub["kind"] == "include":
+            nested = inline_library(sub["path"], state, chain + [path])
+            if table is not None and nested is not None and nested != table:
+                raise ValueError("%s uses natives %s, not %s" % (sub["path"], nested, table))
+        else:
+            state["functions"].append(sub)
+    return table
+
+
+# Where quoted includes are looked for after the script's own folder and each folder above it: the
+# libraries shipped with the SDK (sdk/modkit/...), which any script or mod can include.
+SHARED_LIBRARIES = sdk.SDK_DIR
+
+
+# The texts of a script's library includes and of the libraries they include, looked up from the
+# script's folder and each folder above it, then in the shared libraries. overlay, keyed by include
+# path, stands in for files on disk (build --mod).
 def read_includes(program, source_path, overlay=None):
     texts = {}
     directory = Path(source_path).resolve().parent
-    for item in program.get("functions", []):
-        if item["kind"] != "include" or item["system"]:
+    pending = [item["path"] for item in program.get("functions", []) if item["kind"] == "include" and not item["system"]]
+    while pending:
+        path = pending.pop()
+        if path in texts:
             continue
-        if overlay and item["path"] in overlay:
-            texts[item["path"]] = overlay[item["path"]]
+        text = overlay.get(path) if overlay else None
+        if text is None:
+            for folder in [directory] + list(directory.parents) + [SHARED_LIBRARIES]:
+                candidate = folder / path
+                if candidate.is_file():
+                    text = candidate.read_text(encoding="utf-8")
+                    break
+        if text is None:
             continue
-        for folder in [directory] + list(directory.parents):
-            candidate = folder / item["path"]
-            if candidate.is_file():
-                texts[item["path"]] = candidate.read_text(encoding="utf-8")
-                break
+        texts[path] = text
+        try:
+            nested = parse.parse(text)
+        except ValueError:
+            continue
+        pending += [item["path"] for item in nested.get("functions", []) if item["kind"] == "include" and not item["system"]]
     return texts

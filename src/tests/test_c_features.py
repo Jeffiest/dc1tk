@@ -1,5 +1,5 @@
 from c2s import compile, natives, parse
-from tests import vm
+from c2s import vm
 
 HEAD = "#pragma natives event\n\nPROGRAM(100, f);\nMAIN(f);\n\n"
 EVENT = "#include <event.h>\n\nPROGRAM(100, f);\nMAIN(f);\n\n"
@@ -144,3 +144,31 @@ def test_a_librarys_defines_reach_the_script_that_includes_it():
     texts = {"lib/sizes.c": "#define SIZE 21\n\nint twice(int value)\n{\n    return value * 2;\n}\n"}
     program = library.expand(script, texts, sdk.load_texts())
     assert vm.run_function(vm.table_of(program), "f", [], [("int", 0)] * 4)[1] == 42
+
+
+def test_every_header_a_script_includes_is_read():
+    from c2s import library, sdk
+    headers = dict(sdk.load_texts(), **{"extra.h": "enum extra {\n    EXTRA_VALUE = 9,\n};\n"})
+    script = parse.parse("#include <event.h>\n#include <extra.h>\n\nPROGRAM(100, f);\nMAIN(f);\n\n"
+                         "int f(void)\n{\n    return EXTRA_VALUE + PAD_CROSS;\n}\n")
+    program = library.expand(script, {}, headers)
+    assert vm.run_function(vm.table_of(program), "f", [], []) [1] == 9 + 64
+
+
+def test_libraries_include_libraries_once_and_shared_ones_come_from_the_sdk():
+    import tempfile
+    from pathlib import Path
+    from c2s import library, sdk
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        (root / "lib").mkdir()
+        (root / "lib/a.c").write_text('#include "lib/b.c"\n#include "modkit/input.c"\n\nint a(void)\n{\n    return b() + 1;\n}\n',
+                                      encoding="utf-8")
+        (root / "lib/b.c").write_text("int b(void)\n{\n    return 40;\n}\n", encoding="utf-8")
+        script = parse.parse('#include <event.h>\n\nPROGRAM(100, f);\nMAIN(f);\n\n#include "lib/a.c"\n#include "lib/b.c"\n\n'
+                             "int f(void)\n{\n    modkit_wait(2);\n    return a() + 1;\n}\n")
+        texts = library.read_includes(script, root / "script.c")
+        assert sorted(texts) == ["lib/a.c", "lib/b.c", "modkit/input.c"]
+        program = library.expand(script, texts, sdk.load_texts())
+        assert [function["name"] for function in program["functions"]].count("b") == 1
+        assert vm.run_function(vm.table_of(program), "f", [], [])[1] == 42

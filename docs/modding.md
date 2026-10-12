@@ -13,6 +13,8 @@ comes from. The commands are in [usage](usage.md).
 | How does the game get to map s51, and at which program? | `cli.py xref source map s51` |
 | Which model and AI script does a monster kind use, and who places it? | `cli.py xref source monster golem` |
 | Which save flags are free for a mod? Who uses flag 54? | `cli.py flags source`, `cli.py flags source --flag 54` |
+| Which maps can a scene start in, and where does the player play? | `cli.py maps source` |
+| A map's programs, free program numbers, trigger points and player positions? | `cli.py map source s17` |
 | What have I changed? | `cli.py changes source` |
 
 Files keep the game's codes with a readable name after them
@@ -111,6 +113,48 @@ the engine loads the one for the console's language (`FileNameConvLanguage`,
 your code in a library they all include. `xref` lists the variants of one
 call once.
 
+## Message text
+
+Text given to `show_message` (and `modkit_say`, `modkit_text_show`) can hold
+these codes, which the engine's message layout reads (`nd_meswin.cpp`,
+`font.cpp`):
+
+| Code | Shows |
+| --- | --- |
+| `\n` | a new line |
+| `<page>` | a page break: the window waits for the button before the rest |
+| `[Number1]` ... `[Number16]` | a number set with `set_message_value(window, slot, value)`; negative numbers and 0 show |
+| `[文字列１]` ... `[文字列１６]` | text set with `set_message_string(window, slot, text)`; the slot is in full-width digits |
+| `[アイテム１]` ... | an item's name, set with `set_message_item(window, slot, item)` |
+| `(O)` `(X)` `(A)` `(#)` | the circle, cross, triangle and square buttons |
+| `[l1]` `[r1]` `[l2]` `[r2]` `[start]` `[select]` | the shoulder, Start and Select buttons |
+| `(L)` `(R)` `(L3)` `(R3)` | the analog sticks, and pressing them |
+| `[+]` `[-]` `[|]` `[!]` | D-pad icons |
+| `[heart]` `[hp]` `[mp]` `[lv]` `[fish]` `[weapon]` ... | other icons of the game's font (the table in `font.cpp`) |
+
+`[Number]` is the only tag with an English spelling (`[数値１]` works too);
+the text and item tags are written as the Japanese scripts write them, in
+every language. The shapes of `(A)` and `(#)` follow the order of the font
+table (circle, triangle, cross, square), as the game's text uses them.
+
+The game's own hint windows hold four lines; keep text that updates live as
+short, so it never runs past what the window shows.
+
+## Dungeon events
+
+Besides the programs warps and other scripts start, the dungeon starts these
+in the loaded map's script on its own (`IsEventRun`, `dng_main.cpp`), while
+the player is alive and on the ground:
+
+| Program | When |
+| --- | --- |
+| `floor_start` (1010) | a floor or dungeon-style map loads without a program of its own; a new game starts here, in dungeon 1 |
+| `treasure_chest` (1100) | the player presses the action button at a chest; the chest stays closed unless the program opens it, as the dungeon scripts' own `open_treasure_chest` does, so a chest can be a switch, as the calculator mod's is |
+| `monster_talk` (1150) | the player presses the button by a monster placed as talkable, on maps whose dungeon data allows talking (`dbinfo.monster_talk`) |
+| `monsters_cleared` (1500) | no monster is left on the floor; once per floor |
+| a monster's `run_event_script(n)` | program `n`, on the monster's request |
+| a trigger point's program | the player touches it, presses the action button at it or uses an item there, as `cli.py map` lists |
+
 ## Editing shared code
 
 Code that several scripts share lives in `lib/`, and an edit there reaches
@@ -124,7 +168,10 @@ python3 cli.py fork source lib/dungeon/monster/monster_ai_full_toolkit.c lib/dun
 
 ## A pattern: a caption every five seconds during a fight
 
-This made-up example puts the rules above together. A map program shows the
+`sdk/modkit/` ships this pattern ready to use: `modkit_caption` and
+`modkit_text_show` (`"modkit/text.c"`) on the map side and `modkit_tick`
+(`"modkit/tick.c"`) on the monster side. This made-up example spells it out
+with natives, to show how it works, and puts the rules above together. A map program shows the
 next caption and never waits, so it runs within a frame while the player keeps
 control. The monsters in the fight provide the clock, because event scripts
 cannot run beside play and monster scripts do.
@@ -195,6 +242,12 @@ void tick_captions(void)
 The flag keeps the same monsters elsewhere in the game from asking.
 
 ## Trying a change quickly
+
+Three things keep the loop short: test a mod's logic without the game
+(`cli.py mod test`, see [usage](usage.md#mods)); build only what changed,
+which `build` does by itself; and start New Game at the scene you are
+working on, then boot it with `--play`. A mod can name its scene in
+`mod.json` (`"start_at": "s17:9000"`), so building it is enough.
 
 `build --start-at MAP:PROGRAM` writes a test image whose New Game goes
 straight to a scene, without changing the source tree:

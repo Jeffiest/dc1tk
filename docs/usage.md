@@ -13,6 +13,10 @@ python3 cli.py changes source             what you edited since decompiling
 python3 cli.py mod new source castle map/s/s51_raybrandt_castle/s51_1.c   start a mod
 python3 cli.py build source dc2.iso -o modded.iso --mod castle --mod other  build with mods
 python3 cli.py mod list source            every mod, its files, and mods that clash
+python3 cli.py mod test source calculator run a mod's tests.c without the game
+python3 cli.py play modded.iso            boot an image in PCSX2 (or build ... --play)
+python3 cli.py maps source                every map: town or dungeon-style, playable or not
+python3 cli.py map source s17             one map: programs, free numbers, trigger points, positions
 python3 cli.py xref source event 510 --map s51     what defines, starts and requests an event
 python3 cli.py xref source map s51        how the game enters a map
 python3 cli.py xref source monster golem  a monster's model, AI script and users
@@ -112,6 +116,13 @@ is the script the source compiles to. Files outside `DATA.DAT`, the ISO
 in them.
 
 `build` also notes each edited library that reaches scripts you did not edit.
+It compiles only the scripts that can differ from the disc: those edited,
+replaced or added to by a mod, or including a changed library. Every other
+script is as the decompiler wrote it, which compiles back to the disc's own
+bytes, so most builds take seconds; `--full` compiles everything.
+`--play` boots the new image in PCSX2 (`play IMAGE` does the same for any
+image; `--pcsx2 PATH` or `$PCSX2` when it is not installed in the usual
+place).
 
 To build one script without a disc, `python3 cli.py compile
 source/<path>.c -o <path>.stb`.
@@ -149,9 +160,51 @@ python3 cli.py build source dc2.iso -o modded.iso --mod castle --mod other
   replaces the whole file, so compare them), and the mods that cannot be
   built together.
 - `mod apply SOURCE NAME...` writes mods into the tree instead.
+- `mod test SOURCE NAME` runs the mod's tests (below).
 
 A mod made on a tree with readable names applies to one without, and the
 other way round: files and `#include` lines follow each tree's layout.
+
+**Additions.** A mod need not copy a script to add to it. Its `mod.json` can
+list additions, applied when it is built:
+
+```json
+{
+ "additions": [
+  {"map": "s17",
+   "programs": {"9000": "start_calculator_valley", "treasure_chest": "use_calculator"},
+   "includes": ["lib/mods/calculator/calculator.c"]}
+ ],
+ "start_at": "s17:9000"
+}
+```
+
+Each addition picks scripts by `"map"` (every script of the map, all
+languages) or by `"scripts"` (paths without readable names, with `*` and
+`?`), and adds `"programs"`, `"includes"`, or `"wrap"`, which runs functions
+`"before"` and `"after"` an existing program:
+`{"map_start": {"before": ["my_setup"]}}`. Several mods can add to the same
+script; only adding a program the script already has is refused (wrap it
+instead). Keep a mod's own libraries under `lib/mods/NAME/`, so their paths
+never depend on the tree's names. `"start_at"` is the scene `build` starts a
+new game in when the mod is chosen (`--no-start-at` for a normal start).
+
+**Shared libraries.** `sdk/modkit/` holds libraries any script can include:
+`#include "modkit/text.c"` (message windows: `modkit_say`, `modkit_caption`,
+`modkit_text_show`), `"modkit/input.c"` (`modkit_wait`,
+`modkit_wait_for_button`, `modkit_pressed`) and, for monster scripts,
+`"modkit/tick.c"` (`modkit_tick`, the timer behind the caption pattern in the
+[modding guide](modding.md)). A quoted include is looked for from the
+script's folder up, then in `sdk/`. Libraries can include libraries; each is
+included once.
+
+**Tests.** `mods/NAME/tests.c` holds `int test_...(void)` functions;
+`cli.py mod test SOURCE NAME` compiles them with the mod over the tree and
+runs them in an interpreter of the script VM, without the game. A test
+passes when it returns nonzero, and `print(...)` output is shown for the
+ones that fail. Natives do nothing there (a result they would give is 0),
+so test the logic: write it as functions that take what the game would give
+(the buttons pressed, say) and check what they return or change.
 `--mods DIR` picks another mods folder. Mods hold game scripts, so they stay
 out of this repository (`mods/` is ignored).
 

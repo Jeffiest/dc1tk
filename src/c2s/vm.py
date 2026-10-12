@@ -2,11 +2,12 @@ import re
 
 from c2s import asm, compile, library, natives, parse, sdk
 
-# A small interpreter for the assembly the compiler writes, so tests can check what compiled code
-# does, not only that it compiles. It follows the game's VM (runscript.cpp) for what tests use:
-# values keep their type (int, float, string, pointer), locals, arrays and pointers, arithmetic
-# with C's truncating division, comparisons, jumps and calls. Natives are not run: a native call
-# only takes its arguments off the stack.
+# A small interpreter for the assembly the compiler writes, so code can be tried without the game:
+# the project's tests and cli.py mod test use it. It follows the game's VM (runscript.cpp) in what
+# script logic needs: values keep their type (int, float, string, pointer), locals, arrays and
+# pointers, arithmetic with C's truncating division, comparisons, jumps and calls. Natives are not
+# run: a native call only takes its arguments off the stack, so a result it would give stays 0.
+# print records its values.
 
 LABEL = re.compile(r"^(L_\w+):$")
 
@@ -83,7 +84,7 @@ def cell(frame, globals_, mode, slot, stack):
     return frame, slot
 
 
-def run_function(table, name, args, globals_):
+def run_function(table, name, args, globals_, printed=None):
     function = table[name]
     frame = list(args) + [("int", 0)] * (function["locals"] - len(args))
     stack = []
@@ -142,11 +143,14 @@ def run_function(table, name, args, globals_):
             count = table[words[1]]["args"]
             call_args = stack[len(stack) - count:]
             del stack[len(stack) - count:]
-            stack.append(run_function(table, words[1], call_args, globals_))
+            stack.append(run_function(table, words[1], call_args, globals_, printed))
         elif op == "ret":
             return stack.pop()
         elif op in ("ext", "print"):
+            values = stack[len(stack) - int(words[1]):]
             del stack[len(stack) - int(words[1]):]
+            if op == "print" and printed is not None:
+                printed.append(" ".join(str(value[1]) for value in values))
         elif op in ("nop", "wait", "skip_end"):
             continue
         elif op == "end":

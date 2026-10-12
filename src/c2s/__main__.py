@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from c2s import (asm, compile, coverage, decompile, definitions, disc, extract, flags, index, learn, library, messages, names,
-                 mods, natives, notes, parse, pathnames, rebuild, sdk, source, startat, stb, tree, verify, xref)
+                 maps, mods, natives, notes, parse, pathnames, play, rebuild, sdk, source, startat, stb, tree, verify, xref)
 
 
 def run_extract(args):
@@ -183,8 +183,17 @@ def run_build(args):
         print("mod %s: %d files" % (mod_dir.name, len(mods.contents(mod_dir, args.source))))
         for path in mods.stale(mod_dir, args.source):
             print("warning: %s changed in the decompiler's output since %s was made; compare them" % (path, mod_dir.name))
-    if args.start_at:
-        target = startat.parse_target(args.start_at)
+    start_at = args.start_at
+    if start_at is None and not args.no_start_at:
+        wanted = {mods.entries(mod_dir).get("start_at") for mod_dir in mod_dirs} - {None, ""}
+        if len(wanted) > 1:
+            raise SystemExit("the chosen mods start at different scenes (%s); pick one with --start-at, or --no-start-at"
+                             % ", ".join(sorted(wanted)))
+        if wanted:
+            start_at = wanted.pop()
+            print("start at %s, from the chosen mod (--no-start-at for a normal New Game)" % start_at)
+    if start_at:
+        target = startat.parse_target(start_at)
         consts = index.constants(index.tree_headers(args.source, defs, args.sdk))
         for warning in startat.warnings(args.source, consts, target):
             print("warning: " + warning)
@@ -200,7 +209,9 @@ def run_build(args):
         for note in tree.library_notes(args.source, status):
             print("note: " + note)
     found = rebuild.changes(args.source, args.iso, defs, definitions.header_texts(defs, args.sdk), natives.load(args.natives),
-                            overrides)
+                            overrides, args.full)
+    print("compiled %d scripts; the rest are unchanged since decompiling%s"
+          % (found["compiled"], "" if not args.full else " (all compiled: --full)"))
     for path in found["skipped"]:
         print("not on the disc, skipped: %s" % path)
     for change in found["scripts"]:
@@ -216,7 +227,11 @@ def run_build(args):
     for path in wrong:
         print("reads back wrong: %s" % path)
     print("%d scripts changed, %d disc files rewritten, written to %s" % (len(found["scripts"]), len(found["files"]), args.output))
-    return 1 if wrong else 0
+    if wrong:
+        return 1
+    if args.play:
+        print("started PCSX2: %s" % play.launch(args.output, args.pcsx2))
+    return 0
 
 
 def tree_constants(args, defs):
@@ -253,12 +268,42 @@ def run_xref(args):
     return 0
 
 
+def run_maps(args):
+    defs = loaded_definitions(args)
+    consts = tree_constants(args, defs)
+    found = maps.catalog(args.source, args.extracted, defs, consts)
+    if args.command == "maps":
+        print(maps.summary(found))
+    else:
+        print(maps.detail(args.name, found, args.source, args.extracted, consts))
+    return 0
+
+
+def run_play(args):
+    found = play.launch(args.image, args.pcsx2, not args.full_boot)
+    print("started %s with %s" % (args.image, found))
+    return 0
+
+
 def run_changes(args):
     print(tree.changes_text(args.source))
     return 0
 
 
 def run_mod(args):
+    if args.mod_command == "test":
+        defs = loaded_definitions(args)
+        results = mods.run_tests(mods.folder(args.mods, args.name), args.source, defs, args.sdk)
+        for name, passed, printed, error in results:
+            print("%-5s %s" % ("ok" if passed else "FAIL", name))
+            if not passed:
+                for line in printed:
+                    print("      printed: " + line)
+                if error:
+                    print("      error: " + error)
+        failed = sum(1 for result in results if not result[1])
+        print("%d passed, %d failed" % (len(results) - failed, failed))
+        return 1 if failed else 0
     if args.mod_command == "list":
         print(mods.listing(args.mods, args.source))
         return 0
@@ -368,6 +413,11 @@ def parser():
     command.add_argument("--mod", action="append", default=[], metavar="NAME",
                          help="layer this mod over the tree; repeat for several, which may not change the same file")
     command.add_argument("--mods", default="mods", help="the folder that holds the mods")
+    command.add_argument("--no-start-at", action="store_true", help="ignore a chosen mod's start_at")
+    command.add_argument("--play", action="store_true", help="boot the image in PCSX2 when it is built")
+    command.add_argument("--pcsx2", help="PCSX2's executable, for --play")
+    command.add_argument("--full", action="store_true",
+                         help="compile every script, not only those edited, modded or including an edited library")
     common(command)
 
     command = commands.add_parser("verify", help="round-trip every script in an extracted disc")
@@ -414,6 +464,22 @@ def parser():
     command.add_argument("--extracted", default="extracted", help="the extracted disc, for monster models and AI scripts")
     common(command)
 
+    command = commands.add_parser("maps", help="every map: how the game uses it and whether the player plays there")
+    command.add_argument("source", help="a decompiled source tree")
+    command.add_argument("--extracted", default="extracted", help="the extracted disc, for map names")
+    common(command)
+
+    command = commands.add_parser("map", help="one map: programs and free numbers, trigger points, player positions, entries")
+    command.add_argument("source", help="a decompiled source tree")
+    command.add_argument("name", help="the map's code, as in s17")
+    command.add_argument("--extracted", default="extracted", help="the extracted disc, for names and .map files")
+    common(command)
+
+    command = commands.add_parser("play", help="boot a disc image in PCSX2")
+    command.add_argument("image", help="the disc image")
+    command.add_argument("--pcsx2", help="PCSX2's executable; else $PCSX2, the PATH or the usual install folder")
+    command.add_argument("--full-boot", action="store_true", help="show the PS2 boot screens instead of skipping them")
+
     command = commands.add_parser("changes", help="list files edited, added or removed since the tree was decompiled")
     command.add_argument("source", help="a decompiled source tree")
 
@@ -428,14 +494,18 @@ def parser():
     save_command.add_argument("name", help="the mod's name, a folder in the mods folder")
     list_command = mod_commands.add_parser("list", help="list the mods, their files, and mods that change the same file")
     list_command.add_argument("source", help="the decompiled source tree")
+    test_command = mod_commands.add_parser("test", help="run the test_ functions of a mod's tests.c without the game")
+    test_command.add_argument("source", help="the decompiled source tree")
+    test_command.add_argument("name", help="the mod's name")
     apply_command = mod_commands.add_parser("apply", help="write mods' files into a source tree")
     apply_command.add_argument("source", help="the source tree to apply them to")
     apply_command.add_argument("names", nargs="+", help="mods to apply, in order")
     apply_command.add_argument("--force", action="store_true", help="replace files edited in the tree too")
-    for mod_command in (new_command, save_command, list_command, apply_command):
+    for mod_command in (new_command, save_command, list_command, apply_command, test_command):
         mod_command.add_argument("--mods", default="mods", help="the folder that holds the mods")
     common(new_command)
     common(save_command)
+    common(test_command)
 
     command = commands.add_parser("fork", help="give scripts their own copy of a library, so edits to it reach only them")
     command.add_argument("source", help="a decompiled source tree")
@@ -455,6 +525,15 @@ def main():
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
     args = parser().parse_args()
+    try:
+        return run(args)
+    except ValueError as error:
+        # Compile and parse errors name the file and line; a traceback would only hide that.
+        sys.stderr.write("error: %s\n" % error)
+        return 1
+
+
+def run(args):
     if args.command == "extract":
         return run_extract(args)
     if args.command == "natives":
@@ -479,6 +558,10 @@ def main():
         return run_xref(args)
     if args.command == "changes":
         return run_changes(args)
+    if args.command == "play":
+        return run_play(args)
+    if args.command in ("maps", "map"):
+        return run_maps(args)
     if args.command == "mod":
         return run_mod(args)
     if args.command == "fork":

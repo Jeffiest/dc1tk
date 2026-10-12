@@ -116,8 +116,14 @@ def mapping(tree):
 
 # Folder renames the recorded files imply, as {folder without names: named folder}.
 def folders(tree):
+    path = Path(tree) / UNNAMED
+    return recorded_folders(str(Path(tree).resolve()), path.stat().st_mtime_ns if path.is_file() else 0)
+
+
+@functools.lru_cache(maxsize=None)
+def recorded_folders(tree, modified):
     found = {}
-    for named_path, plain in mapping(tree).items():
+    for named_path, plain in recorded(tree, modified).items():
         for plain_folder, named_folder in zip(Path(plain).parents, Path(named_path).parents):
             if plain_folder.as_posix() != ".":
                 found[plain_folder.as_posix()] = named_folder.as_posix()
@@ -138,12 +144,20 @@ def moved(path, renames):
 def unnamed(tree, path):
     if path in mapping(tree):
         return mapping(tree)[path]
-    return moved(path, {named_folder: plain for plain, named_folder in folders(tree).items()})
+    return moved(path, unnamed_folders(str(Path(tree).resolve()), id(folders(tree))))
+
+
+@functools.lru_cache(maxsize=None)
+def unnamed_folders(tree, folders_id):
+    return {named_folder: plain for plain, named_folder in folders(tree).items()}
 
 
 # The tree path of a file given its path without names.
 def named(tree, path):
-    for named_path, plain in mapping(tree).items():
-        if plain == path:
-            return named_path
-    return moved(path, folders(tree))
+    found = reverse(str(Path(tree).resolve()), id(mapping(tree))).get(path)
+    return found if found is not None else moved(path, folders(tree))
+
+
+@functools.lru_cache(maxsize=None)
+def reverse(tree, mapping_id):
+    return {plain: named_path for named_path, plain in mapping(tree).items()}

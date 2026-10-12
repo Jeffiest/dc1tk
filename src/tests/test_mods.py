@@ -114,3 +114,18 @@ def test_a_mods_editor_flags_put_its_own_files_before_the_trees():
         base = root.resolve().as_posix()
         assert lines[-3:] == ["-I" + base + "/include", "-I.", "-I" + base]
         assert mods.mod_files(mod) == []
+
+
+def test_build_compiles_only_what_can_have_changed():
+    with tempfile.TemporaryDirectory() as folder:
+        root = recorded(folder)
+        iso_path = disc_for(folder, root)
+        assert rebuild.changes(root, iso_path, definitions.empty(), {}, natives.load())["compiled"] == 0
+        assert rebuild.changes(root, iso_path, definitions.empty(), {}, natives.load(), full=True)["compiled"] == 2
+        (root / "lib/m/shared.c").write_text("void helper(void)\n{\n}\n", encoding="utf-8")
+        found = rebuild.changes(root, iso_path, definitions.empty(), {}, natives.load())
+        assert found["compiled"] == 2 and len(found["scripts"]) == 2
+        texts = {"map/m/t01.c": SCRIPT.replace("helper();", "helper();\n    wait;")}
+        (root / "lib/m/shared.c").write_text(LIBRARY, encoding="utf-8")
+        found = rebuild.changes(root, iso_path, definitions.empty(), {}, natives.load(), texts)
+        assert found["compiled"] == 1 and [change["source"] for change in found["scripts"]] == ["map/m/t01.c"]

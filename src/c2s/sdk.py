@@ -286,6 +286,20 @@ def statements(nodes, found, temps=None):
     return out
 
 
+# Locals whose array size names a constant get its value.
+def sized_locals(function, found):
+    sized = []
+    for declared in function["locals"]:
+        size = declared["size"]
+        if isinstance(size, str):
+            value = found["constants"].get(size)
+            if not value or value.get("kind") != "int":
+                raise ValueError("%s: array size %s is not a known integer constant" % (function["name"], size))
+            declared = dict(declared, size=value["value"])
+        sized.append(declared)
+    return sized
+
+
 def resolve(program, tables):
     if "asm" in program:
         return program
@@ -296,7 +310,7 @@ def resolve(program, tables):
         if function["kind"] == "function":
             body = with_constants(function["body"], found["constants"], variable_names(function, global_names))
             temps = []
-            function = dict(function, body=statements(body, found, temps))
+            function = dict(function, body=statements(body, found, temps), locals=sized_locals(function, found))
             if temps:
                 function["locals"] = function["locals"] + [{"name": name, "type": "int", "size": None} for name in temps]
         functions.append(function)
