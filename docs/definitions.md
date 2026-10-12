@@ -341,6 +341,15 @@ constants (`place_monster(MONSTER_SEWER_RAT, ...)`, `add_item(ITEM_ROYAL_SWORD)`
 `compile` and `build` find the header through the source tree's `include/`
 folder. Without a disc the same kinds fall back to comments.
 
+The game's asset names (motions, texture animations, effects, map parts,
+damage settings) are Japanese strings the engine looks up by name. A
+whole-disc decompile also writes a `#define` into `disc.h` for each one the
+scripts pass to such a parameter, named from the set's English gloss
+(`#define MOTION_STAND "立ち"`), and the scripts use the names:
+`set_chara_motion(CHARA_PLAYER, MOTION_STAND)`. Names that read the same
+are numbered (`MOTION_STAND_2`). A single script decompiled on its own
+keeps the strings, with the gloss as a comment.
+
 Character slots cannot be named per map: villagers fill slots in an
 order that changes with the story (see `notes/characters.md`); the
 villager ids scripts look them up by are `enum npc_id`. Music files and

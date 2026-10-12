@@ -5,6 +5,12 @@ script with the SDK. No retail code appears here. Each compiles as it is
 (`python3 cli.py compile docs/examples/greeting.c -o greeting.stb`), and
 `src/tests/test_examples.py` checks that they all still do.
 
+The examples define English names for the few Japanese asset names they
+use (`#define MOTION_STAND "立ち"`). Inside a decompiled tree you do not
+need to: `include/disc.h` defines a name for every motion, texture
+animation, effect, map part and damage setting the game's scripts use, and
+every script includes it.
+
 ## [greeting.c](greeting.c)
 
 An event script for a town square: two actors placed in a camera shot, a

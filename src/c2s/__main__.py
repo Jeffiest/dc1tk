@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from c2s import (asm, compile, coverage, decompile, definitions, disc, extract, flags, index, learn, library, messages, names,
+from c2s import (asm, assets, compile, coverage, decompile, definitions, disc, extract, flags, index, learn, library, messages, names,
                  maps, mods, natives, notes, parse, pathnames, play, rebuild, sdk, slots, source, startat, stb, tree, verify, xref)
 
 
@@ -133,6 +133,7 @@ def run_decompile_disc(args, tables, defs, headers):
     defs, headers, generated = disc.with_header(str(root), defs, headers)
     model = library.model_for(str(root), paths, tables, defs, headers)
     generated = slots.with_header(generated, model.get("folder_slots"))
+    generated = assets.with_header(generated, model.get("asset_names"))
     naming = pathnames.lookups(str(root), defs)
     renamed = {library_entry["path"]: pathnames.named_library(library_entry["path"], naming)
                for library_entry in model["libraries"].values()}

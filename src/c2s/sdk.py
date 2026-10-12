@@ -2,7 +2,7 @@ import collections
 import re
 from pathlib import Path
 
-from c2s import names, parse
+from c2s import assets, names, parse
 
 SDK_DIR = Path(__file__).resolve().parents[2] / "sdk"
 PRELUDE = "c2s.h"
@@ -666,7 +666,7 @@ def present_functions(functions, found, params_by_kind=None):
     prepared = []
     for function in functions:
         if function["kind"] == "function":
-            function = dict(function, body=old_numbered(function["body"], found))
+            function = dict(function, body=assets.named(old_numbered(function["body"], found), found))
             function = named_locals(function, found)
             function = dict(function, body=folded(function["body"], found, inlines, set()))
         prepared.append(function)

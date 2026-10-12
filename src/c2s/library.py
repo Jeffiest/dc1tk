@@ -3,7 +3,7 @@ import hashlib
 import re
 from pathlib import Path, PurePosixPath
 
-from c2s import decompile, definitions, disc, maps, messages, names, natives, notes, parse, sdk, slots, source, stb
+from c2s import assets, decompile, definitions, disc, maps, messages, names, natives, notes, parse, sdk, slots, source, stb
 
 MINIMUM_USERS = 2
 
@@ -47,11 +47,13 @@ def model_for(root, paths, tables, defs, headers=None):
     script_strings = {}
     script_prints = {}
     slot_loads = {}
+    asset_strings = set()
     for path in paths:
         table = natives.table_for(path, defs["tables"])
         program = decompile.decompile(stb.read((Path(root) / path).read_bytes()), table, tables)
         entry, found = survey(path, program)
         slots.survey(slot_loads, path, program)
+        assets.survey(asset_strings, program, contexts.get(table))
         files.append(entry)
         exact_to_loose.update(names.loose_map(program))
         script_prints[path] = names.ordered_fingerprints(program)
@@ -70,7 +72,9 @@ def model_for(root, paths, tables, defs, headers=None):
             if known.get("returns") == "void" and shape.get("returns") != "void":
                 shapes[fingerprint] = dict(known, returns=shape["returns"])
     model = build(files, shapes, defs.get("libraries", {}))
-    model["contexts"] = contexts
+    taken = {name for context in contexts.values() if context is not None for name in context["constants"]}
+    model["asset_names"] = assets.names(asset_strings, defs["strings"], taken)
+    model["contexts"] = {table: assets.in_context(context, model["asset_names"]) for table, context in contexts.items()}
     model["root"] = root
     model["kind_params"] = kind_params
     model["script_files"] = script_files
