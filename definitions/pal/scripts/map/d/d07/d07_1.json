@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for dungeon d07. It starts each floor (Palm Brinks, the story maps s52, s54, s61, s62, s63, s69 and the boss map d07b01), plays the floor arrival scene with seal warnings, handles the exits (Trolley Oil), the Rusted Key door and floor clear, and has warps to story events and the Metal Flotsam and Dark Genie bosses."
+}

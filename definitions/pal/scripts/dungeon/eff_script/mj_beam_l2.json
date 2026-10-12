@@ -1,0 +1,3 @@
+{
+ "doc": "Effect script for the demon (mj) beam attack. The beam model tracks the owner and a child hit effect is controlled through child values."
+}

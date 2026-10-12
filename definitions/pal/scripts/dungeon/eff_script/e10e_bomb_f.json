@@ -1,0 +1,3 @@
+{
+ "doc": "Effect script for the thrown bomb of monster e10e. It arcs forward, explodes with the final bomb effect on contact, and can be knocked back by a guard."
+}

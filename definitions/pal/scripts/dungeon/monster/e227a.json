@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e227a, a ground melee monster with a slash, a charging attack with a knockback hit and invulnerable side and back steps. Its defense rate depends on whether it faces the target. It idles by wandering around its home, notices the player by sight or sound, and holds still if the player is disguised.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

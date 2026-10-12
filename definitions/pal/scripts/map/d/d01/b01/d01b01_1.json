@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the boss room of dungeon 1 (d01b01), the Halloween boss fight. Entering the room the first time plays a long intro cutscene in which the hero meets Halloween and its partner, who demand the red stone before the fight starts, followed by RoBomb tip messages. Two triggers show hints while fighting: aim for the head, and how to lift a RoBomb."
+}

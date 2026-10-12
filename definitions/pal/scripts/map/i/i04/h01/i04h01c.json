@@ -1,0 +1,3 @@
+{
+ "doc": "Interior map i04/h01c. Talking to villagers uses the shared talk handler; map start only calls an empty function."
+}

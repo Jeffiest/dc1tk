@@ -1,0 +1,8 @@
+{
+ "doc": "Boss monster script b40a. It wanders, then fights by distance to the target with lunges, a second claw attack and volleys of rockets fired from the dcol2 point, and plays with the target at high life. Its death runs event script 503.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

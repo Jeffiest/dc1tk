@@ -1,0 +1,7 @@
+{
+ "doc": "Event script for the station where the train Ixion waits (map s11). It plays the boarding scenes for the train cars, runs the party member menus, and has the four gem altars (Earth, Wind, Water and Fire) that lead on to s66 once all four are lit, plus the NPC who waits at the station.",
+ "globals": [
+  "max_slot",
+  "monica_slot"
+ ]
+}

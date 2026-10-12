@@ -1,0 +1,7 @@
+{
+ "doc": "Event script for Sindain Station (s02). It handles the train arriving and leaving, boarding the train, the exits to Sindain (g01) and to the dungeon 1 floor menu (Rainbow Butterfly area), and the story events held here: event 207 (Monica joins Max and explains origin points and Griffon), 209 (the warning about the Rainbow Butterfly and the grape juice from Conda), 254 (finding the Geostone), 280 (the rock cleared from the tracks) and 283 (Cedric calls all aboard for Balance Valley). Talking to the station people triggers the departure question, Borneo and others.",
+ "globals": [
+  "max_scene_slot",
+  "monica_scene_slot"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster e77a, a charging beast. It dashes at the target with a knockback attack, pounces with a second attack, and plays idly when nobody is near. It never guards or dodges.",
+ "globals": [
+  "pos_x",
+  "pos_y",
+  "pos_z"
+ ]
+}

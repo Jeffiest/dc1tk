@@ -1,0 +1,3 @@
+{
+ "doc": "Player-controlled action script for a transformed form that has two attacks: an attack 1 melee swing on Confirm and a sticky projectile attack on Square. Damage of the sticky effect is taken from the main weapon."
+}

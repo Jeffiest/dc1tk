@@ -1,0 +1,3 @@
+{
+ "doc": "Effect script for a drifting spore cloud: one large sprite wanders in a circle while it sheds up to ten fading puffs. The whole cloud fades out after 90 frames and ends at frame 120."
+}

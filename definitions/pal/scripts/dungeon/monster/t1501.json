@@ -1,0 +1,3 @@
+{
+ "doc": "Monster script for the pirate bomb. It lobs itself at the player, can be picked up while its fuse burns, and explodes when the fuse ends or it reaches the player."
+}

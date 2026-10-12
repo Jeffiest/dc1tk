@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e118a, a gear archer. It fires gear arrows and poison arrows from range, sidesteps and backs away to dodge, and changes AI speed depending on rage hits. It has a feigned death that revives it with partial life.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

@@ -1,0 +1,7 @@
+{
+ "doc": "English-text variant of the s56 Cape lighthouse script: the time spot where the party uses the Starglass to travel back in time and save Crest, loading dungeon d03b02. The shared s56 events are in included files.",
+ "globals": [
+  "unused_value",
+  "unused2"
+ ]
+}

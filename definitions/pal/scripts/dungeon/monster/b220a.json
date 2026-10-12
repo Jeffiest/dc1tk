@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for b220a, a Vanguard monster that charges with a shockwave attack and fires nose bullets. Its death runs event script 501.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

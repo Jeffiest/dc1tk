@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e60a, a flying monster that hovers near its home point, wanders, and swoops at the player with attack 1; higher grades poison. It reuses the shared flight movement helpers.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster AI for t1500, a flying enemy that hovers above the ground. It wanders near its home point, circles the player and dives at it with a swooping attack, falls when killed, and calmly hovers while the player is disguised as a monster.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

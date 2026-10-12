@@ -1,0 +1,8 @@
+{
+ "doc": "Regular dungeon monster that slashes and spits a poison mist cloud (attack 2) from its dcol01 bone. Tougher grades hit harder. It guards, and dodges by stepping back or sideways around the player. Calm monsters keep distance and circle; enraged ones attack at close range.",
+ "globals": [
+  "scratch_x",
+  "scratch_y",
+  "scratch_z"
+ ]
+}

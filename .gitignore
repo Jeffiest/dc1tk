@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+
+# Retail game data and anything decompiled or built from it stays out of git.
+*.iso
+/extracted/
+/out/
+/source/
+*.stb
+*.STB
+/*.asm
+/*.c2s
+/report.json

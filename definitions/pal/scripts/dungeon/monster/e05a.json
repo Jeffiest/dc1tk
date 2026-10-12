@@ -1,0 +1,8 @@
+{
+ "doc": "Regular dungeon monster that fights with two sword swings. While calm (rage hits left above zero) it patrols around its home point, watches the player and fights cautiously; once enraged it presses the attack and chases. The monster guards, gets knocked down and stunned like other regular monsters.",
+ "globals": [
+  "scratch_x",
+  "scratch_y",
+  "scratch_z"
+ ]
+}

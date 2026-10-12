@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster e55a, a simple melee monster with two attacks that wanders when idle and fights by distance. It behaves differently before and after being enraged.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

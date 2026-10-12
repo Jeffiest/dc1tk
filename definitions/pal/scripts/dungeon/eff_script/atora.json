@@ -1,0 +1,3 @@
+{
+ "doc": "Effect that sends a stream of red, blue or yellow orbs from the effect's owner to another character, then a glow at the target. The colour is selected by effect value 0 and the receiving character by value 1."
+}

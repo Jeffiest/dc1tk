@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for dungeon d07, the long multi-floor dungeon with seals. It decides what each floor loads (ordinary floors, story maps for certain floors, and the boss map), shows the entry scene with the red, blue and white seal warnings, handles locked exits and the rusted key door, and includes Spheda helpers. Debug warps jump straight to the Metal Flotsam and Dark Genie bosses."
+}

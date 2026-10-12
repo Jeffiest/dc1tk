@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for map s15, the area before the sea dragon fight. It handles the sea dragon boss intro and fight, claiming the Lapis after the boss, music once monsters are cleared, and an entrance to dungeon d04 that requires the gem (flag 632)."
+}

@@ -1,0 +1,3 @@
+{
+ "doc": "Boss monster script p00_10a, a large robot fought in an arena. It smashes the ground with both hands for Vanguard shockwaves, throws nose bombs, fires homing missiles, jumps across the arena and lays eggs of small monsters, then climbs the wall. When stunned it collapses for 120 frames and plays event 530 the first time. Its death runs event 520."
+}

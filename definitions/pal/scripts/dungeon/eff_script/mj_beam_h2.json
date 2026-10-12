@@ -1,0 +1,3 @@
+{
+ "doc": "Effect script for the demon (majin) beam: a looping beam with a hitbox that follows the work position and scales by an effect value until a stop value is set, then plays the return motion."
+}

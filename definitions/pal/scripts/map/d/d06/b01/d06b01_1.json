@@ -1,0 +1,9 @@
+{
+ "doc": "Script for the boss room d06b01 of Dungeon 6, where Emperor Griffon appears and the boss fight starts. Its entries set up each boss arena and leave for the s64, s31 and s44 maps afterwards; the flashback scenes after the fight use Max and Monica actors.",
+ "globals": [
+  "max_slot",
+  "monica_slot",
+  "unused_value",
+  "unused2"
+ ]
+}

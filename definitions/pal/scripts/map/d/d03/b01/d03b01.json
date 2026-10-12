@@ -1,0 +1,9 @@
+{
+ "doc": "Event script for dungeon floor d03b01, the place where the party has gone back in time to help Crest. It plays the arrival scene (e348), the scene where Lin is told to wait while Max and Monica go ahead (e352), and the farewell with Lin after Crest is saved (e356), with the Georama edit mode opened in between. It also handles the exit path question and disables event points already used.",
+ "globals": [
+  "e352_max_slot",
+  "e352_monica_slot",
+  "e356_max_slot",
+  "e356_monica_slot"
+ ]
+}

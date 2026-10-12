@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster e212a, a Tig-style bird that fires volleys of feathers and lunges at the target. It leaps backward to dodge melee attacks and wanders when no target is near.",
+ "globals": [
+  "pos_x",
+  "pos_y",
+  "pos_z"
+ ]
+}

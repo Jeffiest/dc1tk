@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for enemy e219, a dragon with a claw swipe (attack 1) and a fire shot (attack 2). It wanders, fights by distance, and switches to a more aggressive set of choices once its rage counter is used up.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

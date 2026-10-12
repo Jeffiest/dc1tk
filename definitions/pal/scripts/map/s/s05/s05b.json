@@ -1,0 +1,7 @@
+{
+ "doc": "Event script for the Spirit Forest swamp area (s05b) near Sindain. Max and Monica meet Master Utan, who tells them about the Holy One fish monster that bewitched villagers (events 230, 235, 247), try fishing it out with Poison Apples, and later free the villagers and have Utan move the boulder. Entries 501 to 504 play these scenes and return to the s05 script.",
+ "globals": [
+  "max_chara_slot",
+  "partner_chara_slot"
+ ]
+}

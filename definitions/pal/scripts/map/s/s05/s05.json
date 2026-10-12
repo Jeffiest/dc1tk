@@ -1,0 +1,7 @@
+{
+ "doc": "Map s05, the swamp on floor 6 of dungeon 1. The party meets the fisherman Noam, who gives them a Fishing Rod for Grape Juice, finds the villagers acting strangely and meets the swamp master Mardan, who sends them to catch a Priscleen Fish before he turns the three back. Story events 215 to 253 drive this, with the later ones in the s05b script.",
+ "globals": [
+  "max_scene_slot",
+  "monica_scene_slot"
+ ]
+}

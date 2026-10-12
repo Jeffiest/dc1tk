@@ -1,0 +1,8 @@
+{
+ "doc": "Regular dungeon monster that casts a curse shot and swings, and also heals weaker monsters nearby with a green recovery spell once its heal timer (monster var 7) reaches 300. It stands still and watches the player while the player is in a monster disguise. It wanders near home when calm, fights at close and mid range and runs at distant players.",
+ "globals": [
+  "scratch_x",
+  "scratch_y",
+  "scratch_z"
+ ]
+}

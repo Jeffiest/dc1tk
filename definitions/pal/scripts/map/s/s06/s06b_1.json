@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the dungeon floor s06b. It handles the floor exit door, game over on player death, and scenes 500, 510 and 520 (events e103, e107 and e108) that load later scripts, plus program 501 loading the s06c script."
+}

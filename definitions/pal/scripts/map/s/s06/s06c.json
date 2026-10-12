@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for a floor of the dungeon s06 (s06c). It handles the floor exit door (events 310 and gate), game over loading, leaving for edit mode 10 and pausing the monsters while fading in."
+}

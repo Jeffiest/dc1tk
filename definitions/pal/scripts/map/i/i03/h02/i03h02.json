@@ -1,0 +1,3 @@
+{
+ "doc": "Cutscene script for the game's opening circus show in room i03 h02. Program 151 plays the two parts of the opening, with the crowd, clowns, strongman, acrobats and an elephant performing, and then loads the follow-up script i03h02_2 at entry 151."
+}

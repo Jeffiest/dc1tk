@@ -1,0 +1,7 @@
+{
+ "doc": "The Gyorace (fish race) hall in Palm Brinks, map i03 h04. The host runs tournaments of three stages (qualifier, main race, final) in beginner, junior, senior and master classes, where the player enters a fish from the aquarium, picks one of six tuning aquariums and wins prizes by rank. Spectator NPCs comment on the race. Leaving goes to the Palm Brinks Square, s45.",
+ "globals": [
+  "race_sound_id",
+  "prize_sound_id"
+ ]
+}

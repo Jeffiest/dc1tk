@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for the train station platform s34. A train arrives, the player can board it through any of its cars, and leaving the station goes to g05. The platform changes with the station the train is stopped at."
+}

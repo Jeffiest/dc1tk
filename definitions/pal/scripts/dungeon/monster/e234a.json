@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e234a, built from shared monster routines, with backstep and sidestep dodges and an enraged loop that never calms.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

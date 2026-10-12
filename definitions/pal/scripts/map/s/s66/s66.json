@@ -1,0 +1,7 @@
+{
+ "doc": "Cutscene script for the stone circle at Kazarov Stonehenge. It holds the end of game farewell where Max says goodbye to his friends and mother as the Chrono Union closes (events 736 and 737, then Maximilian's Room), and the Chrono Union sequence in which Paznos appears, fires the Nova Driver Cannon, becomes a robot and throws the falling palace aside (event 640 parts).",
+ "globals": [
+  "main_chara_slot",
+  "partner_chara_slot"
+ ]
+}

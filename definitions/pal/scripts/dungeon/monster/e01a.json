@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster script for a sword-fighting enemy using attacks 1 and 2 as a combo. It wanders, circles and sidesteps, guards and dodges, becomes more aggressive when enraged, and sometimes revives once after dying.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

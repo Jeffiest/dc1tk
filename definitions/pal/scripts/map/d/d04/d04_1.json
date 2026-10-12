@@ -1,0 +1,3 @@
+{
+ "doc": "Dungeon script for d04. It builds each floor on entry (floor 1 and ordinary floors from the d04f maps, with a one in eight chance of rain on the random ones), sends the player to other maps from special floors (Veniccio, s19, s15, s45, s46, Shigura Village and the d04b01 boss), handles the Luna Stone gates and key door, shows the red, blue and white seal warnings, and starts the Puppet Shigura, Jaming and Shingala and sea dragon boss fights."
+}

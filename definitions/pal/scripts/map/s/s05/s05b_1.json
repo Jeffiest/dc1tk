@@ -1,0 +1,7 @@
+{
+ "doc": "Companion script of map s05 holding two of its later swamp events: Monica's plan to fish up the Holy One after the Fishing Rod is obtained, and the villagers returning to normal. It also contains shared s05 helpers and returns to the main s05 script afterwards.",
+ "globals": [
+  "max_scene_slot",
+  "monica_scene_slot"
+ ]
+}

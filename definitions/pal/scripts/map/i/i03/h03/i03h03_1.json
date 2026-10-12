@@ -1,0 +1,9 @@
+{
+ "doc": "Map script for the Fishing Contest hall (h03) in Palm Brinks. Max weighs fish with the judge, can Total Up the best entries for a ranking board and prize, and talks to other contestants. Leaving returns to Palm Brinks Square (s45).",
+ "globals": [
+  "number_image_block",
+  "row_name_image_block",
+  "effect_sound_id",
+  "menu_sound_id"
+ ]
+}

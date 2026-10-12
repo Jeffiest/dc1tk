@@ -1,0 +1,3 @@
+{
+ "doc": "Effect script for the hit flash of a thrown grenade. It shows a flash model through the shared hit-flash routine."
+}

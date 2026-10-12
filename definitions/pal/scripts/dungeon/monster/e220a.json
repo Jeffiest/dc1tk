@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster e220a, a Vanguard type that fires nose bullets and does a charging slam that makes a ground shockwave. It wanders when it has no target and picks a routine by distance. Death runs event script 500.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

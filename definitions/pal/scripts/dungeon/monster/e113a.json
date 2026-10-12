@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster AI for a flying enemy that shoots thunder balls. It keeps distance, circles or sidesteps around the player and fires a thunder shot from dcol0.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

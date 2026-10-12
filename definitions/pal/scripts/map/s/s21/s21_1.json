@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the flower garden map s21. The map entry plays the broken flower memory scene (event 704) the first time, and the exit asks whether to enter dungeon d06. It also handles collecting item 374."
+}

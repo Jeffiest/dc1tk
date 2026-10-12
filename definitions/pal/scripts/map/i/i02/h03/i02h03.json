@@ -1,0 +1,3 @@
+{
+ "doc": "Interior map script for i02h03 in the town of i02. It holds a large shared library of town talk handlers with quest-giving and joining villagers: Milane, Gerald, Need, Bruno, Rufio, Fabio, Olivie, Mina, Corinne and Granny Rosa. The map's own code places the player at start and, when progress is 100, shows villagers talking about Claire."
+}

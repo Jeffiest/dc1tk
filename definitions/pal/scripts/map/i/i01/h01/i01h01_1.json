@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for Cedric's workshop house in Palm Brinks (i01h01). It sets up the house and fades in, lets the player talk to Cedric and the house objects, picks up item 386 and exits to map m01. The events 105 to 108 (building the Ridepod Steve and the Flotsam rematch) are implemented in the companion script i01h01c_1."
+}

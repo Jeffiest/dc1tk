@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for a house interior in the i03 area (h01). It resets the camera on entry and handles talking to the villager inside, plus two numbered events."
+}

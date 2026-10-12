@@ -1,0 +1,3 @@
+{
+ "doc": "Effect for the thunder ball projectile: flies forward, damages on contact, bursts in a hit effect and bounces back if guarded."
+}

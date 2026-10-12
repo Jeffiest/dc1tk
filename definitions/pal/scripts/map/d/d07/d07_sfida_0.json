@@ -1,0 +1,3 @@
+{
+ "doc": "Spheda course script for dungeon d07, using the shared Spheda handlers for starter items, tutorials, ball reset, give-up and shots. Its bonus menu loads a floor and opens the Spheda score view."
+}

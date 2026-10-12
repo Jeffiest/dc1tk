@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster script built from the shared library without any guard handler. It dodges with a backstep and sidestep and fights through the shared enraged loop.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

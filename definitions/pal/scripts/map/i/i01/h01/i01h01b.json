@@ -1,0 +1,3 @@
+{
+ "doc": "Interior map script for the inventor's shop in the town of i01. It plays the lesson where Cedric teaches Max to invent: Max gets a camera, photographs a Milk Can, Pipes and a Belt, makes the Energy Pack for Steve and fits it. Events 500 to 521 and story 105c pick which stage to play from flags and inventory."
+}

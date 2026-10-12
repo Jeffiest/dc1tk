@@ -1,0 +1,7 @@
+{
+ "doc": "Map script for floor b03 of dungeon d06, the final boss floor. It plays the Dark Element awakening scene, sets up the timed Dark Element battle, and plays the ending scene about Sirus and the single moon after which the game jumps to Kazarov Stonehenge (s66). It also has the game over screen.",
+ "globals": [
+  "ending_slot_a",
+  "ending_slot_b"
+ ]
+}

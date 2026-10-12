@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for the yellow Atlamillia light, a small invisible-bodied orb that orbits its parent monster (monster var 31). On command it rises above the parent, circles it creating the Atlamillia light effect, then returns to orbit.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

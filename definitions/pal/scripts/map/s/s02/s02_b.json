@@ -1,0 +1,7 @@
+{
+ "doc": "Event script for the Blackstone train and its station area in map s02. It sets up the station villagers and train props, plays the scene where Monica joins the party (flag 207), the Conda and Grape Juice scene (flag 209) and the cleared rock scene (flag 280), and handles party NPC talk on the train.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

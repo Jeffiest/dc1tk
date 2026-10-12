@@ -1,0 +1,8 @@
+{
+ "doc": "Monster AI for b254a, a sword-swinging enemy that comes in a group. Each death adds to a shared counter, and when the fourth one dies event script 510 runs. It wanders, runs at the player, slashes and swings, and dodges backward.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

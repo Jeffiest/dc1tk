@@ -1,0 +1,7 @@
+{
+ "doc": "Map s12, the Moon Flower Palace stop where the Ixion train stops. It handles train arrival and departure scenes, boarding the engine room or guest room cars (s37 and s38), Oz waiting for the party (event 648) and the event 616 departure under the Moon Flower beam.",
+ "globals": [
+  "max_scene_slot",
+  "monica_scene_slot"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for b13b, a boss that drops in from above and fights with a sticky goo shot and a body attack. It keeps its own frame-wait helpers that check a death flag, and steps or runs around the target by distance.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

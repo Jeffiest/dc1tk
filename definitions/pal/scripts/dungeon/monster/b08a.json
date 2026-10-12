@@ -1,0 +1,9 @@
+{
+ "doc": "Monster script for a flying winged boss that fights alongside three clones it creates (monsters 618 to 620). It glides around the arena and fires barrages of Griffon feathers, absorbs energy while its clones are charged, and runs boss event 500 when it drops below 67 percent life or is the last one left. Every wait goes through a per-frame check that triggers that event.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z",
+  "flicker_counter"
+ ]
+}

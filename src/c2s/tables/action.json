@@ -1,0 +1,676 @@
+{
+ "table": "action",
+ "source": "ps2/src/actscript.cpp",
+ "array": "ext_func_info",
+ "natives": [
+  {
+   "no": 0,
+   "name": "_INIT_SCRIPT",
+   "accessors": []
+  },
+  {
+   "no": 1,
+   "name": "_PROG_SET",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 2,
+   "name": "_PROG_GET",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 3,
+   "name": "_GET_ATTK_TYPE",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 4,
+   "name": "_GET_MOVE_TYPE",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 5,
+   "name": "_SET_MOVE_SPEED",
+   "accessors": [
+    "float"
+   ]
+  },
+  {
+   "no": 30,
+   "name": "_SET_PALLET",
+   "accessors": [
+    "int",
+    "int",
+    "int",
+    "int",
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 31,
+   "name": "_CHECK_EQUIP",
+   "accessors": [
+    "int",
+    "out"
+   ]
+  },
+  {
+   "no": 32,
+   "name": "_CAMERA_QUAKE",
+   "accessors": [
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 33,
+   "name": "_CHECK_PAUSE",
+   "accessors": [
+    "out",
+    "int"
+   ]
+  },
+  {
+   "no": 34,
+   "name": "_GET_STATUS_ATTR",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 35,
+   "name": "_SE_PLAY",
+   "accessors": [
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 36,
+   "name": "_SE_LOOP_PLAY",
+   "accessors": [
+    "int",
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 37,
+   "name": "_GET_SHOT_TYPE",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 38,
+   "name": "_GET_MONS_ID",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 39,
+   "name": "_GET_FRONT_VEC",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 40,
+   "name": "_GET_PADON",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 41,
+   "name": "_GET_PADDOWN",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 42,
+   "name": "_GET_PADUP",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 43,
+   "name": "_GET_BTN",
+   "accessors": [
+    "out",
+    "int"
+   ]
+  },
+  {
+   "no": 45,
+   "name": "_GET_PAD_HISTORY",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 46,
+   "name": "_RESET_PAD_HISTORY",
+   "accessors": []
+  },
+  {
+   "no": 47,
+   "name": "_GET_ACUMU_PAD",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 48,
+   "name": "_RESET_ACUMU_PAD",
+   "accessors": []
+  },
+  {
+   "no": 49,
+   "name": "_RUN_MAIN_MOVE",
+   "accessors": []
+  },
+  {
+   "no": 50,
+   "name": "_RUN_SHROW_MOVE",
+   "accessors": []
+  },
+  {
+   "no": 51,
+   "name": "_RUN_TAME_MOVE",
+   "accessors": []
+  },
+  {
+   "no": 52,
+   "name": "_RUN_HOLD_MOVE",
+   "accessors": [
+    "string",
+    "string"
+   ]
+  },
+  {
+   "no": 53,
+   "name": "_GET_POS",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 54,
+   "name": "_CHECK_FRONT_KEY",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 55,
+   "name": "_CHECK_BACK_KEY",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 56,
+   "name": "_SET_BLOW_ANGLE",
+   "accessors": []
+  },
+  {
+   "no": 57,
+   "name": "_SET_BLOW_MOVE",
+   "accessors": [
+    "float",
+    "float",
+    "int",
+    "float"
+   ]
+  },
+  {
+   "no": 58,
+   "name": "_BLOW_START",
+   "accessors": [
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 59,
+   "name": "_SET_MENU_FLAG",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 60,
+   "name": "_RUN_ROBO_MOVE",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 61,
+   "name": "_GET_ROT",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 71,
+   "name": "_SET_DMG2",
+   "accessors": [
+    "string",
+    "string",
+    "string",
+    "float",
+    "float",
+    "string",
+    "float",
+    "float",
+    "string"
+   ]
+  },
+  {
+   "no": 72,
+   "name": "_SET_OBJ",
+   "accessors": [
+    "int",
+    "string"
+   ]
+  },
+  {
+   "no": 73,
+   "name": "_SET_BODY",
+   "accessors": [
+    "int",
+    "float"
+   ]
+  },
+  {
+   "no": 75,
+   "name": "_SW_EFFECT",
+   "accessors": [
+    "int",
+    "string",
+    "float",
+    "float",
+    "string",
+    "string",
+    "int",
+    "int",
+    "int",
+    "string"
+   ]
+  },
+  {
+   "no": 76,
+   "name": "_SET_SND",
+   "accessors": [
+    "int",
+    "string",
+    "float",
+    "float",
+    "string"
+   ]
+  },
+  {
+   "no": 77,
+   "name": "_SET_ACCUME_FX",
+   "accessors": [
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 78,
+   "name": "_SET_ACCUME_FLAG",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 90,
+   "name": "_GET_MONSTER_NOWSTS",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 91,
+   "name": "_SET_MURDEROUS",
+   "accessors": [
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 92,
+   "name": "_GET_TRG_DISTANCE",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 93,
+   "name": "_SET_TRG_ANGLE",
+   "accessors": [
+    "float",
+    "float"
+   ]
+  },
+  {
+   "no": 94,
+   "name": "_SET_GUARD_FLAG",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 95,
+   "name": "_SET_MUTEKI",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 96,
+   "name": "_CHECK_HAND_OBJ",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 97,
+   "name": "_SET_ITEM_USED",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 98,
+   "name": "_THROW_HAND_OBJECT",
+   "accessors": []
+  },
+  {
+   "no": 99,
+   "name": "_CHECK_CATCH",
+   "accessors": [
+    "string",
+    "int",
+    "out"
+   ]
+  },
+  {
+   "no": 100,
+   "name": "_RELEASE_OBJ",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 101,
+   "name": "_SET_SHOT",
+   "accessors": [
+    "int",
+    "string",
+    "int",
+    "int",
+    "float"
+   ]
+  },
+  {
+   "no": 102,
+   "name": "_SHOT",
+   "accessors": [
+    "int",
+    "string",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "int",
+    "out",
+    "out",
+    "out",
+    "out",
+    "string",
+    "float",
+    "int",
+    "string",
+    "string",
+    "out",
+    "string",
+    "out",
+    "out",
+    "string",
+    "out",
+    "float",
+    "float",
+    "string",
+    "string",
+    "out",
+    "int",
+    "float",
+    "float",
+    "float",
+    "int",
+    "float",
+    "float",
+    "float",
+    "int",
+    "int",
+    "int",
+    "int",
+    "int",
+    "float"
+   ]
+  },
+  {
+   "no": 103,
+   "name": "_GET_OBJECT_POS",
+   "accessors": [
+    "string",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 104,
+   "name": "_SET_DIR_GUN",
+   "accessors": []
+  },
+  {
+   "no": 105,
+   "name": "_SET_SPECIAL_SHOT",
+   "accessors": [
+    "string"
+   ]
+  },
+  {
+   "no": 106,
+   "name": "_GET_NOW_HP_RATE",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 107,
+   "name": "_SET_BOMB",
+   "accessors": []
+  },
+  {
+   "no": 108,
+   "name": "_GET_ACTION_CODE",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 109,
+   "name": "_GET_ATTK_POINT",
+   "accessors": [
+    "int",
+    "out"
+   ]
+  },
+  {
+   "no": 110,
+   "name": "_GET_RING_COLOR",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 130,
+   "name": "_SET_MOS",
+   "accessors": [
+    "string",
+    "float",
+    "int",
+    "string"
+   ]
+  },
+  {
+   "no": 131,
+   "name": "_CHECK_MOS_END",
+   "accessors": [
+    "string",
+    "out"
+   ]
+  },
+  {
+   "no": 132,
+   "name": "_NOW_MOS_WAIT",
+   "accessors": [
+    "string",
+    "out"
+   ]
+  },
+  {
+   "no": 133,
+   "name": "_GET_MOS_STATUS",
+   "accessors": [
+    "string",
+    "out"
+   ]
+  },
+  {
+   "no": 134,
+   "name": "_SET_XCHG_STEP",
+   "accessors": [
+    "float"
+   ]
+  },
+  {
+   "no": 135,
+   "name": "_SET_MOS_STEP",
+   "accessors": [
+    "float"
+   ]
+  },
+  {
+   "no": 136,
+   "name": "_TRG_ON_MOS",
+   "accessors": []
+  },
+  {
+   "no": 137,
+   "name": "_RESET_MOS",
+   "accessors": []
+  },
+  {
+   "no": 138,
+   "name": "_SET_DEFAULT_MOS",
+   "accessors": [
+    "string"
+   ]
+  },
+  {
+   "no": 139,
+   "name": "_NOW_MOS_CHGWAIT",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 140,
+   "name": "_SET_NEBA2",
+   "accessors": []
+  },
+  {
+   "no": 150,
+   "name": "_ESM_CREATE",
+   "accessors": [
+    "string",
+    "out"
+   ]
+  },
+  {
+   "no": 151,
+   "name": "_ESM_SET_VECT1",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float"
+   ]
+  },
+  {
+   "no": 152,
+   "name": "_ESM_SET_VECT2",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float"
+   ]
+  },
+  {
+   "no": 153,
+   "name": "_ESM_FINISH",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 154,
+   "name": "_ESM_DELETE",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 155,
+   "name": "_ESM_SET_VALUE",
+   "accessors": [
+    "int",
+    "int",
+    "int",
+    "float"
+   ]
+  }
+ ]
+}

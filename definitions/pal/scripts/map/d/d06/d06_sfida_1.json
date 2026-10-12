@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for the Spheda course of dungeon d06. It provides the Spheda menus (ball reset, giving up a hole), the shot handler, the stage 6 start and the shared coin and help events, with no unique story scenes."
+}

@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for the forest dungeon d02. It starts each floor (town exit, Fish Monster Swamp, map s13 and the boss maps d02b01 and d02b02), plays the floor arrival scene with seal warnings, handles the exits (Fairy Saw), the cobweb door (Slash Branch), floor clear and the monster that gives a Sundrop. Floor 2 also plays the scene where the party receives crystals for the Wrench."
+}

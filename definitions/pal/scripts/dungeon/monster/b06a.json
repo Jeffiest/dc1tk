@@ -1,0 +1,8 @@
+{
+ "doc": "Boss monster script for b06a, a flying boss that fights in a closed arena. It teleports with the San warp, summons six orbiting roses and fires them at the player, and dashes in to cast San's tornado. At half life it runs event 502, and its death runs event 504.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

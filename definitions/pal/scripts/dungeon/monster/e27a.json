@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for a melee enemy with a two-hit combo (attack hits registered as M combo 2) and lunging slashes. It runs or walks at the target, picks attacks by distance (under 75, 75 to 135, 135 to 230) and switches between a calm and an aggressive routine depending on rage hits left. It dodges melee and shots by turning toward the attacker.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

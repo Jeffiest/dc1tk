@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e25a, a ranged monster that fires a fast shot and can summon other monsters (id 1002 plus its grade) in a puff of smoke. It keeps its distance with backward and sideways walking and switches behaviour by distance and by whether rage hits remain.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

@@ -1,0 +1,3 @@
+{
+ "doc": "Event script e209. It only builds argument records: for each scene id from 700 to 3200 it lists two camera or target points and the places where actors stand."
+}

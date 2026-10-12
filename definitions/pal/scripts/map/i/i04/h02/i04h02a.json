@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for a house interior in the i04 area (h02a). It has no map setup of its own, only the villager talk handler and a debug test scene."
+}

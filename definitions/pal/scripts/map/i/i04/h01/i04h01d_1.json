@@ -1,0 +1,3 @@
+{
+ "doc": "Small map script for the i04h01d interior that only passes villager conversations to the shared handler and has empty map start and debug entries."
+}

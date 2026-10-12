@@ -1,0 +1,6 @@
+{
+ "doc": "Action script for a sword-wielding monster the player controls after transforming. Confirm performs the sword slash; a charging second attack is defined but nothing in the update loop starts it.",
+ "globals": [
+  "charge_frames_left"
+ ]
+}

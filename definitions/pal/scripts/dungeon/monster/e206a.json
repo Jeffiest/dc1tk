@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e206a, a fox gunner. It shoots fox bullets with a muzzle flash, strafes around the player, backs away to keep range, and uses a dodge attack with knockback when guarded against or approached. Monster variables count hits taken and knockdowns to trigger flanking runs.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

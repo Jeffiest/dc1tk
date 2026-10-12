@@ -1,0 +1,3 @@
+{
+ "doc": "Monster script for a flower bomb thrown by a plant enemy. It hops to the player's spot, swells and pulses blue for about 30 frames and then explodes with the robot missile explosion effect. Hitting it, stunning it or throwing it makes it explode at once; if the player lifts it first, the explosion is not owned by the monster."
+}

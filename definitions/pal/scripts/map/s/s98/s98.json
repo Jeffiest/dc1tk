@@ -1,0 +1,7 @@
+{
+ "doc": "Event script for the ending sequence map s98. Event 736 is the farewell: Monica says goodbye to Max, Max's mother Eina holds him and says goodbye, the Chrono Union closes and the heroes agree the journey was a dream. Events 640 (several parts) show the Moonflower Palace beam awakening Paznos, the Nova Driver Cannon, the palace falling toward Palm Brinks, and Paznos turning into a robot, each followed by a jump back to the Paznos bridge map s30.",
+ "globals": [
+  "max_scene_slot",
+  "monica_scene_slot"
+ ]
+}

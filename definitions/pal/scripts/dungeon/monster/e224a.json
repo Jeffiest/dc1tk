@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for enemy e224, a flying enemy that dives at the player with a normal attack and fires thunder shots from its face. It flies around the target, keeps within 180 units, and has a separate enraged fight loop once its rage counter is used up.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

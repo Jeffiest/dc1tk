@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for enemy e214, a Vanguard-style melee enemy with a quick weak combo (attack 1) and a shockwave swing (attack 2). It wanders, closes in at different ranges depending on the distance, and fires a Vanguard shockwave effect on its second attack.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

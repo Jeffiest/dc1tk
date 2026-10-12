@@ -1,0 +1,3 @@
+{
+ "doc": "Effect for the charging of a c02 magic attack: a model that follows its owner while the charge is active. Does nothing on finish."
+}

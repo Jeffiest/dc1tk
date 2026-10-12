@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e220an, a Vanguard that charges the player and releases a ground shockwave, and shoots bullets from its nose. It fights by distance, circling or approaching when far, and charges instead of dodging ranged attacks.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

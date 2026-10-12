@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the Moonflower Palace dungeon (d06). It handles floor start and the floor intro scene with the seal warnings, the three moon flower gates that open with the Queen's Watering Pot and lead to the next floor, the key door opened with the Moon Clock Hand (or by Donny), and story warps and boss starters with fixed loadouts for Sirus, Emperor Griffon, the Dream Spiral fights and the Dark Element."
+}

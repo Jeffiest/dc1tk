@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the mine area s52: loads the mine sound set, sets up the start, asks whether to enter the next floor at gates and triggers a silent game over on death. Story event 804 plays the scene where Monica arrives."
+}

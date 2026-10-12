@@ -1,0 +1,3 @@
+{
+ "doc": "Action script for player-controlled monster forms 224, 228, 232, 236 and 240. It only registers the attack hit windows per form and uses the shared attack and move loop."
+}

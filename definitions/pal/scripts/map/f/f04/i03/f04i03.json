@@ -1,0 +1,3 @@
+{
+ "doc": "Small interior map script for a house in the Gundorada Workshop area (f04i03). It only resets the camera behind the player on map start and uses the shared villager talk handler."
+}

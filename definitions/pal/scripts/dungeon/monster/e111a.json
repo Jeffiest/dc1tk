@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for a flying dungeon enemy that shoots fire balls, charges at the player behind a guard and dodges sideways. It is knocked flying by hard hits and can be lifted and thrown.",
+ "globals": [
+  "saved_x",
+  "saved_y",
+  "saved_z"
+ ]
+}

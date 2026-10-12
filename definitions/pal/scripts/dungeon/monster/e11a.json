@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e11a, a venom-spitting creature. It bites in short combos up close and spits poison at range, gets more aggressive once enraged, and avoids shots by bracing.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

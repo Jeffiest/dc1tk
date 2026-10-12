@@ -1,0 +1,9 @@
+{
+ "doc": "Map script for the fishing tournament venue in Palm Brinks. It places the spectators, lets Max weigh caught fish with the judge, tallies the results against invented rivals to give a 1st, 2nd or 3rd place prize, and sends the player back to Palm Brinks Square at the end.",
+ "globals": [
+  "number_image_block",
+  "row_name_image_block",
+  "tournament_sound_bank",
+  "menu_sound_bank"
+ ]
+}

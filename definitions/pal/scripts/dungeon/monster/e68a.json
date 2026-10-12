@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for a stationary enemy that turns to face the target and spits venom at three ranges (under 80, up to 150 and beyond), with a close-range melee attack. It guards with a guard motion, never moves, and switches routine on rage hits left.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

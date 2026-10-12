@@ -1,0 +1,3 @@
+{
+ "doc": "Effect for the lightning magic stone item. Plays the thunder model motion at the effect position and creates a 15 radius lightning stone attack that is removed on first hit or after 30 frames; the effect lasts 114 frames."
+}

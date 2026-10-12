@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the Spheda minigame in dungeon 4 (d04). It hands out the starter items, handles the random coin and geostone, the Spheda help messages, resetting the ball or giving up a hole, the shot, and the bonus score menu."
+}

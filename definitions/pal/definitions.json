@@ -1,0 +1,61 @@
+{
+ "name": "pal",
+ "description": "Dark Chronicle PAL (SCES_511.90) retail scripts",
+ "engine": "dc2",
+ "extends": [],
+ "language": "en",
+ "include": [
+  "pal.h"
+ ],
+ "tables": [
+  {
+   "prefix": "event/tbox/bomb.pack.d/",
+   "table": "effect"
+  },
+  {
+   "prefix": "event/",
+   "table": "arg"
+  },
+  {
+   "prefix": "dungeon/monster/",
+   "table": "monster"
+  },
+  {
+   "prefix": "dungeon/eff_script/",
+   "table": "effect"
+  },
+  {
+   "prefix": "dungeon/articles/",
+   "table": "effect"
+  },
+  {
+   "prefix": "dungeon/sphida/",
+   "table": "effect"
+  },
+  {
+   "prefix": "dungeon/act_script/",
+   "table": "action"
+  },
+  {
+   "prefix": "mainchr/",
+   "table": "action"
+  }
+ ],
+ "text": {
+  "languages": {
+   "ja": 0,
+   "en": 1,
+   "fr": 2,
+   "de": 3,
+   "it": 4,
+   "es": 5
+  }
+ },
+ "executable": {
+  "name": "SCES_511.90",
+  "monster_table": {
+   "address": 3415456,
+   "record_size": 184
+  }
+ }
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster AI for e117a, a walking enemy that swings in combos and sends a ground shockwave. It wanders and plays idle antics until it notices the player, then fights by distance and becomes more aggressive once enraged. It falls over and sometimes gets back up at low health instead of dying.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

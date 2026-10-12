@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e223a, a flying monster that shoots ice shots and swoops at the target. It keeps distance bands (120, 200, 300) to decide what to do, can be lifted and thrown, and floats about 20 units above its start.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

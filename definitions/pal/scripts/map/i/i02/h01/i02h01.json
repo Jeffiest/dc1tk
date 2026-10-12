@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the Blackstone train station (i02h01), where the locomotive stands. It places the train and station parts by chapter, plays the train arrival when the player returns from the train, and plays event 109, in which the crew set off in Blackstone One. The player can board the front car or a middle car, which jump to the train interior maps (the Ixion maps in chapters 6 and 7)."
+}

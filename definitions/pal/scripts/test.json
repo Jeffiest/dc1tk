@@ -1,0 +1,3 @@
+{
+ "doc": "Test map script used during development. It shows numbered test messages, enters interiors i01h01 or i02h01, and plays a short camera and walking actor test."
+}

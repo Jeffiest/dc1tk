@@ -1,0 +1,6 @@
+{
+ "doc": "Boss script for the giant butterfly. It flies around the arena center at height 850, fires a butterfly beam that leaves fire pillars, breathes scale powder, and when damaged enough it splits into a swarm of small butterflies before merging back. Camera and event scenes (502, 507, 510 to 513) run during the split and merge.",
+ "globals": [
+  "camera_lock"
+ ]
+}

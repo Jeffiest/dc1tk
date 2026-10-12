@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the Gundorada Workshop (f04), the rebel workshop built from Heim Rada and Mt. Gundor. It handles the villagers' talk (changing with story flags), the elevator platforms between three floors, the transfer gates and the teleport to Paznos Bridge, and the cutscenes where Garek gives Max or Monica the Time Bomb to destroy the Fire Squall and where Paznos is shown and launched. Exits lead to Heim Rada (g04), Paznos (s30, s55) and the Operations Room (s39)."
+}

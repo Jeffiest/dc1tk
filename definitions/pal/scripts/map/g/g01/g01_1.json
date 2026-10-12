@@ -1,0 +1,7 @@
+{
+ "doc": "Main map of Sindain in the present, with the red time gate to Jurak Mall. It starts the georama editing, the knocking and house-entry scenes, and the leads into the g01b and g01c scripts. Event 254 has Max and Monica decide to ask Gordon to immigrate.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

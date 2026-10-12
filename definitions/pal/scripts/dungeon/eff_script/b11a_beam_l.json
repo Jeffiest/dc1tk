@@ -1,0 +1,3 @@
+{
+ "doc": "Looping beam effect for the b11a monster's beam attack. It follows the monster's muzzle, aims at the target and drives a child beam effect and a damaging attack."
+}

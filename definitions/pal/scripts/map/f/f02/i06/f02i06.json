@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for a small interior in the map f02 (i06). The player is placed behind the camera when the map starts and the villager inside talks through the shared f02 talk handler."
+}

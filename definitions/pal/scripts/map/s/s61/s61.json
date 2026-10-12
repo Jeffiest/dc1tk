@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for a short dungeon bonus room (s61) guarded by two monsters of type 7. On entering the first time a short scene shows the two monsters, then after they are defeated two treasure chests (Healing Coin and Sun Stone) appear, which are tracked in a counter so they only appear once."
+}

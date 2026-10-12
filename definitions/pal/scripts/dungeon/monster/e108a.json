@@ -1,0 +1,8 @@
+{
+ "doc": "Monster AI for e108a, a walking enemy that lunges with a melee attack and spits fireballs. It wanders near its spawn point until it notices the player, circles and chases, and fights more aggressively once enraged by enough hits.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

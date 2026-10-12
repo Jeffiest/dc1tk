@@ -1,0 +1,8 @@
+{
+ "doc": "Regular dungeon monster that attacks with a quick swing and a rolling charge, and can dodge by stepping sideways or back. While calm it wanders near home and watches for the player; once enraged it closes in and charges. It raises guard, dodges melee and shots and gets up after being thrown.",
+ "globals": [
+  "scratch_x",
+  "scratch_y",
+  "scratch_z"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for a flying enemy that spits water balls (water shot effects) and bites with a normal attack. It picks between chasing, strafing, circling the target and shooting depending on its distance to the target (under 90, 90 to 150, 150 to 190, or wandering beyond). Being knocked down makes it fly back and get up.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

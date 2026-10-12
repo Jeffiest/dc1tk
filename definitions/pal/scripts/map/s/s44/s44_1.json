@@ -1,0 +1,9 @@
+{
+ "doc": "Cutscene-only map s44 for Andrea and Sirus in the Moonflower Palace storyline. It plays the scenes where Sirus hugs Andrea, Andrea calms Sirus, Andrea finds Sirus and the hide and seek scene, then jumps to d06b03 or g05 (Moon Flower Palace).",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3",
+  "unused4"
+ ]
+}

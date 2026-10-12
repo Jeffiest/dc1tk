@@ -1,0 +1,7 @@
+{
+ "doc": "Map script for s71 (Kazarov Stonehenge) holding the Moonflower beam flee scene of event 616. Event 590 plays it and jumps to map s11, and the debug entry plays only the scene.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

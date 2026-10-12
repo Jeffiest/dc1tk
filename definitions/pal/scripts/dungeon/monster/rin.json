@@ -1,0 +1,3 @@
+{
+ "doc": "Monster script for Rin, a frightened non-combat creature that cannot be locked on to or damaged. It cowers, looks around and gets startled when monsters come near, and runs event 520 when one gets close enough to touch it."
+}

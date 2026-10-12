@@ -1,0 +1,8 @@
+{
+ "doc": "Regular dungeon monster with a two-part combo (hit window name M combo 2): a swing (attack 1) and a lunging second strike (attack 2), used at a run. When calm it hangs back, circles and swings occasionally; when enraged it dashes at the player with the combos. It watches for the player in monster disguise and can dodge sideways or back.",
+ "globals": [
+  "scratch_x",
+  "scratch_y",
+  "scratch_z"
+ ]
+}

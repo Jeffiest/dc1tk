@@ -1,0 +1,3 @@
+{
+ "doc": "Action script for Max's playable character in dungeons. It defines his sword combo, mid range lunge, charge attack, backflip, gun, guard, lift and throw actions, driven by one saved state value that on_update dispatches each frame."
+}

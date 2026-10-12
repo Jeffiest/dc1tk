@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script e116a, a melee monster that also heals. Roughly every few seconds it finds the weakest nearby monster, itself included, and heals it with a recover animation. It has a weak attack and a knockback attack, guards and dodges, and watches the player while the player is disguised.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

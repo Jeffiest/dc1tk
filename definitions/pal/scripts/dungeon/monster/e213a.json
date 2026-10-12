@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e213a, a flying caster whose shot element depends on its grade (fire, wind, ice, thunder). It hovers, chases with flight helpers, charges, circles and casts shots, and transforms when it first notices the player.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

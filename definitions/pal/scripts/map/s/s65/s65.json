@@ -1,0 +1,9 @@
+{
+ "doc": "Map s65, the approach to the Moonflower Palace. Programs 520 to 532 move on to other maps, including the beam escape and rock throw scenes. The welcome scene (flag 700) has Alexandra, the palace's ruler, greet Max and Monica before the party enters the palace in map g05.",
+ "globals": [
+  "party1_max_slot",
+  "party1_monica_slot",
+  "party2_max_slot",
+  "party2_monica_slot"
+ ]
+}

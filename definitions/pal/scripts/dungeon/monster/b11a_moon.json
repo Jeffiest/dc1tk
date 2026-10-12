@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for the moon (b11a) in the boss map part p06_d06b03-0. The moon is a scenery object with no collision that creeps away over five minutes, and when the stopwatch event info runs out it triggers event script 1201.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

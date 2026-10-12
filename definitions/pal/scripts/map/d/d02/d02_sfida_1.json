@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the Spheda (Sphida) hole set on dungeon map d02. It hands out starter items, runs the random circle and geostone pickups, shows the tutorial and help messages and the Spheda menus (reset ball, give up hole), and plays the shot scene."
+}

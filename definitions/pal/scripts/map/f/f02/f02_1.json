@@ -1,0 +1,7 @@
+{
+ "doc": "Map script for f02, the future town of Starlight Temple where Crest the Great Sage and Lin live. It holds the Lao Chao bistro, temple restoration, Crest and Lin and Griffon's servants scenes, and the crystal worshippers. Events 372 and 376 send the heroes on to the Moonflower Palace and the Luna Lab search, and the blue time gate leads to Balance Valley.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

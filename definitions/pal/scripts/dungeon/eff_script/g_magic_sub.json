@@ -1,0 +1,3 @@
+{
+ "doc": "Effect script for a spinning model that pops in as part of a magic effect. It plays the shared eff_script_8 effect and has an empty finish handler."
+}

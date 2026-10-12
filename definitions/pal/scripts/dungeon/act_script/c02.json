@@ -1,0 +1,7 @@
+{
+ "doc": "Player action script for Monica in dungeons. It defines her sword combo, charge attack, magic aiming, guard, lift and throw, and back-flip dodge, and the per-frame loop that chooses between them from the pad input.",
+ "globals": [
+  "charge_effect",
+  "charge_power"
+ ]
+}

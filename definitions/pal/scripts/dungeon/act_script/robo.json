@@ -1,0 +1,7 @@
+{
+ "doc": "Action script for the player-controlled ridepod robot. It sets up hit boxes per attack type (punches, samurai sword, drill arm, ranged weapons), and handles combos, burst fire, guard, kick-grab, knockback and movement.",
+ "globals": [
+  "next_arm",
+  "weapon_fire_counter"
+ ]
+}

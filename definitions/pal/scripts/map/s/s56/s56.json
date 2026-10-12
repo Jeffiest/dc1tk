@@ -1,0 +1,7 @@
+{
+ "doc": "Map script for s56, the Cape lighthouse area in the present. Event 348 is the arrival at the Lighthouse. Event 352 lets the party use the Starglass to travel back in time and save Crest, loading the d03b02 lighthouse dungeon.",
+ "globals": [
+  "scene_slot_a",
+  "scene_slot_b"
+ ]
+}

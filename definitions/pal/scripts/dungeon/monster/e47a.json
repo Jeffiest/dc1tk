@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e47a, a sword-wielding melee monster with a lunging slash (attack 1) and a long guard. It behaves differently at close, medium and long range and changes its AI when its rage hits are used up.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

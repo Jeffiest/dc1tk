@@ -1,0 +1,3 @@
+{
+ "doc": "Event map s14, the boss arena of Lapis Garter (monster 611). It sets up the arena sounds and the Lapis point, restores music once the monsters are cleared, grants the clear reward, and has an exit that returns to dungeon d03 once the gem (flag 628) is owned."
+}

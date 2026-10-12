@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for Palm Brinks (map m01), the town. It handles the arrival scene, the exits to the houses, the square (Fishing Contest and Finny Frenzy), the train guards that turn the player back, the villagers, the dungeon choice from the tree map, and the story entries such as the chapter 8 opening."
+}

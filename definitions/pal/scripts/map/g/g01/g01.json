@@ -1,0 +1,7 @@
+{
+ "doc": "Map script for the village map g01 in the Georama part of the game. It plays the knock-on-the-door, tree-planting and find-the-tree-expert scenes, sets up doors, NPCs and Georama editing from story flags, and lets the player leave to the station or to Jurak Mall.",
+ "globals": [
+  "left_speaker_value",
+  "right_speaker_value"
+ ]
+}

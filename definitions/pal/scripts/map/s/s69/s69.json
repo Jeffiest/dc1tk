@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for the single-room story map s69 in dungeon d07. Six monsters guard two Diamond treasure chests; after the fight the chests appear, taking them is tracked in counter 17, and the exit leads back to the d07 dungeon."
+}

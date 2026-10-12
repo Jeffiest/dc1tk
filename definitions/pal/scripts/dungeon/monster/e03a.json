@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster e03a, a melee fighter with two sword attacks. It sidesteps and steps back to dodge, guards shots, chases at a run, and has a chance to revive once when killed.",
+ "globals": [
+  "pos_x",
+  "pos_y",
+  "pos_z"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for b253a, a melee monster with two swing attacks and a spinning charge. It is a shared brawler AI that waits until the player comes close, then fights by distance and rage state.",
+ "globals": [
+  "spawn_x",
+  "unused_value",
+  "spawn_z"
+ ]
+}

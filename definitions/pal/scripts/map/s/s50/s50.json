@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the room s50 in the late-game palace, where a strange vase holds the Flower of the Sun (item 374). Using that item plays event 708, a conversation about a broken flower and forgiveness, which opens the door to the next floor of dungeon d06. Until then the door is shut, and only Max or Monica can use the exits."
+}

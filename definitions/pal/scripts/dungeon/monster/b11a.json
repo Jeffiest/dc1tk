@@ -1,0 +1,8 @@
+{
+ "doc": "Boss b11a, a two-form flying boss with blue and red lights. It alternates between a form hurt by Max's weapons and one hurt by Monica, shoots arrows, sweeps a beam, and periodically vanishes to a sky phase before returning. Dying triggers event script 500.",
+ "globals": [
+  "pos_x",
+  "pos_y",
+  "pos_z"
+ ]
+}

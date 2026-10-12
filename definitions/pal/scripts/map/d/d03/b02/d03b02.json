@@ -1,0 +1,25 @@
+{
+ "doc": "Map script for floor b02 of dungeon d03, the Gaspard battle at the Cape lighthouse. It plays the bombardment, confrontation, duel, shelling and Crest farewell cutscenes and sets up the boss fight on the battleship, where Max and Monica swap to protect Lin. It also has the game over screen and the hint to protect Lin from the flames.",
+ "globals": [
+  "max_saved_x",
+  "max_saved_y",
+  "max_saved_z",
+  "max_saved_yaw",
+  "monica_saved_x",
+  "monica_saved_y",
+  "monica_saved_z",
+  "monica_saved_yaw",
+  "attack_scene_slot_a",
+  "attack_scene_slot_b",
+  "confrontation_slot_a",
+  "confrontation_slot_b",
+  "duel_slot_a",
+  "duel_slot_b",
+  "shelling_slot_a",
+  "shelling_slot_b",
+  "farewell_slot_a",
+  "farewell_slot_b",
+  "departure_slot_a",
+  "departure_slot_b"
+ ]
+}

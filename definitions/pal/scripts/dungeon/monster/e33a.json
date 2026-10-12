@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for a Vanguard type enemy that swings, slams a shockwave into the ground, guards and taunts. It acts differently when aggro'd or enraged.",
+ "globals": [
+  "saved_x",
+  "saved_y",
+  "saved_z"
+ ]
+}

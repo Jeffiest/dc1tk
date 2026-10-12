@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e09a. It uses the shared simple monster behaviour: looping sound on init, a brief guard, get-up reactions after knockdown and stun, struggling when lifted, and shared update code.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

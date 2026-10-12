@@ -1,0 +1,3 @@
+{
+ "doc": "Action script for the playable monster form f204a, a charging attacker. It has one attack, a suicide charge on the confirm button, plus damage and knockdown reactions. The decompilation contains several unresolved engine calls."
+}

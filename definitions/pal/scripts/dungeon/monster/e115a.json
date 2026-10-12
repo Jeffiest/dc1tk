@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster AI for a flying enemy that fires holy shots. It circles and sidesteps around the player and shoots from range.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

@@ -1,0 +1,7 @@
+{
+ "doc": "Monster script for the boss b04a, a floating boss that hovers over a ring of six roses in the arena center. It casts San's tornado and commands the roses; hitting the rose it faces three times defeats it, after which event script 501 runs.",
+ "globals": [
+  "current_ring_slot",
+  "hits_remaining"
+ ]
+}

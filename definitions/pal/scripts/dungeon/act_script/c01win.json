@@ -1,0 +1,3 @@
+{
+ "doc": "Player action script for a character with a wrench combo, charge attack, kick, gun attack, guard and throw. It defines each attack as a numbered state, the damage, block and knockdown reactions, the backflip dodge and the victory pose."
+}

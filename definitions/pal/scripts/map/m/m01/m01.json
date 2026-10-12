@@ -1,0 +1,3 @@
+{
+ "doc": "Overworld script for the Palm Brinks map. It places the player on arrival from interiors and other maps, sets up the bridge and invention map objects by story progress, and handles the entrances to Max's house (i01h01), the square (s45), the station, the Underground Channel entrance and the Palm Mine dungeon. It also plays the story scene where Need asks Max to find Zelmite for the Blackstone Railroad (event 800), and holds several camera and character test scenes used by debug entries."
+}

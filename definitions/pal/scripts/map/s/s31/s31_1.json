@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for a train station in map s31. It plays the train arrival and the event 724 scene, asks to board the train toward the Ixion cars (s37 and s38), and lets the player board the train to s33 and talk to waiting NPCs."
+}

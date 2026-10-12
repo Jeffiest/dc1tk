@@ -1,0 +1,7 @@
+{
+ "doc": "Sindain script that plays event 250, the scene at the Time Gate where Atlamillia and travelling between past and future are explained to Max, and then returns to the main Sindain script.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

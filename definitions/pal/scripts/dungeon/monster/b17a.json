@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for the boss in the p01_boss area (map parts boss02-a0 to a5 and c0 to c5 are shown while it lives and hidden on death). The boss circles a point at (250, 0, 250) at radius 180 and height 105, oscillating and speeding up after its third, fourth and fifth damage events, and periodically attacks and flags numbered slots through monster variables 20 to 25. Dying runs event script 501. The large block of generic turn, walk and wait helpers is standard monster movement code.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

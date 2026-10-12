@@ -1,0 +1,3 @@
+{
+ "doc": "Dungeon system script for dungeon 4 (d04). It starts a floor from the dungeon map menu, handles four rotating-wall gates that open with the Luna Stone and let the player descend to the next floor, a star door, and a scene that moves the party between the main area and a high sky area. It also holds the shared treasure chest, Spheda and event handlers from the system library."
+}

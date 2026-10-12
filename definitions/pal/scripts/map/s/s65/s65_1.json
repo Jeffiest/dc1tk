@@ -1,0 +1,9 @@
+{
+ "doc": "Map script for s65. At map start it places the player depending on whether the game was just loaded from the memory card and locks map movement. Events lead to maps s70, s26, s12, s32 and g05, and one scene is the event 616 Moonflower scene with Max and Monica.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot",
+  "max_chara_slot_2",
+  "monica_chara_slot_2"
+ ]
+}

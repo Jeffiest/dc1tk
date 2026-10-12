@@ -1,0 +1,3 @@
+{
+ "doc": "Effect script for the robot missile shot: a homing missile with a smoke trail that spawns an explosion child effect on impact."
+}

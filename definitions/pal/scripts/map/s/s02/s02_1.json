@@ -1,0 +1,7 @@
+{
+ "doc": "Map script for the train station map s02. It handles arriving by train, from town or from a dungeon, boarding the train to the front or middle car, talking to Cedric, Borneo and Erik, and the scene where Max and Monica are told their Geostones will be used to rebuild the forest.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

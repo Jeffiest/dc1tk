@@ -1,0 +1,3 @@
+{
+ "doc": "Interior map in the f04 town area. It only resets the camera behind the player at map start and uses the shared f04 talk handler for the villagers (Galen Agaris, Garek and the other Gundorada villagers, ids 400 to 413). Setup and debug entries do nothing."
+}

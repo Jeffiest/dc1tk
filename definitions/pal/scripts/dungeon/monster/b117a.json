@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster AI for the sword-wielding Infe enemy. It idles until the player comes near, then chases and picks sword swings, a thrown red wave, dodges and guards based on distance and random rolls.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

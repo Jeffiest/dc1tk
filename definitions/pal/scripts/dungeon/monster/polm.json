@@ -1,0 +1,3 @@
+{
+ "doc": "Monster script for a harmless water splash source. It does nothing on any reaction and just spawns the foot water splash effect once and idles."
+}

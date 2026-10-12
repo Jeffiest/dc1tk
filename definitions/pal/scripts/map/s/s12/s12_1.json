@@ -1,0 +1,7 @@
+{
+ "doc": "A train station map used with Ixion in the late story. It lets the player board Ixion to the engine room or guest room, holds the waiting NPC talk and handles the station arrival and exit scenes.",
+ "globals": [
+  "player_slot",
+  "partner_slot"
+ ]
+}

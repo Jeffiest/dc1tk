@@ -1,0 +1,7 @@
+{
+ "doc": "Map s47 in Sindain at the start of the Georama story. The Carpenterion arrives and plants trees, Monica explains the Time Gate and the two Atlamillia stones, and the elder hands out Georama materials and has Max call the Carpenterion. Events then lead on to the Carpenterion control room s26 and map g01.",
+ "globals": [
+  "max_scene_slot",
+  "monica_scene_slot"
+ ]
+}

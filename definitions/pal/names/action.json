@@ -1,0 +1,1755 @@
+{
+ "functions": {
+  "02e4adf97ad563b1": {
+   "name": "run_player_action_loop",
+   "loose": "c39c5133a3a90dcb",
+   "locals": [
+    "button_flags",
+    "ignored",
+    "saved_value"
+   ],
+   "doc": "Main loop. A press of the confirm button starts the charge attack (state 100) when idle, and otherwise it runs the carry-move for walking."
+  },
+  "0383b9a6ac9e333a": {
+   "name": "on_init",
+   "loose": "58a4e6802fa3ed15",
+   "doc": "Registers the col_ha monster attack hit area and sets the move speed to 3.4."
+  },
+  "03c11994c24a9dcb": {
+   "name": "run_gun_aim_and_fire",
+   "loose": "a920630ae341f2c6",
+   "locals": [
+    "status",
+    "saved_value",
+    "attack_button",
+    "aim_button",
+    "progress"
+   ],
+   "doc": "Handles the sub weapon gun, states 800 and 801. While the aim button is held Max aims, pressing attack fires a shot at 30 to 40 percent of the fire motion and returns to aiming."
+  },
+  "040a77793e4b2c0c": {
+   "name": "setup_attack_hits_for_form",
+   "loose": "54b5c5bcf8ab4440",
+   "locals": [
+    "monster_form"
+   ],
+   "doc": "Registers attack hit windows depending on which monster form (224, 228, 232, 236, 240) the player has transformed into, and prints the form id."
+  },
+  "06167898735f8f58": {
+   "name": "run_sword_combo_state",
+   "loose": "d108b1c666366576",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "attack_hold_frames"
+   ],
+   "doc": "Runs the five-hit sword combo (states 100 to 104): pushes Monica forward during each swing and chains to the next swing when attack is pressed in its window. Holding attack for over 10 frames in the first swing switches to the charge attack state 1200."
+  },
+  "06c026bebf9c693d": {
+   "name": "run_player_input_loop",
+   "loose": "180f7aa94a640b16",
+   "locals": [
+    "saved_value",
+    "confirm_button",
+    "guard_button",
+    "aim_button",
+    "item_button",
+    "pause_flag",
+    "back_key",
+    "equip_item",
+    "shot_type",
+    "back_key_2",
+    "stick_alignment",
+    "target_distance",
+    "target_status",
+    "equip_item_2",
+    "shot_type_2",
+    "held_type",
+    "active_item",
+    "attack_hold_frames"
+   ],
+   "doc": "Main per-frame loop for Max in a dungeon. It reads the pad and picks the action from the saved value: sword combo, mid-range lunge, knockdown strike, charge attack, backflip dodge, sub-weapon shot, guard and catch, item throw, or lift and throw. When idle it runs stick movement."
+  },
+  "09e765ad5b86007f": {
+   "name": "on_damage",
+   "loose": "f4e6a61a91e76d8a",
+   "doc": "Cancels guard, knocks the character back, releases anything held, plays the damage motion for 8 frames and clears the action state."
+  },
+  "107f05442685cc2f": {
+   "name": "on_stopped",
+   "loose": "b7d27ee7349a8552",
+   "locals": [
+    "status_flags"
+   ],
+   "doc": "Cancels guard, knocks back lightly and plays the damage motion until the stun status clears."
+  },
+  "136a325df49d5ef8": {
+   "name": "run_charge_attack_state",
+   "loose": "77ed01ae6e4805dd",
+   "locals": [
+    "pad_button",
+    "status",
+    "unused_value",
+    "saved_value",
+    "attack_hold_frames",
+    "progress"
+   ],
+   "doc": "Monica's charge attack, driven by the saved value 1200 to 1202. Holds the charge loop (flash at 20 frames), releases into the charge attack with brief invincibility once the button is let go, then shoves the character forward and shakes the camera until the motion ends."
+  },
+  "16b8f05222c519e0": {
+   "name": "wait_until_motion_done",
+   "loose": "16b8f05222c519e0",
+   "locals": [
+    "is_done"
+   ],
+   "doc": "Waits each frame until the current motion has finished, then returns 1."
+  },
+  "1786cb290a3362bc": {
+   "name": "play_knocked_flying_reaction",
+   "loose": "5d808ba002911bcf",
+   "doc": "Player reaction to a heavy hit: knocked back, turns to the blow source, drops anything held, plays the flying and get-up motions, then clears the saved value."
+  },
+  "17e64e2b0cbf02cc": {
+   "name": "run_max_charge_attack",
+   "loose": "c97807c22df567ef",
+   "locals": [
+    "pad_button",
+    "status",
+    "unused_value",
+    "saved_value",
+    "attack_hold_frames",
+    "x",
+    "y",
+    "z",
+    "progress"
+   ],
+   "doc": "Max's charge attack state machine, keyed on the saved value 1200 to 1202. Holding the button loops the charge motion and flashes at 20 frames, releasing plays the charge attack with a short invincibility and forward impulse."
+  },
+  "181b0ccb677d46af": {
+   "name": "react_to_damage",
+   "loose": "1cbdcf3656d1a3a6",
+   "doc": "Plays the standard damage reaction."
+  },
+  "1909311fb243df6d": {
+   "name": "on_init",
+   "loose": "5924dc8a275a8171",
+   "doc": "Registers Monica's sword attack hit windows, body collisions, blade trails and footstep sounds, and resets the charge effect handle and power."
+  },
+  "19228028f87eb529": {
+   "name": "run_lift_and_throw",
+   "loose": "db99af89f1498148",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "confirm_button",
+    "progress",
+    "held_type",
+    "progress_2"
+   ],
+   "doc": "Lift and throw state (1100 and up): lifts and grabs a target in front, carries it while moving, and on Confirm plays the throw motion and releases it."
+  },
+  "1a5df26998c33fc2": {
+   "name": "fire_weapon_long_burst",
+   "loose": "8010ba651efa7749",
+   "locals": [
+    "saved_value",
+    "status",
+    "pad_button"
+   ],
+   "doc": "Plays the weapon wind-up, fires the ridepod weapon every frame for 30 frames, then plays the wind-down motion."
+  },
+  "1e5ad002609557e7": {
+   "name": "setup_monster_attack_hit",
+   "loose": "8e594901120a791c",
+   "doc": "Registers the monster attack hit collision (dcol00) with the attack 1 motion."
+  },
+  "1ef8c0aa7960ccd2": {
+   "name": "lunge_in_mid_range_attack",
+   "loose": "fc85825b26dd6e92",
+   "locals": [
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress"
+   ],
+   "doc": "Mid-range attack state: plays the attack motion once, pushes the monster forward at 30 to 40 percent of the motion, then clears the saved state value when the motion ends. Uses saved value 200 and 201 as its state."
+  },
+  "2467bdcc9f8b27b4": {
+   "name": "do_back_flip_dodge",
+   "loose": "c50336498b85c804",
+   "locals": [
+    "is_done",
+    "progress"
+   ],
+   "doc": "Plays a back flip with 20 frames of invincibility, pushing backwards while the flip is mid-motion, then clears the saved action value."
+  },
+  "24b0feb8f479c9ef": {
+   "name": "run_guard_lift_throw_action",
+   "loose": "d8c2a4ce273ce403",
+   "locals": [
+    "pad_held",
+    "pad_pressed",
+    "is_done",
+    "saved_value",
+    "progress"
+   ],
+   "doc": "State machine on the saved value (900 to 904): guard, then lift on the action button, carry with stick movement, and throw on a second press, releasing the held object 30 percent into the throw motion."
+  },
+  "25605de22b2f41ef": {
+   "name": "run_guard_and_throw",
+   "loose": "f89be10316d93779",
+   "locals": [
+    "ignored",
+    "saved_value",
+    "fired",
+    "state",
+    "motion_progress"
+   ],
+   "doc": "States 900 to 904: guard in, guard loop, lift, carry and throw. Holding the guard loop and pressing the lift input picks the target up, and the throw plays on the later states."
+  },
+  "268def241924d741": {
+   "name": "run_gun_aim_and_fire",
+   "loose": "87d3c28dbd7de592",
+   "locals": [
+    "status",
+    "saved_value",
+    "action_held",
+    "aim_held",
+    "progress"
+   ],
+   "doc": "State 800 aims the gun while L1 is held and fires on the action button, and state 801 plays the shot and fires the gun projectile partway through. Returns to aiming when the shot motion ends, and drops to idle when L1 is released."
+  },
+  "279f78158203109a": {
+   "name": "run_gun_attack",
+   "loose": "2da6ae08e4ef3416",
+   "locals": [
+    "ignored",
+    "fired",
+    "state",
+    "motion_progress"
+   ],
+   "doc": "State 800: plays the gun attack and returns to state 0 once the weapon has fired; resets attack presses at 30 to 40 percent of the motion."
+  },
+  "27c57330cc5d2563": {
+   "name": "on_update",
+   "loose": "c9cfcd16692a42ac",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "pad_button",
+    "pad_button_2"
+   ],
+   "doc": "Main loop of the form. The confirm button starts a melee attack (state 100) and the square button casts the elemental bolt (state 200), both turning toward the target first; the state lives in the saved value."
+  },
+  "28f01b5098f933c2": {
+   "name": "perform_mid_range_attack",
+   "loose": "b4c08ff1803822c8",
+   "locals": [
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress"
+   ],
+   "doc": "State machine keyed on the saved value 200: plays the mid-range attack motion, lunges forward during the middle of the swing and clears the saved value when the motion ends."
+  },
+  "2b8b1272b6cba3c5": {
+   "name": "on_update",
+   "loose": "731d5946e989c0a5",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "confirm_button",
+    "square_button"
+   ],
+   "doc": "Player-controlled loop: Confirm starts the attack 1 state (100) and Square starts the sticky attack state (200), both turning toward the target first. Otherwise the stick moves the character."
+  },
+  "2cd947cb27e798de": {
+   "name": "land_and_stand",
+   "loose": "1fb379e40d233d71",
+   "doc": "Releases anything held and returns to the battle stand motion after landing."
+  },
+  "3057469d5f044961": {
+   "name": "run_charge_attack",
+   "loose": "cd8d34451ac4914e",
+   "locals": [
+    "unused_value",
+    "object_state",
+    "unused2",
+    "saved_value"
+   ],
+   "doc": "When the action state is 100 plays the charge motion (suicide charge) and waits briefly once it has completed. Decompiled with several unresolved engine calls, so details are approximate."
+  },
+  "34e0f0527ab85b24": {
+   "name": "reset_guard_and_held_item",
+   "loose": "6ecfb033535fdb41",
+   "doc": "Drops the guard, releases and throws any held item. Run when the character is reset."
+  },
+  "361b0ceaa9e816ec": {
+   "name": "update_player_action_state",
+   "loose": "412e58c49dc3aaed",
+   "locals": [
+    "saved_value",
+    "confirm_button",
+    "guard_button",
+    "aim_button",
+    "item_button",
+    "back_key",
+    "equip_item",
+    "back_key_2",
+    "stick_alignment",
+    "target_distance",
+    "target_status",
+    "equip_item_2",
+    "held_type",
+    "active_item",
+    "attack_hold_frames"
+   ],
+   "doc": "Main loop of Max's action script. It dispatches the current action state (combo 100, lunge 200, knockdown kick 300, gun 800, guard 900, item throw 1000, lift 1100, charge 1200, backflip 1300), and in state 0 picks a new one from the buttons and target distance."
+  },
+  "364ce8b49102180a": {
+   "name": "kick_and_grab",
+   "loose": "8812e2e0cb061db5",
+   "locals": [
+    "status",
+    "saved_value",
+    "progress",
+    "found"
+   ],
+   "doc": "Plays the kick motion and past 35 percent tries to grab with the right foot, then waits for the motion to finish."
+  },
+  "36a844aa2f8aac0f": {
+   "name": "on_reset",
+   "loose": "36a844aa2f8aac0f",
+   "doc": "Deletes the charge effect if there is one and releases anything held."
+  },
+  "37299c2287fb4e8a": {
+   "name": "register_dodge_attack_hit",
+   "loose": "f24377cab1c68de4",
+   "doc": "Registers the monster sword hit of the dodge attack and sets the move speed to 3.2."
+  },
+  "37c4348dce2e6b11": {
+   "name": "play_death_and_wait_for_confirm",
+   "loose": "fc0cc8ce83341fdb",
+   "locals": [
+    "pad_button"
+   ],
+   "doc": "Plays the player's death motion, then waits until the confirm button is pressed before clearing the saved value."
+  },
+  "38a49d7aa9ad03ec": {
+   "name": "on_land",
+   "loose": "b2f1cbe03ff30ee6",
+   "doc": "Cancels guard and the charge effect, releases anything held, and returns to the battle stand."
+  },
+  "38ebdf0d5c983f53": {
+   "name": "run_player_control_loop",
+   "loose": "76874a39f491f70a",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "pad_button",
+    "pad_button_2"
+   ],
+   "doc": "Main loop while the player controls this form. Stick moves it; the confirm button starts the sword attack (saved value 100) and the square button starts the pumpkin bomb throw (saved value 200), both turning toward the target first."
+  },
+  "3982019dde15a637": {
+   "name": "wait_motion_end",
+   "locals": [
+    "motion_done"
+   ],
+   "loose": "3982019dde15a637",
+   "params": [],
+   "doc": "Waits frame by frame until the actor's motion is done, then returns 1."
+  },
+  "39d0dc70256c3dc6": {
+   "name": "fall_from_knockdown",
+   "loose": "fdda740b9730252f",
+   "doc": "Plays a sound and the damage motion, waits 8 frames and returns to idle. Same as the damage reaction with a different sound."
+  },
+  "3d353da7afd3770e": {
+   "name": "run_player_attack_loop",
+   "loose": "d33813ddf5150e72",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "attack_state",
+    "confirm_pressed",
+    "square_pressed"
+   ],
+   "doc": "Player-controlled loop for this form: stick moves the character, the confirm button starts the spin combo (saved value 100) and the square button starts the sticky attack (200). While an attack state is active it turns toward the target and runs that attack."
+  },
+  "3e4bd24bd9fdf6f0": {
+   "name": "update_sword_combo_model_0",
+   "loose": "721a1d453c36d9de",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "pad_button",
+    "attack_hold_frames",
+    "stick_alignment"
+   ],
+   "doc": "Runs the five-hit sword combo state machine (saved value 100 to 105) for weapon model 0: moves the character during each swing, chains the next hit on a button press in its window, takes a held button to the charge attack (1200), and goes to the third hit when the stick points at the target."
+  },
+  "3e6f037a254cd5fc": {
+   "name": "run_lift_and_throw",
+   "loose": "01b6153bafa918d3",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "confirm_pressed",
+    "progress",
+    "held_type",
+    "throw_progress"
+   ],
+   "doc": "States 1100 to 1103: pick up the object in front of Max, carry it, and throw it on confirm. The grab is attempted in a window of the lift motion and gives 10 frames of invincibility."
+  },
+  "3f827555d4881020": {
+   "name": "shoot_venom_attack",
+   "loose": "94a758686345e1c7",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "saved_value",
+    "unused4",
+    "muzzle_x",
+    "muzzle_y",
+    "muzzle_z",
+    "rot_x",
+    "rot_y",
+    "rot_z",
+    "unused5",
+    "weapon_attack"
+   ],
+   "doc": "Plays attack 2 and spawns the venom projectile effect from the dcol02 point, facing the character's rotation and carrying the main weapon's attack power. Resets the saved action value to 0 afterwards."
+  },
+  "42096e93c8e74c8d": {
+   "name": "throw_pumpkin_bomb",
+   "loose": "753c7005844955c9",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "saved_value",
+    "bomb_pos",
+    "chara_rot",
+    "weapon_attack"
+   ],
+   "doc": "Plays the second attack motion and spawns the pumpkin bomb effect at the kabo frame when the motion reaches 64-68%. The effect's damage value is the equipped main weapon's attack."
+  },
+  "48b7f220052b0cf7": {
+   "name": "control_monster_by_pad",
+   "loose": "718743e376294e2e",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "confirm_pressed",
+    "square_pressed"
+   ],
+   "doc": "Main loop for the monster the player controls: stick moves it, confirm starts the normal attack (saved value 100) and square starts the petrify shot (saved value 200)."
+  },
+  "4aa737afd0e301a2": {
+   "name": "get_knocked_down_and_rise",
+   "loose": "3be06adceef1a41a",
+   "doc": "Heavy hit: long knockback, plays the knocked-flying motion then the get-up motion, then clears the saved state value."
+  },
+  "4b9ca907464d41c8": {
+   "name": "on_update",
+   "loose": "fbb906648b89c760",
+   "locals": [
+    "saved_value",
+    "confirm_button",
+    "r1_button",
+    "l1_button",
+    "square_button",
+    "pause_flag",
+    "back_key",
+    "x",
+    "y",
+    "z",
+    "ring_color",
+    "back_key_2",
+    "stick_alignment",
+    "target_distance",
+    "target_status",
+    "held_type",
+    "active_item",
+    "attack_hold_frames",
+    "x_2",
+    "y_2",
+    "z_2",
+    "ring_color_2"
+   ],
+   "doc": "Main control loop for Monica. The action state in the saved value selects the running action: 100 sword combo, 200 mid-range attack, 300 knockdown strike, 800 magic, 900 guard and throw, 1000 item throw, 1100 lift and throw, 1200 charge attack, 1300 back flip. In idle it reads the buttons: Confirm attacks (or back flips on the back key), R1 guards, L1 charges magic, Square uses the active item."
+  },
+  "4c9a528dbb83001e": {
+   "name": "delete_effect_if_set",
+   "loose": "4c9a528dbb83001e",
+   "doc": "Deletes the effect whose handle is stored in global g0, unless g0 is -1."
+  },
+  "4ce2d426e842604a": {
+   "name": "setup_transformed_attack_hits",
+   "loose": "78c85e0ef52735ba",
+   "doc": "Registers the dcol00 attack collision with the monster attack hit and a 5.0 radius body collision on bcol00."
+  },
+  "509d72cc0b18fa99": {
+   "name": "wait_frames",
+   "params": [
+    "frames"
+   ],
+   "loose": "509d72cc0b18fa99",
+   "locals": [],
+   "doc": "Waits the given number of frames."
+  },
+  "51416c1cd676ea0c": {
+   "name": "run_guard_catch_and_throw",
+   "loose": "933ebcb0b7614c3e",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "confirm_pressed",
+    "action_held",
+    "r1_held",
+    "progress",
+    "held_type",
+    "throw_progress"
+   ],
+   "doc": "States 900 to 904: raise the guard with R1, catch what is in front with the action button, carry it, then throw it on confirm. The catch gives 10 frames of invincibility, and the held object is released partway through the throw motion."
+  },
+  "535fc6dd2b1a6ee2": {
+   "name": "update_item_throw",
+   "locals": [
+    "motion_done",
+    "prog",
+    "motion_time"
+   ],
+   "loose": "cdabaf9e2555e14f",
+   "params": [],
+   "doc": "Item throw state machine for saved values 1000 and 1001: plays the throw item motion, throws the held item at 45 to 50 percent of the motion, then clears the saved value when the motion ends."
+  },
+  "54b75a109bcb708f": {
+   "name": "play_death_and_clear_state",
+   "loose": "46228c72a01ad711",
+   "doc": "Drops the guard, releases anything held, plays the death motion and clears the saved action value."
+  },
+  "590b13a354633ead": {
+   "name": "setup_monster_attacks",
+   "loose": "4eab798b1715840c",
+   "doc": "Registers the two monster attack hit areas (dcol00 and dcol01) for attack 1 and attack 2."
+  },
+  "593daae045211d11": {
+   "name": "control_monster_by_pad",
+   "loose": "87bad79c2b947f75",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "confirm_pressed",
+    "square_pressed"
+   ],
+   "doc": "Main loop for the monster the player controls: stick moves it, the confirm button starts attack 1 (saved value 100) and the square button starts attack 2 (saved value 200), each turning toward the target first."
+  },
+  "5a1c8a48894c10db": {
+   "name": "run_guard_and_throw",
+   "loose": "4e4bc902a5ca045f",
+   "locals": [
+    "is_done",
+    "r1_button",
+    "confirm_button",
+    "l1_button",
+    "saved_value",
+    "progress",
+    "held_type",
+    "progress_2",
+    "progress_3"
+   ],
+   "doc": "Guard state (900 and up): guard in, hold R1 to keep guarding, Confirm to lift and grab a nearby enemy or object with the throw motion, carry it and throw it. L1 with R1 plays a sword swing that fires sword magic."
+  },
+  "5a5789cb173e265b": {
+   "name": "update_single_shot_gun",
+   "loose": "51d09cde5e62573e",
+   "locals": [
+    "status",
+    "saved_value",
+    "fire_button",
+    "aim_button",
+    "progress"
+   ],
+   "doc": "Gun state machine for saved values 800 and 801: aims while the aim button is held and fires one sub-weapon shot per press of the fire button."
+  },
+  "5a5d2ef34aedaa2b": {
+   "name": "run_mid_range_attack",
+   "loose": "4e12b0da38e87c30",
+   "locals": [
+    "unused_value",
+    "object_pos",
+    "unused2",
+    "state",
+    "motion_progress"
+   ],
+   "doc": "States 200 and 201: plays the mid-range attack, applies a camera shake between 30 and 40 percent of the motion, and returns to state 0 when it ends."
+  },
+  "5b4c11e9e1597259": {
+   "name": "fire_weapon_short_burst",
+   "loose": "87084411c34e9f53",
+   "locals": [
+    "saved_value",
+    "status",
+    "pad_button"
+   ],
+   "doc": "Ridepod ranged weapon burst (states 100 to 110) with the ridepod movement and menu disabled: plays the attack 1 in motion on the arm, then fires the weapon once per frame for 15 frames with the attack 1 r motion, plays the out motion and returns to state 0 when it ends. The long burst fires for 30 frames.",
+   "params": []
+  },
+  "5cb35f82b3df3992": {
+   "name": "on_blocked",
+   "loose": "5cb35f82b3df3992",
+   "doc": "Cancels the current action when an attack is blocked."
+  },
+  "5d6e406b73031220": {
+   "name": "play_death_and_wait_for_confirm",
+   "loose": "0b5d0081f2f50bf5",
+   "locals": [
+    "confirm_button"
+   ],
+   "doc": "Releases anything held, plays the death motion and waits for the confirm button before clearing the action state."
+  },
+  "628aaa4d5b6a4b73": {
+   "name": "run_knockdown_action",
+   "loose": "7ce51990de4cda2e",
+   "doc": "Knockdown program shared by many playable characters; it only calls the knocked-flying and get-up sequence."
+  },
+  "64fd3359042ee83b": {
+   "name": "setup_attack_hits",
+   "loose": "0934ae0e42e352d5",
+   "doc": "Assigns the model object slots, registers the normal and dodge attack hit areas and adds two body collisions."
+  },
+  "663f862319c90be4": {
+   "name": "on_init",
+   "loose": "919e9598e78fa9e1",
+   "doc": "Registers the two monster attack hit areas dcol00 and dcol01 for the first attack animation."
+  },
+  "66a05971e5f048f1": {
+   "name": "run_sword_combo_weapon_0",
+   "loose": "36b741bc41ac2e13",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "attack_hold_frames",
+    "stick_alignment"
+   ],
+   "doc": "Sword combo state machine for sword model 0. Five-hit combo with hits 1 to 5 plus the knock-away finisher, using this weapon's own movement impulses and chain windows. Holding attack for over 10 frames in the first hit starts the charge attack (state 1200)."
+  },
+  "67144ffd6b828cd5": {
+   "name": "update_lift_and_throw",
+   "loose": "83e30f98264f5f8b",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "confirm_button",
+    "progress",
+    "held_type",
+    "throw_progress"
+   ],
+   "doc": "State machine for saved values 1100 to 1103: lifts an enemy or item in front, carries it, and throws it on the confirm button."
+  },
+  "686bda59daa0e509": {
+   "name": "setup_attack_hits",
+   "loose": "23e13d9cf56f9442",
+   "doc": "Registers the two monster attack hit windows with sword trails and sets the movement speed of this player-controlled monster form."
+  },
+  "68c917ab07401583": {
+   "name": "run_lift_and_throw",
+   "loose": "e0a45964dac50f28",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "confirm_button",
+    "progress",
+    "held_type",
+    "throw_progress"
+   ],
+   "doc": "Handles lift and throw, states 1100 to 1103, entered by the guard and attack buttons together or by an active item. It grabs a nearby object and throws it on confirm."
+  },
+  "6f73c267fac5dfd0": {
+   "name": "on_stopped",
+   "loose": "30236a4d068e36e1",
+   "locals": [
+    "status_flags"
+   ],
+   "doc": "Knocks Monica back and holds the damage pose until the stun status flags clear, then returns to idle."
+  },
+  "72266dffdc40393f": {
+   "name": "run_magic_aim_state",
+   "loose": "6cabc8090fd1f81c",
+   "locals": [
+    "status",
+    "saved_value",
+    "pad_button",
+    "pad_button_2",
+    "x",
+    "y",
+    "z",
+    "x_2",
+    "y_2",
+    "z_2",
+    "progress",
+    "x_3",
+    "y_3",
+    "z_3"
+   ],
+   "doc": "Handles magic aiming while L1 is held (states 800, 801): aims, keeps the charge effect on her item frame, and on confirm plays the cast and fires the spell01 sub weapon. Releasing L1 cancels and removes the charge effect."
+  },
+  "7232918761830abb": {
+   "name": "register_monster_sword_hits",
+   "loose": "bdadcaffb4eacc19",
+   "locals": [
+    "monster_form"
+   ],
+   "doc": "Registers the sword hit boxes and sword trails for each attack of monster forms 176, 177, 180, 183, 186 and 187. The hit windows and bone pairs differ per form."
+  },
+  "752c21ba54711af0": {
+   "name": "update_slow_shot_gun",
+   "loose": "4ba6269ea127f8bc",
+   "locals": [
+    "status",
+    "saved_value",
+    "fire_button",
+    "aim_button",
+    "progress"
+   ],
+   "doc": "Gun state machine for saved values 840 and 841: like the single shot gun but with a 6-frame pause after each shot."
+  },
+  "77ad475bf19eba31": {
+   "name": "play_charge_attack",
+   "loose": "e8bd6f21c5910db4",
+   "locals": [
+    "unused_value",
+    "status",
+    "unused2",
+    "saved_value"
+   ],
+   "doc": "Attack 2 state machine driven by the saved value (200 to 203): plays the wind-up motion, loops the attack motion for 45 frames, then gives a forward move impulse and plays the wind-down, clearing the state at the end.",
+   "params": []
+  },
+  "77d4cfc0988a2d06": {
+   "name": "react_to_blocked_hit",
+   "loose": "77d4cfc0988a2d06",
+   "doc": "Plays the block sound, fires the sword magic effect, waits 10 frames and resets the state to 0."
+  },
+  "783837eeeffdc7ba": {
+   "name": "update_guard_lift_and_throw",
+   "loose": "d6a73d9765261691",
+   "locals": [
+    "is_done",
+    "pad_button_2",
+    "pad_button_3",
+    "pad_button",
+    "saved_value",
+    "progress",
+    "held_type",
+    "progress_2"
+   ],
+   "doc": "Handles states 900 to 904: guard with R1, lift a nearby object or enemy with confirm, carry it and throw it. Holding L1 and R1 together also fires sword magic."
+  },
+  "789c8826acecc440": {
+   "name": "on_update",
+   "loose": "62471e6885b47e8a",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "confirm_pressed",
+    "square_pressed"
+   ],
+   "doc": "Player-controlled loop for this transformed form: the confirm button starts the normal attack (saved value 100) and the square button the venom shot (saved value 200). Otherwise the stick moves the character."
+  },
+  "78bc4bccf1c456f9": {
+   "name": "shoot_petrify_ball",
+   "loose": "3cff0ec0d57d2141",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "unused4",
+    "hand_pos",
+    "rot",
+    "weapon_attack"
+   ],
+   "doc": "Attack 2: at the middle of the motion it spawns a looping petrify shot from the dcol02 point, passing the weapon's attack power as damage."
+  },
+  "790450db7c8da38e": {
+   "name": "setup_sword_attacks_and_sounds",
+   "loose": "08ded7979d76cdae",
+   "doc": "Registers Max's sword attack hit boxes, blade trails, body collisions, charge effect slot, gun and wrench footstep and attack sounds. Runs once when the action script loads."
+  },
+  "795e4f16fcf82ba0": {
+   "name": "on_blocked",
+   "loose": "f3341cdd81440cf9",
+   "locals": [
+    "is_done"
+   ],
+   "doc": "Cancels guard and plays the after-guard motion until it finishes."
+  },
+  "7f2b0b02549459d9": {
+   "name": "run_sword_combo_weapon_3",
+   "loose": "1c2afd4ddeb183f4",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "attack_hold_frames",
+    "stick_alignment"
+   ],
+   "doc": "Sword combo state machine for sword model 3. Five-hit combo plus knock-away finisher with a long slide forward, using this weapon's own movement impulses and chain windows. Holding attack for over 10 frames in the first hit starts the charge attack (state 1200)."
+  },
+  "804bb3132cce5efc": {
+   "name": "shoot_curse_bolt",
+   "loose": "d997590477d768b9",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "unused4",
+    "pos",
+    "rot",
+    "weapon_attack"
+   ],
+   "doc": "Plays the attack loop motion, waits 20 frames and launches a curse shot effect from the magic_coll point, carrying the weapon attack value as its damage."
+  },
+  "81bdbc2c5cf3e331": {
+   "name": "launch_sticky_blob_attack",
+   "loose": "a97ed8e1099060f4",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "saved_value",
+    "unused4",
+    "x",
+    "y",
+    "z",
+    "x_2",
+    "y_2",
+    "z_2",
+    "unused5",
+    "weapon_attack"
+   ],
+   "doc": "Plays attack 2 and at the right motion frame spawns the sticky effect at the dcol1 point, facing the character's rotation, with the main weapon attack value as its damage. Resets the action state when the motion ends."
+  },
+  "8226ecc5ef0cddf4": {
+   "name": "run_shooter_control_loop",
+   "loose": "e4ebe1b2a73c90b8",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "action_state",
+    "pad_button"
+   ],
+   "doc": "Per-frame loop for the controllable monster form: stick movement, and on the confirm button it turns toward the target and fires a shot."
+  },
+  "8442a3d20f4f0af4": {
+   "name": "play_death_motion",
+   "loose": "f1149b6127722653",
+   "doc": "Drops what Max is holding and plays the death motion."
+  },
+  "85ecb9a102d730a0": {
+   "name": "play_damage_reaction",
+   "loose": "a65ba001da57fff9",
+   "params": [],
+   "locals": [],
+   "doc": "Reaction to taking damage: turns off the charge effect, knocks the character back, releases any held object, plays the after-damage motion for 8 frames and clears the saved action value."
+  },
+  "864f74ca60539c59": {
+   "name": "run_player_action_loop",
+   "loose": "5855fb05bdf2f545",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "attack_pressed",
+    "square_pressed"
+   ],
+   "doc": "Main loop. When idle the stick moves the character, the confirm button starts the gun shot (state 100) and square starts the dodge attack (state 200). Both states turn toward the target while they run."
+  },
+  "883bd03bc8c68b79": {
+   "name": "recoil_until_stop_ends",
+   "loose": "941776bba18cf16e",
+   "locals": [
+    "status_flags"
+   ],
+   "doc": "Drops the guard, releases anything held and plays the damage motion with a knockback until the stop status flags clear. Clears the saved action value and allows the menu meanwhile."
+  },
+  "89a426876720ea25": {
+   "name": "on_damage",
+   "loose": "89a426876720ea25",
+   "doc": "Drops guard and cancels the current action when damaged."
+  },
+  "89a96ab5aa0f4294": {
+   "name": "set_move_speed_on_init",
+   "loose": "89a96ab5aa0f4294",
+   "doc": "Sets the movement speed of this monster form to 3.4."
+  },
+  "8cf75b04808466fd": {
+   "name": "fire_weapon_while_held",
+   "loose": "90a62e24d536318b",
+   "locals": [
+    "saved_value",
+    "unused_value",
+    "pad_button"
+   ],
+   "doc": "Fires the ridepod weapon every third frame for as long as the action button is held, then returns to idle."
+  },
+  "8e2dadd21feb92d3": {
+   "name": "release_held_on_reset",
+   "loose": "8e2dadd21feb92d3",
+   "doc": "Drops whatever Max is holding when the action script is reset."
+  },
+  "8e4928e597338616": {
+   "name": "update_magic_aim_and_cast",
+   "loose": "55b5fb937cd59431",
+   "locals": [
+    "status",
+    "saved_value",
+    "pad_button",
+    "pad_button_2",
+    "x",
+    "y",
+    "z",
+    "x_2",
+    "y_2",
+    "z_2",
+    "progress",
+    "x_3",
+    "y_3",
+    "z_3"
+   ],
+   "doc": "Handles Monica's magic states 800 and 801. While L1 is held she aims and the charge effect grows toward 1.3; pressing confirm fires the spell at 25 to 30 percent of the cast motion, and releasing L1 cancels."
+  },
+  "90770f4419820340": {
+   "name": "stop_guarding",
+   "loose": "90770f4419820340",
+   "doc": "Takes the guard stance down."
+  },
+  "91f052592e6c99dd": {
+   "name": "play_sword_knockdown",
+   "loose": "fa70015c92a23d3e",
+   "locals": [
+    "status",
+    "unused_value",
+    "saved_value"
+   ],
+   "doc": "State machine keyed on the saved value 300: plays the sword knockdown motion, then clears the saved value and waits 3 frames."
+  },
+  "930945d379277323": {
+   "name": "shoot_fox_bullet",
+   "loose": "f4a487799bac8b9c",
+   "locals": [
+    "unused_value",
+    "status",
+    "unused2",
+    "saved_value",
+    "muzzle_pos",
+    "weapon_attack",
+    "progress"
+   ],
+   "doc": "State 100 to 101: plays the aim-in motion, then fires a fox bullet effect from the dcol00 bone with the main weapon's attack power plus a muzzle flash, and plays the recovery motion with a sound."
+  },
+  "94d88916229fb831": {
+   "name": "play_dodge_attack",
+   "loose": "b18151224c07eda2",
+   "locals": [
+    "unused_value",
+    "status",
+    "unused2",
+    "saved_value",
+    "progress"
+   ],
+   "doc": "Plays the dodge attack motion when the stored action value is 200, pushing the body forward between 1% and 30% of the motion and clearing the action value when the motion ends. Returns 0."
+  },
+  "9df4a28d39cfe408": {
+   "name": "on_knockdown",
+   "loose": "33569dd85b684aec",
+   "locals": [
+    "move_type"
+   ],
+   "doc": "Knocks the ridepod back, faces the source of the blow, plays the standing motion for its leg or caterpillar type, and cancels the current action."
+  },
+  "9e5dd9d1f865322f": {
+   "name": "hold_guard_recoil_pose",
+   "loose": "40133a629f339058",
+   "locals": [
+    "is_done"
+   ],
+   "doc": "Runs the common guard setup, stops movement and holds the after-guard motion until it finishes."
+  },
+  "9f470adf2fe6496a": {
+   "name": "on_update",
+   "loose": "b87e2246bc5d0527",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "pad_button",
+    "pad_button_2"
+   ],
+   "doc": "Per-frame loop for this controllable actor: confirm plays a melee attack and square shoots a curse bolt."
+  },
+  "a276d8f3776c9e86": {
+   "name": "play_knocked_flying_reaction",
+   "loose": "1dafdd250330c3dd",
+   "doc": "Knocks the character back, faces the blow source, plays the knocked-flying and get-up motions, then clears the saved action value."
+  },
+  "a53a67fe10411b09": {
+   "name": "run_death_action",
+   "loose": "f33dd803b8f190d6",
+   "doc": "Death program shared by many playable characters; it only calls the death motion sequence that waits for the confirm button."
+  },
+  "a5c3d0e69504c46f": {
+   "name": "init_double_hit_monster",
+   "loose": "b36ac6109cf8bca3",
+   "doc": "Registers two monster attack hit volumes (dcol0, dcol1) for attack 1."
+  },
+  "a7bdeea6287091eb": {
+   "name": "play_first_attack",
+   "loose": "df996058d5c9e8e7",
+   "locals": [
+    "unused_value",
+    "status",
+    "unused2",
+    "saved_value"
+   ],
+   "doc": "While the action state is 100, plays attack 1 once with a forward step and returns the state to 0 when the motion ends."
+  },
+  "a7fa3b4196cd9c5e": {
+   "name": "update_attack_actions",
+   "loose": "593595e633b96c49",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "confirm_pressed",
+    "square_pressed"
+   ],
+   "doc": "Per-frame update program: moves with the stick when idle, starts action 100 (plain attack) on the confirm button or action 200 (second attack) on the square button, and while an action is active turns toward the target and runs it."
+  },
+  "aa55b5a9ddd70545": {
+   "name": "do_nothing",
+   "loose": "aa55b5a9ddd70545",
+   "params": [],
+   "locals": [],
+   "doc": "Does nothing."
+  },
+  "ab0825d81d0675e0": {
+   "name": "run_guard_and_catch_throw",
+   "loose": "0eacbb30d3aa197a",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "confirm_button",
+    "attack_button",
+    "guard_button",
+    "progress",
+    "held_type",
+    "throw_progress"
+   ],
+   "doc": "Handles guard, catch and throw, states 900 to 904. Holding the guard button guards, pressing attack during guard starts the lift to grab something, and confirm throws what is held."
+  },
+  "ac1b692337452fce": {
+   "name": "wait_for_sub_weapon_fire",
+   "loose": "ac1b692337452fce",
+   "locals": [
+    "fired"
+   ],
+   "doc": "Waits frame by frame until the sub weapon fires, then returns 1."
+  },
+  "ac3c9899baa197ca": {
+   "name": "recoil_from_light_hit",
+   "loose": "68d015a03e57041a",
+   "doc": "Light knockback: short push, releases anything held, plays the damage motion and clears the saved state value."
+  },
+  "ac79d9e18d1f4ca9": {
+   "name": "run_sword_combo",
+   "loose": "01f4df30a5ea2287",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "attack_hold_frames"
+   ],
+   "doc": "Handles the five hit sword combo, states 100 to 104. Pressing attack inside each hit's timing window chains into the next hit, holding attack for over 12 frames jumps to the charge attack (1200), and the state returns to 0 when the motion ends."
+  },
+  "ae6e38decb2cc993": {
+   "name": "play_light_damage_reaction",
+   "loose": "27fb2c4c74c72801",
+   "doc": "Short knockback and damage motion for a light hit. Releases anything held and clears the saved action value."
+  },
+  "aeecd480af06f083": {
+   "name": "fire_elemental_shot",
+   "loose": "ff27545c168518c3",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "action_state",
+    "muzzle_pos",
+    "shot_rot",
+    "front_dir",
+    "weapon_attack",
+    "monster_form"
+   ],
+   "doc": "Plays the attack motion and launches a ranged elemental shot (fire, ice, thunder, wind or holy, chosen by monster form 112/116/120/124/128) from the dcol0 point. Shot damage is the main weapon attack."
+  },
+  "b0e87d2733c76c0c": {
+   "name": "play_guard_recovery_motion",
+   "loose": "2b44795078ac1a84",
+   "locals": [
+    "is_done"
+   ],
+   "doc": "Stops movement and plays the after-guard motion, then waits until that motion finishes."
+  },
+  "b1655ccf42760743": {
+   "name": "hold_guard",
+   "loose": "e9d48d78e0d76b4e",
+   "locals": [
+    "unused_value",
+    "saved_value",
+    "pad_button"
+   ],
+   "doc": "Plays the guard motion and keeps guarding while R1 is held; releases guard and returns to idle when it is let go."
+  },
+  "b3185b4b907f68ac": {
+   "name": "run_charge_attack_states",
+   "loose": "329feea24af9a22a",
+   "locals": [
+    "ignored",
+    "unused_value",
+    "object_pos",
+    "state",
+    "pad_pressed",
+    "motion_progress"
+   ],
+   "doc": "State machine for the charged attack (states 1000 to 1002): holds the charge loop until the button has been held for more than 30 frames, then releases the charge attack motion and waits for it to end. Releasing early cancels back to state 0."
+  },
+  "b374bd5ee4f3a421": {
+   "name": "update_sword_combo_model_2",
+   "loose": "9abb6b1f0bf79d14",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "pad_button",
+    "attack_hold_frames",
+    "stick_alignment"
+   ],
+   "doc": "Runs the five-hit sword combo state machine (saved value 100 to 105) for weapon model 2: moves the character during each swing, chains the next hit on a button press in its window, takes a held button to the charge attack (1200), and goes to the third hit when the stick points at the target."
+  },
+  "b53113356d77f824": {
+   "name": "update_guard_catch_throw",
+   "loose": "5b7e6811b5eb7f4d",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "confirm_button",
+    "grab_button",
+    "guard_button",
+    "progress",
+    "held_type",
+    "throw_progress"
+   ],
+   "doc": "State machine for saved values 900 to 904: raises the guard while R1 is held, catches an enemy or item when the grab button is pressed, carries it, and throws it on the confirm button."
+  },
+  "b6bb8f3cfe8a131b": {
+   "name": "play_backflip_dodge",
+   "loose": "2c9624a664af6caa",
+   "locals": [
+    "fired",
+    "motion_progress"
+   ],
+   "doc": "Plays the backflip dodge motion, applying a camera shake between 18 and 80 percent of it, then waits 6 frames and resets the state to 0."
+  },
+  "b7d4db74fc6790b4": {
+   "name": "wait_motion_in_range",
+   "params": [
+    "start_time",
+    "end_time"
+   ],
+   "locals": [
+    "motion_time",
+    "waiting"
+   ],
+   "loose": "b7d4db74fc6790b4",
+   "doc": "Waits frame by frame until the motion progress is between start_time and end_time. Returns 0."
+  },
+  "b8a015fe2652faa8": {
+   "name": "play_attack_once",
+   "locals": [
+    "unused_a",
+    "mos_status",
+    "unused_b",
+    "prog"
+   ],
+   "loose": "95b21a9243be32b2",
+   "params": [],
+   "doc": "When the saved value is 100, plays the first attack motion once and resets the saved value to 0 when the motion status reaches 4. Returns 0 only on that path."
+  },
+  "bd513f84e995bd9e": {
+   "name": "run_magic_aim_and_cast",
+   "loose": "b2fb22412a70ec62",
+   "locals": [
+    "status",
+    "saved_value",
+    "l1_button",
+    "confirm_button",
+    "x",
+    "y",
+    "z",
+    "x_2",
+    "y_2",
+    "z_2",
+    "progress",
+    "x_3",
+    "y_3",
+    "z_3",
+    "ring_color"
+   ],
+   "doc": "Magic state (800): while L1 is held, aims with the magic motion, moves the charge effect to the item point and grows the charge level up to 1.3. Confirm casts, firing the spell sub weapon at progress 0.25 with the charge level; releasing L1 cancels."
+  },
+  "bfa450f60cfc7433": {
+   "name": "init_sword_monster",
+   "loose": "a1a09aa709dcf4f3",
+   "doc": "Registers the monster sword hit volumes (dcol0, dcol1) for attack 1 and sets the move speed to 2.8."
+  },
+  "c2174c3dae861ffe": {
+   "name": "on_init",
+   "loose": "24e96d91251e01ec",
+   "doc": "Reads the equipped sword model, registers hit boxes and blade trails for each of Monica's sword attacks (they differ per weapon model 0 to 3), the charge attack and the mid-range attack, and sets up the object slots."
+  },
+  "c254ceba50f8350d": {
+   "name": "run_second_attack_action",
+   "loose": "cfd676164c84662c",
+   "locals": [
+    "unused_value",
+    "motion_status",
+    "unused2",
+    "saved_value"
+   ],
+   "doc": "Action state 200: plays the second attack motion once, and clears the saved value when the motion status reaches 4 so the update loop returns to idle."
+  },
+  "c3a0349698c1df01": {
+   "name": "run_sword_combo",
+   "loose": "5392894b099df3e2",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "confirm_pressed",
+    "attack_hold_frames",
+    "stick_alignment"
+   ],
+   "doc": "Runs the five-hit sword combo while the action state is 100 to 105. Each hit pushes Max forward during parts of its motion, and a button press in the next hit's window plays the next hit, or the third-hit kick when the stick points at the target. Holding the attack button for more than 12 frames switches to the charge attack (state 1200)."
+  },
+  "c50cc098f2953c59": {
+   "name": "register_sword_attack_hit",
+   "loose": "7ebd9e4b58922706",
+   "doc": "Registers the monster sword hit area (dcol0 to dcol1) used by the first attack."
+  },
+  "c59fe33f3a487126": {
+   "name": "on_death",
+   "loose": "803b599e8e3a0780",
+   "locals": [
+    "pad_button"
+   ],
+   "doc": "Drops any held object, plays the death motion and waits for the confirm button before clearing the state."
+  },
+  "c5a437119d50693b": {
+   "name": "on_death",
+   "loose": "ad7270d77a53cc28",
+   "doc": "Cancels guard and the charge effect, releases anything held and plays the death motion."
+  },
+  "c7715823b8d02c99": {
+   "name": "setup_attack_hit",
+   "loose": "13e91a50b7fbf163",
+   "doc": "Registers the sword hit window for attack 1."
+  },
+  "c7fe6c71abf32fbb": {
+   "name": "dodge_backflip",
+   "loose": "8264de75f4ca4b6a",
+   "locals": [
+    "is_done",
+    "progress"
+   ],
+   "doc": "Plays the backflip dodge motion with 20 frames of invincibility, pushing backward during the middle of the animation, then clears the saved value."
+  },
+  "c9c45d3872991f52": {
+   "name": "run_three_hit_combo",
+   "loose": "15039234b8d87326",
+   "params": [
+    "first_window_start",
+    "first_window_end",
+    "second_window_start",
+    "second_window_end"
+   ],
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress"
+   ],
+   "doc": "Right punch, then left punch, then two-handed punch; another attack press inside each motion window chains to the next hit. Windows are fractions of motion progress and differ per attack type."
+  },
+  "cd8a5b2490eba82a": {
+   "name": "run_action_loop",
+   "loose": "d7f7cc18b46dff7f",
+   "locals": [
+    "saved_value",
+    "ignored",
+    "state"
+   ],
+   "doc": "Main loop. Runs the return handler for states 100 to 198, and in state 0 handles carrying movement; when the saved value has bit 32 set it plays the victory pose and enters state 100."
+  },
+  "cd9abac0ac8c4a04": {
+   "name": "run_lift_and_throw_state",
+   "loose": "16557a5109d9cdc3",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "pad_button",
+    "progress",
+    "held_type",
+    "progress_2"
+   ],
+   "doc": "Handles lifting and throwing an object (states 1100 to 1103) when R1 and confirm are pressed together or a lift item is used. Carries the object until confirm throws it."
+  },
+  "ce3cc6abe5f1614b": {
+   "name": "on_init",
+   "loose": "f2531435f49b7ab7",
+   "doc": "Registers the monster attack hit box on dcol0 for attack 1."
+  },
+  "cec1b664037483d9": {
+   "name": "update_player_controlled_monster",
+   "loose": "f2725d3f1d8c5c4c",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "confirm_pressed",
+    "square_pressed"
+   ],
+   "doc": "Per-frame loop for the monster while the player controls it: the confirm button starts attack 1 (state 100), and stick input moves it while idle. States 100 to 198 turn toward the target and attack."
+  },
+  "cedfb7f29ea5d643": {
+   "name": "on_init",
+   "loose": "1163a134bd29c0c0",
+   "doc": "Registers Monica's sword attack hit boxes, body collisions, blade trails and motion sounds, and clears the charge effect handle."
+  },
+  "cf85a1fef7b684e6": {
+   "name": "on_update",
+   "loose": "1f5cdba7f37a96eb",
+   "locals": [
+    "saved_value",
+    "confirm_pressed",
+    "guard_held",
+    "magic_held",
+    "item_pressed",
+    "back_key",
+    "x",
+    "y",
+    "z",
+    "back_key_2",
+    "stick_alignment",
+    "target_distance",
+    "target_status",
+    "held_type",
+    "active_item",
+    "x_2",
+    "y_2",
+    "z_2"
+   ],
+   "doc": "Per-frame state machine: dispatches the running action by state number ranges (100 sword combo, 200 mid-range, 300 knockdown strike, 800 magic, 900 guard, 1000 item throw, 1100 lift, 1200 charge, 1300 back flip), and when idle picks the next action from the pressed buttons and target distance."
+  },
+  "d28fdb4689d17250": {
+   "name": "on_reset",
+   "loose": "d28fdb4689d17250",
+   "doc": "Cancels guard and the charge effect and releases anything held."
+  },
+  "d2aa39424684026b": {
+   "name": "run_sword_combo_weapon_1",
+   "loose": "66369f10458a5fec",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "attack_hold_frames",
+    "stick_alignment"
+   ],
+   "doc": "Sword combo state machine for sword model 1. Five-hit combo (hits 1 to 4 plus the knock-away finisher) with this weapon's own movement impulses and chain windows. Holding attack for over 10 frames in the first hit starts the charge attack (state 1200)."
+  },
+  "d340a2d7f1b0a2cd": {
+   "name": "react_to_damage",
+   "loose": "e12aa6ec6dbf0b79",
+   "doc": "Plays the damage sound and damage motion, waits 8 frames and resets the state to 0."
+  },
+  "d38862475dbe7d97": {
+   "name": "run_player_action_loop",
+   "loose": "13c964ce5a761f12",
+   "locals": [
+    "saved_value",
+    "confirm_pressed",
+    "r1_held",
+    "l1_held",
+    "square_pressed",
+    "pause_flag",
+    "back_key",
+    "equip_item",
+    "back_key_2",
+    "stick_alignment",
+    "target_distance",
+    "target_status",
+    "equip_item_2",
+    "held_type",
+    "active_item",
+    "attack_hold_frames"
+   ],
+   "doc": "Main loop for Max's actions. The saved value picks the state: 100 sword combo, 200 lunge, 300 knockdown strike, 800 gun, 900 guard and throw, 1000 item throw, 1100 lift and throw, 1200 charge attack, 1300 backflip. From idle it chooses the next state from the buttons, the stick direction and the target's distance and status."
+  },
+  "d3dadbc2dca6aac4": {
+   "name": "run_attack_and_move_loop",
+   "loose": "5d0cbb06fc25fdbd",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "pad_button"
+   ],
+   "doc": "Main loop of a player action script. While the saved value is 100 to 198 it turns toward the target and plays the attack; at 0 it handles stick movement and starts the attack (value 100) when the action button is confirmed."
+  },
+  "d4b47b71a33abea6": {
+   "name": "cast_elemental_bolt",
+   "loose": "063ffb0a56e77bb6",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "saved_value",
+    "muzzle_pos",
+    "front_dir",
+    "weapon_attack",
+    "monster_form"
+   ],
+   "doc": "Plays the second attack motion and spawns a fire, wind, ice or thunder bolt effect chosen by the monster form (44 to 47). The bolt starts at the col_magic point, flies along the facing, and carries the main weapon's attack value as damage."
+  },
+  "d938254a58f8b5a5": {
+   "name": "on_knockdown",
+   "loose": "72fca3931d723ce7",
+   "doc": "Cancels guard, knocks the character far back facing the blow, plays knocked flying and get up, and clears the action state."
+  },
+  "d99da6b12fbf1369": {
+   "name": "return_from_victory_pose",
+   "loose": "b0b1b42b1f88f61c",
+   "locals": [
+    "unused_value",
+    "object_pos",
+    "unused2",
+    "state"
+   ],
+   "doc": "State 100: when the motion ends, plays the return motion and resets the state to 0."
+  },
+  "da1d83ea09280bc9": {
+   "name": "run_sword_combo_weapon_2",
+   "loose": "9d71ebc30ad2dd2d",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "attack_hold_frames",
+    "stick_alignment"
+   ],
+   "doc": "Sword combo state machine for sword model 2. Six-hit combo plus knock-away finisher, using this weapon's own movement impulses and chain windows. Holding attack for over 10 frames in the first hit starts the charge attack (state 1200)."
+  },
+  "dbca75cd1674256d": {
+   "name": "run_kick_attack",
+   "loose": "1ee6628b3a86d8e0",
+   "locals": [
+    "unused_value",
+    "object_pos",
+    "unused2",
+    "state"
+   ],
+   "doc": "States 300 and 301: plays the knockdown kick motion and returns to state 0 when it ends."
+  },
+  "dc2d31d63fa3a9d5": {
+   "name": "react_to_knockdown",
+   "loose": "d8246aeb7264253c",
+   "doc": "Plays the knocked-flying motion, then the get-up motion, with their sounds, and resets the state to 0."
+  },
+  "dd178a87b47fd5b2": {
+   "name": "setup_wrench_and_gun_actions",
+   "loose": "e761c6d292a64b34",
+   "doc": "Registers the colour flashes, camera shakes, shot types and footstep timings for the triple wrench combo, mid-range attack, charge attack, kick, throw and gun attack of this action set."
+  },
+  "de1482560a622c06": {
+   "name": "update_player_controlled_monster",
+   "loose": "425c222e29932cb7",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "confirm_pressed",
+    "square_pressed"
+   ],
+   "doc": "Per-frame loop while the player controls the monster: confirm starts attack 1 (state 100), square starts the explosion action (state 200), and stick input moves it while idle."
+  },
+  "e1cbb4bb87e41a7d": {
+   "name": "run_spin_attack_combo",
+   "loose": "2ec81d5ab5c32209",
+   "locals": [
+    "unused_value",
+    "motion_status",
+    "unused2",
+    "combo_step",
+    "weapon_attack"
+   ],
+   "doc": "Steps through the three-part spin attack, driven by the saved value: 100 plays the wind-up and creates the Himara spin attack effect with the main weapon's attack, 101 the spin, 102 the recovery and then resets the saved value to 0."
+  },
+  "e1f9d01a18b36912": {
+   "name": "play_second_attack",
+   "loose": "f0912a528feafaea",
+   "locals": [
+    "unused_value",
+    "status",
+    "unused2",
+    "saved_value"
+   ],
+   "doc": "Two-stage attack 2: plays the wind-up motion, then the strike once the first motion has finished. The saved value 200 and 201 track which stage is running and it resets to 0 at the end."
+  },
+  "e277e2d728c06269": {
+   "name": "register_max_attacks_and_sounds",
+   "loose": "237c79ac7ff4d3fb",
+   "doc": "Registers Max's collision slots, sword and kick attack hits for each combo step, the charge attack, blade trails, and footstep and attack sound effects for the Max action script."
+  },
+  "e3945a707bc42219": {
+   "name": "on_init",
+   "loose": "cd192b6dd6ac80b8",
+   "locals": [
+    "attack_type",
+    "move_type"
+   ],
+   "doc": "Registers hit boxes (and sword trails for type 20) for the ridepod's right, left and two-handed attacks according to its attack type, and picks the standing motion for legs or caterpillar movement."
+  },
+  "e41c4ce8940881d0": {
+   "name": "run_guard_and_throw_state",
+   "loose": "089c38a55dc81e28",
+   "locals": [
+    "is_done",
+    "pad_button",
+    "pad_button_2",
+    "saved_value",
+    "progress",
+    "held_type",
+    "progress_2"
+   ],
+   "doc": "Handles guarding with R1 (states 900 to 904): guard loop, pressing confirm lifts a nearby object, carries it, and confirm again throws it."
+  },
+  "e49d7278fcf95d16": {
+   "name": "setup_charge_attack_effects",
+   "loose": "9a253d7079c4f618",
+   "doc": "Sets the character color flash slots and a camera shake for the basic attack and the suicide charge."
+  },
+  "e6662865e2603316": {
+   "name": "recover_after_block",
+   "loose": "e6662865e2603316",
+   "doc": "Plays a sound, fires a sword magic effect, waits 10 frames and returns to idle."
+  },
+  "e89cd82d1961b2d6": {
+   "name": "on_update",
+   "loose": "6a06a96836908e17",
+   "locals": [
+    "saved_value",
+    "pad_button",
+    "pad_button_2",
+    "pad_button_3",
+    "pad_button_4",
+    "back_key",
+    "x",
+    "y",
+    "z",
+    "back_key_2",
+    "stick_alignment",
+    "target_distance",
+    "target_status",
+    "held_type",
+    "active_item",
+    "attack_hold_frames",
+    "x_2",
+    "y_2",
+    "z_2"
+   ],
+   "doc": "Main per-frame loop for Monica. Reads the pad and picks the next action state (sword combo, mid-range attack, back flip, charge attack, magic, guard, throw, item) and dispatches to the matching state function."
+  },
+  "ea530fb5e69277b5": {
+   "name": "fire_alternating_arm_weapons",
+   "loose": "09d180430ef4f1dc",
+   "locals": [
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress"
+   ],
+   "doc": "Fires the ridepod weapon mid-motion, using the right arm and then the left arm on alternate attacks (tracked in the first global)."
+  },
+  "ec1e06165f43deea": {
+   "name": "setup_max_attacks",
+   "loose": "5fd956e788e16d37",
+   "doc": "Reads the equipped weapon model, names the attack collision slots and registers the hit windows and blade trails of the five-hit sword combo, third hit, mid-range attack, charge attack and knockdown kick, with timings that depend on the weapon model."
+  },
+  "ecc8b197dcd12226": {
+   "name": "on_death",
+   "loose": "25154f2f6ed0b7dd",
+   "doc": "Clears any charge effect, drops whatever is held and plays the death motion."
+  },
+  "eda8f859120cfd17": {
+   "name": "update_sword_combo",
+   "loose": "e6815b30d087f1a5",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "attack_hold_frames"
+   ],
+   "doc": "Runs the five-hit sword combo for Monica (states 100 to 104). Each hit steps forward with a movement impulse, and pressing attack inside the hit's input window starts the next swing; holding attack moves to the charge attack (state 1200)."
+  },
+  "ee1f31ec63f68dfe": {
+   "name": "on_update",
+   "loose": "c3ad145f8f588873",
+   "locals": [
+    "confirm_button",
+    "guard_button",
+    "saved_value",
+    "attack_type",
+    "move_type",
+    "found",
+    "attack_type_2"
+   ],
+   "doc": "Player-controlled ridepod loop. Confirm starts a grab-kick (legged types) or the attack chain for the equipped attack type, R1 starts guarding for melee types, and each active state is run by its handler."
+  },
+  "ee6262fbd37f6d33": {
+   "name": "on_init",
+   "loose": "9218173ce3c9178e",
+   "doc": "Registers the single monster attack hit window for this actor."
+  },
+  "ef0b900f09a413d2": {
+   "name": "run_attack_input_loop",
+   "loose": "da10fbaf8b04a3b8",
+   "locals": [
+    "unused_value",
+    "unused2",
+    "saved_value",
+    "pad_button",
+    "pad_button_2"
+   ],
+   "doc": "Main loop. Confirm starts a normal attack (value 100), square starts the dodge attack (value 200); while an attack value is set it turns toward the target and plays the matching attack, otherwise the stick moves the character."
+  },
+  "f3ecdc6a51d34bff": {
+   "name": "update_machine_gun",
+   "loose": "fb7221652694c729",
+   "locals": [
+    "unused_value",
+    "saved_value",
+    "fire_button",
+    "aim_button"
+   ],
+   "doc": "Gun state machine for saved values 820 and 821: while fire and aim are held, fires a sub-weapon shot every third frame."
+  },
+  "f5854ea09a5c2518": {
+   "name": "update_sword_combo_model_1",
+   "loose": "b3fcffb8440b0b5d",
+   "locals": [
+    "attack_presses",
+    "status",
+    "unused_value",
+    "saved_value",
+    "progress",
+    "pad_button",
+    "attack_hold_frames",
+    "stick_alignment"
+   ],
+   "doc": "Runs the five-hit sword combo state machine (saved value 100 to 105) for weapon model 1: moves the character during each swing, chains the next hit on a button press in its window, takes a held button to the charge attack (1200), and goes to the third hit when the stick points at the target."
+  },
+  "f61318255de8e33f": {
+   "name": "explode_if_hp_high",
+   "loose": "fb1a10bd91d8df05",
+   "locals": [
+    "hp_rate",
+    "pos"
+   ],
+   "doc": "If the HP rate is 0.5 or more, spawns the explosion effect at the monster and calls set_low_hp; below 0.5 it just clears the state."
+  },
+  "f965f5ec5e8cc5ea": {
+   "name": "recover_from_stagger",
+   "loose": "41b3b341c3db29ee",
+   "locals": [
+    "status_flags"
+   ],
+   "doc": "Knocks Max back, drops what he holds, and plays the damage motion until the stunned and knocked-down status bits clear, letting the menu be opened meanwhile. Then returns to idle."
+  },
+  "fc257ec83ba959b7": {
+   "name": "cancel_guard_and_charge_effect",
+   "loose": "fc257ec83ba959b7",
+   "doc": "Turns guarding off and deletes the magic charge effect if one exists."
+  },
+  "fd8b8084f41b7749": {
+   "name": "update_lift_and_throw",
+   "loose": "7e9627458bec44d8",
+   "locals": [
+    "is_done",
+    "saved_value",
+    "pad_button",
+    "progress",
+    "held_type",
+    "progress_2"
+   ],
+   "doc": "Handles states 1100 to 1103: lift the thing in front of Monica, carry it, and throw it with confirm. Falls back to idle if nothing was grabbed."
+  },
+  "fe5c6e150d29b48a": {
+   "name": "shoot_sticky_attack",
+   "loose": "c3834bb9aa7866cc",
+   "locals": [
+    "hand_x",
+    "hand_y",
+    "hand_z",
+    "rot_x",
+    "rot_y",
+    "rot_z",
+    "weapon_attack"
+   ],
+   "doc": "Plays attack 2 and, partway through the motion, creates the looping sticky effect at the dcol01 object facing the character's rotation. Resets the saved value to 0 when the motion ends."
+  }
+ }
+}

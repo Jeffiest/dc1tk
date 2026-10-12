@@ -1,0 +1,8 @@
+{
+ "doc": "Monster AI for e214a, which does not fight: it stands still and sets off event script 501 once the floor has run for 30 seconds and it has been struck.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

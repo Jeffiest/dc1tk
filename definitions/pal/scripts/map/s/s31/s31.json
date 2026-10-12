@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the late-game station s31 near the Moon Flower Palace (the Ixion train stop). It handles the train arrival and boarding (to the Ixion engine room s37 or guest room s38), the exit to the Moon Flower Palace (s33), and three story events: 600 (Max and Monica arrive in the ancient past, ten thousand years ago, and head for Griffon's palace), 612 (a shaking scene with sand dust) and 724 (a lone figure grieving over the humans and Alexandra)."
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e214a2, a sturdy boss-type enemy that does not dodge or guard. Taking enough hits only staggers it, it runs event 501 if left alone long enough on the floor, and event 502 plays when it dies without death smoke.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

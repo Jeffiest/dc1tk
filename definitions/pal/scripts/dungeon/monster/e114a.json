@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e114a, a flying enemy that shoots wind shots. It hovers, circles and side-steps around the player and fires a wind projectile at close and medium range.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

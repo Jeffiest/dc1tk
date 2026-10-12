@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e215a, a melee monster that can guard, dodge and counter. On spawning it leaps in from a random point, then runs at the player and uses two melee attacks. Distances in the AI are scaled by 2.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

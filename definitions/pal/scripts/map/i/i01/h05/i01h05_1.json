@@ -1,0 +1,3 @@
+{
+ "doc": "A house interior (i01h05) in the i01 town. It handles villager talk, door entry, and places the player at a fixed spot when the map starts."
+}

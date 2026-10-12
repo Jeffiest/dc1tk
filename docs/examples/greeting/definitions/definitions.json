@@ -1,0 +1,9 @@
+{
+ "name": "greeting-example",
+ "description": "Definitions for the made-up greeting example",
+ "engine": "dc2",
+ "extends": [],
+ "language": "en",
+ "include": [],
+ "tables": []
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Dungeon monster script that uses the shared melee monster library (backstep and sidestep dodges, attacks 1 and 2 with knockback). Only its dodge handlers are defined here.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

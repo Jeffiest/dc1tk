@@ -1,0 +1,9 @@
+{
+ "doc": "Event script for dungeon map d03 b01, the first floor of the d03 sequence. It disables used event points, shows the e356 title card about defeating Gilttoni and farewell to Crest, plays the e348 and e352 scenes, asks whether to return to the past to help Crest, and starts the d03 dungeon when the player agrees.",
+ "globals": [
+  "e352_max_slot",
+  "e352_monica_slot",
+  "e348_max_slot",
+  "e348_monica_slot"
+ ]
+}

@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for a small house interior (i01h06): places the player near the door on map start and handles door and villager talk events."
+}

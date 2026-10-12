@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e226a, a flying wind-shot monster. It is a sibling of e222a with the same flying moves: swooping, circling and strafing, and spitting wind shots instead of fire. It fights at shorter distances (190 units).",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for b07a, a fish-themed monster (Shigu) that spits, swings and threatens, used in dungeons such as s19. It keeps a 'sakana' fish frame and a second monster (1001) it spawns; bringing the two together hurts it, and event scripts 500, 510 (death) and 550 (stall timeout) are triggered from here.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

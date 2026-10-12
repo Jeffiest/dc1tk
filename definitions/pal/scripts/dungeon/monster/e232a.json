@@ -1,0 +1,8 @@
+{
+ "doc": "Monster AI for e232a, built from shared monster code. It guards, recoils, dodges melee and shots by sidestepping, and fights in an enraged loop forever.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

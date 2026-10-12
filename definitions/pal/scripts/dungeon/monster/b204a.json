@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for b204a, a Kotoren, a small monster that charges at the player and blows itself up on contact. When the last one explodes, the dungeon runs event script 510.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

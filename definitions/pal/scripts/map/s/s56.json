@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the Cape Lighthouse entrance map s56 in the past-Crest storyline. The save-style spot lets the player use the Starglass (item 371) to travel back and start event 352, loading dungeon floor d03b02. Program 502 plays the arrival scene (event 348) and program 510 asks whether to leave the lighthouse and loads dungeon d03. The file also carries shared code for talking to party NPCs on the train (join, shop and repair menus)."
+}

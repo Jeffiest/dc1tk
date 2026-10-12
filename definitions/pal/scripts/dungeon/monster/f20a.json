@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for f20a, a Shigu-like fish monster that cannot be damaged or locked on to. It attacks and threatens in a cycle, and dies when thrown or on landing.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e204a, a bomb-like monster that charges the player and explodes with a small explosion on contact, or by itself 300 frames after it was set up.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

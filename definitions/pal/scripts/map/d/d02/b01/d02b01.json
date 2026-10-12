@@ -1,0 +1,7 @@
+{
+ "doc": "First floor of the d02 dungeon, a room with a pond where the Lafrescia plant is grown. The player uses a Lafrescia Seed and then a Sundrop at the pond spot (flags 23 and 24), watching events 255 and 256 in which a giant Lafrescia flower grows and its vine can be climbed to d02b02. Also handles the exit back to town.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

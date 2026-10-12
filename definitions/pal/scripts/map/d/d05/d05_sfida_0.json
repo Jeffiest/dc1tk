@@ -1,0 +1,3 @@
+{
+ "doc": "Dungeon 5 script for the Spheda bonus courses. It loads fixed floors d05f01 and d05f02 as Spheda courses and shows their scores, and uses shared Spheda, help and geostone handlers."
+}

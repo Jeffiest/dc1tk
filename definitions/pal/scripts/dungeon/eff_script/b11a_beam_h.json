@@ -1,0 +1,3 @@
+{
+ "doc": "Beam effect used by monster b11a. The beam model follows its source, hits with a strong knockback attack while active, and retracts when told to stop."
+}

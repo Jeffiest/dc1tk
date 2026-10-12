@@ -1,0 +1,6 @@
+{
+ "doc": "Action script for Monica as a playable character in dungeons. It registers her sword attack hit boxes, blade trails and footstep sounds, and runs her state machine: five-hit sword combo, mid-range attack, charge attack, back flip, magic aiming with L1, guarding and throwing with R1, and item use.",
+ "globals": [
+  "magic_charge_effect"
+ ]
+}

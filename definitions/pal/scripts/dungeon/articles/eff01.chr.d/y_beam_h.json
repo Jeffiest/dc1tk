@@ -1,0 +1,3 @@
+{
+ "doc": "Effect script for the yellow beam hit effect: plays the hit model of the beam impact using shared dungeon effect code."
+}

@@ -1,0 +1,7 @@
+{
+ "doc": "Map s26, the Carpenterion control room. A Firbit elder explains the Carpenterion building machine, Geostones, the reactor and Georama basics, and gives the party their next task of finding Holly. Event 501 and 502 then send the party to map g01.",
+ "globals": [
+  "max_scene_slot",
+  "monica_scene_slot"
+ ]
+}

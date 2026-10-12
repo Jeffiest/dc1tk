@@ -1,0 +1,8 @@
+{
+ "doc": "Behaviour of the red Atlamillia light (an Atla orb) that follows another monster, orbiting it and flying between positions controlled by monster vars. It cannot be hit and fades with a light effect on death.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

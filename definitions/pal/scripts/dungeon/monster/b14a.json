@@ -1,0 +1,3 @@
+{
+ "doc": "Monster script for one of the small monsters that burst out of the ground in a ring of eight positions at radius 400 and leap in toward the center. Each takes a free slot in a shared bit mask in monster var 8, then wanders and fights. As they die, events 510 are run at 10 and 20 kills and a new monster 513 is spawned."
+}

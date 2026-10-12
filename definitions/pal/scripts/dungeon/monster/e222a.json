@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e222a, a flying fire spitter. It hovers and flies at the player, swoops for a melee hit, spits fire shots, circles and strafes, and falls to the ground when killed or stunned.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

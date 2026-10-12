@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for b117b, a guarding monster that dodges melee attacks with a sideways step and blocks shots with a guard motion. Most of its behaviour comes from shared monster includes.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

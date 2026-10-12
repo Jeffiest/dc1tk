@@ -1,0 +1,3 @@
+{
+ "doc": "Action script for a monster form that attacks at range. The shot element depends on the monster form id: fire, ice, thunder, wind or holy. The player moves with the stick and fires with the confirm button."
+}

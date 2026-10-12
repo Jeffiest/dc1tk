@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e54a, a monster that attacks twice in melee (the second attack is a weak poison) and dodges, guards and ambushes by vanishing and reappearing on top of the player.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

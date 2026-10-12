@@ -1,0 +1,3 @@
+{
+ "doc": "Action script for Max in dungeons. It defines his five-hit sword combo, lunge, charge attack, backflip, gun (sub weapon), guard, catch and throw, and the main input loop that moves between them."
+}

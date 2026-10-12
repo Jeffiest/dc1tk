@@ -1,0 +1,3 @@
+{
+ "doc": "Interior map f04i04 in the f04 area. It only resets the camera behind the player on entry and runs the standard villager talk handler."
+}

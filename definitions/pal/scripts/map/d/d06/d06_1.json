@@ -1,0 +1,3 @@
+{
+ "doc": "Floor script for the Moonflower Palace dungeon (d06). It runs floor entry scenes with seal messages, exit gates that need the Queen's Watering Pot, key doors that need the Moon Clock Hand, and the boss starts for Sirus, Emperor Griffon, the Dream Spirals and the Dark Element. Story programs warp to other maps."
+}

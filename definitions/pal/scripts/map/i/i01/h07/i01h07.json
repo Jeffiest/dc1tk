@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for room i01 h07, which holds a panel puzzle. A grid of 2 rows and 7 columns of floor panels can be toggled, and pressing each of fourteen switches (programs 401 to 414) toggles one panel and its four neighbours after a camera cut."
+}

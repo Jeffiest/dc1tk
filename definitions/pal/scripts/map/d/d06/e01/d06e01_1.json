@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the Moon Flower Palace hub (d06e01) at the top of dungeon 6. It places the player on entry (and plays the moon view scene the first time), lets the player pick a floor or leave, shows the wall pictures, and runs the Emperor Griffon story scenes and the boss 515 fight. Several entries warp to other events (s31, s35) or edit modes."
+}

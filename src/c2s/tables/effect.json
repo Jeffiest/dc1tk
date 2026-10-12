@@ -1,0 +1,1177 @@
+{
+ "table": "effect",
+ "source": "ps2/src/effscript.cpp",
+ "array": "ext_func_info",
+ "natives": [
+  {
+   "no": 0,
+   "name": "_ZERO_VECTOR",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 1,
+   "name": "_NORMAL_VECTOR",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 2,
+   "name": "_COPY_VECTOR",
+   "accessors": [
+    "vector",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 3,
+   "name": "_ADD_VECTOR",
+   "accessors": [
+    "vector",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 4,
+   "name": "_SUB_VECTOR",
+   "accessors": [
+    "vector",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 5,
+   "name": "_SCALE_VECTOR",
+   "accessors": [
+    "float",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 6,
+   "name": "_DIV_VECTOR",
+   "accessors": [
+    "float",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 7,
+   "name": "_DIST_VECTOR",
+   "accessors": [
+    "vector",
+    "out"
+   ]
+  },
+  {
+   "no": 8,
+   "name": "_DIST_VECTOR2",
+   "accessors": [
+    "vector",
+    "vector",
+    "out"
+   ]
+  },
+  {
+   "no": 9,
+   "name": "_SQRT",
+   "accessors": [
+    "float",
+    "out"
+   ]
+  },
+  {
+   "no": 10,
+   "name": "_ATAN2F",
+   "accessors": [
+    "float",
+    "float",
+    "out"
+   ]
+  },
+  {
+   "no": 11,
+   "name": "_ANGLE_CMP",
+   "accessors": [
+    "float",
+    "float",
+    "float",
+    "out"
+   ]
+  },
+  {
+   "no": 12,
+   "name": "_ANGLE_LIMIT",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 13,
+   "name": "_GET_RAND",
+   "accessors": [
+    "float",
+    "out",
+    "int",
+    "out"
+   ]
+  },
+  {
+   "no": 14,
+   "name": "_GET_REF_ROT",
+   "accessors": [
+    "vector",
+    "vector",
+    "out",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 15,
+   "name": "_GET_DIR_VECTOR",
+   "accessors": [
+    "vector",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 50,
+   "name": "_SET_ORIGIN",
+   "accessors": [
+    "float",
+    "float",
+    "float"
+   ]
+  },
+  {
+   "no": 51,
+   "name": "_GET_ORIGIN",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 52,
+   "name": "_AUTO_SET_OFFSET",
+   "accessors": [
+    "int",
+    "string"
+   ]
+  },
+  {
+   "no": 53,
+   "name": "_GET_WORK_VECT1",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 54,
+   "name": "_GET_WORK_VECT2",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 55,
+   "name": "_GET_TARGET_ID",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 56,
+   "name": "_GET_USER_ID",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 57,
+   "name": "_GET_VALUE",
+   "accessors": [
+    "int",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 58,
+   "name": "_SET_VALUE",
+   "accessors": [
+    "int",
+    "int",
+    "float"
+   ]
+  },
+  {
+   "no": 100,
+   "name": "_CHR_SET_SHOW",
+   "accessors": [
+    "int",
+    "int",
+    "float"
+   ]
+  },
+  {
+   "no": 101,
+   "name": "_CHR_GET_SHOW",
+   "accessors": [
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 102,
+   "name": "_CHR_SET_POS",
+   "accessors": [
+    "vector"
+   ]
+  },
+  {
+   "no": 103,
+   "name": "_CHR_GET_POS",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 104,
+   "name": "_CHR_SET_ROT",
+   "accessors": [
+    "vector",
+    "int"
+   ]
+  },
+  {
+   "no": 105,
+   "name": "_CHR_GET_ROT",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 106,
+   "name": "_CHR_SET_SCALE",
+   "accessors": [
+    "vector"
+   ]
+  },
+  {
+   "no": 107,
+   "name": "_CHR_GET_SCALE",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 108,
+   "name": "_CHR_SET_MOTION",
+   "accessors": [
+    "string",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 109,
+   "name": "_CHR_SET_MOT_STEP",
+   "accessors": [
+    "float"
+   ]
+  },
+  {
+   "no": 110,
+   "name": "_CHR_GET_DIR_VECTOR",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 111,
+   "name": "_CHR_GET_REF_ROT",
+   "accessors": [
+    "vector",
+    "out",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 112,
+   "name": "_CHR_ADD_POS",
+   "accessors": [
+    "vector"
+   ]
+  },
+  {
+   "no": 113,
+   "name": "_CHR_ADD_ROT",
+   "accessors": [
+    "vector"
+   ]
+  },
+  {
+   "no": 114,
+   "name": "_CHR_ADD_SCALE",
+   "accessors": [
+    "vector"
+   ]
+  },
+  {
+   "no": 125,
+   "name": "_CHR_COPY_CHARA",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 126,
+   "name": "_CHR_SET_POS2",
+   "accessors": [
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 127,
+   "name": "_CHR_SET_ROT2",
+   "accessors": [
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 128,
+   "name": "_CHR_SET_SCALE2",
+   "accessors": [
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 129,
+   "name": "_CHR_SET_MOTION2",
+   "accessors": [
+    "int",
+    "string",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 130,
+   "name": "_CHR_ADD_POS2",
+   "accessors": [
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 131,
+   "name": "_CHR_ADD_ROT2",
+   "accessors": [
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 132,
+   "name": "_CHR_ADD_SCALE2",
+   "accessors": [
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 133,
+   "name": "_CHR_GET_MOT_WAIT",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 134,
+   "name": "_CHR_SET_SHOW2",
+   "accessors": [
+    "int",
+    "int",
+    "int",
+    "float"
+   ]
+  },
+  {
+   "no": 135,
+   "name": "_CHR_GET_FRAME_POS",
+   "accessors": [
+    "string",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 136,
+   "name": "_CHR_SET_LIGHT_COLOR",
+   "accessors": [
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 150,
+   "name": "_SPT_ASSIGN_SPRITE",
+   "accessors": [
+    "int",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 151,
+   "name": "_SPT_DELETE_SPRITE",
+   "accessors": []
+  },
+  {
+   "no": 152,
+   "name": "_SPT_SET_TEXNAME",
+   "accessors": [
+    "string"
+   ]
+  },
+  {
+   "no": 153,
+   "name": "_SPT_SET_ALPHAB",
+   "accessors": [
+    "int",
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 154,
+   "name": "_SPT_INIT_SPRITE",
+   "accessors": [
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 155,
+   "name": "_SPT_SET_DRAW_FLAG",
+   "accessors": [
+    "int",
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 156,
+   "name": "_SPT_GET_DRAW_FLAG",
+   "accessors": [
+    "int",
+    "out"
+   ]
+  },
+  {
+   "no": 157,
+   "name": "_SPT_SET_UV_SIZE",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 158,
+   "name": "_SPT_SET_PUT_SIZE",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 159,
+   "name": "_SPT_SET_POS",
+   "accessors": [
+    "int",
+    "vector",
+    "int"
+   ]
+  },
+  {
+   "no": 160,
+   "name": "_SPT_GET_POS",
+   "accessors": [
+    "int",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 161,
+   "name": "_SPT_SET_ROTZ",
+   "accessors": [
+    "int",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 162,
+   "name": "_SPT_GET_ROTZ",
+   "accessors": [
+    "int",
+    "out"
+   ]
+  },
+  {
+   "no": 163,
+   "name": "_SPT_SET_SCALE",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 164,
+   "name": "_SPT_GET_SCALE",
+   "accessors": [
+    "int",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 165,
+   "name": "_SPT_SET_COLOR",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 166,
+   "name": "_SPT_GET_COLOR",
+   "accessors": [
+    "int",
+    "out",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 167,
+   "name": "_SPT_VAN_SET_POS",
+   "accessors": [
+    "int",
+    "vector",
+    "vector",
+    "vector",
+    "int"
+   ]
+  },
+  {
+   "no": 168,
+   "name": "_SPT_VAN_SET_ROT",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 169,
+   "name": "_SPT_ADD_POS",
+   "accessors": [
+    "int",
+    "vector",
+    "int"
+   ]
+  },
+  {
+   "no": 170,
+   "name": "_SPT_ADD_ROTZ",
+   "accessors": [
+    "int",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 171,
+   "name": "_SPT_ADD_COLOR",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 172,
+   "name": "_SPT_WORLD_ROT",
+   "accessors": [
+    "int",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 173,
+   "name": "_SPT_SET_LIFE",
+   "accessors": []
+  },
+  {
+   "no": 174,
+   "name": "_SPT_SET_VELO_POS",
+   "accessors": [
+    "int",
+    "vector",
+    "int"
+   ]
+  },
+  {
+   "no": 175,
+   "name": "_SPT_SET_ACC_POS",
+   "accessors": [
+    "int",
+    "vector",
+    "int"
+   ]
+  },
+  {
+   "no": 176,
+   "name": "_SPT_SET_VELO_ROTZ",
+   "accessors": [
+    "int",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 177,
+   "name": "_SPT_SET_ACC_ROTZ",
+   "accessors": [
+    "int",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 178,
+   "name": "_SPT_SET_VELO_COL",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 179,
+   "name": "_SPT_SET_ACC_COL",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 180,
+   "name": "_SPT_SET_BLINKING",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 181,
+   "name": "_SPT_VAN_SET_COL",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 182,
+   "name": "_SPT_SET_VELO_SCL",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 183,
+   "name": "_SPT_SET_ACC_SCL",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 184,
+   "name": "_SPT_VAN_SET_SCL",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 185,
+   "name": "_SPT_SCALE_CONV",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 186,
+   "name": "_SPT_COLOR_CONV",
+   "accessors": [
+    "int",
+    "float",
+    "float",
+    "float",
+    "float",
+    "float",
+    "int"
+   ]
+  },
+  {
+   "no": 200,
+   "name": "_SCN_GET_CHR_POS",
+   "accessors": [
+    "int",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 201,
+   "name": "_SCN_GET_CHR_ROT",
+   "accessors": [
+    "int",
+    "out",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 202,
+   "name": "_SCN_GET_CHR_FRM_POS",
+   "accessors": [
+    "int",
+    "string",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 203,
+   "name": "_INTERSECTION_POINT",
+   "accessors": [
+    "int",
+    "vector",
+    "vector",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 204,
+   "name": "_CREATE_DAMAGE",
+   "accessors": []
+  },
+  {
+   "no": 205,
+   "name": "_DELETE_DAMAGE",
+   "accessors": []
+  },
+  {
+   "no": 206,
+   "name": "_DMG_SET_POS",
+   "accessors": []
+  },
+  {
+   "no": 207,
+   "name": "_DMG_SET_FRONT_VECT",
+   "accessors": []
+  },
+  {
+   "no": 208,
+   "name": "_DMG_SET_DAMAGE",
+   "accessors": []
+  },
+  {
+   "no": 210,
+   "name": "_COLPRIM_CREATE",
+   "accessors": [
+    "string",
+    "int"
+   ]
+  },
+  {
+   "no": 211,
+   "name": "_COLPRIM_SET_COORD",
+   "accessors": [
+    "vector",
+    "float",
+    "vector",
+    "vector",
+    "float",
+    "string",
+    "float",
+    "string",
+    "string",
+    "float"
+   ]
+  },
+  {
+   "no": 212,
+   "name": "_COLPRIM_DELETE",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 213,
+   "name": "_COLPRIM_GET_HITCNT",
+   "accessors": [
+    "out"
+   ]
+  },
+  {
+   "no": 214,
+   "name": "_COLPRIM_SET_DAMAGE",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 215,
+   "name": "_COLPRIM_GET_HIT_POS",
+   "accessors": [
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 216,
+   "name": "_COLPRIM_GET_GIFT",
+   "accessors": [
+    "int",
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 217,
+   "name": "_COLPRIM_GET_REVCNT",
+   "accessors": [
+    "out",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 220,
+   "name": "_MON_SE_PLAY",
+   "accessors": [
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 221,
+   "name": "_MON_SE_STOP",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 222,
+   "name": "_BTL_SE_PLAY",
+   "accessors": [
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 223,
+   "name": "_BTL_SE_STOP",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 224,
+   "name": "_BSE_SE_PLAY",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 225,
+   "name": "_BSE_SE_STOP",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 226,
+   "name": "_MON_SE_PLAY2",
+   "accessors": [
+    "int",
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 227,
+   "name": "_MON_SE_STOP2",
+   "accessors": [
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 230,
+   "name": "_SET_LIGHT_FLAG",
+   "accessors": [
+    "int"
+   ]
+  },
+  {
+   "no": 231,
+   "name": "_SCN_GET_CHR_ENTOBJ_POS",
+   "accessors": [
+    "int",
+    "int",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 232,
+   "name": "_SCN_GET_CHR_FRM_DIR",
+   "accessors": [
+    "int",
+    "string",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 233,
+   "name": "_SCN_GET_CHR_FRM_ROT",
+   "accessors": [
+    "int",
+    "string",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 234,
+   "name": "_SCN_GET_ENTRY_OBJ_POS",
+   "accessors": [
+    "int",
+    "int",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 240,
+   "name": "_ES_CREATE",
+   "accessors": [
+    "string",
+    "out"
+   ]
+  },
+  {
+   "no": 241,
+   "name": "_ES_SET_VECT1",
+   "accessors": [
+    "vector",
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 242,
+   "name": "_ES_SET_VECT2",
+   "accessors": [
+    "vector",
+    "int",
+    "vector"
+   ]
+  },
+  {
+   "no": 243,
+   "name": "_ES_SET_TARGET_ID",
+   "accessors": [
+    "int",
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 244,
+   "name": "_ES_SET_COLPRIM",
+   "accessors": []
+  },
+  {
+   "no": 245,
+   "name": "_ES_SET_VALUE",
+   "accessors": [
+    "int",
+    "int",
+    "int",
+    "float"
+   ]
+  },
+  {
+   "no": 251,
+   "name": "_GET_EOH_POS",
+   "accessors": [
+    "int",
+    "out",
+    "out",
+    "out"
+   ]
+  },
+  {
+   "no": 252,
+   "name": "_CHR_SET_FRAME_SHOW",
+   "accessors": [
+    "string",
+    "int",
+    "int"
+   ]
+  },
+  {
+   "no": 253,
+   "name": "_CHR_CHK_MOT_END",
+   "accessors": [
+    "out"
+   ]
+  }
+ ]
+}

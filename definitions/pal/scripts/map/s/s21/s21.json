@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for s21, a flower field in the d06 region where the Flower of the Sun can be picked up. The first visit plays event 704 about a flower with a broken stem. The map blocks character change and map moves and hides the other party members."
+}

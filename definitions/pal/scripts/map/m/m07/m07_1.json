@@ -1,0 +1,3 @@
+{
+ "doc": "Map script m07. It handles leaving map m07 for map s42, either at event 151 or through story event 1, using shared m07 code."
+}

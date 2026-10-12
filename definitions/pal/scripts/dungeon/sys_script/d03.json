@@ -1,0 +1,3 @@
+{
+ "doc": "System script for the dungeon with the d03 maps. It handles opening treasure chests (including the Happy Clown choice chest), the random circle coin flips, geostone pickups, the floor clear victory scenes, the Ridepod breakdown on defeat, the Spheda course and shots, and loading the right map for each floor chosen from the map menu."
+}

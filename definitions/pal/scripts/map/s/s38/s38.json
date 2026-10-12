@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the passenger cars of the Ixion train (s38). It loads the NPCs that sit in the current car (counter 0), lets the player walk between cars through the front and rear doors, leave through the side doors to the station when they can be opened, or reach the engine room (s37) from the first car. Talking to a train NPC opens the party NPC talk or the shop."
+}

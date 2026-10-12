@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e201a, a sword-wielding enemy with a normal attack, a knockback dodge attack, backstep and sidestep dodges, wandering when unaware and wide distance-based fight logic.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

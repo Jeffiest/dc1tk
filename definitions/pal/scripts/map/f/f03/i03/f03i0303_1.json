@@ -1,0 +1,3 @@
+{
+ "doc": "Interior of a house in the Luna Lab area (map f03i0303). On entry it fades in and places the player at the door, and the talk handler runs the standard villager conversation. The save point exits to map f03."
+}

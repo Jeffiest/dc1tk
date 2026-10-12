@@ -1,0 +1,3 @@
+{
+ "doc": "Train car map s07, the interior of a passenger train. Counter 0 tracks which car the player is in; the programs move between cars, restart the edit event when a door is closed, and leave through a door to the station or on to map s08 (Inside of Locomotive). Talking handles the car's shop and party members."
+}

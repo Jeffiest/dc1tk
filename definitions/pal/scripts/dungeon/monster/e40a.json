@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e40a, a melee and rocket-firing monster with a lunge, a second swing and a rocket barrage (attack 3), which behaves differently once its rage hits run out.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

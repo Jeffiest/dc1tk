@@ -1,0 +1,3 @@
+{
+ "doc": "System script for dungeon d01, the first dungeon of the game. It handles entering the dungeon from the town, the floor selection menu, the Help Receiver tutorial scenes, the gate that needs the Key Handle, the floor clear and robot breakdown scenes, and the Spheda ball minigame hooks."
+}

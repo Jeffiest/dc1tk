@@ -1,0 +1,3 @@
+{
+ "doc": "Action script for a controllable monster form (f221a) that the player can transform into. Confirm performs a melee attack and square fires a curse bolt, using a shared damage reaction and attack routines."
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Regular melee monster script with its own copies of the movement helpers, so many native calls decompile with unrelated names. It fights with a lunging swing (attack 1) and a knockback charge (attack 2), dodges by stepping back or sideways and guards. While calm it keeps its distance and circles; once the player is within 175 units it attacks.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

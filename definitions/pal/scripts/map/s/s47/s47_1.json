@@ -1,0 +1,7 @@
+{
+ "doc": "Event script for the Sindain event map s47. It plays the scene (event 254) where the party is given building materials for the forest and an expanded item bag, then told to press select to call the Carpenterion on the Georama map. Program 505 plays it and moves on to the Carpenterion outer map (s26).",
+ "globals": [
+  "max_scene_slot",
+  "monica_scene_slot"
+ ]
+}

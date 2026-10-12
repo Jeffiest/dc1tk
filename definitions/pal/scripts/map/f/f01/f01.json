@@ -1,0 +1,15 @@
+{
+ "doc": "Event script for Jurak Mall (map f01), the town built inside the great tree Jurak in the Sindain area. It plays the Jurak story events 270 to 285: asking about Emperor Griffon, the Lafrescia Seed, the shop for transforming badges, the Himarra badge, Jurak remembering Griffon, and Jurak giving the Jurak Gun. It also handles the shopkeepers and townspeople and the gate back to Sindain.",
+ "globals": [
+  "max_slot",
+  "monica_slot",
+  "event_270_max_slot",
+  "event_270_monica_slot",
+  "event_272_max_slot",
+  "event_272_monica_slot",
+  "event_280_max_slot",
+  "event_280_monica_slot",
+  "event_285_sound",
+  "event_285_item_sound"
+ ]
+}

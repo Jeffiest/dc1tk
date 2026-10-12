@@ -1,0 +1,3 @@
+{
+ "doc": "Map script for the d05 dungeon floor with Spheda. It only wires up programs from shared code: the starter item grant, random coin, geostone pickup, tutorials for flags, monsters, level ups, the buggy and the absorbing sword, and the Spheda menus (ball reset, giving up a hole, shots, bonus stages 4 and 5)."
+}

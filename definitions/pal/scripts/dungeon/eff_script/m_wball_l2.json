@@ -1,0 +1,3 @@
+{
+ "doc": "Variant of the wind ball projectile that flies in a straight line, turns back along the knockback vector when blocked, and spawns the wind shot hit effect on impact."
+}

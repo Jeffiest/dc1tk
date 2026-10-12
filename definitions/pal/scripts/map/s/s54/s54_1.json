@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for Flotsam's boss room in map s54. Event 808 shows Flotsam attacking again and event 812 shows him beaten, and the script places boss monster 628, opens the boss door afterwards and asks to go to the next floor."
+}

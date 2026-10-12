@@ -1,0 +1,7 @@
+{
+ "doc": "Event script for the Time Gate scene (event 250) in g01. Max and Monica find the Time Gate and Monica explains that the Red and Blue Atlamillia let them travel between the future and the past, then tutorials for Carpentrion and rebuilding Charlotte are shown. Entry 501 plays the scene and then loads the g01 script.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

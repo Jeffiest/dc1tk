@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e49a, a Bombahe, a melee monster that lunges at the player and, as its life drops, runs up and blows itself up with an explosion that grows with its remaining life. It dodges by stepping aside or back and guards with a knockback.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

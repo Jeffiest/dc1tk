@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for e46a, a melee enemy that guards against attacks. It charges at the player with a lunge that knocks back, runs or walks up to it, circles it, and dodges by turning to face the attack.",
+ "globals": [
+  "home_x",
+  "home_y",
+  "home_z"
+ ]
+}

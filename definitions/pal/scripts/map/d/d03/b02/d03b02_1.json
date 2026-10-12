@@ -1,0 +1,25 @@
+{
+ "doc": "Event script for the lighthouse map d03b02, where Gaspard attacks the lighthouse. It handles Crest and Lin on the lighthouse, Gaspard's battleship, the boss fight against Gaspard and the Evil Flame, the game over cutscenes for losing, and swapping control between Max and Monica.",
+ "globals": [
+  "max_x",
+  "max_y",
+  "max_z",
+  "max_yaw",
+  "monica_x",
+  "monica_y",
+  "monica_z",
+  "monica_yaw",
+  "attack_first_slot",
+  "attack_second_slot",
+  "confrontation_first_slot",
+  "confrontation_second_slot",
+  "monica_fight_first_slot",
+  "monica_fight_second_slot",
+  "shelling_first_slot",
+  "shelling_second_slot",
+  "farewell_first_slot",
+  "farewell_second_slot",
+  "departure_first_slot",
+  "departure_second_slot"
+ ]
+}

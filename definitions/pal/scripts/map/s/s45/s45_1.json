@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the Palm Brinks town square (s45), where fishing contests and Finny Frenzy races are held. It plays the scenes announcing the fishing tournament (story 344) and the Finny Frenzy (story 424), lets the player move to Main Street or enter the contest grounds (i03h03) and race track (i03h04), and starts the d03 and d04 dungeon events."
+}

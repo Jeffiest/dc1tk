@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for a ground enemy that fights without guarding (update is fight_without_guard_loop). Most behaviour comes from shared libraries; this file adds dodge handlers that turn toward the attacker and lock out interrupts.",
+ "globals": [
+  "unused_value",
+  "unused2",
+  "unused3"
+ ]
+}

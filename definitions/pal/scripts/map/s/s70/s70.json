@@ -1,0 +1,9 @@
+{
+ "doc": "Map s70 in front of the Moonflower Palace after it has returned to the present. It holds the Osmond warning scene (flag 616), the scene where the party flees the Moonflower beam with Conda and the others, and Toryon's rock throwing; each scene then jumps to the next story map.",
+ "globals": [
+  "scene1_max_chara",
+  "scene1_monica_chara",
+  "scene2_max_chara",
+  "scene2_monica_chara"
+ ]
+}

@@ -1,0 +1,3 @@
+{
+ "doc": "Action script for the f03a sword monsters in dungeons. It sets up their melee hit boxes and sword trails per monster form and plays the standard damage reaction when stopped."
+}

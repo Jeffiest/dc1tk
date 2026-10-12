@@ -1,0 +1,32 @@
+{
+ "functions": {
+  "27f546f0e64737b3": {
+   "name": "on_talk",
+   "doc": "Greets the player; the second visit gets a different line.",
+   "loose": "eb071478939e701b"
+  },
+  "75523d6a06c5aaa7": {
+   "name": "wait_frames",
+   "params": [
+    "frames"
+   ],
+   "doc": "Waits the given number of frames.",
+   "loose": "75523d6a06c5aaa7"
+  },
+  "835546f55903419f": {
+   "name": "say",
+   "params": [
+    "line"
+   ],
+   "locals": [
+    "closed"
+   ],
+   "doc": "Shows a message and waits until the player closes it.",
+   "loose": "835546f55903419f"
+  },
+  "d345bde6a43cfa6d": {
+   "doc": "Points the camera at the square and puts the two actors in place.",
+   "loose": "91091968fb30a203"
+  }
+ }
+}

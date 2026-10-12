@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script e48a, a sword wielding mimic. It wanders, circles the player, and slashes with a sword trail, running down a player who moves away. It sidesteps shots and dodges melee attacks by facing the player.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "doc": "Monster AI for e217a, a walking enemy that swipes, charges with a spinning combo and dashes around the player. It wanders near its spawn until it notices the player, then fights by distance, and is more aggressive once enraged.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

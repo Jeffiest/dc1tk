@@ -1,0 +1,3 @@
+{
+ "doc": "Spheda (the ball-rolling golf minigame) course script for dungeon d04. It hands out the starter items on entry and wires up the Spheda ball reset, give-up, shot, score and tutorial help menus through shared libraries."
+}

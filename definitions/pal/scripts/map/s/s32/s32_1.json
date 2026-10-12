@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for map s32. Its numbered events play scenes and then jump to maps s70, s30 and s66, including the Paznos change scene, and it has a light rain effect preview as the debug test."
+}

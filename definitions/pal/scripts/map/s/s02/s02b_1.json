@@ -1,0 +1,7 @@
+{
+ "doc": "Train station map in the s02 area. Event 501 plays Monica explaining time travel, makes Cedric, Borneo and Erik join the party, sets progress to 4, gives 5 Armband Repair Powder and starts s02_1. Events 502 and 503 set up the station arrival and replay event 504.",
+ "globals": [
+  "max_chara_slot",
+  "monica_chara_slot"
+ ]
+}

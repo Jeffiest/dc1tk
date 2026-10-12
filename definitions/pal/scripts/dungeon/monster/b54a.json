@@ -1,0 +1,8 @@
+{
+ "doc": "Monster script for b54a, a Seadra, a sea monster that attacks in melee and dodges or guards by vanishing and reappearing at the player's position. It waits idle until the player is within 500 units, then picks movements and attacks from its distance to the target.",
+ "globals": [
+  "spawn_x",
+  "spawn_y",
+  "spawn_z"
+ ]
+}

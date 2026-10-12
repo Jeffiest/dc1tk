@@ -1,0 +1,3 @@
+{
+ "doc": "Event script for the interior i04h05, used for the hide and seek game: on map start it spawns Corinne for the game. Villager talk uses the shared handler."
+}
