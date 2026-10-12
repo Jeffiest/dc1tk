@@ -310,3 +310,4 @@ def test_banks_reach_entries_through_parameters_and_out_parameters():
     known = sdk.program_sounds([loader, player, caller], found)
     shown = sdk.named_sounds(player["body"], found, sdk.sound_banks(player, known), sdk.sound_flow(player, known))
     assert shown[0]["args"][1] == var("SE_SP_000_FANFARE")
+

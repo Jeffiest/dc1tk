@@ -112,8 +112,8 @@ python3 cli.py play modded.iso
   the shared library for mods.
 - [Definitions](docs/definitions.md): how names and documentation are shared
   without sharing the scripts.
-- [Examples](docs/examples/README.md): one made-up script at every stage from
-  bytecode to annotated source.
+- [Examples](docs/examples/README.md): made-up scripts showing how to write
+  a scene, a cutscene, a monster AI and a town talk handler.
 - [The script format](docs/format.md), [assembly](docs/assembly.md) and
   [how the tools work](docs/internals.md).
 
