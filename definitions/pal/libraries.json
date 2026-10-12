@@ -141,8 +141,8 @@
    "doc": "Town NPC talk lines, close-up talk windows, the NPC shop and the NPC menu. Used by the g00 town map scripts."
   },
   "05583d3ba75a2d70": {
-   "path": "lib/dungeon/monster/stun_unlock_motion_restart.c",
-   "doc": "Locks interrupts, stuns then unlocks and restarts motion, used by 16 boss scripts."
+   "path": "lib/dungeon/monster/halt_stun_and_stop_motion.c",
+   "doc": "Holds make_damageable_and_halt, stun_then_unlock (faint until the stun ends, then allow guard and dodge again) and stop_current_motion. Used by 16 scripts, mostly bosses (Shingala, Emperor Griffon, Dark Element, Metal Flotsam, Arch Demon, Death Ark, Armory, Machine Gun, Jaming, Kortlenn, b06a) plus e205a (Tore) and e227a (Masked Tribesman)."
   },
   "055beb05f8f76307": {
    "path": "lib/dungeon/monster/flying_movement_setup.c",
@@ -219,8 +219,8 @@
    "doc": "Knockback, death, a single attack, the guard-lift-throw state machine and an attack-and-move loop, used by f114 and f45a."
   },
   "098bcb8438ee55d1": {
-   "path": "lib/dungeon/monster/damage_stagger.c",
-   "doc": "Plays a damage stagger, used by 4 monster scripts."
+   "path": "lib/dungeon/monster/damage_then_stun.c",
+   "doc": "Holds play_damage_then_stun, which plays the damage motion once and then the faint motion until the stun ends. Used by b214an (Mammo), e11a (Man-Eating Grass), e67a (Dark Flower) and e68a (Cursed Rose)."
   },
   "09aebf087901fb73": {
    "path": "lib/map/f/f03/f03_1_town_toolkit.c",
@@ -235,8 +235,8 @@
    "doc": "Empty handler, activating Lao Chao and the miss reaction in the f02i08 restaurant."
   },
   "0a5949f02622edfd": {
-   "path": "lib/dungeon/monster/fade_texture_wait.c",
-   "doc": "Fade and texture wait helper, used by b11a_moon, e236a and f20a."
+   "path": "lib/dungeon/monster/wait_forever_bare.c",
+   "doc": "Holds wait_forever, which waits each frame forever without the per-frame update; b11a_moon (Moon) and f20a (Electric Fish) use it as their lifted program, and the unused e236a includes it."
   },
   "0a6afd83de65e927": {
    "path": "lib/map/f/f01/story_event_gate_checks.c",
@@ -500,8 +500,8 @@
    "doc": "Sets midnight without street lamps and plays the m06b events 151, 152, 154 and 155. Used by the m06 map scripts."
   },
   "16ec36e8aba2df3e": {
-   "path": "lib/dungeon/monster/idle_stub_functions.c",
-   "doc": "Empty argument handler and a stub, used by 16 boss scripts."
+   "path": "lib/dungeon/monster/camera_reset_and_stub.c",
+   "doc": "Holds an empty four-argument stub and reset_player_camera, which returns the camera to the player and clears its limits; none of the including scripts calls either. Included by 16 scripts, mostly bosses (Shingala, Emperor Griffon, Dark Element, Metal Flotsam, Arch Demon, Death Ark, Jaming, Kortlenn) plus e205a (Tore), e227a (Masked Tribesman) and b06a (the unnamed boss kind 515)."
   },
   "171572ba8f8d9038": {
    "path": "lib/map/d/golf_shots_0.c",
@@ -513,7 +513,7 @@
   },
   "17bf86271b16495b": {
    "path": "lib/dungeon/monster/lock_and_stop_all_actions.c",
-   "doc": "Locks interrupts, unlocks them and stops all actions, used by 11 boss scripts."
+   "doc": "Locks interrupts, unlocks them, stops all actions and holds an empty do_nothing. Used by 11 scripts, mostly bosses (Shingala, Emperor Griffon, Arch Demon, Death Ark, Armory, Machine Gun, Kortlenn, b06a) plus e227a (Masked Tribesman)."
   },
   "17c08b5707c36e86": {
    "path": "lib/map/i/i01/h01/nod_reply_shot.c",
@@ -605,7 +605,7 @@
   },
   "1c30f36efc8b9301": {
    "path": "lib/dungeon/monster/getup_after_throw_blown_away.c",
-   "doc": "Gets up after a throw and being blown away, used by e116a and e44a."
+   "doc": "Holds get_up_after_throw and get_knocked_flying_then_stun (knocked flying, get up, then faint until the stun ends). Used by e116a (Priest of Rama) and e44a (Heart)."
   },
   "1c62f3d42b574152": {
    "path": "lib/map/d/d05/star_item_socket.c",
@@ -625,7 +625,7 @@
   },
   "1d12121930f9b094": {
    "path": "lib/dungeon/monster/blown_away_stun.c",
-   "doc": "Being blown away then stunned, used by e111a to e114a."
+   "doc": "Holds the heavy hit reaction: knocked flying, blown-away loop and get-up, then the faint until the stun ends. Used by eJema (every Gemron, Gundron, Drake and Wyrm kind) and the unused older e111a to e115a."
   },
   "1d3152524436be0d": {
    "path": "lib/map/d/d02/switch_player_character.c",
@@ -988,8 +988,8 @@
    "doc": "Ball stance, shot camera, stroke counting, ball color, club stats and dropping the ball. Used by the s17 scripts."
   },
   "2ced1de7f710f2bf": {
-   "path": "lib/dungeon/monster/damage_stagger_after_stop.c",
-   "doc": "Damage stagger and stopping to play the damage motion, used by 12 monster scripts."
+   "path": "lib/dungeon/monster/stop_pose_and_shot_attack_report.c",
+   "doc": "Holds the stopped program, which plays the damage motion and holds it while the Stop status lasts, then returns to standing, plus the uncalled report_missing_shot_attack. Used by 12 monster scripts, among them e03a (Skeleton Soldier), e10a (Pumpkinhead), e40a (Arthur), e54a (Killer Snake) and b40a (Uther)."
   },
   "2cefdbefe8a809c8": {
    "path": "lib/map/s/boss_room_runtime_2.c",
@@ -1222,7 +1222,7 @@
   },
   "3a8a4f87c6507987": {
    "path": "lib/dungeon/monster/stop_play_damage_motion.c",
-   "doc": "Stops and plays the damage motion, used by 6 monster scripts."
+   "doc": "Holds the stopped program, which plays the damage motion and holds it while the Stop status lasts, then returns to standing. Used by e210a (Turtle), e253a (Yoyo Barrel), e28a (Corsair), e76a (Crescent Baron) and the bosses Inferno and Lapis Garter."
   },
   "3ab6663542a7234a": {
    "path": "lib/dungeon/monster/die_and_stay_dead.c",
@@ -1294,8 +1294,8 @@
    "doc": "Opens the save menu with a fade. Used by the s42 scripts."
   },
   "3df628b4fc8311a2": {
-   "path": "lib/dungeon/monster/stop_unlock_moon.c",
-   "doc": "Stops and unlocks, used by b11a_moon and f20a."
+   "path": "lib/dungeon/monster/halt_on_dodge.c",
+   "doc": "Holds halt_on_dodge, the dodge program that stops the monster and allows guard and dodge again at once, so it just halts. Used by b11a_moon (Moon) and f20a (Electric Fish)."
   },
   "3e0c7b7ff8638a95": {
    "path": "lib/map/s/s05/s05b_script_loaders.c",
@@ -1593,7 +1593,7 @@
   },
   "4dac05c6d14cecf9": {
    "path": "lib/dungeon/monster/guard_block_and_recoil.c",
-   "doc": "Blocks an attack with a guard and recoils from a hit, used by e111a to e114a."
+   "doc": "Holds an uninterruptible guard and a hit recoil with a 16 frame wait. Used by eJema (every Gemron, Gundron, Drake and Wyrm kind) and the unused older e111a to e115a."
   },
   "4dae5b1572b7f94e": {
    "path": "lib/dungeon/sys_script/angle_compare.c",
@@ -1876,12 +1876,12 @@
    "doc": "Talks to a Desoland villager. Used by the f04_4 and s39_4 scripts."
   },
   "5fb1ae9616a405af": {
-   "path": "lib/dungeon/monster/stay_stunned_element.c",
-   "doc": "Stays stunned until the stop ends, used by e101a and element."
+   "path": "lib/dungeon/monster/hold_damage_pose_until_stop_ends_element.c",
+   "doc": "Holds the stopped program, which plays the damage motion and holds it until the Stop status ends (updating each frame with update_and_wait). Used by e101a (Darkness) and the shared element script."
   },
   "6033ab971df8dff4": {
-   "path": "lib/dungeon/monster/stop_action_stub.c",
-   "doc": "Stop-all-actions stub, used by 5 monster scripts."
+   "path": "lib/dungeon/monster/do_nothing.c",
+   "doc": "Holds do_nothing, an empty function. b02a1 (the Butterfly copies) and b13a (Arch Demon) use it as their main program; b11a (Dark Element), e205a (Tore) and the unused e236a call it as a no-op."
   },
   "6075384823f98268": {
    "path": "lib/map/i/i04/h01/villager_talk_idle_v2.c",
@@ -1989,7 +1989,7 @@
   },
   "665344e23da93a12": {
    "path": "lib/dungeon/monster/stop_unlock_blowback_b253.c",
-   "doc": "Stops and unlocks, damage blowback and a small helper, used by b253a and e253a."
+   "doc": "Holds stop_and_unlock, play_damage_blowback and do_nothing_2 (a locked action that does nothing). No script includes it at present."
   },
   "6658b7016bfac621": {
    "path": "lib/map/s/waiting_npc_talk_3.c",
@@ -2177,7 +2177,7 @@
   },
   "700255a0971a8701": {
    "path": "lib/dungeon/monster/flying_attribs.c",
-   "doc": "Sets flying attributes, used by b11a and b12a."
+   "doc": "Holds set_flying_attribs, which turns scripted (free flying) movement on or off. Used by b11a (Dark Element) and b12a (Metal Flotsam)."
   },
   "702d2f1e59cea0a8": {
    "path": "lib/dungeon/monster/stop_and_reset_motion.c",
@@ -2369,8 +2369,8 @@
    "doc": "Lightning hit effect, used by Monica's c02lightning_hit effect."
   },
   "7ba447e14b974198": {
-   "path": "lib/dungeon/monster/stay_stunned.c",
-   "doc": "Stays stunned until the stop ends, used by 10 monster scripts."
+   "path": "lib/dungeon/monster/hold_damage_pose_until_stop_ends.c",
+   "doc": "Holds the stopped program, which plays the damage motion and holds it until the Stop status ends, then returns to standing. Used by 10 monster scripts: e60a (Bat), t1500, e202a (Vanguard), e204a (Kotore), e211a (Clown), e218a (Nightstalker), e55a (Living Armor) and the bosses Jaming, Kortlenn and Mammo."
   },
   "7c0ef7594e5926cd": {
    "path": "lib/map/d/chest_interact_1.c",
@@ -2513,8 +2513,8 @@
    "doc": "Shows and hides Cedric in his house and handles leaving to m01. Used by the i01h01 house scripts."
   },
   "869f06ecaf59c1fc": {
-   "path": "lib/dungeon/monster/throw_getup_helper.c",
-   "doc": "Throw getup helper, used by b14a, e60a and t1500."
+   "path": "lib/dungeon/monster/struggle_while_lifted.c",
+   "doc": "Holds the lifted program that plays the struggle motion and waits forever while the player holds the monster. Used by b14a (Evil Flame), e60a (bats) and t1500."
   },
   "86ec55ec4588f47c": {
    "path": "lib/map/d/golf_course_4.c",
@@ -3116,7 +3116,7 @@
   },
   "a6be19485926bd44": {
    "path": "lib/dungeon/monster/death_halt_with_lock.c",
-   "doc": "Locked-action end, start of death and halting after death, used by 15 boss scripts."
+   "doc": "Holds end_locked_action, start_death, finish_death_and_halt and halt_and_forbid_guard_and_dodge. Used by 15 scripts, mostly bosses (Shingala, Emperor Griffon, Dark Element, Metal Flotsam, Arch Demon, Death Ark, Armory, Machine Gun, Kortlenn, b06a) plus e205a (Tore) and e227a (Masked Tribesman)."
   },
   "a73b02521e57b596": {
    "path": "lib/map/f/f03/enter_interiors_0303_0304.c",
@@ -3247,7 +3247,7 @@
    "doc": "Opening scenes with the circus ticket, vacuum repair and the empty house. Used by the s42 scripts."
   },
   "ae447d29f62e8c87": {
-   "path": "lib/dungeon/monster/circle_target_move.c",
+   "path": "lib/dungeon/monster/run_to_side_of_target.c",
    "doc": "Moves to a spot to the side of the target at random, used by b205a and e205a.",
    "globals": {
     "g1": "spawn_y"
@@ -3279,7 +3279,7 @@
   },
   "af58c0e69b6cec4c": {
    "path": "lib/dungeon/monster/return_true.c",
-   "doc": "Function returning true, used by 12 boss scripts."
+   "doc": "Holds return_true, which always returns 1. Used by 12 monster scripts, mostly bosses (Shingala, Emperor Griffon, Arch Demon, Death Ark, Armory, Machine Gun, Jaming, Kortlenn) plus e205a (Tore), e227a (Masked Tribesman) and the unused e236a."
   },
   "b05660703dea92ef": {
    "path": "lib/map/s/s71/flee_scene.c",
@@ -3350,8 +3350,8 @@
    "doc": "Full shared script base for variant 0 of the d07 (Zelmite Mine) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d07_0 and d07_sfida_0."
   },
   "b580d095c9d40442": {
-   "path": "lib/dungeon/monster/recoil_until_stun_ends.c",
-   "doc": "Recoils until the stun ends, used by e116a, e221a and e44a."
+   "path": "lib/dungeon/monster/stop_pose_and_shot_attack_report_e116.c",
+   "doc": "Holds the stopped program, which plays the damage motion and holds it while the Stop status lasts (updating with update_and_wait), plus the uncalled report_missing_shot_attack. Used by e116a (Priest of Rama), e221a (Spider Lady) and e44a (Heart)."
   },
   "b591f1237b1674d1": {
    "path": "lib/dungeon/monster/stun_throw_idle_user_monster.c",
@@ -3946,7 +3946,7 @@
   },
   "d5fac68a5913fa3a": {
    "path": "lib/dungeon/monster/nudge_pos_up.c",
-   "doc": "Moves the monster up by one unit, used by 12 boss scripts."
+   "doc": "Holds nudge_pos_up, which raises the monster by one unit and returns 1. Used by 12 monster scripts, mostly fliers: the bats (e60a, t1500), Pixie, Nightstalker, Crescent Baron, the elements and the bosses Emperor Griffon, Dark Element, Metal Flotsam and Arch Demon, plus b06a (the unnamed boss kind 515) and the unused e115a."
   },
   "d6068d6d405e64ed": {
    "path": "lib/map/d/d02/star_item_socket.c",
@@ -3986,7 +3986,7 @@
   },
   "d81f72782193c238": {
    "path": "lib/dungeon/monster/unguarded_monster_fight.c",
-   "doc": "Thrown-recovery, recoil-and-stun and a guardless fight loop for the monsters e231a, e233a and e235a."
+   "doc": "Holds finish_being_thrown, recoil_and_stun and a fight loop that never guards. Used by e231a, e233a and e235a, unused scripts named after King Mimic models."
   },
   "d82ff7fe4f260bae": {
    "path": "lib/map/s/s27/map_charas_setup.c",
@@ -4263,8 +4263,8 @@
    "doc": "Spheda golf for variant 0 of the dungeon Spheda scripts: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by d01_sfida_0, d02_sfida_0 and d04_sfida_0 to d07_sfida_0."
   },
   "e678f14623ae3251": {
-   "path": "lib/dungeon/monster/damage_stagger_variant.c",
-   "doc": "Damage stagger with stopping to play the damage motion, used by 6 monster scripts."
+   "path": "lib/dungeon/monster/missing_shot_attack_report.c",
+   "doc": "Holds report_missing_shot_attack, which prints the debug text 'not SHOT_ATTACK'; none of its users calls it. Included by b05a (Shingala), b17a (Jaming), e101a (Darkness), e201a (Sewer Rat), e227a (Masked Tribesman) and the unused p00_04a."
   },
   "e6b419171454a559": {
    "path": "lib/map/f/f04/interior_03_toolkit.c",
@@ -4367,8 +4367,8 @@
    "doc": "Freezes and faces the target and handles death, used by e101a and element."
   },
   "ebb9cab7a683303d": {
-   "path": "lib/dungeon/monster/run_monster_actions.c",
-   "doc": "Runs the monster action set of the toolkit, used by b11a_moon and f20a."
+   "path": "lib/dungeon/monster/halt_on_guard.c",
+   "doc": "Holds halt_on_guard, the guard program that stops the monster and allows dodging again at once, so a guarded hit just halts it. Used by b11a_moon (Moon) and f20a (Electric Fish)."
   },
   "ebbbb28a3687379a": {
    "path": "lib/map/s/station_runtime_1.c",
@@ -4448,7 +4448,7 @@
   },
   "eefd240883c04902": {
    "path": "lib/dungeon/monster/clear_monster_vars.c",
-   "doc": "Clears monster variables, used by b14a and rin."
+   "doc": "Holds clear_monster_vars, a wrapper that calls clear_vars_1_to_3 to set monster variables 1 to 3 to -1. Used by b14a (Evil Flame) and rin (Lin)."
   },
   "eefefc39b5920d77": {
    "path": "lib/map/base_refuse_motion_v1.c",
@@ -4616,8 +4616,8 @@
    "doc": "Shows the georama hint message. Used by the g04 town scripts."
   },
   "f8222c8bfd273598": {
-   "path": "lib/dungeon/monster/throw_recovery_forever.c",
-   "doc": "Restarts motion and waits forever, finishes a throw and allows lock-on, and gets thrown down and rises, used by b54a and e54a."
+   "path": "lib/dungeon/monster/lifted_throw_and_stun_e54.c",
+   "doc": "Holds the lifted program (stop the motion and idle while held), a throw end that re-enables lock-on, and the stun program (knocked flying, get up, then faint until the stun ends). Used by b54a (Sea Dragon) and e54a (Killer Snake family)."
   },
   "f83a4326c8ee7ec2": {
    "path": "lib/map/d/d05/script_core_0.c",

@@ -1,5 +1,5 @@
 {
- "doc": "Monster script for e214a2, a sturdy boss-type enemy that does not dodge or guard. Taking enough hits only staggers it, it runs event 501 if left alone long enough on the floor, and event 502 plays when it dies without death smoke.",
+ "doc": "Monster AI e214a2 for Linda (kind 601), the elephant boss fought in the s06 pump room. It uses the shared melee AI (swings, shockwave swings, walking at the target), never guards or dodges, flinches with a knockback when staggered or knocked down, and on death drops its items without death smoke and runs map program 502, the elephant victory event. It also has a timed event 501 trigger that nothing calls.",
  "globals": [
   "home_x",
   "home_y",

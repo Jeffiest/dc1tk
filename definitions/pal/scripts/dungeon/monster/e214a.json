@@ -1,5 +1,5 @@
 {
- "doc": "Monster AI for e214a, which does not fight: it stands still and sets off event script 501 once the floor has run for 30 seconds and it has been struck.",
+ "doc": "Monster AI e214a for Linda (kind 614), the elephant of the first pump room fight in s06b, placed after the Flotsam scene. It fights with the shared melee AI (swings, shockwave swings, walking at the target) and ignores every hit reaction. Once the dungeon timer reaches 900 frames and a hit has done no damage, it runs map program 501, which moves on to the s06c scene (event 500).",
  "globals": [
   "home_x",
   "home_y",

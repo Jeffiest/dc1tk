@@ -1,5 +1,5 @@
 {
- "doc": "Boss monster script for b06a, a flying boss that fights in a closed arena. It teleports with the San warp, summons six orbiting roses and fires them at the player, and dashes in to cast San's tornado. At half life it runs event 502, and its death runs event 504.",
+ "doc": "Monster script b06a for boss kind 515 (named '???' in the monster table), the Emperor Griffon fight in the Flower Palace foyer (d06e01). He flies about the arena, teleports with the San warp, circles six roses around himself and fires them at the player, dashes in to cast San's tornado and guards behind the Giltoni shield. At half life he runs map program 502 (the mid-fight vision scene), and his death runs 504, which warps to s31.",
  "globals": [
   "spawn_x",
   "spawn_y",
