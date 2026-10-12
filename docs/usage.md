@@ -10,7 +10,9 @@ python3 cli.py compile <script.c> [-o script.stb]
 python3 cli.py build source dc2.iso -o modded.iso   new disc image with your changes
 python3 cli.py build source dc2.iso -o test.iso --start-at s51:story_50
 python3 cli.py changes source             what you edited since decompiling
-python3 cli.py mod save source mods/name  save your edits; mod apply copies them back
+python3 cli.py mod new source castle map/s/s51_raybrandt_castle/s51_1.c   start a mod
+python3 cli.py build source dc2.iso -o modded.iso --mod castle --mod other  build with mods
+python3 cli.py mod list source            every mod, its files, and mods that clash
 python3 cli.py xref source event 510 --map s51     what defines, starts and requests an event
 python3 cli.py xref source map s51        how the game enters a map
 python3 cli.py xref source monster golem  a monster's model, AI script and users
@@ -43,6 +45,18 @@ Given the extracted disc, it writes a source tree mirroring the disc, one
 under `lib/`, pulled in with `#include "lib/..."`. A typical script then
 contains only its own code. `setup` does this after extracting.
 
+Folders and files keep the game's own code and gain a readable name after
+it: `map/s/s51_raybrandt_castle/s51_1.c`, `dungeon/monster/e33a_golem.c`,
+`mainchr/c01_max.c`, and libraries follow their scripts' folders
+(`lib/map/s/s51_raybrandt_castle/`). Map folders are named from the disc's
+map table and monster AI scripts from its monster table, in the definition
+set's language; the set's `paths.json` names the rest (dungeons, the main
+characters). The game's codes contain underscores too, so the tree records
+the disc path of every renamed file in `unnamed-paths.json`; `build`,
+`defs learn`, `xref` and `mod` read it, so a renamed file still replaces
+the right disc file. Commands that take a map or monster still take the
+game's code (`xref source map s51`).
+
 The tree also gets `compile_flags.txt`, which lets clangd-based editors
 read every file as C with the SDK (see [editor setup](modding.md#editor-setup)),
 and `original-hashes.json`, a record of what was written. Writing into a tree
@@ -50,7 +64,7 @@ again refuses to overwrite files edited since; `--force` overwrites them.
 
 Given a folder inside the extracted disc (`extracted/map/s/s05`), it
 decompiles only the scripts in that folder, still under their disc paths
-(`out/map/s/s05/s05.c`), so the definitions, native table rules and disc
+(`out/map/s/s05_fish_monster_swamp/s05.c`), so the definitions, native table rules and disc
 text apply as they do for the whole disc. Code is shared into libraries
 only among the scripts decompiled together.
 
@@ -110,24 +124,49 @@ do; the source tree is not changed. It suits maps the game loads with
 `load_dungeon_map`, and the scene starts with a new game's party. See
 [the modding guide](modding.md#trying-a-change-quickly).
 
-### Keeping edits across decompiles
+### Mods
 
-`changes` lists what you edited, added or removed. `mod save source
-mods/name` copies those files into a folder, and `mod apply mods/name
-fresh-source` copies them into a newly decompiled tree, warning where the
-decompiler's own version of a file changed meanwhile. A mod holds game
-scripts, so it stays out of this repository (`mods/` is ignored).
+A mod is a folder in `mods/` holding only the files it changes or adds, laid
+out like the tree. Keep the decompiled tree as the decompiler wrote it and
+build any set of mods over it:
+
+```
+python3 cli.py mod new source castle map/s/s51_raybrandt_castle/s51_1.c dungeon/monster/e33a_golem.c
+python3 cli.py build source dc2.iso -o modded.iso --mod castle --mod other
+```
+
+- `mod new SOURCE NAME FILE...` copies tree files into `mods/NAME/files/`
+  to edit there; files the mod already has are kept. The mod gets its own
+  `compile_flags.txt`, so an editor finds its libraries first and then the
+  tree's.
+- `mod save SOURCE NAME` copies every file edited or added in the tree into
+  the mod instead, for edits made in the tree.
+- `build --mod NAME` (repeat it for several) compiles each mod file in place
+  of the tree's, libraries included, without changing the tree. Two chosen
+  mods may not change the same file; `build` names the file and the mods.
+- `mod list SOURCE` lists every mod and its files, the files whose
+  decompiler version changed since the mod was made ("stale": the mod
+  replaces the whole file, so compare them), and the mods that cannot be
+  built together.
+- `mod apply SOURCE NAME...` writes mods into the tree instead.
+
+A mod made on a tree with readable names applies to one without, and the
+other way round: files and `#include` lines follow each tree's layout.
+`--mods DIR` picks another mods folder. Mods hold game scripts, so they stay
+out of this repository (`mods/` is ignored).
+
+`changes` lists what you edited, added or removed in the tree itself.
 
 ### A first test
 
 Two edits that show within minutes of starting a new game:
 
-- **The opening.** In `lib/map/m/m07/base_opening_scenes_v1.c`, function
+- **The opening.** In `lib/map/m/m07_palm_brinks/base_opening_scenes_v1.c`, function
   `play_opening_letter_and_storm_scene`, reverse the three
   `show_narration_line` calls (messages 10010, 10020, 10030) and change
   `set_sprite_color(0, 0, 0, 0, 128)` to `set_sprite_color(0, 128, 0, 0,
   128)`. The letter is narrated last line first, over red instead of black.
-- **Monica's first fight.** In `map/s/s51/s51_1.c` (and `_2` to `_5` for
+- **Monica's first fight.** In `map/s/s51_raybrandt_castle/s51_1.c` (and `_2` to `_5` for
   the other languages), function `start_castle_battle`, replace the four
   `MONSTER_GRIFFON_SOLDIER_523` with other kinds from
   `source/include/disc.h`, loading each first:

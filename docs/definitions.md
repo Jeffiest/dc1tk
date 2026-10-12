@@ -77,6 +77,8 @@ definitions/pal/
   include/              content headers included by every script
   notes/                research notes in Markdown
   libraries.json        library paths and docs
+  paths.json            readable names for disc folders and scripts the disc
+                        does not name (dungeons, the main characters)
 ```
 
 Every part is optional. A new set can start with just a manifest.
@@ -220,9 +222,11 @@ of the native table and the member functions' fingerprints, in order):
 }
 ```
 
-The path must start with `lib/` and end with `.c`. Function names inside
-still come from `names/`, and default function names keep using the
-library's automatic name, so moving a library never changes them.
+The path must start with `lib/` and end with `.c`, and uses the game's codes
+for folders (`lib/map/s/s51/`); the decompiler adds the same readable names
+it gives the scripts' folders (`lib/map/s/s51_raybrandt_castle/`). Function
+names inside still come from `names/`, and default function names keep using
+the library's automatic name, so moving a library never changes them.
 
 `globals` names the script globals a library's code uses, by their default
 slot name:

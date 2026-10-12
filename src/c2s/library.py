@@ -461,11 +461,16 @@ def expand(program, texts, headers=None):
     return dict(program, natives=table, functions=functions, padding_of={}, declarations=declarations)
 
 
-def read_includes(program, source_path):
+# The texts of a script's library includes, looked up from its folder and each folder above it.
+# overlay, keyed by include path, stands in for files on disk (build --mod).
+def read_includes(program, source_path, overlay=None):
     texts = {}
     directory = Path(source_path).resolve().parent
     for item in program.get("functions", []):
         if item["kind"] != "include" or item["system"]:
+            continue
+        if overlay and item["path"] in overlay:
+            texts[item["path"]] = overlay[item["path"]]
             continue
         for folder in [directory] + list(directory.parents):
             candidate = folder / item["path"]

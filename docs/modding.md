@@ -15,7 +15,10 @@ comes from. The commands are in [usage](usage.md).
 | Which save flags are free for a mod? Who uses flag 54? | `cli.py flags source`, `cli.py flags source --flag 54` |
 | What have I changed? | `cli.py changes source` |
 
-`source/include/disc.h` also gives each monster kind's model and AI script:
+Files keep the game's codes with a readable name after them
+(`map/s/s51_raybrandt_castle/`, `dungeon/monster/e33a_golem.c`); commands
+take the codes. `source/include/disc.h` also gives each monster kind's model
+and AI script:
 `MONSTER_GOLEM = 168,  // model e33a, AI e33a`. Several kinds can share one
 AI script (all four kinds of `e33a`), and a story fight can use an event-only
 kind with its own AI (kind 523, the castle's Griffon Soldier, runs `b254a`
@@ -116,7 +119,7 @@ scripts you did not edit. To change a library for some scripts only, give
 them their own copy first:
 
 ```
-python3 cli.py fork source lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a.c
+python3 cli.py fork source lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
 ```
 
 ## A pattern: a caption every five seconds during a fight
@@ -219,13 +222,16 @@ recording what they wrote. From it:
 - `cli.py changes source` lists every file you edited, added or removed;
 - `setup` and `decompile` refuse to overwrite edited files (`--force`
   overrides);
-- `cli.py mod save source mods/castle` copies your edited and added files
-  into a folder, and `cli.py mod apply mods/castle fresh-source` copies them
-  into a fresh tree, such as one decompiled after a tools update, warning
-  where the decompiler's own version of a file has changed since.
+- `cli.py mod save source castle` copies your edited and added files into
+  the mod `mods/castle`.
 
-A saved mod holds edited game scripts, so keep it out of this repository
-(`mods/` is ignored).
+Better still, keep the tree untouched and do the work in mods: `cli.py mod
+new source castle FILE...` copies the files you want to change into
+`mods/castle/files/`, and `cli.py build source dc2.iso -o modded.iso --mod
+castle --mod another` layers the chosen mods over the tree. A fresh tree,
+decompiled after a tools update, takes the same mods; `mod list` marks a mod
+file whose decompiler version has changed since, to compare. See
+[usage](usage.md#mods).
 
 ## Editor setup
 

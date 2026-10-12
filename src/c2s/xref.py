@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from c2s import disc, index
+from c2s import disc, index, pathnames
 
 # Cross-references in a decompiled source tree: what starts an event, what loads a map, and where a
 # monster kind is loaded and which AI script it runs. These are the links a mod has to keep intact
@@ -25,9 +25,10 @@ def map_of(target):
 
 
 # Whether a tree path is one of map_name's scripts: under a folder named after it (map/s/s51/,
-# map/d/d01/) or a file named after it (s51.c, s51_1.c, s51b_1.c).
-def in_map(path, map_name):
-    parts = path.split("/")
+# map/d/d01/) or a file named after it (s51.c, s51_1.c, s51b_1.c), going by its path without
+# readable names.
+def in_map(tree, path, map_name):
+    parts = pathnames.unnamed(tree, path).split("/")
     stem = Path(parts[-1]).stem
     return map_name in parts[:-1] or stem == map_name or stem.startswith(map_name + "_") or \
         (stem.startswith(map_name) and stem[len(map_name):len(map_name) + 1].isalpha())
@@ -95,7 +96,7 @@ def ai_script(row):
 def map_monster_ais(tree, consts, rows, map_name, users):
     found = {}
     for call in index.calls(tree, MONSTER_CALLS):
-        if not call["args"] or not any(in_map(path, map_name) for path in scripts_of(call, users)):
+        if not call["args"] or not any(in_map(tree, path, map_name) for path in scripts_of(call, users)):
             continue
         kind = index.value(call["args"][0], consts)
         if kind in rows:
@@ -109,7 +110,7 @@ def event_report(tree, consts, number, map_name=None, rows=None):
     lines = ["event %d%s" % (number, " in map " + map_name if map_name else "")]
     defined = {}
     for path, entry in outline.items():
-        if map_name and not in_map(path, map_name):
+        if map_name and not in_map(tree, path, map_name):
             continue
         for program in entry["programs"]:
             if index.value(program["number"], consts) == number:
@@ -128,7 +129,8 @@ def event_report(tree, consts, number, map_name=None, rows=None):
     ais = map_monster_ais(tree, consts, rows or {}, map_name, users) if map_name and rows else {}
 
     def placed_here(call):
-        kinds = ais.get(Path(call["path"]).stem) if call["path"].startswith("dungeon/monster/") else None
+        plain = pathnames.unnamed(tree, call["path"])
+        kinds = ais.get(Path(plain).stem) if plain.startswith("dungeon/monster/") else None
         if not kinds:
             return None
         return "<- %s places kind %s, which runs this AI" % (map_name, ", ".join(
@@ -144,7 +146,7 @@ def map_report(tree, consts, map_name):
     users = index.includers(outline)
     entries = [entry for entry in map_entries(tree, consts) if entry["map"] == map_name]
     lines = ["map %s" % map_name, "", "scripts:"]
-    lines += ["  " + path for path in sorted(outline) if in_map(path, map_name) and not index.is_library(path)] \
+    lines += ["  " + path for path in sorted(outline) if in_map(tree, path, map_name) and not index.is_library(path)] \
         or ["  none in this tree"]
     lines += ["", "entered by:"]
     lines += grouped(entries, users, lambda entry: None if entry["program"] is None else "starts program %d" % entry["program"]) \
@@ -167,7 +169,8 @@ def monster_report(tree, consts, rows, wanted):
         script = ai_script(row)
         sharing = sorted(kind for kind, other in rows.items() if ai_script(other) == script and kind != number)
         lines += ["  model:     dungeon/monster/%s.chr" % row["model"],
-                  "  AI script: dungeon/monster/%s.c (on the disc: %s.stb)" % (script, script)]
+                  "  AI script: %s (on the disc: dungeon/monster/%s.stb)" % (
+                      pathnames.named(tree, "dungeon/monster/%s.c" % script), script)]
         if sharing:
             lines.append("  the same AI script also runs kinds: " + ", ".join(
                 "%d %s" % (kind, rows[kind]["name"]) for kind in sharing))

@@ -1,17 +1,14 @@
 import hashlib
 import json
-import shutil
 from pathlib import Path
 
-from c2s import index, source
+from c2s import index, pathnames, source
 
 # A decompiled tree records what the decompiler wrote, so the tools can tell your edits from its
 # output: setup and decompile refuse to overwrite edited files, changes lists them, build says which
-# edited libraries reach scripts you did not touch, and a mod saves them to reapply to a fresh tree.
+# edited libraries reach scripts you did not touch, and mod save copies them into a mod (mods.py).
 
 ORIGINALS = "original-hashes.json"
-MOD_INDEX = "mod.json"
-MOD_FILES = "files"
 
 
 # Line endings do not count: an editor that rewrites them has not edited the file.
@@ -26,7 +23,7 @@ def tracked(tree):
     found = []
     for path in root.rglob("*"):
         parts = path.relative_to(root).parts
-        if path.is_file() and path.name != ORIGINALS and not any(part.startswith(".") or part == "__pycache__" for part in parts):
+        if path.is_file() and path.name not in (ORIGINALS, pathnames.UNNAMED) and not any(part.startswith(".") or part == "__pycache__" for part in parts):
             found.append(path.relative_to(root).as_posix())
     return sorted(found)
 
@@ -97,62 +94,6 @@ def changes_text(tree):
         return "no changes since the tree was decompiled"
     notes = library_notes(tree, found)
     return "\n".join(lines + ([""] + notes if notes else []))
-
-
-def save_mod(tree, mod_dir):
-    found = status(tree)
-    if found is None:
-        raise SystemExit("%s has no %s; decompile it again with this version to save a mod from it" % (tree, ORIGINALS))
-    mod = Path(mod_dir)
-    old_index = mod / MOD_INDEX
-    if old_index.is_file():
-        shutil.rmtree(mod / MOD_FILES, ignore_errors=True)
-    elif mod.exists() and any(mod.iterdir()):
-        raise SystemExit("%s is not empty and holds no mod; choose another folder" % mod)
-    recorded = originals(tree)
-    files = {}
-    for path in found["edited"] + found["added"]:
-        target = mod / MOD_FILES / path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(Path(tree) / path, target)
-        files[path] = {"original": recorded.get(path)}
-    mod.mkdir(parents=True, exist_ok=True)
-    note = "Files edited or added in a decompiled tree. cli.py mod apply copies them into a fresh tree."
-    old_index.write_text(json.dumps({"note": note, "files": files, "removed": found["removed"]}, indent=1) + "\n",
-                         encoding="utf-8")
-    return {"saved": sorted(files), "removed": found["removed"]}
-
-
-# Copies a saved mod into tree. A file the decompiler now writes differently from when the mod was
-# saved is still replaced, with a warning to compare them; a file edited in tree itself is only
-# replaced with force.
-def apply_mod(mod_dir, tree, force=False):
-    mod = Path(mod_dir)
-    entries = json.loads((mod / MOD_INDEX).read_text(encoding="utf-8"))
-    recorded = originals(tree) or {}
-    root = Path(tree)
-    warnings, conflicts = [], []
-    for path, entry in sorted(entries["files"].items()):
-        here = root / path
-        if not here.is_file():
-            continue
-        current = file_hash(here)
-        if current == file_hash(mod / MOD_FILES / path):
-            continue
-        if path in recorded and current != recorded[path]:
-            conflicts.append(path)
-        elif entry["original"] is not None and recorded.get(path) not in (None, entry["original"]):
-            warnings.append("the decompiler's %s changed since the mod was saved; compare it with the mod's copy" % path)
-    if conflicts and not force:
-        raise SystemExit("these files are edited in %s too; pass --force to replace them with the mod's copy:\n  %s"
-                         % (tree, "\n  ".join(conflicts)))
-    for path in sorted(entries["files"]):
-        target = root / path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(mod / MOD_FILES / path, target)
-    for path in entries.get("removed", []):
-        warnings.append("the mod removed %s; it was left in place" % path)
-    return {"applied": sorted(entries["files"]), "warnings": warnings}
 
 
 # Gives some scripts their own copy of a library, so an edit to it reaches only them.

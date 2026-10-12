@@ -34,7 +34,10 @@ python3 cli.py build source dc2.iso -o modded.iso
 
 `build` compiles every script in `source/`, finds the ones that differ from
 the disc, and writes `modded.iso`: the original image with only those
-scripts replaced. Boot it in PCSX2 like the original. To try a change
+scripts replaced. Boot it in PCSX2 like the original. To keep several
+changes apart, put each in a mod, a folder in `mods/` with only the files it
+changes, and choose the ones to build: `--mod castle --mod other` (see
+[mods](docs/usage.md#mods)). To try a change
 without replaying up to it, `--start-at s51:story_50` makes New Game go
 straight to that scene.
 

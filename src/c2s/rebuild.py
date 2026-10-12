@@ -2,20 +2,22 @@ import shutil
 import struct
 from pathlib import Path
 
-from c2s import archive, compile, definitions, iso, library, natives, parse, source
+from c2s import archive, compile, definitions, iso, library, natives, parse, pathnames, source
 
 SCRIPT_SUFFIXES = (".stb", ".STB")
 VOLUME_SIZE = 80
 FILLER = "DMMY"
 
 
-# Compiles a script of the tree; text, when given, stands in for the file's own (build --start-at).
-def compiled(source_path, defs, headers, tables, text=None):
+# Compiles a script of the tree; text, when given, stands in for the file's own (build --start-at,
+# build --mod), table_path, its path without readable names, picks the native table, and overlay
+# holds mod files that stand in for the tree's libraries.
+def compiled(source_path, defs, headers, tables, text=None, table_path=None, overlay=None):
     program = parse.parse(Path(source_path).read_text(encoding="utf-8") if text is None else text)
     headers = dict(headers, **definitions.source_headers(source_path))
-    program = library.expand(program, library.read_includes(program, str(source_path)), headers)
+    program = library.expand(program, library.read_includes(program, str(source_path), overlay), headers)
     if "asm" not in program and program["natives"] is None:
-        program["natives"] = natives.table_for(Path(source_path).resolve().as_posix(), defs["tables"])
+        program["natives"] = natives.table_for(table_path or Path(source_path).resolve().as_posix(), defs["tables"])
     return compile.compile_program(program, tables)
 
 
@@ -71,15 +73,22 @@ def replaced_member(data, names, new):
     return data[:entry] + bytes(header) + inner + bytes(-len(inner) % archive.PACK_ALIGN) + data[old_end:]
 
 
+# The scripts whose compiled form differs from the disc. overrides holds whole-file texts that stand
+# in for tree files, mods' and build --start-at's, keyed by tree path; scripts only a mod has are
+# compiled too.
 def changes(source_dir, iso_path, defs, headers, tables, overrides=None):
+    overrides = overrides or {}
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
         index = {entry["path"]: entry for entry in disc["entries"]}
         tops = {}
         found = []
         skipped = []
-        for relative in source_scripts(source_dir):
-            where = disc_location(relative, index)
+        scripts = set(source_scripts(source_dir)) | {path for path in overrides
+                                                     if path.endswith(source.EXTENSION) and not path.startswith("lib/")}
+        for relative in sorted(scripts):
+            plain = pathnames.unnamed(source_dir, relative)
+            where = disc_location(plain, index)
             if where is None:
                 skipped.append(relative)
                 continue
@@ -89,7 +98,7 @@ def changes(source_dir, iso_path, defs, headers, tables, overrides=None):
             if original is None:
                 skipped.append(relative)
                 continue
-            new = compiled(Path(source_dir) / relative, defs, headers, tables, (overrides or {}).get(relative))
+            new = compiled(Path(source_dir) / relative, defs, headers, tables, overrides.get(relative), plain, overrides)
             if new != original:
                 found.append(dict(where, source=relative, data=new))
     rebuilt = {}

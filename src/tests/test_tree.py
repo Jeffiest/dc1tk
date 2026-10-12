@@ -56,36 +56,6 @@ def test_library_notes_count_scripts_an_edit_reaches_unasked():
             "edited library lib/shared.c is included by 2 scripts, 1 of which you did not edit"]
 
 
-def test_a_saved_mod_applies_to_a_fresh_tree():
-    with tempfile.TemporaryDirectory() as folder:
-        root = recorded(folder)
-        (root / "map/a.c").write_text("mine\n", encoding="utf-8")
-        (root / "lib/extra.c").write_text("extra\n", encoding="utf-8")
-        mod = Path(folder) / "mod"
-        assert tree.save_mod(root, mod) == {"saved": ["lib/extra.c", "map/a.c"], "removed": []}
-        fresh = make_tree(Path(folder) / "fresh", FILES)
-        tree.record(fresh, list(FILES))
-        assert tree.apply_mod(mod, fresh)["applied"] == ["lib/extra.c", "map/a.c"]
-        assert (fresh / "map/a.c").read_text(encoding="utf-8") == "mine\n"
-        assert (fresh / "lib/extra.c").read_text(encoding="utf-8") == "extra\n"
-
-
-def test_applying_over_an_edit_needs_force():
-    with tempfile.TemporaryDirectory() as folder:
-        root = recorded(folder)
-        (root / "map/a.c").write_text("mine\n", encoding="utf-8")
-        mod = Path(folder) / "mod"
-        tree.save_mod(root, mod)
-        (root / "map/a.c").write_text("changed again\n", encoding="utf-8")
-        try:
-            tree.apply_mod(mod, root)
-            raise AssertionError("apply should refuse")
-        except SystemExit as error:
-            assert "map/a.c" in str(error)
-        tree.apply_mod(mod, root, force=True)
-        assert (root / "map/a.c").read_text(encoding="utf-8") == "mine\n"
-
-
 def test_fork_gives_chosen_scripts_their_own_copy():
     with tempfile.TemporaryDirectory() as folder:
         root = recorded(folder)

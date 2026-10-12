@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from c2s import index, source
+from c2s import index, pathnames, source
 
 # build --start-at MAP:PROGRAM makes a test image whose New Game goes straight to a scene, so trying
 # a mod does not mean replaying up to it. Nothing in the source tree changes: build compiles a
@@ -67,13 +67,14 @@ def patched(text, target):
 
 
 # The patched new-game scripts, keyed by tree-relative path, for build to compile in their place.
-def overrides(tree, target):
+# texts holds mods' versions of tree files, which are patched instead of the tree's.
+def overrides(tree, target, texts=None):
     root = Path(tree)
     found = {}
     for path in sorted(root.rglob("*" + source.EXTENSION)):
         relative = path.relative_to(root).as_posix()
-        if NEW_GAME_SCRIPT.match(relative):
-            text = patched(path.read_text(encoding="utf-8"), target)
+        if NEW_GAME_SCRIPT.match(pathnames.unnamed(tree, relative)):
+            text = patched((texts or {}).get(relative) or path.read_text(encoding="utf-8"), target)
             if text is None:
                 raise SystemExit("%s has no PROGRAM(%s, ...) line to start from" % (relative, START_PROGRAM))
             found[relative] = text

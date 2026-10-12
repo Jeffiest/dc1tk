@@ -10,7 +10,7 @@ MANIFEST = "definitions.json"
 
 def empty():
     return {"sets": [], "names": {}, "strings": {}, "tables": [], "language": "en", "include": [], "scripts": {}, "executable": {},
-            "text": {}, "libraries": {}}
+            "text": {}, "libraries": {}, "paths": {}}
 
 
 def manifest(directory):
@@ -78,6 +78,9 @@ def load(directories):
         found["include"] += [name for name in settings.get("include", []) if name not in found["include"]]
         for table, entries in names.load(directory / "names").items():
             found["names"].setdefault(table, {}).update(entries)
+        paths = directory / "paths.json"
+        if paths.is_file():
+            found["paths"].update(json.loads(paths.read_text(encoding="utf-8"))["names"])
         libraries = directory / "libraries.json"
         if libraries.is_file():
             for key, entry in json.loads(libraries.read_text(encoding="utf-8"))["libraries"].items():

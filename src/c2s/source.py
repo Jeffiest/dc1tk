@@ -23,12 +23,17 @@ EDITOR_FLAGS = "compile_flags.txt"
 # folder, the tree's own include folder (disc.h) and its root (for "lib/..." includes). Functions
 # fall off their end into the compiler's implicit return 0, so that warning is off. Some retail
 # calls pass a string or pointer where the native reads an int; clang 15 and later make that an
-# error by default, which here would hide every later diagnostic, so it stays a warning.
-def editor_flags(sdk_dir, definition_sets):
+# error by default, which here would hide every later diagnostic, so it stays a warning. For a mod's
+# files, tree is the decompiled tree it sits on: its own libraries come first, then the tree's.
+def editor_flags(sdk_dir, definition_sets, tree=None):
     folders = [Path(sdk_dir)] + [Path(directory) / "include" for directory in definition_sets]
     flags = ["-xc", "-std=c2x", "-m32", "-Wno-unknown-pragmas", "-Wno-return-type", "-Wno-error=int-conversion"]
     flags += ["-I" + folder.resolve().as_posix() for folder in folders if folder.is_dir()]
-    flags += ["-Iinclude", "-I."]
+    if tree is None:
+        flags += ["-Iinclude", "-I."]
+    else:
+        base = Path(tree).resolve()
+        flags += ["-I" + (base / "include").as_posix(), "-I.", "-I" + base.as_posix()]
     return "\n".join(flags) + "\n"
 
 

@@ -48,7 +48,9 @@ definitions.
     and an image with edited scripts boots in PCSX2 and plays the edits.
 
 12. **Modding tools.** Decompiled files are `.c` with a `compile_flags.txt`,
-    so clangd editors read them with the SDK. `xref` and `flags` answer
+    so clangd editors read them with the SDK, and keep the game's codes with
+    readable names after them (`map/s/s51_raybrandt_castle/`). Mods are
+    folders of changed files that `build --mod` layers over the tree. `xref` and `flags` answer
     what starts an event, how a map is entered, which AI a monster runs and
     which save flags are free; a tree records what the decompiler wrote, so
     `changes`, `mod save`/`apply` and `fork` keep edits apart from its

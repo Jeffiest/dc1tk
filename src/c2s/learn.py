@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from c2s import compile, definitions, fingerprint, library, names, natives, parse, sdk, source, stb
+from c2s import compile, definitions, fingerprint, library, names, natives, parse, pathnames, sdk, source, stb
 
 DEFAULT_NAME = re.compile(r"^(f_[0-9a-f]+|func_\d+|program_\d+|shared_\d+|start|[a-z0-9_]+_\d+_\d+)$")
 DEFAULT_VARIABLE = re.compile(r"^[av]\d+$")
@@ -68,7 +68,7 @@ def source_files(tree):
 
 def disc_path(path, source):
     source = Path(source)
-    relative = Path(path).name if source.is_file() else Path(path).relative_to(source).as_posix()
+    relative = Path(path).name if source.is_file() else pathnames.unnamed(source, Path(path).relative_to(source).as_posix())
     return str(Path(relative).with_suffix(".stb").as_posix())
 
 

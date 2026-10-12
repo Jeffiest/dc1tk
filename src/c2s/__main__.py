@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from c2s import (asm, compile, coverage, decompile, definitions, disc, extract, flags, index, learn, library, messages, names,
-                 natives, notes, parse, rebuild, sdk, source, startat, stb, tree, verify, xref)
+                 mods, natives, notes, parse, pathnames, rebuild, sdk, source, startat, stb, tree, verify, xref)
 
 
 def run_extract(args):
@@ -112,8 +112,15 @@ def run_decompile_disc(args, tables, defs, headers):
     paths = [path if prefix == "." else prefix + "/" + path for path in verify.find_scripts(args.stb)]
     defs, headers, generated = disc.with_header(str(root), defs, headers)
     model = library.model_for(str(root), paths, tables, defs, headers)
+    naming = pathnames.lookups(str(root), defs)
+    renamed = {library_entry["path"]: pathnames.named_library(library_entry["path"], naming)
+               for library_entry in model["libraries"].values()}
+    model = pathnames.with_named_libraries(model, naming)
     texts = library.library_texts(model)
-    written = list(texts) + [Path(path).with_suffix(source.EXTENSION).as_posix() for path in paths] + [source.EDITOR_FLAGS]
+    for path in paths:
+        plain = Path(path).with_suffix(source.EXTENSION).as_posix()
+        renamed[plain] = pathnames.named_script(plain, naming)
+    written = list(texts) + [renamed[Path(path).with_suffix(source.EXTENSION).as_posix()] for path in paths] + [source.EDITOR_FLAGS]
     if generated is not None:
         written.append("include/" + disc.HEADER)
     blocked = tree.overwrites(out, written) if out.is_dir() else []
@@ -130,11 +137,12 @@ def run_decompile_disc(args, tables, defs, headers):
     for path in paths:
         table = natives.table_for(path, defs["tables"])
         program = decompile.decompile(stb.read((root / path).read_bytes()), table, tables)
-        target = (out / path).with_suffix(source.EXTENSION)
+        target = out / renamed[Path(path).with_suffix(source.EXTENSION).as_posix()]
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.text(library.script_program(program, path, model)), encoding="utf-8")
     (out / source.EDITOR_FLAGS).write_text(source.editor_flags(args.sdk, defs["sets"]), encoding="utf-8")
     tree.record(out, written)
+    pathnames.record(out, renamed)
     print("%d scripts and %d library files written to %s" % (len(paths), len(texts), out))
     return 0
 
@@ -167,17 +175,28 @@ def run_compile(args):
 
 def run_build(args):
     defs = loaded_definitions(args)
-    overrides = None
+    mod_dirs = [mods.folder(args.mods, name) for name in args.mod]
+    overrides, clashes = mods.overlay(mod_dirs, args.source)
+    if clashes:
+        raise SystemExit(mods.clash_text(clashes))
+    for mod_dir in mod_dirs:
+        print("mod %s: %d files" % (mod_dir.name, len(mods.contents(mod_dir, args.source))))
+        for path in mods.stale(mod_dir, args.source):
+            print("warning: %s changed in the decompiler's output since %s was made; compare them" % (path, mod_dir.name))
     if args.start_at:
         target = startat.parse_target(args.start_at)
         consts = index.constants(index.tree_headers(args.source, defs, args.sdk))
         for warning in startat.warnings(args.source, consts, target):
             print("warning: " + warning)
-        overrides = startat.overrides(args.source, target)
+        patched = startat.overrides(args.source, target, overrides)
+        overrides = dict(overrides, **patched)
         print("start at: a new game goes to map %s at program %s (patched %s; flag %d marks it done)"
-              % (target["map"], target["program"], ", ".join(sorted(overrides)), startat.START_FLAG))
+              % (target["map"], target["program"], ", ".join(sorted(patched)), startat.START_FLAG))
     status = tree.status(args.source)
     if status is not None:
+        if mod_dirs and (status["edited"] or status["added"]):
+            print("note: %s itself has %d edited or added files, which are built in under the mods"
+                  % (args.source, len(status["edited"]) + len(status["added"])))
         for note in tree.library_notes(args.source, status):
             print("note: " + note)
     found = rebuild.changes(args.source, args.iso, defs, definitions.header_texts(defs, args.sdk), natives.load(args.natives),
@@ -240,16 +259,26 @@ def run_changes(args):
 
 
 def run_mod(args):
-    if args.mod_command == "save":
-        result = tree.save_mod(args.source, args.mod)
-        print("%d files saved to %s" % (len(result["saved"]), args.mod))
-        for path in result["removed"]:
-            print("note: %s was removed from the tree; apply leaves it in place" % path)
+    if args.mod_command == "list":
+        print(mods.listing(args.mods, args.source))
         return 0
-    result = tree.apply_mod(args.mod, args.source, args.force)
-    for warning in result["warnings"]:
-        print("warning: " + warning)
-    print("%d files applied to %s" % (len(result["applied"]), args.source))
+    if args.mod_command == "apply":
+        result = mods.apply([mods.folder(args.mods, name) for name in args.names], args.source, args.force)
+        for warning in result["warnings"]:
+            print("warning: " + warning)
+        print("%d files applied to %s" % (len(result["applied"]), args.source))
+        return 0
+    mod_dir = mods.folder(args.mods, args.name)
+    if args.mod_command == "new":
+        copied = mods.new(args.source, mod_dir, args.files)
+        print("%d files copied into %s; edit them there" % (len(copied), mod_dir / mods.FILES))
+    else:
+        result = mods.save(args.source, mod_dir)
+        print("%d files saved to %s" % (len(result["saved"]), mod_dir))
+        for path in result["removed"]:
+            print("note: %s was removed from the tree; a mod cannot remove files" % path)
+    defs = loaded_definitions(args)
+    mods.write_editor_flags(mod_dir, args.source, args.sdk, defs["sets"])
     return 0
 
 
@@ -336,6 +365,9 @@ def parser():
     command.add_argument("-o", "--output", required=True, help="disc image to write")
     command.add_argument("--start-at", metavar="MAP:PROGRAM",
                          help="test image only: a new game goes straight to this map and program, as in s51:story_50")
+    command.add_argument("--mod", action="append", default=[], metavar="NAME",
+                         help="layer this mod over the tree; repeat for several, which may not change the same file")
+    command.add_argument("--mods", default="mods", help="the folder that holds the mods")
     common(command)
 
     command = commands.add_parser("verify", help="round-trip every script in an extracted disc")
@@ -385,15 +417,25 @@ def parser():
     command = commands.add_parser("changes", help="list files edited, added or removed since the tree was decompiled")
     command.add_argument("source", help="a decompiled source tree")
 
-    command = commands.add_parser("mod", help="save a tree's edits, or apply saved edits to a fresh tree")
+    command = commands.add_parser("mod", help="make, list and apply mods: folders of changed files layered over a tree")
     mod_commands = command.add_subparsers(dest="mod_command", required=True)
-    save_command = mod_commands.add_parser("save", help="copy every edited or added file into a mod folder")
+    new_command = mod_commands.add_parser("new", help="copy tree files into a mod, to edit them there")
+    new_command.add_argument("source", help="the decompiled source tree")
+    new_command.add_argument("name", help="the mod's name, a folder in the mods folder")
+    new_command.add_argument("files", nargs="+", help="tree files to copy into the mod, relative to the tree")
+    save_command = mod_commands.add_parser("save", help="copy every file edited or added in the tree into a mod")
     save_command.add_argument("source", help="the edited source tree")
-    save_command.add_argument("mod", help="folder to save the mod in")
-    apply_command = mod_commands.add_parser("apply", help="copy a saved mod's files into a source tree")
-    apply_command.add_argument("mod", help="the saved mod folder")
-    apply_command.add_argument("source", help="the source tree to apply it to")
+    save_command.add_argument("name", help="the mod's name, a folder in the mods folder")
+    list_command = mod_commands.add_parser("list", help="list the mods, their files, and mods that change the same file")
+    list_command.add_argument("source", help="the decompiled source tree")
+    apply_command = mod_commands.add_parser("apply", help="write mods' files into a source tree")
+    apply_command.add_argument("source", help="the source tree to apply them to")
+    apply_command.add_argument("names", nargs="+", help="mods to apply, in order")
     apply_command.add_argument("--force", action="store_true", help="replace files edited in the tree too")
+    for mod_command in (new_command, save_command, list_command, apply_command):
+        mod_command.add_argument("--mods", default="mods", help="the folder that holds the mods")
+    common(new_command)
+    common(save_command)
 
     command = commands.add_parser("fork", help="give scripts their own copy of a library, so edits to it reach only them")
     command.add_argument("source", help="a decompiled source tree")
