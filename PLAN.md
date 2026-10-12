@@ -142,9 +142,10 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
   showed in game. Script that check, so an image is booted and checked
   without a person watching. PCSX2 can run with its own settings
   (`-datapath`, `-nogui`) and log the game's console output to a file, so a
-  test mod could `print` a marker. Not tried yet: whether any script runs
-  before a new game is chosen on the title menu, which needs a button
-  press (PCSX2's command line cannot press one).
+  test mod could `print` a marker. But no script runs before a new game is
+  chosen on the title menu (the title screen only plays the attract movie,
+  `title.cpp`), and PCSX2's command line cannot press a button; an input
+  recording played from boot could.
 - **Other versions.** The NTSC and Japanese discs as definition sets; Dark
   Cloud 1 as a second engine.
 

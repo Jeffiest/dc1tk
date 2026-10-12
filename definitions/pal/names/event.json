@@ -7580,6 +7580,15 @@
    ],
    "doc": "Skippable scene where the exhausted Max and Donny talk about escaping Flotsam's Circus Troupe, and Donny shows Max the underground water channel, his secret base. Ends with a tip to talk to Donny and save first."
   },
+  "27f874bca3582445": {
+   "name": "talk_gordon_after_joining",
+   "locals": [
+    "chapter",
+    "active_chara"
+   ],
+   "doc": "Gordon's talk once his quest is cleared: he greets Monica politely, reminds Max not to mention the Holy Water to his father, or in chapter 8 muses about plants not yet seen.",
+   "loose": "9ff3cb22c49326df"
+  },
   "28166d2db6708675": {
    "name": "ask_to_leave_water_chamber",
    "loose": "cd969125494ed764",
@@ -14109,6 +14118,15 @@
     "progress"
    ],
    "doc": "At progress 100 (the demo build) shows the demo message and cancels the door. Otherwise does nothing, so the door works normally."
+  },
+  "4eb4e89e301f954c": {
+   "name": "talk_gordon_after_joining",
+   "locals": [
+    "chapter",
+    "active_chara"
+   ],
+   "doc": "Gordon's talk once his quest is cleared: he greets Monica politely, reminds Max not to mention the Holy Water to his father, or in chapter 8 muses about plants not yet seen.",
+   "loose": "9ff3cb22c49326df"
   },
   "4ebca19c0cf03751": {
    "name": "load_e254_event",
@@ -30591,6 +30609,15 @@
    ],
    "doc": "Plays event 280. Jurak remembers that Griffon lived in ancient times and advises asking Crest, whose origin point was erased too. Max and Monica decide to revive it with the Carpenterion and leave for map s26."
   },
+  "af43dfc9ff8175d5": {
+   "name": "talk_gordon_after_joining",
+   "locals": [
+    "chapter",
+    "active_chara"
+   ],
+   "doc": "Gordon's talk once his quest is cleared: he greets Monica politely, reminds Max not to mention the Holy Water to his father, or in chapter 8 muses about plants not yet seen.",
+   "loose": "9ff3cb22c49326df"
+  },
   "af4aa51c5587a628": {
    "name": "choose_palace_dungeon_floor",
    "loose": "846318f1791181cd",
@@ -32408,6 +32435,15 @@
     "flag_428"
    ],
    "doc": "Enters Lab 2 (f03i0302). After the Veniccio arrival (flag 400) but before Shingala is freed (flag 420) it only says the door won't open; otherwise it keeps the current music until the Shell Talkie is given (flag 428) and enters."
+  },
+  "b7ab454adcf48672": {
+   "name": "talk_gordon_after_joining",
+   "locals": [
+    "chapter",
+    "active_chara"
+   ],
+   "doc": "Gordon's talk once his quest is cleared: he greets Monica politely, reminds Max not to mention the Holy Water to his father, or in chapter 8 muses about plants not yet seen.",
+   "loose": "9ff3cb22c49326df"
   },
   "b7bd6d51f03a44ef": {
    "name": "play_scene_then_go_to_s30_650",
