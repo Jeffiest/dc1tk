@@ -15,16 +15,17 @@ every script includes it.
 
 An event script for a town square: two actors placed in a camera shot, a
 greeting that changes on the second visit, and a global that counts visits.
-It shows `PROGRAM` and `MAIN`, helpers (`set_camera_view`, `place_actor`,
-`set_actor_face`) and waiting for a message to close.
+It explains programs, `MAIN`, `wait;`, actors and scene character slots,
+and shows helpers (`set_camera_view`, `place_actor`, `set_actor_face`) and
+your own text in a message window with `modkit_say`.
 
 ## [cutscene.c](cutscene.c)
 
 A one-off scene: the screen fades in on the town gate, a friend walks over
-to the player while the camera follows, the two trade a few lines in speech
-bubbles, and a story flag records that the scene has played. It shows
-actors bound to scene characters (`CHARA_PLAYER`), queued moves and motions,
-and polling natives (`check_actor_busy`, `is_message_closed`) in wait loops.
+to the player while the camera follows, the two trade a few lines, and a
+save flag records that the scene has played. It shows actors bound to scene
+characters (`CHARA_PLAYER`), queued moves and motions, waiting for them with
+`check_actor_busy`, fades, and playing a scene only once.
 
 ## [patrol.c](patrol.c)
 
