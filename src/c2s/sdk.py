@@ -608,7 +608,7 @@ def variable_access(node, reads, writes):
 # Names locals after the natives that fill them: a slot-numbered local takes the name of the result
 # it first holds, and a local with only that generic name (flag, flag_2) takes the name of what it
 # reads when every read agrees (griffon_defeated for get_flag(FLAG_GRIFFON_DEFEATED)).
-def named_locals(function, found):
+def named_locals(function, found, function_names=()):
     uses = out_uses(function["body"], found, [])
     by_variable = collections.defaultdict(set)
     for variable, wanted, generic in uses:
@@ -630,7 +630,7 @@ def named_locals(function, found):
     if not unnamed:
         return function
     taken = ({param["name"] for param in function["params"]} | {declared["name"] for declared in function["locals"]}
-             | set(names.variables(function["body"], [])) | KEYWORDS | reserved(found))
+             | set(names.variables(function["body"], [])) | KEYWORDS | reserved(found) | set(function_names))
     mapping = {}
     for variable, wanted, _ in uses:
         if variable not in unnamed or variable in mapping:
@@ -729,11 +729,12 @@ def present_functions(functions, found, params_by_kind=None):
         functions = [dict(function, body=call_named(function["body"], found, function_kinds))
                      if function["kind"] == "function" else function for function in functions]
     inlines = ordered_inlines(found)
+    function_names = {function["name"] for function in functions if function["kind"] == "function"}
     prepared = []
     for function in functions:
         if function["kind"] == "function":
             function = dict(function, body=assets.named(old_numbered(function["body"], found), found))
-            function = named_locals(function, found)
+            function = named_locals(function, found, function_names)
             function = dict(function, body=folded(function["body"], found, inlines, set()))
         prepared.append(function)
     sounds = program_sounds(prepared, found)
@@ -828,6 +829,9 @@ SOUND_ENTRY_ARGS = {"play_se": (0, 1), "stop_se": (0, 1), "pause_se": (0, 1), "s
                     "set_se_pan": (0, 1), "set_se_pitch": (0, 1), "get_se_status": (0, 1), "play_actor_se": (1, 2),
                     "play_actor_se_after": (2, 3)}
 EVENT_PORT = "event port"
+# What the sound pass records for a variable that is written, or a parameter passed, something it
+# cannot follow; a variable seen with it is never settled.
+UNKNOWN_BANK = "?"
 
 
 # A context with the definition set's event bank of each sound set, keyed by number.
@@ -878,7 +882,7 @@ def program_sounds(functions, found):
                 flow = dict(sound_flow(function, known), info=info)
                 named_sounds(function["body"], found, sound_banks(function, known), flow)
         learned = {"globals": single_kinds(info["globals"]), "params": single_kinds(info["params"]),
-                   "outs": single_kinds(info["outs"]), "port": next(iter(info["port"])) if len(info["port"]) == 1 else None}
+                   "outs": single_kinds(info["outs"]), "port": single_kinds({"port": info["port"]}).get("port")}
         if learned == known:
             break
         known = learned
@@ -886,7 +890,7 @@ def program_sounds(functions, found):
 
 
 def single_kinds(found_sets):
-    return {key: next(iter(kinds)) for key, kinds in found_sets.items() if len(kinds) == 1}
+    return {key: next(iter(kinds)) for key, kinds in found_sets.items() if len(kinds) == 1 and UNKNOWN_BANK not in kinds}
 
 
 def sound_flow(function, known):
@@ -910,6 +914,19 @@ def sound_banks(function, known):
 
 def set_bank(banks, name, kind, flow):
     banks[name] = kind
+    record_bank(name, kind, flow)
+
+
+# A write of something other than a bank id: the variable no longer holds a bank here, and a global,
+# out-parameter or the event port written so is not always one bank.
+def forget_bank(banks, name, flow):
+    if name is None:
+        return
+    banks.pop(name, None)
+    record_bank(name, UNKNOWN_BANK, flow)
+
+
+def record_bank(name, kind, flow):
     info = flow.get("info") if flow else None
     if info is None:
         return
@@ -945,19 +962,28 @@ def named_sounds(nodes, found, banks, flow=None):
     for node in nodes:
         kind = node["kind"]
         if kind == "if":
-            otherwise = None if node["else"] is None else named_sounds(node["else"], found, banks, flow)
-            node = dict(node, then=named_sounds(node["then"], found, banks, flow), **{"else": otherwise})
+            # each branch starts from the banks before it, and after the if a variable keeps the
+            # bank every path that goes on agrees on
+            then_banks, else_banks = dict(banks), dict(banks)
+            then = named_sounds(node["then"], found, then_banks, flow)
+            otherwise = None if node["else"] is None else named_sounds(node["else"], found, else_banks, flow)
+            node = dict(node, then=then, **{"else": otherwise})
+            merge_banks(banks, [(then_banks, then), (else_banks, otherwise or [])])
         elif kind == "while":
-            node = dict(node, body=named_sounds(node["body"], found, banks, flow))
+            body_banks = dict(banks)
+            node = dict(node, body=named_sounds(node["body"], found, body_banks, flow))
+            merge_banks(banks, [(body_banks, []), (dict(banks), [])])
         elif kind == "expr" and node["expr"]["kind"] == "assign":
             target, value = node["expr"]["target"], node["expr"]["value"]
             source = value["name"] if value["kind"] == "var" else None
-            if pointer_target(target, flow) and source in banks:
-                set_bank(banks, pointer_target(target, flow), banks[source], flow)
-            elif assigned_var(target) and source in banks:
-                set_bank(banks, assigned_var(target), banks[source], flow)
+            written = pointer_target(target, flow) or assigned_var(target)
+            if written and source in banks:
+                set_bank(banks, written, banks[source], flow)
+            elif literal_value(value, found) is not None:
+                # a number written to a bank variable marks it empty (id = -1), not another bank
+                banks.pop(written, None)
             else:
-                banks.pop(assigned_var(target), None)
+                forget_bank(banks, written, flow)
         elif kind in ("native", "call"):
             args = node["args"]
             positions = SOUND_ENTRY_ARGS.get(node["name"])
@@ -967,39 +993,71 @@ def named_sounds(nodes, found, banks, flow=None):
                 node = dict(node, args=args[:entry] + [named] + args[entry + 1:])
             if kind == "call":
                 for position, arg in enumerate(args):
-                    if info is not None and arg["kind"] == "var" and arg["name"] in banks:
-                        info["params"][(node["name"], position)].add(banks[arg["name"]])
+                    if arg["kind"] == "var" and info is not None:
+                        info["params"][(node["name"], position)].add(banks.get(arg["name"], UNKNOWN_BANK))
                     elif arg["kind"] == "addr" and (node["name"], position) in known["outs"]:
                         set_bank(banks, assigned_var(arg), known["outs"][(node["name"], position)], flow)
+                    elif arg["kind"] == "addr":
+                        # the function may write anything through the pointer
+                        banks.pop(assigned_var(arg), None)
             else:
-                for written in [node.get("result")] + [arg for arg in args if arg["kind"] == "addr"]:
-                    banks.pop(assigned_var(written), None)
-                result = assigned_var(node.get("result"))
-                if node["name"] == "get_system_sound_id" and result:
-                    set_bank(banks, result, "system_se", flow)
-                elif node["name"] == "get_sound_id" and len(args) > 1 and assigned_var(args[1]):
-                    bank = args[0]["name"] if args[0]["kind"] == "var" else args[0].get("value")
-                    if bank in SOUND_BANKS:
-                        set_bank(banks, assigned_var(args[1]), SOUND_BANKS[bank], flow)
-                elif node["name"] == "load_sound" and len(args) >= 2:
-                    loaded = loaded_bank(node, found)
-                    last = args[-1]
-                    target = result or (assigned_var(last) if last["kind"] == "addr" else None)
-                    if target is None and flow and last["kind"] == "var" and last["name"] in flow["pointers"]:
-                        target = last["name"]
-                    # the two-argument form, load_sound(set, &id), loads on the event port
-                    has_port = len(args) > 2 or args[1]["kind"] != "addr"
-                    port = (args[0]["name"] if args[0]["kind"] == "var" else args[0].get("value")) if has_port else "SND_PORT_EVENT"
-                    if loaded and target:
-                        set_bank(banks, target, loaded, flow)
-                    if loaded and port in ("SND_PORT_EVENT", literal_value({"kind": "var", "name": "SND_PORT_EVENT"}, found)):
-                        set_bank(banks, EVENT_PORT, loaded, flow)
-                elif node["name"] == "get_sound_port_bank" and result and EVENT_PORT in banks:
-                    port = args[0]["name"] if args and args[0]["kind"] == "var" else None
-                    if port in (None, "SND_PORT_EVENT"):
-                        set_bank(banks, result, banks[EVENT_PORT], flow)
+                for target, bank in native_banks(node, found, banks, flow).items():
+                    if bank is None:
+                        forget_bank(banks, target, flow)
+                    else:
+                        set_bank(banks, target, bank, flow)
         out.append(node)
     return out
+
+
+# The variables a native call writes and the bank each then holds (None for anything else).
+def native_banks(node, found, banks, flow):
+    args = node["args"]
+    written = {assigned_var(target): None for target in [node.get("result")] + [arg for arg in args if arg["kind"] == "addr"]}
+    written.pop(None, None)
+    result = assigned_var(node.get("result"))
+    if node["name"] == "get_system_sound_id" and result:
+        written[result] = "system_se"
+    elif node["name"] == "get_sound_id" and len(args) > 1 and assigned_var(args[1]):
+        bank = args[0]["name"] if args[0]["kind"] == "var" else args[0].get("value")
+        written[assigned_var(args[1])] = SOUND_BANKS.get(bank)
+    elif node["name"] == "load_sound" and len(args) >= 2:
+        loaded = loaded_bank(node, found)
+        last = args[-1]
+        target = result or (assigned_var(last) if last["kind"] == "addr" else None)
+        if target is None and flow and last["kind"] == "var" and last["name"] in flow["pointers"]:
+            target = last["name"]
+        # the two-argument form, load_sound(set, &id), loads on the event port
+        has_port = len(args) > 2 or args[1]["kind"] != "addr"
+        port = (args[0]["name"] if args[0]["kind"] == "var" else args[0].get("value")) if has_port else "SND_PORT_EVENT"
+        if target:
+            written[target] = loaded
+        if port in ("SND_PORT_EVENT", literal_value({"kind": "var", "name": "SND_PORT_EVENT"}, found)):
+            written[EVENT_PORT] = loaded
+    elif node["name"] == "get_sound_port_bank" and result and EVENT_PORT in banks:
+        port = args[0]["name"] if args and args[0]["kind"] == "var" else None
+        if port in (None, "SND_PORT_EVENT"):
+            written[result] = banks[EVENT_PORT]
+    return written
+
+
+ENDS_PATH = ("return", "break", "continue")
+
+
+# Sets banks to what the paths that go on agree on: a variable one path forgets, or two paths give
+# different banks, is forgotten; one only some paths set keeps that bank (on the other paths it was
+# never a bank id). paths are (banks at the end, statements), and a path whose statements end in a
+# return, break or continue does not go on.
+def merge_banks(banks, paths):
+    going_on = [path_banks for path_banks, statements in paths if not statements or statements[-1]["kind"] not in ENDS_PATH]
+    if not going_on:
+        return
+    before = dict(banks)
+    banks.clear()
+    for name in set(before).union(*going_on):
+        kinds = {path_banks.get(name) for path_banks in going_on if name in path_banks or name in before}
+        if len(kinds) == 1 and None not in kinds:
+            banks[name] = kinds.pop()
 
 
 def shadowing(function, names_used):

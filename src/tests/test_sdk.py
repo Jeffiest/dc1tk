@@ -310,6 +310,28 @@ def test_banks_reach_entries_through_parameters_and_out_parameters():
     known = sdk.program_sounds([loader, player, caller], found)
     shown = sdk.named_sounds(player["body"], found, sdk.sound_banks(player, known), sdk.sound_flow(player, known))
     assert shown[0]["args"][1] == var("SE_SP_000_FANFARE")
+    # a caller that passes something the pass cannot follow leaves the parameter unsettled
+    other = {"kind": "function", "name": "on_end", "params": [], "locals": [{"name": "id"}],
+             "body": [{"kind": "expr", "expr": {"kind": "assign", "target": var("id"), "value": {"kind": "call", "name": "get", "args": []}}},
+                      {"kind": "call", "name": "play_fanfare", "args": [var("id")]}]}
+    known = sdk.program_sounds([loader, player, caller, other], found)
+    assert ("play_fanfare", 0) not in known["params"]
+
+
+def test_banks_after_an_if_are_those_its_paths_agree_on():
+    found = {"enums": {"se_sp_000_pal": {0: "SE_SP_000_FANFARE"}}, "constants": {}, "sound_set_banks": {}}
+    var = lambda name: {"kind": "var", "name": name}
+    load = lambda path: {"kind": "native", "name": "load_sound",
+                         "args": [var("SND_PORT_MENU"), {"kind": "string", "text": path}], "result": var("id")}
+    play = {"kind": "native", "name": "play_se", "args": [var("id"), {"kind": "int", "value": 0}]}
+    branch = lambda otherwise: {"kind": "if", "cond": var("x"), "then": [load("snd2/sp/sp_000.snd")], "else": otherwise}
+    # only one path loads: on the other the id holds no bank
+    assert sdk.named_sounds([branch(None), play], found, {})[1]["args"][1] == var("SE_SP_000_FANFARE")
+    # the paths load different banks
+    assert sdk.named_sounds([branch([load("snd2/sp/sp_001.snd")]), play], found, {})[1]["args"][1]["kind"] == "int"
+    # the path that loads the other bank returns
+    returning = [load("snd2/sp/sp_001.snd"), {"kind": "return", "value": None}]
+    assert sdk.named_sounds([branch(returning), play], found, {})[1]["args"][1] == var("SE_SP_000_FANFARE")
 
 
 
@@ -327,3 +349,6 @@ def test_locals_called_unused_that_are_read_get_a_true_name():
     renamed = [declared["name"] for declared in sdk.named_locals(function, found)["locals"]]
     # read and never written; written and read; written only (still unused)
     assert renamed == ["unset_mode", "mode", "unused4"]
+    # nor do they take the name of one of the script's functions
+    renamed = [declared["name"] for declared in sdk.named_locals(function, found, {"mode"})["locals"]]
+    assert renamed == ["unset_mode", "mode_2", "unused4"]
