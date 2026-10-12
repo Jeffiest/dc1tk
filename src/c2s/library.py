@@ -315,6 +315,11 @@ def library_text(library, model):
               for kind, positions in model["kind_params"].items()}
     functions = messages.annotate_functions(functions, found, params, library_messages(library, model), model["disc_names"])
     functions = notes.annotate_siblings(functions, library_siblings(library, model))
+    # a library only scripts built for one older native table use reads its calls the same way
+    numberings = {sdk.numbering_of(definitions.script_entry({"scripts": model["scripts"]}, path))
+                  for path in library["user_paths"]}
+    if len(numberings) == 1:
+        found = sdk.numbered(found, numberings.pop())
     presented = notes.annotate_functions(sdk.present_functions(functions, found, params), model["translations"])
     return source.library_text(library["table"], presented, header, library["doc"])
 
@@ -410,7 +415,7 @@ def script_program(program, path, model):
     split = dict(renamed, functions=functions, padding_of=padding_of)
     entry = definitions.script_entry({"scripts": model["scripts"]}, path)
     scripted = names.with_script(split, entry, names.global_uses(hidden), forced)
-    presented = sdk.present(scripted, context, params)
+    presented = sdk.present(scripted, sdk.numbered(context, sdk.numbering_of(entry)), params)
     triggers = model.get("triggers", {}).get(str(Path(path).parent.as_posix()), {})
     if triggers:
         programs = [dict(entry, note="; ".join(triggers[original["no"]])) if original["no"] in triggers else entry
@@ -451,7 +456,8 @@ def expand(program, texts, headers=None):
             raise ValueError("#pragma padding_of names unknown function " + name)
     functions = [dict(function, padding=padding_of[function["name"]]) if function["name"] in padding_of else function
                  for function in functions]
-    return dict(program, natives=state["table"], functions=functions, padding_of={}, declarations=state["declarations"])
+    return dict(program, natives=state["table"], functions=functions, padding_of={}, declarations=state["declarations"],
+                library_docs=state.get("library_docs", {}))
 
 
 def absorbed_header(path, state):
@@ -472,6 +478,7 @@ def inline_library(path, state, chain):
         raise ValueError("cannot find included file " + path)
     state["included"].add(path)
     included = parse.parse(state["texts"][path])
+    state.setdefault("library_docs", {})[path] = included.get("doc", "")
     for key, value in included.get("declarations", {}).items():
         if isinstance(value, dict):
             state["declarations"].setdefault(key, {}).update(value)
@@ -487,7 +494,8 @@ def inline_library(path, state, chain):
             if table is not None and nested is not None and nested != table:
                 raise ValueError("%s uses natives %s, not %s" % (sub["path"], nested, table))
         else:
-            state["functions"].append(sub)
+            # which library a function came from, for defs learn
+            state["functions"].append(dict(sub, library=path))
     return table
 
 

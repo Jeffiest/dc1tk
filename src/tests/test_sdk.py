@@ -237,3 +237,34 @@ def test_raw_numbered_calls_name_the_native_they_were_written_for():
     # raw 60 is get_target_angle in the table the call was written for
     assert "    DIRECT get_monster_var2(1);  // old numbering, meant as get_target_angle\n" in shown
     assert "    DIRECT target_angle = get_target_angle();\n" in shown
+
+
+def test_scripts_built_for_the_old_table_read_current_groups_as_old():
+    header = (MONSTER_HEADER + "extern void set_visible_monster_limit(int count, OPTIONAL(int extra2)) NATIVE(110, 9);\n"
+              "extern void set_mask_flag(int mask, int on) NATIVE(120, 9);\n")
+    headers = dict(HEADERS, **{"monster.h": header})
+    text = MONSTER.replace("    AT(60) target_angle = get_target_angle();\n", "    set_visible_monster_limit(4, 1);\n")
+    data = compile.compile_program(library.expand(parse.parse(text), {}, headers), natives.load())
+    tables = natives.load()
+    found = sdk.header_context("monster", headers, tables)
+    program = decompile.decompile(stb.read(data), "monster", tables)
+    named = names.apply(program, {}, sdk.reserved(found), found["program_names"])
+    assert "old numbering" not in source.text(sdk.present(named, found))
+    shown = source.text(sdk.present(named, sdk.numbered(found, "old")))
+    assert "    set_visible_monster_limit(4, 1);  // old numbering, meant as set_mask_flag\n" in shown
+
+
+def test_sound_entries_take_the_names_of_the_bank_their_id_came_from():
+    header = EVENT_HEADER.replace("#endif", "extern int get_system_sound_id(void) NATIVE(620);\n"
+                                  "extern void play_se(int sound_id, int se_no, OPTIONAL(int volume, int pan)) NATIVE(602);\n"
+                                  "enum system_se_pal {\n    SE_TREASURE_GET = 18,\n};\n#endif")
+    headers = dict(HEADERS, **{"event.h": header})
+    text = EVENT.replace("    set_actor_texture_anim(1, 0);\n",
+                         "    flag = get_system_sound_id();\n    play_se(flag, 18);\n    flag = 3;\n    play_se(flag, 18);\n")
+    data = compile.compile_program(library.expand(parse.parse(text), {}, headers), natives.load())
+    tables = natives.load()
+    found = sdk.header_context("event", headers, tables)
+    program = decompile.decompile(stb.read(data), "event", tables)
+    shown = source.text(sdk.present(names.apply(program, {}, sdk.reserved(found), found["program_names"]), found))
+    assert "play_se(flag, SE_TREASURE_GET);" in shown
+    assert "play_se(flag, 18);" in shown

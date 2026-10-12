@@ -2,5 +2,6 @@
  "doc": "Monster script for the butterfly puzzle fight: seven butterfly monsters (kinds 501 to 507) hover at formation points high above the arena and must be defeated in numeric order, tracked in monster variable 8. Defeating one out of order resets the round (variable 8 set to 9), and defeating the seventh runs event script 501. Butterflies dodge shots by moving to a free formation slot and fire a sticky butterfly effect.",
  "globals": [
   "state"
- ]
+ ],
+ "numbering": "raw"
 }

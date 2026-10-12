@@ -28,6 +28,9 @@ typedef string directory;
 typedef int item_id;
 typedef any map_id;
 typedef int flag;
+typedef int bgm_file;
+typedef int sound_set;
+typedef int system_se;
 typedef int npc_id;
 typedef int monster_kind;
 typedef string chara_pack;
@@ -3024,7 +3027,7 @@ extern int get_npc_train_value(int column, int npc) NATIVE(573);
 // Registers a villager in a scene character slot. With a place number it starts at that villager
 // place's position and facing; without, a blank place is allocated from scene memory stack 4.
 // Original name: _REGISTER_VILLAGER.
-extern void register_villager(int slot, int villager, OPTIONAL(int place)) NATIVE(574);
+extern void register_villager(int slot, npc_id villager, OPTIONAL(int place)) NATIVE(574);
 
 // Switches between two named part groups on the active maps for the first-person view. Nonzero
 // shows the first group and hides the second; 0 does the reverse.
@@ -3157,7 +3160,7 @@ extern void stop_all_se_on_port(enum snd_port port) NATIVE(609);
 // Loads a music file by number into the scene's music slot. Does nothing when that file is already
 // loaded, or once after set_save_value command 3 set the skip flag.
 // Original name: _LOAD_BGM.
-extern void load_bgm(int bgm_file) NATIVE(610);
+extern void load_bgm(bgm_file bgm_file) NATIVE(610);
 
 // Plays a track of the loaded music file, stopping the previous one; scripts use track 0. volume
 // runs 0 to 127, and -1 or leaving it out uses the default.
@@ -3225,7 +3228,7 @@ extern void play_env_sound(int se_no, OPTIONAL(float volume)) NATIVE(623);
 
 // Plays a sound effect from the system sound bank. Negative numbers do nothing.
 // Original name: _SYS_SE_PLAY.
-extern void play_system_se(int se_no) NATIVE(624);
+extern void play_system_se(system_se se_no) NATIVE(624);
 
 // Stops and unloads all positional sound sources and resets the event and object sound ports.
 // Original name: _INIT_SE_SRC.
@@ -3326,7 +3329,7 @@ extern void load_se_base(int bank_no) NATIVE(646);
 // banks, the reverb setting and the environment sound loop. Banks already loaded are kept. Skipped
 // once after skip_next_sound_load.
 // Original name: _LOAD_SOUND.
-extern void load_sound_set(int sound_data_id) NATIVE(647);
+extern void load_sound_set(sound_set sound_data_id) NATIVE(647);
 
 // Stops and closes the event stream, restoring its saved volume. The channel argument is ignored;
 // the event stream is always used.
@@ -3342,7 +3345,7 @@ extern void open_stream_named(enum stream_channel channel, string file_name) NAT
 // background buffers. Does nothing when that number is already loaded or negative, and fails when
 // the file was not preloaded.
 // Original name: _LOAD_BGM_PACK.
-extern void load_bgm_pack(int bgm_no) NATIVE(650);
+extern void load_bgm_pack(bgm_file bgm_no) NATIVE(650);
 
 // Returns the number of the currently loaded music pack.
 // Original name: _GET_BGM_NO.
@@ -4527,7 +4530,7 @@ extern int get_slot_chara_id(int slot) NATIVE(1236);
 // Searches the villager and talk slots of the scene for chara_id and returns its slot number, or
 // -1.
 // Original name: _SEARCH_CHARA_NO.
-extern int find_villager_slot(int chara_id) NATIVE(1237);
+extern int find_villager_slot(npc_id chara_id) NATIVE(1237);
 
 // Looks for a random stone within 30 units of x, y, z. found receives 1 and the out position the
 // stone's position, or found is -1 and the position is 0, 0, 0.

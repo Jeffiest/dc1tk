@@ -30,6 +30,7 @@ python3 cli.py defs todo extracted        unnamed functions, most called first
 python3 cli.py disassemble <script.stb>   text assembly, for debugging
 python3 cli.py assemble <script.asm> -o <script.stb>
 python3 cli.py defs learn <source> <definition set>
+python3 cli.py defs disc extracted <definition set>  record which disc a set is for
 python3 cli.py natives <ChronicleTwo checkout>
 python3 cli.py test                       run the tests
 ```

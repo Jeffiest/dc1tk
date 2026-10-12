@@ -52,6 +52,19 @@ def write_output(path, text):
         sys.stdout.write(text)
 
 
+# Whether an extracted disc is the one the definition sets were made for.
+def disc_match_text(root, defs, differences=None):
+    if not defs["disc"]:
+        return "the definition sets record no disc to compare with"
+    differences = differences or definitions.disc_differences(root, defs)
+    if not any(differences.values()):
+        return "the disc is the one the definition sets were made for (%d scripts match)" % len(defs["disc"])
+    return ("the disc is not the one the definition sets were made for: %d scripts differ, %d are new, %d are "
+            "missing (first: %s); names and docs may not fit" % (
+                len(differences["differ"]), len(differences["unknown"]), len(differences["missing"]),
+                (differences["differ"] + differences["unknown"] + differences["missing"])[0]))
+
+
 def run_decompile(args):
     tables = natives.load(args.natives)
     defs = loaded_definitions(args)
@@ -65,8 +78,10 @@ def run_decompile(args):
     entries = names.with_loose(names.merged(defs["names"]), names.loose_map(program))
     named = names.apply(program, entries, sdk.reserved(found), program_names)
     named = with_messages(named, found, defs, args.stb)
-    scripted = names.with_script(named, definitions.script_entry(defs, args.stb))
+    entry = definitions.script_entry(defs, args.stb)
+    scripted = names.with_script(named, entry)
     params = messages.kind_params(named["functions"], found) if found is not None and "asm" not in named else {}
+    found = sdk.numbered(found, sdk.numbering_of(entry))
     write_output(args.output, source.text(notes.annotate(sdk.present(scripted, found, params), defs["strings"])))
     return 0
 
@@ -106,6 +121,9 @@ def sibling_strings(program, path, code, found):
 def run_decompile_disc(args, tables, defs, headers):
     if not args.output:
         raise SystemExit("decompiling a directory needs -o OUT_DIR")
+    differences = definitions.disc_differences(args.stb, defs)
+    if differences["differ"] or differences["unknown"]:
+        print("warning: " + disc_match_text(args.stb, defs, differences))
     out = Path(args.output)
     root = disc_root(Path(args.stb) / "manifest.json") or Path(args.stb)
     prefix = Path(args.stb).resolve().relative_to(root.resolve()).as_posix()
@@ -361,6 +379,11 @@ def run_defs(args):
         return 1 if result["failures"] else 0
     if args.defs_command == "check":
         print(coverage.format_check(coverage.check(args.extracted, defs, natives.load(args.natives))))
+        print(disc_match_text(args.extracted, defs))
+        return 0
+    if args.defs_command == "disc":
+        print("%d script hashes written to %s" % (definitions.write_disc(args.extracted, args.into),
+                                                  Path(args.into) / definitions.DISC))
         return 0
     if args.defs_command == "todo":
         rows, total = coverage.todo(args.extracted, defs, natives.load(args.natives),
@@ -453,6 +476,10 @@ def parser():
     todo_command.add_argument("extracted")
     todo_command.add_argument("--limit", type=int, default=50, help="rows to print")
     common(todo_command)
+    disc_command = defs_commands.add_parser("disc", help="record which disc a definition set is for: its scripts' hashes")
+    disc_command.add_argument("extracted")
+    disc_command.add_argument("into", help="definition set directory to write disc.json into")
+    common(disc_command)
 
     command = commands.add_parser("flags", help="save flags the scripts and engine use, and which are free")
     command.add_argument("source", help="a decompiled source tree")

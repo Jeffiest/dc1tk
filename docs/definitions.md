@@ -77,6 +77,7 @@ definitions/pal/
   include/              content headers included by every script
   notes/                research notes in Markdown
   libraries.json        library paths and docs
+  disc.json             the hash of each script on the disc the set is for
   paths.json            readable names for disc folders and scripts the disc
                         does not name (dungeons, the main characters)
 ```
@@ -121,8 +122,9 @@ Every part is optional. A new set can start with just a manifest.
   the archive) and where tables inside it live, such as the monster table
   (`{"address": ..., "record_size": 184}`); addresses differ between disc
   versions, so they belong to the set.
-- `disc` (planned) names a file of script paths and hashes, so tools can
-  tell whether a disc matches the set or has been modified.
+- `disc.json`, beside the manifest, holds the hash of each script on the
+  disc the set was made from (`cli.py defs disc`), so tools can tell
+  whether a disc matches the set or has been modified.
 
 ### Names
 
@@ -177,7 +179,10 @@ lines by instruction offset.
 `doc` is printed at the top of the file. `globals` names the script's
 globals in slot order; a global that included library code also uses keeps
 its slot name, so the library compiles in every script that includes it.
-An entry also applies to the script's language variants (`X.stb`,
+`"numbering": "old"` marks a monster script built for the older native
+table, whose group 110, 140 and 160 calls then get the comment naming the
+native they were written for, and `"raw"` one that calls natives by number
+from an older, smaller table (see [the SDK](sdk.md)). An entry also applies to the script's language variants (`X.stb`,
 `X_1.stb` ... `X_5.stb`) that have no entry of their own.
 
 ### Strings
@@ -325,7 +330,10 @@ constants (`place_monster(MONSTER_SEWER_RAT, ...)`, `add_item(ITEM_ROYAL_SWORD)`
 `compile` and `build` find the header through the source tree's `include/`
 folder. Without a disc the same kinds fall back to comments.
 
-Planned: scene character slots (which pack a slot holds) and `sound`.
+Character slots cannot be named per map: villagers fill slots in an
+order that changes with the story (see `notes/characters.md`); the
+villager ids scripts look them up by are `enum npc_id`. Music files and
+sound sets have enums in the PAL set's `pal.h` (see `notes/sounds.md`).
 
 ## Rules that keep it safe
 
@@ -346,13 +354,17 @@ The easiest way to write definitions is to edit decompiled code:
    above functions and at the top of scripts, in `decompiled/`.
 3. `cli.py defs learn decompiled definitions/pal` compiles the edited files,
    fingerprints each function, and records every name, doc and global name
-   that differs from the decompiler's defaults. Because names do not change
-   bytecode, any edit that still compiles to the same function teaches the
-   definition set.
+   that differs from the decompiler's defaults, and the file name and top
+   comment of each library file (into `libraries.json`). Because names do
+   not change bytecode, any edit that still compiles to the same function
+   teaches the definition set.
 4. Commit the definition set.
 
 To see where things stand:
 
+- `cli.py defs disc extracted definitions/pal` records the disc the set is
+  for in `disc.json`; `decompile` then warns when it is given a different
+  disc, and `defs check` says whether the disc matches.
 - `cli.py defs check extracted` reports how much of the disc the set
   names, per native table, by function and by distinct class, and entries
   that match nothing on the disc.

@@ -41,7 +41,7 @@ def script_entry(program):
 def script_entries(path, tables, headers, rules):
     program = parse.parse(Path(path).read_text(encoding="utf-8"))
     if "asm" in program:
-        return None, {}, {}
+        return None, {}, {}, {}
     expanded = library.expand(program, library.read_includes(program, path), dict(headers, **definitions.source_headers(path)))
     table = expanded["natives"] or natives.table_for(Path(path).resolve().as_posix(), rules)
     expanded["natives"] = table
@@ -62,7 +62,28 @@ def script_entries(path, tables, headers, rules):
         entry = learned_entry(function, context["programs"])
         if entry:
             entries[found[offset]] = dict(entry, loose=prints["loose"][offset])
-    return table, entries, script_entry(program)
+    return table, entries, script_entry(program), library_entries(functions, found, table, expanded["library_docs"])
+
+
+# The libraries a script includes, keyed as the decompiler keys them (the fingerprints of the
+# functions each holds, in order), with the path the script includes them by and their doc.
+def library_entries(functions, found, table, docs):
+    runs = []
+    for function, offset in zip(functions, sorted(found)):
+        path = function.get("library")
+        if path is None:
+            continue
+        if runs and runs[-1][0] == path:
+            runs[-1][1].append(found[offset])
+        else:
+            runs.append((path, [found[offset]]))
+    out = {}
+    for path, prints in runs:
+        entry = {"path": path}
+        if docs.get(path):
+            entry["doc"] = docs[path]
+        out[library.library_fingerprint(table, prints)] = entry
+    return out
 
 
 ALIAS = re.compile(r"^(.+?)(?:_for_program_\d+|_\d+)$")
@@ -106,11 +127,12 @@ def write_script(target, path, entry):
 
 def learn(source, target, tables, headers, rules):
     collected = {}
+    found_libraries = {}
     failures = []
     scripts = 0
     for path in source_files(source):
         try:
-            table, entries, entry = script_entries(path, tables, headers, rules)
+            table, entries, entry, libraries = script_entries(path, tables, headers, rules)
         except ValueError as error:
             failures.append("%s: %s" % (path, error))
             continue
@@ -121,6 +143,11 @@ def learn(source, target, tables, headers, rules):
         if entry:
             write_script(target, disc_path(path, source), entry)
             scripts += 1
+        for key, library_entry in libraries.items():
+            # the set keeps library paths under the disc's folder names, as the decompiler makes them
+            if Path(source).is_dir():
+                library_entry = dict(library_entry, path=pathnames.unnamed(source, library_entry["path"]))
+            found_libraries.setdefault(key, library_entry)
     directory = Path(target) / "names"
     directory.mkdir(parents=True, exist_ok=True)
     existing = names.load(directory)
@@ -132,4 +159,33 @@ def learn(source, target, tables, headers, rules):
         (directory / (table + ".json")).write_text(
             json.dumps({"functions": dict(sorted(merged.items()))}, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
         counts[table] = len(entries)
-    return {"learned": counts, "scripts": scripts, "failures": failures}
+    libraries = write_libraries(target, found_libraries)
+    return {"learned": counts, "scripts": scripts, "libraries": libraries, "failures": failures}
+
+
+# Records the path and doc of each library the set already knows (a key the decompiler made), when
+# they differ from what the set says. Returns how many changed.
+def write_libraries(target, found):
+    file = Path(target) / "libraries.json"
+    if not file.is_file():
+        return 0
+    data = json.loads(file.read_text(encoding="utf-8"))
+    known = data.get("libraries", {})
+    taken = {entry.get("path") for entry in known.values()}
+    changed = 0
+    for key, entry in found.items():
+        if key not in known:
+            continue
+        updated = dict(known[key])
+        if entry["path"] != updated.get("path") and entry["path"] not in taken:
+            taken.discard(updated.get("path"))
+            updated["path"] = entry["path"]
+            taken.add(entry["path"])
+        if entry.get("doc") and entry["doc"] != updated.get("doc"):
+            updated["doc"] = entry["doc"]
+        if updated != known[key]:
+            known[key] = updated
+            changed += 1
+    if changed:
+        file.write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    return changed

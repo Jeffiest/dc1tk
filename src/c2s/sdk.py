@@ -77,6 +77,8 @@ def context(declarations, table, tables):
         "float_names": float_names,
         "old_groups": {int(base): new for base, new in tables.get(table, {}).get("old_groups", {}).items()},
         "old_direct": {int(number): new for number, new in tables.get(table, {}).get("old_direct", {}).items()},
+        "old_table_groups": {int(base): new for base, new in tables.get(table, {}).get("old_table_groups", {}).items()},
+        "old_table": False,
         "by_number": {declared["no"]: declared["name"] for declared in declarations["natives"]},
     }
     for inline in declarations["inlines"]:
@@ -558,12 +560,28 @@ def present_functions(functions, found, params_by_kind=None):
         if function["kind"] == "function":
             function = dict(function, body=old_numbered(function["body"], found))
             function = named_locals(function, found)
-            body = folded(function["body"], found, inlines, set())
+            body = named_sounds(folded(function["body"], found, inlines, set()), found, {})
             if found["float_names"] and not shadowing(function, found["float_names"].values()):
                 body = named_floats(body, found)
             function = dict(function, body=body)
         out.append(function)
     return out
+
+
+# The context for a script its definition entry marks as built for an older native table, or a
+# library only such scripts use. "old": groups that are current groups too (old_table_groups) are
+# read as old there. "raw": every call by number without a group comes from the older, smaller
+# table, also those that land on a native the header gives no group (old_direct).
+def numbered(found, numbering):
+    if found is None or numbering not in ("old", "raw"):
+        return found
+    if numbering == "raw":
+        return dict(found, raw_table=True)
+    return dict(found, old_groups={**found["old_groups"], **found["old_table_groups"]}, old_table=True)
+
+
+def numbering_of(entry):
+    return entry.get("numbering")
 
 
 # The native an old-numbered call was written for. A call with an old group base selects the native
@@ -574,8 +592,11 @@ def meant_native(node, found):
     declared = found["by_original"].get(node["name"])
     if declared is None:
         return None
+    if node["base"] is None and found.get("old_table") and declared["no"] in found["old_groups"]:
+        # a call to an old group's first number, made without a group
+        return found["by_number"].get(found["old_groups"][declared["no"]])
     if node["base"] is None:
-        if declared["base"] is None or declared["no"] not in found["old_direct"]:
+        if (declared["base"] is None and not found.get("raw_table")) or declared["no"] not in found["old_direct"]:
             return None
         return found["by_number"].get(found["old_direct"][declared["no"]])
     if node["base"] not in found["old_groups"]:
@@ -601,6 +622,49 @@ def old_numbered(nodes, found):
                 notes.append("no native at this number, so the call does nothing")
             if notes:
                 node = dict(node, comment="; ".join(notes + ([node["comment"]] if node.get("comment") else [])))
+        out.append(node)
+    return out
+
+
+# The kind of sound entry play_se plays from a bank id, by where the id came from.
+SOUND_BANKS = {"SE_BANK_BASE": "base_se", "SE_BANK_BASE_2": "base_se", "SE_BANK_BASE_3": "base_se",
+               "SE_BANK_BATTLE": "battle_se", 1: "base_se", 2: "base_se", 3: "base_se", 4: "battle_se"}
+
+
+def assigned_var(node):
+    if node is not None and node["kind"] == "var":
+        return node["name"]
+    if node is not None and node["kind"] == "addr" and node["target"]["kind"] == "var":
+        return node["target"]["name"]
+    return None
+
+
+# Names the entry number of play_se(id, n) when id was read from the system bank
+# (get_system_sound_id) or a scene bank (get_sound_id(SE_BANK_BASE, &id)) earlier in the function:
+# banks maps each such variable to the kind of its entries, and any other write to it forgets it.
+def named_sounds(nodes, found, banks):
+    out = []
+    for node in nodes:
+        kind = node["kind"]
+        if kind == "if":
+            otherwise = None if node["else"] is None else named_sounds(node["else"], found, banks)
+            node = dict(node, then=named_sounds(node["then"], found, banks), **{"else": otherwise})
+        elif kind == "while":
+            node = dict(node, body=named_sounds(node["body"], found, banks))
+        elif kind == "expr" and node["expr"]["kind"] == "assign":
+            banks.pop(assigned_var(node["expr"]["target"]), None)
+        elif kind == "native":
+            args = node["args"]
+            if node["name"] == "play_se" and len(args) > 1 and assigned_var(args[0]) in banks:
+                node = dict(node, args=[args[0], named_literal(args[1], banks[assigned_var(args[0])], found)] + args[2:])
+            for written in [node.get("result")] + [arg for arg in args if arg["kind"] == "addr"]:
+                banks.pop(assigned_var(written), None)
+            if node["name"] == "get_system_sound_id" and assigned_var(node.get("result")):
+                banks[assigned_var(node["result"])] = "system_se"
+            elif node["name"] == "get_sound_id" and len(args) > 1 and assigned_var(args[1]):
+                bank = args[0]["name"] if args[0]["kind"] == "var" else args[0].get("value")
+                if bank in SOUND_BANKS:
+                    banks[assigned_var(args[1])] = SOUND_BANKS[bank]
         out.append(node)
     return out
 

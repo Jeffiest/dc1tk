@@ -2,7 +2,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from c2s import compile, decompile, definitions, learn, names, natives, parse, sdk, source, stb
+from c2s import compile, decompile, definitions, learn, library, names, natives, parse, sdk, source, stb
 from tests import test_source as examples
 
 DOCUMENTED = examples.NAMED.replace("void start(void)", "// Greets the visitor and counts the visit.\nvoid greet_visitor(void)")
@@ -14,7 +14,7 @@ def test_learn_records_names_and_docs():
         script = Path(folder) / "greet.c"
         script.write_text(DOCUMENTED, encoding="utf-8")
         result = learn.learn(script, Path(folder) / "defs", natives.load(), {}, [])
-        assert result == {"learned": {"event": 2}, "scripts": 1, "failures": []}
+        assert result == {"learned": {"event": 2}, "scripts": 1, "libraries": 0, "failures": []}
         table = json.loads((Path(folder) / "defs/names/event.json").read_text())["functions"]
         entries = sorted(({key: value for key, value in entry.items() if key != "loose"} for entry in table.values()),
                          key=lambda entry: entry["name"])
@@ -85,3 +85,29 @@ def test_a_handler_takes_the_name_of_the_program_it_handles():
     mapping = names.assign(program, {"f_0000": "abc", "f_0010": None}, {"abc": "on_dodge_shot"}, set(),
                            {101: "dodge_shot", 102: "dodge_melee"})
     assert mapping["f_0000"] == "on_dodge_melee"
+
+
+def test_a_set_knows_which_disc_it_was_made_for():
+    with tempfile.TemporaryDirectory() as folder:
+        disc, set_dir = Path(folder) / "disc", Path(folder) / "set"
+        (disc / "map").mkdir(parents=True)
+        set_dir.mkdir()
+        (disc / "map" / "a.stb").write_bytes(b"one")
+        (disc / "map" / "b.stb").write_bytes(b"two")
+        assert definitions.write_disc(disc, set_dir) == 2
+        defs = definitions.load([set_dir])
+        assert definitions.disc_differences(disc, defs) == {"differ": [], "missing": [], "unknown": []}
+        (disc / "map" / "a.stb").write_bytes(b"changed")
+        (disc / "map" / "b.stb").unlink()
+        (disc / "map" / "c.stb").write_bytes(b"new")
+        assert definitions.disc_differences(disc, defs) == {"differ": ["map/a.stb"], "missing": ["map/b.stb"],
+                                                            "unknown": ["map/c.stb"]}
+
+
+def test_libraries_are_keyed_by_the_functions_they_hold():
+    functions = [{"name": "a"}, {"name": "b", "library": "lib/x.c"}, {"name": "c", "library": "lib/x.c"},
+                 {"name": "d", "library": "lib/y.c"}]
+    found = {0: "f0", 16: "f1", 32: "f2", 48: "f3"}
+    entries = learn.library_entries(functions, found, "event", {"lib/x.c": "Shared helpers."})
+    assert entries == {library.library_fingerprint("event", ["f1", "f2"]): {"path": "lib/x.c", "doc": "Shared helpers."},
+                       library.library_fingerprint("event", ["f3"]): {"path": "lib/y.c"}}

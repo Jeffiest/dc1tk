@@ -34,7 +34,8 @@ FLAG_FUNCTIONS = {"get_flag": "get", "set_flag": "set", "get_dungeon_flag": "get
 def scan(tree, consts):
     uses, computed = {}, []
     for call in index.calls(tree, FLAG_FUNCTIONS):
-        if not call["args"]:
+        # an old-numbered call that lands on a flag native was written for another one
+        if not call["args"] or call["meant"]:
             continue
         number = index.value(call["args"][0], consts)
         use = dict(call, access=FLAG_FUNCTIONS[call["name"]], expr=call["args"][0])

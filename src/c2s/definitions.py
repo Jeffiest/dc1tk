@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -10,7 +11,40 @@ MANIFEST = "definitions.json"
 
 def empty():
     return {"sets": [], "names": {}, "strings": {}, "tables": [], "language": "en", "include": [], "scripts": {}, "executable": {},
-            "text": {}, "libraries": {}, "paths": {}}
+            "text": {}, "libraries": {}, "paths": {}, "disc": {}}
+
+
+# The scripts of the disc a set was made from, by path and hash, so tools can tell whether a disc
+# is that one (disc_differences).
+DISC = "disc.json"
+
+
+def script_hash(data):
+    return hashlib.sha1(data).hexdigest()[:16]
+
+
+# The hashes of an extracted disc's scripts: {path: hash}.
+def disc_hashes(root):
+    from c2s import verify  # verify reads definitions itself
+    return {path: script_hash((Path(root) / path).read_bytes()) for path in verify.find_scripts(root)}
+
+
+# How an extracted disc differs from the one the loaded sets were made from: scripts that differ,
+# that the disc lacks, and that the sets do not know. Empty lists when no set records a disc.
+def disc_differences(root, defs):
+    if not defs["disc"]:
+        return {"differ": [], "missing": [], "unknown": []}
+    found = disc_hashes(root)
+    return {"differ": sorted(path for path, value in found.items() if path in defs["disc"] and defs["disc"][path] != value),
+            "missing": sorted(path for path in defs["disc"] if path not in found),
+            "unknown": sorted(path for path in found if path not in defs["disc"])}
+
+
+def write_disc(root, directory):
+    found = disc_hashes(root)
+    (Path(directory) / DISC).write_text(json.dumps({"scripts": dict(sorted(found.items()))}, indent=1) + "\n",
+                                        encoding="utf-8")
+    return len(found)
 
 
 def manifest(directory):
@@ -87,6 +121,9 @@ def load(directories):
                 found["libraries"][key] = dict(found["libraries"].get(key, {}), **entry)
         for path, entry in load_scripts(directory / "scripts").items():
             found["scripts"][path] = dict(found["scripts"].get(path, {}), **entry)
+        disc = directory / DISC
+        if disc.is_file():
+            found["disc"].update(json.loads(disc.read_text(encoding="utf-8"))["scripts"])
     for directory in order:
         found["strings"].update(notes.load(directory / "strings", found["language"]))
     return found

@@ -66,55 +66,61 @@ definitions.
    dialogue comments, a few hundred at a time. An audit of 1,800 random
    functions (a fifth of the 8,254 distinct ones) found 85% right; the rest
    were missing docs, about 60 wrong names and a few wrong docs, all fixed.
-   At that rate roughly 1,000 of the unaudited functions still have a wrong
-   name or doc. A second audit read the monster AI (`dungeon/monster` and
-   its libraries) against the SDK and renamed 134 distinct functions and
-   corrected the docs of 475:
-   calm and enraged loops swapped, `on_dodge_shot` handlers bound to
-   `dodge_melee`, branches no roll can reach, "100 unit" steps cut off
-   after a few frames, and docs that read old-numbered calls literally.
-   Scenes without dialogue are next.
-2. **Review script docs, library names and story flags.** None of these
-   were audited. Many library names and docs were written from the
-   function names alone. The 185 flag names in
-   `definitions/pal/include/pal.h` were mostly named from a few call sites
-   each, and three flags are never set by any script.
+   A second audit read the monster AI (`dungeon/monster` and its libraries)
+   against the SDK and renamed 134 distinct functions and corrected the
+   docs of 475: calm and enraged loops swapped, `on_dodge_shot` handlers
+   bound to `dodge_melee`, branches no roll can reach, "100 unit" steps cut
+   off after a few frames, and docs that read old-numbered calls literally.
+   A third read the map libraries' scenes without dialogue (about 7,800
+   definitions, 1,800 distinct bodies) and fixed 141 functions: warp docs
+   with wrong program numbers, wrong map parts and characters, and names
+   like `setup_monster_628_boss_arena` (the Metal Flotsam fight). Still
+   unaudited: map scripts' own functions, dialogue scenes, and the later
+   files of each scene group, which got a lighter pass.
+2. **Review script docs.** Not audited. Library docs were (164 corrected,
+   70 libraries renamed: language variants read as floors, docs listing
+   content the file lacks), all but about 100 small monster libraries; so
+   were the 185 story flags (35 renamed, 91 comments corrected, flag 51
+   named; `FLAG_FINAL_BOSS_DEFEATED` was Griffon's defeat, now
+   `FLAG_GRIFFON_DEFEATED`, and 732 is the Dark Element's).
 3. **Fewer numbered names.** About 2,700 function definitions on the disc
    end in a number. Most are copy numbers: a function that appears twice in
    a file (`resume_guard_and_dodge_after_shot_3`), or two functions given
    the same name (`do_nothing_2`); some numbers are part of the name
    (`enter_i01h01_event_105`). Give copies that callers tell apart, and
    same-named functions that differ, their own names.
-4. **Glosses for the remaining strings.** About 980 distinct Japanese
-   strings have no English beside them: debug `print` text, unused strings
-   kept in `#pragma strings` lines, and the inline dialogue of the original
-   Japanese scripts. The first two can be glossed in
-   `definitions/pal/strings/en.json`; the dialogue stays out of the shared
-   set by design (see [docs/definitions.md](docs/definitions.md)).
-5. **`defs learn` for everything a set holds.** It learns function names,
-   variables, docs, script docs and globals. Library paths, library docs
-   and library globals (`libraries.json`) and constants in `include/`
-   headers still have to be edited by hand.
+4. **`defs learn` for constants.** It learns function names, variables,
+   docs, script docs, globals, and library paths and docs. Constants in
+   `include/` headers and library globals are still edited by hand.
+
+Every Japanese string outside dialogue now has an English gloss; the
+dialogue of the original Japanese scripts stays out of the shared set by
+design (see [docs/definitions.md](docs/definitions.md)).
 
 ## Next: what numbers mean
 
-1. **Scene character slots.** Scripts activate and move characters by slot
-   (`activate_chara(37)`), and most slots are filled by the map, not by the
-   script. Read the map data that loads them, so each slot gets the name
-   of the character in it.
-2. **Sounds, music, motions and effects.** `load_sound(2809)`,
-   `play_bgm(22)` and effect numbers are still bare numbers. Find their
-   tables on the disc, or name the common ones in a content header.
-3. **Flags through arithmetic.** Flags reached as `base + i` or through a
-   variable print as numbers; only literal flag numbers print as names.
+1. **Sound effects from other banks.** Music files, sound sets and the
+   system, base and battle sounds print as names. `play_se` on a bank a
+   script loads by path (`load_sound(port, "snd2/sp/SP_000.snd", &id)`),
+   a sound set's event bank, or a monster's or character's own bank still
+   prints numbers: every bank's cfg names its entries (8,050 names, in
+   Japanese), so English names for the common ones and the same variable
+   tracking would name most of the rest (see
+   [the sound notes](definitions/pal/notes/sounds.md)).
+2. **Script-loaded character slots.** Maps do not fill character slots:
+   the engine fills the controlled character, the villagers (in an order
+   that changes with the story, so they cannot be named per map; scripts
+   find them by id, `find_villager_slot(NPC_...)`) and the time gate and
+   save point; scripts load the rest (see
+   [the character notes](definitions/pal/notes/characters.md)). Of 643
+   (map folder, slot) pairs scripts load, 369 always hold the same pack and
+   could be named per folder.
 
 ## Next: definitions format
 
 The rest of the proposal in [docs/definitions.md](docs/definitions.md):
 line notes anchored to an instruction offset, `types` to give a variable a
-value kind or enum, `returns` to override an inferred return type, and a
-`disc` manifest of script hashes so tools can tell whether a disc matches
-the set.
+value kind or enum, and `returns` to override an inferred return type.
 
 ## Later
 
@@ -132,13 +138,10 @@ the set.
 
 - Raw-number monster calls. Six monster scripts (`b02a1` to `b02a4`,
   `e236a`, `p00_23a`) call natives by number with no group, from an older
-  table. Same-shaped twins pin down 18 of its numbers (`old_direct` in
+  table, marked `"numbering": "raw"` in the definition set. Same-shaped
+  twins pin down 18 of its numbers (`old_direct` in
   `src/c2s/tables/monster.json`); the rest, mostly in `b02a1` and
   `p00_23a`, have no twin.
-- Old groups 110, 140 and 160. `b07a_atora_yellow`, `e08a` and `e09a` call
-  them where the current table has 120, 150 and 180 (twins confirm every
-  call), but those are current groups too, so the decompiler cannot
-  comment them per call. Telling it which scripts use the old table would.
 - Calls to numbers the engine does not register (`_EXT_67`, `_EXT_6` and
   others) do nothing: the VM finds no function and goes on. What they did
   in the table they were written for is unknown.

@@ -183,10 +183,18 @@ def calls(tree, names):
                 if position > match.start():
                     break
                 function = name
+            line_end = text.find("\n", end)
+            meant = OLD_NUMBERING.search(text[end:line_end if line_end >= 0 else len(text)])
             found.append({"path": relative(tree, path), "line": text.count("\n", 0, match.start()) + 1,
                           "function": function, "name": match.group(1),
-                          "args": split_args(text[match.end():end]), "text": text[match.start():end + 1]})
+                          "args": split_args(text[match.end():end]), "text": text[match.start():end + 1],
+                          "meant": meant.group(1) if meant else None})
     return found
+
+
+# The decompiler's comment on a call written for an older native table: the engine runs the native
+# the call names, but the script meant another.
+OLD_NUMBERING = re.compile(r"//.*\bold numbering, meant as (\w+)")
 
 
 # PROGRAM lines and includes of every file, keyed by tree-relative path.

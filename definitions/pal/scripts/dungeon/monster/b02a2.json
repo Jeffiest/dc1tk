@@ -1,3 +1,4 @@
 {
- "doc": "Monster script for the second b02a boss form, mostly empty hooks. It sets up defense and death handling and just turns in place forever."
+ "doc": "Monster script for the second b02a boss form, mostly empty hooks. It sets up defense and death handling and just turns in place forever.",
+ "numbering": "raw"
 }

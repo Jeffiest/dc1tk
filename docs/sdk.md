@@ -102,9 +102,10 @@ The scripts with those calls (`b07a_atora_yellow`, `e08a`, `e09a` and the
 libraries only they use) also call groups 110, 140 and 160 where the current table
 uses 120, 150 and 180: same-shaped functions elsewhere on the disc confirm
 every such call. Those groups are also current groups, used correctly by
-every other script, and a library function can be shared, so the decompiler
-does not comment these calls; read `AT(110)` and default-group calls of
-groups 110, 140 and 160 in those files as ten (twenty for 160) numbers on.
+every other script, so a definition set marks the scripts built for the
+older table (`"numbering": "old"` in their `scripts/` entry), and only in
+them, and in libraries only they use, are these calls commented
+(`old_table_groups` in `monster.json`).
 
 Six monster scripts (`b02a1` to `b02a4`, `e236a`, `p00_23a`) call natives
 by raw number with no group, from an older, smaller table; they show as
@@ -112,10 +113,13 @@ by raw number with no group, from an older, smaller table; they show as
 table, but same-shaped twins pin down 18 of its numbers (raw 52 to 61 are
 the current 77 to 86, for example), and `old_direct` in `monster.json`
 records them. A `DIRECT` call to one of those numbers gets the same
-comment:
+comment anywhere; in the scripts a definition set marks `"numbering":
+"raw"` (`b02a1` to `b02a7`, `e236a`, `p00_23a`) and the libraries only they
+use, so does a call that lands on a native the header gives no group:
 
 ```c
 DIRECT get_monster_var2(&turn_target);  // old numbering, meant as get_target_angle
+set_dungeon_flag(turn_target, speed);  // old numbering, meant as turn_to
 ```
 
 ## Constants
@@ -175,7 +179,16 @@ value is.
   lets several headers contribute names for one kind. `flag` (`set_flag`,
   `get_flag`) takes its names from the SDK's `enum flag_engine` (flags the
   engine itself names) and from a definition set's own `enum flag_...`,
-  such as story flags.
+  such as story flags. `bgm_file` (`load_bgm`, `load_bgm_pack`) and
+  `sound_set` (`load_sound_set`) take theirs from the PAL set's
+  `enum bgm_file_pal` and `enum sound_set_pal`, named from the music files'
+  cfg titles and the rows of `snd2/MAP_index.txt`; `system_se`
+  (`play_system_se`) from `enum system_se_pal`.
+- `play_se(id, n)` plays entry n of the bank `id` was read from, so the
+  decompiler follows the variable within a function: after
+  `id = get_system_sound_id()` or `get_sound_id(SE_BANK_BASE, &id)` (or
+  `SE_BANK_BATTLE`), n prints from `system_se`, `base_se` or `battle_se`
+  (`play_se(snd_id, SE_TREASURE_GET)`).
 
 ## Unregistered numbers
 

@@ -142,7 +142,7 @@
   "00d70f6357bea0ec": {
    "name": "press_panel_1_5",
    "loose": "8030fc6ad15ee521",
-   "doc": "Presses the panel at row 1, column 5: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 1, column 5: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "01005cdffad8f222": {
    "name": "give_test_items",
@@ -570,9 +570,9 @@
    "doc": "First visit tutorial on floor 1. Max enters through the door, takes out the Help Receiver and Donny explains the Floor Map, the Gate Key and Key Handle, then help messages explain clearing floors and Medals. Sets flag 100."
   },
   "031face0da848dc8": {
-   "name": "play_train_departure_scene",
+   "name": "play_run_beside_departing_train_scene",
    "loose": "fb035c1ef62f8b36",
-   "doc": "Cutscene of the train pulling out: starts the engine animation, sets the time to 7:00, moves Max and the train down the track while the camera pans, and waits for the confirm button."
+   "doc": "Test shot: starts the engine animation, sets 7:00 with time flowing, then the player runs along the platform (460 frames) while the train pulls away down the track (260 frames) and the camera pans; ends on a pad press."
   },
   "03385f68238a7b6d": {
    "name": "load_e616_scene_characters",
@@ -879,7 +879,7 @@
    "doc": "Plays the Gaspard confrontation and sword fight scenes, then sets up the boss fight: Monica becomes the active character, character switching and map moves are locked, the player is placed on the battleship and monster 510 appears. Stores the current time of day for later."
   },
   "056ac858f2a34e7e": {
-   "name": "reload_scene_keeping_player_position",
+   "name": "play_griffon_hatred_vision_midfight",
    "loose": "d4bf372815e265e1",
    "locals": [
     "player_pos",
@@ -887,7 +887,7 @@
     "camera_pos",
     "camera_target"
    ],
-   "doc": "Pauses the dungeon, saves the player and camera position, runs the scene reload in play_griffon_hatred_vision_scene, restores the saved position and camera, then fades back in."
+   "doc": "Mid-battle scene: fades out, pauses monster AI, drawing and player status, saves the player and camera, plays play_griffon_hatred_vision_scene, then restores the player, camera and pause state and fades back in."
   },
   "058694f131a8c20e": {
    "name": "play_winged_boss_transformation_scene",
@@ -969,7 +969,7 @@
   "060edeb59d427ad0": {
    "name": "begin_event_scene",
    "loose": "96c2c21199679ffa",
-   "doc": "Pauses events and runs two setup scenes."
+   "doc": "Switches the Lafrescia room into event mode (set_event_pause(1): weapon drawing paused, party hidden, swapping and map moves blocked), sets the room up for the story flags and plays the run-into-room scene."
   },
   "0613e9e3f000e027": {
    "name": "unload_event_372_charas",
@@ -1045,9 +1045,9 @@
    "doc": "Plays the title card scene and waits for a button press."
   },
   "068daba3472e7729": {
-   "name": "play_s55_scene_and_jump_to_f30_602",
+   "name": "play_golem_charge_then_jump_to_f30",
    "loose": "485b46d2db3e9e25",
-   "doc": "Runs the s55 scene part 5 and jumps to map f30 at entry 602."
+   "doc": "Plays the golem slope charge scene, skips the next BGM load and jumps to map f30 at entry 602."
   },
   "0698e34c978aae45": {
    "name": "play_password_challenge_scene",
@@ -1918,13 +1918,13 @@
    "doc": "Ferdinand asks for Chestnuts to try a Castagnaccio sweet because Mayor Need bought them all. Accepts quest 3."
   },
   "0b15ba2370ee6c1d": {
-   "name": "play_elephant_trumpet_shot",
+   "name": "play_flotsam_orders_elephant_again_shot",
    "params": [
     "sound_id"
    ],
    "loose": "1d8c9a211036cebd",
    "locals": [],
-   "doc": "Shot in the elephant ambush: the camera shows the elephant, Linda, and Flotsam, who turns and laughs that it is the same every time, then points and orders Linda to get them while she trumpets and the camera pushes in. Max and Monica are hidden for the shot."
+   "doc": "Flotsam turns and laughs that it is the same every time (voice 1080070), then points and orders Linda to get them (1080075) while the elephant trumpets and the camera pushes in. Max and Steve (characters 0 and 9) are hidden for the shot."
   },
   "0b2adf5f40e27036": {
    "name": "warp_to_d06e01_event_608",
@@ -2581,7 +2581,7 @@
    "doc": "Plays the Griffon reveal scene."
   },
   "0f058e8bd8724749": {
-   "name": "play_dungeon_landing_scene",
+   "name": "play_condor_drop_off_scene",
    "loose": "33a492ee0920034d",
    "locals": [
     "se_bank",
@@ -2592,7 +2592,7 @@
     "frame",
     "sound_id"
    ],
-   "doc": "A flying object swoops in and the player lands at (-230, 32, 1200) with a d03 landing animation, then fades out and returns control. Skippable."
+   "doc": "The condor (chara 8, p00_26a) swoops down over 60 frames, then the hidden player appears and lands at (-230, 32.1, 1200) with the d03 landing motion. After a fade out it stands the condor at (-316.7, 71.9, 806.8), resets the camera behind the player and fades back in. Skippable."
   },
   "0f1ff3040072d674": {
    "name": "play_opening_vacuum_repair_scene",
@@ -3111,7 +3111,7 @@
   "11d5838f635b11f5": {
    "name": "warp_to_boss_floor_after_story_532",
    "loose": "cf90642bfb0eed59",
-   "doc": "Story 532 program: warps to boss floor d05b01 and runs its event 5320 (id 532*10+10000)."
+   "doc": "Story 532 program: warps to boss floor d05b01 and runs its story_532 program (15320 = 532*10+10000)."
   },
   "11e8df88a17043b7": {
    "name": "debug_play_victory_speech",
@@ -3138,7 +3138,7 @@
    ],
    "loose": "3a4cde89c633ca5b",
    "params": [],
-   "doc": "Plays the head-shake refusal animation for the active character when the player is turned away. Loads the miss motion pack for the first two characters (nothing is shown for characters 2 and 3), turns toward the camera, plays the shake motion and turns back. Returns 0 only on the unsupported characters."
+   "doc": "Plays the no-no head-shake for the active character: loads the miss motion pack for Max or Monica, turns toward the camera over 6 frames, plays the shake and turns back. Does nothing for characters 2 and 3 (returns 0)."
   },
   "12017890f4485e7e": {
    "name": "play_victory_crowd_cheering_scene",
@@ -3161,9 +3161,9 @@
    "doc": "If the player agrees at the exit, advances the floor info and loads the d03 dungeon script."
   },
   "1209dcad4d6c097e": {
-   "name": "start_monster_609_battle",
+   "name": "start_trentos_battle",
    "loose": "1209dcad4d6c097e",
-   "doc": "Loads and places monster 609 (and loads 610), pauses the battle music and starts music 190, then fades in."
+   "doc": "Program boss_trentos: loads Trentos (monster 609) and Kortlenn (610), places Trentos 800 units back, pauses the battle music, starts BGM 190 and fades in."
   },
   "1212cd7b06440554": {
    "name": "delete_train_car_npcs",
@@ -3455,9 +3455,9 @@
    "doc": "Rufio's talk before the first quest is cleared: he wonders why he misses the moon and whether he came from there."
   },
   "14008357e555f9e4": {
-   "name": "open_menu_without_music_reload",
+   "name": "open_save_menu_keep_bgm",
    "loose": "7ad5524774806953",
-   "doc": "Sets the skip-load-BGM save value, opens the menu with a fade, then clears it."
+   "doc": "Opens the save menu with a fade (open_save_menu_with_fade) while the skip-load-BGM save value is set, so the train music is not reloaded, then clears the value."
   },
   "140ef692c2d71cbe": {
    "name": "show_wall_picture",
@@ -3504,7 +3504,7 @@
     "active_chara",
     "active_chara_2"
    ],
-   "doc": "Fades out the music and screen, clears monsters, switches a Ride Pod character back to the on-foot character and loads map s44 at event 510."
+   "doc": "Fades out music and screen over 20 frames, clears monsters, switches Steve back to Max or Monica's monster form back to Monica, plays the boss defeat scene (flag 728) and loads map s44 at event 510."
   },
   "1449fa51419c8843": {
    "name": "play_paznos_launch_scene",
@@ -4053,7 +4053,7 @@
   "174a50109f3f34db": {
    "name": "press_panel_1_0",
    "loose": "1420b74d333ccab8",
-   "doc": "Presses the panel at row 1, column 0: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 1, column 0: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "174bd646b4243d77": {
    "name": "choose_dungeon_floor_from_tree_map",
@@ -4099,7 +4099,7 @@
     "flag_a",
     "flag_b"
    ],
-   "doc": "Places and activates the opening characters at fixed positions. The balloon is attached to the handle instead of Pierrot when flags 2 and 3 are set and item 353 is owned."
+   "doc": "Activates and places the opening characters in slots 8 to 18 (Pierrot with his blade frames hidden, the townsfolk and the balloon). When both bystander flags are set and the circus ticket is owned, it hides two frames of the balloon model (himonet and f2--A01C0S1)."
   },
   "1774e61832ac7b6e": {
    "name": "show_butterfly_split_hint",
@@ -4770,7 +4770,7 @@
    "loose": "143aeff2cf1cf5dc",
    "params": [],
    "locals": [],
-   "doc": "Opens the menu with a fade out and in around it."
+   "doc": "Opens the save menu with a fade out and in around it (open_save_menu_with_fade)."
   },
   "1b116169071bdb48": {
    "name": "show_message_at",
@@ -5212,7 +5212,7 @@
    "locals": [
     "flag"
    ],
-   "doc": "Map start: while flag 632 is clear, plays the guardian intro, disables the rapis function point, loads monster 612 and places it ahead of the player and locks map movement; then fades in."
+   "doc": "Map start: runs setup_rapis_point_sound; while flag 632 (Lapis stone 3 found) is clear it plays the monster title card intro, disables the rapis point, places the Sea Dragon (monster 612) at z -800 and locks map movement. Then places the player at z 1100 facing it and fades in."
   },
   "1d4ef2c094ef3235": {
    "name": "talk_olivie_early",
@@ -5286,9 +5286,9 @@
    "doc": "Rufio's quest offer: he declines to come along because there is no moon, then a system message says he no longer trusts humans and suggests photographing the moon for him. Ends the event and sets quest 14 to accepted."
   },
   "1da30d56b6cb7e70": {
-   "name": "play_s55_scene_and_jump_to_f30_603",
+   "name": "play_far_view_then_jump_to_f30",
    "loose": "dea7736df4a0d279",
-   "doc": "Runs the s55 scene part 9 and jumps to map f30 at entry 603."
+   "doc": "Plays the far view shot without the golems, skips the next BGM load and jumps to map f30 at entry 603."
   },
   "1dad47451e20f64f": {
    "name": "play_cannon_talk_then_enter_bridge",
@@ -5944,7 +5944,7 @@
    "doc": "Plays the scene where Max runs along a path with a camera sweep."
   },
   "20dac40051f51155": {
-   "name": "play_victory_pose_a",
+   "name": "play_max_victory_pose",
    "params": [
     "show_banner"
    ],
@@ -5958,7 +5958,7 @@
     "yaw"
    ],
    "loose": "ab0a7d0e702516da",
-   "doc": "Victory pose after clearing a dungeon room: stops the music, shows the finish banner sprite when show_banner is set, the hero plays a win pose in front of the camera with a laughing voice line, then restores the camera and music. Skippable."
+   "doc": "Max's victory pose after clearing a dungeon room: loads c01b_win motions and the finish banner (drawn when show_banner is set, status bar hidden otherwise), follows Max with the camera, plays the victory pose, slides the banner to the corner after 90 frames and plays laughing voice 8500160, then restarts BGM 193. Skippable."
   },
   "20e6f4a4bce1bf9d": {
    "name": "interact_with_gate_3",
@@ -6180,7 +6180,7 @@
    "doc": "Two guards say the path is closed and advise turning back, then the player is faded out and put back at the entrance."
   },
   "2223f525dd7a23e3": {
-   "name": "play_victory_pose_a",
+   "name": "play_max_victory_pose",
    "params": [
     "show_banner"
    ],
@@ -6194,7 +6194,7 @@
     "yaw"
    ],
    "loose": "4de9acd0f3f95e2e",
-   "doc": "Victory pose after clearing a dungeon room: stops the music, shows the finish banner sprite when show_banner is set, the hero plays a win pose in front of the camera with a laughing voice line, then restores the camera and music. Skippable."
+   "doc": "Max's victory pose after clearing a dungeon room: loads his win motions and the finish banner (drawn when show_banner is set), has the camera follow him through the pose with a laughing voice line (8500160), then restores the camera and starts BGM 193. Skippable."
   },
   "226a472cba0df299": {
    "name": "ask_to_leave_floor",
@@ -6213,7 +6213,7 @@
   "226cd0d1b4f39f48": {
    "name": "spawn_fishing_tournament_villagers",
    "loose": "b91f9993d702a263",
-   "doc": "Loads the cup model and number and row-name images into globals number_image_block and row_name_image_block and spawns the villagers who watch the fishing tournament."
+   "doc": "Loads the cup and Race Master models and the tournament number and fish-name label images (into number_image_block and row_name_image_block), then spawns the villagers who watch the fishing tournament."
   },
   "2280c98f635c907c": {
    "name": "ask_to_move_to_main_street",
@@ -6531,6 +6531,11 @@
     "active_chara"
    ],
    "doc": "Deletes the scene characters and images after the Ixion scene, restores the active character and jumps to map s09 entrance 500."
+  },
+  "23dfabebd54f9248": {
+   "name": "vanish_spiral_rock_3",
+   "doc": "Binds map part p11_d06b02-3 and plays the spiral rock vanish scene.",
+   "loose": "6e34c88e16ce3558"
   },
   "23e9252e62b5090a": {
    "name": "play_paznos_launch_preparation_scene",
@@ -7109,7 +7114,7 @@
   "2656989aafa5d14c": {
    "name": "press_panel_0_5",
    "loose": "32aa6b1a06a11983",
-   "doc": "Presses the panel at row 0, column 5: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 0, column 5: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "266f77fb3a413250": {
    "name": "run_in_from_exit_64",
@@ -7418,7 +7423,7 @@
   "27ac8706de4c67be": {
    "name": "warp_to_s20_after_story_512",
    "loose": "2c11148fe1f08a6a",
-   "doc": "Story 512 program: warps to map s20 and runs its event 5120 (id 512*10+10000)."
+   "doc": "Story 512 program: warps to map s20 and runs its story_512 program (15120 = 512*10+10000)."
   },
   "27b5cc7cece9146a": {
    "name": "play_broken_flower_memory_scene",
@@ -8170,9 +8175,9 @@
    "doc": "Event 640 cutscene variant with music 115 in which Paznos begins to transform; Max and Monica ask what it is and remark that it looks like Paznos transforming. Used by program 630. Sets flag 640."
   },
   "2c8afe3f8984e4ae": {
-   "name": "wait_for_button_press",
+   "name": "wait_for_cross_press",
    "loose": "2c8afe3f8984e4ae",
-   "doc": "Starts an event and waits for the player to press pad button 64, then finishes."
+   "doc": "Starts an event, waits one frame and then until the player presses Cross (pad mask 64), then finishes the event."
   },
   "2c98c6384846ab2b": {
    "name": "play_room_entry_scene",
@@ -8217,9 +8222,9 @@
    "doc": "Variant of the slope charge in which only columns 3 to 5 of the golems run up the slope."
   },
   "2cf64c6fbcd2c81c": {
-   "name": "play_s55_closing_scenes",
+   "name": "play_golem_charge_columns",
    "loose": "171ed7523ea986f4",
-   "doc": "Waits 30 frames then runs three s55 scene parts in a row."
+   "doc": "Debug test: waits 30 frames, then plays the golem slope charge for the left, middle and right columns in turn."
   },
   "2d1942d89fcaf4a5": {
    "name": "talk_gerald_joined",
@@ -9032,7 +9037,7 @@
    ],
    "loose": "4b152293d0bb315d",
    "params": [],
-   "doc": "Returns how many of the 14 candle parts in the Ferdinand-area house (map part i01h07) are currently visible."
+   "doc": "Returns how many of the 14 candle parts in the Palm Brinks church (map part p08_i01h07, i01h07_13-m7 to m21) are currently visible; used by Bruno's candle quest."
   },
   "3290ca7c007eb2c8": {
    "name": "play_lin_tribute_ending_with_star",
@@ -9111,9 +9116,9 @@
    "doc": "Places the swamp characters, including the villagers while the story counter is below 7."
   },
   "330b3bd284bd37c2": {
-   "name": "receive_items_198_and_199",
+   "name": "receive_sun_and_moon_stones",
    "loose": "aa4ace827c9b082f",
-   "doc": "Places the player, fades in, gives items 198 and 199 with get messages and opens the item limit menu."
+   "doc": "Places the player at the south entry, fades in, waits 30 frames, gives the Sun Stone and Moon Stone (items 198 and 199) with get messages and opens the item limit menu with a fade."
   },
   "3316ec3ad85ee814": {
    "name": "pause_scene_briefly",
@@ -9130,9 +9135,9 @@
    "doc": "Event 540. Max and Monica tell the crew that Luna Lab finished the Ixion and they will ride it to the distant past to find Griffon. They are encouraged to bring light back to the world. Sets flag 540."
   },
   "3333774353148f8a": {
-   "name": "setup_town_and_place_villagers",
+   "name": "play_station_arrival_and_place_villagers",
    "loose": "55a7169f523691ce",
-   "doc": "Sets up the map objects, then places the villagers while Cedric, Borneo and Erik have their AI paused."
+   "doc": "Sets up the map objects, pauses the AI of villager slots 24 to 26, plays the Balance Valley station arrival scene, places the villagers and turns their AI back on."
   },
   "33436a593f585189": {
    "name": "start_s02b_script_502",
@@ -9268,12 +9273,12 @@
    "doc": "Binds the map part p03_i04h01 and sets it visible and its function point enabled together."
   },
   "3485fe0b0b640e0f": {
-   "name": "play_night_plateau_run_scene",
+   "name": "play_night_run_to_gerald_scene",
    "loose": "2bfa5fbea38a4750",
    "locals": [
     "index"
    ],
-   "doc": "Sets night time, removes the villagers 8 to 37, then shows a character running across a high plateau toward another while the camera rises along a path. Ends on a pad press and shows characters 122 and 123."
+   "doc": "Test scene at 22:00: removes the villagers and charas 8 to 37, hides charas 122 and 123, then the player walks and runs up the plateau toward Gerald (p01_11a) while the camera rises along a path. Ends on a pad press and shows 122 and 123 again."
   },
   "34a0ee0981b1d856": {
    "name": "get_analyze_200",
@@ -9764,9 +9769,9 @@
    "doc": "The train pulls in, the player steps out and the camera is reset behind him at (-270, 0, 3450)."
   },
   "37a46e22464b26ed": {
-   "name": "setup_monster_611_boss_arena",
+   "name": "start_lapis_garter_fight",
    "loose": "37a46e22464b26ed",
-   "doc": "Boss room start: places monster 611, holds the battle music and plays BGM 190."
+   "doc": "Program boss_lapis_garter: loads Lapis Garter (monster 611) and places it 800 units back, pauses the battle music, starts BGM 190 and fades in."
   },
   "37b6a8d9817fc94b": {
    "name": "setup_dream_spiral_floor",
@@ -10083,9 +10088,9 @@
    "doc": "Plays the train steam release and stops the engine. With fade_music set it fades out and stops the BGM."
   },
   "3991993fba192419": {
-   "name": "wait_for_button_press",
+   "name": "wait_for_cross_press",
    "loose": "3991993fba192419",
-   "doc": "Waits a frame and then for pad button 64."
+   "doc": "Waits one frame, then until the player presses Cross (pad mask 64)."
   },
   "39b2741e08459f46": {
    "name": "handle_villager_talk",
@@ -10371,7 +10376,7 @@
   "3ba6fbc9c2c6bf17": {
    "name": "warp_to_s20_after_story_516",
    "loose": "017abbef3bfff5c4",
-   "doc": "Story 516 program: warps to map s20 and runs its event 5160 (id 516*10+10000)."
+   "doc": "Story 516 program: warps to map s20 and runs its story_516 program (15160 = 516*10+10000)."
   },
   "3bc6d6aadf3be16b": {
    "name": "play_toryon_rock_throw_scene",
@@ -10518,9 +10523,9 @@
    "doc": "Event 440, sets flag 440: the Shigura turn out to be controlled by Gaspard's Marionette devices, a battleship drops in and Gaspard sets them on Max and Monica, leading to the boss fight."
   },
   "3c603946f4cbb2e8": {
-   "name": "play_scene_and_go_to_s12",
+   "name": "play_rock_barrage_then_go_to_s12",
    "loose": "fae7afdfae615ca4",
-   "doc": "Program 532: plays a story scene and then jumps to map s12 as program 590."
+   "doc": "Program 532: plays the Toryon rock barrage scene (play_rock_barrage_scene) and jumps to map s12 (Moon Flower Palace Stop) as program 590."
   },
   "3c6319bda7733fea": {
    "name": "load_e356_scene_characters",
@@ -10766,7 +10771,7 @@
     "se_id"
    ],
    "loose": "c2e2488078ac4f12",
-   "doc": "Boarding scene for a middle train car: reads the train id and position from the event, sets the world frame there, picks floor heights by map (map 83 and 54 differ, or alt_heights), binds the door and window parts for the chosen train id, sets counter 0 to the car number, plays the door sound and fades out."
+   "doc": "Boarding scene for a middle train car (train id 2 to 7 from the event): picks step heights by map (83, 54) or alt_heights, binds that car's door parts, sets counter 0 to the car number (1 to 3), opens the doors, walks the player in and fades out, then places the player inside the train."
   },
   "3dd5b55b445414b0": {
    "name": "talk_need_after_joining",
@@ -10830,6 +10835,11 @@
     "ref_z"
    ],
    "doc": "Dispatches talking by the NPC slot: the ticket guard (8), the townspeople (10 to 18). Without a ticket, talking to slot 10 records flag 3, and slot 11 loads the m06b program 154 scene once flags 2 and 3 are both set."
+  },
+  "3e0fef4c25fc529f": {
+   "name": "vanish_spiral_rock_7",
+   "doc": "Binds map part p11_d06b02-7 and plays the spiral rock vanish scene.",
+   "loose": "6e34c88e16ce3558"
   },
   "3e160376e02b6413": {
    "name": "use_time_gate_transfer",
@@ -11286,7 +11296,7 @@
   "3fdf353a1c9e0391": {
    "name": "press_panel_1_6",
    "loose": "7c492fcf4dd5faeb",
-   "doc": "Presses the panel at row 1, column 6: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 1, column 6: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "3fe6a61859e4ce0a": {
    "name": "play_walk_through_opening_scene",
@@ -11887,7 +11897,7 @@
    "loose": "3cc7ae884ab10560",
    "params": [],
    "locals": [],
-   "doc": "Opens the menu with a fade by calling open_menu_with_fade."
+   "doc": "Opens the save menu with a fade out and in around it (wrapper for open_save_menu_with_fade)."
   },
   "432a54b4df891e28": {
    "name": "scale_by_club_power",
@@ -11953,7 +11963,7 @@
   "436cd90de553e693": {
    "name": "warp_to_s44_map",
    "loose": "b50194831ff005f7",
-   "doc": "Runs the shared exit scene and loads map s44 at event 510."
+   "doc": "Plays the boss defeat scene (flag 728) and loads map s44 at event 510 without a fade."
   },
   "4373ba2cb0e9f853": {
    "name": "set_bridge_func_points",
@@ -12057,18 +12067,23 @@
    ],
    "doc": "Debug entry that shows the race ranking board with placeholder names and times."
   },
+  "448a129f8d440253": {
+   "name": "load_s06c_1_event_500",
+   "doc": "Program 650: waits a frame and loads the s06/s06c_1.stb event script at entry 500.",
+   "loose": "b3e297cdcde9a1cc"
+  },
   "448c636be01aa43a": {
    "name": "play_m06b_event_151",
    "loose": "086fc4b9a286a146",
    "doc": "Loads the m06b event script at 151."
   },
   "448e00add14bef27": {
-   "name": "start_s19_boss_fight",
+   "name": "start_shingala_fight",
    "loose": "448e00add14bef27",
    "locals": [
     "player_pos"
    ],
-   "doc": "Fades in, puts the player at a fixed spot, resumes monster AI and places monster 516 in the arena."
+   "doc": "Fades in, puts the player at a fixed spot, resumes monster drawing and AI, loads Shingala (monster 516) and the Electric Fish data and places Shingala in the arena."
   },
   "449550763923f7d6": {
    "name": "play_argo_and_lin_first_visit_scene",
@@ -12356,9 +12371,9 @@
    "doc": "Aunt Polly's two-part talk to Monica about Max being a good man, with an offer of bread in chapter 8."
   },
   "465ce3ae5777919b": {
-   "name": "play_s55_scene_and_jump_to_f30_604",
+   "name": "play_cannon_barrage_then_jump_to_f30",
    "loose": "359c900c43424c6f",
-   "doc": "Runs the s55 scene part 10 and jumps to map f30 at entry 604."
+   "doc": "Plays the cannon barrage on the golems, skips the next BGM load and jumps to map f30 at entry 604."
   },
   "465f7a70031ae120": {
    "name": "setup_station_item_check",
@@ -13114,9 +13129,9 @@
    "doc": "Enables or disables the ground function points jimen1 to jimen10 (except 8)."
   },
   "49f8405d2ee05e1f": {
-   "name": "give_item_373_and_enter_edit_mode",
+   "name": "give_shell_talkie_and_enter_shigura",
    "loose": "49f8405d2ee05e1f",
-   "doc": "Sets flag 400, clears flags 432 to 438, adds item 373 and goes to edit mode 90."
+   "doc": "Sets flag 400 (Veniccio arrival seen), clears the Shigura flags 432, 434, 436 and 438, gives the Shell Talkie (item 373) and enters Shigura Village (edit mode 90), so the with-item arrival plays."
   },
   "4a0d52b4d61356c2": {
    "name": "set_idle_motion",
@@ -13127,6 +13142,11 @@
    "loose": "45509f505a63b02c",
    "params": [],
    "doc": "Sets the player's standing motion for the active character. Steve (character 2) uses the legs or caterpillar track stand motion depending on his movement type; the others use the plain stand."
+  },
+  "4a1e4d1b1aae4001": {
+   "name": "vanish_spiral_rock_9",
+   "doc": "Binds map part p11_d06b02-9 and plays the spiral rock vanish scene.",
+   "loose": "6e34c88e16ce3558"
   },
   "4a3a907257412138": {
    "name": "open_save_menu_keeping_music",
@@ -13166,7 +13186,7 @@
   "4a98efef6f8f89b7": {
    "name": "replay_story_event_364",
    "loose": "4a98efef6f8f89b7",
-   "doc": "Story program for event 364: sets the Georama analysis flags 0 to 9 and the story event flags 364, 368, 372 and 376 (0 for the one to replay) and jumps to map 26."
+   "doc": "Story program for event 364: sets Balance Valley Georama analysis flags 0 to 7 and clears 8 and 9, marks events 368, 372 and 376 seen and 364 unseen, and jumps to map 26 (Starlight Temple)."
   },
   "4a9ee55e60129de3": {
    "name": "play_cannon_barrage_on_golems_scene",
@@ -13501,7 +13521,7 @@
   "4c84eef8ab48ef5a": {
    "name": "jump_to_s32_map",
    "loose": "1311b2e68933c0f6",
-   "doc": "Runs the shared exit scene and jumps to map s32 at event 600."
+   "doc": "Plays Emperor Griffon's battle challenge scene (flag 640) and jumps to map s32 (Moon Flower Palace vs Paznos) at event 600. Returns 0."
   },
   "4ca11babaaed1f27": {
    "name": "pause_then_run_s03_2_2",
@@ -14163,7 +14183,7 @@
     "unused_value",
     "unused2"
    ],
-   "doc": "Floor clear: spawns treasure box 206 if counter 17 bit 4 is clear and box 199 if bit 8 is clear, moves the camera to the player, plays BGM 193 and marks the floor as finished (flag 2)."
+   "doc": "Floor clear: spawns a chest with an Absorption Coin (item 206) unless counter 17 bit 4 is set and one with a Moon Stone (item 199) unless bit 8 is set; if either spawned, crossfades to a view of the chests with the player placed in front of them. Then plays BGM 193 and sets the floor info flag to 2."
   },
   "4ffcfc260a91bad7": {
    "name": "finish_boss_fight_and_return_to_first_floor",
@@ -14271,7 +14291,7 @@
   "50905efc392ef85f": {
    "name": "press_panel_1_2",
    "loose": "1ce4bbba8088461d",
-   "doc": "Presses the panel at row 1, column 2: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 1, column 2: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "5099d221d254e9a6": {
    "name": "vanish_spiral_rock_1",
@@ -14715,7 +14735,7 @@
     "ref_z"
    ],
    "loose": "a2ff0a12cb2477fd",
-   "doc": "Frames a conversation close-up: turns the speaker toward the listener, hides the speaker's model and puts the listener where the camera looks past the speaker's shoulder."
+   "doc": "Frames a close-up of listener: turns speaker to face listener and deactivates speaker, turns the listener toward speaker over 10 frames when it faces more than 0.4 radian away, and puts the camera 35 units in front of the listener aimed at its head. Waits 4 frames at the end."
   },
   "52d2586032ad9026": {
    "name": "warp_to_s64_event_500",
@@ -14767,7 +14787,7 @@
    "locals": [
     "item_count"
    ],
-   "doc": "Sets both characters to 240 max HP and 94 defence, tops item 270 up to 20, equips a fixed loadout and starts event 151 on map d06b01."
+   "doc": "Debug warp: applies the same stats and gear as apply_debug_loadout (240 max HP, 94 defence, 20 Premium Chicken, Grade Zero, Steal Gun, Atlamillia Sword, Goddess Brassard) and starts event 151 on map d06b01."
   },
   "5315fab42b0429c9": {
    "name": "handle_energy_pack_request",
@@ -16209,7 +16229,7 @@
    "locals": [
     "part_pos"
    ],
-   "doc": "Fades out, switches to floor 4 of the d06b02 tower (disables the 4f marker, raises two map parts by 200), places monster 606 and the player at their start positions and fades in."
+   "doc": "Fades out over 20 frames, plays the boss intro play_monster_intro_e40e, disables the 4f marker, raises map parts p11_d06b02-6 and -7 by 200, places Uther (monster 606) and the player at their start positions and fades in."
   },
   "5c26105c94f61d0b": {
    "name": "load_event_250_actors",
@@ -16477,7 +16497,7 @@
    "locals": [
     "part_pos"
    ],
-   "doc": "Fades out, switches to floor 5 of the d06b02 tower (disables the 5f marker, raises two map parts by 200), places monster 607 and 608 and the player at their start positions and fades in."
+   "doc": "Fades out over 20 frames, plays the boss intro play_monster_pair_intro_e117, disables the 5f marker, raises map parts p11_d06b02-8 and -9 by 200, places Gaja Ein and Gaja Zwei (monsters 607 and 608) and the player at their start positions and fades in."
   },
   "5de7a533c836f8da": {
    "name": "play_lipsync_for",
@@ -16558,7 +16578,7 @@
   "5df6c9c14e863fea": {
    "name": "press_panel_0_3",
    "loose": "7d9c84868b6c67ad",
-   "doc": "Presses the panel at row 0, column 3: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 0, column 3: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "5e59876345f9c63e": {
    "name": "log_map_start",
@@ -16798,7 +16818,7 @@
     "unused_value",
     "unused2"
    ],
-   "doc": "After the fight spawns treasure boxes (item 189) for each of counter 17 bits 256 and 512 not yet taken, starts BGM 193 and marks the floor cleared."
+   "doc": "After the fight spawns a Diamond chest for each of counter 17 bits 256 and 512 not yet taken, starts BGM 193 and sets floor info flag 2."
   },
   "5fac0c89fac3d6af": {
    "name": "show_temporary_event_message",
@@ -16852,7 +16872,7 @@
   "600344198c544877": {
    "name": "warp_to_boss_floor_after_story_526",
    "loose": "78f3f0f95122d682",
-   "doc": "Story 526 program: warps to boss floor d05b01 and runs its event 5260 (id 526*10+10000)."
+   "doc": "Story 526 program: warps to boss floor d05b01 and runs its story_526 program (15260 = 526*10+10000)."
   },
   "6007b2d840106009": {
    "name": "ask_give_up_spheda_trial",
@@ -17370,7 +17390,7 @@
    ],
    "loose": "79be1d65207de349",
    "locals": [],
-   "doc": "Shows door set door_set (0 to 9) of the d05 floor as opened: hides the closed door pieces and shows the open door piece plus its frame parts."
+   "doc": "Shows door set door_set (0 to 9) of the d05 floor in its opened state: hides the closed door piece and the matching -a and -c pieces, and shows the opened (_3) door piece."
   },
   "63f755cdccbaf786": {
    "name": "ask_pau_for_orange_food",
@@ -17458,7 +17478,7 @@
     "frame",
     "step"
    ],
-   "doc": "Changes the camera projection linearly from a0 to a1 over a2 frames (scaled from 60 to 50 fps). a3 is not used."
+   "doc": "Steps the camera projection from from_projection toward to_projection over frames frames scaled by 50/60, using the difference divided by the frame count truncated to an integer step; it does not set the final value. The last parameter is unused."
   },
   "6426d9a7c49c66fd": {
    "name": "play_ready_scene_and_enter_dungeon",
@@ -18001,7 +18021,7 @@
    ],
    "loose": "f0d1b274615f4844",
    "params": [],
-   "doc": "Cutscene of Max boarding the train at a station. Reads the train and position from the event data, faces the train sideways (the direction depends on the map), picks the door and car parts for the train id, swings the doors open, and walks Max in to the train sound. Sets counter 0 to the train type."
+   "doc": "Boarding cutscene from a station platform: reads the train id and position from the event, sets the facing and start height by map, swings the station door pieces (s3601_12/14/16/17) for that car open and has the player run aboard, then fades out and places them inside. Sets counter 0 to the car number (1 to 3)."
   },
   "67d68b418c90aa13": {
    "name": "setup_event_235_actors",
@@ -18497,16 +18517,16 @@
    "doc": "Event 403: turns to face south-west, fades out, sets map counter 2 to 4 and jumps to map f03i04."
   },
   "6aecfbf6ddaac1a8": {
-   "name": "setup_monster_515_arena",
+   "name": "setup_emperor_griffon_battle",
    "loose": "f0ae683c78b0709c",
-   "doc": "Map setup for the hub boss room: plays the Emperor Griffon reveal scene, disables the exit and in_dng function points, locks map moves, shows map part p05_d06e01-0, places monster 515 and the player facing it and fades in.",
+   "doc": "Map setup for the Emperor Griffon fight in the foyer: plays the Griffon reveal scene, disables the exit and in_dng points and item points, locks map moves, shows map part p05_d06e01-0, places monster 515 and the player at z 600 facing it and fades in over 20 frames.",
    "params": [],
    "locals": []
   },
   "6aef4820977389c3": {
    "name": "replay_story_event_368",
    "loose": "6aef4820977389c3",
-   "doc": "Story program for event 368: sets the Georama analysis flags 0 to 9 and the story event flags 364, 368, 372 and 376 (0 for the one to replay) and jumps to map 26."
+   "doc": "Story program for event 368: sets Balance Valley Georama analysis flags 0 to 7 and clears 8 and 9, marks events 364, 372 and 376 seen and 368 unseen, and jumps to map 26 (Starlight Temple)."
   },
   "6af77e1f3f175058": {
    "name": "place_player_at_station",
@@ -18751,7 +18771,7 @@
   "6b9358a23d22e02a": {
    "name": "setup_dungeon_floor_1",
    "loose": "a207477e9b30576c",
-   "doc": "Shows the status bar and loads the d01f01 floor with its monsters and treasure boxes."
+   "doc": "Hides the status bar, loads floor d01f01 with the Sewer Rat monster data, places its treasure boxes and monsters, plays the receiver call scene, then resets the floor timer and shows the floor title."
   },
   "6ba377e45888ce1f": {
    "name": "toggle_train_charas_122_123",
@@ -19473,7 +19493,7 @@
   "70328da3ca771b8a": {
    "name": "press_panel_0_6",
    "loose": "72710ddeb3d04f0d",
-   "doc": "Presses the panel at row 0, column 6: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 0, column 6: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "7037780d66ab5cc5": {
    "name": "start_elephant_floor",
@@ -19769,7 +19789,7 @@
   "711a0337589dadaf": {
    "name": "press_panel_1_1",
    "loose": "dd73f223d95cf599",
-   "doc": "Presses the panel at row 1, column 1: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 1, column 1: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "71247637ed05e1da": {
    "name": "play_dark_power_scene_and_load_d06b03",
@@ -19817,9 +19837,9 @@
    "doc": "Shows a thought that the job Cedric asked for is not finished yet."
   },
   "7184f5a8b095ddeb": {
-   "name": "play_scene_to_s32_640",
+   "name": "play_stop_palace_dive_then_go_to_s32",
    "loose": "962ff8ff1b6fc7ed",
-   "doc": "Plays an s30 scene and jumps to map s32 at event 640."
+   "doc": "Plays play_stop_palace_dive_scene and jumps to map s32 (Moon Flower Palace vs Paznos) at event 640. Returns 0."
   },
   "719b16363fd3a686": {
    "name": "play_palace_arrival_then_return_to_g05",
@@ -19861,9 +19881,9 @@
    "doc": "Loads the scene actors of event 254: Max and Monica (the one not played is loaded as a party member in slot 32 and the slots are stored in max_scene_slot and monica_scene_slot), the Conda, Firbit and Toryon models, and the event message file."
   },
   "72002922ae26e04c": {
-   "name": "play_scene_and_go_to_s32",
+   "name": "play_palace_returned_then_go_to_s32",
    "loose": "8ace291231267bda",
-   "doc": "Story 616: plays a scene that sets flag 616 and then jumps to map s32 as program 500."
+   "doc": "Story 616: plays the palace-returned scene (Osmond reports the Moon Flower Palace is back, flag 616) and jumps to map s32 as program 500."
   },
   "7206859d6f9e62da": {
    "name": "warp_to_s19_event_416",
@@ -19934,7 +19954,7 @@
    ],
    "loose": "02ede6a64e02ef30",
    "params": [],
-   "doc": "Event 372 in the Starlight Temple: sets the seen flag, switches to the event music (track 152) if not already on it, and runs the scene where Max and Monica run to Madame Crest, who addresses them and talks with them, with camera moves and voiced lines."
+   "doc": "Event 372 in the Starlight Temple: sets its seen flag, switches to BGM 152, and plays Max and Monica finding Lin as Crest the Great Sage, the worshippers at the crystal and her spell calling up a vision, then unloads the scene characters and jumps to map s33 entry 510."
   },
   "725b58cd79c59720": {
    "name": "run_geostone_scene_test",
@@ -20136,7 +20156,7 @@
   "73c86c6f2a9d9e82": {
    "name": "place_monster_pack",
    "loose": "73c86c6f2a9d9e82",
-   "doc": "Loads monster 55 and places six of them in the room, with battle music paused."
+   "doc": "Loads Mandora (monster 55), places six of them in the room and pauses the battle music."
   },
   "73cecc73c30ffaf8": {
    "name": "go_to_paus_house",
@@ -20173,7 +20193,7 @@
    ],
    "loose": "a7844f674e76fe70",
    "params": [],
-   "doc": "Tilts the train's seven slope parts by moving and rotating their handles so the train sits on the slope."
+   "doc": "Turns the train slope on: shifts the six train07 pieces 56 units sideways (m0 to m2 one way, m3 to m5 the other) and tilts them 0.56 rad, then shows the six train02-a step pieces. reset_train_slope_parts undoes it."
   },
   "742015f81fb083d6": {
    "name": "play_story_420_then_enter_georama",
@@ -20550,9 +20570,9 @@
    "doc": "Map setup: plays the story event that is due (456, 460 or the 468 interior), otherwise places the player by the previous map number and fades in."
   },
   "76f658028a9b37a7": {
-   "name": "setup_monster_628_boss_arena",
+   "name": "start_metal_flotsam_fight",
    "loose": "f8423c8381aa6214",
-   "doc": "Boss room start: plays BGM 107, places monster 628 and the player and fades in."
+   "doc": "Program boss_metal_flotsam: starts BGM 107, loads Metal Flotsam (monster 628) with bomb 1006 and places it 500 units ahead of the player, then fades in."
   },
   "771909cea7dc6ed6": {
    "name": "play_arrival_run_in_from_town",
@@ -20695,7 +20715,7 @@
    "doc": "Floor exit scene for the d07 dungeon: crossfades in, the player walks 200 units out while the two gate pieces slide away in the direction set by the exit's yaw, then the screen fades out."
   },
   "7797624b4255755f": {
-   "name": "show_story_points",
+   "name": "setup_forest_story_points",
    "locals": [
     "story_cnt",
     "item_count",
@@ -20703,7 +20723,7 @@
    ],
    "loose": "13fd85166ab9bcb3",
    "params": [],
-   "doc": "Sets up the forest map from the story counter (counter 3): shows the exit piece and enables the exit point at 8 or more, enables the ear item point between 2 and 6, and shows or hides the Poison Apple pickup characters depending on whether the apple scene was seen and the player holds the apple."
+   "doc": "Sets up the forest's event points from the story counter (counter 3): disables them all, then shows the exit piece and next_floor point at 8 or more, the ear pickup between 2 and 6, the Poison Apple pickups (slots 13, 15 to 17) while the apple is not held, and the one story trigger for the current step (fc_e220 without a fishing rod, fc_e230 until the apple scene, fc_e235 at 3, item_e245 at 5, fc_e247 at 6 which also hides the villagers, fc_e253 at 7 once flag 250 is set)."
   },
   "779aac83b7ad2df3": {
    "name": "talk_aunt_polly_to_monica",
@@ -20805,7 +20825,7 @@
    ],
    "loose": "47345880bb55c9cf",
    "locals": [],
-   "doc": "Voiced shot pan over the station while a figure runs off; the camera orbits and stops the sound at the end. sound_id is the sound bank to stop."
+   "doc": "Opening shot of Mayor Need (character 36, actor 4) watching from above while train actor 10 heads off to z -6000 over 120 frames; after 30 frames the camera orbits for 120 frames, then sound 9 of sound_id is stopped."
   },
   "77f4e32b1d3c0218": {
    "name": "play_ocean_breeze_and_bridge_scene",
@@ -20865,12 +20885,12 @@
    "doc": "Event 500: loads the d01f01 floor with its monsters and chests, plays Donny's second call and finishes the floor setup."
   },
   "7842ef392cc96992": {
-   "name": "place_four_monster_600_ambush",
+   "name": "place_four_clown_ambush",
    "loose": "ba41e0e5b85ada53",
    "locals": [
     "sound_id"
    ],
-   "doc": "Loads monster 600, places four of them around the player, plays an event sound, pauses the battle music, sets counter 5 to 2 and fades in."
+   "doc": "Loads the clown monster (600) and places four of them around the player, plays event sound 0, pauses the battle music, sets counter 5 to 2, then shows the status bar and fades in."
   },
   "785114b2056656cd": {
    "name": "play_object_lift",
@@ -20890,7 +20910,7 @@
    "locals": [
     "part_pos"
    ],
-   "doc": "Fades out, switches to floor 2 of the d06b02 tower (disables the 2f marker, raises two map parts by 200), places monster 604 and the player at their start positions and fades in."
+   "doc": "Fades out over 20 frames, plays the boss intro play_monster_intro_e220e, disables the 2f marker, raises map parts p11_d06b02-2 and -3 by 200, places Nightmare (monster 604) and the player at their start positions and fades in."
   },
   "785a64e624a1949e": {
    "name": "examine_sleeping_lin",
@@ -20952,7 +20972,7 @@
   "78b1f698262545a7": {
    "name": "place_ring_of_monsters_with_boss",
    "loose": "dbf81df88f1f26d1",
-   "doc": "Loads monsters 514 and 522 and places six 514 monsters on a ring of radius 450 around (250, 250) and one 522 at the origin."
+   "doc": "Loads Jaming (522) and Shingala (514), places six Shingala on a ring of radius 450 around (250, 250) facing inward and Jaming at the origin, then shows map part p04_d04b01."
   },
   "78b461b6734258cf": {
    "name": "play_another_lab_scene",
@@ -21548,7 +21568,7 @@
   "7bf32bc21e5cd9a5": {
    "name": "play_cedric_gets_off_train",
    "loose": "f23879b63fa5335e",
-   "doc": "Cedric walks across the train platform, hops down with a landing motion while train parts turn, and stands on the ground."
+   "doc": "Swings the train door parts (train11-m1, train12-m1, train12-m3) open over 30 frames, then Cedric (actor 2) walks out over 75 frames, turns and jumps down to the platform with a landing motion."
   },
   "7bfdd6154352d43e": {
    "name": "leave_lighthouse_if_confirmed",
@@ -21741,9 +21761,9 @@
    "doc": "Plays the Ixion completion scene."
   },
   "7d8ea0a3d7ebd80e": {
-   "name": "take_item_373_and_enter_edit_mode",
+   "name": "take_shell_talkie_and_enter_shigura",
    "loose": "7d8ea0a3d7ebd80e",
-   "doc": "Sets flag 400, clears flags 432, 436 and 438, removes item 373 and goes to edit mode 90."
+   "doc": "Sets flag 400 (Veniccio arrival seen), clears the Shigura flags 432, 436 and 438, removes all Shell Talkies (item 373) and enters Shigura Village (edit mode 90), so the without-item arrival plays."
   },
   "7d93fc3f4c5fc13a": {
    "name": "play_event_336_scene",
@@ -22180,9 +22200,9 @@
    "doc": "Elevator at (684.8, 6024.3): asks the floor, then places the player on the chosen floor (heights 0, 1160 or 2320) with the elevator sound. Arriving on the second floor can trigger event 508."
   },
   "7f470179e50df485": {
-   "name": "place_two_monster_43",
+   "name": "place_two_sphinxes",
    "loose": "7f470179e50df485",
-   "doc": "Loads monster 43, places two of them and pauses the battle music."
+   "doc": "Loads the Sphinx (monster 43, model e212d), places two of them at (256.8, 0, 230.3) and (-147.9, 0, 624.8) facing -3.06, and pauses the battle music."
   },
   "7f59c05ad8162f5b": {
    "name": "talk_aunt_polly_after_joining",
@@ -22272,7 +22292,7 @@
    "doc": "Fades out, plays play_farewell_scene and jumps to map s46 at event 530."
   },
   "80248f119d36a1f4": {
-   "name": "open_floor_exit_door",
+   "name": "open_cleared_room_door",
    "loose": "78246fb61bd4625b",
    "locals": [
     "door_part",
@@ -22282,7 +22302,7 @@
     "panel_a_pos",
     "panel_b_pos"
    ],
-   "doc": "Opens the floor's exit door: finds the door map part, opens the minimap door, raises the door handles 100 units, swaps in the open-door map pieces and disables the door function point. Returns 0 without doing anything if there is no door."
+   "doc": "Opens the floor's exit door: opens it on the minimap, lifts the two door panels (d07d05_1-m0 and m1) 100 units, swaps the closed d07da05a/d07dv05a pieces for the open 05b ones and disables the door01 function point. Returns 0 if there is no visible door."
   },
   "80255715b9f195a6": {
    "name": "play_ixion_plan_story_and_go_to_s09",
@@ -22834,7 +22854,7 @@
    "locals": [
     "unused_value"
    ],
-   "doc": "The crew is startled by something outside and tells Max the ladder leads to the train roof. Max nods and heads off (wait_for_chara_motion_progress)."
+   "doc": "A crash startles the crew (\"It came from outside!\") and one tells Max the ladder leads to the train roof. Max nods and answers \"Got'cha!\" once his nod is about a quarter through."
   },
   "835fe7f73acc53ae": {
    "name": "warp_to_luna_lab",
@@ -23381,7 +23401,7 @@
   "870556ae30c819bc": {
    "name": "warp_to_boss_floor_after_story_536",
    "loose": "3400826f93c5f933",
-   "doc": "Story 536 program: warps to boss floor d05b01 and runs its event 5360 (id 536*10+10000)."
+   "doc": "Story 536 program: warps to boss floor d05b01 and runs its story_536 program (15360 = 536*10+10000)."
   },
   "871763fead4cf739": {
    "name": "talk_stewart",
@@ -25571,9 +25591,9 @@
    "doc": "Asks the question for leaving the map. On yes Max runs off along a path and fades out (returns 1); on no he walks back a few steps."
   },
   "947330c27c8f8547": {
-   "name": "play_scene_only",
+   "name": "play_palace_beam_flee_only",
    "loose": "effb57a7cc16d45f",
-   "doc": "Debug test program: plays the same story scene as program 530 without jumping to another map."
+   "doc": "Debug test program: plays the palace beam flee scene (as program 530 does) without jumping to another map."
   },
   "948ce300f7670b12": {
    "name": "board_train_if_confirmed",
@@ -26105,7 +26125,7 @@
     "chara_id"
    ],
    "loose": "974f336e2d32bd4b",
-   "doc": "Looks up the character id for chara_no and activates slot slot with it."
+   "doc": "Finds the scene character with number chara_no and activates it when slot is nonzero or deactivates it when slot is 0 (the second parameter is an on/off flag, not a slot)."
   },
   "9753a24f42f97e77": {
    "name": "give_grape_juice_after_conda_scene",
@@ -26359,7 +26379,7 @@
    "locals": [
     "item_count"
    ],
-   "doc": "Sets both characters to 200 max HP and 70 defence, tops item 270 up to 20, equips a fixed loadout and starts event 151 on map d06e01."
+   "doc": "Debug warp: sets both characters to 200 max HP and 70 defence, tops Premium Chicken up to 20, equips Max with Sigma Breaker and Steal Gun and Monica with Ama no Murakumo and Goddess Brassard, then starts event 151 on map d06e01."
   },
   "98b9509f53d0607a": {
    "name": "play_utan_meeting_then_continue",
@@ -26420,7 +26440,7 @@
   "98f615e6a1e16517": {
    "name": "play_event_708_hidden_party",
    "loose": "0aa765a6a0f10020",
-   "doc": "Hides the party members, shows the status bar and plays event 708."
+   "doc": "Hides the two party members and the status bar, then plays event 708."
   },
   "98fb535e4220809a": {
    "name": "talk_stewart_monica",
@@ -27486,9 +27506,9 @@
    "doc": "Midnight scene: Max, Monica and Pau stand looking up while the camera orbits and rises. The battleship map part is hidden during the shot."
   },
   "9f5733b7ecc22ed2": {
-   "name": "run_s14_2_1_scene",
+   "name": "replay_boss_title_intro_scene",
    "loose": "55f014196c8d48a3",
-   "doc": "Runs the play_boss_title_intro_scene scene."
+   "doc": "Debug test program: plays the boss title intro scene (play_boss_title_intro_scene)."
   },
   "9f6cb4eb41d23288": {
    "name": "setup_central_lab_entry",
@@ -28056,6 +28076,11 @@
    "loose": "91f46fa7cb577e11",
    "doc": "After the fight, removes the Electric Fish, unblocks map moves, plays the freed scene and opens Georama edit mode for Pau's House."
   },
+  "a2a61a53d487896f": {
+   "name": "vanish_spiral_rock_5",
+   "doc": "Binds map part p11_d06b02-5 and plays the spiral rock vanish scene.",
+   "loose": "6e34c88e16ce3558"
+  },
   "a2af29b56e03f666": {
    "name": "load_event_277_charas",
    "loose": "0ad29aafc9a78049",
@@ -28116,9 +28141,9 @@
    "doc": "Loads Max, Monica, Mardan, his frog form, the ripple, wink and pink effects and the e245 message file."
   },
   "a2d9fba6fbcf821d": {
-   "name": "play_sleeping_visitor_scene",
+   "name": "start_osmond_asleep_scene",
    "loose": "259edf17cacf43ae",
-   "doc": "Story 414 program: clears flag 408, sets up the map characters and plays the short scene of a sound sleeper."
+   "doc": "Story 414 program: clears flag 408 (electric worm request started), sets up the map characters and plays play_osmond_asleep_scene, the short scene of Osmond sound asleep."
   },
   "a2e36ab4f1091249": {
    "name": "setup_event_230_actors",
@@ -28514,7 +28539,7 @@
   "a56ad53c4a8a8d4d": {
    "name": "press_panel_0_2",
    "loose": "f6e4394ca5f64b00",
-   "doc": "Presses the panel at row 0, column 2: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 0, column 2: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "a578916827b706b0": {
    "name": "enter_palm_brinks_square",
@@ -28646,12 +28671,12 @@
   "a5e793aa159511c6": {
    "name": "warp_to_s20_after_story_520",
    "loose": "de774b2071fb24a9",
-   "doc": "Story 520 program: warps to map s20 and runs its event 5200 (id 520*10+10000)."
+   "doc": "Story 520 program: warps to map s20 and runs its story_520 program (15200 = 520*10+10000)."
   },
   "a5e8d9cbf92b7222": {
-   "name": "setup_boss_515_fight",
+   "name": "start_emperor_griffon_fight",
    "loose": "4a52fd3fdac4f3d1",
-   "doc": "Switches to BGM 36, shows map part p05_d06e01-0, fades in and places monster 515."
+   "doc": "Starts the Emperor Griffon fight without its reveal scene: switches to BGM 36, shows map part p05_d06e01-0, fades in over 30 frames and places monster 515."
   },
   "a608e372b3ec26de": {
    "name": "talk_mina_after_joining",
@@ -29008,7 +29033,7 @@
     "frame",
     "step"
    ],
-   "doc": "Changes the camera projection linearly from a0 to a1 over a2 frames. a3 is not used."
+   "doc": "Steps the camera projection from from_projection toward to_projection over frames frames, using the difference divided by frames truncated to an integer step; it does not set the final value. The last parameter is unused."
   },
   "a89ce433f4786b93": {
    "name": "open_npc_shop_faded",
@@ -29049,9 +29074,9 @@
    "doc": "Event 220: the group's fisherman complains the fish aren't biting and the others have gone strange, and asks for something to drink. If the player gives Grape Juice (item 370) he hands over a Fishing Rod and Mimi bait and the fishing tutorial is shown."
   },
   "a8e693da3a3773fb": {
-   "name": "place_monster_183_pack",
+   "name": "place_rare_jacket_pack",
    "loose": "a8e693da3a3773fb",
-   "doc": "Loads monster 183 and places five of them around the room, holding the battle music."
+   "doc": "Loads the Rare Jacket (monster 183) and places five of them around the room, then pauses the battle music."
   },
   "a8f487ffc148246b": {
    "name": "go_to_sindain_if_confirmed",
@@ -29088,7 +29113,7 @@
   "a90ef36278c9f85c": {
    "name": "warp_to_boss_floor_after_story_528",
    "loose": "61f439fa7a724996",
-   "doc": "Story 528 program: warps to boss floor d05b01 and runs its event 5280 (id 528*10+10000)."
+   "doc": "Story 528 program: warps to boss floor d05b01 and runs its story_528 program (15280 = 528*10+10000)."
   },
   "a9135a35c1679391": {
    "name": "play_victory_crowd_back_scene",
@@ -29164,14 +29189,14 @@
    "doc": "Function point program: asks to travel to the past and opens the item menu for the Starglass. Using it fades out, plays event 352 and loads dungeon d03b02 at program 502. A wrong item plays a miss reaction."
   },
   "a96a023a17297f66": {
-   "name": "place_two_monster_7",
+   "name": "place_two_nail_bursts",
    "loose": "a96a023a17297f66",
-   "doc": "Loads monster 7, places two of them and pauses the battle music."
+   "doc": "Loads Nail Burst (monster 7), places two of them facing the entrance and pauses the battle music."
   },
   "a9764cdbe6e6ecad": {
    "name": "warp_to_s06_after_story_108b",
    "loose": "7a4967d069c77206",
-   "doc": "Story 108b program: sets story progress to 3 and warps to map s06, running s06_1 event 10082."
+   "doc": "Story 108b program: sets story progress to 3 and warps to map s06, running its story_108b program (11082 = 108*10+2+10000) in s06_1."
   },
   "a97c7cc7193c7fbb": {
    "name": "play_gaspard_backstory_scene",
@@ -29190,7 +29215,7 @@
     "boss_flag",
     "active_chara"
    ],
-   "doc": "Entry setup of the d06b03 boss floor. With flag 728 it switches Max or Monica back from their transformed forms, places the boss monsters 621 and 622 and starts a 5 minute stopwatch; always places the player and fades in."
+   "doc": "Entry setup of the d06b03 boss floor. With flag 728 set it switches Ride Pod or monster forms back to Max or Monica, plays the Dark Ruler flurry scene, places the Dark Element and Moon monsters (621 and 622) and starts a 5 minute stopwatch; it always places the player at z -400 and fades in."
   },
   "a9a1de993ec923e3": {
    "name": "show_final_ranking_board",
@@ -29364,9 +29389,9 @@
    "doc": "Returns analysis flag 204."
   },
   "aa5d9a347f51d2e5": {
-   "name": "jump_to_i03h01a_event_500",
+   "name": "play_cedric_walks_away_then_go_to_mayors_office",
    "loose": "424202f71fd5c342",
-   "doc": "Plays Cedric's walk-away scene (event 109), skips the villager load and jumps to map i03h01a (Mayor's Office) entry 500.",
+   "doc": "Plays Cedric's walk-away scene (event 109), skips the villager load and jumps to map i03h01a (Mayor's Office) at entry 500.",
    "params": [],
    "locals": []
   },
@@ -29558,14 +29583,14 @@
    "doc": "Loads Max and Monica with the event 372 motions, a station villager model and the event 372 messages, and marks them as no-distance-fade."
   },
   "abb6aa75a6458b42": {
-   "name": "open_key_door",
+   "name": "open_cleared_room_door",
    "loose": "22289feb7687c77e",
    "locals": [
     "door_part",
     "key_visible",
     "door_pos"
    ],
-   "doc": "Opens the key door on the current door part: opens the minimap door, swaps the door pieces, hides its collision and disables the key marker. Does nothing if the key marker is hidden."
+   "doc": "Opens the door of the current room after a fight (called from the room-clear event): opens it on the minimap, swaps the d06d00 door pieces, stops the d06d00_2-m part motion, hides the door's collision pieces and disables the key1 marker. Returns 0 if the marker is hidden."
   },
   "abbd866849677bd3": {
    "name": "play_holly_letter_scene",
@@ -29838,7 +29863,7 @@
   "ad35f37a7e37414c": {
    "name": "press_panel_1_3",
    "loose": "7c61c0a0d392b3d5",
-   "doc": "Presses the panel at row 1, column 3: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 1, column 3: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "ad41f181a2cccc78": {
    "name": "play_board_front_car",
@@ -30233,12 +30258,12 @@
    "doc": "Sets up Max and Monica as scene actors (the inactive one is loaded as a party member) and loads the event 275 message file."
   },
   "af50d0e21a237f4a": {
-   "name": "give_item_357_once",
+   "name": "give_photo_album_once",
    "loose": "f5cb15da6df967f0",
    "locals": [
     "flag"
    ],
-   "doc": "If flag 38 is unset, sets it, gives item 357 with a get message, deactivates the p03 part and opens the item limit menu."
+   "doc": "If flag 38 is unset, sets it, gives the Photo Album (item 357) with a get message, hides the p03 part and its func point, and opens the item limit menu with a fade."
   },
   "af5238383a1047e7": {
    "name": "play_train_return_arrival",
@@ -31294,12 +31319,12 @@
    "doc": "Event 352. Crest and Lin stand on the lighthouse talking about the Moon Crystal. Gaspard's battleship appears, Gaspard orders Jaming to destroy the lighthouse, its cannon fires and Crest and Lin are thrown down. Ends through end_lighthouse_scene_load_dungeon."
   },
   "b45070f3e1d0df03": {
-   "name": "enter_house_i01h01",
+   "name": "enter_i01h01_or_show_notice",
    "loose": "7457a90f4aacd9fb",
    "locals": [
     "progress"
    ],
-   "doc": "Program 200: at progress 100 shows the notice message and resets the edit event; otherwise enters interior i01h01."
+   "doc": "Program 200, the door to i01h01: at story progress 100 shows the notice message and resets the edit event; otherwise turns the player to yaw 0 and enters interior i01h01."
   },
   "b468b9b2e3a94916": {
    "name": "interact_with_treasure_chest",
@@ -31384,7 +31409,7 @@
    ],
    "loose": "b4f23a08fcb1ca15",
    "params": [],
-   "doc": "Returns analysis flag 301, which the second town uses to gate event 460 and to show a character."
+   "doc": "Returns analysis flag 301, which gates event 456 (can_play_event_456)."
   },
   "b4f9f17f49d7bf84": {
    "name": "talk_to_ferdinand",
@@ -31691,7 +31716,7 @@
     "unused2",
     "frame"
    ],
-   "doc": "Waits a0 frames. a1 is not used."
+   "doc": "Waits frames frames (no PAL scaling, unlike wait_frames). The second parameter is unused."
   },
   "b66bee473d1b3d03": {
    "name": "play_time_gate_scene_then_return_to_g01",
@@ -31880,7 +31905,7 @@
     "unused2",
     "frame"
    ],
-   "doc": "Waits a2 frames scaled from 60 to 50 fps. a1 is not used."
+   "doc": "Waits frames frames scaled by 50/60 (PAL rate). The second parameter is unused."
   },
   "b765b9bc7339fb53": {
    "name": "play_light_scene",
@@ -31903,7 +31928,7 @@
   "b7729fa82aecc521": {
    "name": "enter_boss_arena_d06b02",
    "loose": "55e4842510173333",
-   "doc": "Hides characters 1 and 2, plays the transition scene and loads the d06b02 boss arena."
+   "doc": "Hides the status bar and characters 1 and 2, plays the Dark Ruler moon-fall scene and loads the d06b02 boss arena without reloading the BGM."
   },
   "b77973564149f471": {
    "name": "play_camera_pan_over_plateau_scene",
@@ -32099,7 +32124,7 @@
    "locals": [
     "bgm_no"
    ],
-   "doc": "Starts BGM 167 unless it is already playing and loads dungeon d06b03 at event 550."
+   "doc": "Plays the dark power emerges scene, starts BGM 167 unless it is already playing and loads dungeon d06b03 at event 550."
   },
   "b85b4f338ae5d0fa": {
    "name": "enter_room_4_and_fight",
@@ -33236,7 +33261,7 @@
   "bf099744d482e8e2": {
    "name": "start_second_gaspard_fight",
    "loose": "23b8df5e5be789b8",
-   "doc": "Plays the transformation scene, moves the time gate pieces in the map, loads monster 511 (giant Gaspard) and places the player facing it."
+   "doc": "Plays the transformation scene, disables the e528 and lava func points, enables invent_2023-1, shows piece d05ba03-a and pushes the two lava fall parts (takil, takir) 330 units apart, then loads monster 511 (giant Gaspard) and places the player facing it."
   },
   "bf1193b39f921528": {
    "name": "play_fire_support_order_scene",
@@ -33667,7 +33692,7 @@
     "event_522_seen"
    ],
    "loose": "4577f7baa87594a5",
-   "doc": "Plays the time gate warp at the given spot. With Monica in the party it plays the blue time gate scene, otherwise it may first play the Atlamillia glow scene and then the red time gate scene."
+   "doc": "Time travel through the blue time gate at the given spot. With Monica in the party she warps with both characters shown (play_blue_time_gate_scene). Otherwise Max warps alone through the same gate (play_red_time_gate_scene with the blue gate), first playing the blue Atlamillia glow scene once (flag 522) when flag 520 is set and flag 532 is not."
   },
   "c16873efe2e4061b": {
    "name": "play_starglass_time_travel_scene",
@@ -34293,7 +34318,7 @@
     "spin_step",
     "spin_phase"
    ],
-   "doc": "Cutscene (event 250 replay): Toryon flies in, plants a tree on each side of Max and Monica, who dodge, then spins with a peace sign. Waits for a button press at the end."
+   "doc": "Cutscene (event 250 replay): Toryon flies in and plants a tree on each side of Max and Monica, who dodge, then spins into a peace sign. Waits for Cross (pad mask 64) at the end and deletes the scene characters."
   },
   "c443e57b323943a6": {
    "name": "play_victory_and_gate_hint",
@@ -34314,7 +34339,7 @@
   "c4499e76b211f318": {
    "name": "warp_to_s06_after_story_108a",
    "loose": "747a8a8a3acf6348",
-   "doc": "Story 108a program: sets story progress to 3 and warps to map s06, running s06_1 event 10081."
+   "doc": "Story 108a program: sets story progress to 3 and warps to map s06, running its story_108a program (11081 = 108*10+1+10000) in s06_1."
   },
   "c450b14fec3aca15": {
    "name": "leave_for_edit_mode_10",
@@ -34421,9 +34446,9 @@
    "doc": "Fades in and walks the player a short way forward, then resets the camera."
   },
   "c4e3474377d25b23": {
-   "name": "play_scene_to_s32_620",
+   "name": "play_nova_driver_fire_then_go_to_s32",
    "loose": "af9668dd1e04a4ee",
-   "doc": "Plays an s30 scene and jumps to map s32 at event 620."
+   "doc": "Plays play_nova_driver_fire_scene and jumps to map s32 (Moon Flower Palace vs Paznos) at event 620. Returns 0."
   },
   "c4e69f125345dd72": {
    "name": "play_run_in_from_dungeon",
@@ -35047,6 +35072,11 @@
    ],
    "doc": "Deletes the characters loaded for the opening scene, stops music and environment sound and skips the next music and sound loads."
   },
+  "c78da5f5b5962a5a": {
+   "name": "warp_to_s06_after_story_104",
+   "doc": "Story 104 program: sets story progress to 3 and warps to map s06, running event 500 of the s06c_1 script.",
+   "loose": "35d4d3731b7ae4fe"
+  },
   "c791685686ed45d3": {
    "name": "unload_event_256_scene",
    "loose": "c791685686ed45d3",
@@ -35112,7 +35142,7 @@
    ],
    "loose": "4af0fbc2999796c1",
    "locals": [],
-   "doc": "Opening shot: the train engine starts up, characters 33 to 35 are hidden, a sound plays and actor 10 slides 120 units over 60 frames."
+   "doc": "Opening shot: starts the engine motion on the p01_train01 kikan-m0 part, hides characters 33 to 35, plays sound 13 and eases train actor 10 to (-120, 0, -2100) over 60 frames."
   },
   "c8117a10aabcbbbd": {
    "name": "play_floor_clear_scene",
@@ -35980,7 +36010,7 @@
   "cc5e1046c9784e7e": {
    "name": "press_panel_1_4",
    "loose": "2f4d1dba65abbeb2",
-   "doc": "Presses the panel at row 1, column 4: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 1, column 4: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "cc69504ae0d06182": {
    "name": "play_scene_then_go_to_s30_630",
@@ -36030,7 +36060,7 @@
    "loose": "cc979c9359e63a42",
    "params": [],
    "locals": [],
-   "doc": "Shows or hides NPC slots in town 3 by analysis flags: slot 401 follows flag 403, slot 406 is hidden until flag 400 is set and slot 407 until flag 406 is set."
+   "doc": "Shows or hides town 3 characters by analysis flags: character 401 is active only while flag 403 is set, character 406 is deactivated until flag 400 is set and character 407 until flag 406 is set."
   },
   "cca73b466bdbcc84": {
    "name": "start_lapis_map",
@@ -36052,6 +36082,19 @@
    "loose": "0cb84c4692721233",
    "params": [],
    "doc": "Opens a locked door in dungeon 1: the minimap door opens, the door piece slides up with a sound while the camera looks back, and the key point is disabled."
+  },
+  "ccbe312331062c7c": {
+   "name": "talk_gordon",
+   "params": [
+    "npc",
+    "player"
+   ],
+   "locals": [
+    "met_flag",
+    "quest_state"
+   ],
+   "doc": "Picks Gordon's conversation: the early talk until the Geostone plan scene is done, then by quest 0 state the quest offer, the holy water reminder (accepted) or the joined talk (cleared). Returns 0.",
+   "loose": "27a92c874fd14b95"
   },
   "ccbf7899498351a3": {
    "name": "load_event_or_game_over",
@@ -36088,7 +36131,7 @@
   "cd0b2c105869b6d7": {
    "name": "setup_boss_616_arena",
    "loose": "19790d5b3b6d171b",
-   "doc": "Runs the shared arena setup, resets the player and camera, loads and places monster 616 and fades in."
+   "doc": "Plays the winged boss transformation scene (flag 720), then puts the player at (0, 0, -200) with the camera behind, shows the partners and status bar, loads and places Emperor Griffon form 616 at (0, 0, 150) facing the player and fades in."
   },
   "cd29e6e06c5c0f37": {
    "name": "talk_to_man_asking_if_anything_wrong",
@@ -36242,7 +36285,7 @@
   "cdd97824c18737f7": {
    "name": "press_panel_0_0",
    "loose": "59184045f7519986",
-   "doc": "Presses the panel at row 0, column 0: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 0, column 0: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "cde95f216c9fb3d7": {
    "name": "play_event_108",
@@ -36638,12 +36681,12 @@
    "doc": "Plays the railroad reopen scene and jumps to the Station (i02h01), keeping the music."
   },
   "d03246eb117e6433": {
-   "name": "play_gaspard_defeat_scenes",
+   "name": "restore_time_and_play_gaspard_defeat_scenes",
    "loose": "74d6a91bae2b1f12",
    "locals": [
     "saved_time"
    ],
-   "doc": "Restores the saved time of day, plays the lighthouse shelling and Crest farewell scenes and returns to d03b01 at entry 503."
+   "doc": "Program 504 after the Gaspard boss: blacks out, stops the music, restores the time of day saved before the fight, plays the lighthouse shelling and Crest farewell scenes and returns to d03b01 entry 503."
   },
   "d0379d7fa92a8722": {
    "name": "play_long_camera_flyover_shot",
@@ -36799,7 +36842,7 @@
    "locals": [
     "time_of_day"
    ],
-   "doc": "Camera shot: advances the time of day from 6.5 to 6.8 while the camera sits still, then fades out and flies along a camera path. Returns 0."
+   "doc": "Dawn shot: with a fixed camera advances the time of day from 6.5 to 6.8 (0.004 per frame), then flies the camera along a 250-frame path that fades out over 60 frames after a 190-frame delay. Returns 0."
   },
   "d14c0c5c58906d6e": {
    "name": "play_mother_farewell_then_enter_d05b01",
@@ -36959,7 +37002,7 @@
    "locals": [
     "item_count"
    ],
-   "doc": "Sets both characters to 240 max HP and 94 defence, tops item 270 up to 20, equips a fixed loadout and starts the dark element boss event on map d06b03."
+   "doc": "Debug warp: applies the same stats and gear as apply_debug_loadout (240 max HP, 94 defence, 20 Premium Chicken, Grade Zero, Steal Gun, Atlamillia Sword, Goddess Brassard) and starts the dark element boss event on map d06b03."
   },
   "d21563766d1e18f2": {
    "name": "turn_and_speak_with_npc",
@@ -37149,7 +37192,7 @@
   "d2e012e478f6a5c0": {
    "name": "press_panel_0_4",
    "loose": "74066847365c6e27",
-   "doc": "Presses the panel at row 0, column 4: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 0, column 4: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "d2e6057e9a4bba72": {
    "name": "lower_rock_in_room_3",
@@ -37217,7 +37260,7 @@
     "quest_state"
    ],
    "loose": "2ff1abf4cd2efc5c",
-   "doc": "Picks Parn's conversation by quest state: until quest 0 is accepted the early talk, then the quest offer, the golden paint reminder (quest 1 accepted) or the joined talk (quest 1 done). Returns 0 only on the early path; nothing for other states."
+   "doc": "Picks Parn's conversation by quest state: the early talk until quest 0 is done, then by quest 1 status the quest offer, the golden paint reminder (accepted) or the joined talk (done). Returns 0."
   },
   "d30b76e51dbf9329": {
    "name": "walk_party_to_train_door",
@@ -37693,9 +37736,9 @@
    "doc": "Adel's quest offer: she declines because she never finishes anything. A hint says to get her to make clothes again, and quest 7 is marked accepted."
   },
   "d5f13258fc5d6019": {
-   "name": "play_scene_to_s32_610",
+   "name": "play_nova_driver_order_then_go_to_s32",
    "loose": "2de7f91b39cfa743",
-   "doc": "Plays an s30 scene and jumps to map s32 at event 610."
+   "doc": "Plays play_nova_driver_order_scene and jumps to map s32 (Moon Flower Palace vs Paznos) at event 610. Returns 0."
   },
   "d60ec73b3e08700a": {
    "name": "open_exit_and_play_halloween_defeat",
@@ -38298,9 +38341,9 @@
    "doc": "Shows a system message about receiving an item with its count after playing sound 18. Kind 0 picks message 14 for a count of 1 and 15 otherwise, kind 1 picks 18. Returns 0 for other kinds."
   },
   "d97d3f6c2d0f5047": {
-   "name": "run_m07_2_74",
+   "name": "play_letter_and_storm_scene_only",
    "loose": "224a66f00ffc4a59",
-   "doc": "Runs the play_opening_letter_and_storm_scene scene."
+   "doc": "Plays play_opening_letter_and_storm_scene without jumping to another map."
   },
   "d98b139340720ca3": {
    "name": "end_lighthouse_scene_load_dungeon",
@@ -39185,7 +39228,7 @@
    ],
    "loose": "e8a327fd2bf71461",
    "params": [],
-   "doc": "Places the station villagers: Cedric normally, a different man during chapters 6 and 7, plus Borneo and Erik until the Heim Rada arrival has been seen."
+   "doc": "Loads and places the station villagers: Cedric in slot 8, or Osmond during chapters 6 and 7, plus Borneo (slot 9) and Erik (slot 10) until the Heim Rada arrival (flag 500) has been seen."
   },
   "df5e65a00fe5979a": {
    "name": "show_item_get_message",
@@ -39379,7 +39422,7 @@
    "doc": "Plays the fishing tournament announcement and loads the d03 script at entry 500."
   },
   "e04197ff4bf6a944": {
-   "name": "play_victory_pose_b",
+   "name": "play_monica_victory_pose",
    "params": [
     "show_banner"
    ],
@@ -39574,7 +39617,7 @@
   "e158d9ab82524e40": {
    "name": "press_panel_0_1",
    "loose": "2b047bf5ea5ad8f6",
-   "doc": "Presses the panel at row 0, column 1: toggles that panel and its four neighbours (puzzle step with a fixed camera)."
+   "doc": "Candle puzzle step for the church candle at row 0, column 1: cuts to a fixed camera, waits 45 frames, toggles that candle and its four neighbours (i01h07_13 pieces), then waits 45 frames."
   },
   "e17d5803ea1cd5ac": {
    "name": "apply_debug_loadout",
@@ -39596,7 +39639,7 @@
   "e19d3f7531d91576": {
    "name": "play_event_250_scene",
    "loose": "5857d8a9e3edb521",
-   "doc": "Program 690: plays the scene where Max and Monica stand looking up at the Toryon tree (event 250)."
+   "doc": "Program 690: replays the event 250 Toryon scene (play_toryon_plants_trees_scene): Toryon flies in and plants a tree on each side of Max and Monica, who dodge."
   },
   "e1a14d77c152f2d0": {
    "name": "play_ending_movie_and_wait_for_button",
@@ -39976,7 +40019,7 @@
   "e3f739461ec2d9c3": {
    "name": "rococo_runs_home_and_shuts_door",
    "loose": "11e9ca0c5f64dc32",
-   "doc": "Rococo runs along a path to his door and shuts it while the other characters turn to look."
+   "doc": "Rococo runs a seven-point path up to his door and plays his close-door motion, while the two door pieces (actors 10 and 11, edit parts g010707-m and g010708-m) are held at -90 degrees and then swing shut to 0 over 10 frames."
   },
   "e4098efdaa69737e": {
    "name": "play_platform_arrival_scene",
@@ -40034,7 +40077,7 @@
    "doc": "Uses gate 3."
   },
   "e46dbddf96607507": {
-   "name": "play_s55_scene_and_jump_to_f30_601",
+   "name": "play_golem_march_then_jump_to_f30",
    "loose": "77f09cef40edbe06",
    "doc": "Plays the golem army march scene, skips the next BGM load and jumps to map f30 at entry 601.",
    "params": [],
@@ -40347,9 +40390,9 @@
    "doc": "Loads the d05f02 Spheda course (mstage5), gives items 305 and 306, sets up Spheda with hole 5, places Max and opens the Spheda score view."
   },
   "e5979678e8d08963": {
-   "name": "fade_out_then_run_s56_2_1",
+   "name": "fade_out_and_play_lighthouse_arrival",
    "loose": "4ad639ee43dd01e9",
-   "doc": "Hides the e348 function point and map part p07_d03b01, fades out the music and screen, then runs play_lighthouse_arrival_scene."
+   "doc": "Program 502 (touching the e348 point): disables the e348 point, hides map part p07_d03b01, fades out the music and screen over 30 frames, then plays the lighthouse arrival scene."
   },
   "e599bc15fe4dbba4": {
    "name": "use_condor_perch",
@@ -40438,7 +40481,7 @@
     "quest_state"
    ],
    "loose": "27a92c874fd14b95",
-   "doc": "Picks Gordon's conversation: the early talk until the Geostone plan scene is done, then by quest 0 state: the quest offer, the holy water reminder (accepted) or the joined talk (done). Returns 0 on the early and offer paths."
+   "doc": "Picks Gordon's conversation: the early talk until the Geostone plan scene is done, then by quest 0 state the quest offer, the holy water reminder (accepted) or the joined talk (done). Returns 0."
   },
   "e61880b68549f27b": {
    "name": "remove_rock_scene_actors",
@@ -40515,7 +40558,7 @@
    "locals": [
     "part_pos"
    ],
-   "doc": "Fades out, switches to floor 3 of the d06b02 tower (disables the 3f marker, raises two map parts by 200), places monster 605 and the player at their start positions and fades in."
+   "doc": "Fades out over 20 frames, plays the boss intro play_monster_intro_e219e, disables the 3f marker, raises map parts p11_d06b02-4 and -5 by 200, places Black Dragon (monster 605) and the player at their start positions and fades in."
   },
   "e69eb77e00caf299": {
    "name": "start_spheda_debug_course",
@@ -41604,9 +41647,9 @@
    "doc": "Stops the BGM, loads sound set 3694 and hides the Lapis point once event 628 has been seen."
   },
   "ec653b079ffcd03b": {
-   "name": "start_boss_628_fight",
+   "name": "restart_metal_flotsam_fight",
    "loose": "9372f3b69111d7cc",
-   "doc": "Runs the boss 628 arena setup."
+   "doc": "Program 151: starts the Metal Flotsam fight again through start_metal_flotsam_fight."
   },
   "ec7074776d203a0e": {
    "name": "set_station_gate_visible",
@@ -41894,7 +41937,7 @@
   "ee851ed038f0cae1": {
    "name": "place_npc_group_and_wait_for_button",
    "loose": "fd5c9bf61d45c419",
-   "doc": "Debug-like scene: places a set of NPC models and Monica in a ring and waits for a button press."
+   "doc": "Test scene: frames a fixed camera, places the player, seven event/nanahige tp02 models (slots 8 to 14) in their idle motion and Monica (slot 15) around them, then waits until Cross is pressed. Does not finish the event."
   },
   "ee9d03ea620bb7b5": {
    "name": "talk_mina_before_lesson",
@@ -42038,7 +42081,7 @@
   "efdda3de192c983a": {
    "name": "setup_boss_617_arena",
    "loose": "eac45faf67159c65",
-   "doc": "Runs the shared arena setup, resets the player and camera, loads and places monster 617 and fades in."
+   "doc": "Plays the boss awakens with flame scene (flag 724), then puts the player at (0, 0, -200) with the camera behind, shows the partners and status bar, loads and places Emperor Griffon form 617 at (0, 0, 150) facing the player and fades in."
   },
   "efde66e9dd8d71c5": {
    "name": "play_shot_crew_talk",
@@ -42468,7 +42511,7 @@
   "f276e02f14c5026b": {
    "name": "trigger_silent_game_over",
    "loose": "e85f3340d0d13fdb",
-   "doc": "Starts a game over without a jingle."
+   "doc": "Runs the dungeon game over sequence with no voice line and revive 0, so a defeat without a switchable partner sets the exit flag."
   },
   "f2826ccde5755cb5": {
    "name": "play_time_gate_scene_then_load_script",
@@ -42870,14 +42913,14 @@
    "doc": "Story jump: sets earlier story flags, clears 408 and replays event 408, then opens Pau's House in Georama."
   },
   "f4a68dcd3a7e6421": {
-   "name": "play_twin_e202d_intro_scene",
+   "name": "play_twin_nail_burst_intro_scene",
    "loose": "43f056559cf81359",
    "locals": [
     "index",
     "sound_id",
     "block"
    ],
-   "doc": "Two e202d monsters stand in the room, attack once and a title card fades in and out before the scene fades out."
+   "doc": "Intro for the twin Nail Burst room: two Nail Bursts (model e202d) stand in the room, attack once while their caption card fades in, then the scene fades out and the models are removed."
   },
   "f4ad0019ffafcd87": {
    "name": "play_back_golems_march_shot",
@@ -43192,7 +43235,7 @@
    "doc": "Cutscene where Parn explains that magical artists can bring drawings to life only with Gold Paint made from a Golden Egg, and asks Max to bring some in return for his new power."
   },
   "f64bd1e845c0a04e": {
-   "name": "play_crying_child_camera_orbit",
+   "name": "play_crying_child_camera_pan",
    "loose": "acecdb7d117c6bf1",
    "locals": [
     "frame",
@@ -43205,7 +43248,7 @@
     "ref_y",
     "ref_z"
    ],
-   "doc": "Shows a crying child with a slowly rotating camera at noon with time frozen for 700 frames, then 300 more frames before giving control back."
+   "doc": "Test shot from event 102: hides the player, places the crying child and Eina (e102 models) at the same spot playing the cry motion, freezes time at noon and slowly turns the camera's look-at point around a fixed camera position for 700 frames, then waits 300 more before giving control back."
   },
   "f6697bde6b1b566a": {
    "name": "leave_for_g05_if_confirmed",
@@ -43215,7 +43258,7 @@
   "f6726946fbc70e33": {
    "name": "setup_fishing_tournament",
    "loose": "7c541b21dfa6a56b",
-   "doc": "Resets the image and sound globals, blocks map movement, spawns the villagers, loads the tournament prizes and a monster sound, places the player and fades in."
+   "doc": "Resets the image and sound globals, blocks map movement, spawns the villagers, loads the tournament prizes, shows map part p16_i03h03, loads the fishing tournament sound bank (EN_903) on the enemy port, places the player and fades in."
   },
   "f673909c3755e14d": {
    "name": "start_s06c_1_event_500",
@@ -44080,6 +44123,18 @@
    "name": "use_condor_perch_2",
    "loose": "dbb097bc10d868f0",
    "doc": "Uses condor perch 2."
+  },
+  "fb873763f75d617b": {
+   "name": "talk_parn",
+   "params": [
+    "npc",
+    "player"
+   ],
+   "locals": [
+    "quest_state"
+   ],
+   "doc": "Picks Parn's conversation by quest state: until quest 0 is cleared the early talk, then by quest 1 the quest offer, the golden paint reminder (accepted) or the joined talk (cleared). Returns 0.",
+   "loose": "2ff1abf4cd2efc5c"
   },
   "fb894abe6e7553eb": {
    "name": "play_fish_up_the_holy_one_plan_scene",

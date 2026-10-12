@@ -1,3 +1,4 @@
 {
- "doc": "Monster script for a b02a5 part that has no hit reactions of its own. Its update only repeats a turn, and its death and landing handlers run shared helper routines."
+ "doc": "Monster script for a b02a5 part that has no hit reactions of its own. Its update only repeats a turn, and its death and landing handlers run shared helper routines.",
+ "numbering": "raw"
 }

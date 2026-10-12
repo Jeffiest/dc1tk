@@ -1,3 +1,4 @@
 {
- "doc": "Monster script for b02a7, a stationary placeholder-like monster with empty guard, damage, knockdown and dodge handlers. Its update loop only keeps turning in place, and it applies a texture when a fade finishes."
+ "doc": "Monster script for b02a7, a stationary placeholder-like monster with empty guard, damage, knockdown and dodge handlers. Its update loop only keeps turning in place, and it applies a texture when a fade finishes.",
+ "numbering": "raw"
 }

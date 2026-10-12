@@ -4,5 +4,6 @@
   "spawn_x",
   "spawn_y",
   "spawn_z"
- ]
+ ],
+ "numbering": "old"
 }

@@ -5,8 +5,8 @@
    "doc": "Finishes a throw and returns true, used by e05a and e219a."
   },
   "0060346f1c8b8842": {
-   "path": "lib/map/d/d06/floor_2_script_core.c",
-   "doc": "Full shared script base for floor 2 of dungeon d06: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d06/script_core_2.c",
+   "doc": "Full shared script base for language variant 2 of the d06 (Moon Flower Palace) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d06_2 and d06_sfida_2."
   },
   "0081183a156af5b4": {
    "path": "lib/map/f/f02/interior_06_4_toolkit.c",
@@ -17,8 +17,8 @@
    "doc": "Picks up item 382 and the memo item 386. Used by the s42 scripts."
   },
   "00c2c9eda043493d": {
-   "path": "lib/map/s/palace_return_actors_3.c",
-   "doc": "Shared script runtime with the faded menu plus the palace return, event 616 and rock scene actors. Used by the s65_3 and s68_3 scripts.",
+   "path": "lib/map/s/palace_return_runtime_3.c",
+   "doc": "Shared script runtime with the save menu plus the event 616 cutscenes after the Moon Flower Palace returns: Osmond's warning, the beam escape and Toryon's rock barrage, with their actor setup. Used by the s65_3 and s68_3 scripts.",
    "globals": {
     "g0": "party1_max_slot",
     "g1": "party1_monica_slot",
@@ -67,8 +67,8 @@
    "doc": "Rising randomized sprite particles scaled by the effect, used by the pother2 and pother3 effects."
   },
   "02822e882ae3afef": {
-   "path": "lib/map/s/palace_return_actors_2.c",
-   "doc": "Shared script runtime with the faded menu plus the palace return, event 616 and rock scene actors. Used by the s65_2 and s68_2 scripts.",
+   "path": "lib/map/s/palace_return_runtime_2.c",
+   "doc": "Shared script runtime with the save menu plus the event 616 cutscenes after the Moon Flower Palace returns: Osmond's warning, the beam escape and Toryon's rock barrage, with their actor setup. Used by the s65_2 and s68_2 scripts.",
    "globals": {
     "g0": "party1_max_slot",
     "g1": "party1_monica_slot",
@@ -101,8 +101,8 @@
    "doc": "Georama analysis lookups, story event availability checks and chapter notices in g02."
   },
   "03b4545ef6ff26c2": {
-   "path": "lib/map/d/d07/floor_2_script_core.c",
-   "doc": "Full shared script base for floor 2 of dungeon d07: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d07/script_core_2.c",
+   "doc": "Full shared script base for language variant 2 of the d07 (Zelmite Mine) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d07_2 and d07_sfida_2."
   },
   "03d2c57142b76f73": {
    "path": "lib/map/s/s13/lapis_point_and_monster_battle.c",
@@ -114,7 +114,7 @@
   },
   "03e9074eea0ca31d": {
    "path": "lib/dungeon/act_script/guard_lift_throw_action.c",
-   "doc": "Guard, lift, carry and throw state machine driven by pad input, used by the f-series action scripts."
+   "doc": "Guard, lift, carry and throw state machine driven by pad input, used by the monster form (f-series) action scripts."
   },
   "0408ad8847c84c26": {
    "path": "lib/map/d/d03/b01/lighthouse_arrival_scene.c",
@@ -162,15 +162,15 @@
   },
   "06bd24d37d218149": {
    "path": "lib/map/s/s12/map_start_and_exit.c",
-   "doc": "Sets up the s12 start, goes to s11 and opens the faded menu. Used by the s12 scripts."
+   "doc": "Sets up the s12 start, goes to s11 and opens the save menu. Used by the s12 scripts."
   },
   "06bd8fb2312d143b": {
    "path": "lib/map/i/i01/h07/panel_puzzle_presses.c",
    "doc": "Prints the panel map and handles pressing each panel of the floor panel puzzle. Used by the i01h07 house scripts."
   },
   "06e11c7a3165f653": {
-   "path": "lib/map/s/palace_return_actors_5.c",
-   "doc": "Shared script runtime with the faded menu plus the palace return, event 616 and rock scene actors. Used by the s65_5 and s68_5 scripts.",
+   "path": "lib/map/s/palace_return_runtime_5.c",
+   "doc": "Shared script runtime with the save menu plus the event 616 cutscenes after the Moon Flower Palace returns: Osmond's warning, the beam escape and Toryon's rock barrage, with their actor setup. Used by the s65_5 and s68_5 scripts.",
    "globals": {
     "g0": "party1_max_slot",
     "g1": "party1_monica_slot",
@@ -204,7 +204,7 @@
   },
   "08ce51ca2542e9bf": {
    "path": "lib/map/s/s10/station_exit_prompt.c",
-   "doc": "Leaves for s41 or g04 and opens the faded menu. Used by the s10 scripts."
+   "doc": "Leaves for s41 or g04 and opens the save menu. Used by the s10 scripts."
   },
   "09174b3793442e22": {
    "path": "lib/dungeon/monster/monster_var_20_reader.c",
@@ -261,16 +261,16 @@
    "doc": "Plays the scene of meeting Doctor Chap in f03i0304."
   },
   "0bacb499642c5b48": {
-   "path": "lib/map/d/d05/floor_3_script_core.c",
-   "doc": "Full shared script base for floor 3 of dungeon d05: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d05/script_core_3.c",
+   "doc": "Full shared script base for language variant 3 of the d05 (Mount Gundor) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d05_3 and d05_sfida_3."
   },
   "0bcd2998b376ca82": {
    "path": "lib/dungeon/monster/boss_view_cone_turning.c",
-   "doc": "Fade and texture waits, offset and angle math, view cone checks and turning toward the target, used by the b02a2 to b02a5 boss scripts."
+   "doc": "Land and death programs, ground-plane offset and angle math, view cone checks, flying turns toward the target and a warp to the home point, in the b02a raw native numbering. Used by the b02a2 to b02a7 boss scripts."
   },
   "0c0e73384accaa01": {
    "path": "lib/map/base_door_jump_rush.c",
-   "doc": "Shared base runtime with the rush variant of door jumps and the overflow menu, covering flags, pad input, message windows, voices, NPC talk and item messages. Used by the rush_g01 scripts."
+   "doc": "Shared base runtime with the rush variant of door jumps and the overflow menu, covering flags, pad input, message windows, voices, NPC talk and item messages. Used by the rush_g01 and m03 scripts."
   },
   "0c0fe1d56b12e053": {
    "path": "lib/map/f/f03/town_toolkit.c",
@@ -278,7 +278,7 @@
   },
   "0c50a47cb7656226": {
    "path": "lib/map/base_refuse_motion_menu_fade_v2.c",
-   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the faded menu. Used by d05b01_2, s11_2."
+   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the save menu. Used by d05b01_2, s11_2."
   },
   "0cb0001d9617568b": {
    "path": "lib/map/base_item_messages_d02b03_v2.c",
@@ -330,7 +330,7 @@
   },
   "0e851023c16b0699": {
    "path": "lib/map/desoland_villager_talk_v2.c",
-   "doc": "Talks to a Desoland villager. Used by the f04 town scripts."
+   "doc": "Talks to a Desoland villager. Used by the f04_2 and s39_2 scripts."
   },
   "0ee23721f8cbbfde": {
    "path": "lib/map/d/d01/receiver_call_cutscene.c",
@@ -421,7 +421,7 @@
   },
   "133fdbfd9ee628d3": {
    "path": "lib/dungeon/monster/idle_until_target_near.c",
-   "doc": "Idles while a user monster is active until the target is near, with a texture setup helper, used by e67a and e68a."
+   "doc": "Waits idle until the target is within 280 units, plus the poison spitter init program that registers the combo attack hits and loads the poison fluid effects. Used by e67a and e68a."
   },
   "13435d6b88fd7f53": {
    "path": "lib/map/base_item_messages_door_jump_i03h05.c",
@@ -441,11 +441,11 @@
   },
   "13ea7ecf19365df6": {
    "path": "lib/map/do_nothing_arg.c",
-   "doc": "A function that does nothing and takes an argument. Used by the i01h01b house scripts."
+   "doc": "A function that takes an argument and does nothing. Used by the i01h01b, i03h01a and s01 scripts."
   },
   "15604d6d096127c6": {
    "path": "lib/map/s/s10/station_menu_and_setup.c",
-   "doc": "Opens the menu with a fade and sets up the station map. Used by the s10 scripts."
+   "doc": "Opens the save menu with a fade and sets up the station map. Used by the s10 scripts."
   },
   "157e96674040402c": {
    "path": "lib/map/s/s03/event_206_and_buggy.c",
@@ -460,8 +460,8 @@
    "doc": "Flies back then lands stunned, used by e223a to e226a."
   },
   "16117706bc05c769": {
-   "path": "lib/dungeon/monster/monster_hit_and_death_motions.c",
-   "doc": "Numbered monster motion routines plus hit recoil, stop-and-unlock and death motion for e231a, e233a and e235a.",
+   "path": "lib/dungeon/monster/range_melee_fight_ai.c",
+   "doc": "Melee fight AI that picks lunge, backstep, sidestep, second and weak attacks by target range and remaining rage hits, plus attack hit setup, hit recoil, stop-and-unlock, facing the target on knockdown and the death motion. Used by e231a, e233a and e235a.",
    "globals": {
     "g1": "home_y"
    }
@@ -504,12 +504,12 @@
    "doc": "Empty argument handler and a stub, used by 16 boss scripts."
   },
   "171572ba8f8d9038": {
-   "path": "lib/map/d/golf_shots_floor_0.c",
-   "doc": "Spheda golf shot routines for floor 0: aiming, power gauge, club checks, ball stance, camera and ball reset, without course menu handling. Used by the d02 floor scripts."
+   "path": "lib/map/d/golf_shots_0.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d02_0, d05_0, d06_0 and d07_0 dungeon scripts."
   },
   "17369c0b699c6793": {
-   "path": "lib/map/faded_menu_open_d06.c",
-   "doc": "Opens the menu with a fade. Used by the d06 dungeon scripts."
+   "path": "lib/map/open_save_menu_with_fade.c",
+   "doc": "Opens the save menu with a fade. Used by the d06e01, m01, m06 and s71 scripts."
   },
   "17bf86271b16495b": {
    "path": "lib/dungeon/monster/lock_and_stop_all_actions.c",
@@ -553,11 +553,11 @@
   },
   "1aa2d08427f71cd1": {
    "path": "lib/map/s/s02/string_test_and_menu.c",
-   "doc": "Shows the string substitution test, waits for a button and opens the faded menu. Used by the s02 station scripts."
+   "doc": "Shows the string substitution test, waits for a button and opens the save menu. Used by the s02 station scripts."
   },
   "1aae47eb999ca694": {
    "path": "lib/map/desoland_villager_talk.c",
-   "doc": "Villager talk handler. Used by the f04 town scripts."
+   "doc": "Villager talk handler for the Desoland villagers. Used by the f04 and s39 scripts."
   },
   "1af831066d3a6f64": {
    "path": "lib/map/s/s67/moonbreak_event_732.c",
@@ -581,7 +581,7 @@
   },
   "1bc3a2149072a48d": {
    "path": "lib/map/confirm_press_wait.c",
-   "doc": "Waits for a confirm button press. Used by the d03 dungeon scripts."
+   "doc": "Waits for a confirm button press. Used by many dungeon, boss room, town and map scripts (d03b01, f02, g04, s02, s61 and others)."
   },
   "1bcad9815d30fcdf": {
    "path": "lib/dungeon/monster/face_target_forbid_evasion_death.c",
@@ -589,7 +589,7 @@
   },
   "1be07c09ae12ca62": {
    "path": "lib/map/entrance_walk_in.c",
-   "doc": "Disables flagged event points and plays the walk-in scene at the entrance. Used by the d03 dungeon scripts."
+   "doc": "Disables flagged event points and plays the walk-in scene at the entrance. Used by the d03b01 and s56 scripts."
   },
   "1be5ce1a82cb13b1": {
    "path": "lib/map/g/g01/rococo_wakes_up_scene.c",
@@ -613,7 +613,7 @@
   },
   "1c96646c4942bcd1": {
    "path": "lib/map/ask_enter_or_depart_v3.c",
-   "doc": "Asks whether to enter or depart. Used by the i02h01 station scripts."
+   "doc": "Station prompt asking whether to go inside the train or leave: leaving opens the world map move menu. Used by the i02h01_3 and s37_3 scripts."
   },
   "1ca0ee9a3684a342": {
    "path": "lib/dungeon/eff_script/effect_frame_waits.c",
@@ -645,15 +645,15 @@
   },
   "1d90e265bde6d4a8": {
    "path": "lib/map/ask_board_train_v5.c",
-   "doc": "Asks whether to board the train. Used by the i02h01 station scripts."
+   "doc": "Station prompt asking whether to go inside the train or leave: leaving opens the world map move menu. Used by the i02h01_5 and s37_5 scripts."
   },
   "1d9654fb3ae13d40": {
    "path": "lib/map/i/i04/h01/villager_talk_system_message_v4.c",
    "doc": "Villager talk handler and a zero-id system message. Used by the i04h01a house scripts."
   },
   "1de4195f5078117c": {
-   "path": "lib/map/d/d02/floor_5_toolkit.c",
-   "doc": "Floor 5 toolkit of dungeon d02: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d02/toolkit_5.c",
+   "doc": "Toolkit for language variant 5 of the d02 (Rainbow Butterfly Wood) dungeon script and its Spheda script: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by d02_5 and d02_sfida_5."
   },
   "1e2a7ff608904780": {
    "path": "lib/dungeon/monster/view_turn_math_ai_init.c",
@@ -709,7 +709,7 @@
   },
   "1fc476cc0824dbfc": {
    "path": "lib/map/silent_game_over.c",
-   "doc": "Runs a silent game over. Used by dungeon floor scripts."
+   "doc": "Player-dead handler that runs a silent game over. Used by many dungeon, boss room and map scripts (d01b01, d02b02, d06b02, s13, s17, s61 and others)."
   },
   "1fe20297e3955833": {
    "path": "lib/dungeon/monster/turn_and_second_attack.c",
@@ -729,7 +729,7 @@
   },
   "203db35b6d92b2be": {
    "path": "lib/map/i/i02/h01/train_departure_to_dungeon.c",
-   "doc": "Opens the faded menu, departs by train to a dungeon and plays the train departure scene. Used by the i02h01 station scripts."
+   "doc": "Opens the save menu, departs by train to a dungeon and plays the train departure scene. Used by the i02h01 station scripts."
   },
   "207c8a393bef2882": {
    "path": "lib/map/s/station_runtime_5.c",
@@ -749,7 +749,7 @@
   },
   "217c0df346a07c9a": {
    "path": "lib/map/item_messages_v4.c",
-   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03 scripts."
+   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03_4 and s30_4 scripts."
   },
   "2186f2c5af807412": {
    "path": "lib/map/f/f02/event_372_scene_setup.c",
@@ -769,19 +769,19 @@
   },
   "2279fce0f6e3ca75": {
    "path": "lib/map/voice_stream_start.c",
-   "doc": "Starts a voice stream. Used by the m06b scripts."
+   "doc": "Starts a voice stream. Used by the m06b, s43 and s43b scripts."
   },
   "22aa3e728b7ace0d": {
    "path": "lib/map/f/f01/story_event_jumps.c",
    "doc": "Jumps to story events 270, 272, 275, 277, 280 and 285 in f01."
   },
   "22ba4d8e2e8fa128": {
-   "path": "lib/map/d/golf_swing_floor_3.c",
-   "doc": "Spheda golf shot routines for floor 3: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01 floor scripts."
+   "path": "lib/map/d/golf_swing_3.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01_3, d03_3 and d04_3 dungeon scripts."
   },
   "22d88dccf19360e4": {
    "path": "lib/map/dungeon_entry_and_game_over.c",
-   "doc": "Enters d03 when ready and runs a silent game over. Used by the d03 dungeon scripts."
+   "doc": "Enters d03 when ready and runs a silent game over. Used by the d03b01 and s56 scripts."
   },
   "22dedf218ed2b1de": {
    "path": "lib/map/i/i01/h01/villager_talk_with_npc_fade.c",
@@ -789,7 +789,7 @@
   },
   "2354717a1c5cf75f": {
    "path": "lib/map/f/time_gate_scenes_4.c",
-   "doc": "Atlamillia check and glow scenes, time travel caption and red and blue time gate scenes for f01_4."
+   "doc": "Atlamillia check and glow scenes, the time travel caption and the red and blue time gate scenes. Used by the f01_4, f02_4, f03_4 and f04_4 town scripts."
   },
   "2393ef570191d33a": {
    "path": "lib/map/s/s53/ixion_unveiling_runtime.c",
@@ -861,7 +861,7 @@
   },
   "27bf319172bb0ffd": {
    "path": "lib/map/s/s31/menu_and_start_events.c",
-   "doc": "Opens the faded menu and runs s31 start events. Used by the s31 scripts."
+   "doc": "Opens the save menu and runs s31 start events. Used by the s31 scripts."
   },
   "27f25b9f0956bc37": {
    "path": "lib/dungeon/footstep_dust_rise.c",
@@ -877,11 +877,11 @@
   },
   "283b8a57f86ca1cc": {
    "path": "lib/map/i/i02/h01/base_opening_scenes_v1.c",
-   "doc": "Shared base runtime with the opening scene helpers (character loading, ticket, narration, letter and storm scenes). Used by i02h01_1, i02h01_2, i02h01_3, i02h01_4 and others."
+   "doc": "Shared base runtime plus the opening shots at Palm Brinks station: the Blackstone One crew talk, Mayor Need's line to Cedric and the train pulling out. Used by the i02h01_1 to i02h01_5 scripts."
   },
   "28952915f19c14aa": {
    "path": "lib/map/s/s06/floor_exit_door_4.c",
-   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06 floor 4 scripts."
+   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06_4 and s06b_4 scripts."
   },
   "28b4e052850c670c": {
    "path": "lib/map/s/s14/boss_611_floor_clear.c",
@@ -908,8 +908,8 @@
    "doc": "Stun and throw handlers with wander choice, facing check and user monster mode, used by e43a and e75a."
   },
   "2a0c27c447689bbd": {
-   "path": "lib/map/d/golf_course_floor_3.c",
-   "doc": "Spheda golf for floor 3: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by the six Spheda scripts of that floor."
+   "path": "lib/map/d/golf_course_3.c",
+   "doc": "Spheda golf for language variant 3 of the dungeon Spheda scripts: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by d01_sfida_3, d02_sfida_3 and d04_sfida_3 to d07_sfida_3."
   },
   "2a42c8f77134b94c": {
    "path": "lib/map/s/s02/train_rock_scene.c",
@@ -920,8 +920,8 @@
    "doc": "Spiral rock vanish scene and boss floor setups for d06b02, with entry to d06b03."
   },
   "2a8da05cdf438cae": {
-   "path": "lib/map/d/d03/floor_0_toolkit.c",
-   "doc": "Floor 0 toolkit of dungeon d03: doors, chests, victory poses, floor clear, geostone pickup, help messages and monster talk. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d03/toolkit_0.c",
+   "doc": "Toolkit for variant 0 of the d03 (Starlight Canyon) dungeon script and its Spheda script: doors, chests, victory poses, floor clear, geostone pickup, help messages and monster talk. Used by d03_0 and d03_sfida_0."
   },
   "2ab276fcc474bef5": {
    "path": "lib/map/g/g01/i07/firbit_house_scenes.c",
@@ -949,15 +949,15 @@
   },
   "2c31974723abe435": {
    "path": "lib/dungeon/monster/boss_turn_wait_helpers.c",
-   "doc": "Turn speed, snapping to a turn target, waiting for player status and flight clearance, used by the b02a2 to b02a5 boss scripts."
+   "doc": "Turning, move and motion waits, positions around the target and an init program that clears the guard and mask flags, in the b02a raw native numbering. Used by the b02a2 to b02a7 boss scripts."
   },
   "2c325c4c2d5f2474": {
    "path": "lib/map/f/f02/interior_06_2_toolkit.c",
    "doc": "Full shared script base for f02i06_2: pad, message, voice, NPC talk and shop helpers."
   },
   "2c7007312a88cb5e": {
-   "path": "lib/map/d/d05/floor_4_script_core.c",
-   "doc": "Full shared script base for floor 4 of dungeon d05: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d05/script_core_4.c",
+   "doc": "Full shared script base for language variant 4 of the d05 (Mount Gundor) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d05_4 and d05_sfida_4."
   },
   "2ca3f17c51c608f5": {
    "path": "lib/map/d/d01/object_lift_and_walk_in.c",
@@ -976,8 +976,8 @@
    }
   },
   "2cc8f701b56ccc8d": {
-   "path": "lib/map/d/d02/floor_1_toolkit.c",
-   "doc": "Floor 1 toolkit of dungeon d02: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d02/toolkit_1.c",
+   "doc": "Toolkit for language variant 1 of the d02 (Rainbow Butterfly Wood) dungeon script and its Spheda script: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by d02_1 and d02_sfida_1."
   },
   "2ce4377aa1d0bc85": {
    "path": "lib/map/s/station_runtime_4.c",
@@ -1041,12 +1041,12 @@
    "doc": "Registers the scene camera records for event e209 in its two argument scripts, with an empty handler."
   },
   "2e21a26f049cc4db": {
-   "path": "lib/map/d/d05/floor_1_script_core.c",
-   "doc": "Full shared script base for floor 1 of dungeon d05: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d05/script_core_1.c",
+   "doc": "Full shared script base for language variant 1 of the d05 (Mount Gundor) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d05_1 and d05_sfida_1."
   },
   "2e7264045926ed42": {
    "path": "lib/dungeon/monster/rin_move_turn_wait_helpers.c",
-   "doc": "Basic turn, wait and position helpers plus stop actions, used by b14a and rin."
+   "doc": "Basic turn, wait and position helpers plus an empty function, used by b14a and rin."
   },
   "2e7a4612a35c4cda": {
    "path": "lib/map/d/d01/b01/boss_room_exit_prompt.c",
@@ -1097,24 +1097,24 @@
    "doc": "Takes item 368, clears the floor and sets up the boss 613 arena. Used by the s16 scripts."
   },
   "32697c98a2ea92cf": {
-   "path": "lib/map/d/d06/floor_1_script_core.c",
-   "doc": "Full shared script base for floor 1 of dungeon d06: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d06/script_core_1.c",
+   "doc": "Full shared script base for language variant 1 of the d06 (Moon Flower Palace) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d06_1 and d06_sfida_1."
   },
   "3277025ab5df99f8": {
    "path": "lib/dungeon/monster/face_target_death_idle.c",
    "doc": "Locks and faces the target, ends a locked action and idles after death, used by e215a, f20a and t1500."
   },
   "33c278e1ab0d8c39": {
-   "path": "lib/map/d/golf_swing_floor_1.c",
-   "doc": "Spheda golf shot routines for floor 1: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01 floor scripts."
+   "path": "lib/map/d/golf_swing_1.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01_1, d03_1 and d04_1 dungeon scripts."
   },
   "33d63f850da3a7b8": {
-   "path": "lib/map/d/d04/floor_1_script_core.c",
-   "doc": "Full shared script base for floor 1 of dungeon d04: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d04/script_core_1.c",
+   "doc": "Full shared script base for language variant 1 of the d04 (Ocean's Roar Cave) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d04_1 and d04_sfida_1."
   },
   "3463a322f5a28622": {
-   "path": "lib/map/d/golf_swing_floor_2.c",
-   "doc": "Spheda golf shot routines for floor 2: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01 floor scripts."
+   "path": "lib/map/d/golf_swing_2.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01_2, d03_2 and d04_2 dungeon scripts."
   },
   "34fbf172904ca505": {
    "path": "lib/map/g/g01/i07/leave_for_s47.c",
@@ -1154,7 +1154,7 @@
   },
   "376d6aa16926cd81": {
    "path": "lib/map/base_refuse_motion_menu_fade_v1.c",
-   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the faded menu. Used by d05b01_1, s11_1."
+   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the save menu. Used by d05b01_1, s11_1."
   },
   "37700668943dbecb": {
    "path": "lib/map/f/f02/f02_4_town_toolkit.c",
@@ -1197,8 +1197,8 @@
    "doc": "Starts the h01_33 event and fades in Cedric. Used by the i01h01b house scripts."
   },
   "39c00c9365dad192": {
-   "path": "lib/map/d/d05/floor_2_script_core.c",
-   "doc": "Full shared script base for floor 2 of dungeon d05: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d05/script_core_2.c",
+   "doc": "Full shared script base for language variant 2 of the d05 (Mount Gundor) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d05_2 and d05_sfida_2."
   },
   "39cb4b617b57e6b9": {
    "path": "lib/map/s/s30/scene_then_jump_events.c",
@@ -1210,7 +1210,7 @@
   },
   "3a4d4c5c51be92ae": {
    "path": "lib/map/s/train_map_runtime_3.c",
-   "doc": "Shared script runtime with the enter-or-depart prompt. Used by the s02b_3 and s71_3 scripts."
+   "doc": "Shared script runtime plus the train part swaps, train boarding cutscenes, platform placement and the enter-or-depart prompt at the station. Used by the s02b_3 and s71_3 scripts."
   },
   "3a7c24129c122691": {
    "path": "lib/map/i/i03/h01/camera_reset_behind_player.c",
@@ -1241,8 +1241,8 @@
    "doc": "Shared script runtime with game over and Lapis point hiding, for variant 1 of the s13 to s16 boss room scripts."
   },
   "3b1db5ec70bfa618": {
-   "path": "lib/map/d/floor_2_chest_interact.c",
-   "doc": "Interaction with a treasure chest on floor 2 of the dungeons."
+   "path": "lib/map/d/chest_interact_2.c",
+   "doc": "Treasure chest handler that only calls open_treasure_chest. Used by the d01_2 to d07_2 dungeon scripts."
   },
   "3b7c2abe23756e94": {
    "path": "lib/map/d/d01/spheda_course_scoring.c",
@@ -1283,15 +1283,15 @@
   },
   "3d7d20874bdea3c9": {
    "path": "lib/map/i/i03/h02/base_opening_scenes_v1.c",
-   "doc": "Shared base runtime with the opening scene helpers (character loading, ticket, narration, letter and storm scenes). Used by i03h02b_1, i03h02b_2, i03h02b_3, i03h02b_4 and others."
+   "doc": "Shared base runtime plus the circus tent opening scene where Max finds the Pierrots arguing with Polcurse and Mayor Need, after which the game moves on to map m06. Used by the i03h02b_1 to i03h02b_5 scripts."
   },
   "3db23a5c3c63268a": {
    "path": "lib/map/base_refuse_motion_menu_fade_v3.c",
-   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the faded menu. Used by d05b01_3, s11_3."
+   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the save menu. Used by d05b01_3, s11_3."
   },
   "3de449938922b4b1": {
    "path": "lib/map/s/s42/faded_menu.c",
-   "doc": "Opens the menu with a fade. Used by the s42 scripts."
+   "doc": "Opens the save menu with a fade. Used by the s42 scripts."
   },
   "3df628b4fc8311a2": {
    "path": "lib/dungeon/monster/stop_unlock_moon.c",
@@ -1303,15 +1303,15 @@
   },
   "3f34a106abb9f3b5": {
    "path": "lib/map/leave_area_prompt.c",
-   "doc": "Asks whether to leave the area. Used by the d06 dungeon scripts."
+   "doc": "Asks whether to leave the area. Used by the d06e01 and s33 scripts."
   },
   "3f6596b913cd7b11": {
    "path": "lib/map/s/train_npc_talk_2.c",
    "doc": "Epilogue and partner hint lines, train NPC placement, scoop progress reports, shop and party member menus, and talks with the train staff and waiting NPC. Used by the s02b_2 and s71_2 scripts."
   },
   "3f66885a9bace248": {
-   "path": "lib/map/d/golf_course_floor_5.c",
-   "doc": "Spheda golf for floor 5: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by the six Spheda scripts of that floor."
+   "path": "lib/map/d/golf_course_5.c",
+   "doc": "Spheda golf for language variant 5 of the dungeon Spheda scripts: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by d01_sfida_5, d02_sfida_5 and d04_sfida_5 to d07_sfida_5."
   },
   "3fbbff816145be4c": {
    "path": "lib/map/s/s58/train_rush_runtime.c",
@@ -1322,8 +1322,8 @@
    "doc": "Zelmite ore boss appearance and Majin shrink scenes in d07b01."
   },
   "40388e1f13d2bab7": {
-   "path": "lib/map/d/d06/floor_5_script_core.c",
-   "doc": "Full shared script base for floor 5 of dungeon d06: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d06/script_core_5.c",
+   "doc": "Full shared script base for language variant 5 of the d06 (Moon Flower Palace) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d06_5 and d06_sfida_5."
   },
   "4045cea851d968c5": {
    "path": "lib/dungeon/monster/flying_init.c",
@@ -1378,12 +1378,12 @@
    "doc": "Full shared script base for f02i06_1: pad, message, voice, NPC talk and shop helpers."
   },
   "429b25a03344fa0c": {
-   "path": "lib/map/d/floor_4_chest_interact.c",
-   "doc": "Interaction with a treasure chest on floor 4 of the dungeons."
+   "path": "lib/map/d/chest_interact_4.c",
+   "doc": "Treasure chest handler that only calls open_treasure_chest. Used by the d01_4 to d07_4 dungeon scripts."
   },
   "42b0b42470b473e3": {
    "path": "lib/map/s/train_car_runtime.c",
-   "doc": "Shared script runtime with the enter-or-depart prompt. Used by the s02_b and s38 scripts."
+   "doc": "Shared script runtime plus the train part swaps, train boarding cutscenes, platform placement and the enter-or-depart prompt at the station. Used by the s02_b and s38 scripts."
   },
   "42cb657a5adb75ff": {
    "path": "lib/map/s/s05/forest_map_runtime.c",
@@ -1394,8 +1394,8 @@
    "doc": "Asks whether to leave the floor. Used by the s61 and s63 scripts."
   },
   "42d3f5a461025370": {
-   "path": "lib/map/d/golf_course_floor_2.c",
-   "doc": "Spheda golf for floor 2: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by the six Spheda scripts of that floor."
+   "path": "lib/map/d/golf_course_2.c",
+   "doc": "Spheda golf for language variant 2 of the dungeon Spheda scripts: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by d01_sfida_2, d02_sfida_2 and d04_sfida_2 to d07_sfida_2."
   },
   "42ee402816da2ee5": {
    "path": "lib/map/f/f03/i03/interior_0301_toolkit.c",
@@ -1443,11 +1443,11 @@
   },
   "45063247d692e236": {
    "path": "lib/map/party_npc_talk_and_train.c",
-   "doc": "Party character talks, scoop prize and photo checks, and talks with Borneo the train mechanic and Erik the bomber and the departure question. Used by the g00 town scripts."
+   "doc": "Party character talks, scoop prize and photo checks, and talks with Borneo the train mechanic and Erik the bomber and the departure question. Used by the g00 and s38 scripts."
   },
   "4521a878318ec82e": {
    "path": "lib/map/town_villagers_scoops_v5.c",
-   "doc": "Item messages and town villager and quest talk with scoop reward checks. Used by the d01e01 scripts."
+   "doc": "Item, party and system message helpers plus the Palm Brinks villager quest talks (Gordon, Blinkhorn, Parn, Donny and the other recruitable townsfolk) and the scoop reward checks. Used by the d01e01_5 and i01h02_5 (Polly's bakery) scripts."
   },
   "454511aed4742e43": {
    "path": "lib/map/s/s17/dead_end_search_scenes.c",
@@ -1455,7 +1455,7 @@
   },
   "45591fd0d16b960b": {
    "path": "lib/map/s/palace_station_runtime.c",
-   "doc": "Shared script runtime with the enter-or-depart prompt. Used by the s66 and s71 scripts."
+   "doc": "Shared script runtime plus the train part swaps, train boarding cutscenes, platform placement and the enter-or-depart prompt at the station. Used by the s66 and s71 scripts."
   },
   "45ab215a1b583683": {
    "path": "lib/map/g/g02/i02/clinic_event_replays.c",
@@ -1472,7 +1472,7 @@
   },
   "45cc57944a54779f": {
    "path": "lib/map/s/train_map_runtime_1.c",
-   "doc": "Shared script runtime with the board-train prompt. Used by the s02b_1 and s71_1 scripts."
+   "doc": "Shared script runtime plus the train part swaps, train boarding cutscenes, platform placement and the enter-or-depart prompt at the station. Used by the s02b_1 and s71_1 scripts."
   },
   "45eb2ffb48963845": {
    "path": "lib/dungeon/monster/stop_unlock_and_blowback.c",
@@ -1543,12 +1543,12 @@
    "doc": "Opens the d04 key door by animating its lever and door parts."
   },
   "4b114e0afeec2096": {
-   "path": "lib/map/d/d06/floor_4_script_core.c",
-   "doc": "Full shared script base for floor 4 of dungeon d06: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d06/script_core_4.c",
+   "doc": "Full shared script base for language variant 4 of the d06 (Moon Flower Palace) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d06_4 and d06_sfida_4."
   },
   "4b88489d413c746b": {
    "path": "lib/map/d/d01/b01/platform_raise_scene.c",
-   "doc": "Plays the platform raise scene in the d01 boss room, shared by its five floor scripts."
+   "doc": "Plays the platform raise scene in the d01 boss room. Used by the five language variants of d01b01 (d01b01_1 to d01b01_5)."
   },
   "4b8f93ec4ce04177": {
    "path": "lib/map/d/d07/b01/final_boss_script_core.c",
@@ -1675,7 +1675,7 @@
   },
   "51ea8c6f70b87b3a": {
    "path": "lib/map/event_250_cleanup.c",
-   "doc": "Unloads the event 250 characters. Used by the g01c scripts.",
+   "doc": "Unloads the event 250 characters. Used by the g01c and s47 scripts.",
    "globals": {
     "g0": "max_chara_slot",
     "g1": "monica_chara_slot"
@@ -1694,16 +1694,16 @@
    "doc": "Monster talk entry shared by all d01 floor scripts."
   },
   "530f4a277d4c4e22": {
-   "path": "lib/map/d/d04/floor_5_script_core.c",
-   "doc": "Full shared script base for floor 5 of dungeon d04: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d04/script_core_5.c",
+   "doc": "Full shared script base for language variant 5 of the d04 (Ocean's Roar Cave) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d04_5 and d04_sfida_5."
   },
   "532c2f70be8de7b5": {
    "path": "lib/map/s/train_map_runtime_2.c",
-   "doc": "Shared script runtime with the board-train prompt. Used by the s02b_2 and s71_2 scripts."
+   "doc": "Shared script runtime plus the train part swaps, train boarding cutscenes, platform placement and the enter-or-depart prompt at the station. Used by the s02b_2 and s71_2 scripts."
   },
   "5376862395a1740d": {
    "path": "lib/map/town_villagers_scoops_v3.c",
-   "doc": "Item messages and town villager and quest talk with scoop reward checks. Used by the d01e01 scripts."
+   "doc": "Item, party and system message helpers plus the Palm Brinks villager quest talks (Gordon, Blinkhorn, Parn, Donny and the other recruitable townsfolk) and the scoop reward checks. Used by the d01e01_3 and i01h02_3 (Polly's bakery) scripts."
   },
   "551d8a1d6ebc85ba": {
    "path": "lib/map/f/f04/interior_03_5_toolkit.c",
@@ -1742,8 +1742,8 @@
    "doc": "Chooses a dungeon floor from the tree map, parks the train off screen, starts the station event and plays the train departure and event 201 with starter items. Used by the s01 station scripts."
   },
   "56d192d037b76a19": {
-   "path": "lib/map/d/d05/floor_5_script_core.c",
-   "doc": "Full shared script base for floor 5 of dungeon d05: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d05/script_core_5.c",
+   "doc": "Full shared script base for language variant 5 of the d05 (Mount Gundor) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d05_5 and d05_sfida_5."
   },
   "57019529315bdb63": {
    "path": "lib/map/s/train_car_shop_runtime_4.c",
@@ -1767,7 +1767,7 @@
   },
   "580a310d31d7c0c5": {
    "path": "lib/dungeon/monster/enraged_monster_fights.c",
-   "doc": "Fight routines for the monsters e230a, e232a and e234a, including a combat loop that never calms down."
+   "doc": "Lifted struggle, landing get-up and knocked-flying faint handlers, plus a fight loop that strafes or waits and then picks an action by range forever. Used by e230a, e232a and e234a."
   },
   "583d08246f3b29c9": {
    "path": "lib/dungeon/monster/throw_recovery_handlers.c",
@@ -1787,7 +1787,7 @@
   },
   "5998c11fb4355282": {
    "path": "lib/map/s/s04/town_setup_and_departure.c",
-   "doc": "Opens the world menu with a fade, plays a debug sound test, sets up the town with its villagers and plays the departure jump to s09. Used by the s04 map scripts."
+   "doc": "Opens the save menu with a fade, plays a debug sound test, sets up the town with its villagers and plays the departure jump to s09. Used by the s04 map scripts."
   },
   "599a3c41cce68a8d": {
    "path": "lib/dungeon/monster/stun_throw_idle_choice.c",
@@ -1807,11 +1807,11 @@
   },
   "5b34dd3949b5bd70": {
    "path": "lib/dungeon/act_script/knockback_and_death_handlers.c",
-   "doc": "Handlers for the knocked-flying reaction and for death with a confirm wait, used by four f-series action scripts."
+   "doc": "Handlers for the knocked-flying reaction and for death with a confirm wait, used by four monster form (f-series) action scripts."
   },
   "5b550f0b5bd578dc": {
-   "path": "lib/map/s/palace_return_actors_4.c",
-   "doc": "Shared script runtime with the faded menu plus the palace return, event 616 and rock scene actors. Used by the s65_4 and s68_4 scripts.",
+   "path": "lib/map/s/palace_return_runtime_4.c",
+   "doc": "Shared script runtime with the save menu plus the event 616 cutscenes after the Moon Flower Palace returns: Osmond's warning, the beam escape and Toryon's rock barrage, with their actor setup. Used by the s65_4 and s68_4 scripts.",
    "globals": {
     "g0": "party1_max_slot",
     "g1": "party1_monica_slot",
@@ -1828,8 +1828,8 @@
    "doc": "Spheda lesson and trial turns, Monica instructions, floor advance and game over. Used by the s17 scripts."
   },
   "5c0025c3758df207": {
-   "path": "lib/map/d/d07/floor_5_script_core.c",
-   "doc": "Full shared script base for floor 5 of dungeon d07: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d07/script_core_5.c",
+   "doc": "Full shared script base for language variant 5 of the d07 (Zelmite Mine) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d07_5 and d07_sfida_5."
   },
   "5c6bd5fbcb084c34": {
    "path": "lib/map/s/s06/load_monster_and_script.c",
@@ -1841,7 +1841,7 @@
   },
   "5cc8900d70476df5": {
    "path": "lib/dungeon/act_script/knockback_death_and_attack.c",
-   "doc": "Knocked-flying reaction, death, and a single attack motion, used by the f-series action scripts."
+   "doc": "Knocked-flying reaction, death, and a single attack motion, used by the monster form (f-series) action scripts."
   },
   "5cc9082e952520aa": {
    "path": "lib/effect_do_nothing.c",
@@ -1873,7 +1873,7 @@
   },
   "5f8a44e130073828": {
    "path": "lib/map/desoland_villager_talk_v4.c",
-   "doc": "Talks to a Desoland villager. Used by the f04 town scripts."
+   "doc": "Talks to a Desoland villager. Used by the f04_4 and s39_4 scripts."
   },
   "5fb1ae9616a405af": {
    "path": "lib/dungeon/monster/stay_stunned_element.c",
@@ -1896,8 +1896,8 @@
    "doc": "Fades out and plays events 336 and 340, and starts the monster 68 fight. Used by the s18 scripts."
   },
   "60c8b8dd501c6894": {
-   "path": "lib/map/d/golf_swing_floor_0.c",
-   "doc": "Spheda golf shot routines for floor 0: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01 floor scripts."
+   "path": "lib/map/d/golf_swing_0.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01_0, d03_0 and d04_0 dungeon scripts."
   },
   "60e6b405fa0da965": {
    "path": "lib/dungeon/monster/stop_and_unlock.c",
@@ -1944,8 +1944,8 @@
    "doc": "Shared script runtime with game over, Spheda ball handling, floor counters, chest opening and mimics, geostone pickup, help tutorials and monster talk, for variant 4 of the s61, s62, s63 and s69 room scripts."
   },
   "62be601aba8862ad": {
-   "path": "lib/map/d/d04/floor_3_script_core.c",
-   "doc": "Full shared script base for floor 3 of dungeon d04: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d04/script_core_3.c",
+   "doc": "Full shared script base for language variant 3 of the d04 (Ocean's Roar Cave) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d04_3 and d04_sfida_3."
   },
   "63247b19405f6541": {
    "path": "lib/dungeon/monster/recoil_from_hit_b204.c",
@@ -1981,7 +1981,7 @@
   },
   "6568c7dbd0de4ef5": {
    "path": "lib/map/item_messages_v2.c",
-   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03 scripts."
+   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03_2 and s30_2 scripts."
   },
   "66516f3b86c6b848": {
    "path": "lib/map/d/d06/b02/monster_intro_scenes.c",
@@ -2030,8 +2030,8 @@
    "doc": "Max's fully charged attack, used by the c01 player scripts."
   },
   "681b8cf12141dd0a": {
-   "path": "lib/map/d/golf_shots_floor_4.c",
-   "doc": "Spheda golf shot routines for floor 4: aiming, power gauge, club checks, ball stance, camera and ball reset, without course menu handling. Used by the d02 floor scripts."
+   "path": "lib/map/d/golf_shots_4.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d02_4, d05_4, d06_4 and d07_4 dungeon scripts."
   },
   "68ae9ad73def4230": {
    "path": "lib/map/s/s31/train_station_scenes.c",
@@ -2039,7 +2039,7 @@
   },
   "68e1ecf228ca731f": {
    "path": "lib/map/ask_board_train_v2.c",
-   "doc": "Asks whether to board the train. Used by the i02h01 station scripts."
+   "doc": "Station prompt asking whether to go inside the train or leave: leaving opens the world map move menu. Used by the i02h01_2 and s37_2 scripts."
   },
   "69a4c58b1067739e": {
    "path": "lib/dungeon/monster/distance_and_view_cone.c",
@@ -2065,7 +2065,7 @@
   },
   "6a1b3d1d6f070364": {
    "path": "lib/map/s/train_map_runtime_5.c",
-   "doc": "Shared script runtime with the board-train prompt. Used by the s02b_5 and s71_5 scripts."
+   "doc": "Shared script runtime plus the train part swaps, train boarding cutscenes, platform placement and the enter-or-depart prompt at the station. Used by the s02b_5 and s71_5 scripts."
   },
   "6a49d97b31ad06fe": {
    "path": "lib/dungeon/monster/store_var_20.c",
@@ -2076,8 +2076,8 @@
    "doc": "Charge effect model that follows its owner, used by Monica's c02tame effect."
   },
   "6a4a94cbadb0db81": {
-   "path": "lib/dungeon/monster/facing_check_and_actions.c",
-   "doc": "Facing check with two small action helpers, used by b117a and e117a."
+   "path": "lib/dungeon/monster/facing_check_and_disguise_idle.c",
+   "doc": "Facing check plus standing and facing the target while the player is disguised, until the disguise ends. Used by b117a and e117a."
   },
   "6ae6dc3fc38c2fb5": {
    "path": "lib/map/base_item_messages_door_jump_d04b01.c",
@@ -2097,7 +2097,7 @@
   },
   "6b69859ae6294610": {
    "path": "lib/dungeon/act_script/damage_reaction.c",
-   "doc": "Reaction to taking damage for the f-series action scripts such as f03a, f05a and f114a."
+   "doc": "Reaction to taking damage for the monster form (f-series) action scripts such as f03a, f05a and f114a."
   },
   "6bc1bdbb03d15486": {
    "path": "lib/map/g/g02/i02/clinic_story_scenes.c",
@@ -2121,7 +2121,7 @@
   },
   "6c7d0c7253c20db3": {
    "path": "lib/map/s/s71/moonflower_beam_scene.c",
-   "doc": "Moonflower beam actors and scene, and faded menu. Used by the s71 scripts.",
+   "doc": "Moonflower beam actors and scene, and the save menu. Used by the s71 scripts.",
    "globals": {
     "g0": "max_scene_slot",
     "g1": "monica_scene_slot"
@@ -2220,8 +2220,8 @@
    "doc": "Shared script runtime plus train NPC talk, shop menus and villager talk. Used by the s07_1 and s38_1 train car scripts."
   },
   "72c55216d89a6859": {
-   "path": "lib/map/d/d02/floor_0_toolkit.c",
-   "doc": "Floor 0 toolkit of dungeon d02: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d02/toolkit_0.c",
+   "doc": "Toolkit for variant 0 of the d02 (Rainbow Butterfly Wood) dungeon script and its Spheda script: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by d02_0 and d02_sfida_0."
   },
   "72ff4a74896e3561": {
    "path": "lib/map/i/i01/h01/npc_house_scene.c",
@@ -2252,8 +2252,8 @@
    }
   },
   "751925f2e5394b14": {
-   "path": "lib/dungeon/monster/monster_ai_toolkit_unnamed.c",
-   "doc": "Monster helper set with mostly unnamed functions for turning and waiting, used by b07a_atora_yellow, e08a and e09a.",
+   "path": "lib/dungeon/monster/monster_ai_toolkit_basic.c",
+   "doc": "Monster AI toolkit with turning, view checks, walking and chasing, but without the frame-updating waits, aggro handling or PAL frame scaling. Used by b07a_atora_yellow, e08a and e09a.",
    "globals": {
     "g0": "spawn_x",
     "g1": "spawn_y",
@@ -2278,7 +2278,7 @@
   },
   "7589fb2371c119b8": {
    "path": "lib/map/g/g03/map_start_and_leave.c",
-   "doc": "Starts the g03 map (including the event 404 start), opens the faded menu and leaves for s27 or s09. Used by the g03 town map scripts."
+   "doc": "Starts the g03 map (including the event 404 start), opens the save menu and leaves for s27 or s09. Used by the g03 town map scripts."
   },
   "75a5af568aec9f76": {
    "path": "lib/map/s/s27/heal_shingala_and_leave.c",
@@ -2301,8 +2301,8 @@
    "doc": "Facing check, facing the target while the player is disguised, user monster mode and damage motion, used by 6 enemy scripts."
   },
   "77b7314785f4dc81": {
-   "path": "lib/map/d/golf_course_floor_1.c",
-   "doc": "Spheda golf for floor 1: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by the six Spheda scripts of that floor."
+   "path": "lib/map/d/golf_course_1.c",
+   "doc": "Spheda golf for language variant 1 of the dungeon Spheda scripts: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by d01_sfida_1, d02_sfida_1 and d04_sfida_1 to d07_sfida_1."
   },
   "77bac2219d8da85f": {
    "path": "lib/map/s/s60/ending_movie_runtime.c",
@@ -2314,7 +2314,7 @@
   },
   "785ca9d1a03b6089": {
    "path": "lib/map/shop_and_villager_talk.c",
-   "doc": "Opens the shop menu with a greeting and handles town villager talk. Used by the i02h01 station scripts."
+   "doc": "Opens the shop menu with a greeting and handles town villager talk. Used by the i02h01 and s38 scripts."
   },
   "7904f4e6c0b8a633": {
    "path": "lib/map/f/f04/event_548_508_scenes.c",
@@ -2345,8 +2345,8 @@
    "doc": "Flies around or watches the target, used by e225a and e226a."
   },
   "7ac8c35adca77127": {
-   "path": "lib/map/d/d04/floor_4_script_core.c",
-   "doc": "Full shared script base for floor 4 of dungeon d04: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d04/script_core_4.c",
+   "doc": "Full shared script base for language variant 4 of the d04 (Ocean's Roar Cave) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d04_4 and d04_sfida_4."
   },
   "7b06e69924e964c1": {
    "path": "lib/dungeon/eff_script/bone_follow_with_fade.c",
@@ -2373,8 +2373,8 @@
    "doc": "Stays stunned until the stop ends, used by 10 monster scripts."
   },
   "7c0ef7594e5926cd": {
-   "path": "lib/map/d/floor_1_chest_interact.c",
-   "doc": "Interaction with a treasure chest on floor 1 of the dungeons."
+   "path": "lib/map/d/chest_interact_1.c",
+   "doc": "Treasure chest handler that only calls open_treasure_chest. Used by the d01_1 to d07_1 dungeon scripts."
   },
   "7c27d6369f12cc6a": {
    "path": "lib/dungeon/homing_flame_shot.c",
@@ -2393,8 +2393,8 @@
    "doc": "Runs the door map jump. Used by the i01h02 scripts."
   },
   "7ce29fe97822bb9a": {
-   "path": "lib/map/d/d06/floor_3_script_core.c",
-   "doc": "Full shared script base for floor 3 of dungeon d06: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d06/script_core_3.c",
+   "doc": "Full shared script base for language variant 3 of the d06 (Moon Flower Palace) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d06_3 and d06_sfida_3."
   },
   "7de5d05f2adf41b7": {
    "path": "lib/map/i/i04/h01/event_101_dungeon_start.c",
@@ -2402,7 +2402,7 @@
   },
   "7e1933f1b82e06b7": {
    "path": "lib/map/d/d01/e01/opening_town_script_core.c",
-   "doc": "Full shared script base for the opening town d01e01: pad input, door jumps, message and voice windows, NPC talk, item limit menu and menu with fade."
+   "doc": "Full shared script base for the opening town d01e01: pad input, door jumps, message and voice windows, NPC talk, item limit menu and save menu."
   },
   "7e872a9fa5b55d48": {
    "path": "lib/map/f/f02/f02_2_town_toolkit.c",
@@ -2481,8 +2481,8 @@
    "doc": "Plays the Dr. Dell recruit scene on entry. Used by the i05h01 scripts."
   },
   "8486e61ef4b1d3aa": {
-   "path": "lib/map/d/golf_shots_floor_3.c",
-   "doc": "Spheda golf shot routines for floor 3: aiming, power gauge, club checks, ball stance, camera and ball reset, without course menu handling. Used by the d02 floor scripts."
+   "path": "lib/map/d/golf_shots_3.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d02_3, d05_3, d06_3 and d07_3 dungeon scripts."
   },
   "84d0b9acb08bde2b": {
    "path": "lib/map/s/station_runtime_2.c",
@@ -2517,8 +2517,8 @@
    "doc": "Throw getup helper, used by b14a, e60a and t1500."
   },
   "86ec55ec4588f47c": {
-   "path": "lib/map/d/golf_course_floor_4.c",
-   "doc": "Spheda golf for floor 4: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by the six Spheda scripts of that floor."
+   "path": "lib/map/d/golf_course_4.c",
+   "doc": "Spheda golf for language variant 4 of the dungeon Spheda scripts: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by d01_sfida_4, d02_sfida_4 and d04_sfida_4 to d07_sfida_4."
   },
   "86f238a41a8c8e3a": {
    "path": "lib/map/s/s01/event_202_load.c",
@@ -2560,8 +2560,8 @@
    "doc": "Shared script runtime with game over and Lapis point hiding, for variant 5 of the s13 to s16 boss room scripts."
   },
   "880cc0019076c050": {
-   "path": "lib/dungeon/monster/move_turn_wait_helpers_t1500.c",
-   "doc": "Basic turn, wait and position helpers, used by e215a and t1500.",
+   "path": "lib/dungeon/monster/monster_ai_toolkit_t1500.c",
+   "doc": "Full monster AI toolkit with clip distance setup, frame-updating waits, view checks, turning, walking toward the target when the way is clear, chasing and dodge locks. Used by e215a (Flotsam balloon) and t1500.",
    "globals": {
     "g0": "home_x",
     "g1": "home_y",
@@ -2636,20 +2636,20 @@
    "doc": "Bomb effect that follows its owner's item bone and arcs to a target, used by the bakudan effect."
   },
   "8deb5f2c234ec2a5": {
-   "path": "lib/map/d/d04/floor_2_script_core.c",
-   "doc": "Full shared script base for floor 2 of dungeon d04: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d04/script_core_2.c",
+   "doc": "Full shared script base for language variant 2 of the d04 (Ocean's Roar Cave) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d04_2 and d04_sfida_2."
   },
   "8e2118ea8c42feb0": {
    "path": "lib/map/s/palace_scene_jumps.c",
-   "doc": "Opens the faded menu, goes to the s70 entrance 520, and plays the beam escape and rock throw scenes then jumps to s26 or s12. Used by the s65 and s68 scripts."
+   "doc": "Opens the save menu, goes to the s70 entrance 520, and plays the beam escape and rock throw scenes then jumps to s26 or s12. Used by the s65 and s68 scripts."
   },
   "8e435d008d446be8": {
    "path": "lib/map/f/f02/interior_06_3_villager_talk.c",
    "doc": "Villager talk handler and camera reset for f02i06_3."
   },
   "8ebaac7fb23b4323": {
-   "path": "lib/map/d/d02/floor_4_toolkit.c",
-   "doc": "Floor 4 toolkit of dungeon d02: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d02/toolkit_4.c",
+   "doc": "Toolkit for language variant 4 of the d02 (Rainbow Butterfly Wood) dungeon script and its Spheda script: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by d02_4 and d02_sfida_4."
   },
   "8f1f9df00557eecf": {
    "path": "lib/map/s/s05/utan_boulder_scene.c",
@@ -2669,7 +2669,7 @@
   },
   "8f4f3331f1a285a6": {
    "path": "lib/map/base_refuse_motion_menu_fade_v4.c",
-   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the faded menu. Used by d05b01_4, s11_4."
+   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the save menu. Used by d05b01_4, s11_4."
   },
   "8f58360bafffb75a": {
    "path": "lib/map/f/f02/temple_villager_talk.c",
@@ -2700,8 +2700,8 @@
    "doc": "Tries to play event 508 in f04."
   },
   "92467895bfc5a078": {
-   "path": "lib/map/d/golf_shots_floor_5.c",
-   "doc": "Spheda golf shot routines for floor 5: aiming, power gauge, club checks, ball stance, camera and ball reset, without course menu handling. Used by the d02 floor scripts."
+   "path": "lib/map/d/golf_shots_5.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d02_5, d05_5, d06_5 and d07_5 dungeon scripts."
   },
   "92a1003c55f01955": {
    "path": "lib/dungeon/monster/death_and_halt.c",
@@ -2813,7 +2813,7 @@
   },
   "995560fe2a6945ff": {
    "path": "lib/map/voiced_message_lipsync.c",
-   "doc": "Waits on character motion and plays voiced messages with lip sync. Used by the d01 dungeon scripts."
+   "doc": "Waits on character motion and plays voiced messages with lip sync. Used by the d01_0, i01h01b, i03h01a and s08 scripts."
   },
   "996c0b3422994bbf": {
    "path": "lib/map/base_item_messages_door_jump_g04.c",
@@ -2840,16 +2840,16 @@
    "doc": "Shared base runtime with message windows, item messages and the refuse motion. Used by d02b01_4, s20_4."
   },
   "9a8ced86d71a55f3": {
-   "path": "lib/map/d/golf_swing_floor_4.c",
-   "doc": "Spheda golf shot routines for floor 4: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01 floor scripts."
+   "path": "lib/map/d/golf_swing_4.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01_4, d03_4 and d04_4 dungeon scripts."
   },
   "9ac55e8b28822c5a": {
-   "path": "lib/map/d/d07/floor_1_script_core.c",
-   "doc": "Full shared script base for floor 1 of dungeon d07: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d07/script_core_1.c",
+   "doc": "Full shared script base for language variant 1 of the d07 (Zelmite Mine) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d07_1 and d07_sfida_1."
   },
   "9ace1a51fe153dbb": {
    "path": "lib/map/game_over_variants.c",
-   "doc": "Runs the normal, silent and voiced game over. Used by the d04 dungeon scripts."
+   "doc": "Runs the normal, silent and voiced game over. Used by the d04b01, d05b01 and s20 scripts."
   },
   "9af9abd929e7c2fe": {
    "path": "lib/map/g/g05/map_start_and_dungeon_entry.c",
@@ -2864,8 +2864,8 @@
    "doc": "Shared base runtime: flags, pad input, stream waits, camera, voiced message windows and item and party message helpers. Used by d04b01_2, g05_2, s05_2, s05b_2 and others."
   },
   "9bbf8741cc56b3c5": {
-   "path": "lib/map/s/palace_return_actors_1.c",
-   "doc": "Shared script runtime with the faded menu plus the palace return, event 616 and rock scene actors. Used by the s65_1 and s68_1 scripts.",
+   "path": "lib/map/s/palace_return_runtime_1.c",
+   "doc": "Shared script runtime with the save menu plus the event 616 cutscenes after the Moon Flower Palace returns: Osmond's warning, the beam escape and Toryon's rock barrage, with their actor setup. Used by the s65_1 and s68_1 scripts.",
    "globals": {
     "g0": "max_chara_slot",
     "g1": "monica_chara_slot",
@@ -2883,7 +2883,7 @@
   },
   "9c7a8817742e2d7e": {
    "path": "lib/dungeon/act_script/actor_reaction_basics.c",
-   "doc": "Frame and motion waits, damage and knocked-flying reactions, and death with a confirm wait, used by the f-series action scripts."
+   "doc": "Frame and motion waits, damage and knocked-flying reactions, and death with a confirm wait, used by the monster form (f-series) action scripts."
   },
   "9cc56b17e04d4e3a": {
    "path": "lib/map/base_game_over_refuse_v3.c",
@@ -2935,7 +2935,7 @@
   },
   "9eee892100d99bfe": {
    "path": "lib/map/base_refuse_motion_menu_fade_v5.c",
-   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the faded menu. Used by d05b01_5, s11_5."
+   "doc": "Shared base runtime with message windows, item messages, the refuse motion and the save menu. Used by d05b01_5, s11_5."
   },
   "9f1202d799dbbfcf": {
    "path": "lib/map/f/f02/i08/miracle_dish_request_scene.c",
@@ -3013,11 +3013,11 @@
   },
   "a1d62df8490a9361": {
    "path": "lib/map/return_zero.c",
-   "doc": "Returns zero. Used by the i01h04 house scripts."
+   "doc": "Returns zero. Used by the i01h04 weapon shop scripts and m01."
   },
   "a20a625095917b42": {
    "path": "lib/map/f/time_gate_scenes_5.c",
-   "doc": "Atlamillia check and glow scenes, time travel caption and red and blue time gate scenes for f01_5."
+   "doc": "Atlamillia check and glow scenes, the time travel caption and the red and blue time gate scenes. Used by the f01_5, f02_5, f03_5 and f04_5 town scripts."
   },
   "a21981476e52ce42": {
    "path": "lib/map/s/s64/alexandra_farewell_scene.c",
@@ -3032,8 +3032,8 @@
    "doc": "Effect frame wait, used by the bara, mguil_kemuri and tarub effects."
   },
   "a33483c0bcb7e0b1": {
-   "path": "lib/dungeon/monster/monster_ai_toolkit_renamed_waits.c",
-   "doc": "Full monster AI toolkit with frame counter, aggro handling and renamed update waits, used by e116a, e221a and e44a.",
+   "path": "lib/dungeon/monster/monster_ai_toolkit_frame_counter.c",
+   "doc": "Full monster AI toolkit with a frame counter, PAL frame scaling, aggro handling, its own frame-updating waits and a dash toward the target. Used by e116a, e221a and e44a.",
    "globals": {
     "g0": "spawn_x",
     "g1": "spawn_y",
@@ -3076,7 +3076,7 @@
   },
   "a4c74b20778b9333": {
    "path": "lib/map/f/time_gate_scenes_3.c",
-   "doc": "Atlamillia check and glow scenes, time travel caption and red and blue time gate scenes for f01_3."
+   "doc": "Atlamillia check and glow scenes, the time travel caption and the red and blue time gate scenes. Used by the f01_3, f02_3, f03_3 and f04_3 town scripts."
   },
   "a4ef736caa3f6318": {
    "path": "lib/map/g/g02/jump_to_s04.c",
@@ -3099,8 +3099,8 @@
    }
   },
   "a61b49f743d0056b": {
-   "path": "lib/dungeon/monster/move_turn_wait_helpers_stop.c",
-   "doc": "Basic monster helpers for turning, waiting and positions around the target plus stopping all actions, used by 9 boss scripts such as b02a and b03a."
+   "path": "lib/dungeon/monster/move_turn_wait_helpers_empty.c",
+   "doc": "Basic monster helpers for turning, waiting and positions around the target plus an empty function, used by 9 boss scripts such as b02a and b03a."
   },
   "a6589961ea29648c": {
    "path": "lib/dungeon/eff_script/smoke_rising_sprites.c",
@@ -3127,8 +3127,8 @@
    "doc": "Shared base runtime with the shop menu and the town villager talk handlers for every quest NPC (Gordon, Blinkhorn, Parn, Ferdinand, Stewart, Adel, Aunt Polly, Milane, Gerald, Need, Bruno and others). Used by i01h04_1, i01h05_1, i01h06_1, i01h07_1 and others."
   },
   "a77b7267aad8993f": {
-   "path": "lib/map/d/d02/floor_3_toolkit.c",
-   "doc": "Floor 3 toolkit of dungeon d02: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d02/toolkit_3.c",
+   "doc": "Toolkit for language variant 3 of the d02 (Rainbow Butterfly Wood) dungeon script and its Spheda script: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by d02_3 and d02_sfida_3."
   },
   "a7f36443f1dee08f": {
    "path": "lib/map_do_nothing.c",
@@ -3136,7 +3136,7 @@
   },
   "a8022de4baad8851": {
    "path": "lib/map/train_station_boarding.c",
-   "doc": "Tilts and resets the train slope parts, shows the station parts, plays boarding of the front and middle cars and asks to enter or depart. Used by the i02h01 station scripts."
+   "doc": "Tilts and resets the train slope parts, shows the station parts, plays boarding of the front and middle cars and asks to enter or depart. Used by the i02h01 and s37 scripts."
   },
   "a82ec387cc7ee416": {
    "path": "lib/map/g/g02/i02/moaning_message.c",
@@ -3192,7 +3192,7 @@
   },
   "aaddb5aef5a2f01d": {
    "path": "lib/map/f/time_gate_scenes_1.c",
-   "doc": "Atlamillia check and glow scenes, time travel caption and red and blue time gate scenes for f01_1."
+   "doc": "Atlamillia check and glow scenes, the time travel caption and the red and blue time gate scenes. Used by the f01_1, f02_1, f03_1 and f04_1 town scripts."
   },
   "aaf60ffc688bcd4d": {
    "path": "lib/dungeon/monster/flinch_and_stun.c",
@@ -3232,7 +3232,7 @@
   },
   "acfc0aa10c5c2541": {
    "path": "lib/map/item_messages_v1.c",
-   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03 scripts."
+   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03_1 and s30_1 scripts."
   },
   "ad3ed282c21f9a22": {
    "path": "lib/map/i/i03/h05/fish_race_start_and_exit.c",
@@ -3263,7 +3263,7 @@
   },
   "ae7c5d55bcf073cb": {
    "path": "lib/map/town_shop_and_villager_talk.c",
-   "doc": "Opens the shop menu with a greeting and handles talking to town villagers. Used by the f01 town scripts."
+   "doc": "Opens the shop menu with a greeting and handles talking to town villagers. Used by the f01 and s07 scripts."
   },
   "aee9c4fe112eb851": {
    "path": "lib/map/i/i04/h02/npc_until_button_press.c",
@@ -3346,8 +3346,8 @@
    "doc": "Victory speech, villager crowd, plaza camera and fireworks scenes. Used by the s60 scripts."
   },
   "b564c23c91707659": {
-   "path": "lib/map/d/d07/floor_0_script_core.c",
-   "doc": "Full shared script base for floor 0 of dungeon d07: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d07/script_core_0.c",
+   "doc": "Full shared script base for variant 0 of the d07 (Zelmite Mine) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d07_0 and d07_sfida_0."
   },
   "b580d095c9d40442": {
    "path": "lib/dungeon/monster/recoil_until_stun_ends.c",
@@ -3429,8 +3429,8 @@
    }
   },
   "b8ab128146a51407": {
-   "path": "lib/map/d/golf_shots_floor_2.c",
-   "doc": "Spheda golf shot routines for floor 2: aiming, power gauge, club checks, ball stance, camera and ball reset, without course menu handling. Used by the d02 floor scripts."
+   "path": "lib/map/d/golf_shots_2.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d02_2, d05_2, d06_2 and d07_2 dungeon scripts."
   },
   "b8cb73911442afde": {
    "path": "lib/dungeon/monster/guard_and_damage_knockback.c",
@@ -3454,7 +3454,7 @@
   },
   "b9b17a088c2392f1": {
    "path": "lib/map/item_messages_v5.c",
-   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03 scripts."
+   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03_5 and s30_5 scripts."
   },
   "ba1eb596bd3cc123": {
    "path": "lib/map/m/m01/house_event_entries.c",
@@ -3529,15 +3529,15 @@
   },
   "bd1846118466a01c": {
    "path": "lib/map/item_messages.c",
-   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03 scripts."
+   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03 and s30 scripts."
   },
   "bd2c300072ad5996": {
-   "path": "lib/map/d/d02/floor_2_toolkit.c",
-   "doc": "Floor 2 toolkit of dungeon d02: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d02/toolkit_2.c",
+   "doc": "Toolkit for language variant 2 of the d02 (Rainbow Butterfly Wood) dungeon script and its Spheda script: locked doors, chests, victory poses, floor clear, geostone pickup, help messages, monster talk and Spheda setup. Used by d02_2 and d02_sfida_2."
   },
   "bd3b18405164ca18": {
    "path": "lib/map/m/m06/midnight_event_starts.c",
-   "doc": "Opens the faded menu and starts the m06b events 152 and 155. Used by the m06 map scripts."
+   "doc": "Opens the save menu and starts the m06b events 152 and 155. Used by the m06 map scripts."
   },
   "bd4df914540452e2": {
    "path": "lib/map/f/f02/i08/lao_chao_restaurant_setup.c",
@@ -3545,7 +3545,7 @@
   },
   "bdb5b67d978e33df": {
    "path": "lib/map/ask_enter_or_depart_v4.c",
-   "doc": "Asks whether to enter or depart. Used by the i02h01 station scripts."
+   "doc": "Station prompt asking whether to go inside the train or leave: leaving opens the world map move menu. Used by the i02h01_4 and s37_4 scripts."
   },
   "bdcf1bfb2da74414": {
    "path": "lib/map/m/m06/opening_characters.c",
@@ -3573,7 +3573,7 @@
   },
   "c01ff29dbbd5d0d2": {
    "path": "lib/map/event_275_cleanup.c",
-   "doc": "Unloads the event 275 characters. Used by the f01 town scripts.",
+   "doc": "Unloads the event 275 characters. Used by the f01 and s05b scripts.",
    "globals": {
     "g0": "max_chara_slot",
     "g1": "partner_chara_slot"
@@ -3598,7 +3598,7 @@
   },
   "c0e5ed7ba8b2f43d": {
    "path": "lib/map/time_gate_scenes.c",
-   "doc": "Plays the Atlamillia glow scenes, the future jump, the return and the red and blue gate warps. Used by the f02 map scripts."
+   "doc": "Plays the Atlamillia glow scenes, the future jump, the return and the red and blue gate warps. Used by the f02, f03, f04 and g03 scripts."
   },
   "c0f7c384f9190b4c": {
    "path": "lib/map/s/s63/twin_monster_room.c",
@@ -3629,8 +3629,8 @@
    "doc": "Plays event 406 on the d04 floors."
   },
   "c23a3ce67db628cd": {
-   "path": "lib/map/d/floor_0_chest_open.c",
-   "doc": "Opens a treasure chest on floor 0 of the dungeons."
+   "path": "lib/map/d/chest_open_0.c",
+   "doc": "Treasure chest handler that only calls open_treasure_chest. Used by variant 0 of the d01 to d07 dungeon scripts."
   },
   "c24028dac14c971e": {
    "path": "lib/map/s/s02/event_254_load.c",
@@ -3670,7 +3670,7 @@
   },
   "c38e9887d352169b": {
    "path": "lib/map/ask_board_train_v1.c",
-   "doc": "Asks whether to board the train. Used by the i02h01 station scripts."
+   "doc": "Station prompt asking whether to go inside the train or leave: leaving opens the world map move menu. Used by the i02h01_1 and s37_1 scripts."
   },
   "c3a1a6d0caa45f8b": {
    "path": "lib/map/s/s08/opening_narration_scene.c",
@@ -3709,12 +3709,12 @@
    }
   },
   "c64185724f28b8aa": {
-   "path": "lib/map/d/golf_swing_floor_5.c",
-   "doc": "Spheda golf shot routines for floor 5: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01 floor scripts."
+   "path": "lib/map/d/golf_swing_5.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d01_5, d03_5 and d04_5 dungeon scripts."
   },
   "c6806d3b3ac466a4": {
    "path": "lib/map/s/train_map_runtime_4.c",
-   "doc": "Shared script runtime with the enter-or-depart prompt. Used by the s02b_4 and s71_4 scripts."
+   "doc": "Shared script runtime plus the train part swaps, train boarding cutscenes, platform placement and the enter-or-depart prompt at the station. Used by the s02b_4 and s71_4 scripts."
   },
   "c68f8f5006079688": {
    "path": "lib/map/s/s06/ridepod_steve_debut.c",
@@ -3758,15 +3758,15 @@
   },
   "c8f3e568679b66f4": {
    "path": "lib/map/town_villagers_scoops_v2.c",
-   "doc": "Item messages and town villager and quest talk with scoop reward checks. Used by the d01e01 scripts."
+   "doc": "Item, party and system message helpers plus the Palm Brinks villager quest talks (Gordon, Blinkhorn, Parn, Donny and the other recruitable townsfolk) and the scoop reward checks. Used by the d01e01_2 and i01h02_2 (Polly's bakery) scripts."
   },
   "c907c2cd59f14b48": {
    "path": "lib/map/desoland_villager_talk_v1.c",
-   "doc": "Talks to a Desoland villager. Used by the f04 town scripts."
+   "doc": "Talks to a Desoland villager. Used by the f04_1 and s39_1 scripts."
   },
   "c9843c7f428c6bbf": {
    "path": "lib/map/town_villagers_scoops_v1.c",
-   "doc": "Item messages and town villager and quest talk with scoop reward checks. Used by the d01e01 scripts."
+   "doc": "Item, party and system message helpers plus the Palm Brinks villager quest talks (Gordon, Blinkhorn, Parn, Donny and the other recruitable townsfolk) and the scoop reward checks. Used by the d01e01_1 and i01h02_1 (Polly's bakery) scripts."
   },
   "c9cbdbbe7defcd98": {
    "path": "lib/map/s/s51/monica_gear_battle.c",
@@ -3794,7 +3794,7 @@
   },
   "cb8298ac19c1185f": {
    "path": "lib/map/town_villagers_scoops_v4.c",
-   "doc": "Item messages and town villager and quest talk with scoop reward checks. Used by the d01e01 scripts."
+   "doc": "Item, party and system message helpers plus the Palm Brinks villager quest talks (Gordon, Blinkhorn, Parn, Donny and the other recruitable townsfolk) and the scoop reward checks. Used by the d01e01_4 and i01h02_4 (Polly's bakery) scripts."
   },
   "cbe32ebabef25b42": {
    "path": "lib/dungeon/monster/guard_block_recoil.c",
@@ -3866,7 +3866,7 @@
   },
   "ced5c9f28569035c": {
    "path": "lib/map/s/train_stop_runtime.c",
-   "doc": "Shared script runtime with the faded menu. Used by the s08, s31 and s34 scripts."
+   "doc": "Shared script runtime with the save menu plus the train part swaps and the front and middle car boarding cutscenes. Used by the s08, s31 and s34 scripts."
   },
   "cf23eb30e6e95abd": {
    "path": "lib/map/s/train_npc_talk_3.c",
@@ -3934,15 +3934,15 @@
   },
   "d48c4f5fd7b03e4b": {
    "path": "lib/map/f/time_gate_scenes_2.c",
-   "doc": "Atlamillia check and glow scenes, time travel caption and red and blue time gate scenes for f01_2."
+   "doc": "Atlamillia check and glow scenes, the time travel caption and the red and blue time gate scenes. Used by the f01_2, f02_2, f03_2 and f04_2 town scripts."
   },
   "d4f2655b0d4dbf38": {
-   "path": "lib/dungeon/monster/photo_window_attack_ai.c",
-   "doc": "Attack start limiting visible monsters, fainting and releasing the visible limit, wander choice and disguise watching, used by e08a and e09a."
+   "path": "lib/dungeon/monster/faint_throw_wander_disguise.c",
+   "doc": "Faint and throw recovery handlers, wander choice, a facing check and facing or watching the player while disguised, in this script pair's old native numbering. Used by e08a and e09a."
   },
   "d580829951f41410": {
    "path": "lib/map/facing_talk.c",
-   "doc": "Talk with the characters facing each other. Used by the m06 map scripts."
+   "doc": "Talk with the characters facing each other. Used by the m06 and s17 scripts."
   },
   "d5fac68a5913fa3a": {
    "path": "lib/dungeon/monster/nudge_pos_up.c",
@@ -3965,8 +3965,8 @@
    "doc": "Turns and performs a slash combo, used by e27a and e28a."
   },
   "d6830dfddff940b0": {
-   "path": "lib/map/d/floor_5_chest_interact.c",
-   "doc": "Interaction with a treasure chest on floor 5 of the dungeons."
+   "path": "lib/map/d/chest_interact_5.c",
+   "doc": "Treasure chest handler that only calls open_treasure_chest. Used by the d01_5 to d07_5 dungeon scripts."
   },
   "d69c0c2c4a093567": {
    "path": "lib/dungeon/final_bomb_blast.c",
@@ -3974,7 +3974,7 @@
   },
   "d744889f363be0c0": {
    "path": "lib/map/s/s06/floor_exit_door_5.c",
-   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06 floor 5 scripts."
+   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06_5 and s06b_5 scripts."
   },
   "d7c02b543a78162a": {
    "path": "lib/map/s/s02/station_train_arrivals_events_v4.c",
@@ -3993,12 +3993,12 @@
    "doc": "Sets up the map characters. Used by the s27 scripts."
   },
   "d8527ba810b6c311": {
-   "path": "lib/map/d/d04/floor_0_script_core.c",
-   "doc": "Full shared script base for floor 0 of dungeon d04: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d04/script_core_0.c",
+   "doc": "Full shared script base for variant 0 of the d04 (Ocean's Roar Cave) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d04_0 and d04_sfida_0."
   },
   "d8e1389cad1a9c81": {
    "path": "lib/map/s/s06/floor_exit_door_3.c",
-   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06 floor 3 scripts."
+   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06_3 and s06b_3 scripts."
   },
   "d91979a6686afadd": {
    "path": "lib/dungeon/eff_script/hit_model_effect.c",
@@ -4026,7 +4026,7 @@
   },
   "da051845e21fe42a": {
    "path": "lib/map/desoland_villager_talk_v3.c",
-   "doc": "Talks to a Desoland villager. Used by the f04 town scripts."
+   "doc": "Talks to a Desoland villager. Used by the f04_3 and s39_3 scripts."
   },
   "da3ed644e37ac33f": {
    "path": "lib/dungeon/wind_projectile_launch.c",
@@ -4133,8 +4133,8 @@
    "doc": "Shows and hides Cedric and handles talking to him by story progress. Used by the i01h01 house scripts."
   },
   "df4c57fe2da9078a": {
-   "path": "lib/map/d/golf_shots_floor_1.c",
-   "doc": "Spheda golf shot routines for floor 1: aiming, power gauge, club checks, ball stance, camera and ball reset, without course menu handling. Used by the d02 floor scripts."
+   "path": "lib/map/d/golf_shots_1.c",
+   "doc": "Spheda golf shot routines without the course menu: aiming, power gauge, club checks, ball stance, camera and ball reset. Used by the d02_1, d05_1, d06_1 and d07_1 dungeon scripts."
   },
   "df55e87fbc0862fa": {
    "path": "lib/dungeon/monster/facing_dot_to_target.c",
@@ -4165,8 +4165,8 @@
    "doc": "Shared script runtime for the s45 maps plus six town characters and crowd setup."
   },
   "e0ab8d6eef3756b9": {
-   "path": "lib/map/d/d06/floor_0_script_core.c",
-   "doc": "Full shared script base for floor 0 of dungeon d06: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d06/script_core_0.c",
+   "doc": "Full shared script base for variant 0 of the d06 (Moon Flower Palace) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d06_0 and d06_sfida_0."
   },
   "e0abc3d9f8e58208": {
    "path": "lib/dungeon/monster/guard_blowback_attack_setup.c",
@@ -4229,8 +4229,8 @@
    "doc": "Knocked flying then getting up and dying to stay dead, used by b07a_atora_yellow, e08a and e09a."
   },
   "e4e78d94632d557d": {
-   "path": "lib/map/faded_menu_open_d04.c",
-   "doc": "Opens the menu with a fade. Used by the d04 dungeon scripts."
+   "path": "lib/map/open_menu_faded.c",
+   "doc": "Opens the save menu with a fade (a wrapper around open_save_menu_with_fade). Used by 16 Japanese-original scripts, among them d04b01, d06e01, the g02 to g05 towns, i02h01, m06 and several s maps."
   },
   "e569821551039965": {
    "path": "lib/dungeon/monster/struggle_getup_chase.c",
@@ -4259,8 +4259,8 @@
    "doc": "Monster e117e intro scene, Lapis get scene and Lapis room sound setup. Used by the s16 scripts."
   },
   "e675c7894846b1cf": {
-   "path": "lib/map/d/golf_course_floor_0.c",
-   "doc": "Spheda golf for floor 0: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by the six Spheda scripts of that floor."
+   "path": "lib/map/d/golf_course_0.c",
+   "doc": "Spheda golf for variant 0 of the dungeon Spheda scripts: aiming, power gauge, club checks, ball stance, shot camera, stroke counting, scoring, next hole loading and reset or give-up offers. Used by d01_sfida_0, d02_sfida_0 and d04_sfida_0 to d07_sfida_0."
   },
   "e678f14623ae3251": {
    "path": "lib/dungeon/monster/damage_stagger_variant.c",
@@ -4291,8 +4291,8 @@
    "doc": "Struggling forever, getting up after a fall and flying back then getting up, used by e08a and e09a."
   },
   "e75cb25999aa4819": {
-   "path": "lib/map/d/d07/floor_4_script_core.c",
-   "doc": "Full shared script base for floor 4 of dungeon d07: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d07/script_core_4.c",
+   "doc": "Full shared script base for language variant 4 of the d07 (Zelmite Mine) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d07_4 and d07_sfida_4."
   },
   "e7786c47fd80dd18": {
    "path": "lib/map/f/f04/launch_and_rise_scenes.c",
@@ -4320,7 +4320,7 @@
   },
   "e93919d2fe945ea5": {
    "path": "lib/map/s/s05/story_flag_reset_and_menu.c",
-   "doc": "Loads the s05b script, resets story flags and shows the story points, and opens the faded menu. Used by the s05 map scripts."
+   "doc": "Loads the s05b script, resets story flags and shows the story points, and opens the save menu. Used by the s05 map scripts."
   },
   "e93e8aac8affaf3f": {
    "path": "lib/map/g/base_time_gates_v2.c",
@@ -4336,7 +4336,7 @@
   },
   "e9c438ec65edc19f": {
    "path": "lib/map/time_gates_and_event_checks.c",
-   "doc": "Plays the Atlamillia glow, future jump, return and red and blue gate warp scenes and checks which of events 270 to 285 can play. Used by the f01 town scripts."
+   "doc": "Plays the Atlamillia glow, future jump, return and red and blue gate warp scenes and checks which of events 270 to 285 can play. Used by the f01 and g01 scripts."
   },
   "e9df9be3adb145a6": {
    "path": "lib/map/m/m08/opening_run_scene.c",
@@ -4380,7 +4380,7 @@
   },
   "ebf322cb657b3ee1": {
    "path": "lib/map/s/s06/floor_exit_door_2.c",
-   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06 floor 2 scripts."
+   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06_2 and s06b_2 scripts."
   },
   "ec31a17e40755b1a": {
    "path": "lib/map/s/s40/event_438_and_scene_pair.c",
@@ -4475,8 +4475,8 @@
    "doc": "Plays the Alexandra welcome scene. Used by the s68 scripts."
   },
   "f0073b0dd9d02724": {
-   "path": "lib/map/d/d07/floor_3_script_core.c",
-   "doc": "Full shared script base for floor 3 of dungeon d07: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d07/script_core_3.c",
+   "doc": "Full shared script base for language variant 3 of the d07 (Zelmite Mine) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d07_3 and d07_sfida_3."
   },
   "f04e45fd0bd255db": {
    "path": "lib/dungeon/flame_puff_burst_sound.c",
@@ -4488,7 +4488,7 @@
   },
   "f08a2a80e9f03477": {
    "path": "lib/map/item_messages_v3.c",
-   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03 scripts."
+   "doc": "Fishing tournament, party character and item pickup message windows and system questions. Used by the i02h03_3 and s30_3 scripts."
   },
   "f0e3a51fdb69dbfc": {
    "path": "lib/map/i/i01/h01/cheer_and_backpack_shots.c",
@@ -4500,7 +4500,7 @@
   },
   "f1b02a1545112bca": {
    "path": "lib/map/desoland_villager_talk_v5.c",
-   "doc": "Talks to a Desoland villager. Used by the f04 town scripts."
+   "doc": "Talks to a Desoland villager. Used by the f04_5 and s39_5 scripts."
   },
   "f25a523bb08a68d9": {
    "path": "lib/map/s/s29/eina_farewell_scene.c",
@@ -4508,7 +4508,7 @@
   },
   "f260c230ff8ef268": {
    "path": "lib/map/menu_fade_and_idle.c",
-   "doc": "Opens the menu with a fade and a function that does nothing. Used by the g02 scripts."
+   "doc": "Opens the save menu with a fade, plus a function that does nothing. Used by the g02, g03, g04, s04, s09 and s10 scripts."
   },
   "f27f47806d1d579d": {
    "path": "lib/map/base_game_over_door_jump_d01.c",
@@ -4592,8 +4592,8 @@
    "doc": "Shared base runtime with the shop menu and the town villager talk handlers for every quest NPC (Gordon, Blinkhorn, Parn, Ferdinand, Stewart, Adel, Aunt Polly, Milane, Gerald, Need, Bruno and others), using the door map jump. Used by i04h01, i04h03, m01."
   },
   "f68636116f79fea3": {
-   "path": "lib/map/d/floor_3_chest_interact.c",
-   "doc": "Interaction with a treasure chest on floor 3 of the dungeons."
+   "path": "lib/map/d/chest_interact_3.c",
+   "doc": "Treasure chest handler that only calls open_treasure_chest. Used by the d01_3 to d07_3 dungeon scripts."
   },
   "f6da792aa9c1a46f": {
    "path": "lib/map/d/d07/lift_door.c",
@@ -4620,8 +4620,8 @@
    "doc": "Restarts motion and waits forever, finishes a throw and allows lock-on, and gets thrown down and rises, used by b54a and e54a."
   },
   "f83a4326c8ee7ec2": {
-   "path": "lib/map/d/d05/floor_0_script_core.c",
-   "doc": "Full shared script base for floor 0 of dungeon d05: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by the floor script and its Spheda counterpart."
+   "path": "lib/map/d/d05/script_core_0.c",
+   "doc": "Full shared script base for variant 0 of the d05 (Mount Gundor) dungeon script and its Spheda script: pad input, message and voice windows, NPC talk, doors, chests, victory poses, floor clear and help messages. Used by d05_0 and d05_sfida_0."
   },
   "f896f344e3058bc3": {
    "path": "lib/map/f/f04/interior_03_2_villager_talk.c",
@@ -4637,7 +4637,7 @@
   },
   "f979e5712a3e0908": {
    "path": "lib/map/s/waiting_npc_talk_with_menu.c",
-   "doc": "Opens the faded menu and talks to the waiting NPC. Used by the s12 and s34 scripts."
+   "doc": "Opens the save menu and talks to the waiting NPC. Used by the s12 and s34 scripts."
   },
   "f983d609527f85e2": {
    "path": "lib/map/i/i01/h01/story_script_starts.c",
@@ -4660,12 +4660,12 @@
    "doc": "Facing check, watching the player while disguised and playing the damage motion, used by e05a and e207a."
   },
   "fa391bc01a7b14c2": {
-   "path": "lib/dungeon/monster/knocked_flying_death_reaction.c",
-   "doc": "Knocked flying, clearing visible monster limits and holding the death reaction forever, used by b07a_atora_yellow, e08a and e09a."
+   "path": "lib/dungeon/monster/old_numbered_lock_and_death.c",
+   "doc": "Lock-and-face, interrupt unlock, death start and death hold handlers in the old native numbering, so the calls meant to lock guard and dodge set the visible monster limit instead. Used by b07a_atora_yellow, e08a and e09a."
   },
   "fa8a291954330f94": {
    "path": "lib/map/s/s06/floor_exit_door_1.c",
-   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06 floor 1 scripts."
+   "doc": "Floor exit door use: loads the exit event or triggers game over. Used by the s06_1 and s06b_1 scripts."
   },
   "fa92a8c4bb2bbf24": {
    "path": "lib/dungeon/monster/blowback_blown_away_death.c",

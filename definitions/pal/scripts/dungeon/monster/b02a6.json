@@ -1,3 +1,4 @@
 {
- "doc": "Monster script for b02a6, a stub that does nothing in guard, damage, knockdown and dodge, and shares its init, lifted, land, death and update with other monsters. Its update just turns forever and its death advances a sequence counter, so it acts as a scripted prop rather than a fighter."
+ "doc": "Monster script for b02a6, a stub that does nothing in guard, damage, knockdown and dodge, and shares its init, lifted, land, death and update with other monsters. Its update just turns forever and its death advances a sequence counter, so it acts as a scripted prop rather than a fighter.",
+ "numbering": "raw"
 }
