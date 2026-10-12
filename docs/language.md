@@ -66,9 +66,9 @@ void on_talk(void)
 This is [`docs/examples/greeting/greeting.c`](examples/greeting/greeting.c), a made-up script. The
 [examples](examples/README.md) show the same script at each stage of decompiling.
 
-- Types are `int`, `float` and `string`, with `int x[]` for an array passed
-  by pointer and `int x[4]` for a local array. Locals are declared at the
-  top of a function, in slot order.
+- Types are `int`, `float` and `string`, with `int x[4]` for a local array
+  and `int x[]` or `int *x` for an array or variable passed by pointer.
+  The decompiler declares locals at the top of a function, in slot order.
 - Functions have C return types. The decompiler makes a function `void` when
   it never returns a value and nothing uses its result, `float` when it
   returns a float, and `int` otherwise. Every function still ends with the
@@ -87,10 +87,12 @@ This is [`docs/examples/greeting/greeting.c`](examples/greeting/greeting.c), a m
   functions. A native whose only result is its last argument returns it
   (`count = get_counter(3);`); one with several results takes pointers
   (`get_actor_pos(0, &x, &y, &z);`). Natives push nothing on the VM stack,
-  so a native call is a statement or an assignment of its result to a
-  variable, never part of a larger expression; the compiler rejects
-  anything else. The original Level-5 names (`_GET_FLAG(12, &flag);`) and
-  unregistered numbers (`_EXT_190(...)`) still compile.
+  so the decompiler always shows a native call as a statement or an
+  assignment of its result. In your own code a native with a result can
+  stand in an expression (`if (get_flag(5) && count > 2)`): the compiler
+  calls it first, into a hidden local, and the expression reads that. The
+  original Level-5 names (`_GET_FLAG(12, &flag);`) and unregistered numbers
+  (`_EXT_190(...)`) still compile.
 - `AT(n)` or `DIRECT` before a native call picks a group form other than the
   header's default (see the SDK). 471 of the 1.4 million calls on the disc
   need one.
@@ -107,3 +109,50 @@ This is [`docs/examples/greeting/greeting.c`](examples/greeting/greeting.c), a m
   `asm f_0388 arg 0 { ... }` around its text assembly, and a file it cannot
   read at all as `#pragma assembly` followed by the whole disassembly. Neither
   happens on the retail disc, and neither is C.
+
+## Writing your own code
+
+The decompiler writes only the forms above, so retail scripts compile back
+byte for byte. Code you write can also use more of C; each form compiles to
+the VM's own instructions:
+
+- Declarations anywhere in a function, with initializers: `int count = 0;`,
+  `for (int i = 0; ...)`, `int table[] = {1, 2, 4};`, `int *p = &x;`. Every
+  local still gets one slot for the whole function, so a name declared again
+  in another block reuses the slot, and must have the same type.
+- `for`, `do ... while`, and `switch` with `case`, `default`, fall-through
+  and `break`. `continue` in a `for` runs the step first.
+- `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `++` and
+  `--`, before or after, and `?:`.
+- `^`, `~`, `<<` and `>>`, which the VM has no instruction for: `a ^ b` is
+  worked out as `(a | b) - (a & b)`, `~a` as `-a - 1`, and shifts as
+  multiplying or dividing by a power of 2 (a loop when the count is not a
+  constant). `>>` of a negative number rounds toward zero, not down.
+- Bodies without braces (`if (x) wait;`), nested `{ }` blocks and empty
+  statements.
+- `string` variables, `int *p` parameters and locals, `*p` for `p[0]`, and an
+  array name standing for its first element's address (`fill(table, 3)`).
+- Character literals (`'A'`, `'\n'`) and literal suffixes (`2.5f`, `10u`).
+- `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif` and `#undef`, with
+  `defined(NAME)`; conditions see the file's own `#define`s.
+- Errors name the line.
+
+Not available, because the VM cannot do them: global arrays and global
+pointers (the VM has no indexed access to globals), initialized globals
+(globals start at 0 when the script loads; set them in a program), structs,
+unions, function pointers, `double`, 64-bit and unsigned arithmetic, and
+macros with parameters (write a function). `goto` and multi-dimensional
+arrays are not supported either.
+
+The VM differs from C in ways that matter when writing code:
+
+- **Values keep their type.** Every value on the VM's stack and in a
+  variable carries its type, and storing copies it: after `int x; x = 1.5;`,
+  `x` holds the float 1.5, where C would truncate it to 1. Mixed arithmetic
+  gives a float, as in C. Write `x = (int)y;` when you mean to truncate.
+- **`&&` and `||` give the deciding value, not 0 or 1:** `x = a || 5;` sets
+  `x` to 5 when `a` is 0. Conditions behave as in C.
+- A native called inside a condition runs before the condition is tested,
+  even on the right of `&&` or `||` or in a branch of `?:`, since natives
+  cannot run in the middle of an expression. Write an `if` when a native
+  should only run some of the time.

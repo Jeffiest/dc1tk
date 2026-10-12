@@ -121,6 +121,15 @@ def decompiled(data, table):
     return source.text(decompile.decompile(stb.read(data), table, natives.load()))
 
 
+# Parsed statements carry their source line, for error messages; the decompiler's have none.
+def without_lines(node):
+    if isinstance(node, list):
+        return [without_lines(item) for item in node]
+    if isinstance(node, dict):
+        return {key: without_lines(value) for key, value in node.items() if key != "line"}
+    return node
+
+
 def test_source_round_trips_through_bytes():
     data = build_text(EVENT)
     assert decompiled(data, "event") == EVENT
@@ -128,7 +137,7 @@ def test_source_round_trips_through_bytes():
     tree = decompile.decompile(stb.read(data), "event", natives.load())
     assert sorted(tree.pop("fingerprints")) == ["f_0000", "f_04d4"]
     assert sorted(tree.pop("loose_fingerprints")) == ["f_0000", "f_04d4"]
-    assert resolved == tree
+    assert without_lines(resolved) == tree
 
 
 def test_names_are_free_to_choose():

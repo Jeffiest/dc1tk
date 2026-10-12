@@ -1,9 +1,11 @@
 from c2s import asm, sdk, stb
 
-SCALAR_MODES = {"int": "local", "float": "local_f"}
-ARRAY_MODES = {"int": "local_idx", "float": "local_idx_f"}
-POINTER_MODES = {"int": "ptr_idx", "float": "ptr_idx_f"}
-GLOBAL_MODES = {"int": "global", "float": "global_f"}
+# A string variable uses the int modes: they move a value without changing its type, and the VM
+# keeps each value's type with it.
+SCALAR_MODES = {"int": "local", "float": "local_f", "string": "local"}
+ARRAY_MODES = {"int": "local_idx", "float": "local_idx_f", "string": "local_idx"}
+POINTER_MODES = {"int": "ptr_idx", "float": "ptr_idx_f", "string": "ptr_idx"}
+GLOBAL_MODES = {"int": "global", "float": "global_f", "string": "global"}
 
 BINARY = {"+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod", "&": "and", "|": "or"}
 COMPARES = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
@@ -32,7 +34,7 @@ def frame(function, globals_):
         symbols[param["name"]] = {"slot": slot, "type": param["type"], "scope": scope}
         slot += 1
     for declared in function["locals"]:
-        scope = "scalar" if declared["size"] is None else "array"
+        scope = "pointer" if declared.get("pointer") else "scalar" if declared["size"] is None else "array"
         symbols[declared["name"]] = {"slot": slot, "type": declared["type"], "scope": scope}
         slot += 1 if declared["size"] is None else declared["size"]
     return symbols, slot
@@ -49,6 +51,9 @@ def scalar_mode(symbol, name):
         return GLOBAL_MODES[symbol["type"]]
     if symbol["scope"] == "scalar":
         return SCALAR_MODES[symbol["type"]]
+    if symbol["scope"] == "pointer":
+        # The slot holds the pointer itself; an int mode moves it without retyping it as a float.
+        return "local"
     fail(name + " is an array")
 
 
@@ -80,6 +85,14 @@ def place_label(state, number):
 
 
 def access(state, node, mnemonic):
+    if node["kind"] == "deref":
+        operand = node["operand"]
+        if operand["kind"] != "var":
+            fail("* works on a pointer or array variable; write p[i] for the others")
+        symbol = lookup(state, operand["name"])
+        emit(state, "push 0")
+        emit(state, "%s %s %d" % (mnemonic, indexed_mode(symbol, operand["name"]), symbol["slot"]))
+        return
     if node["kind"] == "var":
         symbol = lookup(state, node["name"])
         emit(state, "%s %s %d" % (mnemonic, scalar_mode(symbol, node["name"]), symbol["slot"]))
@@ -101,7 +114,12 @@ def expression(state, node):
     elif kind == "string":
         emit(state, "push string %d" % len(state["strings"]))
         state["strings"].append(node["text"])
-    elif kind in ("var", "index"):
+    elif kind == "var" and lookup(state, node["name"])["scope"] == "array":
+        # An array used as a value is the address of its first element, as in C.
+        symbol = lookup(state, node["name"])
+        emit(state, "push 0")
+        emit(state, "addr %s %d" % (ARRAY_MODES[symbol["type"]], symbol["slot"]))
+    elif kind in ("var", "index", "deref"):
         access(state, node, "load")
     elif kind == "addr":
         access(state, node["target"], "addr")
@@ -109,6 +127,10 @@ def expression(state, node):
         access(state, node["target"], "addr")
         expression(state, node["value"])
         emit(state, "store")
+    elif kind == "binary" and node["op"] == "^":
+        exclusive_or(state, node)
+    elif kind == "binary" and node["op"] in ("<<", ">>"):
+        shift(state, node)
     elif kind == "binary":
         expression(state, node["left"])
         expression(state, node["right"])
@@ -139,8 +161,75 @@ def expression(state, node):
         emit(state, "%s %s" % (LOGICAL[node["op"]], label_name(state, label)))
         expression(state, node["right"])
         place_label(state, label)
+    elif kind == "ternary":
+        expression(state, node["cond"])
+        otherwise = new_label(state)
+        end = new_label(state)
+        emit(state, "jf " + label_name(state, otherwise))
+        expression(state, node["then"])
+        emit(state, "jmp " + label_name(state, end))
+        place_label(state, otherwise)
+        expression(state, node["else"])
+        place_label(state, end)
     else:
         fail("unknown expression " + kind)
+
+
+# A hidden local for the compiler's own use, past the function's declared locals.
+def temporary(state):
+    slot = state["next_slot"]
+    state["next_slot"] += 1
+    return slot
+
+
+def store_temporary(state, slot, node):
+    emit(state, "addr local %d" % slot)
+    expression(state, node)
+    emit(state, "store")
+    emit(state, "pop")
+
+
+# a ^ b, which the VM has no instruction for, as (a | b) - (a & b), with a and b worked out once.
+def exclusive_or(state, node):
+    left, right = temporary(state), temporary(state)
+    store_temporary(state, left, node["left"])
+    store_temporary(state, right, node["right"])
+    for op in ("or", "and"):
+        emit(state, "load local %d" % left)
+        emit(state, "load local %d" % right)
+        emit(state, op)
+    emit(state, "sub")
+
+
+# a << n and a >> n as multiplying or dividing by 2 to the n. The VM's division rounds toward
+# zero, so >> of a negative number rounds up where an arithmetic shift rounds down.
+def shift(state, node):
+    op = "mul" if node["op"] == "<<" else "div"
+    count = node["right"]
+    if count["kind"] == "int":
+        expression(state, node["left"])
+        emit(state, "push %d" % (1 << count["value"]))
+        emit(state, op)
+        return
+    value, times = temporary(state), temporary(state)
+    store_temporary(state, value, node["left"])
+    store_temporary(state, times, count)
+    top, end = new_label(state), new_label(state)
+    place_label(state, top)
+    emit(state, "load local %d" % times)
+    emit(state, "push 0")
+    emit(state, "cmp gt")
+    emit(state, "jf " + label_name(state, end))
+    for slot, step in ((value, ["push 2", op]), (times, ["push 1", "sub"])):
+        emit(state, "addr local %d" % slot)
+        emit(state, "load local %d" % slot)
+        for line in step:
+            emit(state, line)
+        emit(state, "store")
+        emit(state, "pop")
+    emit(state, "jmp " + label_name(state, top))
+    place_label(state, end)
+    emit(state, "load local %d" % value)
 
 
 def float_literal(bits):
@@ -159,6 +248,15 @@ def native_number(state, name):
 
 
 def statement(state, node):
+    try:
+        statement_code(state, node)
+    except ValueError as error:
+        if node.get("line") is None or str(error).startswith("line "):
+            raise
+        raise ValueError("line %d: %s" % (node["line"], error)) from None
+
+
+def statement_code(state, node):
     kind = node["kind"]
     if kind == "expr":
         expression(state, node["expr"])
@@ -190,10 +288,13 @@ def statement(state, node):
         conditional(state, node)
     elif kind == "while":
         loop(state, node)
+    elif kind == "switch":
+        switch(state, node)
     elif kind in ("break", "continue"):
-        if not state["loops"]:
-            fail(kind + " outside a loop")
-        emit(state, "jmp " + label_name(state, state["loops"][-1][kind]))
+        targets = [entry[kind] for entry in reversed(state["loops"]) if entry[kind] is not None]
+        if not targets:
+            fail(kind + (" outside a loop" if kind == "continue" else " outside a loop or switch"))
+        emit(state, "jmp " + label_name(state, targets[0]))
     else:
         fail("unknown statement " + kind)
 
@@ -231,6 +332,31 @@ def loop(state, node):
     place_label(state, end)
 
 
+# The value is worked out once into a hidden local, then compared with each case in order; cases
+# fall through into the next as in C, and break leaves the switch.
+def switch(state, node):
+    slot = temporary(state)
+    store_temporary(state, slot, node["value"])
+    labels = [new_label(state) for _ in node["cases"]]
+    end = new_label(state)
+    fallback = end
+    for case, label in zip(node["cases"], labels):
+        if case["default"]:
+            fallback = label
+            continue
+        emit(state, "load local %d" % slot)
+        expression(state, case["value"])
+        emit(state, "cmp eq")
+        emit(state, "jt " + label_name(state, label))
+    emit(state, "jmp " + label_name(state, fallback))
+    state["loops"].append({"continue": None, "break": end})
+    for case, label in zip(node["cases"], labels):
+        place_label(state, label)
+        block(state, case["body"])
+    state["loops"].pop()
+    place_label(state, end)
+
+
 def arg_types(params):
     types = [0 if param["array"] else 1 for param in params[:10]]
     while types and types[-1] == 0:
@@ -252,11 +378,14 @@ def function_lines(function, context):
         "lines": [header],
         "strings": list(function["unused_strings"]),
         "next_label": 0,
+        "next_slot": size,
         "loops": [],
     }
     block(state, function["body"])
     emit(state, "push 0")
     emit(state, "ret")
+    if state["next_slot"] != size:
+        state["lines"][0] = header.replace(" local %d " % size, " local %d " % state["next_slot"], 1)
     for text in state["strings"]:
         state["lines"].append(".string " + asm.quote(text))
     padding, buffer = stb.block_padding(context["buffer"], state["strings"])

@@ -123,14 +123,14 @@ def test_locals_are_named_after_results():
     assert readable(build(renamed), "event") == EVENT
 
 
-def test_native_results_cannot_be_used_in_expressions():
-    for broken in (EVENT.replace("flag = get_flag(12);", "flag = get_flag(12) + 1;"),
-                   EVENT.replace("flag = get_flag(12);", "flag = set_actor_texture_anim(1, 0);")):
-        try:
-            build(broken)
-        except ValueError:
-            continue
-        raise AssertionError("compiled " + broken)
+def test_natives_in_expressions_are_called_first():
+    build(EVENT.replace("flag = get_flag(12);", "flag = get_flag(12) + 1;"))
+    try:
+        build(EVENT.replace("flag = get_flag(12);", "flag = set_actor_texture_anim(1, 0);"))
+    except ValueError as error:
+        assert "returns nothing" in str(error)
+    else:
+        raise AssertionError("a native without a result was given a value")
 
 
 def test_header_declarations_parse():

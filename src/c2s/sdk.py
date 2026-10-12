@@ -154,7 +154,7 @@ def substituted(node, bindings, outs):
     if (node.get("kind") == "deref" and node["operand"].get("kind") == "var"
             and node["operand"]["name"] in outs):
         return bindings[node["operand"]["name"]]["target"]
-    return {key: substituted(value, bindings, outs) for key, value in node.items()}
+    return {key: substituted(value, bindings, outs) for key, value in node.items() if key != "line"}
 
 
 def expanded_inline(inline, args):
@@ -188,45 +188,101 @@ def checked(node, found):
     return node
 
 
-def statement(node, found):
+# Native calls inside an expression. The VM's natives push no value, so each one is called first,
+# into a hidden local (__value_N), and the expression reads that local. The calls are added to
+# before, in the order the expression would make them; one in a condition therefore runs before
+# the condition is tested, even on the right of && or || or in a branch of ?:.
+def hoisted(node, found, temps, before):
+    if isinstance(node, list):
+        return [hoisted(item, found, temps, before) for item in node]
+    if not isinstance(node, dict):
+        return node
+    if node.get("kind") == "call" and node["name"] in found["inlines"]:
+        raise ValueError("helper %s is a statement; call it on a line of its own" % node["name"])
+    if node.get("kind") == "call" and is_native(node["name"], found):
+        declared = found["natives"].get(node["name"])
+        if declared is None or not has_result(declared):
+            raise ValueError("native %s returns nothing, so it has no value to use" % node["name"])
+        args = hoisted(node["args"], found, temps, before)
+        name = "__value_%d" % len(temps)
+        temps.append(name)
+        target = {"kind": "addr", "target": {"kind": "var", "name": name}}
+        before.append(canonical_native(node["name"], None, args + [target], found))
+        return {"kind": "var", "name": name}
+    return {key: hoisted(value, found, temps, before) for key, value in node.items()}
+
+
+def resolved_statement(node, found, temps, before):
     kind = node["kind"]
     at = node.get("at")
     plain = {key: value for key, value in node.items() if key != "at"}
     expression = node.get("expr") if kind == "expr" else None
+
+    def value(item):
+        return hoisted(item, found, temps, before)
+
     if expression is not None and expression["kind"] == "call":
         name = expression["name"]
         if name in found["inlines"]:
             if at is not None:
                 raise ValueError("AT and DIRECT apply to native calls, not to helper " + name)
-            return expanded_inline(found["inlines"][name], [checked(arg, found) for arg in expression["args"]])
+            return expanded_inline(found["inlines"][name], value(expression["args"]))
         if is_native(name, found):
-            return [canonical_native(name, at, [checked(arg, found) for arg in expression["args"]], found)]
+            return [canonical_native(name, at, value(expression["args"]), found)]
     if (expression is not None and expression["kind"] == "assign" and expression["value"]["kind"] == "call"
             and is_native(expression["value"]["name"], found)):
         name = expression["value"]["name"]
         declared = found["natives"].get(name)
         if declared is None or not has_result(declared):
             raise ValueError("native %s returns nothing; pass &variable instead of assigning" % name)
-        args = [checked(arg, found) for arg in expression["value"]["args"]]
-        args.append(address_of(checked(expression["target"], found)))
+        args = value(expression["value"]["args"])
+        args.append(address_of(value(expression["target"])))
         return [canonical_native(name, at, args, found)]
     if at is not None:
         raise ValueError("AT and DIRECT apply only to native calls")
     if kind == "native":
-        return [canonical_native(node["name"], node["base"], node["args"], found)]
+        return [canonical_native(node["name"], node["base"], value(node["args"]), found)]
     if kind == "if":
-        otherwise = None if node["else"] is None else statements(node["else"], found)
-        return [dict(plain, cond=checked(node["cond"], found), then=statements(node["then"], found),
+        otherwise = None if node["else"] is None else statements(node["else"], found, temps)
+        return [dict(plain, cond=value(node["cond"]), then=statements(node["then"], found, temps),
                      **{"else": otherwise})]
     if kind == "while":
-        return [dict(plain, cond=checked(node["cond"], found), body=statements(node["body"], found))]
-    return [checked(plain, found)]
+        inner = []
+        cond = hoisted(node["cond"], found, temps, inner)
+        body = statements(node["body"], found, temps)
+        if not inner:
+            return [dict(plain, cond=cond, body=body)]
+        # The condition's native calls run at the top of every iteration.
+        leave = {"kind": "if", "cond": {"kind": "unary", "op": "!", "operand": cond}, "then": [{"kind": "break"}],
+                 "else": None}
+        return [dict(plain, cond={"kind": "int", "value": 1}, body=inner + [leave] + body)]
+    if kind == "switch":
+        cases = [dict(case, value=None if case["value"] is None else checked(case["value"], found),
+                      body=statements(case["body"], found, temps)) for case in node["cases"]]
+        return [dict(plain, value=value(node["value"]), cases=cases)]
+    return [value(plain)]
 
 
-def statements(nodes, found):
+def statement(node, found, temps=None):
+    temps = [] if temps is None else temps
+    before = []
+    result = before + resolved_statement(node, found, temps, before)
+    line = node.get("line")
+    if line is None:
+        return result
+    return [item if "line" in item else dict(item, line=line) for item in result]
+
+
+def statements(nodes, found, temps=None):
+    temps = [] if temps is None else temps
     out = []
     for node in nodes:
-        out += statement(node, found)
+        try:
+            out += statement(node, found, temps)
+        except ValueError as error:
+            if node.get("line") is None or str(error).startswith("line "):
+                raise
+            raise ValueError("line %d: %s" % (node["line"], error)) from None
     return out
 
 
@@ -239,7 +295,10 @@ def resolve(program, tables):
     for function in program["functions"]:
         if function["kind"] == "function":
             body = with_constants(function["body"], found["constants"], variable_names(function, global_names))
-            function = dict(function, body=statements(body, found))
+            temps = []
+            function = dict(function, body=statements(body, found, temps))
+            if temps:
+                function["locals"] = function["locals"] + [{"name": name, "type": "int", "size": None} for name in temps]
         functions.append(function)
     programs = []
     for entry in program["programs"]:
@@ -271,9 +330,10 @@ def matches(pattern, node, params, bindings):
         if node.get("kind") not in ("var", "index"):
             return False
         return bound(pattern["operand"]["name"], {"kind": "addr", "target": node}, bindings)
-    if set(pattern) != set(node):
+    keys = set(pattern) - {"line"}
+    if keys != set(node) - {"line"}:
         return False
-    return all(matches(pattern[key], node[key], params, bindings) for key in pattern)
+    return all(matches(pattern[key], node[key], params, bindings) for key in keys)
 
 
 def bound(name, node, bindings):
