@@ -63,7 +63,7 @@ void on_talk(void)
 }
 ```
 
-This is [`docs/examples/greeting/greeting.c2s`](examples/greeting/greeting.c2s), a made-up script. The
+This is [`docs/examples/greeting/greeting.c`](examples/greeting/greeting.c), a made-up script. The
 [examples](examples/README.md) show the same script at each stage of decompiling.
 
 - Types are `int`, `float` and `string`, with `int x[]` for an array passed

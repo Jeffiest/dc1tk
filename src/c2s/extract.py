@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from c2s import archive, iso
@@ -58,5 +59,9 @@ def extract(iso_path, out_dir):
     }
     out.mkdir(parents=True, exist_ok=True)
     manifest["boot"] = extract_boot(iso_path, out_dir)
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False))
+    # The manifest marks a finished extraction (setup reuses a folder that has one), so it is written
+    # whole or not at all.
+    partial = out / "manifest.json.partial"
+    partial.write_text(json.dumps(manifest, indent=1, ensure_ascii=False), encoding="utf-8")
+    os.replace(partial, out / "manifest.json")
     return manifest

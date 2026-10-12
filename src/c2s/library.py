@@ -151,11 +151,11 @@ def build(files, shapes, library_defs=None):
         leaf = identifier(directory[-1]) if directory else "common"
         counters[leaf] += 1
         name = "%s_%d" % (leaf, counters[leaf])
-        path = "/".join(["lib"] + directory + [name + ".c2s"])
+        path = "/".join(["lib"] + directory + [name + source.EXTENSION])
         identity = library_fingerprint(key[0], key[1])
         chosen = library_defs.get(identity, {})
         wanted = chosen.get("path", "")
-        if wanted.startswith("lib/") and wanted.endswith(".c2s") and wanted not in used_paths:
+        if wanted.startswith("lib/") and wanted.endswith(source.EXTENSION) and wanted not in used_paths:
             path = wanted
         used_paths.add(path)
         libraries[key] = {"path": path, "name": name, "table": key[0], "fingerprints": key[1], "users": len(users[key]),

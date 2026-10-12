@@ -28,7 +28,8 @@ def test_extracts_archive_and_packs():
         assert (out / "chara/c01.chr.d/info.cfg").read_bytes() == b"MODEL c01;"
         assert (out / "readme.txt").read_bytes() == b"hello"
         assert manifest["scripts"] == ["map/t01.stb", "chara/c01.chr.d/c01.stb"]
-        assert json.loads((out / "manifest.json").read_text()) == manifest
+        assert json.loads((out / "manifest.json").read_text(encoding="utf-8")) == manifest
+        assert not (out / "manifest.json.partial").exists()
 
 
 def test_manifest_records_sizes_and_packing():

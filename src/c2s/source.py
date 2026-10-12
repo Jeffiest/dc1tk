@@ -1,4 +1,5 @@
 import textwrap
+from pathlib import Path
 
 from c2s import asm
 
@@ -11,6 +12,24 @@ ASSIGN = 1
 UNARY = 10
 PRIMARY = 11
 INDENT = "    "
+# Extension of decompiled source files, so editors read them as C.
+EXTENSION = ".c"
+# Written at the root of a decompiled tree. clangd (and editors built on it) reads it for every file
+# below, so scripts get the SDK's declarations, helpers and constants.
+EDITOR_FLAGS = "compile_flags.txt"
+
+
+# The flags that let clang read a decompiled tree: the SDK and each definition set's include
+# folder, the tree's own include folder (disc.h) and its root (for "lib/..." includes). Functions
+# fall off their end into the compiler's implicit return 0, so that warning is off. Some retail
+# calls pass a string or pointer where the native reads an int; clang 15 and later make that an
+# error by default, which here would hide every later diagnostic, so it stays a warning.
+def editor_flags(sdk_dir, definition_sets):
+    folders = [Path(sdk_dir)] + [Path(directory) / "include" for directory in definition_sets]
+    flags = ["-xc", "-std=c2x", "-m32", "-Wno-unknown-pragmas", "-Wno-return-type", "-Wno-error=int-conversion"]
+    flags += ["-I" + folder.resolve().as_posix() for folder in folders if folder.is_dir()]
+    flags += ["-Iinclude", "-I."]
+    return "\n".join(flags) + "\n"
 
 
 def float_literal(bits):

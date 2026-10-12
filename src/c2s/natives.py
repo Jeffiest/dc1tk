@@ -81,7 +81,7 @@ def generate(root, out_dir):
     tables = {}
     for spec in TABLES:
         table = build_table(root, spec)
-        (out / (spec["table"] + ".json")).write_text(json.dumps(table, indent=1) + "\n")
+        (out / (spec["table"] + ".json")).write_text(json.dumps(table, indent=1) + "\n", encoding="utf-8")
         tables[spec["table"]] = table
     return tables
 
@@ -91,7 +91,7 @@ def load(directory=DATA_DIR):
     for spec in TABLES:
         path = Path(directory) / (spec["table"] + ".json")
         if path.exists():
-            tables[spec["table"]] = json.loads(path.read_text())
+            tables[spec["table"]] = json.loads(path.read_text(encoding="utf-8"))
     return tables
 
 

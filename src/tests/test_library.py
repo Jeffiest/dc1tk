@@ -54,15 +54,15 @@ def test_shared_functions_become_one_library():
         root, paths = corpus(folder)
         model = library.model_for(root, paths, natives.load(), definitions.empty())
         texts = library.library_texts(model)
-        assert list(texts) == ["lib/map/map_1.c2s"]
-        assert "void map_1_1(int a0)" in texts["lib/map/map_1.c2s"]
-        assert "map_1_1(a0);" in texts["lib/map/map_1.c2s"]
+        assert list(texts) == ["lib/map/map_1.c"]
+        assert "void map_1_1(int a0)" in texts["lib/map/map_1.c"]
+        assert "map_1_1(a0);" in texts["lib/map/map_1.c"]
         for path in paths:
             data = (root / path).read_bytes()
             program = decompile.decompile(stb.read(data), "event", natives.load())
             text = source.text(library.script_program(program, path, model))
             if path != "map/solo.stb":
-                assert '#include "lib/map/map_1.c2s"' in text
+                assert '#include "lib/map/map_1.c"' in text
                 assert "void program_100(void)" in text
                 assert "v0 = map_1_2(" in text
             parsed = parse.parse(text)
@@ -80,7 +80,7 @@ def test_name_table_renames_everywhere():
         (table / "event.json").write_text(json.dumps({"functions": {fingerprint: entry}}))
         model = library.model_for(root, paths, natives.load(), dict(definitions.empty(), names=names.load(table)))
         texts = library.library_texts(model)
-        text = texts["lib/map/map_1.c2s"]
+        text = texts["lib/map/map_1.c"]
         assert "void wait_frames(int frames)" in text
         assert "while (frames > 0) {" in text
         assert "wait_frames(a0);" in text
@@ -98,9 +98,9 @@ def test_clashing_variable_names_are_numbered():
 
 
 def test_padding_of_overrides_an_included_function():
-    program = parse.parse('#pragma natives event\nPROGRAM(100, talk);\nMAIN(talk);\n#include "lib.c2s"\nvoid talk(void)\n{\n}\n'
+    program = parse.parse('#pragma natives event\nPROGRAM(100, talk);\nMAIN(talk);\n#include "lib.c"\nvoid talk(void)\n{\n}\n'
                           "#pragma padding_of helper 01020304\n")
-    texts = {"lib.c2s": "#pragma natives event\nvoid helper(void)\n{\n    print(\"abc\");\n}\n"}
+    texts = {"lib.c": "#pragma natives event\nvoid helper(void)\n{\n    print(\"abc\");\n}\n"}
     expanded = library.expand(program, texts)
     assert [function["name"] for function in expanded["functions"]] == ["helper", "talk"]
     assert expanded["functions"][0]["padding"] == "01020304"
@@ -112,10 +112,10 @@ def test_includes_are_found_in_parent_folders():
     with tempfile.TemporaryDirectory() as folder:
         root = Path(folder)
         (root / "lib").mkdir()
-        (root / "lib/a.c2s").write_text("#pragma natives event\n")
+        (root / "lib/a.c").write_text("#pragma natives event\n")
         (root / "map/s").mkdir(parents=True)
-        program = parse.parse('#include "lib/a.c2s"\nMAIN(f);\n')
-        assert library.read_includes(program, root / "map/s/x.c2s") == {"lib/a.c2s": "#pragma natives event\n"}
+        program = parse.parse('#include "lib/a.c"\nMAIN(f);\n')
+        assert library.read_includes(program, root / "map/s/x.c") == {"lib/a.c": "#pragma natives event\n"}
 
 
 def test_native_calls_are_resolved_after_includes():
@@ -136,15 +136,15 @@ def test_libraries_json_moves_and_documents_a_library():
         root, paths = corpus(folder)
         model = library.model_for(root, paths, natives.load(), definitions.empty())
         identity = next(iter(model["libraries"].values()))["fingerprint"]
-        defs = dict(definitions.empty(), libraries={identity: {"path": "lib/town/waiting.c2s", "doc": "Waiting helpers."}})
+        defs = dict(definitions.empty(), libraries={identity: {"path": "lib/town/waiting.c", "doc": "Waiting helpers."}})
         model = library.model_for(root, paths, natives.load(), defs)
         texts = library.library_texts(model)
-        assert list(texts) == ["lib/town/waiting.c2s"]
-        assert texts["lib/town/waiting.c2s"].startswith("// Waiting helpers.\n\n")
+        assert list(texts) == ["lib/town/waiting.c"]
+        assert texts["lib/town/waiting.c"].startswith("// Waiting helpers.\n\n")
         data = (root / "map/m1.stb").read_bytes()
         program = decompile.decompile(stb.read(data), "event", natives.load())
         text = source.text(library.script_program(program, "map/m1.stb", model))
-        assert '#include "lib/town/waiting.c2s"' in text
+        assert '#include "lib/town/waiting.c"' in text
         assert compile.compile_program(library.expand(parse.parse(text), texts), natives.load()) == data
 
 

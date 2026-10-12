@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from c2s import compile, definitions, fingerprint, library, names, natives, parse, sdk, stb
+from c2s import compile, definitions, fingerprint, library, names, natives, parse, sdk, source, stb
 
 DEFAULT_NAME = re.compile(r"^(f_[0-9a-f]+|func_\d+|program_\d+|shared_\d+|start|[a-z0-9_]+_\d+_\d+)$")
 DEFAULT_VARIABLE = re.compile(r"^[av]\d+$")
@@ -59,11 +59,11 @@ def script_entries(path, tables, headers, rules):
     return table, entries, script_entry(program)
 
 
-def source_files(source):
-    source = Path(source)
-    if source.is_file():
-        return [source]
-    return sorted(path for path in source.rglob("*.c2s") if "lib" not in path.relative_to(source).parts[:1])
+def source_files(tree):
+    tree = Path(tree)
+    if tree.is_file():
+        return [tree]
+    return sorted(path for path in tree.rglob("*" + source.EXTENSION) if "lib" not in path.relative_to(tree).parts[:1])
 
 
 def disc_path(path, source):

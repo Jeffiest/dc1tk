@@ -3,7 +3,8 @@ import json
 import sys
 from pathlib import Path
 
-from c2s import asm, compile, coverage, decompile, definitions, disc, extract, learn, library, messages, names, natives, notes, parse, rebuild, sdk, source, stb, verify
+from c2s import (asm, compile, coverage, decompile, definitions, disc, extract, flags, index, learn, library, messages, names,
+                 natives, notes, parse, rebuild, sdk, source, startat, stb, tree, verify, xref)
 
 
 def run_extract(args):
@@ -110,20 +111,30 @@ def run_decompile_disc(args, tables, defs, headers):
     prefix = Path(args.stb).resolve().relative_to(root.resolve()).as_posix()
     paths = [path if prefix == "." else prefix + "/" + path for path in verify.find_scripts(args.stb)]
     defs, headers, generated = disc.with_header(str(root), defs, headers)
+    model = library.model_for(str(root), paths, tables, defs, headers)
+    texts = library.library_texts(model)
+    written = list(texts) + [Path(path).with_suffix(source.EXTENSION).as_posix() for path in paths] + [source.EDITOR_FLAGS]
+    if generated is not None:
+        written.append("include/" + disc.HEADER)
+    blocked = tree.overwrites(out, written) if out.is_dir() else []
+    if blocked and not args.force:
+        raise SystemExit("%s holds %d edited file%s this would overwrite, such as:\n  %s\n"
+                         "Save them first (cli.py mod save %s MOD_DIR), write somewhere else, or pass --force."
+                         % (out, len(blocked), "" if len(blocked) == 1 else "s", "\n  ".join(blocked[:10]), out))
     if generated is not None:
         (out / "include").mkdir(parents=True, exist_ok=True)
         (out / "include" / disc.HEADER).write_text(generated, encoding="utf-8")
-    model = library.model_for(str(root), paths, tables, defs, headers)
-    texts = library.library_texts(model)
     for path, text in texts.items():
         (out / path).parent.mkdir(parents=True, exist_ok=True)
         (out / path).write_text(text, encoding="utf-8")
     for path in paths:
         table = natives.table_for(path, defs["tables"])
         program = decompile.decompile(stb.read((root / path).read_bytes()), table, tables)
-        target = (out / path).with_suffix(".c2s")
+        target = (out / path).with_suffix(source.EXTENSION)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.text(library.script_program(program, path, model)), encoding="utf-8")
+    (out / source.EDITOR_FLAGS).write_text(source.editor_flags(args.sdk, defs["sets"]), encoding="utf-8")
+    tree.record(out, written)
     print("%d scripts and %d library files written to %s" % (len(paths), len(texts), out))
     return 0
 
@@ -156,7 +167,21 @@ def run_compile(args):
 
 def run_build(args):
     defs = loaded_definitions(args)
-    found = rebuild.changes(args.source, args.iso, defs, definitions.header_texts(defs, args.sdk), natives.load(args.natives))
+    overrides = None
+    if args.start_at:
+        target = startat.parse_target(args.start_at)
+        consts = index.constants(index.tree_headers(args.source, defs, args.sdk))
+        for warning in startat.warnings(args.source, consts, target):
+            print("warning: " + warning)
+        overrides = startat.overrides(args.source, target)
+        print("start at: a new game goes to map %s at program %s (patched %s; flag %d marks it done)"
+              % (target["map"], target["program"], ", ".join(sorted(overrides)), startat.START_FLAG))
+    status = tree.status(args.source)
+    if status is not None:
+        for note in tree.library_notes(args.source, status):
+            print("note: " + note)
+    found = rebuild.changes(args.source, args.iso, defs, definitions.header_texts(defs, args.sdk), natives.load(args.natives),
+                            overrides)
     for path in found["skipped"]:
         print("not on the disc, skipped: %s" % path)
     for change in found["scripts"]:
@@ -175,13 +200,73 @@ def run_build(args):
     return 1 if wrong else 0
 
 
+def tree_constants(args, defs):
+    return index.constants(index.tree_headers(args.source, defs, args.sdk))
+
+
+def run_flags(args):
+    defs = loaded_definitions(args)
+    consts = tree_constants(args, defs)
+    found = flags.scan(args.source, consts)
+    if args.flag is not None:
+        print(flags.who(found, args.flag, consts))
+    elif args.used:
+        print(flags.used_list(found, consts))
+    else:
+        print(flags.summary(found))
+    return 0
+
+
+def run_xref(args):
+    defs = loaded_definitions(args)
+    consts = tree_constants(args, defs)
+    if args.kind == "map":
+        print(xref.map_report(args.source, consts, args.what))
+        return 0
+    rows = xref.monster_rows(args.extracted, defs)
+    if args.kind == "monster":
+        print(xref.monster_report(args.source, consts, rows, args.what))
+        return 0
+    number = index.value(args.what, consts)
+    if not isinstance(number, int):
+        raise SystemExit("%s is not a program number or name" % args.what)
+    print(xref.event_report(args.source, consts, number, args.map, rows))
+    return 0
+
+
+def run_changes(args):
+    print(tree.changes_text(args.source))
+    return 0
+
+
+def run_mod(args):
+    if args.mod_command == "save":
+        result = tree.save_mod(args.source, args.mod)
+        print("%d files saved to %s" % (len(result["saved"]), args.mod))
+        for path in result["removed"]:
+            print("note: %s was removed from the tree; apply leaves it in place" % path)
+        return 0
+    result = tree.apply_mod(args.mod, args.source, args.force)
+    for warning in result["warnings"]:
+        print("warning: " + warning)
+    print("%d files applied to %s" % (len(result["applied"]), args.source))
+    return 0
+
+
+def run_fork(args):
+    result = tree.fork(args.source, args.library, args.copy, args.scripts)
+    print("%s now includes %s" % (", ".join(args.scripts), args.copy))
+    print("%d scripts still include %s" % (len(result["still_using_original"]), args.library))
+    return 0
+
+
 def run_verify(args):
     defs = loaded_definitions(args)
     defs, headers, _ = disc.with_header(args.extracted, defs, definitions.header_texts(defs, args.sdk))
     report = verify.verify(args.extracted, natives.load(args.natives), defs, headers)
     print(verify.format_report(report, args.limit))
     if args.json:
-        Path(args.json).write_text(json.dumps(report, indent=1, ensure_ascii=False))
+        Path(args.json).write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
     return 0 if report["summary"]["ok"] else 1
 
 
@@ -227,18 +312,20 @@ def parser():
     command.add_argument("iso", help="the retail disc image")
     command.add_argument("output", help="directory for the decompiled source tree")
     command.add_argument("--extracted", default="extracted", help="where to extract the disc (reused when already there)")
+    command.add_argument("--force", action="store_true", help="overwrite files edited since the last decompile")
     common(command)
 
     command = commands.add_parser("extract", help="write every file in the disc's DATA.DAT")
     command.add_argument("iso")
     command.add_argument("out")
 
-    command = commands.add_parser("decompile", help="write a script, or a whole extracted disc, as c2s source")
+    command = commands.add_parser("decompile", help="write a script, or a whole extracted disc, as C source")
     command.add_argument("stb", help="a script, or an extracted disc directory")
     command.add_argument("-o", "--output", help="file or directory to write; standard output for one script when omitted")
+    command.add_argument("--force", action="store_true", help="overwrite files edited since the last decompile")
     common(command, table=True)
 
-    command = commands.add_parser("compile", help="build a script from c2s source")
+    command = commands.add_parser("compile", help="build a script from C source")
     command.add_argument("source")
     command.add_argument("-o", "--output", help="script file to write; the source path with .stb when omitted")
     common(command, table=True)
@@ -247,6 +334,8 @@ def parser():
     command.add_argument("source", help="the source tree, as setup or decompile wrote it")
     command.add_argument("iso", help="the retail disc image the source came from")
     command.add_argument("-o", "--output", required=True, help="disc image to write")
+    command.add_argument("--start-at", metavar="MAP:PROGRAM",
+                         help="test image only: a new game goes straight to this map and program, as in s51:story_50")
     common(command)
 
     command = commands.add_parser("verify", help="round-trip every script in an extracted disc")
@@ -268,7 +357,7 @@ def parser():
     command = commands.add_parser("defs", help="work on definition sets")
     defs_commands = command.add_subparsers(dest="defs_command", required=True)
     learn_command = defs_commands.add_parser("learn", help="record names and docs from edited source into a definition set")
-    learn_command.add_argument("source", help="an edited .c2s file or source tree")
+    learn_command.add_argument("source", help="an edited .c file or source tree")
     learn_command.add_argument("into", help="definition set directory to update")
     common(learn_command)
     check_command = defs_commands.add_parser("check", help="report how much of a disc a definition set names")
@@ -279,6 +368,39 @@ def parser():
     todo_command.add_argument("--limit", type=int, default=50, help="rows to print")
     common(todo_command)
 
+    command = commands.add_parser("flags", help="save flags the scripts and engine use, and which are free")
+    command.add_argument("source", help="a decompiled source tree")
+    command.add_argument("--used", action="store_true", help="list every used flag with its name and users")
+    command.add_argument("--flag", type=int, help="show every use of this flag")
+    common(command)
+
+    command = commands.add_parser("xref", help="what starts an event, what enters a map, where a monster is used")
+    command.add_argument("source", help="a decompiled source tree")
+    command.add_argument("kind", choices=["event", "map", "monster"])
+    command.add_argument("what", help="a program number or name, a map name (s51), or a monster number, constant or name")
+    command.add_argument("--map", help="for event: only this map's programs and entries")
+    command.add_argument("--extracted", default="extracted", help="the extracted disc, for monster models and AI scripts")
+    common(command)
+
+    command = commands.add_parser("changes", help="list files edited, added or removed since the tree was decompiled")
+    command.add_argument("source", help="a decompiled source tree")
+
+    command = commands.add_parser("mod", help="save a tree's edits, or apply saved edits to a fresh tree")
+    mod_commands = command.add_subparsers(dest="mod_command", required=True)
+    save_command = mod_commands.add_parser("save", help="copy every edited or added file into a mod folder")
+    save_command.add_argument("source", help="the edited source tree")
+    save_command.add_argument("mod", help="folder to save the mod in")
+    apply_command = mod_commands.add_parser("apply", help="copy a saved mod's files into a source tree")
+    apply_command.add_argument("mod", help="the saved mod folder")
+    apply_command.add_argument("source", help="the source tree to apply it to")
+    apply_command.add_argument("--force", action="store_true", help="replace files edited in the tree too")
+
+    command = commands.add_parser("fork", help="give scripts their own copy of a library, so edits to it reach only them")
+    command.add_argument("source", help="a decompiled source tree")
+    command.add_argument("library", help="the library, as scripts include it (lib/...)")
+    command.add_argument("copy", help="path for the copy (lib/...)")
+    command.add_argument("scripts", nargs="+", help="scripts to switch to the copy, relative to the tree")
+
     command = commands.add_parser("natives", help="generate native function tables from a ChronicleTwo checkout")
     command.add_argument("chronicletwo")
     command.add_argument("--out", default=str(natives.DATA_DIR), help="directory for the table JSON files")
@@ -286,6 +408,10 @@ def parser():
 
 
 def main():
+    # Scripts and reports carry Japanese text; without this a Windows console's code page fails on it.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     args = parser().parse_args()
     if args.command == "extract":
         return run_extract(args)
@@ -305,6 +431,16 @@ def main():
         return run_defs(args)
     if args.command == "build":
         return run_build(args)
+    if args.command == "flags":
+        return run_flags(args)
+    if args.command == "xref":
+        return run_xref(args)
+    if args.command == "changes":
+        return run_changes(args)
+    if args.command == "mod":
+        return run_mod(args)
+    if args.command == "fork":
+        return run_fork(args)
     return run_verify(args)
 
 

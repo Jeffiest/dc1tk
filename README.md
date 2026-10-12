@@ -23,8 +23,10 @@ python3 cli.py setup dc2.iso source
 This extracts the disc to `extracted/` and decompiles every script into
 `source/`, as readable C using the SDK and the shipped definitions: named
 functions and variables, documented natives, named constants, and English
-comments. Edit any scripts or shared library files, then build a new disc
-image:
+comments. Open `source/` in an editor that uses clangd and every native,
+helper and constant completes and documents itself (see
+[editor setup](docs/modding.md#editor-setup)). Edit any scripts or shared
+library files, then build a new disc image:
 
 ```
 python3 cli.py build source dc2.iso -o modded.iso
@@ -32,7 +34,9 @@ python3 cli.py build source dc2.iso -o modded.iso
 
 `build` compiles every script in `source/`, finds the ones that differ from
 the disc, and writes `modded.iso`: the original image with only those
-scripts replaced. Boot it in PCSX2 like the original.
+scripts replaced. Boot it in PCSX2 like the original. To try a change
+without replaying up to it, `--start-at s51:story_50` makes New Game go
+straight to that scene.
 
 Neither `extracted/` nor `source/` is ever committed: this repository holds
 tools and knowledge, never game code or text.
@@ -54,6 +58,8 @@ PLAN.md          what comes next
 ## Documentation
 
 - [Usage](docs/usage.md): every command, and the modding workflow.
+- [Modding guide](docs/modding.md): how scripts run, as far as a mod needs to
+  know, and the commands that find what to edit.
 - [The c2s language](docs/language.md) and [the SDK](docs/sdk.md).
 - [Definitions](docs/definitions.md): the format for sharing knowledge about
   compiled scripts without sharing the scripts.

@@ -2,15 +2,16 @@ import shutil
 import struct
 from pathlib import Path
 
-from c2s import archive, compile, definitions, iso, library, natives, parse
+from c2s import archive, compile, definitions, iso, library, natives, parse, source
 
 SCRIPT_SUFFIXES = (".stb", ".STB")
 VOLUME_SIZE = 80
 FILLER = "DMMY"
 
 
-def compiled(source_path, defs, headers, tables):
-    program = parse.parse(Path(source_path).read_text(encoding="utf-8"))
+# Compiles a script of the tree; text, when given, stands in for the file's own (build --start-at).
+def compiled(source_path, defs, headers, tables, text=None):
+    program = parse.parse(Path(source_path).read_text(encoding="utf-8") if text is None else text)
     headers = dict(headers, **definitions.source_headers(source_path))
     program = library.expand(program, library.read_includes(program, str(source_path)), headers)
     if "asm" not in program and program["natives"] is None:
@@ -20,12 +21,12 @@ def compiled(source_path, defs, headers, tables):
 
 def source_scripts(source_dir):
     root = Path(source_dir)
-    return sorted(path.relative_to(root).as_posix() for path in root.rglob("*.c2s")
+    return sorted(path.relative_to(root).as_posix() for path in root.rglob("*" + source.EXTENSION)
                   if path.relative_to(root).parts[0] != "lib")
 
 
 def disc_location(relative, index):
-    stem = relative[:-len(".c2s")]
+    stem = relative[:-len(source.EXTENSION)]
     parts = stem.split(".d/")
     if len(parts) == 1:
         for suffix in SCRIPT_SUFFIXES:
@@ -70,7 +71,7 @@ def replaced_member(data, names, new):
     return data[:entry] + bytes(header) + inner + bytes(-len(inner) % archive.PACK_ALIGN) + data[old_end:]
 
 
-def changes(source_dir, iso_path, defs, headers, tables):
+def changes(source_dir, iso_path, defs, headers, tables, overrides=None):
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
         index = {entry["path"]: entry for entry in disc["entries"]}
@@ -88,7 +89,7 @@ def changes(source_dir, iso_path, defs, headers, tables):
             if original is None:
                 skipped.append(relative)
                 continue
-            new = compiled(Path(source_dir) / relative, defs, headers, tables)
+            new = compiled(Path(source_dir) / relative, defs, headers, tables, (overrides or {}).get(relative))
             if new != original:
                 found.append(dict(where, source=relative, data=new))
     rebuilt = {}

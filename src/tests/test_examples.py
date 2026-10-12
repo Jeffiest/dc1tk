@@ -7,7 +7,7 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "docs" / "examples"
 
 
 def example_bytes(directory, defs):
-    path = directory / (directory.name + ".c2s")
+    path = directory / (directory.name + ".c")
     program = parse.parse(path.read_text(encoding="utf-8"))
     headers = definitions.header_texts(defs, sdk.SDK_DIR)
     return compile.compile_program(library.expand(program, library.read_includes(program, path), headers), natives.load())
@@ -31,9 +31,9 @@ def stages(directory):
     script = directory.name + ".stb"
     return {
         directory.name + ".asm": asm.disassemble(stb.read(data), table, natives.load()),
-        directory.name + ".bare.c2s": decompiled(data, table, definitions.empty(), {}, script),
-        directory.name + ".sdk.c2s": decompiled(data, table, definitions.empty(), sdk.load_texts(), script),
-        directory.name + ".c2s": decompiled(data, table, defs, definitions.header_texts(defs, sdk.SDK_DIR), script),
+        directory.name + ".bare.c": decompiled(data, table, definitions.empty(), {}, script),
+        directory.name + ".sdk.c": decompiled(data, table, definitions.empty(), sdk.load_texts(), script),
+        directory.name + ".c": decompiled(data, table, defs, definitions.header_texts(defs, sdk.SDK_DIR), script),
     }, data
 
 
@@ -42,7 +42,7 @@ def test_examples_match_the_decompiler():
         outputs, data = stages(directory)
         for name, text in outputs.items():
             path = directory / name
-            if os.environ.get("C2S_REGENERATE") and name != directory.name + ".c2s":
+            if os.environ.get("C2S_REGENERATE") and name != directory.name + ".c":
                 path.write_text(text, encoding="utf-8")
             assert path.read_text(encoding="utf-8") == text, "%s is out of date" % path
 
@@ -51,7 +51,7 @@ def test_every_example_stage_compiles_to_the_same_bytes():
     for directory in sorted(path for path in EXAMPLES.iterdir() if path.is_dir()):
         outputs, data = stages(directory)
         assert asm.assemble(outputs[directory.name + ".asm"], natives.load()) == data
-        bare = parse.parse(outputs[directory.name + ".bare.c2s"])
+        bare = parse.parse(outputs[directory.name + ".bare.c"])
         assert compile.compile_program(bare, natives.load()) == data
-        with_sdk = parse.parse(outputs[directory.name + ".sdk.c2s"])
+        with_sdk = parse.parse(outputs[directory.name + ".sdk.c"])
         assert compile.compile_program(library.expand(with_sdk, {}, sdk.load_texts()), natives.load()) == data

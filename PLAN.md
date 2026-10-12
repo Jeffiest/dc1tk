@@ -47,6 +47,15 @@ definitions.
     updated. An unchanged tree rebuilds the original image byte for byte,
     and an image with edited scripts boots in PCSX2 and plays the edits.
 
+12. **Modding tools.** Decompiled files are `.c` with a `compile_flags.txt`,
+    so clangd editors read them with the SDK. `xref` and `flags` answer
+    what starts an event, how a map is entered, which AI a monster runs and
+    which save flags are free; a tree records what the decompiler wrote, so
+    `changes`, `mod save`/`apply` and `fork` keep edits apart from its
+    output; `build --start-at` makes a test image that starts at a scene.
+    How scripts run, as far as a mod needs, is in
+    [docs/modding.md](docs/modding.md).
+
 ## Next: names and docs
 
 1. **Review function names.** They were written from the code and its

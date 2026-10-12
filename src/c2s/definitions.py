@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from c2s import names, notes, sdk
+from c2s import names, notes, sdk, source
 
 DEFAULT_SET = Path(__file__).resolve().parents[2] / "definitions" / "pal"
 MANIFEST = "definitions.json"
@@ -40,8 +40,8 @@ def variant_base(path):
 
 def script_entry(defs, path):
     text = Path(path).as_posix()
-    if text.endswith(".c2s"):
-        text = text[:-4] + ".stb"
+    if text.endswith(source.EXTENSION):
+        text = text[:-len(source.EXTENSION)] + ".stb"
     sibling = {}
     for disc_path, entry in defs["scripts"].items():
         if text == disc_path or text.endswith("/" + disc_path):

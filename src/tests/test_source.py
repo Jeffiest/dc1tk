@@ -1,4 +1,4 @@
-from c2s import asm, compile, decompile, natives, parse, sdk, source, stb
+from c2s import asm, compile, decompile, definitions, natives, parse, sdk, source, stb
 from tests import build
 
 EVENT = """#pragma natives event
@@ -204,3 +204,11 @@ def test_fingerprints_ignore_names_and_position():
     moved = build_text(EVENT.replace("int g0;\n", "int g0;\n").replace("    v0 = 3;\n", "    v0 = 4;\n"))
     changed = decompile.decompile(stb.read(moved), "event", natives.load())["fingerprints"]
     assert changed["f_0000"] != first["f_0000"] and changed["f_04d4"] == first["f_04d4"]
+
+
+def test_editor_flags_point_clang_at_the_sdk_the_sets_and_the_tree():
+    lines = source.editor_flags(sdk.SDK_DIR, [str(definitions.DEFAULT_SET)]).splitlines()
+    assert lines[:3] == ["-xc", "-std=c2x", "-m32"]
+    assert "-I" + sdk.SDK_DIR.resolve().as_posix() in lines
+    assert "-I" + (definitions.DEFAULT_SET / "include").resolve().as_posix() in lines
+    assert lines[-2:] == ["-Iinclude", "-I."]

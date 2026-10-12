@@ -6,8 +6,10 @@ __pycache__/
 /extracted/
 /out/
 /source/
+/decompiled/
+/mods/
 *.stb
 *.STB
 /*.asm
-/*.c2s
+/*.c
 /report.json

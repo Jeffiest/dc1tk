@@ -90,7 +90,7 @@ Used for `sysmes_*.mes`, `system_*.mes`, `d01_*.mes`, `npcmsg.mes`, `etc/help*.m
 
 ### Proof on s05
 
-`map/s/s05/s05_1.c2s` includes `lib/map/s/s05/s05_6.c2s`, which calls `load_message_file(0, 5, "event/e200/e215/e215_1.txt")` and then `play_voice_message(2150010)`.
+`map/s/s05/s05_1.c` includes `lib/map/s/s05/s05_6.c`, which calls `load_message_file(0, 5, "event/e200/e215/e215_1.txt")` and then `play_voice_message(2150010)`.
 
 Reading ids 2150010 and 2150020 from `event/e200/e215/e215_1.txt` gives the
 two English lines the scene shows. Id 2350010, which `s05b_*` passes to
@@ -121,7 +121,7 @@ The unresolved ids break down as:
 
 `open_stream_wav(ch, n)` is `_STREAM_OPEN3`, which builds `sprintf("%07d.wav", n)` (event_func.cpp:12104, `at_7117`). The files live in `SOUND.DAT`, indexed by `SOUND.HD3`: 3,100 names like `2150010.wav`, with no language variants (one voice track for all languages).
 
-The lib wrappers (`play_voice_message`, `_for`, `_auto`, `_hold`, `run_voice_message_window` in `lib/map/map_27.c2s` and others) take one `voice` argument and pass it to both `open_stream_wav(1, voice)` and `show_message(0, voice)`. The wav number and the message id are therefore the same number.
+The lib wrappers (`play_voice_message`, `_for`, `_auto`, `_hold`, `run_voice_message_window` in `lib/map/map_27.c` and others) take one `voice` argument and pass it to both `open_stream_wav(1, voice)` and `show_message(0, voice)`. The wav number and the message id are therefore the same number.
 
 The id layout is `event_no * 10000 + line*10` (plus odd steps like 5 or 3 for inserted lines):
 

@@ -9,6 +9,7 @@ HEADER = "disc.h"
 MONSTER_ID = 0
 MONSTER_NAME = (4, 36)
 MONSTER_MODEL = (36, 52)
+MONSTER_SCRIPT = (52, 68)
 
 
 def text_at(record, span):
@@ -35,7 +36,8 @@ def monster_table(elf, layout):
         model = text_at(record, MONSTER_MODEL)
         if not model:
             break
-        rows.setdefault(struct.unpack_from("<h", record, MONSTER_ID)[0], {"name": text_at(record, MONSTER_NAME), "model": model})
+        rows.setdefault(struct.unpack_from("<h", record, MONSTER_ID)[0],
+                        {"name": text_at(record, MONSTER_NAME), "model": model, "script": text_at(record, MONSTER_SCRIPT)})
         position += layout["record_size"]
     return rows
 
@@ -53,11 +55,18 @@ def tables(root, defs):
     layout = defs.get("executable", {}).get("monster_table")
     monsters = monster_table(elf, layout) if elf is not None and layout else {}
     found["monster_kind"] = {number: row["name"] for number, row in monsters.items() if row["name"]}
+    found["monster_kind_notes"] = {number: monster_note(row) for number, row in monsters.items() if row["name"]}
     found.setdefault("chara_pack", {})
     for row in monsters.values():
         if row["name"]:
             found["chara_pack"].setdefault(row["model"], row["name"])
     return found
+
+
+# Where a monster kind's files are: its model pack and the AI script it runs, both under
+# dungeon/monster/. Kinds can share an AI script, and an event-only kind can have its own.
+def monster_note(row):
+    return "model %s, AI %s" % (row["model"], row["script"] or row["model"])
 
 
 def identifier(text, prefix):
@@ -66,7 +75,7 @@ def identifier(text, prefix):
     return "_".join([prefix] + [word.upper() for word in words]) if words else None
 
 
-def enum_lines(name, prefix, values, taken):
+def enum_lines(name, prefix, values, taken, notes=None):
     lines = ["enum %s {" % name]
     for number in sorted(values):
         constant = identifier(values[number], prefix)
@@ -77,7 +86,8 @@ def enum_lines(name, prefix, values, taken):
         if constant in taken:
             continue
         taken.add(constant)
-        lines.append("    %s = %d," % (constant, number))
+        note = (notes or {}).get(number)
+        lines.append("    %s = %d,%s" % (constant, number, "  // " + note if note else ""))
     return lines + ["};", ""]
 
 
@@ -93,7 +103,7 @@ def header(found, taken):
     present = False
     for name, prefix, doc in ENUMS:
         if found.get(name):
-            lines += ["// " + doc] + enum_lines(name, prefix, found[name], used)
+            lines += ["// " + doc] + enum_lines(name, prefix, found[name], used, found.get(name + "_notes"))
             present = True
     return "\n".join(lines + ["#endif", ""]) if present else None
 

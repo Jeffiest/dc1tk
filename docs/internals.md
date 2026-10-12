@@ -21,7 +21,7 @@ itself, so fingerprints are well defined and the same in every file.
    functions that appear, in order, in at least one other script.
 3. Every distinct run used by two or more scripts becomes a library file,
    placed under `lib/` in the deepest folder all its users share
-   (`lib/map/s/s05/s05_12.c2s`). Runs only one script uses stay inline.
+   (`lib/map/s/s05/s05_12.c`). Runs only one script uses stay inline.
 
 The libraries evolved while the game was made, so the same helper exists in
 several versions and a library file is one exact version. The disc gives
@@ -88,7 +88,7 @@ globals.
 
 ## Compiler
 
-`src/c2s/parse.py` reads `.c2s` into the same tree and `src/c2s/compile.py` turns
+`src/c2s/parse.py` reads `.c` into the same tree and `src/c2s/compile.py` turns
 the tree into text assembly, which `asm.assemble` lays out. Slots, label
 numbers, native numbers and string indices are assigned by the rules above;
 the assembler computes every offset, record field and header field.

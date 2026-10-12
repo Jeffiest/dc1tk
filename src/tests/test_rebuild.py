@@ -49,7 +49,7 @@ def read(path, top, members):
 
 def test_unchanged_source_rebuilds_the_same_image():
     with tempfile.TemporaryDirectory() as folder:
-        iso_path, out, found, _ = built(folder, 4, {"map/t01.c2s": "    wait;\n", "map/t02.c2s": "    end;\n"})
+        iso_path, out, found, _ = built(folder, 4, {"map/t01.c": "    wait;\n", "map/t02.c": "    end;\n"})
         assert found["scripts"] == []
         assert out.read_bytes() == iso_path.read_bytes()
 
@@ -57,9 +57,9 @@ def test_unchanged_source_rebuilds_the_same_image():
 def test_changed_scripts_land_in_place_inside_packs_and_in_the_filler():
     with tempfile.TemporaryDirectory() as folder:
         long_body = "    wait;\n" * 400
-        _, out, found, result = built(folder, 4, {"map/t01.c2s": long_body, "map/t02.c2s": "    end;\n",
-                                                  "chara/c01.chr.d/c01.c2s": "    wait;\n    wait;\n"})
-        assert sorted(change["source"] for change in found["scripts"]) == ["chara/c01.chr.d/c01.c2s", "map/t01.c2s"]
+        _, out, found, result = built(folder, 4, {"map/t01.c": long_body, "map/t02.c": "    end;\n",
+                                                  "chara/c01.chr.d/c01.c": "    wait;\n    wait;\n"})
+        assert sorted(change["source"] for change in found["scripts"]) == ["chara/c01.chr.d/c01.c", "map/t01.c"]
         assert {item["path"]: item["moved"] for item in result["placed"]} == {"chara/c01.chr": False, "map/t01.stb": True}
         assert result["grown"] == 0
         assert read(out, "map/t01.stb", []) == script(long_body)
@@ -71,7 +71,7 @@ def test_changed_scripts_land_in_place_inside_packs_and_in_the_filler():
 
 def test_image_grows_when_there_is_no_filler():
     with tempfile.TemporaryDirectory() as folder:
-        iso_path, out, found, result = built(folder, 0, {"map/t01.c2s": "    wait;\n" * 400})
+        iso_path, out, found, result = built(folder, 0, {"map/t01.c": "    wait;\n" * 400})
         assert result["grown"] > 0
         assert out.stat().st_size == iso_path.stat().st_size + result["grown"] * build.SECTOR
         assert read(out, "map/t01.stb", []) == script("    wait;\n" * 400)

@@ -11,7 +11,7 @@ DOCUMENTED = DOCUMENTED.replace("PROGRAM(100, start);", "PROGRAM(100, greet_visi
 
 def test_learn_records_names_and_docs():
     with tempfile.TemporaryDirectory() as folder:
-        script = Path(folder) / "greet.c2s"
+        script = Path(folder) / "greet.c"
         script.write_text(DOCUMENTED, encoding="utf-8")
         result = learn.learn(script, Path(folder) / "defs", natives.load(), {}, [])
         assert result == {"learned": {"event": 2}, "scripts": 1, "failures": []}
@@ -32,7 +32,7 @@ def test_learn_records_names_and_docs():
 
 def test_learn_skips_default_names():
     with tempfile.TemporaryDirectory() as folder:
-        script = Path(folder) / "plain.c2s"
+        script = Path(folder) / "plain.c"
         script.write_text(examples.EVENT, encoding="utf-8")
         assert learn.learn(script, Path(folder) / "defs", natives.load(), {}, [])["learned"] == {"event": 0}
 
@@ -56,7 +56,7 @@ def test_definition_sets_layer():
 
 def test_names_reach_variants_that_differ_only_in_strings():
     with tempfile.TemporaryDirectory() as folder:
-        script = Path(folder) / "greet.c2s"
+        script = Path(folder) / "greet.c"
         script.write_text(DOCUMENTED, encoding="utf-8")
         learn.learn(script, Path(folder) / "defs", natives.load(), {}, [])
         variant = examples.EVENT.replace('print("hello", v0);', 'print("hallo", v0);')

@@ -208,19 +208,19 @@ flag number appears.
 ### Libraries
 
 Libraries are found automatically and get a default home under `lib/`, in
-the folder their users share (`lib/map/map_29.c2s`). `libraries.json` gives
+the folder their users share (`lib/map/map_29.c`). `libraries.json` gives
 them a better path and a doc comment, keyed by library fingerprint (a hash
 of the native table and the member functions' fingerprints, in order):
 
 ```json
 {
   "libraries": {
-    "5e0c4f1d9a2b7c3e": {"path": "lib/town/talk_v29.c2s", "doc": "Shared town talk helpers."}
+    "5e0c4f1d9a2b7c3e": {"path": "lib/town/talk_v29.c", "doc": "Shared town talk helpers."}
   }
 }
 ```
 
-The path must start with `lib/` and end with `.c2s`. Function names inside
+The path must start with `lib/` and end with `.c`. Function names inside
 still come from `names/`, and default function names keep using the
 library's automatic name, so moving a library never changes them.
 
@@ -228,7 +228,7 @@ library's automatic name, so moving a library never changes them.
 slot name:
 
 ```json
-{"path": "lib/map/s/s05/scene_setup.c2s", "globals": {"g0": "max_chara_slot", "g1": "partner_chara_slot"}}
+{"path": "lib/map/s/s05/scene_setup.c", "globals": {"g0": "max_chara_slot", "g1": "partner_chara_slot"}}
 ```
 
 Library code is one file shared by every script that includes it, so each
