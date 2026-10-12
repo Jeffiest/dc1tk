@@ -99,7 +99,7 @@ definitions.
    Every function has now had one audit. A second look at the 360
    most-called functions found 3 wrong names (`activate_chara_slot` also
    switches characters off, so it is `set_chara_active_by_no`; the red time
-   gate scene is Max's, either gate) and 55 wrong docs (return values left
+   gate scene is Max's, either gate) and 43 wrong docs (return values left
    out, branches misread, a lip sync said to close the stream). The less
    called functions got one pass only.
 2. **Fewer numbered names.** About 2,700 function definitions on the disc
