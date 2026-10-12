@@ -431,8 +431,12 @@ def script_program(program, path, model):
     global_names = names.global_mapping(split, entry or {}, names.global_uses(hidden), forced)
     shown_hidden = [dict(function, body=names.renamed_variables(function["body"], global_names))
                     for function in hidden if function["kind"] == "function"]
-    sounds = {"out": {}}
-    presented = sdk.present(scripted, sdk.numbered(context, sdk.numbering_of(entry)), params, shown_hidden, sounds)
+    numbering = sdk.numbering_of(entry)
+    keys = {function["name"]: (program["natives"], numbering, function["name"],
+                               tuple(sorted((name, global_names.get(name, name)) for name in names.global_uses([function]))))
+            for function in hidden if function["kind"] == "function"}
+    sounds = {"out": {}, "cache": model.setdefault("prepared_hidden", {}), "keys": keys}
+    presented = sdk.present(scripted, sdk.numbered(context, numbering), params, shown_hidden, sounds)
     record_sound_uses(model, hidden_by_library, global_names, sounds["out"])
     triggers = model.get("triggers", {}).get(str(Path(path).parent.as_posix()), {})
     if triggers:

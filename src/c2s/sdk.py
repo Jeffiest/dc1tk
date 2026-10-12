@@ -735,8 +735,20 @@ def present_functions(functions, found, params_by_kind=None, hidden=(), sounds=N
     function_names = {function["name"] for function in functions if function["kind"] == "function"}
     prepared = [prepared_function(function, found, function_names, inlines) for function in functions]
     sounds = sounds or {}
-    hidden = [prepared_function(function, found, function_names, inlines)
-              for function in sound_related(hidden, functions, found)]
+    # included code is the same in every script that includes it, so it is prepared once per set of
+    # global names (sounds["keys"], into sounds["cache"])
+    cache, keys = sounds.get("cache", {}), sounds.get("keys", {})
+    prepared_hidden = []
+    for function in sound_related(hidden, functions, found):
+        key = keys.get(function["name"])
+        if key is None or key not in cache:
+            ready = prepared_function(function, found, function_names, inlines)
+            if key is None:
+                prepared_hidden.append(ready)
+                continue
+            cache[key] = ready
+        prepared_hidden.append(cache[key])
+    hidden = prepared_hidden
     seen = {}
     known = program_sounds(prepared + hidden, found, sounds.get("seed"), seen)
     if "out" in sounds:
