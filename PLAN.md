@@ -107,11 +107,13 @@ definitions.
    renamed (`show_system_message_60` is `show_game_over_message`); the
    rest carry an event, analysis or exit number, or are identical stubs
    (`do_nothing_2`, `unlock_interrupts_3`) that cannot be told apart.
-3. **`defs learn` for constants.** It learns function names, variables
-   and their kinds, return types, line notes, docs, script docs, globals,
-   and library paths and docs. Constants in `include/` headers (flag names,
-   the music, sound and bank enums) and library globals are still edited
-   by hand.
+3. **Constants.** `defs learn` learns function names, variables and their
+   kinds, return types, line notes, docs, script docs, globals (a
+   library's too), and library paths and docs. The constants (flag names,
+   the music, sound and bank enums) live in the set's `include/pal.h`,
+   which a decompiled tree includes from the set itself, so an edit there
+   is already an edit of the set; renaming one means renaming its uses
+   across the tree too (an editor's rename does both).
 
 Script docs (210 corrected), library docs (190 corrected, 85 libraries
 renamed) and the 185 story flags (35 renamed, 91 comments corrected) have

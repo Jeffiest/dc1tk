@@ -80,12 +80,17 @@ def script_entries(path, tables, headers, rules):
             entry["notes"] = notes[function["name"]]
         if entry:
             entries[found[offset]] = dict(entry, loose=prints["loose"][offset])
-    return table, entries, script_entry(program), library_entries(functions, found, table, expanded["library_docs"])
+    slots = {}
+    if "asm" not in decompiled and len(decompiled["globals"]) == len(expanded["globals"]):
+        slots = {declared["name"]: shown["name"] for declared, shown in zip(expanded["globals"], decompiled["globals"])}
+    return table, entries, script_entry(program), library_entries(functions, found, table, expanded["library_docs"], slots)
 
 
 # The libraries a script includes, keyed as the decompiler keys them (the fingerprints of the
-# functions each holds, in order), with the path the script includes them by and their doc.
-def library_entries(functions, found, table, docs):
+# functions each holds, in order), with the path the script includes them by, their doc and the
+# names of the globals they use, by the slot the decompiler names them for (g0). slots maps each
+# global's name to that slot name.
+def library_entries(functions, found, table, docs, slots=None):
     runs = []
     for function, offset in zip(functions, sorted(found)):
         path = function.get("library")
@@ -93,13 +98,19 @@ def library_entries(functions, found, table, docs):
             continue
         if runs and runs[-1][0] == path:
             runs[-1][1].append(found[offset])
+            runs[-1][2].append(function)
         else:
-            runs.append((path, [found[offset]]))
+            runs.append((path, [found[offset]], [function]))
     out = {}
-    for path, prints in runs:
+    for path, prints, members in runs:
         entry = {"path": path}
         if docs.get(path):
             entry["doc"] = docs[path]
+        used = {name for function in members for name in names.variables(function["body"], [])
+                if name not in {variable["name"] for variable in function["params"] + function["locals"]}}
+        globals_ = {slots[name]: name for name in used if name in (slots or {}) and not DEFAULT_GLOBAL.match(name)}
+        if globals_:
+            entry["globals"] = dict(sorted(globals_.items(), key=lambda item: int(item[0][1:])))
         out[library.library_fingerprint(table, prints)] = entry
     return out
 
@@ -181,8 +192,8 @@ def learn(source, target, tables, headers, rules):
     return {"learned": counts, "scripts": scripts, "libraries": libraries, "failures": failures}
 
 
-# Records the path and doc of each library the set already knows (a key the decompiler made), when
-# they differ from what the set says. Returns how many changed.
+# Records the path, doc and global names of each library the set already knows (a key the
+# decompiler made), when they differ from what the set says. Returns how many changed.
 def write_libraries(target, found):
     file = Path(target) / "libraries.json"
     if not file.is_file():
@@ -201,6 +212,8 @@ def write_libraries(target, found):
             taken.add(entry["path"])
         if entry.get("doc") and entry["doc"] != updated.get("doc"):
             updated["doc"] = entry["doc"]
+        if entry.get("globals"):
+            updated["globals"] = dict(updated.get("globals", {}), **entry["globals"])
         if updated != known[key]:
             known[key] = updated
             changed += 1

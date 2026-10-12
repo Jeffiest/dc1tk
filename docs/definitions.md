@@ -256,7 +256,9 @@ of those scripts must declare the slot under the same name. A script's own
 entry cannot rename a slot that included code uses; the library's name is
 used instead. Where two libraries included by one script disagree about a
 slot, or give two slots the same name, those names are dropped and the
-slot keeps its default name everywhere the libraries are used.
+slot keeps its default name everywhere the libraries are used. `learn`
+records these names too: rename such a global in the library file and the
+scripts that include it, and the library's entry takes the new name.
 
 ## Text from the disc
 
@@ -374,8 +376,8 @@ The easiest way to write definitions is to edit decompiled code:
    above functions and at the top of scripts, in `decompiled/`.
 3. `cli.py defs learn decompiled definitions/pal` compiles the edited files,
    fingerprints each function, and records every name, doc and global name
-   that differs from the decompiler's defaults, and the file name and top
-   comment of each library file (into `libraries.json`). Because names do
+   that differs from the decompiler's defaults, and the file name, top
+   comment and global names of each library file (into `libraries.json`). Because names do
    not change bytecode, any edit that still compiles to the same function
    teaches the definition set. Docs come back wrapped at 100 columns, so an annotated
    script written another way decompiles to the same words on other lines.

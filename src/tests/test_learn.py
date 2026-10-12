@@ -105,11 +105,17 @@ def test_a_set_knows_which_disc_it_was_made_for():
 
 
 def test_libraries_are_keyed_by_the_functions_they_hold():
-    functions = [{"name": "a"}, {"name": "b", "library": "lib/x.c"}, {"name": "c", "library": "lib/x.c"},
-                 {"name": "d", "library": "lib/y.c"}]
+    var = lambda name: {"kind": "expr", "expr": {"kind": "var", "name": name}}
+    function = lambda name, body, path=None, locals_=(): {"name": name, "library": path, "params": [], "body": body,
+                                                         "locals": [{"name": local} for local in locals_]}
+    functions = [function("a", [var("visits")]), function("b", [var("visits")], "lib/x.c"),
+                 function("c", [var("g1"), var("talks")], "lib/x.c", ["talks"]), function("d", [], "lib/y.c")]
     found = {0: "f0", 16: "f1", 32: "f2", 48: "f3"}
-    entries = learn.library_entries(functions, found, "event", {"lib/x.c": "Shared helpers."})
-    assert entries == {library.library_fingerprint("event", ["f1", "f2"]): {"path": "lib/x.c", "doc": "Shared helpers."},
+    # the script's globals, visits and talks, decompile as g0 and g1; talks is a local in c
+    entries = learn.library_entries(functions, found, "event", {"lib/x.c": "Shared helpers."},
+                                    {"visits": "g0", "talks": "g1"})
+    assert entries == {library.library_fingerprint("event", ["f1", "f2"]): {"path": "lib/x.c", "doc": "Shared helpers.",
+                                                                            "globals": {"g0": "visits"}},
                        library.library_fingerprint("event", ["f3"]): {"path": "lib/y.c"}}
 
 
