@@ -223,3 +223,17 @@ def test_locals_shadow_constants():
     script = stb.read(constant_build(shadowed))
     loads = [item for item in script["regions"][2]["instructions"] if item["name"] == "LOAD"]
     assert any(item["arg1"] == 1 for item in loads)
+
+
+def test_raw_numbered_calls_name_the_native_they_were_written_for():
+    header = MONSTER_HEADER + "extern void get_monster_var2(int index, OPTIONAL(int *value)) NATIVE(35, 25);\n"
+    headers = dict(HEADERS, **{"monster.h": header})
+    text = MONSTER.replace("    AT(60) target_angle = get_target_angle();\n", "    DIRECT get_monster_var2(1);\n")
+    data = compile.compile_program(library.expand(parse.parse(text), {}, headers), natives.load())
+    tables = natives.load()
+    found = sdk.header_context("monster", headers, tables)
+    program = decompile.decompile(stb.read(data), "monster", tables)
+    shown = source.text(sdk.present(names.apply(program, {}, sdk.reserved(found), found["program_names"]), found))
+    # raw 60 is get_target_angle in the table the call was written for
+    assert "    DIRECT get_monster_var2(1);  // old numbering, meant as get_target_angle\n" in shown
+    assert "    DIRECT target_angle = get_target_angle();\n" in shown

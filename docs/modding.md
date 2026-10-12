@@ -9,17 +9,17 @@ comes from. The commands are in [usage](usage.md).
 
 | Question | Command |
 | --- | --- |
-| What runs program 510 of map s51, and what asks for it? | `cli.py xref source event 510 --map s51` |
-| How does the game get to map s51, and at which program? | `cli.py xref source map s51` |
-| Which model and AI script does a monster kind use, and who places it? | `cli.py xref source monster golem` |
-| Which save flags are free for a mod? Who uses flag 54? | `cli.py flags source`, `cli.py flags source --flag 54` |
-| Which maps can a scene start in, and where does the player play? | `cli.py maps source` |
-| A map's programs, free program numbers, trigger points and player positions? | `cli.py map source s17` |
-| What have I changed? | `cli.py changes source` |
+| What runs program 510 of map s51, and what asks for it? | `cli.py xref decompiled event 510 --map s51` |
+| How does the game get to map s51, and at which program? | `cli.py xref decompiled map s51` |
+| Which model and AI script does a monster kind use, and who places it? | `cli.py xref decompiled monster golem` |
+| Which save flags are free for a mod? Who uses flag 54? | `cli.py flags decompiled`, `cli.py flags decompiled --flag 54` |
+| Which maps can a scene start in, and where does the player play? | `cli.py maps decompiled` |
+| A map's programs, free program numbers, trigger points and player positions? | `cli.py map decompiled s17` |
+| What have I changed? | `cli.py changes decompiled` |
 
 Files keep the game's codes with a readable name after them
 (`map/s/s51_raybrandt_castle/`, `dungeon/monster/e33a_golem.c`); commands
-take the codes. `source/include/disc.h` also gives each monster kind's model
+take the codes. `decompiled/include/disc.h` also gives each monster kind's model
 and AI script:
 `MONSTER_GOLEM = 168,  // model e33a, AI e33a`. Several kinds can share one
 AI script (all four kinds of `e33a`), and a story fight can use an event-only
@@ -110,7 +110,8 @@ event and marks the AI scripts of monsters the map places.
 Map scripts come in one file per language, `s51_1.c` (English) to `s51_5.c`;
 the engine loads the one for the console's language (`FileNameConvLanguage`,
 `event_func.cpp`; `EntryEventScript`, `dng_main.cpp`). Edit all five, or put
-your code in a library they all include. `xref` lists the variants of one
+your code in a library they all include. A file without a number (`s51.c`)
+is the original Japanese script, which the PAL game never loads. `xref` lists the variants of one
 call once.
 
 ## Message text
@@ -163,7 +164,7 @@ scripts you did not edit. To change a library for some scripts only, give
 them their own copy first:
 
 ```
-python3 cli.py fork source lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
+python3 cli.py fork decompiled lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
 ```
 
 ## A pattern: a caption every five seconds during a fight
@@ -253,7 +254,7 @@ working on, then boot it with `--play`. A mod can name its scene in
 straight to a scene, without changing the source tree:
 
 ```
-python3 cli.py build source dc2.iso -o test.iso --start-at s51:story_50
+python3 cli.py build decompiled dc2.iso -o test.iso --start-at s51:story_50
 ```
 
 A new game starts in dungeon 1's script at `floor_start` (`title.cpp`,
@@ -272,15 +273,15 @@ only.
 `setup` and `decompile` write `original-hashes.json` at the root of the tree,
 recording what they wrote. From it:
 
-- `cli.py changes source` lists every file you edited, added or removed;
+- `cli.py changes decompiled` lists every file you edited, added or removed;
 - `setup` and `decompile` refuse to overwrite edited files (`--force`
   overrides);
-- `cli.py mod save source castle` copies your edited and added files into
+- `cli.py mod save decompiled castle` copies your edited and added files into
   the mod `mods/castle`.
 
 Better still, keep the tree untouched and do the work in mods: `cli.py mod
 new source castle FILE...` copies the files you want to change into
-`mods/castle/files/`, and `cli.py build source dc2.iso -o modded.iso --mod
+`mods/castle/files/`, and `cli.py build decompiled dc2.iso -o modded.iso --mod
 castle --mod another` layers the chosen mods over the tree. A fresh tree,
 decompiled after a tools update, takes the same mods; `mod list` marks a mod
 file whose decompiler version has changed since, to compare. See

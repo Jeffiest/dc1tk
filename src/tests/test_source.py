@@ -221,3 +221,19 @@ def test_editor_flags_point_clang_at_the_sdk_the_sets_and_the_tree():
     assert "-I" + sdk.SDK_DIR.resolve().as_posix() in lines
     assert "-I" + (definitions.DEFAULT_SET / "include").resolve().as_posix() in lines
     assert lines[-2:] == ["-Iinclude", "-I."]
+
+
+def test_docs_read_back_as_written():
+    doc = "Plays a back flip, pushing backwards while the flip is mid-motion; " * 3 + "\nA second paragraph."
+    lines = source.doc_lines(doc)
+    comments = [(number, line[2:].strip()) for number, line in enumerate(lines, 1)]
+    assert parse.comment_block(comments, len(lines) + 1) == doc.replace("; \n", ";\n").strip()
+
+
+def test_a_program_naming_no_function_says_so():
+    try:
+        build_text(EVENT.replace("PROGRAM(200, f_04d4);", "PROGRAM(200, renamed_away);"))
+    except ValueError as error:
+        assert str(error) == "PROGRAM(200, renamed_away): no function renamed_away"
+    else:
+        raise AssertionError("compiled a broken program")

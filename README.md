@@ -22,12 +22,16 @@ PCSX2/A future port. Unedited scripts compile back to exactly the bytes on the d
 ### 1. What you need
 
 - Python 3.8 or later. Nothing else to install.
-- Your own Dark Chronicle PAL disc image, saved here as `dc2.iso`.
-- [PCSX2](https://pcsx2.net) to play the result.
+- Your own Dark Chronicle disc image, saved here as `dc2.iso`. It must be the
+  PAL release (`SCES_511.90`); the NTSC and Japanese discs are not supported
+  yet.
+- [PCSX2](https://pcsx2.net) to play the result, with a BIOS dumped from your
+  own PS2.
 - Optional: an editor that uses clangd (VS Code with the clangd extension,
   Neovim, Emacs, Zed), which then completes and documents every engine call.
 
-Commands below use `python3`; on Windows type `python`.
+Run the commands from this folder (it is where `extracted/`, `decompiled/`
+and `mods/` go). They use `python3`; on Windows type `python`.
 
 ### 2. Decompile the game
 
@@ -53,6 +57,10 @@ python3 cli.py mod new decompiled my-first-mod map/s/s51_raybrandt_castle/s51_1.
 
 and edit them in `mods/my-first-mod/files/`. The decompiled tree stays as it
 was, so several mods can be kept apart and built in any combination.
+Each map script comes in five languages: `s51_1.c` is English and `_2` to
+`_5` are French, German, Italian and Spanish. The game loads the one for the
+PS2's language setting, so change all five, or set the language to English
+while testing.
 (You can also edit `decompiled/` directly and save the edits into a mod
 later with `python3 cli.py mod save decompiled my-first-mod`.)
 
@@ -79,7 +87,9 @@ python3 cli.py build decompiled dc2.iso -o modded.iso --mod my-first-mod
 disc with only those scripts replaced. It takes seconds. Add `--mod` again for
 more mods. To test a change without playing up to it, add
 `--start-at MAP:PROGRAM` (for example `--start-at s51:story_50`), and New
-Game starts at that scene.
+Game starts at that scene, with a new game's party; use such images for
+testing only. The first build after updating these tools compiles every
+script, which takes a couple of minutes; it says so.
 
 ### 5. Play
 

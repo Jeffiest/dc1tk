@@ -1229,6 +1229,14 @@
    "loose": "1bcc7ad481645eed",
    "doc": "Runs the s50 map setup, places the player at the entrance and fades in."
   },
+  "073da64e471c25c6": {
+   "name": "load_defeat_scene_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads the actors for the e728 scene: Max and Monica with their e728 motions and equipment, the boss model and a particle model. Switches the player to Max or Monica if a transformed form is active, and stores the character slots in defeat_scene_max_slot and defeat_scene_monica_slot.",
+   "loose": "86fe2e962f6c3b7b"
+  },
   "07402d14deac7004": {
    "name": "play_retreat_from_shingala_scene",
    "loose": "4c114cdef90feb65",
@@ -3653,7 +3661,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads Max, Monica, Master Utan and four poison apples as scene actors for event 230 and its message file. Sets globals g0 and g1."
+   "doc": "Loads Max, Monica, Master Utan and four poison apples as scene actors for event 230 and its message file. Sets globals max_chara_slot and partner_chara_slot."
   },
   "15454dd4344c99f4": {
    "name": "talk_to_npc_and_depart_if_ready",
@@ -5298,7 +5306,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads the Max and Monica scene actors for event 235 and its message file. Sets globals g0 and g1."
+   "doc": "Loads the Max and Monica scene actors for event 235 and its message file. Sets globals max_chara_slot and partner_chara_slot."
   },
   "1dda2b3aec7ad51d": {
    "name": "load_s43b_event_151",
@@ -5710,6 +5718,14 @@
    ],
    "loose": "e89db5e50433248f",
    "doc": "Opens an item chest: pauses the dungeon, plays the lid opening, and has the item jump out. With item -1 the chest is empty and a message says so. Otherwise it adds as many as fit under the item limit, shows the get message or a can't-carry message, and opens the bag-full menu on overflow. Item 306 on stage 0 or in the trial version also shows a hint."
+  },
+  "1fef3fe55e09340e": {
+   "name": "load_farewell_scene_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads the actors for event 736: Max, Monica, Elena, two villagers, the Chrono Union models and the vanishing lights. Stores party slots in main_chara_slot and partner_chara_slot.",
+   "loose": "cf7a5ddf9ca44f2e"
   },
   "1ffdb63ccf3fc803": {
    "name": "play_carpenterion_intro_scene",
@@ -6197,7 +6213,7 @@
   "226cd0d1b4f39f48": {
    "name": "spawn_fishing_tournament_villagers",
    "loose": "b91f9993d702a263",
-   "doc": "Loads the cup model and number and row-name images into globals g0 and g1 and spawns the villagers who watch the fishing tournament."
+   "doc": "Loads the cup model and number and row-name images into globals number_image_block and row_name_image_block and spawns the villagers who watch the fishing tournament."
   },
   "2280c98f635c907c": {
    "name": "ask_to_move_to_main_street",
@@ -8930,6 +8946,18 @@
     "chapter"
    ],
    "doc": "Ferdinand's chatter after the chestnut quest is cleared, promising Max he will never refuse him. Chapter 8 swaps in his dream of being the best chef."
+  },
+  "324866f284ad399e": {
+   "name": "setup_event_209_actors",
+   "locals": [
+    "active_chara",
+    "index",
+    "unused_value",
+    "unused2",
+    "unused3"
+   ],
+   "doc": "Loads Max, Monica, Conda, the wine bottle, the item get model, five magic sprites, the flower and the e209 magic effect script for event 209. Sets globals max_scene_slot and monica_scene_slot.",
+   "loose": "4fd6babe3858e6c0"
   },
   "324c5b9fc0ecf47a": {
    "name": "simulate_spheda_ball_shot",
@@ -12956,7 +12984,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads Max, Monica, Conda, Noam, Rococo, Zak, Wicky, Tobo and Mogri for event 250 and its message file. Stores the party slots in g0 and g1."
+   "doc": "Loads Max, Monica, Conda, Noam, Rococo, Zak, Wicky, Tobo and Mogri for event 250 and its message file. Stores the party slots in chara_slot_a and chara_slot_b."
   },
   "49672edc885a57c0": {
    "name": "play_toryon_rock_throw_then_go_to_s11",
@@ -13823,7 +13851,7 @@
   "4e938ca98b2f01b5": {
    "name": "setup_fish_race_hall",
    "loose": "e389cd969047196d",
-   "doc": "Starts the fish race event: clears globals g0 and g1, loads the festival villagers, shows map part p07_i03h04, loads the prize setting and places the player."
+   "doc": "Starts the fish race event: clears globals race_sound_id and prize_sound_id, loads the festival villagers, shows map part p07_i03h04, loads the prize setting and places the player."
   },
   "4eaa6c1f79ce202c": {
    "name": "play_quake_then_load_s35",
@@ -14869,6 +14897,14 @@
     "sound_id"
    ],
    "doc": "Fades in on Max and Steve and plays the workshop door sound before the retry departure."
+  },
+  "53eaa8efdf9b4c8b": {
+   "name": "load_firbit_return_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads Max, Monica, Conda, Noam, Rococo, Zak, Wicky, Tobo and Mogri for event 250 and its message file. Stores the party slots in chara_slot_a and chara_slot_b.",
+   "loose": "982d97a2502ec367"
   },
   "53fc9fdd8704b893": {
    "name": "get_analyze_206",
@@ -16019,7 +16055,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads the actors for the e728 scene: Max and Monica with their e728 motions and equipment, the boss model and a particle model. Switches the player to Max or Monica if a transformed form is active, and stores the character slots in g0 and g1."
+   "doc": "Loads the actors for the e728 scene: Max and Monica with their e728 motions and equipment, the boss model and a particle model. Switches the player to Max or Monica if a transformed form is active, and stores the character slots in defeat_scene_max_slot and defeat_scene_monica_slot."
   },
   "5b39f663f74042b7": {
    "name": "talk_adel_after_joining",
@@ -16043,7 +16079,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads the actors for event 736: Max, Monica, Elena, two villagers, the Chrono Union models and the vanishing lights. Stores party slots in g0 and g1."
+   "doc": "Loads the actors for event 736: Max, Monica, Elena, two villagers, the Chrono Union models and the vanishing lights. Stores party slots in main_chara_slot and partner_chara_slot."
   },
   "5b609bbe0ed212a9": {
    "name": "play_event_600_then_s37",
@@ -16594,7 +16630,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads Max, Monica, Rococo and two door parts as scene actors depending on which character the player controls, and loads the message file e208. Sets globals g2 and g3 to the Max and Monica slots."
+   "doc": "Loads Max, Monica, Rococo and two door parts as scene actors depending on which character the player controls, and loads the message file e208. Sets globals max_slot and monica_slot to the Max and Monica slots."
   },
   "5e84e2290b3b9104": {
    "name": "ask_for_circus_ticket",
@@ -16965,7 +17001,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads Max, Monica, Cedric (starbre), Vorneo and Tom plus the train map part as scene actors for event 207 and loads the e207 message file. Sets globals g0 and g1 to the Max and Monica slots."
+   "doc": "Loads Max, Monica, Cedric (starbre), Vorneo and Tom plus the train map part as scene actors for event 207 and loads the e207 message file. Sets globals max_scene_slot and monica_scene_slot to the Max and Monica slots."
   },
   "6112f2655db66267": {
    "name": "start_m06b_event_155",
@@ -17627,6 +17663,14 @@
    "loose": "a6b3d7a8f6161f8e",
    "doc": "Treasure chest opening sequence: camera pushes in, the lid shakes and opens, and the item jumps out (nothing when item is -1). Adds item up to the bag limit and shows the item message, or a no-room message if none fit; with item -1 it shows an empty-chest message instead. Opens the item overflow menu when the bag is over its limit."
   },
+  "655a5aeec37dfa9c": {
+   "name": "setup_event_207_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads Max, Monica, Cedric (starbre), Vorneo and Tom plus the train map part as scene actors for event 207 and loads the e207 message file. Sets globals max_scene_slot and monica_scene_slot to the Max and Monica slots.",
+   "loose": "f8da1a8b82fba817"
+  },
   "656b6e5eb35e8670": {
    "name": "talk_fabio_joined",
    "params": [
@@ -17719,7 +17763,7 @@
   "664d9e508c062090": {
    "name": "place_train_crew_villagers",
    "loose": "e57efaaa54df6e33",
-   "doc": "Loads sound set 2200 into g0 and places the train crew Cedric, Vorneo and Tom as villagers, then starts the train sounds."
+   "doc": "Loads sound set 2200 into train_sound_id and places the train crew Cedric, Vorneo and Tom as villagers, then starts the train sounds."
   },
   "666b695b19145acd": {
    "name": "play_story_202_train_scene_and_board",
@@ -17958,6 +18002,14 @@
    "loose": "f0d1b274615f4844",
    "params": [],
    "doc": "Cutscene of Max boarding the train at a station. Reads the train and position from the event data, faces the train sideways (the direction depends on the map), picks the door and car parts for the train id, swings the doors open, and walks Max in to the train sound. Sets counter 0 to the train type."
+  },
+  "67d68b418c90aa13": {
+   "name": "setup_event_235_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads the Max and Monica scene actors for event 235 and its message file. Sets globals max_chara_slot and partner_chara_slot.",
+   "loose": "a87cc2b6a309f03a"
   },
   "67fa179c83429350": {
    "name": "use_floor_gate",
@@ -19291,7 +19343,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads the actors for the e728 dark power scene: Max and Monica, the sun and smoke models, and the red, blue and yellow Atla models. Stores the party slots in g2 and g3."
+   "doc": "Loads the actors for the e728 dark power scene: Max and Monica, the sun and smoke models, and the red, blue and yellow Atla models. Stores the party slots in dark_scene_max_slot and dark_scene_monica_slot."
   },
   "6fa41cbdb6f3bbb2": {
    "name": "on_monsters_cleared",
@@ -19484,6 +19536,16 @@
    "loose": "da17b98016f66b1b",
    "params": [],
    "doc": "Talking to Erik (character slot) at a station. If Erik is the partner he gives a demolition quip and, in chapters 2, 3 and 4 before the chapter's story event, an extra line, then the normal NPC talk. Otherwise it opens the party member menu for him with mode 3. Returns 0."
+  },
+  "705ff55c76c6bd8d": {
+   "name": "load_geostone_scene_actors",
+   "locals": [
+    "active_chara",
+    "block",
+    "block_2"
+   ],
+   "doc": "Loads the actors and images for event 254: Max and Monica, Conda, a Geostone model and two story images. Stores the party slots in player_slot and partner_slot.",
+   "loose": "5addf7392d0cff78"
   },
   "706533896893ae88": {
    "name": "talk_to_corinne",
@@ -21021,7 +21083,7 @@
     "active_chara",
     "block"
    ],
-   "doc": "Loads Max, Monica, Rococo, Tobo and Conda for event 209 together with the story images (beauty of the forest, the seven grieving, search party formed). Stores the party slots in g0 and g1."
+   "doc": "Loads Max, Monica, Rococo, Tobo and Conda for event 209 together with the story images (beauty of the forest, the seven grieving, search party formed). Stores the party slots in chara_slot_a and chara_slot_b."
   },
   "79401d827ec8fec6": {
    "name": "ask_to_retry_after_miss",
@@ -21430,6 +21492,14 @@
     "chapter"
    ],
    "doc": "Sheriff Blinkhorn's chatter after he has joined the party, praising Max's speed. Chapter 8 swaps in an offer of help."
+  },
+  "7bc1fd7deb9c6a84": {
+   "name": "load_event_270_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads the actors for event 270: Max and Monica with their e270 motions and the message file, storing the party slots in event_270_max_slot and event_270_monica_slot.",
+   "loose": "06b6c6d8e47d05a9"
   },
   "7bc324d7d42b22ca": {
    "name": "wait_camera_script",
@@ -21925,6 +21995,14 @@
    "name": "play_opening_town_run_scene",
    "loose": "d253c4ef61a96232",
    "doc": "Opening scene: the player runs along a long fixed path through the town for 430 frames while the camera pans, then fades out and jumps to map m06 at entry 152."
+  },
+  "7ebac5548e9b425f": {
+   "name": "setup_event_235_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads the Max and Monica scene actors for event 235 and its message file. Sets globals max_chara_slot and partner_chara_slot.",
+   "loose": "a87cc2b6a309f03a"
   },
   "7ebb20f58a76dcfc": {
    "name": "start_lapis_room",
@@ -23049,7 +23127,7 @@
     "block",
     "block_2"
    ],
-   "doc": "Loads the actors and images for event 254: Max and Monica, Conda, a Geostone model and two story images. Stores the party slots in g0 and g1."
+   "doc": "Loads the actors and images for event 254: Max and Monica, Conda, a Geostone model and two story images. Stores the party slots in player_slot and partner_slot."
   },
   "8540ca8ba5d63e64": {
    "name": "play_train_arrival_late",
@@ -23233,6 +23311,15 @@
    ],
    "doc": "Event 640. The Nova Driver is readied, aimed and fired at the palace. Sets flag 640."
   },
+  "86552b0b2ddf8d9e": {
+   "name": "play_ridepod_departure_then_enter_dungeon",
+   "locals": [
+    "departed",
+    "core_count"
+   ],
+   "doc": "Same as play_ridepod_departure_and_join, but on departure goes straight to dungeon 0, floor 4 with event 520.",
+   "loose": "98c133b25e617b63"
+  },
   "86606ee16d8ae76e": {
    "name": "play_max_and_monica_run_along_road_scene",
    "loose": "925c0a8e3e1fea57",
@@ -23323,7 +23410,7 @@
    "locals": [
     "flag"
    ],
-   "doc": "Disables the e348 function point if flag 348 is set and resets the scene globals (vector g0-g2 with g2 = 30, vector g4-g6) used by the Gaspard events."
+   "doc": "Disables the e348 function point if flag 348 is set and resets the scene globals (vector max_saved_x, max_saved_y, max_saved_z with max_saved_z = 30, vector monica_saved_x, monica_saved_y, monica_saved_z) used by the Gaspard events."
   },
   "872c46d6c7a89a4f": {
    "name": "test_arrival_sound",
@@ -24961,6 +25048,14 @@
     "counter"
    ],
    "doc": "Map setup. Starts the room music; while chests are not both taken it plays the intro once (counter 20 bit 1) and places the two monsters. Then places the player and fades in."
+  },
+  "91b8143ce67d46fa": {
+   "name": "setup_event_235_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads the Max and Monica scene actors for event 235 and its message file. Sets globals max_scene_slot and monica_scene_slot.",
+   "loose": "a87cc2b6a309f03a"
   },
   "91c302ce47114996": {
    "name": "play_stream_message_for",
@@ -27041,6 +27136,15 @@
    ],
    "doc": "Talks to the station NPC. If the player agrees to depart, plays the Mt. Gundor departure and jumps to map s10 (Heim Rada Stop)."
   },
+  "9d2f8e121f6ce5e6": {
+   "name": "load_firbit_meeting_actors",
+   "locals": [
+    "active_chara",
+    "block"
+   ],
+   "doc": "Loads Max, Monica, Rococo, Tobo and Conda for event 209 together with the story images (beauty of the forest, the seven grieving, search party formed). Stores the party slots in chara_slot_a and chara_slot_b.",
+   "loose": "57fdbfb74fae7145"
+  },
   "9d5b91dbc706977e": {
    "name": "preview_run_along_path_scene",
    "loose": "b8fd018665bca05c",
@@ -27103,7 +27207,7 @@
     "unused2",
     "unused3"
    ],
-   "doc": "Loads Max, Monica, Conda, the wine bottle, the item get model, five magic sprites, the flower and the e209 magic effect script for event 209. Sets globals g0 and g1."
+   "doc": "Loads Max, Monica, Conda, the wine bottle, the item get model, five magic sprites, the flower and the e209 magic effect script for event 209. Sets globals max_scene_slot and monica_scene_slot."
   },
   "9d90c971e93e035b": {
    "name": "on_gate",
@@ -28016,6 +28120,14 @@
    "loose": "259edf17cacf43ae",
    "doc": "Story 414 program: clears flag 408, sets up the map characters and plays the short scene of a sound sleeper."
   },
+  "a2e36ab4f1091249": {
+   "name": "setup_event_230_actors",
+   "locals": [
+    "active_chara"
+   ],
+   "doc": "Loads Max, Monica, Master Utan and four poison apples as scene actors for event 230 and its message file. Sets globals max_chara_slot and partner_chara_slot.",
+   "loose": "eb78480e674d86c1"
+  },
   "a2e509609831959e": {
    "name": "play_donny_gives_gun_scene",
    "loose": "da163178b15de6ad",
@@ -28666,6 +28778,15 @@
    ],
    "doc": "Sets flag 612. At the top a warp effect appears around the platform, then Max and his partner are placed back at the start with the camera behind them."
   },
+  "a717fe9d76b37b52": {
+   "name": "play_ridepod_departure_then_enter_dungeon",
+   "locals": [
+    "departed",
+    "core_count"
+   ],
+   "doc": "Same as play_ridepod_departure_and_join, but on departure goes straight to dungeon 0, floor 4 with event 520.",
+   "loose": "98c133b25e617b63"
+  },
   "a7292d5a557f1a5f": {
    "name": "play_cedric_walk_away_scene",
    "loose": "611a916d61fbef34",
@@ -29289,7 +29410,7 @@
     "departed",
     "core_count"
    ],
-   "doc": "Same as program_151, but on departure goes straight to dungeon 0, floor 4 with event 520."
+   "doc": "Same as play_ridepod_departure_and_join, but on departure goes straight to dungeon 0, floor 4 with event 520."
   },
   "aa86e6f1f1b27aa9": {
    "name": "talk_adel_give_materials",
@@ -29579,7 +29700,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads the actors for event 270: Max and Monica with their e270 motions and the message file, storing the party slots in g2 and g3."
+   "doc": "Loads the actors for event 270: Max and Monica with their e270 motions and the message file, storing the party slots in event_270_max_slot and event_270_monica_slot."
   },
   "ac634d25b22a5f7f": {
    "name": "play_dead_end_search_scene",
@@ -31814,6 +31935,15 @@
    ],
    "doc": "The Finny Frenzy host. Monica is turned away. In extra mode the race menu opens directly. Otherwise the host ends the tournament after three races, or offers to join, explain the rules and show the prizes per class. Joining picks a fish from the aquarium that has not won a prize, then a class (Beginner to Master) and moves on to choose a tank."
   },
+  "b782c8d972960759": {
+   "name": "play_ridepod_departure_then_enter_dungeon",
+   "locals": [
+    "departed",
+    "core_count"
+   ],
+   "doc": "Same as play_ridepod_departure_and_join, but on departure goes straight to dungeon 0, floor 4 with event 520.",
+   "loose": "98c133b25e617b63"
+  },
   "b784c432c17929bb": {
    "name": "load_room_music",
    "loose": "c528d42052966bf6",
@@ -32292,7 +32422,7 @@
    "locals": [
     "active_chara"
    ],
-   "doc": "Loads the actors for event 732: Max and Monica with equipment, the sun and dark models, Andrea, the moon-break models and the light rain effect. Stores party slots in g0 and g1."
+   "doc": "Loads the actors for event 732: Max and Monica with equipment, the sun and dark models, Andrea, the moon-break models and the light rain effect. Stores party slots in max_slot and monica_slot."
   },
   "ba2ee1d46ea3fbaf": {
    "name": "play_sighting_scene_then_go_to_heim_rada",
@@ -39569,6 +39699,11 @@
    ],
    "doc": "Starts the game over. When Monica or her alternate form is active it plays one of two random voice lines, otherwise a silent game over."
   },
+  "e245ec0e222a0d80": {
+   "name": "spawn_fishing_tournament_villagers",
+   "doc": "Loads the cup model and number and row-name images into globals number_image_block and row_name_image_block and spawns the villagers who watch the fishing tournament.",
+   "loose": "b91f9993d702a263"
+  },
   "e24cb607df7cc278": {
    "name": "play_monica_rescue_story_206",
    "loose": "b3b76ad7cb0566f1",
@@ -40028,6 +40163,15 @@
    "name": "close_npc_talk_windows",
    "loose": "e4ca0b9bfd86579a",
    "doc": "Makes character 0 active, resets message window 1 options, closes it and finishes the event."
+  },
+  "e4d0819a36ad5616": {
+   "name": "play_ridepod_departure_then_enter_dungeon",
+   "locals": [
+    "departed",
+    "core_count"
+   ],
+   "doc": "Same as play_ridepod_departure_and_join, but on departure goes straight to dungeon 0, floor 4 with event 520.",
+   "loose": "98c133b25e617b63"
   },
   "e4e8d80163d96ba4": {
    "name": "start_arrival_story",
@@ -40754,7 +40898,7 @@
   "e86f4c6ea8b053d2": {
    "name": "start_train_sounds",
    "loose": "e86f4c6ea8b053d2",
-   "doc": "Plays sound effects 2 and 8 of the train sound set held in g0."
+   "doc": "Plays sound effects 2 and 8 of the train sound set held in train_sound_id."
   },
   "e872c2b2c858ba09": {
    "name": "play_paznos_transform_then_go_to_stonehenge",
@@ -41913,7 +42057,7 @@
     "block_a",
     "block_b"
    ],
-   "doc": "Loads the actors, images and sprites for the Ixion explanation scene: Max, Monica, Chap, Elena's hologram, Jaming's grandson and a researcher, plus seven story images. Party slots go in g0 and g1."
+   "doc": "Loads the actors, images and sprites for the Ixion explanation scene: Max, Monica, Chap, Elena's hologram, Jaming's grandson and a researcher, plus seven story images. Party slots go in max_slot and monica_slot."
   },
   "efe44a62b6c3ad8c": {
    "name": "enter_f03i04_from_save_point",

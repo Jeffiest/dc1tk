@@ -64,3 +64,24 @@ def test_names_reach_variants_that_differ_only_in_strings():
         program = decompile.decompile(stb.read(data), "event", natives.load())
         entries = names.with_loose(names.merged(names.load(Path(folder) / "defs/names")), names.loose_map(program))
         assert "void greet_visitor(void)" in source.text(names.apply(program, entries))
+
+
+def test_copies_of_a_function_resolve_to_its_edit_not_its_alias():
+    existing = {"name": "start_event", "doc": "Old doc."}
+    copies = [{"name": "start_event", "doc": "Old doc."}, {"name": "start_event_for_program_506", "doc": "New doc."},
+              {"name": "start_event_2"}]
+    assert learn.resolved(copies, existing) == {"name": "start_event", "doc": "New doc."}
+    assert learn.resolved([{"name": "start_event"}, {"name": "begin_event"}], existing) == {"name": "begin_event"}
+
+
+def test_docs_wrapped_at_a_hyphen_join_without_a_space():
+    comments = [(1, "Pushes backwards while the flip is mid-"), (2, "motion, then stops - briefly.")]
+    assert parse.comment_block(comments, 3) == "Pushes backwards while the flip is mid-motion, then stops - briefly."
+
+
+def test_a_handler_takes_the_name_of_the_program_it_handles():
+    program = {"functions": [{"name": "f_0000", "kind": "function"}, {"name": "f_0010", "kind": "function"}],
+               "programs": [{"no": 102, "function": "f_0000"}], "main": "f_0010"}
+    mapping = names.assign(program, {"f_0000": "abc", "f_0010": None}, {"abc": "on_dodge_shot"}, set(),
+                           {101: "dodge_shot", 102: "dodge_melee"})
+    assert mapping["f_0000"] == "on_dodge_melee"

@@ -341,10 +341,10 @@ Planned: scene character slots (which pack a slot holds) and `sound`.
 
 The easiest way to write definitions is to edit decompiled code:
 
-1. `cli.py setup dc2.iso source` decompiles the disc with the shipped sets.
+1. `cli.py setup dc2.iso decompiled` decompiles the disc with the shipped sets.
 2. Rename functions, parameters, locals and globals, and add doc comments
-   above functions and at the top of scripts, in `source/`.
-3. `cli.py defs learn source definitions/pal` compiles the edited files,
+   above functions and at the top of scripts, in `decompiled/`.
+3. `cli.py defs learn decompiled definitions/pal` compiles the edited files,
    fingerprints each function, and records every name, doc and global name
    that differs from the decompiler's defaults. Because names do not change
    bytecode, any edit that still compiles to the same function teaches the

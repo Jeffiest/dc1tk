@@ -182,7 +182,17 @@ def comment_block(comments, line):
             paragraphs[-1].append(text)
         else:
             paragraphs.append([])
-    return "\n".join(" ".join(paragraph) for paragraph in paragraphs if paragraph)
+    return "\n".join(joined(paragraph) for paragraph in paragraphs if paragraph)
+
+
+# Joins wrapped comment lines. Older trees wrapped after a hyphen (mid-/motion), which joins
+# without a space.
+def joined(lines):
+    text = ""
+    for line in lines:
+        hyphen = re.search(r"[A-Za-z]-$", text) and line[:1].isalpha()
+        text = text + line if hyphen or not text else text + " " + line
+    return text
 
 
 def tokenize(text):

@@ -19,7 +19,7 @@ extern int get_counter(int index) NATIVE(16);
 // Original name: _OBJS_TEX_ANIME.
 extern void set_actor_texture_anim(int actor, int on, OPTIONAL(string anim_name)) NATIVE(471);
 
-extern float get_target_angle(void) NATIVE(70, 15);
+extern float get_target_angle(...) NATIVE(70, 15);
 
 static inline void start_turning_to_target(float *angle, float turn_speed)
 {
@@ -96,10 +96,27 @@ AT(60) get_pos(&target_angle);  // old numbering, meant as get_target_angle
 The rule (old group 60 is group 70, so the native ten numbers on) fits the
 arguments of all 197 such calls on the disc, and functions with a modern
 twin elsewhere confirm it; `old_groups` in `src/c2s/tables/monster.json`
-records it. Six monster scripts (`b02a1` to `b02a4`, `e236a`, `p00_23a`)
-also call 191 natives by raw number with no group, from a numbering no
-offset explains; those calls are shown as the natives they run, without a
-comment.
+records it.
+
+The scripts with those calls (`b07a_atora_yellow`, `e08a`, `e09a` and the
+libraries only they use) also call groups 110, 140 and 160 where the current table
+uses 120, 150 and 180: same-shaped functions elsewhere on the disc confirm
+every such call. Those groups are also current groups, used correctly by
+every other script, and a library function can be shared, so the decompiler
+does not comment these calls; read `AT(110)` and default-group calls of
+groups 110, 140 and 160 in those files as ten (twenty for 160) numbers on.
+
+Six monster scripts (`b02a1` to `b02a4`, `e236a`, `p00_23a`) call natives
+by raw number with no group, from an older, smaller table; they show as
+`DIRECT` calls, which no other script needs. No single offset maps that
+table, but same-shaped twins pin down 18 of its numbers (raw 52 to 61 are
+the current 77 to 86, for example), and `old_direct` in `monster.json`
+records them. A `DIRECT` call to one of those numbers gets the same
+comment:
+
+```c
+DIRECT get_monster_var2(&turn_target);  // old numbering, meant as get_target_angle
+```
 
 ## Constants
 
@@ -165,3 +182,21 @@ value is.
 Natives the scripts call but the engine never registers are declared too,
 as `extern void _EXT_67(...) NATIVE(60, 7);`, so the code stays valid C. At
 runtime the engine prints "not found ext" and skips them.
+
+## modkit
+
+`sdk/modkit/` holds libraries for mods, written for this project rather than
+taken from the game. Any script includes them with a quoted include, which
+is looked for in the script's folders and then in `sdk/`:
+
+| Include | For | Functions |
+| --- | --- | --- |
+| `"modkit/input.c"` | event scripts | `modkit_wait(frames)`, `modkit_pressed(mask)`, `modkit_wait_for_button(mask)`, `modkit_wait_for_confirm()` |
+| `"modkit/text.c"` | event scripts | `modkit_text_open(window)`, `modkit_text_show(window, text)`, `modkit_text_close(window)`, `modkit_say(text)`, `modkit_caption(text)` |
+| `"modkit/tick.c"` | monster scripts | `modkit_tick(flag, frames, program)` |
+
+Button masks are the `PAD_` constants of `<event.h>`, and frames are 50 a
+second on a PAL console. Text can hold the codes listed in
+[the modding guide](modding.md#message-text). `modkit_tick`, called from the
+AI of the monsters a map places, asks the map for a program on a timer while
+the player plays; the [modding guide](modding.md) explains the pattern.

@@ -76,9 +76,9 @@ code  function      0x38-byte record, instructions, FUNC_END, string block
   per push (no deduplication), padded to a multiple of 16 bytes. A function
   that pushes no strings usually has no block; the last block in a file and a
   few hundred others break the rule and are kept as bytes. The padding bytes are left over from the compiler's
-  string buffer: in 41,746 of 42,728 blocks they match the bytes the previous
-  block left at the same positions. The rest still need a rule (see open
-  questions). Some files end in stale bytes the same way.
+  string buffer: in 41,343 of 41,637 blocks they match the bytes the previous
+  block left at the same positions. The rest still need a rule (see the
+  [open questions](../PLAN.md#open-questions)). Some files end in stale bytes the same way.
 - **Globals**: an `SB2` program carves `global_num` slots off the bottom of the
   value stack. Dark Cloud 1 scripts have no magic and no globals (version 1).
 
@@ -109,7 +109,7 @@ code  function      0x38-byte record, instructions, FUNC_END, string block
 
 `NOP` appears 472,159 times and is a label: every jump on the disc lands on
 one, and its `arg1` is the label's number in the order the compiler allocated
-it within the function (see the decompiler below). Addressing modes (`RS_ADDR_MODE`): `0x1` local,
+it within the function (see [the decompiler](internals.md#decompiler)). Addressing modes (`RS_ADDR_MODE`): `0x1` local,
 `0x2` local indexed, `0x4` indexed through a pointer in a local, `0x8`, `0x10`,
 `0x20` the same three as float, `0x40` global, `0x200` global float.
 
@@ -120,11 +120,13 @@ it within the function (see the decompiler below). Addressing modes (`RS_ADDR_MO
 - `ITOF`/`FTOI` exist and slots are tagged float by the addressing mode: the
   language had declared `int` and `float` variables. Mixed arithmetic without
   any conversion is common and only 3,318 conversions appear on the disc, so
-  c2s writes them as explicit casts, `int(x)` and `float(x)`.
+  c2s writes them as explicit casts, `(int)x` and `(float)x`.
 - Named functions with arguments, locals, `CALL` and a value-returning `RET`.
 - `LOAD_ADDR` and pointer-indexed modes: `&x`, arrays, and array parameters.
-- `EXT` pushes no result. Every native is a statement and returns values
-  through pointer arguments: `_GET_FLAG(12, &done);`.
+- `EXT` pushes no result. At the VM level every native is a statement and
+  returns values through pointer arguments: `_GET_FLAG(12, &done);`. In
+  source, a native with one result returns it (`done = get_flag(12);`; see
+  [the language](language.md)).
 
 ## Native function tables
 
@@ -172,8 +174,9 @@ source, the SDK header a script includes names its table:
 Monster scripts often compute the native number as a group base plus an
 offset (`push 70; push 15; add` for `_GET_TARGET_ANGLE`), and 12,903 functions
 do it. The base differs between call sites for the same native (`_SET_MOS` is
-`180 + 2` 8,630 times and `170 + 12` four times), so c2s keeps it:
-`_GET_TARGET_ANGLE@70(&angle);`. The natives stage folds the addition before
+`180 + 2` 8,630 times and `170 + 12` four times), so c2s keeps it: the SDK declares each native with the base its calls
+mostly use (`NATIVE(70, 15)`), and `AT(n)` marks a call with another one
+(`AT(60) get_pos(&target_angle);`). The natives stage folds the addition before
 looking the number up.
 
 227 calls use 22 numbers that the matching table never registers, so at

@@ -169,6 +169,7 @@ def entry_names(program, program_names):
 
 def assign(program, found, class_names, reserved=frozenset(), program_names=None):
     entries = entry_names(program, program_names or {})
+    handler_names = {"on_" + name for name in (program_names or {}).values()}
     mapping = {}
     taken = set(reserved)
     own = 0
@@ -176,6 +177,10 @@ def assign(program, found, class_names, reserved=frozenset(), program_names=None
         fingerprint = found[function["name"]]
         if fingerprint is not None and fingerprint in class_names:
             base = class_names[fingerprint]
+            # A handler named for its program elsewhere (on_dodge_shot) takes the name of the
+            # program it handles here, as the same code can be bound to another one.
+            if base in handler_names and entries.get(function["name"], base) in handler_names:
+                base = entries[function["name"]] if function["name"] in entries else base
         elif function["name"] in entries:
             base = entries[function["name"]]
         else:

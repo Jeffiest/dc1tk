@@ -1840,6 +1840,19 @@
    ],
    "doc": "Explosion effect. Effect value 0 selects the size and damage (1 normal 100, 2 larger 400, 3 largest 800, 4 small 40, 5 treasure chest explosion with no damage set); the attack is removed on the first hit or at frame 30, and the effect lasts 114 frames."
   },
+  "7f463bd54f92302d": {
+   "locals": [
+    "pos",
+    "rot",
+    "dir",
+    "velocity",
+    "owner_id",
+    "spare",
+    "frame"
+   ],
+   "doc": "Places the flash model at the owner's work position and rotation, plays its fire motion and fades it in, then lasts 25 frames. The direction and velocity it works out are not used.",
+   "loose": "ad39ca422f754e06"
+  },
   "7f9ad5f3fff94058": {
    "name": "shrink_rose_and_remove_attack",
    "loose": "7f9ad5f3fff94058",
@@ -3412,6 +3425,19 @@
    ],
    "doc": "Cold shot projectile that flies up to 90 frames with an ice attack, bursting on a hit or wall. If a guard knocks it back it turns around along the reflected direction for up to 60 frames and can hurt the original caster."
   },
+  "db4ed299c609262c": {
+   "locals": [
+    "pos",
+    "rot",
+    "dir",
+    "velocity",
+    "owner_id",
+    "spare",
+    "frame"
+   ],
+   "doc": "Places the flash model at the owner's work position and rotation, plays its fire motion and fades it in, then lasts 25 frames. The direction and velocity it works out are not used.",
+   "loose": "ad39ca422f754e06"
+  },
   "db9b995874ad6ae0": {
    "name": "on_play",
    "loose": "28ad8a48d2bde1f6",
@@ -3453,6 +3479,19 @@
     "frame"
    ],
    "doc": "Places the model at the work position and plays its looping motion for 17 frames."
+  },
+  "e071b42ab8d637ba": {
+   "locals": [
+    "pos",
+    "rot",
+    "dir",
+    "velocity",
+    "owner_id",
+    "spare",
+    "frame"
+   ],
+   "doc": "Places the flash model at the owner's work position and rotation, plays its fire motion and fades it in, then lasts 25 frames. The direction and velocity it works out are not used.",
+   "loose": "ad39ca422f754e06"
   },
   "e10bdfca952621d5": {
    "name": "follow_owner_item_bone",

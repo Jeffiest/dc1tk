@@ -169,7 +169,9 @@ def doc_lines(text):
     for paragraph in text.split("\n"):
         if lines:
             lines.append("//")
-        lines += ["// " + row for row in textwrap.wrap(paragraph, 96)]
+        # Breaking only at spaces lets the parser join the lines back with spaces (mid-motion, not
+        # mid- motion).
+        lines += ["// " + row for row in textwrap.wrap(paragraph, 96, break_on_hyphens=False)]
     return lines
 
 
@@ -222,7 +224,8 @@ def text(program):
     if program["globals"]:
         lines.append("")
     for entry in program["programs"]:
-        lines.append("PROGRAM(%s, %s);" % (entry["no"], entry["function"]))
+        line = "PROGRAM(%s, %s);" % (entry["no"], entry["function"])
+        lines.append(line + ("  // " + entry["note"] if entry.get("note") else ""))
     lines.append("MAIN(%s);" % program["main"])
     lines += function_lines(program["functions"][leading:])
     padding_of = dict(program["padding_of"])

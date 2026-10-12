@@ -127,7 +127,7 @@ def run_decompile_disc(args, tables, defs, headers):
     blocked = tree.overwrites(out, written) if out.is_dir() else []
     if blocked and not args.force:
         raise SystemExit("%s holds %d edited file%s this would overwrite, such as:\n  %s\n"
-                         "Save them first (cli.py mod save %s MOD_DIR), write somewhere else, or pass --force."
+                         "Save them first (cli.py mod save %s NAME), write somewhere else, or pass --force."
                          % (out, len(blocked), "" if len(blocked) == 1 else "s", "\n  ".join(blocked[:10]), out))
     if generated is not None:
         (out / "include").mkdir(parents=True, exist_ok=True)

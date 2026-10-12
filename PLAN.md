@@ -55,6 +55,8 @@ definitions.
     which save flags are free; a tree records what the decompiler wrote, so
     `changes`, `mod save`/`apply` and `fork` keep edits apart from its
     output; `build --start-at` makes a test image that starts at a scene.
+    `PROGRAM` lines say which trigger point, door or treasure box in the
+    map's `.map` file starts them.
     How scripts run, as far as a mod needs, is in
     [docs/modding.md](docs/modding.md).
 
@@ -65,8 +67,13 @@ definitions.
    functions (a fifth of the 8,254 distinct ones) found 85% right; the rest
    were missing docs, about 60 wrong names and a few wrong docs, all fixed.
    At that rate roughly 1,000 of the unaudited functions still have a wrong
-   name or doc. Audit the rest the same way, monster AI and scenes without
-   dialogue first, where most errors were.
+   name or doc. A second audit read the monster AI (`dungeon/monster` and
+   its libraries) against the SDK and renamed 134 distinct functions and
+   corrected the docs of 475:
+   calm and enraged loops swapped, `on_dodge_shot` handlers bound to
+   `dodge_melee`, branches no roll can reach, "100 unit" steps cut off
+   after a few frames, and docs that read old-numbered calls literally.
+   Scenes without dialogue are next.
 2. **Review script docs, library names and story flags.** None of these
    were audited. Many library names and docs were written from the
    function names alone. The 185 flag names in
@@ -95,13 +102,10 @@ definitions.
    (`activate_chara(37)`), and most slots are filled by the map, not by the
    script. Read the map data that loads them, so each slot gets the name
    of the character in it.
-2. **Event triggers.** A map's `.cfg` (`FUNC_DATA`) and probably its `.map`
-   file say where and how each program number fires (step on a spot, press
-   a button, use an item). Comment `PROGRAM` lines with their trigger.
-3. **Sounds, music, motions and effects.** `load_sound(2809)`,
+2. **Sounds, music, motions and effects.** `load_sound(2809)`,
    `play_bgm(22)` and effect numbers are still bare numbers. Find their
    tables on the disc, or name the common ones in a content header.
-4. **Flags through arithmetic.** Flags reached as `base + i` or through a
+3. **Flags through arithmetic.** Flags reached as `base + i` or through a
    variable print as numbers; only literal flag numbers print as names.
 
 ## Next: definitions format
@@ -127,12 +131,17 @@ the set.
 ## Open questions
 
 - Raw-number monster calls. Six monster scripts (`b02a1` to `b02a4`,
-  `e236a`, `p00_23a`) call 191 natives by number with no group, under a
-  numbering no fixed offset explains, so the native each was written for
-  is unknown. Group-60 calls are solved (old group 60 is group 70).
-- 227 calls use native numbers the engine does not register
-  (`_EXT_67` and others); what they did in the table they were written
-  for is unknown.
+  `e236a`, `p00_23a`) call natives by number with no group, from an older
+  table. Same-shaped twins pin down 18 of its numbers (`old_direct` in
+  `src/c2s/tables/monster.json`); the rest, mostly in `b02a1` and
+  `p00_23a`, have no twin.
+- Old groups 110, 140 and 160. `b07a_atora_yellow`, `e08a` and `e09a` call
+  them where the current table has 120, 150 and 180 (twins confirm every
+  call), but those are current groups too, so the decompiler cannot
+  comment them per call. Telling it which scripts use the old table would.
+- Calls to numbers the engine does not register (`_EXT_67`, `_EXT_6` and
+  others) do nothing: the VM finds no function and goes on. What they did
+  in the table they were written for is unknown.
 - Padding. Of the bytes after functions, 1,385 blocks follow no known rule:
   294 string blocks the leftover-buffer rule misses and 1,091 functions
   with padding but no strings. 403 of those match the leftover buffer when
@@ -142,7 +151,5 @@ the set.
   `#pragma strings`).
 - Whether the original language had a `for` loop. Loops with an increment
   before the backward jump decompile as `while`, which compiles the same.
-- Compile errors past the parser (unknown variable, wrong argument count)
-  carry no line number yet.
 - How the eleventh argument of the one 11-argument function is typed, given
   that `arg_types` has ten entries.

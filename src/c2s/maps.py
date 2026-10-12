@@ -53,6 +53,7 @@ def trigger_points(path):
             # kind, event number, program, three arguments, target, then flags for the action button
             # and for using an item (mapFUNC_EVENT_DATA in mapload.cpp); with neither, touching it.
             fields = [field.strip() for field in value.split(",")]
+            point["event"] = fields
             if fields[0].strip('"') == "event" and len(fields) > 2:
                 point["program"] = int(fields[2])
                 action = len(fields) > 7 and fields[7] not in ("0", "")
@@ -66,6 +67,44 @@ def trigger_points(path):
         elif key == "FUNC_DATA_END":
             found.append(point)
             point = None
+    return found
+
+
+# What starts each program, from the trigger points of the .map files under extracted/map:
+# {disc folder: {program: ['"exit" point (action button)', ...]}}. A map's script sits in the
+# folder of its .map file.
+def folder_triggers(extracted):
+    found = {}
+    for path in sorted(Path(extracted).rglob("*.map")):
+        folder = path.parent.relative_to(extracted).as_posix()
+        for point in trigger_points(path):
+            for program, note in point_programs(point):
+                notes = found.setdefault(folder, {}).setdefault(program, [])
+                if note not in notes:
+                    notes.append(note)
+    return found
+
+
+# The programs a trigger point starts, with a note saying what it is. An event point starts its
+# program; doors and treasure boxes also run the program in their last argument when used, the
+# one the edit loop calls (kEventDataCallFlag, editloop.cpp).
+def point_programs(point):
+    fields = point.get("event") or []
+    kind = fields[0].strip('"') if fields else ""
+    if point["program"] is not None:
+        how = {"on the action button": "action button", "on using an item": "using an item",
+               "on touch": "touch"}.get(point["check"], point["check"])
+        name = '"%s" ' % point["name"] if point["name"] else ""
+        return [(point["program"], "trigger point %s(%s)" % (name, how))]
+    if len(fields) < 6 or kind not in ("door", "ed_door", "close_door", "t_box"):
+        return []
+    target = fields[6].strip('"') if len(fields) > 6 else ""
+    label = "treasure box" if kind == "t_box" else "door to %s" % target if target else "door"
+    found = []
+    for field in (fields[2], fields[5]):
+        number = int(field) if field.lstrip("-").isdigit() else 0
+        if number > 0 and (number, label) not in found:
+            found.append((number, label))
     return found
 
 
@@ -142,8 +181,11 @@ def detail(code, found, tree, extracted, consts, programs=()):
     lines += ["", "trigger points (%s):" % (Path(path).name if path else "no .map file found")]
     for point in trigger_points(path) if path else []:
         where = "at %s" % ", ".join("%g" % value for value in point["position"]) if point["position"] else ""
+        started = point_programs(point)
         if point["program"] is not None:
             what = "starts program %d %s" % (point["program"], point["check"])
+        elif started:
+            what = "%s, runs program %s" % (started[0][1], " and ".join(str(number) for number, _ in started))
         elif "item" in point:
             what = "item use point for item %d" % point["item"]
         else:

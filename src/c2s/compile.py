@@ -459,6 +459,11 @@ def to_asm(program, tables):
         "natives": {native["name"]: native["no"] for native in table["natives"]},
         "buffer": b"",
     }
+    for entry in program["programs"]:
+        if entry["function"] not in context["functions"]:
+            fail("PROGRAM(%s, %s): no function %s" % (entry["no"], entry["function"], entry["function"]))
+    if program["main"] not in context["functions"]:
+        fail("MAIN(%s): no function %s" % (program["main"], program["main"]))
     lines = [".natives " + program["natives"], header_line(program)]
     for entry in program["programs"]:
         lines.append(".program %d %s" % (entry["no"], entry["function"]))

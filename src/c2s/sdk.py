@@ -76,6 +76,7 @@ def context(declarations, table, tables):
         "enums": enums,
         "float_names": float_names,
         "old_groups": {int(base): new for base, new in tables.get(table, {}).get("old_groups", {}).items()},
+        "old_direct": {int(number): new for number, new in tables.get(table, {}).get("old_direct", {}).items()},
         "by_number": {declared["no"]: declared["name"] for declared in declarations["natives"]},
     }
     for inline in declarations["inlines"]:
@@ -555,8 +556,7 @@ def present_functions(functions, found, params_by_kind=None):
     out = []
     for function in functions:
         if function["kind"] == "function":
-            if found["old_groups"]:
-                function = dict(function, body=old_numbered(function["body"], found))
+            function = dict(function, body=old_numbered(function["body"], found))
             function = named_locals(function, found)
             body = folded(function["body"], found, inlines, set())
             if found["float_names"] and not shadowing(function, found["float_names"].values()):
@@ -566,9 +566,19 @@ def present_functions(functions, found, params_by_kind=None):
     return out
 
 
+# The native an old-numbered call was written for. A call with an old group base selects the native
+# that many numbers on (old_groups); a call by raw number where the header gives the native a group
+# (shown as DIRECT) comes from an older table, and old_direct maps the numbers whose same-shaped
+# twins elsewhere on the disc show what they stand for.
 def meant_native(node, found):
     declared = found["by_original"].get(node["name"])
-    if declared is None or node["base"] not in found["old_groups"]:
+    if declared is None:
+        return None
+    if node["base"] is None:
+        if declared["base"] is None or declared["no"] not in found["old_direct"]:
+            return None
+        return found["by_number"].get(found["old_direct"][declared["no"]])
+    if node["base"] not in found["old_groups"]:
         return None
     return found["by_number"].get(declared["no"] - node["base"] + found["old_groups"][node["base"]])
 
@@ -581,9 +591,16 @@ def old_numbered(nodes, found):
             node = dict(node, then=old_numbered(node["then"], found), **{"else": otherwise})
         elif node["kind"] == "while":
             node = dict(node, body=old_numbered(node["body"], found))
-        elif node["kind"] == "native" and meant_native(node, found):
-            note = "old numbering, meant as " + meant_native(node, found)
-            node = dict(node, comment="; ".join(part for part in (note, node.get("comment")) if part))
+        elif node["kind"] == "native":
+            notes = []
+            if meant_native(node, found):
+                notes.append("old numbering, meant as " + meant_native(node, found))
+            if node["name"].startswith("_EXT_"):
+                # the engine's table has no function at this number; the VM prints "not found ext"
+                # and goes on (CRunScript::ext, runscript.cpp)
+                notes.append("no native at this number, so the call does nothing")
+            if notes:
+                node = dict(node, comment="; ".join(notes + ([node["comment"]] if node.get("comment") else [])))
         out.append(node)
     return out
 

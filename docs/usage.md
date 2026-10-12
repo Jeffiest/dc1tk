@@ -3,26 +3,30 @@
 Everything runs through `cli.py`, with Python 3 and nothing else installed.
 
 ```
-python3 cli.py setup dc2.iso source       extract the disc and decompile it all
+python3 cli.py setup dc2.iso decompiled       extract the disc and decompile it all
 python3 cli.py extract dc2.iso extracted  write every file on the disc
 python3 cli.py decompile <script.stb | extracted dir> [-o out]
 python3 cli.py compile <script.c> [-o script.stb]
-python3 cli.py build source dc2.iso -o modded.iso   new disc image with your changes
-python3 cli.py build source dc2.iso -o test.iso --start-at s51:story_50
-python3 cli.py changes source             what you edited since decompiling
-python3 cli.py mod new source castle map/s/s51_raybrandt_castle/s51_1.c   start a mod
-python3 cli.py build source dc2.iso -o modded.iso --mod castle --mod other  build with mods
-python3 cli.py mod list source            every mod, its files, and mods that clash
-python3 cli.py mod test source calculator run a mod's tests.c without the game
+python3 cli.py build decompiled dc2.iso -o modded.iso   new disc image with your changes
+python3 cli.py build decompiled dc2.iso -o test.iso --start-at s51:story_50
+python3 cli.py changes decompiled             what you edited since decompiling
+python3 cli.py mod new decompiled castle map/s/s51_raybrandt_castle/s51_1.c   start a mod
+python3 cli.py build decompiled dc2.iso -o modded.iso --mod castle --mod other  build with mods
+python3 cli.py mod list decompiled            every mod, its files, and mods that clash
+python3 cli.py mod test decompiled calculator run a mod's tests.c without the game
 python3 cli.py play modded.iso            boot an image in PCSX2 (or build ... --play)
-python3 cli.py maps source                every map: town or dungeon-style, playable or not
-python3 cli.py map source s17             one map: programs, free numbers, trigger points, positions
-python3 cli.py xref source event 510 --map s51     what defines, starts and requests an event
-python3 cli.py xref source map s51        how the game enters a map
-python3 cli.py xref source monster golem  a monster's model, AI script and users
-python3 cli.py flags source [--flag N]    save flags in use, and free ones
-python3 cli.py fork source lib/x.c lib/y.c script.c   a library copy for some scripts
+python3 cli.py maps decompiled                every map: town or dungeon-style, playable or not
+python3 cli.py map decompiled s17             one map: programs, free numbers, trigger points, positions
+python3 cli.py xref decompiled event 510 --map s51     what defines, starts and requests an event
+python3 cli.py xref decompiled map s51        how the game enters a map
+python3 cli.py xref decompiled monster golem  a monster's model, AI script and users
+python3 cli.py flags decompiled [--flag N]    save flags in use, and free ones
+python3 cli.py fork decompiled lib/x.c lib/y.c script.c   a library copy for some scripts
+python3 cli.py mod save decompiled castle copy edits made in the tree into a mod
+python3 cli.py mod apply decompiled castle write a mod into the tree
 python3 cli.py verify extracted           prove every script round-trips
+python3 cli.py defs check extracted       how much of the disc the definitions name
+python3 cli.py defs todo extracted        unnamed functions, most called first
 python3 cli.py disassemble <script.stb>   text assembly, for debugging
 python3 cli.py assemble <script.asm> -o <script.stb>
 python3 cli.py defs learn <source> <definition set>
@@ -35,7 +39,9 @@ python3 cli.py test                       run the tests
 - `--defs DIR` applies a definition set. Repeat it to layer sets, later ones
   winning. Without it the shipped `definitions/pal` set is used; `--defs
   none` uses no definitions at all.
-- `--sdk DIR` points at the SDK headers (default `sdk/`).
+- `--sdk DIR` points at the SDK headers and shared libraries (default
+  `sdk/`).
+- `--natives DIR` points at the native tables (default `src/c2s/tables/`).
 - `--table NAME` forces a native table (`event`, `monster`, `action`,
   `effect`, `arg`) instead of choosing it from the script's path.
 
@@ -67,8 +73,8 @@ and `original-hashes.json`, a record of what was written. Writing into a tree
 again refuses to overwrite files edited since; `--force` overwrites them.
 
 Given a folder inside the extracted disc (`extracted/map/s/s05`), it
-decompiles only the scripts in that folder, still under their disc paths
-(`out/map/s/s05_fish_monster_swamp/s05.c`), so the definitions, native table rules and disc
+decompiles only the scripts in that folder, at the same tree paths a
+whole-disc decompile gives them (`out/map/s/s05_fish_monster_swamp/s05.c`), so the definitions, native table rules and disc
 text apply as they do for the whole disc. Code is shared into libraries
 only among the scripts decompiled together.
 
@@ -83,20 +89,20 @@ The output is byte-identical to the original when the source is unchanged.
 
 ## Modding workflow
 
-1. `python3 cli.py setup dc2.iso source` extracts the disc and decompiles
-   every script into `source/`.
-2. Edit scripts in `source/`, and shared code in `source/lib/` (an edit to a
+1. `python3 cli.py setup dc2.iso decompiled` extracts the disc and decompiles
+   every script into `decompiled/`.
+2. Edit scripts in `decompiled/`, and shared code in `decompiled/lib/` (an edit to a
    library changes every script that includes it; `fork` gives some scripts
    their own copy). The [modding guide](modding.md) covers how scripts run
    and the commands that find what to edit.
-3. `python3 cli.py build source dc2.iso -o modded.iso` writes a new disc
+3. `python3 cli.py build decompiled dc2.iso -o modded.iso` writes a new disc
    image.
 4. Boot `modded.iso` in PCSX2.
 
-`build` compiles every script in the tree (about two minutes for the whole
-disc) and compares each with the script on the disc, so you never list what
-you changed. An unchanged tree gives an image identical to the original. For
-each changed script it:
+`build` compiles the scripts that can differ from the disc and compares each
+with the script on the disc, so you never list what you changed. An
+unchanged tree gives an image identical to the original. For each changed
+script it:
 
 - puts the new script back into its pack, when it lives inside one (a
   character's `.chr` or a map's `.mpk`), leaving the pack's other members
@@ -120,12 +126,16 @@ It compiles only the scripts that can differ from the disc: those edited,
 replaced or added to by a mod, or including a changed library. Every other
 script is as the decompiler wrote it, which compiles back to the disc's own
 bytes, so most builds take seconds; `--full` compiles everything.
+It compiles everything, and says why, when the tree has no record of what
+was decompiled, when the SDK or definition headers changed since (after
+updating these tools, say), or when a header in the tree's `include/` was
+edited.
 `--play` boots the new image in PCSX2 (`play IMAGE` does the same for any
 image; `--pcsx2 PATH` or `$PCSX2` when it is not installed in the usual
 place).
 
 To build one script without a disc, `python3 cli.py compile
-source/<path>.c -o <path>.stb`.
+decompiled/<path>.c -o <path>.stb`.
 
 ### Testing without replaying
 
@@ -142,8 +152,8 @@ out like the tree. Keep the decompiled tree as the decompiler wrote it and
 build any set of mods over it:
 
 ```
-python3 cli.py mod new source castle map/s/s51_raybrandt_castle/s51_1.c dungeon/monster/e33a_golem.c
-python3 cli.py build source dc2.iso -o modded.iso --mod castle --mod other
+python3 cli.py mod new decompiled castle map/s/s51_raybrandt_castle/s51_1.c dungeon/monster/e33a_golem.c
+python3 cli.py build decompiled dc2.iso -o modded.iso --mod castle --mod other
 ```
 
 - `mod new SOURCE NAME FILE...` copies tree files into `mods/NAME/files/`
@@ -191,10 +201,11 @@ new game in when the mod is chosen (`--no-start-at` for a normal start).
 
 **Shared libraries.** `sdk/modkit/` holds libraries any script can include:
 `#include "modkit/text.c"` (message windows: `modkit_say`, `modkit_caption`,
-`modkit_text_show`), `"modkit/input.c"` (`modkit_wait`,
-`modkit_wait_for_button`, `modkit_pressed`) and, for monster scripts,
-`"modkit/tick.c"` (`modkit_tick`, the timer behind the caption pattern in the
-[modding guide](modding.md)). A quoted include is looked for from the
+`modkit_text_open`, `modkit_text_show`, `modkit_text_close`),
+`"modkit/input.c"` (`modkit_wait`, `modkit_pressed`, `modkit_wait_for_button`,
+`modkit_wait_for_confirm`) and, for monster scripts, `"modkit/tick.c"`
+(`modkit_tick(flag, frames, program)`, the timer behind the caption pattern
+in the [modding guide](modding.md)). See [the SDK](sdk.md#modkit). A quoted include is looked for from the
 script's folder up, then in `sdk/`. Libraries can include libraries; each is
 included once.
 
@@ -222,7 +233,7 @@ Two edits that show within minutes of starting a new game:
 - **Monica's first fight.** In `map/s/s51_raybrandt_castle/s51_1.c` (and `_2` to `_5` for
   the other languages), function `start_castle_battle`, replace the four
   `MONSTER_GRIFFON_SOLDIER_523` with other kinds from
-  `source/include/disc.h`, loading each first:
+  `decompiled/include/disc.h`, loading each first:
   `load_monster_data(MONSTER_SEWER_RAT, 1); load_monster_data(MONSTER_FROGGY, 0); ...`
   and `place_monster(MONSTER_SEWER_RAT, ...)` and so on. That soldier's own
   script ends the fight when the fourth one dies, which other monsters do
@@ -237,12 +248,15 @@ Names, docs and global names you write in decompiled source can be fed back
 into a definition set, so everyone's next decompile gets them:
 
 ```
-python3 cli.py defs learn source definitions/pal
+python3 cli.py defs learn decompiled definitions/pal
 ```
 
 `learn` compiles each script, matches functions by their bytecode
 fingerprint, and records any name, parameter or local name, doc comment, or
-global name that differs from the decompiler's defaults. See
+global name that differs from the decompiler's defaults. A function that
+appears in several files takes the copy you edited; the aliases the
+decompiler gives a second copy in one file (`start_event_for_program_506`,
+`do_nothing_2`) are not learned as names. See
 [definitions](definitions.md).
 
 ## Checking a C toolchain can read the output
@@ -251,7 +265,7 @@ The tree's `compile_flags.txt` holds the flags, so clangd and `clang-tidy`
 find them alone. By hand:
 
 ```
-clang -m32 -fsyntax-only -x c -std=c2x -I sdk -I definitions/pal/include -I source -I source/include -Wno-unknown-pragmas source/<path>.c
+clang -m32 -fsyntax-only -x c -std=c2x -I sdk -I definitions/pal/include -I decompiled -I decompiled/include -Wno-unknown-pragmas decompiled/<path>.c
 ```
 
 `sdk/c2s.h` gives C tools a meaning for c2s's few extensions. What clang

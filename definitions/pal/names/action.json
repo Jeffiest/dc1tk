@@ -494,7 +494,7 @@
   "4c9a528dbb83001e": {
    "name": "delete_effect_if_set",
    "loose": "4c9a528dbb83001e",
-   "doc": "Deletes the effect whose handle is stored in global g0, unless g0 is -1."
+   "doc": "Deletes the effect whose handle is stored in global charge_effect, unless charge_effect is -1."
   },
   "4ce2d426e842604a": {
    "name": "setup_transformed_attack_hits",

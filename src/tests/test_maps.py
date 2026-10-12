@@ -44,3 +44,17 @@ def test_the_catalog_says_how_the_game_uses_a_map_and_what_is_free():
         assert found["s97"]["kinds"] == ["town"] and not found["s97"]["playable"]
         text = maps.detail("s98", found, root, Path(folder) / "no-disc", dict(consts, ITEM_SOMETHING=9001), {9002})
         assert "free for a mod: 9001, 9003" in text and "starts program 9000" in text
+
+
+def test_doors_and_boxes_name_the_programs_they_run():
+    door = {"program": None, "check": None, "name": "", "event": ['"door"', "0", "200", "0", "3", "210", '"i01h01"', "1", "0", "1"]}
+    box = {"program": None, "check": None, "name": "", "event": ['"t_box"', "0", "0", "388", "1", "105", '""', "1", "0", "1"]}
+    assert maps.point_programs(door) == [(200, "door to i01h01"), (210, "door to i01h01")]
+    assert maps.point_programs(box) == [(105, "treasure box")]
+
+
+def test_program_lines_carry_their_trigger_as_a_comment():
+    from c2s import parse, source
+    program = parse.parse("#pragma natives event\n\nPROGRAM(520, leave);\nMAIN(leave);\n\nvoid leave(void)\n{\n}\n")
+    program["programs"][0]["note"] = 'trigger point "exit" (action button)'
+    assert 'PROGRAM(520, leave);  // trigger point "exit" (action button)' in source.text(program)

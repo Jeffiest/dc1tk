@@ -86,7 +86,7 @@ This is [`docs/examples/greeting/greeting.c`](examples/greeting/greeting.c), a m
 - Natives are declared `extern` in the SDK headers and called like
   functions. A native whose only result is its last argument returns it
   (`count = get_counter(3);`); one with several results takes pointers
-  (`get_actor_pos(0, &x, &y, &z);`). Natives push nothing on the VM stack,
+  (`get_chara_pos(0, &x, &y, &z);`). Natives push nothing on the VM stack,
   so the decompiler always shows a native call as a statement or an
   assignment of its result. In your own code a native with a result can
   stand in an expression (`if (get_flag(5) && count > 2)`): the compiler
@@ -98,7 +98,9 @@ This is [`docs/examples/greeting/greeting.c`](examples/greeting/greeting.c), a m
   need one.
 - `#include "lib/..."` pulls in a library's functions at that point; include
   paths are looked up from the including file's folder and then each folder
-  above it.
+  above it, then in `sdk/` (where the `modkit` libraries are). A library's
+  `#define`s, enums, typedefs and helpers become the including script's, as
+  with a header.
 - `#pragma` lines carry what the bytes need and the language does not say:
   `magic`, `unk_14`, `header_padding` and `globals N` for the file;
   `strings` before a function; `padding_of NAME HEX` for the leftover bytes

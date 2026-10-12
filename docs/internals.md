@@ -8,9 +8,10 @@ carries its own copy of everything it included, so most of a script is
 library code. Recovering those libraries is what makes the decompiled source
 readable.
 
-A function's identity is its fingerprint: a hash of its decompiled body
-(without its name or string padding) and the fingerprints of the functions
-it calls, plus the native table. No script calls a later function or
+A function's identity is its fingerprint: a hash of its bytecode (without
+its name or string padding) and the fingerprints of the functions it calls,
+plus the native table (see
+[how definitions find things](definitions.md#how-definitions-find-things)). No script calls a later function or
 itself, so fingerprints are well defined and the same in every file.
 
 `src/c2s/library.py` finds the libraries over the whole disc:
@@ -21,7 +22,9 @@ itself, so fingerprints are well defined and the same in every file.
    functions that appear, in order, in at least one other script.
 3. Every distinct run used by two or more scripts becomes a library file,
    placed under `lib/` in the deepest folder all its users share
-   (`lib/map/s/s05/s05_12.c`). Runs only one script uses stay inline.
+   (`lib/map/s/s05/s05_12.c`, given the folder's readable name,
+   `s05_fish_monster_swamp`, and usually a better name from
+   `libraries.json`). Runs only one script uses stay inline.
 
 The libraries evolved while the game was made, so the same helper exists in
 several versions and a library file is one exact version. The disc gives
@@ -46,19 +49,18 @@ optionally, parameter and local names:
 
 Because the key is the fingerprint, one entry names that function in every
 script and library that has it. Two versions of a helper can share a name;
-when two such versions would meet in one file, they fall back to their
-default names. Variable names that would clash with each other or with a
+when two such versions would meet in one file, the later one gets a numbered
+suffix (`do_nothing_2`). Variable names that would clash with each other or with a
 global are ignored.
 
-The first naming pass read the most-called library code and named 1,084
-functions with their parameters and locals: 72% of the function calls in
-script code and 91% of those inside libraries now go to a named function.
-Names were checked by `verify` like everything else, since a wrong name can
-only make the source less clear, never change the bytes.
+Every function on the disc now has a name. Names are checked by `verify`
+like everything else, since a wrong name can only make the source less
+clear, never change the bytes.
 
 Functions without an entry get defaults: library functions are named after
 the library that first holds them and their position in it (`map_2_40`),
-entry points after their program number (`program_100`), the header's main
+entry points `on_` plus their program's name (`on_map_start`), or
+`program_100` when the program has no name, the header's main
 function `start`, and the rest `func_1`, `func_2` in file order. Variables
 default to their slot: `a0` for arguments, `v3` for locals, `g1` for
 globals.

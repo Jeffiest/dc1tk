@@ -3,7 +3,7 @@ import hashlib
 import re
 from pathlib import Path, PurePosixPath
 
-from c2s import decompile, definitions, disc, messages, names, natives, notes, parse, sdk, source, stb
+from c2s import decompile, definitions, disc, maps, messages, names, natives, notes, parse, sdk, source, stb
 
 MINIMUM_USERS = 2
 
@@ -79,6 +79,7 @@ def model_for(root, paths, tables, defs, headers=None):
     model["siblings"] = sibling_maps(script_strings, model["language_code"])
     model["translations"] = defs["strings"]
     model["scripts"] = defs["scripts"]
+    model["triggers"] = maps.folder_triggers(root) if Path(root, "map").is_dir() else {}
     return with_globals(with_names(model, defs["names"]))
 
 
@@ -410,6 +411,11 @@ def script_program(program, path, model):
     entry = definitions.script_entry({"scripts": model["scripts"]}, path)
     scripted = names.with_script(split, entry, names.global_uses(hidden), forced)
     presented = sdk.present(scripted, context, params)
+    triggers = model.get("triggers", {}).get(str(Path(path).parent.as_posix()), {})
+    if triggers:
+        programs = [dict(entry, note="; ".join(triggers[original["no"]])) if original["no"] in triggers else entry
+                    for entry, original in zip(presented["programs"], program["programs"])]
+        presented = dict(presented, programs=programs)
     return notes.annotate(presented, model["translations"])
 
 
