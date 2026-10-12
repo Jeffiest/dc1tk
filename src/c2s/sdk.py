@@ -557,6 +557,54 @@ def out_uses(nodes, found, out):
     return out
 
 
+UNUSED_LOCAL = re.compile(r"^unused(\d+|_value|_\d+)?$")
+
+
+# The native parameter each variable is first passed to as a plain value: {variable: parameter}.
+def in_uses(nodes, found, out):
+    for node in nodes:
+        if node["kind"] == "native":
+            declared = found["by_original"].get(node["name"])
+            for position, arg in enumerate(node["args"]):
+                if (declared is not None and position < len(declared["params"]) and not declared["params"][position]["out"]
+                        and arg["kind"] == "var"):
+                    out.setdefault(arg["name"], declared["params"][position]["name"])
+        for key in ("then", "else", "body"):
+            if isinstance(node.get(key), list):
+                in_uses(node[key], found, out)
+    return out
+
+
+# The variables a body reads and writes. A write is an assignment's target, a native's result, or
+# an argument passed by address (an out-parameter); anything else is a read.
+def variable_access(node, reads, writes):
+    if isinstance(node, list):
+        for item in node:
+            variable_access(item, reads, writes)
+        return reads, writes
+    if not isinstance(node, dict):
+        return reads, writes
+    kind = node.get("kind")
+    if kind == "var":
+        reads.add(node["name"])
+        return reads, writes
+    if kind == "addr" and node["target"]["kind"] in ("var", "index"):
+        writes.add(node["target"]["name"])
+        variable_access(node["target"].get("index"), reads, writes)
+        return reads, writes
+    if kind == "assign" and node["target"]["kind"] in ("var", "index"):
+        writes.add(node["target"]["name"])
+        variable_access(node["target"].get("index"), reads, writes)
+        variable_access(node["value"], reads, writes)
+        return reads, writes
+    if kind == "native" and node.get("result") is not None and node["result"]["kind"] == "var":
+        writes.add(node["result"]["name"])
+    for key, value in node.items():
+        if key != "result":
+            variable_access(value, reads, writes)
+    return reads, writes
+
+
 # Names locals after the natives that fill them: a slot-numbered local takes the name of the result
 # it first holds, and a local with only that generic name (flag, flag_2) takes the name of what it
 # reads when every read agrees (griffon_defeated for get_flag(FLAG_GRIFFON_DEFEATED)).
@@ -572,7 +620,13 @@ def named_locals(function, found):
             wanted, generic = next(iter(seen))
             if wanted != generic and re.fullmatch(r"%s(_\d+)?" % re.escape(generic), declared["name"]):
                 generic_names.add(declared["name"])
-    unnamed = {declared["name"] for declared in function["locals"] if DEFAULT_LOCAL.match(declared["name"])} | generic_names
+    # a local called unused that the function reads after all: unset when nothing writes it (the
+    # function reads a slot it never sets), otherwise named like any other
+    reads, writes = variable_access(function["body"], set(), set())
+    misnamed = {declared["name"] for declared in function["locals"]
+                if UNUSED_LOCAL.match(declared["name"]) and declared["name"] in reads}
+    unnamed = ({declared["name"] for declared in function["locals"] if DEFAULT_LOCAL.match(declared["name"])}
+               | generic_names | misnamed)
     if not unnamed:
         return function
     taken = ({param["name"] for param in function["params"]} | {declared["name"] for declared in function["locals"]}
@@ -583,6 +637,18 @@ def named_locals(function, found):
             continue
         candidate = wanted
         copy = 1
+        while candidate in taken:
+            copy += 1
+            candidate = "%s_%d" % (wanted, copy)
+        mapping[variable] = candidate
+        taken.add(candidate)
+    passed = in_uses(function["body"], found, {})
+    for variable in sorted(misnamed - set(mapping)):
+        # named for the parameter it is first passed to (sound_id for play_se), or by what it is
+        wanted = passed.get(variable) or ("unset" if variable not in writes else "value")
+        if variable not in writes:
+            wanted = "unset_" + wanted if wanted != "unset" else wanted
+        candidate, copy = wanted, 1
         while candidate in taken:
             copy += 1
             candidate = "%s_%d" % (wanted, copy)

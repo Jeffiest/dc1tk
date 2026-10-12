@@ -69,6 +69,15 @@ definitions.
     no longer writes. Music, sound sets, sound bank entries and fixed
     character slots print as names.
 
+14. **English in place of Japanese.** The game's asset names (motions,
+    texture animations, effects, map parts, damage settings) print as
+    English `#define`s written into `disc.h` (`MOTION_STAND`); only dialogue
+    in the original Japanese scripts stays Japanese. Locals are named for
+    what fills them or what they are passed to (`griffon_defeated`,
+    `home_x`, `sound_id`; `unset_...` for a slot the function reads but
+    never sets). The [examples](docs/examples/README.md) are commented
+    scripts showing how to write each kind.
+
 ## Next: names and docs
 
 1. **Review function names.** They were written from the code and its
@@ -131,7 +140,11 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
 - **Automated emulator test.** A built image has been booted in PCSX2 by
   hand with the two test edits in [docs/usage.md](docs/usage.md) and both
   showed in game. Script that check, so an image is booted and checked
-  without a person watching.
+  without a person watching. PCSX2 can run with its own settings
+  (`-datapath`, `-nogui`) and log the game's console output to a file, so a
+  test mod could `print` a marker. Not tried yet: whether any script runs
+  before a new game is chosen on the title menu, which needs a button
+  press (PCSX2's command line cannot press one).
 - **Other versions.** The NTSC and Japanese discs as definition sets; Dark
   Cloud 1 as a second engine.
 

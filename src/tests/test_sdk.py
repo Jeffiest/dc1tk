@@ -311,3 +311,19 @@ def test_banks_reach_entries_through_parameters_and_out_parameters():
     shown = sdk.named_sounds(player["body"], found, sdk.sound_banks(player, known), sdk.sound_flow(player, known))
     assert shown[0]["args"][1] == var("SE_SP_000_FANFARE")
 
+
+
+def test_locals_called_unused_that_are_read_get_a_true_name():
+    found = {"by_original": {"_SET_MODE": {"name": "set_mode", "params": [{"name": "mode", "out": False}]}},
+             "enums": {}, "constants": {}}
+    var = lambda name: {"kind": "var", "name": name}
+    body = [{"kind": "native", "name": "_SET_MODE", "base": None, "args": [var("unused2")]},
+            {"kind": "expr", "expr": {"kind": "assign", "target": var("unused3"), "value": {"kind": "int", "value": 1}}},
+            {"kind": "native", "name": "_SET_MODE", "base": None, "args": [var("unused3")]},
+            {"kind": "expr", "expr": {"kind": "assign", "target": var("unused4"), "value": {"kind": "int", "value": 1}}}]
+    function = {"params": [], "locals": [{"name": name, "type": "int", "size": None} for name in ("unused2", "unused3", "unused4")],
+                "body": body}
+    found = dict(found, natives={}, inlines={}, programs={})
+    renamed = [declared["name"] for declared in sdk.named_locals(function, found)["locals"]]
+    # read and never written; written and read; written only (still unused)
+    assert renamed == ["unset_mode", "mode", "unused4"]
