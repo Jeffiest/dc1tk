@@ -254,6 +254,27 @@ the game's scripts; whole files suit scripts and libraries of the mod's own.
 A mod made on a tree with readable names applies to one without, and the
 other way round: files and `#include` lines follow each tree's layout.
 
+**Game assets by id (`c2` only).** A mod names the textures, models and
+sounds it replaces by their asset ids (see `c2 assets`) in `mod.json`,
+with the files anywhere in its folder, and `build` replaces each at every
+place the disc has it:
+
+```json
+"replace": {
+  "texture:e254a1": "art/soldier_green.png",
+  "model:c02fuku*": "models/monica/c02b.gltf",
+  "sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW": {"file": "sounds/boom.wav", "volume": 90},
+  "file:snd2/sp/sp_000.snd": "raw/sp_000.snd"
+},
+"add": {"sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"}}
+```
+
+`mod asset ISO NAME ID...` copies assets out by id and adds their lines,
+`mod check SOURCE NAME... --disc ISO` checks every line resolves, and
+`mod migrate ISO NAME` turns a mod's `disc/` folder (below) into such
+lines. Two mods replacing one asset are refused. The rules are in
+[the design](design.md), "Mods by name".
+
 **Game files.** A mod can replace models, textures, sounds and any other
 file on the disc. It keeps them under `mods/NAME/disc/`, laid out as
 `extract` lays the disc out: a file at its path in `DATA.DAT`

@@ -5,6 +5,7 @@
 
 pub mod folder;
 pub mod from_gltf;
+pub mod ids;
 pub mod im3;
 pub mod info_cfg;
 pub mod json;

@@ -162,16 +162,10 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
                 for (place, _) in places(asset) {
                     let pack = at(&tops, &place)?;
                     let name = asset["name"].as_str().unwrap_or("");
-                    let (stem, exported) = tree::exported_gltf(&gltf, pack, name)?;
-                    let _ = std::fs::remove_dir_all(&folder);
-                    std::fs::create_dir_all(&folder)?;
-                    std::fs::write(folder.join(format!("{stem}.gltf")), &exported)?;
-                    std::fs::write(folder.join(format!("{stem}.bin")), &bin)?;
-                    if tree::build_model(&folder, pack, name)? != pack {
+                    if tree::build_model_from(&gltf, &bin, pack, name, &folder)? != pack {
                         out.push(format!("{id}: builds back to other bytes at {}", place.display()));
                     }
                 }
-                let _ = std::fs::remove_dir_all(&folder);
                 Ok(out)
             };
             check().unwrap_or_else(|error| vec![format!("{id}: {error}")])

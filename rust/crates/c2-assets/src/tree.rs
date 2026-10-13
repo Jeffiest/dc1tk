@@ -325,7 +325,7 @@ pub fn picture_name(name: &str) -> String {
 }
 
 /// A picture of a texture file.
-struct Picture {
+pub(crate) struct Picture {
     /// The game file (texture file) it is in.
     file: usize,
     /// Its entry in the file.
@@ -369,19 +369,20 @@ fn survey(index: usize, file: &GameFile) -> Surveyed {
 }
 
 /// One distinct content: where it is first found, and every place (game file, picture entry).
-struct Asset {
+pub(crate) struct Asset {
     /// The game's name for it (a picture's as im3 reads it).
-    name: String,
+    pub name: String,
     /// The name as the id and manifest give it.
-    shown: String,
-    game_hash: String,
-    places: Vec<(usize, Option<usize>)>,
+    pub shown: String,
+    pub game_hash: String,
+    /// Where it is: the game file, by its place in the walk, and the picture's entry.
+    pub places: Vec<(usize, Option<usize>)>,
     /// The id's name, without the kind.
-    id: String,
+    pub id: String,
 }
 
 impl Asset {
-    fn first(&self) -> usize {
+    pub fn first(&self) -> usize {
         self.places[0].0
     }
 }
@@ -495,13 +496,29 @@ pub fn manifest_text(manifest: &Value) -> Vec<u8> {
     out
 }
 
-/// Writes the asset tree for the disc's files through `write`, the manifest last, and says what
-/// it holds.
-pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Summary> {
+/// The disc's texture files, character packs and banks grouped into distinct contents and named:
+/// what the tree and the index of ids (ids::Index) share, so both give every asset the same id.
+pub(crate) struct Named<'a> {
+    pub files: Vec<GameFile<'a>>,
+    pub shadowed: usize,
+    pub texture_files: usize,
+    pictures: Vec<Picture>,
+    pub pack_places: usize,
+    pub bank_places: usize,
+    /// Distinct packs by their bytes alone.
+    pub pack_contents: usize,
+    pub textures: Vec<Asset>,
+    pub packs: Vec<Asset>,
+    pub banks: Vec<Asset>,
+    /// Game files that give no asset, by their index in files, and why.
+    pub failed: Vec<(usize, String)>,
+}
+
+pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
     let Found { files, shadowed } = game_files(disc);
     let surveyed: Vec<Surveyed> = files.par_iter().enumerate().map(|(index, file)| survey(index, file)).collect();
-    let mut summary = Summary { shadowed, ..Summary::default() };
     let mut failed: Vec<(usize, String)> = Vec::new();
+    let mut texture_files = 0;
     let mut pictures = Vec::new();
     let mut packs = Vec::new();
     let mut banks = Vec::new();
@@ -509,7 +526,7 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         let place = &files[index].place;
         match found {
             Surveyed::Pictures(found) => {
-                summary.texture_files += 1;
+                texture_files += 1;
                 if found.is_empty() {
                     failed.push((index, "the texture file has no pictures with pixels".to_string()));
                 }
@@ -522,29 +539,69 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
             Surveyed::Failed(error) => failed.push((index, error)),
         }
     }
-    summary.picture_places = pictures.len();
-    summary.pack_places = packs.len();
-    summary.bank_places = banks.len();
-    summary.distinct_pictures = pictures.iter().map(|p| &p.game_hash).collect::<HashSet<_>>().len();
-    let shapes: HashMap<(usize, usize), (&'static str, usize, usize)> =
-        pictures.iter().map(|p| ((p.file, p.entry), (p.format, p.width, p.height))).collect();
-
+    let (pack_places, bank_places) = (packs.len(), banks.len());
+    let pack_contents = packs.iter().map(|pack| &pack.1).collect::<HashSet<_>>().len();
     let mut textures = distinct(pictures.iter().map(|p| (p.name.clone(), p.game_hash.clone(), p.file, Some(p.entry))));
     for texture in &mut textures {
         texture.shown = picture_name(&texture.name);
     }
     name_assets(&mut textures, &files);
+    let mut packs = distinct(packs.into_iter());
+    name_assets(&mut packs, &files);
+    let mut banks = distinct(banks.into_iter());
+    name_assets(&mut banks, &files);
+    Named {
+        files,
+        shadowed,
+        texture_files,
+        pictures,
+        pack_places,
+        bank_places,
+        pack_contents,
+        textures,
+        packs,
+        banks,
+        failed,
+    }
+}
+
+/// The id of a bank's entry: the header's name for it, unless an earlier entry took that name, else
+/// the bank's id and the entry's number (sound:EV_000_130/4). Says whether it is the name.
+pub(crate) fn sound_id(
+    bank: &str,
+    entry: usize,
+    names: &HashMap<usize, String>,
+    taken: &mut HashSet<String>,
+) -> (String, bool) {
+    match names.get(&entry) {
+        Some(name) if taken.insert(Kind::Sound.id(name)) => (Kind::Sound.id(name), true),
+        _ => (Kind::Sound.id(&format!("{bank}/{entry}")), false),
+    }
+}
+
+/// Writes the asset tree for the disc's files through `write`, the manifest last, and says what
+/// it holds.
+pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Summary> {
+    let found = named(disc);
+    let Named { files, shadowed, texture_files, pictures, textures, packs, banks, mut failed, .. } = found;
+    let mut summary = Summary {
+        shadowed,
+        texture_files,
+        pack_places: found.pack_places,
+        bank_places: found.bank_places,
+        distinct_pack_contents: found.pack_contents,
+        distinct_packs: packs.len(),
+        ..Summary::default()
+    };
+    summary.picture_places = pictures.len();
+    summary.distinct_pictures = pictures.iter().map(|p| &p.game_hash).collect::<HashSet<_>>().len();
+    let shapes: HashMap<(usize, usize), (&'static str, usize, usize)> =
+        pictures.iter().map(|p| ((p.file, p.entry), (p.format, p.width, p.height))).collect();
     let mut versions: HashMap<&str, usize> = HashMap::new();
     for asset in &textures {
         *versions.entry(asset.name.as_str()).or_default() += 1;
     }
     summary.names_with_versions = versions.values().filter(|&&n| n > 1).count();
-    summary.distinct_pack_contents = packs.iter().map(|pack| &pack.1).collect::<HashSet<_>>().len();
-    let mut packs = distinct(packs.into_iter());
-    summary.distinct_packs = packs.len();
-    name_assets(&mut packs, &files);
-    let mut banks = distinct(banks.into_iter());
-    name_assets(&mut banks, &files);
 
     let texture_outs = export_textures(&textures, &files, write)?;
     let texture_ids = texture_lookup(&textures, &texture_outs);
@@ -562,6 +619,7 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
 
     let mut assets: BTreeMap<String, Value> = BTreeMap::new();
     let mut aliases: BTreeMap<String, Value> = BTreeMap::new();
+    let mut taken = HashSet::new();
     let place_json = |file: usize, key: &str, entry: Option<usize>| {
         let mut out = files[file].place.json();
         if let Some(entry) = entry {
@@ -626,15 +684,11 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         let entry_names = entry_names(asset, names);
         let mut sound_ids = Vec::new();
         for entry in &entries {
-            let number_id = Kind::Sound.id(&format!("{}/{}", asset.id, entry.index));
-            let id = match entry_names.get(&entry.index) {
-                Some(name) if !assets.contains_key(&Kind::Sound.id(name)) => {
-                    summary.sounds_named += 1;
-                    aliases.insert(number_id, json!(Kind::Sound.id(name)));
-                    Kind::Sound.id(name)
-                }
-                _ => number_id,
-            };
+            let (id, is_named) = sound_id(&asset.id, entry.index, &entry_names, &mut taken);
+            if is_named {
+                summary.sounds_named += 1;
+                aliases.insert(Kind::Sound.id(&format!("{}/{}", asset.id, entry.index)), json!(id));
+            }
             let places: Vec<Value> =
                 asset.places.iter().map(|&(file, _)| place_json(file, "entry", Some(entry.index))).collect();
             let mut sound = Map::new();
@@ -843,7 +897,7 @@ const INFO_CFG: &str = "info.cfg";
 /// cfg named after the pack (b04a.cfg in b04a.chr) instead of info.cfg; such a pack is read with
 /// that cfg (failing that, its only .cfg) named info.cfg. Also gives, for a renamed pack, the cfg's
 /// own name field, which build_model puts back.
-fn model_pack<'a>(data: &'a [u8], name: &str) -> (std::borrow::Cow<'a, [u8]>, Option<Vec<u8>>) {
+pub(crate) fn model_pack<'a>(data: &'a [u8], name: &str) -> (std::borrow::Cow<'a, [u8]>, Option<Vec<u8>>) {
     let unchanged = (std::borrow::Cow::Borrowed(data), None);
     let Some(members) = archive::parse_pack(data) else {
         return unchanged;
@@ -885,8 +939,73 @@ pub fn build_model(folder: &std::path::Path, data: &[u8], name: &str) -> Result<
     Ok(built)
 }
 
+/// models::export for a character pack read as model_pack reads it: the export's glTF, buffer and
+/// textures/, which build_model builds back.
+pub fn exported_model(data: &[u8], name: &str) -> Result<Vec<(String, Vec<u8>)>> {
+    models::export(&model_pack(data, name).0)
+}
+
+/// The stem of the model's files in a character pack (c02b for c02fuku1.chr), as the export names
+/// its glTF.
+pub fn model_stem(data: &[u8], name: &str) -> Result<String> {
+    Ok(models::unpacked(&model_pack(data, name).0)?.1.stem)
+}
+
+/// A character pack built from a glTF and its buffer anywhere (the tree's, or one a tool wrote
+/// from it): they are written into `folder` as the export names them, and built with the pack as
+/// the template. The glTF's images are not read: a model's textures change through their own ids.
+pub fn build_model_from(gltf: &[u8], bin: &[u8], data: &[u8], name: &str, folder: &std::path::Path) -> Result<Vec<u8>> {
+    let (stem, exported) = exported_gltf(gltf, data, name)?;
+    let _ = std::fs::remove_dir_all(folder);
+    std::fs::create_dir_all(folder)?;
+    std::fs::write(folder.join(format!("{stem}.gltf")), &exported)?;
+    std::fs::write(folder.join(format!("{stem}.bin")), bin)?;
+    let built = build_model(folder, data, name);
+    let _ = std::fs::remove_dir_all(folder);
+    built
+}
+
+/// The bytes of a glTF file's buffer: the file its first buffer's uri names, beside the glTF.
+pub fn gltf_buffer(path: &std::path::Path, gltf: &[u8]) -> Result<Vec<u8>> {
+    let json = pyjson::loads(std::str::from_utf8(gltf).map_err(|_| Error::invalid("the glTF is not UTF-8"))?)?;
+    let buffers = json.get("buffers").and_then(pyjson::Value::as_list).map(Vec::as_slice).unwrap_or_default();
+    let [buffer] = buffers else {
+        return Err(Error::invalid(format!("{}: a model's glTF has one buffer", path.display())));
+    };
+    let uri = buffer.get("uri").and_then(pyjson::Value::as_str).unwrap_or_default();
+    if uri.is_empty() || uri.starts_with("data:") {
+        return Err(Error::invalid(format!(
+            "{}: the glTF's buffer must be a .bin file beside it (glTF Separate)",
+            path.display()
+        )));
+    }
+    let file = path.parent().unwrap_or(std::path::Path::new(".")).join(uri_decoded(uri));
+    std::fs::read(&file).map_err(|error| Error::invalid(format!("{}: {error}", file.display())))
+}
+
+/// A uri's path with its %XX escapes decoded.
+fn uri_decoded(uri: &str) -> String {
+    let bytes = uri.as_bytes();
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let hex = bytes.get(at + 1..at + 3).and_then(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok());
+        match (bytes[at], hex) {
+            (b'%', Some(byte)) => {
+                out.push(byte);
+                at += 3;
+            }
+            (byte, _) => {
+                out.push(byte);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// The header's names for a bank's entries, for the first version of the bank's name only.
-fn entry_names(asset: &Asset, names: &SoundNames) -> HashMap<usize, String> {
+pub(crate) fn entry_names(asset: &Asset, names: &SoundNames) -> HashMap<usize, String> {
     let found = names.iter().find(|(bank, _)| bank.eq_ignore_ascii_case(&asset.id));
     found.map(|(_, entries)| entries.iter().cloned().collect()).unwrap_or_default()
 }

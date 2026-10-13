@@ -10,6 +10,9 @@
 //! (c02a.img.png/c02a01.png), sound banks a folder of WAVs by entry number
 //! (sp_000.snd.wav/003.wav) and character packs a folder holding a glTF with its textures
 //! (c02a.chr.gltf/c02a.gltf); c2_assets converts them.
+//!
+//! mod.json's file: lines (replace) give game files the same way, by disc path, with the file
+//! anywhere in the mod; a folder there converts by the game file's suffix, whatever it is named.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -152,12 +155,47 @@ pub fn converter_of(source: &Path) -> Option<Converter> {
     converter_for(&source.to_string_lossy().replace('\\', "/"), source.is_dir()).1
 }
 
+/// The converter for a mod file standing for a game file: a folder converts by the game file's
+/// suffix (a folder of PNGs for a .img), whatever the folder is named; a file is the game file
+/// itself.
+pub fn conversion(target: &str, source: &Path) -> Option<Converter> {
+    if !source.is_dir() {
+        return None;
+    }
+    CONVERTERS.iter().copied().find(|converter| lower(target).ends_with(converter.game))
+}
+
 /// The game file's bytes for a mod file: the file itself, or converted from its common format.
 pub fn game_bytes(source: &Path, original: &[u8]) -> Result<Vec<u8>> {
     match converter_of(source) {
         None => Ok(fs::read(source)?),
         Some(converter) => converter.build(source, original),
     }
+}
+
+/// game_bytes for the game file at target.
+fn game_bytes_for(target: &str, source: &Path, original: &[u8]) -> Result<Vec<u8>> {
+    match conversion(target, source) {
+        None if source.is_dir() => Err(Error::invalid(format!(
+            "{} is a folder, which stands only for a texture file (.img), sound bank (.snd) or character pack (.chr)",
+            source.display()
+        ))),
+        None => Ok(fs::read(source)?),
+        Some(converter) => converter.build(source, original),
+    }
+}
+
+/// The game files a mod replaces or adds by path: its disc/ folder's and its mod.json's file:
+/// lines, {disc path: file or folder}.
+pub fn game_files(mod_dir: &Path) -> Result<IndexMap<String, PathBuf>> {
+    let mut found = mod_files(mod_dir)?;
+    for (path, file) in crate::replace::raw_files(mod_dir)? {
+        if found.keys().any(|known| lower(known) == lower(&path)) {
+            return Err(Error::invalid(format!("{}: {path} is given twice, in {DISC}/ and as file:{path}", name_of(mod_dir))));
+        }
+        found.insert(path, file);
+    }
+    Ok(found)
 }
 
 /// The file of DATA.DAT a disc path is in, and the members down to it: chara/c01_base.chr.d/c01b.img
@@ -181,7 +219,7 @@ pub fn collect(mod_dirs: &[PathBuf]) -> Result<(Wanted, Clashes)> {
     let mut found = Wanted::new();
     let mut clashes: IndexMap<String, Vec<String>> = IndexMap::new();
     for mod_dir in mod_dirs {
-        for (path, file) in mod_files(mod_dir)? {
+        for (path, file) in game_files(mod_dir)? {
             if let Some((owner, _)) = found.get(&path) {
                 clashes.entry(path).or_insert_with(|| vec![owner.clone()]).push(name_of(mod_dir));
             } else {
@@ -279,7 +317,7 @@ pub fn replaced(
         let fail = |message: String| Error::invalid(format!("{path} (mod {module}): {message}"));
         if !index.contains_key(&lower(&top)) && members.is_empty() {
             // a new file: build gives it a record in the game's file index (rebuild::write_disc)
-            if converter_of(file).is_some() {
+            if file.is_dir() {
                 return Err(fail("a new file is given as the game file itself".into()));
             }
             let new = fs::read(file)?;
@@ -306,7 +344,7 @@ pub fn replaced(
                 None => {
                     // a member the pack does not have is added (a game file in a common format
                     // needs one to convert from, so it is given as the game file itself)
-                    if converter_of(file).is_some() {
+                    if file.is_dir() {
                         return Err(Error::invalid(format!(
                             "{} has no member {} to convert to; give the game file itself",
                             top,
@@ -318,7 +356,7 @@ pub fn replaced(
                     Ok((new, packed))
                 }
                 Some(old) => {
-                    let new = game_bytes(file, old)?;
+                    let new = game_bytes_for(path, file, old)?;
                     let packed = rebuild::replaced_member(&data, &members, &new)?;
                     Ok((new, packed))
                 }

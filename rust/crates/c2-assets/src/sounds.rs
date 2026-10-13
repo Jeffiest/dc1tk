@@ -79,9 +79,29 @@ pub fn same_sound(a: &Sound, b: &Sound) -> bool {
 /// The bank with the entries a folder of WAVs gives in place of the original's, and the entries
 /// it adds.
 pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
+    let given: Vec<Given> =
+        numbered(folder)?.into_iter().map(|(number, name, path)| Given { number, name, path, volume: None }).collect();
+    build_entries(&given, original)
+}
+
+/// A WAV for an entry of a bank: the entry's number, the name a new entry takes, and a volume to
+/// set (0 to 127) when given.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Given {
+    pub number: usize,
+    pub name: Option<String>,
+    pub path: PathBuf,
+    pub volume: Option<i64>,
+}
+
+/// build from WAVs by entry number, sorted by number.
+pub fn build_entries(given: &[Given], original: &[u8]) -> Result<Vec<u8>> {
     let mut bank = Bank::from_bytes(original)?;
     let mut changed = false;
-    for (number, name, path) in numbered(folder)? {
+    for Given { number, name, path, volume } in given.iter().cloned() {
+        if volume.is_some_and(|volume| !(0..=127).contains(&volume)) {
+            bail!("a volume is 0 to 127");
+        }
         let file = path.file_name().unwrap().to_string_lossy().to_string();
         let sound = soundbank::read_wav(&std::fs::read(&path)?).map_err(|error| match error {
             Error::Invalid(message) => Error::invalid(format!("{file}: {message}")),
@@ -98,13 +118,17 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
                 );
             }
             let label = name.filter(|n| !n.is_empty()).unwrap_or_else(|| NEW_ENTRY_NAME.to_string());
-            bank.add_entry(&sound, &label, "MOD", 100, 60)?;
+            bank.add_entry(&sound, &label, "MOD", volume.unwrap_or(100), 60)?;
             changed = true;
             continue;
         }
         let entry = &entries[number];
         let voices = if entry.kind == EntryKind::KeyOn { bank.voices(entry)? } else { Vec::new() };
         if !voices.is_empty() && same_sound(&bank.decode_vag(voices[0].vag)?, &sound) {
+            if let Some(volume) = volume {
+                bank.set_volume(number, volume);
+                changed = true;
+            }
             continue;
         }
         // in place only for an entry that plays one sound no other entry shares; a sequence entry
@@ -119,7 +143,7 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
         }
         let old: BTreeSet<usize> = bank.voices(entry)?.iter().map(|v| v.vag).collect();
         let mode = if !voices.is_empty() && !shared { Mode::InPlace } else { Mode::Detach };
-        bank.replace_entry(number, &sound, mode, None)?;
+        bank.replace_entry(number, &sound, mode, volume)?;
         free_unused(&mut bank, &old)?;
         changed = true;
     }

@@ -1669,7 +1669,7 @@ impl Bank {
         Ok(())
     }
 
-    fn set_volume(&mut self, index: usize, volume: i64) {
+    pub fn set_volume(&mut self, index: usize, volume: i64) {
         let line = format!("{index}\t{volume}").into_bytes();
         for i in 0..self.vol.lines.len() {
             let (text_, eol) = &self.vol.lines[i];

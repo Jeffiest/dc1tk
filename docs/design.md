@@ -178,24 +178,25 @@ bank places build back, no problems, in 13 s.
 ## 2. Mods by name
 
 A mod is a folder with a `mod.json`. Where files sit inside the folder does
-not matter: `mod.json` says what each one replaces.
+not matter: `mod.json` says what each one replaces, by asset id (section
+1). Built in `c2` only (`c2-script`'s `replace` and `migrate`, the index of
+ids in `c2-assets`' `ids`); `cli.py` builds the old `disc/` layout alone.
 
 ```json
 {
-  "name": "castle-showcase",
   "title": "Castle showcase",
   "version": "1.0.0",
   "authors": ["Andrew"],
-  "description": "Monica recoloured with a big head, green soldiers, new event sounds.",
-  "game": "SCES-51190",
+  "description": "Monica's clothes reshaped, a green soldier, new event sounds.",
   "start_at": "s51:500",
 
   "replace": {
-    "texture:e254a01": "art/soldier_green.png",
-    "model:c02fuku*": "models/monica.gltf",
+    "texture:e254a1": "art/soldier_green.png",
+    "model:c02fuku*": "models/monica/c02b.gltf",
     "sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW": "sounds/boom.wav",
     "sound:SE_EV_000_130_MONICA_SWING_SWORD": { "file": "sounds/chime.wav", "volume": 90 },
-    "texture:a01ia_01@d05": { "file": "art/floor.png", "only": ["map/d/d05"] },
+    "bank:SP_003": "sounds/SP_003",
+    "texture:a01ia_01@a01ic": { "file": "art/floor.png", "only": ["map/a/a01"] },
     "file:snd2/event/EV_000_130.snd": "raw/bank.snd"
   },
   "add": {
@@ -204,26 +205,141 @@ not matter: `mod.json` says what each one replaces.
 }
 ```
 
-- **Keys are asset ids**, values are files in the mod (any path inside it)
-  or an object with `file` and options. A replacement reaches every place
-  the manifest lists for the id; `only` limits it to some of them.
-- **Globs** (`model:c02fuku*`) replace a set of ids with one file, such as
-  every costume pack of Monica.
-- **`file:`** replaces a raw disc file or pack member by path: the escape
-  hatch for anything with no common-format converter yet.
-- **`add`** makes new assets: a sound entry in a bank (named, so scripts
-  use `SE_MOD_BEEP` from the mod's generated header), a new file.
-- **Scripts** stay as now: `.c` patches with `#pragma target`, anywhere in
-  the folder; `additions` and `start_at` keep their meaning, and the
-  `files`/`includes` index of whole-file mods is kept as is.
-- **Clashes**: two mods replacing the same id, or overlapping places, are
-  refused at build, naming both mods, as script clashes are now.
-- **`mod new`/`mod asset`** copy an asset out of `assets/` into the mod and
-  add its line to `mod.json`; `mod check` checks every key resolves and
-  every file exists.
+- **Keys are asset ids** as the asset tree gives them, the kind's prefix
+  and the name ignoring case, and `sound:BANK/N` for a named entry too.
+  Values are a file in the mod, by its path from the mod's folder (`/`,
+  nothing outside it), or an object with `file` and options: `only`
+  (replace), `volume` (sounds, 0 to 127; set even when the WAV is the
+  bank's own) and `bank` (add). An unknown option, a file the mod does not
+  have or of the wrong kind, is refused when `mod.json` is read.
+- **What each kind takes.** A texture: a PNG, built into the picture at
+  each place with the disc's picture as the template (palette, mip levels),
+  as a texture folder's PNG is. A model: a `.gltf` file with its buffer
+  beside it (Blender's "glTF Separate", or the tree's own
+  `models/.../<id>.gltf`), whose images are not read: the model's
+  textures change through their own ids. Or a folder as `mod asset` writes
+  it, the export's `c02b.gltf`, buffer and `textures/` (PNGs edited there
+  go into the pack, as the old `--as gltf` folders do); a folder holding
+  one other `.gltf` is that file. A sound: a WAV for that entry. A bank: a
+  folder of WAVs named by entry number (`004.wav`, or `004_NAME.wav` as the
+  tree names them), for entries the bank has; new entries are `add`'s.
+- **Every place.** A replacement reaches every place the disc has the id,
+  each built with that place's own file as the template. `only` keeps the
+  places under the disc paths it lists: a place itself
+  (`dungeon/monster/e254a.chr.d/e254a.img`), or a folder or pack holding
+  it (`map/a/a01`, `map/a/a01/a01ic.ipk`), ignoring case, `*` and `?`
+  allowed; one that keeps no place is refused.
+- **Patterns** (`model:c02fuku*`, `*` and `?`, ignoring case, over ids and
+  aliases of that kind) replace every id they match with one file, such as
+  every costume pack of Monica (one glTF fits them all: each place is built
+  from it with its own pack as the template). An id given exactly wins
+  over a pattern; two patterns giving one id are refused, as is a pattern
+  matching nothing.
+- **`file:`** replaces a disc file or pack member by path, as `extract`
+  lays the disc out (`a.pac.d/b.chr.d/c.img`): the escape hatch for
+  anything without an id (the 340 game files of the manifest's
+  `unconverted`, scripts' packs, anything else). It is the old `disc/`
+  layout by line: the same code builds both, a file is the game file
+  itself, a folder converts by the game file's suffix (PNGs for a `.img`,
+  WAVs for a `.snd`, a glTF folder for a `.chr`) whatever it is named, and
+  a path the disc lacks is a new file or member. One path in both `disc/`
+  and a `file:` line is refused.
+- **`add`** appends a sound entry to every place of a bank, numbered on
+  from the bank's last entry (in build order, when several mods add to one
+  bank). Its name is a constant in the mod's patches, as `NEW_FLAG` names
+  are (`play_se(SE_MOD_BEEP)`); `build` prints the number. `mod check`
+  without a disc compiles with 0 for it. Other new assets (a model or
+  picture under a new name) need a script or model to ask for that name,
+  so they are `file:` lines (a new member) for now; the design's "mod's
+  generated header" is not needed while patches see the names.
+- **Scripts** stay as they were: `.c` patches with `#pragma target`,
+  anywhere in the folder; `additions` and `start_at` keep their meaning,
+  and the `files`/`includes` index of whole-file mods is kept as is.
+  `title` and `version` are shown by `mod list`; `authors`, `description`
+  and the rest are for people. (The design's `name` and `game` were
+  dropped: the folder names the mod, and the build's disc decides the ids.)
 
-The `disc/` layout of mods made so far is read by `mod migrate`, which
-writes the equivalent `replace` lines.
+### How a build finds the places
+
+`build` makes the index of ids from the disc image it builds from, only
+when a chosen mod names an id: the same walk and naming as `c2 assets`
+(the tree's `named` step, shared), without converting anything. On the
+PAL disc it takes 0.6 s and gives the asset tree's manifest exactly (all
+26,399 ids, 1,497 aliases and every place, compared). It does not read
+`assets/manifest.json`: a tree can be stale, made from another disc or
+with other definitions, and a build should not need one. The definition
+sets (`--defs`) name the sound entries, as for `c2 assets`. (The index
+counts as models the packs whose cfg names a model; the tree, the ones its
+export converts: on the PAL disc the same.)
+
+Then, on top of the scripts and the `disc/` and `file:` files, it builds
+models, then banks (every entry a mod changes at one place in one go),
+then pictures (every picture of one texture file in one go), outer places
+first, so a texture goes into a pack another line's model rebuilt. Each
+changed place is read back from the new image, as `disc/` files are, and
+printed with its ids:
+
+```
+mod castle-showcase: 1 patches, 0 files, 0 game files
+  replaces texture:e254a1 at 1 place
+  replaces model:c02fuku1 at 1 place
+  ...
+replaced: dungeon/monster/e254a.chr.d/e254a.img (texture:e254a1, texture:e254a2; mod castle-showcase, 35088 bytes, was 35088)
+```
+
+### Clashes
+
+Refused at build (and by `mod check --disc`), naming the mods:
+
+- one id replaced by two mods;
+- one picture, sound entry or model place changed by two mods through
+  different ids (a bank's folder in one and a sound's id in another);
+- a change inside, or around, a game file another mod replaces whole by
+  `file:` or `disc/`.
+
+A model in one mod and pictures of its pack in another go together: the
+model is built first and the pictures go into the built pack. (The design
+refused all overlapping places; that would have kept a recolour of Monica
+and a reshaping of her apart, since her pictures live inside her packs.)
+Within one mod, an entry given twice (by its bank's folder and its id) is
+refused. `mod list`, which has no disc, shows each mod's lines and the ids
+two mods both name.
+
+### Commands
+
+- `mod asset ISO NAME ID...` copies assets off the disc by id or pattern,
+  each in its common format (`textures/<name>.png`, `models/<name>/` as
+  the export writes it, `sounds/<bank>/<NNN_NAME>.wav`, `sounds/<bank>/`)
+  and adds its `replace` line; an id the mod has a line for is left alone.
+  Paths (`chara/c02a.chr.d/c02a.img --as png`) still copy into `disc/`.
+  It reads the disc, not `assets/`: the files are the same as the tree's,
+  and a mod should not need a tree.
+- `mod check SOURCE NAME... --disc ISO` resolves every line, shows what
+  each reaches and refuses clashes; without `--disc` it checks the lines
+  and files only.
+- `mod list` shows each mod's lines (`replaces texture:e254a1: ...`).
+- `mod migrate ISO NAME` turns a mod's `disc/` folder into `replace`
+  lines (it needs the disc for the ids).
+
+### Migrating disc/ mods
+
+`mod migrate` gives each PNG of a texture folder its texture id's line
+(found by the picture at that place), each WAV of a bank folder its sound
+id's, and each model folder its model id's, and moves the files out of
+`disc/` (which `build` would still read) into `textures/`, `models/` and
+`sounds/`, named after the ids. What has no id (a raw game file, a new
+member, a bank folder adding entries) becomes a `file:` line with its file
+under `raw/`; files no line uses go to `unused/`. A line whose id the disc
+has at more places than the old file covered gets `only`, so the migrated
+mod builds the same image; removing it then reaches the rest. Nothing is
+written when a line cannot be made.
+
+castle-showcase migrates to 14 lines: `texture:e254a1` and
+`texture:e254a2` (each at 5 places, so with `only`), the ten
+`model:c02fuku*` packs and two named sounds of `EV_000_130`. Built old and
+migrated, the images are identical, and identical to `castle-showcase.iso`
+as built before. The old `disc/` layout keeps working, alone or beside
+`replace` lines.
 
 ## 3. The Rust port
 
