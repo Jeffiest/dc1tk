@@ -8,6 +8,8 @@ license = "MIT"
 
 [workspace.dependencies]
 c2-disc = { path = "crates/c2-disc" }
+c2-script = { path = "crates/c2-script" }
+c2-py = { path = "crates/c2-py" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 encoding_rs = "0.8"

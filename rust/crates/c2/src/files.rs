@@ -1,0 +1,96 @@
+//! Where the tools' data is, and reading and writing text as the Python tools do.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result};
+
+/// The repository folder: $C2_ROOT, or the nearest folder above the executable that has
+/// definitions/ (c2 runs from rust/target/release).
+pub fn root() -> PathBuf {
+    if let Some(root) = std::env::var_os("C2_ROOT") {
+        return PathBuf::from(root);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        for folder in exe.ancestors().skip(1) {
+            if folder.join("definitions").is_dir() {
+                return folder.to_path_buf();
+            }
+        }
+    }
+    PathBuf::from(".")
+}
+
+/// The native tables' folder cli.py uses by default.
+pub fn natives_dir() -> PathBuf {
+    root().join("src").join("c2s").join("tables")
+}
+
+/// The shipped definition set.
+pub fn default_defs() -> PathBuf {
+    root().join("definitions").join("pal")
+}
+
+/// A path as Python's pathlib prints it on this system.
+pub fn python_path(path: &str) -> String {
+    if !cfg!(windows) {
+        return path.to_string();
+    }
+    let rooted = path.starts_with('/') || path.starts_with('\\');
+    let parts: Vec<&str> = path.split(['/', '\\']).filter(|part| !part.is_empty() && *part != ".").collect();
+    let joined = parts.join("\\");
+    if rooted {
+        format!("\\{joined}")
+    } else {
+        joined
+    }
+}
+
+/// Text with the line endings Python writes in text mode on this system.
+fn native_lines(text: &str) -> String {
+    if cfg!(windows) {
+        text.replace('\n', "\r\n")
+    } else {
+        text.to_string()
+    }
+}
+
+/// Path.read_text(): UTF-8 with \r\n and \r read as \n.
+pub fn read_text(path: &Path) -> Result<String> {
+    let text = fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    Ok(text.replace("\r\n", "\n").replace('\r', "\n"))
+}
+
+/// Path.write_text(), or standard output when there is no path.
+pub fn write_output(path: Option<&Path>, text: &str) -> Result<()> {
+    let text = native_lines(text);
+    match path {
+        Some(path) => fs::write(path, text).with_context(|| format!("cannot write {}", path.display())),
+        None => {
+            let mut out = std::io::stdout().lock();
+            out.write_all(text.as_bytes())?;
+            Ok(out.flush()?)
+        }
+    }
+}
+
+/// Every .stb under a folder (any case), by path from it with "/", sorted.
+pub fn find_scripts(root: &Path) -> Result<Vec<String>> {
+    let mut found = Vec::new();
+    let mut folders = vec![root.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for entry in fs::read_dir(&folder).with_context(|| format!("cannot read {}", folder.display()))? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                folders.push(path);
+            } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("stb")) {
+                let relative = path.strip_prefix(root).unwrap();
+                found.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
+}

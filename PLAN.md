@@ -103,7 +103,9 @@ See [the design](docs/design.md). In order:
    compares the two; [rust/README.md](rust/README.md) has what is ported.
    - Done: the disc (`c2 extract`, writing an image, cp932), the same bytes
      as the Python on the whole PAL disc.
-   - Next: the script reader (stb, vm, disassembly, definitions, names).
+   - Done: the script reader (`c2 disassemble`, `c2 assemble`), the same
+     text for all 1,398 scripts, 16 times faster.
+   - Next: the decompiler.
 2. **The asset tree**: `assets/` beside `decompiled/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.

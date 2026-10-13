@@ -64,7 +64,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "c2-disc",
+ "c2-script",
  "clap",
+ "rayon",
  "serde_json",
 ]
 
@@ -75,6 +77,21 @@ dependencies = [
  "encoding_rs",
  "memmap2",
  "rayon",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "c2-py"
+version = "0.1.0"
+
+[[package]]
+name = "c2-script"
+version = "0.1.0"
+dependencies = [
+ "c2-disc",
+ "c2-py",
  "serde",
  "serde_json",
  "thiserror",

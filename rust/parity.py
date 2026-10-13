@@ -8,6 +8,8 @@ same input in a work folder and compares; exit status 1 when anything differs.
                                                       the files cli.py build writes for a mod,
                                                       written by both
   python rust/parity.py cp932 WORK                    every code and character through both codecs
+  python rust/parity.py disassemble extracted WORK    every script disassembled by both, and c2
+                                                      assembling each listing back to the script
 
 Run from the repository folder, after cargo build --release in rust/. Images are 4.7 GB each; the
 work folder needs room for two.
@@ -153,6 +155,42 @@ def check_write_disc(args):
     return problems
 
 
+def check_disassemble(args):
+    """Every script under an extracted disc disassembled by both, compared; then every listing
+    assembled by c2 and compared with the script it came from."""
+    from c2s import asm, definitions, natives, stb, verify
+    work = Path(args.work)
+    py, rs = work / "py_asm", work / "rs_asm"
+    for folder in (py, rs):
+        if folder.exists():
+            raise SystemExit("%s exists; give an empty work folder" % folder)
+    root = Path(args.extracted)
+    defs = definitions.load([definitions.DEFAULT_SET])
+    tables = natives.load()
+    start = time.time()
+    scripts = verify.find_scripts(root)
+    for relative in scripts:
+        path = root / relative
+        table = natives.table_for(path.resolve().as_posix(), defs["tables"])
+        target = py / (relative + ".asm")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(asm.disassemble(stb.read(path.read_bytes()), table, tables).encode("utf-8"))
+    py_time = time.time() - start
+    _, rs_time = run([C2, "disassemble-tree", root, rs])
+    print("%d scripts; python %.1fs, rust %.1fs" % (len(scripts), py_time, rs_time))
+    problems = compare_trees(py, rs)
+    out, rs_time = run_status([C2, "assemble-tree", root, py])
+    print("rust assembled python's listings in %.1fs: %s" % (rs_time, out.strip().splitlines()[-1]))
+    problems += [line for line in out.splitlines() if line.startswith("differs")]
+    return problems
+
+
+def run_status(command):
+    start = time.time()
+    result = subprocess.run([str(part) for part in command], capture_output=True, text=True, encoding="utf-8")
+    return result.stdout + result.stderr, time.time() - start
+
+
 def check_cp932(args):
     work = Path(args.work)
     work.mkdir(parents=True, exist_ok=True)
@@ -198,10 +236,14 @@ def main():
     command.add_argument("--keep", action="store_true", help="keep the two images")
     command = checks.add_parser("cp932")
     command.add_argument("work")
+    command = checks.add_parser("disassemble")
+    command.add_argument("extracted")
+    command.add_argument("work")
     args = parser.parse_args()
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
-    problems = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932}[args.check](args)
+    checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble}
+    problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)
     print("%s: %s" % (args.check, "same bytes" if not problems else "%d differences" % len(problems)))
