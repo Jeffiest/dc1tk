@@ -114,50 +114,48 @@ definitions.
 
 ## Next: mod assets
 
-Mods should be able to bring models, textures and sounds, not only scripts.
-On the PAL disc these live in packs (the same chain format as `.chr` and
-`.mpk`):
+Mods can bring models, textures and sounds made with common tools, not only
+scripts (see [usage](docs/usage.md#mods) and [the formats](docs/assets/)):
 
-- characters (`.chr`): the mesh (`.mds`), skin weights (`.wgt`), what looks
-  like skeleton data (`.bbp`), motions (`.mot`), textures (`.img`),
-  sometimes cloth (`.clo`), and an `info.cfg` naming the parts;
-- textures: `.img`, the game's own `IM3` container (5,217 files), and a few
-  standard PS2 `TIM2` images (`.tm2`);
-- sound banks (`.snd`): Sony's sound library files, `.hd` (instrument
-  header), `.bd` (samples in PS2 ADPCM), `.sq` (sequences), plus `.vol` and
-  `.cfg`.
+- **Any game file or pack member** replaced from a mod's `disc/` folder,
+  laid out as `extract` lays out the disc, with new members added to packs
+  and new files given records in `DATA.HD4` (whose fixed 0x50000-byte
+  buffer leaves room for about 150 more on the PAL disc; `build` counts it).
+- **Textures as PNG**, a folder per texture file with one PNG per picture
+  (`c02a.img.png/c02a01.png`); all 5,217 texture files round-trip.
+- **Sound effects as WAV**, a folder per bank with one WAV per entry
+  (`sp_004.snd.wav/001.wav`), replacing entries or adding new ones; all 861
+  banks round-trip.
+- **Character models as glTF** for Blender, a folder per character pack
+  with the skeleton, skin, motions and textures (`c02a.chr.gltf/`); only
+  meshes that change are rebuilt, with the disc's model as the template.
+  Tried through Blender 5.1: the skeleton, motions and textures come back
+  unchanged and the game's animations drive the edited mesh.
 
-In order:
+Unedited exports build back to the disc's own bytes in every case. Still to
+do:
 
-1. **Replace any file or pack member.** `build` already writes scripts
-   back into their packs and over their files in `DATA.DAT`; take away the
-   "scripts only" assumption so `mods/NAME/files/` can hold any file or
-   member (`chara/c01_base.chr.d/c01b.img`), with the same clash rule as
-   whole files and `mod list` showing them. A size-growth warning, since
-   models and textures load into fixed memory stacks the build cannot see.
-2. **Textures.** Read and write `IM3` (`maintex.cpp` and `mg_texture.cpp`
-   in the engine source load it): `mod asset export` to PNG and `import`
-   from PNG, reducing the colours to the texture's palette size. With step 1
-   a mod can reskin any character.
-3. **Sound effects.** A WAV to PS2 ADPCM encoder, and rewriting `.hd` when a
-   sample's length changes, to replace entries in a bank or add new ones.
-   New entries get names like the `se_<bank>` enums (`SE_SP_000_FANFARE`)
-   so scripts play them by name. Music sequences (`.sq` from MIDI) are a
-   separate, larger job.
-4. **New files and members.** `build` only replaces files the disc has. A
-   new file needs a record in `DATA.HD4`, which the engine reads into a
-   fixed 0x50000-byte buffer (`dataread.cpp`, `header_buff`); the PAL index
-   fills all but 7,780 bytes of it, room for about 150 new files. So new
-   assets should go into packs (new members of existing packs, or one pack
-   per mod), and `build` should count the index space and refuse with a
-   clear message when it runs out. A mod's new motions, effects and sounds
-   get generated names, as `disc.h` gives the game's, and `mod check`
-   checks the pack paths and member names its scripts load.
-5. **Models.** The mesh, weights, skeleton, motion and cloth formats are
-   the game's own and need reverse engineering (`mdslist.hpp` and
-   `visualmotion.cpp` in the engine source), then an importer from a format
-   Blender exports (glTF). Until then mods can reuse and retexture the
-   game's models, which scripts already load by path.
+1. **Try them in the game.** None of the converted assets has been booted
+   yet: a reskinned, re-voiced and remodelled character in PCSX2 with
+   `--start-at`, to confirm what the format checks and renders say.
+2. **Memory.** Models, textures and sound banks load into fixed memory the
+   build cannot see, so it only warns when a file grows. Measure the
+   budgets: the character memory stacks, how much of a texture block a
+   scene leaves free, and the SPU regions (a sound-set row's banks add up
+   to more than the field region as read, so something is not understood).
+3. **Names for a mod's new sounds.** New bank entries are used by number;
+   generate names for them (`SE_SP_004_BEEP`) as `disc.h` names the game's,
+   and have `mod check` check the pack paths and member names scripts load.
+4. **Motions from glTF.** Export writes every motion as an animation, but
+   build does not read animations back yet: decode the remaining channels
+   (per-vertex, material alpha, visibility), confirm the frame rate, and
+   write `.mot` keys and `info.cfg` `KEY` ranges from glTF animations.
+5. **New characters.** A model is rebuilt on the disc model's skeleton; a
+   wholly new character needs a new pack, an `info.cfg` and a skeleton of
+   its own from glTF, and cloth (`.clo`) left out or carried over.
+6. **Music.** `.sq` sequences (music and ambient loops) are not decoded, and
+   a WAV given for a sequence entry replaces it with one sound; sequences
+   from MIDI are a separate job.
 
 ## Next: names and docs
 
