@@ -1,7 +1,7 @@
 import struct
 from pathlib import Path
 
-from c2s import archive, rebuild, sounds, textures
+from c2s import archive, models, rebuild, sounds, textures
 
 # Game files a mod replaces: models, textures, sounds and anything else on the disc. A mod keeps
 # them under disc/, laid out as extract lays the disc out: a file at its path in DATA.DAT
@@ -12,8 +12,9 @@ from c2s import archive, rebuild, sounds, textures
 # A game file can also be given in a common format, named after the file it stands for plus the
 # format's suffix: build converts it, with the disc's own file as the template (palette size,
 # sample rate, layout), and mod asset --as exports to it. Textures are a folder of PNGs
-# (c02a.img.png/c02a01.png, textures.py) and sound banks a folder of WAVs by entry number
-# (sp_000.snd.wav/003.wav, sounds.py).
+# (c02a.img.png/c02a01.png, textures.py), sound banks a folder of WAVs by entry number
+# (sp_000.snd.wav/003.wav, sounds.py) and character packs a folder holding a glTF with its
+# textures (c02a.chr.gltf/c02a.gltf, models.py).
 
 DISC = "disc"
 PACK = ".d/"
@@ -25,6 +26,7 @@ PACK = ".d/"
 CONVERTERS = {
     ".png": {"game": ".img", "folder": True, "build": textures.build, "export": textures.export},
     ".wav": {"game": ".snd", "folder": True, "build": sounds.build, "export": sounds.export},
+    ".gltf": {"game": ".chr", "folder": True, "build": models.build, "export": models.export},
 }
 
 
@@ -209,6 +211,7 @@ def copy_out(iso_path, mod_dir, paths, form=None):
                 if converter["folder"]:
                     target.mkdir(parents=True, exist_ok=True)
                     for name, content in exported.items():
+                        (target / name).parent.mkdir(parents=True, exist_ok=True)
                         (target / name).write_bytes(content)
                         written.append("%s%s/%s" % (path, suffix, name))
                     continue

@@ -306,6 +306,23 @@ character pack; packs inside packs work the same way).
   back to the disc's own bytes. Keep a bank's sample data near its original
   size: sound memory is shared between banks, and how much is free where a
   bank loads is not yet known. See [the sound bank format](assets/sounds.md).
+- **Character models as glTF.** A character pack (`.chr`) holds a model,
+  its skin weights, bind pose, motions and textures. `mod asset ISO NAME
+  chara/c02a.chr --as gltf` writes a folder `c02a.chr.gltf/` with
+  `c02a.gltf` and `c02a.bin` (the skeleton, the meshes, the skin and every
+  motion as an animation) and `textures/` with the pack's pictures as PNG.
+  Open it in Blender (File, Import, glTF 2.0), edit the meshes, and export
+  glTF 2.0 over it as "glTF Separate"; or edit the PNGs. `build` rebuilds
+  the meshes that differ from the export with the disc's model as the
+  template: the skeleton keeps its frames, names and order, since motions
+  and cloth find frames by name, and meshes are matched to frames by name
+  (Blender's `.001` suffixes are ignored). Keep a mesh to 32 bones and 4
+  weights per vertex. Changed PNGs go into the pack's textures by picture
+  name; textures the model takes from other packs are changed in those.
+  Unedited exports build back to the disc's own bytes. Max's and Monica's
+  clothes are separate costume packs (`mainchr/c01fuku1.chr` and the like):
+  their own packs hold the skeleton and motions. Importing from glTF is new
+  and not yet tried in the game. See [the model formats](assets/models.md).
 
 **Additions.** The older way to add to a script without copying it, kept for
 mods that use it: its `mod.json` can list additions, applied when it is
