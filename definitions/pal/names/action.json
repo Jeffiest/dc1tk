@@ -1,5 +1,15 @@
 {
  "functions": {
+  "005cfaf4386c265f": {
+   "name": "play_knockdown_kick",
+   "locals": [
+    "status",
+    "unused_value",
+    "saved_value"
+   ],
+   "doc": "State machine keyed on the saved value 300: plays Max's knockdown kick motion (a kick at a downed enemy), then clears the saved value and waits 3 frames.",
+   "loose": "fa70015c92a23d3e"
+  },
   "02e4adf97ad563b1": {
    "name": "run_player_action_loop",
    "loose": "c39c5133a3a90dcb",
@@ -86,6 +96,11 @@
    ],
    "doc": "Cancels guard, knocks back lightly and plays the damage motion until the stun status clears."
   },
+  "132a9bd27c25af7b": {
+   "name": "react_to_damage",
+   "doc": "Meant to knock the character back (speed 5.0), drop what it holds, play the damage motion, wait 8 frames and return to idle. Under this disc's numbering the knockback runs play_chara_se with a bad bank, so nothing plays, the drop and motion calls run other natives, and the state reset is an _EXT_ call that does nothing.",
+   "loose": "e12aa6ec6dbf0b79"
+  },
   "136a325df49d5ef8": {
    "name": "run_charge_attack_state",
    "loose": "77ed01ae6e4805dd",
@@ -126,7 +141,7 @@
     "z",
     "progress"
    ],
-   "doc": "Max's charge attack state machine, keyed on the saved value 1200 to 1202. Holding the button loops the charge motion and flashes at 20 frames, releasing plays the charge attack with a short invincibility and forward impulse."
+   "doc": "Max's charge attack state machine, keyed on the saved value 1200 to 1202. While charging it loops the charge motion with slow movement and flashes at 20 held frames; letting go before then cancels to state 0. Once charged, releasing the button plays the charge attack with 30 frames of invincibility and the charge effect, pushes him forward from 20 to 47 percent of the motion, and returns to state 0 when it ends. Returns 0."
   },
   "181b0ccb677d46af": {
    "name": "react_to_damage",
@@ -175,7 +190,7 @@
     "saved_value",
     "progress"
    ],
-   "doc": "Mid-range attack state: plays the attack motion once, pushes the monster forward at 30 to 40 percent of the motion, then clears the saved state value when the motion ends. Uses saved value 200 and 201 as its state."
+   "doc": "Max's mid-range attack state (saved values 200 and 201): plays the attack motion once, lunges Max forward between 30 and 40 percent of the motion, then clears the saved value and waits 6 frames when the motion ends."
   },
   "2467bdcc9f8b27b4": {
    "name": "do_back_flip_dodge",
@@ -231,7 +246,7 @@
     "state",
     "motion_progress"
    ],
-   "doc": "State 800: plays the gun attack and returns to state 0 once the weapon has fired; resets attack presses at 30 to 40 percent of the motion."
+   "doc": "State 800: plays the gun attack motion and returns to state 0 when it ends, calling reset_attack_presses(6) between 30 and 40 percent of the motion (where Max's working script fires the gun from slot 6). Under this disc's numbering the state reads and writes do nothing."
   },
   "27c57330cc5d2563": {
    "name": "on_update",
@@ -320,7 +335,7 @@
     "progress",
     "found"
    ],
-   "doc": "Plays the kick motion and past 35 percent tries to grab with the right foot, then waits for the motion to finish."
+   "doc": "State 1000 plays the kick motion on the legs and, once past 35 percent, picks up a map stone within 40 units of the right foot (keri_R) and moves to state 1001, which returns to idle when the kick motion ends."
   },
   "36a844aa2f8aac0f": {
    "name": "on_reset",
@@ -369,7 +384,7 @@
   "39d0dc70256c3dc6": {
    "name": "fall_from_knockdown",
    "loose": "fdda740b9730252f",
-   "doc": "Plays a sound and the damage motion, waits 8 frames and returns to idle. Same as the damage reaction with a different sound."
+   "doc": "Meant to knock the character back harder than the damage reaction (speed 8.0 instead of 5.0), drop what it holds, play the damage motion, wait 8 frames and return to idle. Under this disc's numbering the knockback, drop and motion calls run other natives and the state reset does nothing."
   },
   "3d353da7afd3770e": {
    "name": "run_player_attack_loop",
@@ -584,7 +599,7 @@
     "aim_button",
     "progress"
    ],
-   "doc": "Gun state machine for saved values 800 and 801: aims while the aim button is held and fires one sub-weapon shot per press of the fire button."
+   "doc": "Gun state machine for saved values 800 and 801: aims while L1 is held, and while the attack button is also held plays the fire motion, firing one sub-weapon shot early in it, then returns to aiming and fires again if the buttons are still held. Releasing L1 ends it."
   },
   "5a5d2ef34aedaa2b": {
    "name": "run_mid_range_attack",
@@ -596,7 +611,7 @@
     "state",
     "motion_progress"
    ],
-   "doc": "States 200 and 201: plays the mid-range attack, applies a camera shake between 30 and 40 percent of the motion, and returns to state 0 when it ends."
+   "doc": "States 200 and 201: plays the mid-range attack, pushes Max forward between 30 and 40 percent of the motion, and returns to state 0 after 6 frames once it ends. Under this disc's numbering the state reads, state writes and the push are _EXT_ calls that do nothing."
   },
   "5b4c11e9e1597259": {
    "name": "fire_weapon_short_burst",
@@ -606,7 +621,7 @@
     "status",
     "pad_button"
    ],
-   "doc": "Ridepod ranged weapon burst (states 100 to 110) with the ridepod movement and menu disabled: plays the attack 1 in motion on the arm, then fires the weapon once per frame for 15 frames with the attack 1 r motion, plays the out motion and returns to state 0 when it ends. The long burst fires for 30 frames.",
+   "doc": "Ridepod ranged weapon burst (states 100 to 110) with the menu blocked and stick movement still running on the body: plays the attack 1 in motion on the arm, then fires the weapon once per frame for 15 frames with the attack 1 r motion, plays the out motion and returns to state 0 when it ends. The long burst fires for 30 frames.",
    "params": []
   },
   "5cb35f82b3df3992": {
@@ -746,7 +761,7 @@
   "77d4cfc0988a2d06": {
    "name": "react_to_blocked_hit",
    "loose": "77d4cfc0988a2d06",
-   "doc": "Plays the block sound, fires the sword magic effect, waits 10 frames and resets the state to 0."
+   "doc": "Meant to knock Max back after a blocked hit, then waits 10 frames and resets the state to 0. Under this disc's numbering the knockback runs play_chara_se with a bad bank, so nothing plays, it calls fire_sword_magic(0.0), and the state reset is an _EXT_ call that does nothing."
   },
   "783837eeeffdc7ba": {
    "name": "update_guard_lift_and_throw",
@@ -937,7 +952,7 @@
     "y_3",
     "z_3"
    ],
-   "doc": "Handles Monica's magic states 800 and 801. While L1 is held she aims and the charge effect grows toward 1.3; pressing confirm fires the spell at 25 to 30 percent of the cast motion, and releasing L1 cancels."
+   "doc": "Handles Monica's magic states 800 and 801. While L1 is held she aims with the charge effect kept on her item frame, and the spell power grows from 0.8 by 0.5 per second up to 1.3; releasing L1 cancels and removes the effect. Pressing confirm plays the cast, which fires spell01 scaled by that power at 25 to 30 percent of the motion; L1 and confirm after 65 percent restart the cast, and when it ends she returns to aiming with a new charge effect."
   },
   "90770f4419820340": {
    "name": "stop_guarding",
@@ -994,7 +1009,7 @@
    "locals": [
     "is_done"
    ],
-   "doc": "Runs the common guard setup, stops movement and holds the after-guard motion until it finishes."
+   "doc": "Deletes the charge effect if one is set, stops any knockback movement and holds the after-guard motion until it finishes."
   },
   "9f470adf2fe6496a": {
    "name": "on_update",
@@ -1069,12 +1084,12 @@
    "doc": "Handles guard, catch and throw, states 900 to 904. Holding the guard button guards, pressing attack during guard starts the lift to grab something, and confirm throws what is held."
   },
   "ac1b692337452fce": {
-   "name": "wait_for_sub_weapon_fire",
+   "name": "wait_motion_end_old_numbered",
    "loose": "ac1b692337452fce",
    "locals": [
     "fired"
    ],
-   "doc": "Waits frame by frame until the sub weapon fires, then returns 1."
+   "doc": "Old-numbered copy of wait_motion_end, meant to wait frame by frame until the motion is done and then return 1. Under this disc's numbering the check runs fire_sub_weapon with the flag's address as its slot, which never writes the flag, so the wait does not track the motion."
   },
   "ac3c9899baa197ca": {
    "name": "recoil_from_light_hit",
@@ -1183,7 +1198,7 @@
     "fired",
     "motion_progress"
    ],
-   "doc": "Plays the backflip dodge motion, applying a camera shake between 18 and 80 percent of it, then waits 6 frames and resets the state to 0."
+   "doc": "Plays the backflip dodge motion, pushing Max backward (angle 180) between 18 and 80 percent of it, then waits 6 frames after it ends and resets the state to 0. Under this disc's numbering the push and the state reset are _EXT_ calls that do nothing."
   },
   "b7d4db74fc6790b4": {
    "name": "wait_motion_in_range",
@@ -1266,7 +1281,7 @@
     "attack_hold_frames",
     "stick_alignment"
    ],
-   "doc": "Runs the five-hit sword combo while the action state is 100 to 105. Each hit pushes Max forward during parts of its motion, and a button press in the next hit's window plays the next hit, or the third-hit kick when the stick points at the target. Holding the attack button for more than 12 frames switches to the charge attack (state 1200)."
+   "doc": "Runs the five-hit sword combo while the action state is 100 to 105. Each hit pushes Max forward during parts of its motion, and an attack press in the next hit's window plays the next hit, or the third-hit kick (state 105) when the stick points at the target during the second hit. During the first hit only, holding the attack button for more than 12 frames switches to the charge attack (state 1200)."
   },
   "c50cc098f2953c59": {
    "name": "register_sword_attack_hit",
@@ -1326,7 +1341,7 @@
     "ignored",
     "state"
    ],
-   "doc": "Main loop. Runs the return handler for states 100 to 198, and in state 0 handles carrying movement; when the saved value has bit 32 set it plays the victory pose and enters state 100."
+   "doc": "Main loop. Runs the return handler for states 100 to 198, and in state 0 runs the carry movement and, when the pad bits read each frame have bit 32 set (the input f204a.c treats as confirm), plays the victory pose and enters state 100. Under this disc's numbering the state reads and writes are _EXT_ calls that do nothing."
   },
   "cd9abac0ac8c4a04": {
    "name": "run_lift_and_throw_state",
@@ -1405,12 +1420,12 @@
     "attack_hold_frames",
     "stick_alignment"
    ],
-   "doc": "Sword combo state machine for sword model 1. Five-hit combo (hits 1 to 4 plus the knock-away finisher) with this weapon's own movement impulses and chain windows. Holding attack for over 10 frames in the first hit starts the charge attack (state 1200)."
+   "doc": "Sword combo state machine for sword model 1. Four-hit combo (states 100 to 103) with this weapon's own movement impulses and chain windows; pressing attack in the second hit's window with the stick toward the target plays the knock-away finisher (state 105) instead of the third hit. Holding attack for over 10 frames in the first hit starts the charge attack (state 1200)."
   },
   "d340a2d7f1b0a2cd": {
    "name": "react_to_damage",
    "loose": "e12aa6ec6dbf0b79",
-   "doc": "Plays the damage sound and damage motion, waits 8 frames and resets the state to 0."
+   "doc": "Meant to knock Max back (speed 5.0), drop what he holds, play the damage motion, wait 8 frames and reset the state to 0. Under this disc's numbering the knockback runs play_chara_se with a bad bank, so nothing plays, the drop and motion calls run other natives, and the state reset is an _EXT_ call that does nothing."
   },
   "d38862475dbe7d97": {
    "name": "run_player_action_loop",
@@ -1505,12 +1520,12 @@
   "dc2d31d63fa3a9d5": {
    "name": "react_to_knockdown",
    "loose": "d8246aeb7264253c",
-   "doc": "Plays the knocked-flying motion, then the get-up motion, with their sounds, and resets the state to 0."
+   "doc": "Meant to knock Max back, drop what he holds, play the knocked-flying motion until it ends, wait 8 frames, play the get-up motion until it ends, wait 2 frames and reset the state to 0. Under this disc's numbering the knockback, drop, motion and end checks run other natives, and the state reset is an _EXT_ call that does nothing."
   },
   "dd178a87b47fd5b2": {
    "name": "setup_wrench_and_gun_actions",
    "loose": "e761c6d292a64b34",
-   "doc": "Registers the colour flashes, camera shakes, shot types and footstep timings for the triple wrench combo, mid-range attack, charge attack, kick, throw and gun attack of this action set."
+   "doc": "Meant to register Max's object slots, attack hits for the triple wrench combo, mid-range attack, knockdown kick, charge attack and lift, two body collisions, sword trails, the charge effect slot and footstep and attack sounds. Under this disc's numbering the calls run other natives (colour flashes, camera shakes, equipment and pad queries), and the sound registrations are _EXT_ calls that do nothing."
   },
   "de1482560a622c06": {
    "name": "update_player_controlled_monster",
@@ -1576,14 +1591,14 @@
    "doc": "Handles guarding with R1 (states 900 to 904): guard loop, pressing confirm lifts a nearby object, carries it, and confirm again throws it."
   },
   "e49d7278fcf95d16": {
-   "name": "setup_charge_attack_effects",
+   "name": "setup_charge_attack_hits",
    "loose": "9a253d7079c4f618",
-   "doc": "Sets the character color flash slots and a camera shake for the basic attack and the suicide charge."
+   "doc": "Meant to register the Kotore's object slots 0 and 2, an attack hit for the suicide charge motion and a body collision. Under this disc's numbering the calls run other natives instead (colour flashes, a camera shake and an equipment query), so nothing is registered."
   },
   "e6662865e2603316": {
    "name": "recover_after_block",
    "loose": "e6662865e2603316",
-   "doc": "Plays a sound, fires a sword magic effect, waits 10 frames and returns to idle."
+   "doc": "Meant to knock the character back after a blocked hit, then waits 10 frames and returns to idle. Under this disc's numbering the knockback runs play_chara_se with a bad bank, so nothing plays, it calls fire_sword_magic(0.0), and the state reset is an _EXT_ call that does nothing."
   },
   "e89cd82d1961b2d6": {
    "name": "on_update",
@@ -1643,7 +1658,7 @@
     "progress",
     "attack_hold_frames"
    ],
-   "doc": "Runs the five-hit sword combo for Monica (states 100 to 104). Each hit steps forward with a movement impulse, and pressing attack inside the hit's input window starts the next swing; holding attack moves to the charge attack (state 1200)."
+   "doc": "Runs the five-hit sword combo for Monica (states 100 to 104). Each hit pushes her forward during part of its motion (the third also drifts her back at its end), and pressing attack inside the hit's input window starts the next swing. During the first swing only, holding attack for more than 10 frames moves to the charge attack (state 1200)."
   },
   "ee1f31ec63f68dfe": {
    "name": "on_update",
@@ -1700,16 +1715,16 @@
     "attack_hold_frames",
     "stick_alignment"
    ],
-   "doc": "Runs the five-hit sword combo state machine (saved value 100 to 105) for weapon model 1: moves the character during each swing, chains the next hit on a button press in its window, takes a held button to the charge attack (1200), and goes to the third hit when the stick points at the target."
+   "doc": "Runs the sword combo state machine for weapon model 1, a four-hit combo (saved values 100 to 103) with camera shakes on the first and fourth hits: moves the character during each swing, chains the next hit on a button press in its window, takes a held button in the first hit to the charge attack (1200), and in the second hit goes to the third-hit finisher (105) instead when the stick points at the target."
   },
   "f61318255de8e33f": {
-   "name": "explode_if_hp_high",
+   "name": "explode_at_full_hp",
    "loose": "fb1a10bd91d8df05",
    "locals": [
     "hp_rate",
     "pos"
    ],
-   "doc": "If the HP rate is 0.5 or more, spawns the explosion effect at the monster and calls set_low_hp; below 0.5 it just clears the state."
+   "doc": "Spawns the explosion effect at the monster and drops its HP to 5% of maximum, but only at full HP: get_hp_rate divides in integers, so the 0.5 check passes only when HP is full. Otherwise it just clears the state. Returns 0."
   },
   "f965f5ec5e8cc5ea": {
    "name": "recover_from_stagger",
@@ -1717,7 +1732,7 @@
    "locals": [
     "status_flags"
    ],
-   "doc": "Knocks Max back, drops what he holds, and plays the damage motion until the stunned and knocked-down status bits clear, letting the menu be opened meanwhile. Then returns to idle."
+   "doc": "Runs when Max is frozen by the stop status. Knocks him back, drops what he holds, and holds the damage motion until the stop status bits (8 and 32) clear, letting the menu be opened meanwhile. Then returns to idle."
   },
   "fc257ec83ba959b7": {
    "name": "cancel_guard_and_charge_effect",

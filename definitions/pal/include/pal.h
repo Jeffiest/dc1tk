@@ -445,7 +445,7 @@ enum flag_story {
     // Set by event 414 in Osmond's lab (f03i0301) when the party finds Osmond asleep at his desk
     // before flag 408; the lab's map start reads it to play the scene once.
     FLAG_OSMOND_ASLEEP_SEEN = 414,
-    // Set by event 416 in s19 when Pau tells Max to feed the Electric Fish to Shingala and the
+    // Set by event 416 in s19 when Monica tells Max to feed the Electric Fish to Shingala and the
     // fight starts. The s19 game over handler reads it with flag 420 to play a voiced game over
     // during the fight.
     FLAG_SHINGALA_FIGHT_STARTED = 416,

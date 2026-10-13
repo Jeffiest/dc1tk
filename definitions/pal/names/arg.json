@@ -25,7 +25,7 @@
   "a9ea35f2079308d6": {
    "name": "build_test_args",
    "loose": "61aa8fec2a1a1afe",
-   "doc": "Adds four argument records at 50 to 80, sets the record id to 100 and adds a record holding the walk motion name and the number 2."
+   "doc": "Adds four argument records under ids 0 to 3, each holding 0 and a point with x 50, 60, 70 or 80 at height 104.2, then sets the record id to 100 and adds a record holding 0, the walk motion name and 2."
   }
  }
 }

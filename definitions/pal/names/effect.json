@@ -59,7 +59,7 @@
     "attack_hit_count_2",
     "wall_hit_pos_2"
    ],
-   "doc": "Throws a sticky glob along an arc for up to 90 frames. It stops on hitting the player or a wall, and when it is knocked back by a guard it flies back along the knockback direction for up to 60 frames, then fades out."
+   "doc": "Throws a sticky glob dealing effect value 0 damage along a falling arc for up to 90 frames. It stops on hitting the player or a wall; when a guard knocks it back it spawns a guard effect and flies back along the knockback direction for up to 60 frames, again stopping on a hit or a wall. Only after a wall hit does it stay at the wall and fade out over 30 frames."
   },
   "01e609826a7c5fd1": {
    "name": "fire_demon_beam_from_owner",
@@ -153,7 +153,7 @@
     "remaining",
     "step_distance"
    ],
-   "doc": "Finish program of the thrown item bomb: flies the item from the owner's hand to the work vector in an arc for up to 60 frames, bouncing off walls and floor and spawning footstep effects, with an attack matching the item id (gift, fruit, stone, ...). On landing or hit it spawns the item's burst effect (explosion, magic stones, final bomb, lightning flash)."
+   "doc": "Finish program of the thrown item: flies it from the owner's item bone toward work vector 1 in an arc, bouncing off walls and floor and spawning grass, dust or splash effects where it lands, with an attack matching the item id (gift, fruits or pebble; a test attack otherwise). When the attack hits something or after 60 frames it spawns the item's burst effect (explosion, magic stone, final bomb or lightning flash)."
   },
   "0ed5e44fbb32e9bb": {
    "name": "play_barrel_smoke",
@@ -222,7 +222,7 @@
     "pos",
     "frame"
    ],
-   "doc": "Plays the explosion model and a sound, with a 50 radius attack of the given damage that is removed after 30 frames."
+   "doc": "Plays the explosion model with a radius 50 attack dealing the damage in effect value 0, removed after 30 frames, and plays sound effect 7 from the sound bank of the scene character whose slot is effect value 1. Waits 40 frames and then for the motion to end."
   },
   "12fa5fb66e3a2983": {
    "name": "fly_homing_wind_blast",
@@ -316,7 +316,7 @@
     "damage_value",
     "pillar_param"
    ],
-   "doc": "Lobs a spark-trailing ball up toward the player, then re-creates the fire attack 200 units above the player's offset position and drops it, spawning a fire pillar where it lands."
+   "doc": "Flies a spark-trailing ball in a straight line up at 60 degrees toward the player for 15 frames plus the count in work vector 2, then moves it 200 units above a point offset from the player (angle and distance also from work vector 2) and drops it at 20 units per frame for up to 60 frames, spawning a fire pillar where it hits the ground. The fire attack is first created for the drop, and its shape is placed at the velocity vector rather than at the ball."
   },
   "1661c796e9399446": {
    "name": "play_dragon_fire_pillar",
@@ -369,7 +369,7 @@
     "attack_hit_count",
     "hit_point"
    ],
-   "doc": "Flies a cross slash projectile forward, accelerating each frame, with a knockback attack. It ends early when it hits a target or a wall, otherwise after 130 frames, and then fades out."
+   "doc": "Flies a cross slash projectile forward, starting at 10 units per frame and accelerating by 1.2 each frame, with a knockback attack. At frame 115, or at once when it hits a target or a wall, the attack is removed and the projectile keeps flying while it fades out over its last 15 frames (130 in all)."
   },
   "1a283ba7952ed346": {
    "name": "emit_ember_sprites",
@@ -388,7 +388,7 @@
     "value",
     "sprite_visible"
    ],
-   "doc": "Allocates 210 ember sprites and each frame spawns two dust puffs at the work position unless effect value 2 is 1. Sprites that fall below height 2 bounce, and invisible ones are hidden. Runs until the effect is stopped."
+   "doc": "Allocates 210 additive ember sprites and, every frame unless effect value 2 is 1, starts two rising, fading embers at random spots within 20 units of the first work vector. Visible sprites below height 2 lose their sideways drift and are pushed back up from below 0, and fully faded ones are hidden. Runs until the effect is stopped; returns 0 at once if the sprites cannot be allocated."
   },
   "1a986c18d0fa4650": {
    "name": "on_play",
@@ -430,7 +430,7 @@
     "bounce_count",
     "reflect_dir"
    ],
-   "doc": "The arrow flies from the owner's dcol0 bone, slowing and dropping after 30 frames, with a normal attack that deals the effect value. On hitting a wall it bounces off for up to 20 frames without damaging; on hitting a character it vanishes, otherwise it fades out after landing."
+   "doc": "The arrow flies from the owner's dcol0 bone along the owner's facing for up to 60 frames, slowing and dropping after 30 frames, with a normal attack that deals effect value 0. When it hits a wall it bounces off without damaging for up to 20 frames, unless the bounce would go upward or the arrow has already dropped more than 10 units below its start height. On hitting a character it vanishes; otherwise it fades out over 30 frames."
   },
   "1eda9a46739ef6d4": {
    "name": "play_hit_spark_effect",
@@ -483,17 +483,17 @@
     "hit_count",
     "wall_hit_pos"
    ],
-   "doc": "Reads damage, speed and a direction from the effect values, then moves the fire shot for up to 90 frames with a 10 unit hit shape. On a hit or wall collision it spawns the fire pillar effect with the damage value and ends."
+   "doc": "Reads damage and speed from effect values 0 and 1 and the direction from the second work vector, then moves the fire shot for up to 90 frames with a hit shape of radius 10. On a hit or wall collision it spawns the fire pillar effect with the damage value and ends."
   },
   "214acbb1c79a927f": {
-   "name": "play_buggy_explosion",
+   "name": "play_warship_damage_explosion",
    "loose": "613beb290aa95703",
    "locals": [
     "pos",
     "rot",
     "frame_count"
    ],
-   "doc": "Places the model at the work position with zero rotation, plays the buggy explosion motion and waits 47 frames."
+   "doc": "Places the model at the first work vector, turned to the rotation in the second, plays its explosion motion once (the model's motion is named after the buggy explosion) and ends after 47 frames."
   },
   "215229502dc1f014": {
    "name": "play_fire_pillar",
@@ -549,7 +549,7 @@
     "wall_hit_index",
     "wall_hit_pos"
    ],
-   "doc": "Throws a cannonball on a ballistic arc from the start position toward the target point and spawns a large explosion where it hits a wall or the player. The damage and a second value are passed on to the explosion child effect."
+   "doc": "Throws a half-size cannonball on a ballistic arc from the first work vector toward the second for up to 120 frames, using a hit-test attack to detect the player. It always ends by spawning the large explosion, where it hits a wall or the player or at its last position when time runs out, passing on the damage (effect value 0) and effect value 1."
   },
   "23fadbd6d31fc95c": {
    "name": "fly_dragon_fire_shot",
@@ -599,7 +599,7 @@
     "frame",
     "hit_index"
    ],
-   "doc": "Moves a machine gun bullet along its velocity for up to 60 frames with a 1-unit attack. When it hits a wall it plays the sound from effect value 1 and bounces off the surface for a few frames. Damage comes from effect value 0."
+   "doc": "Moves a machine gun bullet from the first work vector by the second each frame for up to 60 frames, with a 1-unit line attack dealing effect value 0. When it hits a wall it plays sound 5 from the sound bank of the character whose slot is in effect value 1 (the firing gun) and then ricochets along the reflection at half speed for 6 frames without an attack. Returns 0 at once when it hits a target."
   },
   "252757432c4abb94": {
    "name": "emit_smoke_trail_sprites",
@@ -617,7 +617,7 @@
     "tick",
     "launch_count"
    ],
-   "doc": "Allocates 16 smoke sprites and follows the owner forever, launching a rising sprite every 3 frames and a larger puff every fourth tick. Sprites fade out once they reach their peak brightness."
+   "doc": "Allocates 16 smoke sprites (returns 0 if that fails) and follows the owner forever, launching a rising sprite from sprites 0 to 14 every 4 frames and a puff every 16 frames. Only the first puff uses the larger sprite 15; the puff index is then reset to 0, so later puffs reuse sprite 0. Sprites fade out once they reach their peak brightness."
   },
   "26b5fafa336fbbc5": {
    "name": "play_thunder_shot_hit",
@@ -668,7 +668,7 @@
     "fade_step2",
     "frame2"
    ],
-   "doc": "Additive flash. Effect value 0 selects the mode: 0 is a white core with a gold glow, 1 is only a glow using the color given in effect values 1 to 4. The glow brightens then fades over 5 frames."
+   "doc": "Additive flash. Effect value 0 selects the mode: 0 is a white core that grows and fades with a gold glow, 1 is only a glow using the color given in effect values 1 to 4. Over 5 frames the glow fades out, flaring back briefly on the third frame."
   },
   "294aa7daf94a7774": {
    "name": "on_play",
@@ -739,7 +739,7 @@
     "hit_pos",
     "impact_pos"
    ],
-   "doc": "Wind ball that waits delay frames fading in, then flies on a parabolic arc (speed and gravity from the effect values) for up to 60 frames. Spawns the wind shot hit effect on hitting a target or a wall."
+   "doc": "Wind ball that fades in and waits delay frames, then flies for up to 60 frames. Each frame it moves by the arc offset for that frame (forward speed times frame, down gravity times frame squared over 2, from the effect values) instead of to it, so it speeds up and drops ever faster. Spawns the wind shot hit effect on hitting a target or a wall."
   },
   "30ae9a842591619e": {
    "name": "play_flame_puff_burst",
@@ -818,7 +818,7 @@
     "next_sprite",
     "unused_value"
    ],
-   "doc": "Keeps a glow sprite on the owner and spawns a stream of 15 coloured orbs from the owner toward the target character while effect value 7 is set. Orbs vanish when they reach the target or fade out; the colour comes from effect value 0."
+   "doc": "Keeps a glow sprite on the owner and, on every frame that effect value 7 is set, launches one coloured orb from the owner toward the target character (effect value 1), cycling through a pool of 15 orb sprites. Orbs vanish when they reach the target or fade out; the colour comes from effect value 0. Runs until the finish program takes over, and returns 0 at once if the sprites cannot be allocated."
   },
   "344ef9d263e7897e": {
    "name": "play_petrify_ball_shot",
@@ -842,7 +842,7 @@
     "attack_hit_count_2",
     "deflect_hit_pos"
    ],
-   "doc": "Fires a petrifying ball in an arc for up to 60 frames with a petrify attack dealing the effect value. It spawns the sticky hit effect on a hit; if the attack was guarded, it is reflected for up to 60 more frames."
+   "doc": "Fires a petrifying ball in an arc for up to 60 frames with a petrify attack dealing the damage in effect value 0, spawning the sticky hit effect on a hit or a wall. If another attack knocks it back (with a nonzero direction), it flies back along that direction for up to 60 more frames as a petrify attack owned by slot 0 and spawns the water shot hit effect where that flight ends."
   },
   "355525a0d1b52e90": {
    "name": "raise_ice_pillar",
@@ -892,7 +892,7 @@
     "knocked_back",
     "attack_hit_count"
    ],
-   "doc": "Flies a cloud of butterfly scale powder for up to 300 frames, first straight, then steering toward the target. It re-creates its radius 20 attack every 6 frames and stops on a hit or a guard, then fades out."
+   "doc": "Flies a cloud of butterfly scale powder at 12.5 units per frame for up to 300 frames: along its starting rotation for the first 7 frames, then straight at the player until frame 30, then on in the last direction. Turning toward the target only rotates the model. It re-creates its radius 20 attack at its current position every 6 frames and stops on a hit or a guard, then fades out."
   },
   "378232c04e45e402": {
    "name": "emit_slow_smoke_sprite",
@@ -935,7 +935,7 @@
     "puff_angle",
     "fade_index"
    ],
-   "doc": "Moves the main spore sprite on a slow circular path and every second frame starts a free puff at its position. Puffs fade by 6 alpha per frame and switch to a thinner frame below alpha 48. After frame 90 the main sprite fades out, and the effect ends at frame 120."
+   "doc": "Moves the main spore sprite upward 3.4 units per frame while it wobbles on a small circle, and every second frame starts a free puff at its position. Puffs fade by 6 alpha per frame and switch to a thinner frame below alpha 48. After frame 90 the main sprite fades out, and the effect ends at frame 120."
   },
   "38dfbbd55f8d4335": {
    "name": "follow_owner_with_activation_model",
@@ -992,7 +992,7 @@
     "fading_out",
     "scale"
    ],
-   "doc": "Effect script that scatters four sprites around the work vector, each rising and spinning with random speed, while a central sprite flashes in alpha and grows for 30 frames."
+   "doc": "Effect script that scatters four sprites around the work vector, each rising and spinning with random speed, while all four grow and fade out from alpha 92 over 30 frames."
   },
   "3eb4924c067bbe9d": {
    "name": "launch_homing_fire_bolt",
@@ -1080,7 +1080,7 @@
     "frame",
     "owner_id"
    ],
-   "doc": "Shows a looping electric model at double scale and keeps it just under the owner's marioa_null bone for 30 frames, then fades it out."
+   "doc": "Fades in a looping electric model at double scale and keeps it 15 units under the owner's marioa_null bone for 30 frames, then hides it at once. The fade-out it starts never shows, because the second follow loop also stops at frame 30 and cannot run."
   },
   "494c6824c0cf7eb4": {
    "name": "throw_poison_arc_projectile",
@@ -1339,7 +1339,7 @@
     "height",
     "sprite_pos"
    ],
-   "doc": "Cold mist effect (c02cold): drifts the model toward the work vector over 10 frames while spawning a ring of fading, growing mist sprites around it. Effect value 0 (0.0 to 1.0) scales the size and picks the sound."
+   "doc": "Hit effect of Monica's ice bolt (c02cold_h): over 10 frames the model rises from 30 units below the work position to just above it while a ring of fading, growing mist sprites spawns around it; it then holds 10 frames and fades out. Effect value 0 (0.0 to 1.0) scales the size and picks the sound."
   },
   "5d37a569612628aa": {
    "name": "wait_motion_end",
@@ -1785,7 +1785,7 @@
     "owner_id",
     "damage_value"
    ],
-   "doc": "The fireball rises toward the player for a number of frames set by the work values, then drops from 200 units above a point near the player at speed 20 for up to 60 frames. It carries a knockback attack of 6 damage that is removed when it hits something, spawning the fireball hit effect."
+   "doc": "The double-size fireball rises at 60 degrees toward the player at 16 units a frame for 15 frames plus the first component of the second work vector, then falls straight down at 20 units a frame from 200 units above the player, offset by the angle (degrees) and distance in the other two components, for up to 60 frames. It spawns the fireball hit effect where it hits the ground or a wall. Its 6-damage knockback attack is made with create_damage and the other damage natives, which are disabled in this build, so it deals no damage."
   },
   "7d495c8167e3f099": {
    "name": "throw_lobbed_bomb",
@@ -1827,7 +1827,7 @@
     "puff_sprite",
     "spark_velocity"
    ],
-   "doc": "Effect script: spawns three fire puffs (smoke and glow sprites) with ten sparks each around the effect position for 60 frames, with a battle sound. Effect value 0 to 1 scales size; at 1 or more it plays the louder sound."
+   "doc": "Effect script: spawns three fire puffs (smoke and glow sprites) with ten sparks each at random moments around the effect position over 60 frames, with a battle sound. Effect value 0 to 1 scales size; below 1 it plays battle sound 70, at 1 or more sound 76."
   },
   "7ee658319062aaa1": {
    "name": "play_explosion_effect",
@@ -1957,7 +1957,7 @@
     "offset_x",
     "hit_result"
    ],
-   "doc": "Three phases: the rose model flies to the first work point, circles that point until effect value 7 is set to 1, then shoots toward the second work point as a damaging attack. On a wall or target hit it spawns the rose hit effect with the damage and owner id."
+   "doc": "Flies the rose from the first work point to the second over effect value 2 frames and holds there until effect value 7 is set to 1. It then circles 30 units around the first work point, read again, until value 7 is set to 1 again, and finally flies toward the second work point, read again, at speed value 1 for value 2 frames as a rose attack dealing value 0 damage. At the end it always spawns the rose hit effect, at the hit position, at its last position before a wall, or where the flight ran out, passing the damage and owner id."
   },
   "8631326384f946b5": {
    "name": "launch_rising_sprite",
@@ -1991,7 +1991,7 @@
     "color",
     "frame"
    ],
-   "doc": "Ends the glowing orb effect: shows the sprites at the work position, expands them while fading their color to zero, then waits 30 frames."
+   "doc": "Ends the glowing orb effect: hides the glow and trail sprites, shows the two spinning sprites at the work position with new textures and expands them while fading their alpha to zero, then waits 30 frames."
   },
   "87b14b60c94d66a1": {
    "name": "launch_smoke_puff",
@@ -2071,7 +2071,7 @@
     "pos",
     "sound_id"
    ],
-   "doc": "Places the rose hit model at the work position, plays its motion and a character sound id taken from effect value 1, then waits for the motion to end."
+   "doc": "Places the rose hit model at the first work vector, plays its hit motion once, plays sound 8 from the sound bank of the character whose slot is in effect value 1 (the rose's owner), and waits for the motion to end."
   },
   "8b6078bc23ad5d1d": {
    "name": "play_beam_trail",
@@ -2164,7 +2164,7 @@
     "random_step",
     "color"
    ],
-   "doc": "Builds 50 pollen sprites in a ring around a fixed point in the Rafflesia room and spins two halves in opposite directions for 160 frames. It pulses their alpha and spawns a pollen sub effect every 12 frames."
+   "doc": "Builds 50 pollen sprites in a ring around a fixed point in the Rafflesia room and for 160 frames spins sprites 0 to 24 and 25 to 49 in place in opposite directions. Their alpha rises by 1 per frame to just over 80 and then falls back for the rest of the run, and a pollen sub effect is spawned every 12 frames."
   },
   "8f9df77934ccb040": {
    "name": "on_play",
@@ -2211,7 +2211,7 @@
     "frame",
     "attack_hit_count"
    ],
-   "doc": "Plays the holy burst at the work position with a hitbox sized 15. Effect value 1 uses the holy magic stone attack, value 2 the holy water attack; the hitbox ends on hit or at frame 30."
+   "doc": "Plays the holy burst with sound effect 11 at the work position and a radius 15 attack. Effect value 0 picks the attack: 1 the holy magic stone, 2 holy water. The attack ends on the first hit or at frame 30; the effect then runs to frame 40 and waits for the motion to end."
   },
   "9420b65330998139": {
    "name": "fire_homing_gil_magic",
@@ -2230,7 +2230,7 @@
     "target_rot",
     "angle_check"
    ],
-   "doc": "Waits 10 frames, shows the magic loop at the owner's magic point for 24 frames, then sends a weak knockback attack forward in 16-unit steps that steers slowly toward the target and trails sub effects until it hits a wall."
+   "doc": "Waits 10 frames, shows the magic loop model at the owner's magic point for 24 frames, then hides it and sends an invisible weak knockback attack dealing effect value 0 forward in 16-unit steps along the second work vector's rotation. It steers slowly toward the target while the target lies within 1.2 radians of its heading, spawns the Gil magic sub effect every other frame at a fixed height of 2.5, and runs until it hits a wall."
   },
   "94dd029b916b2a71": {
    "name": "start_dust_puff_sprite",
@@ -2272,7 +2272,7 @@
    "doc": "Places the model at the work position and rotation and plays the attack 4 motion to its end."
   },
   "982d6d060e37ff2e": {
-   "name": "play_lit_hit_model",
+   "name": "play_tinted_hit_model",
    "loose": "dad1a8b7cbbd1e28",
    "locals": [
     "pos",
@@ -2281,7 +2281,7 @@
     "random_angle",
     "model_motion_end"
    ],
-   "doc": "Effect script that places a hit model at the work position, tints it with a light color at alpha 128 and fades it in until the motion ends. Effect value 0 sets the fade scale."
+   "doc": "Effect script that places a hit model at work vector 1, colours it with work vector 2 at alpha 128 with scene lighting off, scales it by effect value 0 (1 when that is 0) and fades it in, then waits until its hit motion ends."
   },
   "990309dc3d010229": {
    "name": "play_homing_arrow_attack",
@@ -2309,7 +2309,7 @@
     "attack_hit_count",
     "wall_hit_pos"
    ],
-   "doc": "The arrow follows the owner's arrow bone until effect value 1 is set, then flies for up to 150 frames. It accelerates, flies straight for the first frames and then curves toward the player, and spawns the DE arrow hit effect on a hit. Each shot picks one of six attack types at random (normal, curse, sticky, petrify, venom, DE arrow)."
+   "doc": "Holds the arrow on the owner's arrow bone until effect value 1 is set, then gives it one of six attacks at random (normal, curse, sticky, petrify, venom, DE arrow) dealing effect value 0 damage and flies it for up to 150 frames, starting at speed value 2 and accelerating by value 3. It flies straight for value 5 frames, homes toward the player with strength value 4 until frame value 6, then keeps its heading. A hit spawns the DE arrow hit effect; after a wall hit the arrow stays at the wall and fades out over 60 frames, otherwise it vanishes at once."
   },
   "99fb058ef37fecd0": {
    "name": "on_play",
@@ -2418,7 +2418,7 @@
     "frame",
     "target_entry"
    ],
-   "doc": "Plays the recover motion for 90 frames, keeping the model on the position of the entry object given by the first effect value."
+   "doc": "Plays the recover motion for 90 frames, keeping the model on entry point 0 of the scene character whose slot is given by the first effect value."
   },
   "a0c4b11b6897393a": {
    "name": "wait_effect_frames",
@@ -2441,7 +2441,7 @@
     "model_motion_end",
     "effect_param"
    ],
-   "doc": "Effect script for the final bomb: plays a sound, creates an 80 radius attack, shows the hit model at 1.8 scale and fades it in until the motion ends. Effect value 1 sets the fade scale."
+   "doc": "Effect script for the final bomb: plays battle sound 56, creates an 80 radius attack at work vector 1, plays the hit model's motion there and fades it in at the scale given by effect value 1 (default 1.0), then waits for the motion to end."
   },
   "a40cfa7e36c377c5": {
    "name": "play_growing_model_effect",
@@ -2472,7 +2472,7 @@
     "target_rot",
     "within_turn_limit"
    ],
-   "doc": "Giltoni magic: after a 10 frame wind-up shows at the owner's magic bone, launches a knockback bolt that moves 16 units a frame, turns slowly toward the target, leaves child sparks every other frame and stops when it hits a wall."
+   "doc": "Giltoni magic, cast by Gaspard (b03a): waits 10 frames, shows the magic loop model at the owner's magic bone for 24 frames, then hides it and sends an invisible knockback attack dealing effect value 0 from there, heading along the second work vector's rotation at 16 units a frame. It turns slowly toward the target while the target lies within 1.2 radians of its heading, spawns the Giltoni magic sub effect every other frame at a fixed height of 489.5, and runs until it hits a wall."
   },
   "a5993b7bed290787": {
    "name": "play_chest_explosion",
@@ -2666,7 +2666,7 @@
     "pillar_param",
     "alpha"
    ],
-   "doc": "Fire ball that starts off to the side and curves toward the player, trailing ember sprites. On hitting a wall it removes its attack and spawns a fire pillar there; otherwise it vanishes after 90 frames."
+   "doc": "Fire ball that starts off to the side (work vector 2 gives speed, homing weight and side angle) and curves toward the player, trailing ember sprites; it re-reads the player's position each frame only when its target is 1, otherwise it aims at where the player stood at launch. A wall hit between frames 11 and 82 removes its attack and spawns a fire pillar there; otherwise it fades out at frame 77 and ends 16 frames after frame 90. Its attack shape is placed at the step vector rather than at the ball. Returns 0 if its sprites cannot be allocated."
   },
   "b055237c74082097": {
    "name": "get_angle_from_model_to_point",
@@ -2702,7 +2702,7 @@
     "stop_flag",
     "repeat_i"
    ],
-   "doc": "Every frame fades existing smoke sprites and, while effect value 2 is 0, emits smoke from the owner's eff0_01, eff0_02 and eff0_03 frames."
+   "doc": "Allocates 540 smoke sprites (returns 0 if that fails), then every frame fades the existing ones and, while effect value 2 is 0, emits two small sprites per frame and a larger puff every fourth frame from each of the owner's eff0_03, eff0_01 and eff0_02 frames. The per-emitter radius and angle are passed in swapped order, so the sprites start within about 1.6 units of each frame and drift along a heading of 200 or 100 radians."
   },
   "b5255e266a0543d0": {
    "name": "follow_owner_bone_with_fade",
@@ -2715,7 +2715,7 @@
     "fade_state",
     "fade_frames"
    ],
-   "doc": "Effect script that loops forever: keeps the model on the owner's 'tama' frame at the scale given by effect value 1, shows one of two model parts by effect value 0, and fades the model in or out for up to 15 frames depending on effect value 2 (1 or 2)."
+   "doc": "Effect script that loops forever: keeps the model on the owner's 'tama' frame at the scale in effect value 1, shows it when effect value 0 is nonzero and hides it when it is 0, and while effect value 2 is 1 or 2 starts a fade-out each frame, clearing value 2 once that has run for more than 15 frames."
   },
   "b54f65d35235e16d": {
    "name": "play_wind_puff_effect",
@@ -2976,7 +2976,7 @@
     "hit_pos",
     "hit_result"
    ],
-   "doc": "Monica's fire magic projectile. It launches toward the target (or straight ahead), steers gently toward it each frame while drawing a flame sprite trail, and for up to 60 frames checks for wall or attack hits. On a hit it spawns the Monica fire hit effect and passes the power along to it."
+   "doc": "Monica's fire magic projectile. It launches at a random spread around the caster's facing, then for up to 60 frames turns a sixth of the way toward the target (or a point 300 ahead) whenever it is within 1.6 radians of it, draws a flame sprite trail and checks for wall or attack hits. On a hit it spawns the Monica fire hit effect and passes the power along; it then removes the attack and waits 20 frames. Returns 0 at once when its sprites cannot be allocated."
   },
   "c282bb3dcfc16282": {
    "name": "launch_wind_projectile",
@@ -3132,7 +3132,7 @@
     "hit_pos",
     "hit_result"
    ],
-   "doc": "Effect script for Monica's ice magic: an ice bolt flies from the caster, steers toward the target with a smoky sprite trail and spawns the ice hit effect when it touches something or hits an enemy. Effect value 0 is the charge level that sets speed and size."
+   "doc": "Effect script for Monica's ice magic: an ice bolt flies from the caster, steers toward the target with a smoky sprite trail and spawns the ice hit effect when it touches something or hits an enemy, then fades its model out and waits 20 frames. Effect value 0 is the charge level that sets speed and size. Returns 0 at once when its sprites cannot be allocated."
   },
   "c97941511dfafc16": {
    "name": "wait_scaled_frames",
@@ -3168,7 +3168,7 @@
     "rand_size",
     "puff_pos"
    ],
-   "doc": "Flies a robot missile forward at 48 units per frame, turning slowly toward the target, trailing smoke sprites. It explodes on hitting a wall, an attack hit or after 90 frames."
+   "doc": "Flies a robot missile forward at 48 units per frame, trailing smoke sprites, and steers it toward the target (1/12 of the way each frame) while the target lies within about 44 degrees of its heading. It spawns an explosion when it hits a wall or its attack hits, and after 90 frames it simply ends without exploding. Returns 0 at once if the sprites cannot be allocated."
   },
   "d06b11c3de1b6f53": {
    "name": "on_play",
@@ -3236,7 +3236,7 @@
     "shrink_accel",
     "frame"
    ],
-   "doc": "A model at the effect position spins, grows quickly for 3 frames, then shrinks to nothing over 35 frames. A second model state appears at frame 9."
+   "doc": "A model at work vector 1 fades in and spins, grows from scale 0.4 to 2.2 over the first 3 frames, then shrinks at a slowing rate while it fades out from frame 9. The effect lasts 35 frames; the shrink turns back into growth after about 12 frames, by which time the model has faded."
   },
   "d32060bfd9bafe2f": {
    "name": "shoot_petrify_bolt",
@@ -3331,7 +3331,7 @@
     "hit_count",
     "hit_pos"
    ],
-   "doc": "Launches a fire shot from the work position toward the target or a second work position, bending the first heading around the aim axis by a roll angle and homing in for the first few frames. Effect values give damage, speed, homing, roll, whether it tracks the target, acceleration, lifetime and homing duration. It ends with the fire hit effect on a hit or fades out when it runs out."
+   "doc": "Launches a fire shot dealing effect value 0 from the first work vector. Its first heading is turned 90 degrees sideways from the aim line (toward the target character when effect value 4 is set, else toward the second work vector) and rolled around that line by value 3. For the first value 7 frames it homes with strength value 2 toward the target character, aiming 10 units above where it stood at launch unless value 4 makes it follow the character each frame. It flies at speed value 1, accelerating by value 5, for up to value 6 frames; a hit, or a wall after frame 10, spawns the fire shot hit effect, and if time runs out it fades out over 30 frames."
   },
   "d690c56bdddc88be": {
    "name": "play_lightning_flash_effect",
@@ -3373,7 +3373,7 @@
     "hit_count",
     "wall_pos"
    ],
-   "doc": "Launches a cold shot with a 10 unit knockback attack that flies up to 90 frames. It stops on hitting a target, or spawns an ice pillar where it strikes a wall."
+   "doc": "Launches a cold shot with a knockback attack of radius 10 (damage and speed from effect values 0 and 1) that flies straight for up to 90 frames. It stops on hitting a target, or spawns an ice pillar where it strikes a wall."
   },
   "d997b2f1f0e12073": {
    "name": "fly_sonic_wave",
@@ -3471,14 +3471,14 @@
    "doc": "Plays the heal activate motion at the work position and lasts 20 frames."
   },
   "dfb512f0e3d645aa": {
-   "name": "play_shockwave_loop",
+   "name": "play_sonic_wave_launch",
    "loose": "43d043a08ed2979c",
    "locals": [
     "pos",
     "rot",
     "frame"
    ],
-   "doc": "Places the model at the work position and plays its looping motion for 17 frames."
+   "doc": "Places the model at the first work vector, turned to the rotation in the second, plays its loop motion once from the start, holding the last frame, and ends after 17 frames."
   },
   "e071b42ab8d637ba": {
    "locals": [
@@ -3745,7 +3745,7 @@
     "direction",
     "spin"
    ],
-   "doc": "Four tall streaks rise from around the effect position, and eight puffs are drawn in toward it. Runs for 30 frames."
+   "doc": "Four tall streaks rise from around the effect position, and eight puffs drift outward from it and slow down. Runs for 30 frames."
   },
   "eee8e23df25b2e44": {
    "name": "fire_shockwave_in_front",
@@ -3784,7 +3784,7 @@
     "rot",
     "frame"
    ],
-   "doc": "Plays the machine gun impact motion at the work position and lasts 24 frames."
+   "doc": "Plays the machine gun impact motion once and ends after 24 frames. It reads the work vectors but never places the model, so the model stays at its starting position."
   },
   "f160c9664df7261a": {
    "name": "shoot_nose_machine_gun",
@@ -3816,7 +3816,7 @@
     "unused2",
     "scale"
    ],
-   "doc": "Spawns 8 spinning smoke sprites at random offsets around the effect position that drift upward and fade out, while the first sprite grows over 30 frames."
+   "doc": "Spawns 8 spinning smoke sprites at random offsets around the effect position that rise, fade in and fade out, while all 8 grow over 30 frames."
   },
   "f6de76609ba533c7": {
    "name": "fly_holy_shot_projectile",
@@ -3836,7 +3836,7 @@
     "attack_hit_count_2",
     "hit_pos_2"
    ],
-   "doc": "Flies a holy shot for up to 90 frames. On a guard it spawns the guard effect and reflects back along the knockback direction as a second weak attack for 60 frames. It spawns the holy shot hit effect on a hit or a wall. Damage comes from effect value 0 and speed from value 1."
+   "doc": "Flies a holy shot for up to 90 frames with the wind shot 2 damage row. When another attack knocks it back it spawns the guard effect and, unless the knockback direction is zero, flies back along that direction for up to 60 frames as a weak attack owned by slot 0, so it can hit monsters. It spawns the holy shot hit effect on a hit or a wall. Damage comes from effect value 0 and speed from value 1."
   },
   "f71b96ec7c5bf962": {
    "name": "float_heal_sparkle",
@@ -3879,7 +3879,7 @@
     "trail_index",
     "random_angle"
    ],
-   "doc": "Effect script that sets up a growing glow sprite and two spinning sprites at the work position, then for 120 frames follows the work vector and spawns small fading trail sprites. The glow color comes from the second work vector."
+   "doc": "Effect script that sets up a growing glow sprite and two spinning sprites at the work position, then follows work vector 1 forever (the frame counter wraps at 100, below its 120 limit), moving the glow every second frame and spawning small shrinking trail sprites. The colours come from the second work vector."
   }
  }
 }

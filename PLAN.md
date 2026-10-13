@@ -96,20 +96,22 @@ definitions.
      up with Dr. Jaming in d04b01, a Griffon collapse called a stabbing,
      Sun's confession to Alexandra described as another scene, wrong
      flags, characters and text languages).
-   Every function has now had one audit. A second look at the 360
-   most-called functions found 3 wrong names (`activate_chara_slot` also
-   switches characters off, so it is `set_chara_active_by_no`; the red time
-   gate scene is Max's, either gate) and 43 wrong docs (return values left
-   out, branches misread, a lip sync said to close the stream). The less
-   called functions got one pass only.
-2. **Fewer numbered names.** About 2,700 function definitions on the disc
-   end in a number. Most are copy numbers: a function that appears twice in
-   a file (`resume_guard_and_dodge_after_shot_3`), or two functions given
-   the same name (`do_nothing_2`); some numbers are part of the name
-   (`enter_i01h01_event_105`). The 80 most-called were reviewed: 17
-   renamed (`show_system_message_60` is `show_game_over_message`); the
-   rest carry an event, analysis or exit number, or are identical stubs
-   (`do_nothing_2`, `unlock_interrupts_3`) that cannot be told apart.
+   Every function has now had two audits. The second read the 360
+   most-called functions (46 fixed) and then the other 5,716 distinct
+   ones in 62 batches: 1,069 functions corrected, 120 of them renamed,
+   and the same fix carried to 889 copies in language variants and
+   sibling libraries with identical code. The errors it found were mostly
+   docs that called the event started on arrival an entry point, named
+   Max where the code uses the active character (or the Ridepod, or
+   Monica's monster form), gave scenes to the wrong speaker, quoted raw
+   frame counts and distances the code cuts short, or left out return
+   values; and names for the wrong monster or event (the Vanguard's name
+   on Mammo, a "Griffon" fight against Sirus, Gaspard for Dr. Jaming).
+2. **Fewer numbered names.** 2,196 function definitions on the disc end
+   in a number (from about 2,700). The rest are copies the decompiler
+   numbers because a file holds two functions of one name, identical
+   stubs (`do_nothing_2`, `unlock_interrupts_3`) that cannot be told
+   apart, or event, exit and analysis numbers that are part of the name.
 3. **Constants.** `defs learn` learns function names, variables and their
    kinds, return types, line notes, docs, script docs, globals (a
    library's too), and library paths and docs. The constants (flag names,

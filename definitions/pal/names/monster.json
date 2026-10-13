@@ -223,7 +223,7 @@
     "life",
     "explode_chance"
    ],
-   "doc": "Combat loop once the rage hits are used up (enraged). Within 120 units it lunges; below 30 percent life it first tries a self-destruct charge, and below 70 percent life the self-destruct chance rises as life falls. Farther away it runs at the target. Returns 0 if rage hits become available again."
+   "doc": "Combat loop once the rage hits are used up (enraged). It reads its life fraction once, on entry, and uses that value throughout. Within 120 units: if that life is under 30 percent it first tries a self-destruct charge; then it lunges when its last random roll (never rerolled for this test) is under 50, and otherwise, with life under 70 percent, self-destructs with a chance of (1 - life) or lunges. Farther away it runs at the target for up to 60 frames, and it circles or holds when more than four monsters are nearer the target. Returns 0 if rage hits become available again."
   },
   "018dffba8cbe5f16": {
    "name": "run_normal_ai",
@@ -249,7 +249,7 @@
   "01c6f1f971b1460d": {
    "name": "fly_back_and_get_up",
    "loose": "2220b3bef5d20216",
-   "doc": "Stun program: makes the monster damageable and halts it, plays the knocked-flying and get-up motions, then faints until the stun ends and allows guard and dodge again."
+   "doc": "Stun program of e08a and e09a: meant to make the monster damageable and halt it, play the knocked-flying and get-up motions, then faint until the stun ends and allow guard and dodge again. In this script pair's old numbering the halt, motion and guard calls run set_photo_window, set_visible_monster_limit, get_home_pos, get_attack and set_life instead, and wait_stun_end does not follow the stun, so none of that is shown."
   },
   "01c9592b3d6858b3": {
    "name": "wait_move_end_for_frames",
@@ -282,7 +282,7 @@
     "ground_y",
     "result"
    ],
-   "doc": "Walks straight backward, as far as 100 units, shortened by the clearance check. Returns -1 if there is less than min_distance of room."
+   "doc": "Meant to fly straight backward up to 100 units at height_offset above the ground. As in walk_sideways the clearance is measured straight ahead and any wall within 100 units returns -1 instead of shortening the move, and the ground height is taken with its sign reversed. The calls are old-numbered and reach unrelated natives (the target read runs as set_home_pos and overwrites the home position), so the monster does not move; otherwise it returns an unset value."
   },
   "01cf7401a04ffb3f": {
    "name": "circle_or_wait_near_target",
@@ -294,7 +294,7 @@
     "side_angle",
     "ring_dist"
    ],
-   "doc": "Half the time circles the target at about 110 units, otherwise stands waiting for the target to be in view. Used when the monster is not the closest attacker."
+   "doc": "Half the time circles the target 110 to 140 units out, otherwise stands waiting up to 30 frames for the target to come into view. Used when several monsters are nearer the target (distance rank above 3, or above 4 while enraged)."
   },
   "01d341b429e2bd96": {
    "name": "on_stun",
@@ -400,7 +400,7 @@
     "angle_to",
     "spot"
    ],
-   "doc": "Sets variable 0 to 64 and walks to one of two fixed spots for up to 600 frames, then faces the target and waits 60 frames."
+   "doc": "Sets variable 0 to 64 and walks to one of two fixed spots, chosen at random, for up to 600 frames, then sets variable 0 to 16, faces the target and waits 60 frames."
   },
   "031fd1d20571642a": {
    "name": "wait_idle_delay",
@@ -1347,7 +1347,7 @@
     "target_dist",
     "noticed"
    ],
-   "doc": "When the target comes within 320, turns to it once and records it in variable 0; otherwise idles."
+   "doc": "Clears variable 0 and waits a frame. If the target is within 320, turns toward it, sets variable 0 to 1 and returns 0; nothing limits this to once, because variable 0 is cleared on entry and the noticed check reads a local that the original writes into variable 0 (set_monster_var with &noticed) instead of loading. Otherwise reads variable 0 back and plays the idle motion for 10 frames if it is 0. Its only caller runs it when the target is 600 or more away."
   },
   "07671b8285ab6234": {
    "name": "setup_mimic_attacks",
@@ -1541,7 +1541,7 @@
     "target_pos",
     "side_angle"
    ],
-   "doc": "Circles the target on a curved path and swings the melee attack."
+   "doc": "Flies a curved path that starts off to a random side and homes in on the target, then swings the melee attack. Nothing calls it."
   },
   "08bd13aa4cc50781": {
    "name": "clear_body_hit_and_halt",
@@ -1752,10 +1752,10 @@
     "target_dist",
     "unused4"
    ],
-   "doc": "Repeats the strafe-or-wait behaviour until the target comes within 175 units."
+   "doc": "Repeats the strafe-or-wait behaviour until the target comes within 175 units, then returns 0."
   },
   "09c7d88732027579": {
-   "name": "wait_move_end",
+   "name": "wait_move_end_syncing_life",
    "loose": "3c5a867380699725",
    "params": [
     "max_frames"
@@ -1764,7 +1764,7 @@
     "frame",
     "move_end"
    ],
-   "doc": "Waits up to max_frames for the current move to finish."
+   "doc": "Waits up to max_frames for the current move to finish, running the shared life bookkeeping each frame. Returns 0 when the move ends; on timeout it falls off the end without a return value."
   },
   "09e0c0b3082b996f": {
    "name": "fire_machine_gun_burst",
@@ -2016,7 +2016,7 @@
    "doc": "Runs at the target, plays idle motions while watching it and spits poison mist if the target is in view."
   },
   "0c23b1fb16a26e27": {
-   "name": "fight_target_while_enraged",
+   "name": "fight_target_while_calm",
    "loose": "5344b3c9f5ec6d0a",
    "locals": [
     "target_dist",
@@ -2024,7 +2024,7 @@
     "rage_hits_left",
     "life"
    ],
-   "doc": "Main fight loop: returns when the target is beyond 280 or the rage hit counter reaches 0, otherwise picks the far, mid or close range behaviour by distance."
+   "doc": "Calm fight loop: returns when the target is beyond 280 or the monster becomes enraged (rage hits left reaches 0). When its distance rank is above 1 it waits or circles; otherwise it picks the far (210 to 280), mid (130 to 210) or close range behaviour."
   },
   "0c643aada63fde9a": {
    "name": "walk_in_direction",
@@ -2418,7 +2418,7 @@
    ],
    "loose": "0ee7ff48d4273d6a",
    "locals": [],
-   "doc": "Sets the distance at which this monster notices and becomes aggressive toward the player (second variable set, slot 8)."
+   "doc": "Sets the aggro range (second variable set, slot 8): while aggressive, the monster keeps pursuing only while the target is within this distance and drops its aggro beyond it."
   },
   "0ef0a6827c6af3d1": {
    "name": "approach_until_target_present",
@@ -2939,7 +2939,7 @@
     "frame",
     "step_result"
    ],
-   "doc": "Turns toward the target, then flies to the point where the target stood when it started."
+   "doc": "Turns toward the target, then flies in a straight line toward where the target stood, at the ground height under the monster plus height_offset. Returns 1 within speed plus margin of that point, a negative check_flight_step result if blocked, or 0 after frames."
   },
   "118337ff3e113994": {
    "name": "on_knockdown",
@@ -3296,7 +3296,7 @@
     "speed",
     "target_close"
    ],
-   "doc": "Sidestep to the left, invulnerable from frame 10 to 24: when the target is within 120 units it heads for a point 200 units to its left at 3.6 per frame (about 50 units covered), otherwise it steps in to a point 90 units from the target, 30 degrees to its other side, while turning to face it."
+   "doc": "Sidestep to the left, invulnerable from frame 10 to 24, moving at 3.6 per frame (about 50 units). When the target is within 120 units it heads for a point 200 units to its left; otherwise it heads for a point 90 units from the target, 30 degrees to its other side, while turning to face it."
   },
   "1403671432b0a93c": {
    "name": "rush_and_roam_near_target",
@@ -3494,7 +3494,7 @@
     "distance",
     "result"
    ],
-   "doc": "Flies 300 units to the monster's right or left."
+   "doc": "Flies 300 units to the monster's right (go_right set) or left at hover_height above the ground, updating the boss. The flight result is dropped, so the return value is undefined."
   },
   "1555834d634c4e0a": {
    "name": "step_back_from_target",
@@ -3741,7 +3741,7 @@
     "target_dist",
     "roll"
    ],
-   "doc": "Idles while the target is farther than 350 units by circling at 240 units, turning or standing watch. Returns once the target is closer."
+   "doc": "Idles while the target is 350 units or farther by circling to a point 240 units from it, turning toward it or standing watch. Returns 0 once the target is closer."
   },
   "1690b6076e9d2452": {
    "name": "side_walk_to_face_target",
@@ -3752,7 +3752,7 @@
    "locals": [
     "target_angle"
    ],
-   "doc": "Turns toward the target using the walk left or walk right motion, whichever side the target is on, then stands."
+   "doc": "Turns to face the target, looping the walk right motion when the world yaw toward the target is negative and walk left otherwise, then stands. The choice ignores the monster's own facing, so the motion often does not match the turn direction."
   },
   "16a4ab205f16d19a": {
    "name": "turn_and_attack_2",
@@ -3863,7 +3863,7 @@
    "locals": [
     "counter"
    ],
-   "doc": "One step of the rose mode, chosen by the move counter: reposition and cast roses, teleport, dash, and finally switch to the tornado mode after three steps."
+   "doc": "One step of the rose mode: always repositions and tries the rose barrage first (which increments the move counter), then acts on the new count: at 1 it sometimes dashes in with a tornado, at 2 it repositions and tries the roses again, and at 3 or more it switches to the tornado mode. The teleport branch for a count of 0 cannot be reached, since the counter is never below 0 in rose mode and the reposition has already raised it."
   },
   "175e0306006d2cb1": {
    "name": "turn_random_direction",
@@ -3958,7 +3958,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle, then walks a random distance ahead if the way is clear. Returns -1 if blocked, otherwise the move result."
+   "doc": "Meant to turn up to turn_range_deg degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about turn_range_deg/57, always to the same side. If 100 units ahead are clear it walks min_distance + speed plus a random 0 to distance_range units; if less is clear but more than stop_dist it walks just the random amount; otherwise it returns -1 without moving. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "17e93f8109a26309": {
    "name": "share_damage_with_hull",
@@ -4073,7 +4073,7 @@
     "extra_dist",
     "pos"
    ],
-   "doc": "Dodge for melee attacks: with damage disabled for about 23 frames it plays the step back motion and moves to a point on its own side of the target, 40 to 50 units farther from it than now."
+   "doc": "Dodge for melee attacks: with damage disabled for about 19 frames it plays the step back motion and, after 5 frames, moves for 14 frames toward a point on its own side of the target, 40 to 50 units farther from it than now; then it waits for the motion to end and stands."
   },
   "18dd9500743a5e65": {
    "name": "watch_disguised_player",
@@ -4135,9 +4135,9 @@
    "doc": "Mid-range choice (200 to 300): nose bullets, run up and charge, chase, or circle."
   },
   "195c40621677abb8": {
-   "name": "recover_after_throw",
+   "name": "recover_after_throw_and_restore_flight",
    "loose": "eb46e41c4fb468ef",
-   "doc": "Recovers from a throw, waits 10 frames, restores scripted movement and resets the motion."
+   "doc": "Recovers from a throw, waits 10 frames, turns scripted movement back on and resets the motion."
   },
   "196d88c9b24ecd10": {
    "name": "charge_and_self_destruct",
@@ -4154,7 +4154,7 @@
     "attack",
     "life"
    ],
-   "doc": "Charges 100 units forward, then may blow itself up (80 percent at grade 0, otherwise 50 percent, or whenever it reaches the target). The Bombahe self-destruct effect hits for attack power times the remaining life fraction times 5 plus 1, and the monster dies. Returns 1 if it exploded."
+   "doc": "Plays the attack 2 wind-up and charges toward a point 100 units ahead for up to max_frames, then blows itself up if it got within 34 units of the target, otherwise with an 80 percent chance at grade 0 and 50 percent at other grades. The Bombahe self-destruct effect hits for the attack power times the whole part of (5 times the life fraction plus 1), so 1 to 6 times its attack, and the monster plays the self-destruct death and halts forever. When it does not explode it plays the wind-down, stands 9 frames and returns 0."
   },
   "197b77841b501bc5": {
    "name": "set_speed_boost",
@@ -4162,7 +4162,7 @@
    "params": [
     "boost"
    ],
-   "doc": "Stores the extra speed added to flights in monster var 9."
+   "doc": "Stores a speed boost for flights in monster var 9. Nothing reads it back, since get_speed_boost overwrites the variable instead of loading it, so the boost set during the sky phase has no effect."
   },
   "19987bd3b171aa2f": {
    "name": "make_damageable_and_halt",
@@ -4362,7 +4362,7 @@
   "1a99c7169d34aad0": {
    "name": "swing_quick_combo",
    "loose": "7a53ff6886df100d",
-   "doc": "Plays attack 1, cuts to attack 2 after 18 frames and waits for the end."
+   "doc": "Plays attack 1, cuts to attack 2 after 15 frames (18 at 30 fps scaled to PAL) and waits for the end."
   },
   "1a9f15c21c79e2b2": {
    "name": "dash_to_target_position",
@@ -4868,7 +4868,7 @@
     "free_texture_block",
     "effect_slots"
    ],
-   "doc": "Registers the weak knockback hit for attack 1 and loads the heal effects into a free texture block."
+   "doc": "Registers the weak knockback hit for attack 1, clears monster var 0, loads the heal effects into a free texture block when one is available, and starts the monster AI with init_monster_ai."
   },
   "1d692a81af8717e0": {
    "name": "counter_or_recoil_from_knockdown",
@@ -5079,7 +5079,7 @@
    "locals": [
     "pos"
    ],
-   "doc": "Plays the threaten motion, loops it for the given time with variables 0 and 8 set to 32 so a hit during it counts as a head hit, then returns to standing."
+   "doc": "Sets variable 20 (which also stops the stall event), ends any spit effect, faces the target and plays the threaten motion, looping it for frames (PAL-scaled) with variables 0 and 8 at 32 until 0.408 into the return motion, then stands. A stun while variable 0 is 32 and the fish frame is within 60 of a monster runs event script 500. Returns 0."
   },
   "1f0d003988707226": {
    "name": "glide_to_arena_edge",
@@ -5251,7 +5251,7 @@
   "203319e8f0b0dbd2": {
    "name": "faint_until_stun_ends",
    "loose": "98288abd6f6b40f7",
-   "doc": "Plays the faint motion until the stun stars are gone, then allows guard and dodge again. Under this script's old native numbering set_life is set_motion and set_visible_monster_limit is set_mask_flag."
+   "doc": "Meant to play the faint motion until the stun stars are gone, then allow guard and dodge again. In this script's old native numbering the motion and mask flag calls run set_life and set_visible_monster_limit instead, so only the stun wait happens as meant."
   },
   "203521f9ba011562": {
    "name": "wander_or_wait_for_target",
@@ -5549,7 +5549,7 @@
    "locals": [
     "roll"
    ],
-   "doc": "Mostly stands guarding while watching the target, otherwise wanders in a random direction."
+   "doc": "80 percent of the time stands in the guard motion for up to 45 frames or until the target is in view within 240 units; otherwise walks roughly straight ahead about 30 to 60 units, but only when the 100 units ahead are clear."
   },
   "216f8a7f801ff981": {
    "name": "get_turn_frames",
@@ -5634,7 +5634,7 @@
     "roll",
     "target_dist_2"
    ],
-   "doc": "Runs to the target when it is more than 80 away, then does a slash or lunge (5 percent) or the moonsault."
+   "doc": "Runs to the target when it is more than 80 away, then 4 percent of the time does a double slash (target under 50) or lunge, and otherwise the moonsault, which only acts when the target is within 40."
   },
   "22007c7a5131e35f": {
    "name": "guard_briefly",
@@ -5709,13 +5709,13 @@
    "doc": "Plays the guard knockback motion and stands."
   },
   "22ad9a92d7b6231c": {
-   "name": "run_vanguard_ai_loop",
+   "name": "run_mammo_ai_loop",
    "loose": "be7f0dbc0c8aa525",
    "locals": [
     "target_dist",
     "unused_value"
    ],
-   "doc": "Main loop: fights when the target is within 280 units, otherwise walks and spins toward it."
+   "doc": "Main loop: fights when the target is within 280 units, otherwise spins to face it and walks toward it until within 69 units or 60 frames pass."
   },
   "22adbbcb7e62fed0": {
    "name": "on_init",
@@ -5892,7 +5892,7 @@
    "locals": [
     "dist"
    ],
-   "doc": "Distance on the ground plane between two points."
+   "doc": "Meant to return the distance on the ground plane between two points, but the square root call (old numbering, meant as calc_square_root) has no native on this disc, so dist is never written and the returned value is unset."
   },
   "236c4df9d48428cf": {
    "name": "act_at_close_range",
@@ -5944,7 +5944,7 @@
    "locals": [
     "effect_slot"
    ],
-   "doc": "Ends the spit effect if one is active (variable 14) and marks it cleared with -2."
+   "doc": "Ends the spit effect whose slot is in variable 14 unless the variable holds -2, then sets it to -2. Variable 14 is also slot 0 of record_floor_time, so until the first spit the first call passes the floor time recorded by on_init to finish_effect."
   },
   "23b71c3812933c52": {
    "name": "fly_to_height",
@@ -6085,9 +6085,9 @@
    "doc": "Plays the damage knockback and recovers. With an 8 percent chance it steps back afterwards."
   },
   "24b7d16c5e043aa0": {
-   "name": "play_vanguard_death",
+   "name": "play_mammo_death",
    "loose": "40ad2957819dba24",
-   "doc": "Plays the death motion and finishes the death, then after 30 frames resets the player camera and runs event script 500."
+   "doc": "Death program: plays the death motion and finishes the death, then after 30 frames resets the player camera and runs event script 500."
   },
   "24c7797f7896287e": {
    "name": "play_griffon_combo",
@@ -6166,12 +6166,12 @@
     "target_angle",
     "ground_delta"
    ],
-   "doc": "Winds up with attack 1 in, flies down to the target's position in the attack loop, then turns and flies 150 units away with attack 1 out."
+   "doc": "Winds up with attack 1 in, flies at the target's position 10 units above the ground in the attack loop for up to 60 frames, then snaps to face the target and backs 150 units straight away from it, rising to 50 above the ground, with attack 1 out."
   },
   "257efbf1f6c7a644": {
    "name": "setup_melee_attacks",
    "loose": "709710b63778d344",
-   "doc": "Registers two attack hit areas and two sword trails for attack 1 and attack 2, initializes the AI and sets the aggro duration to 150."
+   "doc": "Registers three attack hits (a combo hit on attack 1 and two normal hits on attack 2) and a sword trail for each attack, initializes the AI and sets the aggro duration to 150."
   },
   "2581a77d3f451f27": {
    "name": "chase_target_checking_clearance",
@@ -6316,7 +6316,7 @@
     "result",
     "unused2"
    ],
-   "doc": "Turns to the given angle in degrees and flies the given distance at height_offset above the ground, stopping early when the target comes within clearance."
+   "doc": "Meant to turn to angle_deg and fly distance (at least speed plus 1) along it at height_offset above the ground, stopping early when the target comes within clearance. The turn, position and move calls are old-numbered and reach unrelated natives, so the monster neither turns nor flies. Returns an unset value."
   },
   "264ee5153bed6fdf": {
    "name": "attack_at_far_range",
@@ -6411,7 +6411,7 @@
     "rot",
     "attack"
    ],
-   "doc": "Turns to the target and charges 100 units toward it with dodging disabled, then releases a Vanguard shockwave from the chn76 bone and stands. Used as the monster's close attack."
+   "doc": "Turns to the target and swings attack 1, tracking it for 15 frames, then heads for a point 100 units toward it at 3.6 units per frame; 14 frames later (about 50 units) it releases a Vanguard shockwave below the chn76 bone and stops, then stands. The monster cannot dodge while it runs. Used as the monster's close attack."
   },
   "2730a1b8ad1abf40": {
    "name": "get_situation_flags",
@@ -6816,7 +6816,7 @@
     "rot_y",
     "rot_z"
    ],
-   "doc": "Waits frame by frame until the monster's yaw is within tolerance of the given angle."
+   "doc": "Meant to wait frame by frame until the monster's yaw is within tolerance of the given angle. Written in the b02a raw numbering, where check_pause_flags stands for get_rot, so on this disc the yaw is never read and the loop compares the angle against an unset value."
   },
   "29680c9ebbc6f817": {
    "name": "fight_mid_range",
@@ -7201,7 +7201,7 @@
   "2b5f2d3e0b742f70": {
    "name": "slash_quick_combo",
    "loose": "3415d612406090ba",
-   "doc": "Plays attack 1, then after 18 frames switches to attack 2."
+   "doc": "Plays attack 1, then after 15 frames (18 at 30 fps scaled to PAL) switches to attack 2 and waits for it to end."
   },
   "2b8b879326492026": {
    "name": "choose_idle_or_spit_venom",
@@ -7209,7 +7209,7 @@
    "locals": [
     "roll"
    ],
-   "doc": "Random idle action: half the time turns to the target and spits venom; otherwise, with equal odds, stands and waits up to 30 frames for the target to come within 100 units and 45 degrees of its facing, or turns to the target and plays attack motion 1."
+   "doc": "Random idle action: half the time turns to the target and spits venom; otherwise, with equal odds, stands and waits up to 30 frames for the target to come within 100 units and 45 degrees of its facing, or turns to the target and plays its idle play motion."
   },
   "2ba1bf490cd3abc8": {
    "name": "start_turn_to_target",
@@ -7667,7 +7667,7 @@
     "unused2",
     "unused3"
    ],
-   "doc": "Flies to the point while staying at hover_height above the ground. Returns 1 on arrival or the flight-blocked code."
+   "doc": "Flies in a straight line at a fixed step toward x, z at hover_height above the ground under the monster at the start; the y argument is ignored. Vertical movement stops once a step would leave 0 to 45 units above the ground. Returns 1 within speed + near_dist of the point, the check_flight_step result if a step is blocked, or 0 after max_frames."
   },
   "2e317a0a2b0fdec4": {
    "name": "walk_to_point_around_target",
@@ -7750,7 +7750,7 @@
     "player_disguise",
     "monster_kind"
    ],
-   "doc": "Starts watch_disguised_player only if the player is currently disguised."
+   "doc": "Starts watch_disguised_player only if the player is disguised in the form this monster's kind recognises as its own (get_player_disguise is not -1); otherwise returns at once."
   },
   "2eb7ccd319c82d46": {
    "name": "on_init",
@@ -7889,7 +7889,7 @@
     "frames",
     "range"
    ],
-   "doc": "Moves to the edge of the ring opposite the player when the player is moving, then either slams or stands tired for 90 to 120 frames."
+   "doc": "When the player has moved since the last frame, walks to the point 250 units from the arena centre on the side away from the player (on the player's side when the player is 600 or more units away) and turns to face them. Then 30 percent of the time it slams the ground if the player is in the near range band, or else stands tired for 90 frames; otherwise it stands tired for 120 frames."
   },
   "2f44e36893b361a6": {
    "name": "fight_while_enraged",
@@ -8004,7 +8004,7 @@
   "2ffa3b70064e6ac1": {
    "name": "record_spawn_position",
    "loose": "2ffa3b70064e6ac1",
-   "doc": "Init hook of e08a and e09a. Calls the shared routine that stores the monster's starting position in spawn_x, spawn_y and spawn_z, with y zeroed.",
+   "doc": "Init program of e08a and e09a. Meant to store the monster's starting position in spawn_x, spawn_y and spawn_z through store_position_in_globals, but that routine's old-numbered get_pos runs loop_se_on_monster instead, so no position is read and only spawn_y is zeroed.",
    "params": [],
    "locals": []
   },
@@ -8102,7 +8102,7 @@
     "diff"
    ],
    "loose": "3046556669ca42f0",
-   "doc": "Estimates how many frames a turn from the current yaw to angle takes at turn_speed per frame. The wrap handling is faulty: the second check adds a full turn in almost every case, so the estimate is usually a full turn too long."
+   "doc": "Estimates how many frames a turn from the current yaw to angle takes at turn_speed per frame. The wrap handling is faulty: a difference from minus pi to pi gets a full turn added and one above pi is left unwrapped, so only a difference below minus pi gives the short turn."
   },
   "304c577666dd0754": {
    "name": "chase_target_clear_updating",
@@ -8172,7 +8172,7 @@
     "clear_dist",
     "result"
    ],
-   "doc": "Turns toward a point around the target and moves there if the way is clear. Returns -1 if blocked."
+   "doc": "Turns toward the point angle degrees and distance units around the target and moves there. When a wall is within speed + near_dist ahead it moves only that far, returning -1 without moving if that is under twice near_dist. Otherwise returns the result of waiting for the move."
   },
   "30c5fcfb2aa5f653": {
    "name": "chase_until_in_range",
@@ -8663,7 +8663,7 @@
    ],
    "loose": "fb47ae1ee3a4ef0a",
    "params": [],
-   "doc": "Picks and runs one random wander behaviour for a flying monster: turn away from a wall, circle its home point, hover and watch, turn in place, orbit the target, or fly straight. Records the choice in monster variable 2 slot 0 and returns 1 when it noticed the target while hovering, otherwise 0."
+   "doc": "Picks and runs one random wander behaviour for a flying monster: turns to a random heading when a wall is close ahead, and when over 300 from home either circles the home point or hovers watching for the target; otherwise it randomly hovers and watches, turns in place, orbits the target or flies straight (a last wander branch tests a local that is never set). Records the choice in monster variable 2 slot 0. Returns 1 when one of the two checked watches spots the target and 0 after the far-from-home choice; on the other paths it returns without setting a value."
   },
   "33516d64aa155315": {
    "name": "fly_around_point",
@@ -8839,7 +8839,7 @@
     "side_angle",
     "distance"
    ],
-   "doc": "Used when another monster has priority to attack: circles the target, stands watching it, or plays with it."
+   "doc": "Used when the monster is not among the nearest to the target (distance rank above 1, or above 2 in fight_until_target_leaves): half the time plays with the target; otherwise it either circles the target 130 to 160 units out or stands watching for up to 30 frames."
   },
   "34415ea55047f48b": {
    "name": "dodge_to_new_slot",
@@ -8856,7 +8856,7 @@
     "pos",
     "target_angle"
    ],
-   "doc": "On the first dodge it runs event script 503. It then picks a new free slot, shoots a sticky effect and flies there quickly."
+   "doc": "On the first dodge (monster variable 18 at 1) it runs event script 503. It then shows the exclamation mark, picks a new free formation slot, fires a non-sticky ball at the player and flies to the slot, returning the flight result (1, 0, 3 or 6) as the next state."
   },
   "3463f1a357b3c142": {
    "name": "setup_monster_attacks",
@@ -8960,7 +8960,7 @@
     "unused4",
     "unused5"
    ],
-   "doc": "Tilts the monster 15 degrees one way or the other depending on which side of it the target stands on, and straightens it when the target is level in x."
+   "doc": "Picks an X rotation of 15 degrees when the target's world X is more than 1 unit greater than the monster's, -15 when it is more than 1 unit smaller, otherwise 0, and passes it to tilt_toward_angle at 5 degrees per frame. Not called by this script."
   },
   "3516cf9be25de5bd": {
    "name": "turn_to_face_target_within_frames",
@@ -9014,9 +9014,9 @@
    "name": "play_idle_taunt",
    "loose": "a1ad341ce5a082b4",
    "locals": [
-    "unused_value"
+    "unset"
    ],
-   "doc": "Plays the play motion while watching for the target, setting attack state 32. Returns the watch result."
+   "doc": "Sets attack state 32 and plays the play motion until it ends or the target comes into view within 49 units. Meant to return whether the target was seen, but it discards wait_motion_watch_target's result and returns a variable that is never assigned."
   },
   "356bdd3cee80d911": {
    "name": "slam_ground_shockwave",
@@ -9280,7 +9280,7 @@
     "roll",
     "life"
    ],
-   "doc": "Short range choice: walk up and use attack 1, step back, or chase the target a little and attack."
+   "doc": "Short range choice: turns to the target and uses attack 1, steps back from it, or chases the target for up to 20 frames and then uses attack 1."
   },
   "36d205acef918fc5": {
    "name": "pick_idle_movement",
@@ -9591,7 +9591,7 @@
     "unused_value",
     "frames"
    ],
-   "doc": "Turns by an angle relative to the current heading and waits."
+   "doc": "Turns by relative_deg from the current heading at turn_speed_deg and waits for the turn, returning the frames spent. When the new heading passes 180 degrees either way the wrap is faulty and the monster turns to a small wrong angle instead."
   },
   "384aece642239003": {
    "name": "chase_target_while_turning",
@@ -9673,7 +9673,7 @@
     "target_pos",
     "bomb_pos"
    ],
-   "doc": "Hovers around the target at 120 units while dropping a bomb every 60 frames. Returns -2 if the flight becomes invalid, the boss is too low or the target is on raised ground."
+   "doc": "Flies level toward a point 120 units from the target, moving that point 3 degrees around it each frame while farther than 120, and drops a bomb every 60 frames while fewer than 20 monsters exist. Returns -2 if it starts below 20 units of altitude, the flight becomes invalid, it crosses below z 0 or the target is on raised ground; when it reaches the ground or max_frames runs out it falls off the end with no defined result."
   },
   "3879429894809f23": {
    "name": "track_target_frames",
@@ -9723,7 +9723,7 @@
   "38a378e9ee61af7f": {
    "name": "setup_giltoni",
    "loose": "ebcadab39c2557d8",
-   "doc": "Binds the sword and obj86 objects, registers the sword hits and trails for the double, mid-range and moonsault attacks, sets phase var 0 to 0 and loads the Giltoni shield and magic effects."
+   "doc": "Binds the sword and obj86 objects, registers sword hits for the double and mid-range attacks and sword trails for those and the moonsault, sets phase var 0 to 0, loads the Giltoni shield and magic effects and sets clip distance 60."
   },
   "38a66063851967bb": {
    "name": "move_in_direction_updating",
@@ -9980,7 +9980,7 @@
     "wrapped_angle",
     "final_angle"
    ],
-   "doc": "Moves the boss along the ring by a third of a half turn (60 degrees) from the given angle, facing outward, and returns the end angle. Not called in this script."
+   "doc": "Moves the boss 60 degrees along the ring of radius 150 around (250, 250) at height 100, 0.05 rad per frame, from the given angle, facing the ring center, and returns the end angle. Not called in this script."
   },
   "3a67bc978047a7a5": {
    "name": "turn_to_target_random",
@@ -10024,7 +10024,7 @@
     "frame",
     "step_count"
    ],
-   "doc": "Rotates the monster's x rotation in fixed steps, one per frame, toward the target angle in degrees along the shorter way."
+   "doc": "Meant to step the monster's X rotation toward target_deg by step_deg each frame, but the step count and direction are computed wrongly: it can tilt away from the target (from 15 toward 0 it goes to 25), take the long way round (from 0 toward -15 it turns about 340 degrees), and it always stops one step short. Only tilt_toward_target_side calls it."
   },
   "3aa4c0b4912c21df": {
    "name": "idle_while_player_disguised",
@@ -10060,7 +10060,7 @@
     "unused3",
     "frames"
    ],
-   "doc": "Turns the monster by an offset in degrees from its current yaw. Returns the frames waited."
+   "doc": "Unused. Meant to turn the monster by offset_deg from its current yaw and return the frames waited. When the sum passes plus or minus 180 degrees the wrap is wrong (it divides by 2 pi or by pi and negates instead of adding or subtracting a full turn), so it turns to an unrelated heading."
   },
   "3ac676131f7e0662": {
    "name": "wait_frame_update",
@@ -10262,7 +10262,7 @@
     "unused2",
     "frame"
    ],
-   "doc": "Moves the monster each frame by speed along the direction toward the point dir_x, dir_y, dir_z until the target is closer than stop_distance or max_frames pass (-1 means no limit). Returns the frames used."
+   "doc": "Meant to move the monster each frame by speed toward the point dir_x, dir_y, dir_z until the target is closer than stop_distance or max_frames pass (-1 means no limit). The old-numbered position read, distance read and set_pos run as loop_se_on_monster, get_kind_pos and set_se_positional, so the monster does not move and the distance test reads an unset value. Returns the frames counted."
   },
   "3bd181b6eef2c087": {
    "name": "on_dodge_shot",
@@ -10276,7 +10276,7 @@
     "target_angle",
     "step_direction"
    ],
-   "doc": "Faces the target and steps left or right depending on which side it is on."
+   "doc": "Snaps to face the target and steps 30 units right when the world yaw toward it is negative, else left, then allows guard and dodge again."
   },
   "3c0e0159ebb1d70c": {
    "name": "approach_at_mid_range",
@@ -10406,7 +10406,7 @@
     "target_pos",
     "frames_run"
    ],
-   "doc": "Far-range approach: runs the waypoint route if the target is on raised ground, then chases the target on foot and rests if the chase was long."
+   "doc": "Far-range approach: runs the waypoint route if the target is on raised ground, then chases the target on foot for up to 90 frames and rests 90 frames out of breath if the chase timed out without reaching the target."
   },
   "3d294353c1046bf8": {
    "name": "dodge_shot_by_sidestepping",
@@ -10609,7 +10609,7 @@
   "3e9dad615a1f3f44": {
    "name": "idle_forever",
    "loose": "3e9dad615a1f3f44",
-   "doc": "Does nothing every frame forever."
+   "doc": "Waits forever, running wait_frame_update each frame so the model lighting keeps following the rage state."
   },
   "3eb2da08a4d85088": {
    "name": "on_guard",
@@ -10637,7 +10637,7 @@
     "distance",
     "result"
    ],
-   "doc": "Flies 300 units sideways, to the left or right depending on go_left."
+   "doc": "Flies 300 units to one side of its facing (yaw minus 90 degrees when go_left is nonzero, plus 90 degrees otherwise) at hover_height above the ground. The returned value is never set."
   },
   "3ed931105717e115": {
    "name": "fly_around_target",
@@ -10793,9 +10793,9 @@
    "doc": "Fight loop once the rage hits are used up: spin attacks and fireballs by distance, with step backs, until the target is further than 330 units."
   },
   "3fcb8a487feccdf3": {
-   "name": "begin_attack_state",
+   "name": "lock_and_snap_to_target",
    "loose": "e853c9b019ad53d9",
-   "doc": "Disables guarding and dodging, resets motion and movement, faces the target and sets the act status to 1."
+   "doc": "Locks the monster for a scripted reaction: forbids guard and dodge, resets the motion, stops moving and turning, snaps to face the target, waits a frame and sets act status 1. Unused here."
   },
   "3fe129bc1fca35ad": {
    "name": "turn_toward_target_with_offset",
@@ -11087,7 +11087,7 @@
   "40ef7eb65c7bbe30": {
    "name": "setup_lunge_attack",
    "loose": "2cfeb2cf91ff662f",
-   "doc": "Registers the weak knockback hit box on attack 1 and clears monster var 0."
+   "doc": "Registers the weak knockback hit box on attack 1 (0.486 to 0.583), clears monster var 0 and starts the monster AI with init_monster_ai."
   },
   "410fd87494e07eef": {
    "name": "circle_target_or_wait",
@@ -11351,7 +11351,7 @@
    "doc": "Returns 1 if any other butterfly (kinds 502 to 508) is within 50 units of this one."
   },
   "4272465fe915dec6": {
-   "name": "flash_while_clones_charged",
+   "name": "flash_while_lights_circle",
    "loose": "4272465fe915dec6",
    "locals": [
     "clone_state_a",
@@ -11359,7 +11359,7 @@
     "clone_state_c",
     "frame"
    ],
-   "doc": "While all three clone states are 32, keeps the boss invincible and flashing. Returns when any changes."
+   "doc": "While the states of the red, blue and yellow Atramilia lights (monster vars 27 to 29) are all 32, meaning all three are circling above the boss with their light effect, keeps the boss invincible with lighting off and flickers its colour. Returns as soon as any state differs, at once if they are not all 32 yet; the invincibility and unlit model are left for the caller to reset."
   },
   "4274c463a7dc4e4b": {
    "name": "walk_to_target",
@@ -11407,7 +11407,7 @@
     "unused_value",
     "frame"
    ],
-   "doc": "Flies toward the point at a constant step until near or blocked. The step length is never set in the original."
+   "doc": "Meant to fly toward the point at a constant step until near or blocked, but the step length is never set and the speed argument is unused, so it does not fly at any set speed; with the local at zero it stops on the first frame without moving."
   },
   "42aa507417d34646": {
    "name": "walk_in_direction",
@@ -11446,7 +11446,7 @@
     "strafe_angle",
     "strafe_count"
    ],
-   "doc": "Combat loop that returns 0 once the target is beyond 200 units. Inside 100 units it picks a melee attack; farther out it uses the weak attack, walks up, or strafes beside the target, but that strafe loop never counts its steps and repeats forever."
+   "doc": "Combat loop that returns 0 once the target is beyond 200 units. A monster ranked third or further from the target (get_priority above 2) only runs the far-range idle; otherwise inside 100 units it picks the lunge, attack 2 or the weak attack, and farther out it uses the weak attack, walks up, or strafes beside the target, but that strafe loop never counts its steps and repeats forever."
   },
   "42adaea7cb0fd28e": {
    "name": "setup_healer_monster",
@@ -11568,7 +11568,7 @@
     "launch_pos",
     "rot"
    ],
-   "doc": "Plays the missile launch motion and fires a homing robot missile from in front of or beside itself, 60 units up."
+   "doc": "Plays the missile launch motion and fires a homing robot missile, aimed at character 0, from 60 units above its own position or above a point 20 units to its side, then stands for 30 frames."
   },
   "439c6c8943023241": {
    "name": "wait_for_motion_progress",
@@ -11766,7 +11766,7 @@
    "locals": [
     "roll"
    ],
-   "doc": "Flies to the far side of the target at plus or minus 150 degrees, chosen at random."
+   "doc": "Turns to the target and, with the step right or step left motion chosen at random, flies at 4 units per frame toward a point the target's distance plus 50 units from itself, on a heading 30 degrees to one side of the target: up to 15 frames at 5 units above the ground, then up to 15 at 25. Although fly_to_point_around_target is passed 150 or -150 degrees, the point is measured from the monster, so it lies beside and a little beyond the target rather than on its far side."
   },
   "44e001d50d02a6ad": {
    "name": "fight_at_mid_range",
@@ -11793,7 +11793,7 @@
    "locals": [
     "diff"
    ],
-   "doc": "Signed angle from the facing direction to the target point, wrapped to -PI..PI."
+   "doc": "Meant to return the signed angle from the facing direction to the target point, wrapped to -PI..PI. Written in the b02a raw numbering, where play_monster_se stands for calc_atan2, so on this disc it plays a sound instead and the angle is never computed; it returns the unset value minus facing, wrapped."
   },
   "451255764849750a": {
    "name": "lunge_with_attack_two",
@@ -11803,7 +11803,7 @@
     "rot",
     "attack"
    ],
-   "doc": "Turns to the target, tracks it, then plays attack 2 (the knockback attack) with a 100 unit forward lunge."
+   "doc": "Turns to the target and plays attack 2 (the knockback attack), tracking the target for 6 frames, then moves toward a point 100 units ahead at 4.5 units per frame for 14 frames (about 63 units), waits 7 more frames, stands and waits 9 frames."
   },
   "451ecaee55e53291": {
    "name": "dodge_shot_by_sidestep",
@@ -11880,7 +11880,7 @@
     "ground_y",
     "result"
    ],
-   "doc": "Turns to face a point at the given angle and distance from the target, then flies toward it at height_offset above the ground, shortening the move by the clearance check. Returns -1 if there is too little room."
+   "doc": "Meant to turn toward a point at the given angle and distance from the target and fly there at height_offset above the ground, stopping short of a wall within 50 units and returning -1 when too little room is left. Its position, turn and move calls are old-numbered and reach unrelated natives, so it does not turn or fly there as meant; otherwise it returns an unset value."
   },
   "457cefab81183ac3": {
    "name": "play_attack_two",
@@ -11957,7 +11957,7 @@
     "side_angle",
     "orbit_dist"
    ],
-   "doc": "Used when another monster is closer to the target: circles it at a distance or stands watching."
+   "doc": "Used when the monster is not among the nearest to the target (distance rank above 1, or above 2 in the enraged loop): half the time circles the target 160 to 190 units out, otherwise stands and waits up to 30 frames for it to come into view."
   },
   "46370ba41fdab91e": {
    "name": "walk_toward_target_to_range",
@@ -12172,7 +12172,7 @@
    "doc": "Turns by the given number of degrees relative to the current yaw, updating the boss."
   },
   "473d2abf3462c529": {
-   "name": "fight_after_rage_ends",
+   "name": "fight_step_while_enraged",
    "loose": "fc7d480df7036558",
    "locals": [
     "target_dist",
@@ -12180,7 +12180,7 @@
     "roll",
     "count"
    ],
-   "doc": "Fighting behaviour once no rage hits are left: melee attack 1 or a step back when the target is close, otherwise bombs, repeated step backs, or a dash that ends with the monster fainting for 90 frames. Does nothing while rage hits remain."
+   "doc": "One enraged fight decision, made when no rage hits are left: melee attack 1 or a step back when the target is within 60, otherwise a bomb throw, one or two step backs, or a dash past the target that ends with the monster fainting for 90 frames. Returns 0 at once while rage hits remain."
   },
   "47438a241825c62c": {
    "name": "track_target_until_time",
@@ -12223,7 +12223,7 @@
     "unused_value",
     "ground_delta"
    ],
-   "doc": "Flies at the target and plays attack 1 on the way, then turns and backs away 150 units."
+   "doc": "Turns to the target and flies at it 3 units above the ground (up to 90 frames), then plays attack 1 while flying at its new position (up to 75 frames). After the attack it faces the target and backs away toward a point 150 units beyond itself, 50 units above the ground, at 4 units per frame for at most 30 frames (about 120 units)."
   },
   "479c9ce29caefb10": {
    "name": "slide_to_point",
@@ -12347,7 +12347,7 @@
    "locals": [
     "roll",
     "noticed_target",
-    "unused_value",
+    "unset",
     "unused2",
     "kind_pos",
     "home_dist",
@@ -12364,7 +12364,7 @@
     "target_dist",
     "final_turn_2"
    ],
-   "doc": "Wander AI. Picks a random idle action: turn away from walls, return toward home, walk around the home point or the target, walk straight, or wait and watch for the player. Sets monster var 0 to 1, 4, 8, 16 or 32 to record which action it chose. Returns 1 when it noticed the target."
+   "doc": "Wander AI, meant to pick a random idle action: turn away from walls, return toward home, walk around the home point or the target, walk straight, or wait and watch for the player, recording the choice in monster var 0 (1, 4, 8, 16 or 32). Returns 1 when it noticed the target and 0 after the far-from-home branch; other paths end without a return value. Written in this script's old native numbering, so the distance, position, rotation, clearance and motion calls run other natives or none, and the branch that records 1 tests a variable that is never set."
   },
   "48512be6ca711109": {
    "name": "move_beside_target",
@@ -12454,7 +12454,7 @@
     "seen",
     "no_damage_count"
    ],
-   "doc": "Once the monster has taken a hit, sets monster var 18 and runs event script 507 a single time."
+   "doc": "Once a hit on the boss has done no damage, sets monster var 18 to 1 and runs event script 507 (the hint that no attack works on the Rainbow Butterfly and the Lafrescia flower may hold the clue). Does nothing once var 18 is set."
   },
   "48bbcd811b92baac": {
    "name": "run_after_target",
@@ -12701,9 +12701,9 @@
    "doc": "Calm close-range choice: walk up and swing or lunge, slash combo, strafe, or dodge in place."
   },
   "49e92f2b4796b76b": {
-   "name": "fall_and_recover_flight",
+   "name": "halt_briefly_on_knockdown",
    "loose": "42f440e696b3f63d",
-   "doc": "Drops to the ground and lifts off again."
+   "doc": "Knockdown program: forbids guarding and dodging, stops the motion and turning and waits one frame, then turns scripted flight off and straight back on in the same frame, nudges itself up off the ground and allows guarding and dodging again. It never falls or plays a knockdown motion."
   },
   "49f882ec5ab9b45d": {
    "name": "get_knocked_down_and_rise",
@@ -12893,7 +12893,7 @@
     "phase_done",
     "monster_count"
    ],
-   "doc": "Once, when life is under 67 percent or no other monsters remain, ends the three clone effects, makes the boss invulnerable, stops its sound and runs event script 500. Monster var 7 marks that it has run."
+   "doc": "Once, when life is under 67 percent or no other monsters remain, ends the Atlamillia light effects of the three Atramilia lights (the effect slots in monster vars 24 to 26), makes the boss invulnerable, stops its sound and runs event script 500. Monster var 7 marks that it has run."
   },
   "4ace3e10c17254c9": {
    "name": "fight_while_calm",
@@ -13100,7 +13100,7 @@
     "target_dist",
     "result"
    ],
-   "doc": "Moves to the point angle degrees around the target at the same distance, stopping short if a wall is within 100 units."
+   "doc": "Moves to the point angle degrees around the target at its current distance. If map collision lies within 100 units straight ahead of its facing, it instead moves that far toward the point, returning -1 without moving when that is under twice near_dist. Otherwise returns the result of waiting for the move."
   },
   "4bc8cdb7e96b9dc1": {
    "name": "fly_to_point_around_target_updating",
@@ -13606,7 +13606,7 @@
     "roll",
     "monster_count"
    ],
-   "doc": "Long range choice: summon sprouts, approach, look around, idle or stand."
+   "doc": "Long range choice: 10 percent of the time, if fewer than 7 monsters exist, walks up to the target and summons sprouts; otherwise 75 percent of the time walks up to the target. Of the rest, 40 percent looks around (it then tests the result for 1, but look_around_for_target returns 0 on a sighting, so the follow-up chase never comes from a sighting), 30 percent idles watching for the target for up to 75 frames and chases it if seen, and 30 percent stands for 30 frames."
   },
   "4fb042775e95f077": {
    "name": "turn_and_walk_forward",
@@ -13751,7 +13751,7 @@
     "extra_frames",
     "pos"
    ],
-   "doc": "If the boss is more than 45 units up, plays attack 1 and casts the rose barrage. Otherwise dashes to a random arena point and returns 1."
+   "doc": "Turns to face the target. If the boss is more than 45 units up, plays attack 1, casts the rose barrage and returns 0; otherwise dashes to a random arena point and returns 1."
   },
   "509a08ed5fdf2132": {
    "name": "play_damage_until_stop_ends",
@@ -13926,7 +13926,7 @@
    "locals": [
     "roll"
    ],
-   "doc": "Dodges a melee attack with a step back or a sidestep, then allows guard and dodge again."
+   "doc": "Dodges a melee attack by turning to the target and either stepping back or sidestepping, then allows guard and dodge again. The roll call passes only the result variable, so get_random_int fails and the choice is fixed by the uninitialised roll rather than being 50/50."
   },
   "516ba9820bc53d9c": {
    "name": "play_guard_knockback",
@@ -14237,9 +14237,9 @@
    "doc": "Plays the play motion and waits for the target to come into view."
   },
   "5402a3eb0876062a": {
-   "name": "run_rin_fear_event",
+   "name": "run_lin_caught_game_over",
    "loose": "5402a3eb0876062a",
-   "doc": "Runs event script 520 and waits a frame."
+   "doc": "Runs event script 520, the boss-defeat game over that d03b02 plays when a monster reaches Lin, and waits a frame."
   },
   "54156da686b801da": {
    "name": "choose_idle_movement",
@@ -14785,7 +14785,7 @@
     "max_frames_value",
     "min_tolerance"
    ],
-   "doc": "Waits while the monster turns until it faces the angle within the tolerance, the turn is complete, or the frame limit passes. Returns the frames spent."
+   "doc": "Waits, ticking the fight tracking, while the monster turns until its yaw is within tolerance_deg (or at least 3 degrees) of angle_deg or max_frames pass, then stops turning. Returns the frames waited."
   },
   "566fe75a3fc27253": {
    "name": "fly_around_target",
@@ -14992,14 +14992,14 @@
    "doc": "Turns toward the target every frame for the given number of frames, then stops turning. Despite the parameter name, turn_speed_deg goes to the turn unconverted, so it is in radians per frame; the values callers give, such as 4.2, make the monster face the target almost at once."
   },
   "572ef22fbdb4b4c5": {
-   "name": "explode_flower_bomb",
+   "name": "explode_nose_bomb",
    "loose": "968d079db0abde81",
    "locals": [
     "attack",
     "pos",
     "lifted_flag"
    ],
-   "doc": "Kills the monster silently and spawns the robot missile explosion carrying its attack data, clearing the effect owner if the player had lifted it. Then halts."
+   "doc": "Kills the monster silently and spawns the robot missile explosion carrying its attack, setting the effect's owner to 0 if the player had lifted it (var 1). Then halts."
   },
   "5733d64b781c4bf7": {
    "name": "wait_target_in_view",
@@ -15295,7 +15295,7 @@
     "turn_result",
     "frame"
    ],
-   "doc": "Turns toward the player and releases butterfly scale powder twice over 120 frames. Returns 2, or 5 if the split signal arrives."
+   "doc": "Turns toward the player and releases butterfly scale powder twice over 120 frames. Always returns 2: the split check after the turn never fires, because turn_to_yaw_at_current_height always returns 0."
   },
   "591d4116f243c7e8": {
    "name": "pick_far_range_action",
@@ -15496,7 +15496,7 @@
     "clear_dist",
     "heading"
    ],
-   "doc": "Strafes right or left up to the given distance, shortened by walls, until the target is near or the time is up. Returns -1 if there is no room."
+   "doc": "Plays the walk-right or walk-left motion and moves up to distance units to that side, until the target comes within stop_distance or max_frames pass. The clearance is measured straight ahead along its facing, not to the side: if less than 100 units ahead are clear, distance is reduced by the clear amount and it returns -1 without moving when that leaves less than stop_distance. Otherwise the return value is undefined."
   },
   "5a579fc86fc495c6": {
    "name": "move_until_near_or_done",
@@ -15615,7 +15615,7 @@
     "return_yaw",
     "return_result"
    ],
-   "doc": "Rises to height 1050 facing the player, aims and sweeps a beam toward where the player stood over 60 frames, dropping a rainbow fire pillar every 3 frames. Then returns to the orbit height. Returns 1, or 5 when the split signal (var 8 = 16) comes in."
+   "doc": "Rises to height 1050 facing the player, aims and sweeps a beam toward where the player stood over 60 frames, dropping a rainbow fire pillar every 3 frames. Then returns to the orbit height. Returns 5 if the split signal (var 8 = 16) arrives during the rise or the beam; a split during the return flight only cuts that flight short, and the result is 1."
   },
   "5ab759b214b6fc2f": {
    "name": "fly_around_point",
@@ -15988,7 +15988,7 @@
    "locals": [
     "monster_kind"
    ],
-   "doc": "Main loop that dispatches on the state global: 1 wait for start, 2 fly to start slot, 3 attack, 6 hover, 5 dodge, 0 end."
+   "doc": "Main loop that dispatches on the state global: 1 wait for the round to start, 2 fly to the start slot, 3 fire a sticky ball and regroup above the centre after a reset, 6 hover, 5 dodge to a new slot, 0 end."
   },
   "5c1fdf4fda5e74c4": {
    "name": "shoot_curse_bullet",
@@ -16113,7 +16113,7 @@
     "feather_dir",
     "round"
    ],
-   "doc": "Plays the attack animation, then four rounds of three Griffon feathers fired from the dcol00 bone, one straight and two to the sides, then the recovery animation."
+   "doc": "Meant to play attack 1 and fire four rounds of three Griffon feather L1 effects from the dcol00 bone at the target (one at the bone and one 20 units either way along x), then play the attack-out motion. The motion, target and spawn calls are old-numbered (the motions run as set_life, the spawns as get_monster_grade, set_damage_kind_rate and set_entry_object_size), and the first wait_motion_time can never end, so no feathers are fired and the script waits there forever."
   },
   "5c9dde7ddbe48eda": {
    "name": "unlock_interrupts",
@@ -16170,7 +16170,7 @@
     "rot",
     "delta"
    ],
-   "doc": "Returns the signed difference between target_angle and the current yaw divided by divisor."
+   "doc": "Returns the difference between target_angle and the current yaw divided by divisor. The wrap is broken: it adds 2 pi whenever the difference is below pi, so the result is almost always a full turn too large. Nothing calls it."
   },
   "5cedc59cdae59abc": {
    "name": "turn_to_angle",
@@ -16201,9 +16201,9 @@
    "name": "fly_to_start_slot",
    "loose": "88bd63244a23cb9b",
    "locals": [
-    "x",
-    "y",
-    "z",
+    "kind_x",
+    "kind_y",
+    "kind_z",
     "start_x",
     "start_y",
     "start_z",
@@ -16215,7 +16215,7 @@
     "rot_y",
     "rot_z"
    ],
-   "doc": "Makes the butterfly targetable, places it at height 1050 above the kind 501 monster, records its own formation slot, faces directly away from that slot and flies there, turning around on the way."
+   "doc": "Makes the butterfly targetable, places it at height 1050 above the kind 501 monster, records its own formation slot, faces directly away from that slot and flies there, turning around on the way. Returns the flight result (1, 0, 3 or 6) as the next state."
   },
   "5d5cc664582acacd": {
    "name": "fire_holy_shot",
@@ -16250,7 +16250,7 @@
     "deceleration",
     "frame"
    ],
-   "doc": "Flies straight to a point, slowing as it nears so it stops there. Returns the frames used."
+   "doc": "Meant to fly straight to the point, slowing so it stops there. The position read and set_pos are old-numbered (they run as loop_se_on_monster and set_se_positional), so the monster does not move, and the deceleration is computed from current_speed before it is set. Returns the frames counted."
   },
   "5d76b453814c5150": {
    "name": "act_at_medium_range",
@@ -16629,7 +16629,7 @@
     "alpha",
     "state"
    ],
-   "doc": "Takes the monster to the arena center, plays the butterfly merge effect and event 512, fades the body out over 90 frames and sets monster var 8 to 17 for the swarm. Runs events 511 and 502 and returns 4."
+   "doc": "Rises to height 1050, flies to the arena center, plays the butterfly merge effect, event 512 (stops music slot 0) and sound 9, and fades the body out over 90 frames, becoming unlockable. Sets monster var 8 to 17 to release the swarm and runs event 511 (starts music slot 1), then after 60 frames sets var 8 to 1 so the first butterfly is next. If monster var 18 is still 0 it runs event 502, the message that the butterfly has split into seven. Returns 4."
   },
   "5f1af9b4fe36de91": {
    "name": "walk_around_target",
@@ -16678,7 +16678,7 @@
     "pulse_phase",
     "fuse"
    ],
-   "doc": "Throws itself in a ballistic arc along its own facing (the direction to the player is computed but overwritten) for up to 120 frames, exploding if the player comes within 30 units and stopping when it drops below the player's height or hits a wall. It then counts down the 195 frame fuse in monster var 2, pulsing blue and growing in the last 30 frames, and explodes."
+   "doc": "Throws itself in a ballistic arc along its own facing (the direction to the player is computed but overwritten), exploding if the player comes within 30 units and stopping when its speed (2.5, falling 0.04 a frame) runs out after 62 frames, when it drops below the player's height or when it hits a wall; the 120 frame limit is never reached. It then counts down the 195 frame fuse in monster var 2, pulsing blue and swelling up to 1.1 times its size in the last 30 frames, and explodes."
   },
   "5f43a15d0b1ec762": {
    "name": "reset_slot_timer",
@@ -16943,7 +16943,7 @@
     "relative_angle",
     "own_rot_z"
    ],
-   "doc": "Turns the turret toward the target, but only within its side of the ship: the four port turrets (handles 27 to 30) only turn left of the ship's heading and the four starboard turrets (31 to 34) only turn right."
+   "doc": "Turns the turret toward the target at pi/32 per frame, measuring the target's angle from the ship's heading (the yaw of the monster in active slot 0). Turrets 27 to 30 only follow the target on the positive-angle side and otherwise turn to +90 degrees at pi/64; turrets 31 to 34 only follow it on the negative-angle side and otherwise turn to -90 degrees. Returns 0 when it turns to the fixed side."
   },
   "613df4202ca11dc0": {
    "name": "approach_target_to_distance",
@@ -16965,7 +16965,7 @@
     "unused_value",
     "unused2"
    ],
-   "doc": "Chases the target, each frame moving to a point move_speed plus stop_dist short of it. Returns -1 once within stop_dist, otherwise the frames used."
+   "doc": "Turns to face the target, then each frame turns toward it and walks toward a point move_speed plus stop_dist units ahead of itself in the target's direction, at its own height, checking the death flag. Returns -1 once within stop_dist, otherwise the frames used."
   },
   "614d123b4ccad7ff": {
    "name": "walk_random_direction",
@@ -17427,7 +17427,7 @@
   "63e13137f2422235": {
    "name": "fly_back_then_get_up_stunned",
    "loose": "480b5cb847ea5d7d",
-   "doc": "Is blown back and gets up as the stun action."
+   "doc": "Stun program: makes the monster damageable and halts it, plays the knocked-flying and get-up motions, then faints until the stun stars run out and allows guarding and dodging again."
   },
   "63e2608efcddef2c": {
    "name": "wander_while_idle",
@@ -17586,7 +17586,7 @@
     "aim_angle",
     "own_rot_z"
    ],
-   "doc": "Turns the cannon toward the target relative to the ship. The left cannon (handle 25) is limited to the right half and the right cannon (handle 26) to the left half, where it turns to a fixed side instead."
+   "doc": "Turns the cannon toward the target at pi/32 per frame, measuring the target's angle from the ship's heading (the yaw of the monster in active slot 0). Cannon 25 only follows the target on the positive-angle side and otherwise turns to +90 degrees at pi/64; cannon 26 only follows it on the negative-angle side and otherwise turns to -90 degrees. Returns 0 when it turns to the fixed side."
   },
   "6487628b5e8eb07f": {
    "name": "dodge_step_left",
@@ -17598,7 +17598,7 @@
     "speed",
     "close_flag"
    ],
-   "doc": "Side-steps to the left with invulnerability while the step motion plays, sliding 200 units sideways when the player is close."
+   "doc": "Sidestep to the left, invulnerable from frame 10 to 24 of the step motion, moving at 3.6 per frame (about 50 units). When the target is within 110 units it heads for a point 200 units to its left; otherwise it heads for a point 85 units from the target, 30 degrees to its other side, while turning to face it."
   },
   "64989e9c161d1b5f": {
    "name": "act_at_close_range",
@@ -17931,9 +17931,9 @@
    "doc": "Walks up to the player, turns and swings (attack 1) while tracking, then stands."
   },
   "66d66a3a40db39c2": {
-   "name": "begin_attack_state",
+   "name": "lock_and_snap_to_target",
    "loose": "541314c236390682",
-   "doc": "Disables guarding and dodging, resets motion and movement, faces the target and sets the act status to 1."
+   "doc": "Locks the monster for a scripted reaction: forbids guard and dodge, resets the motion, stops moving and turning, snaps to face the target, waits a frame and sets act status 1. Unused here."
   },
   "66f914cd75fb19cf": {
    "name": "hover_idle_while_player_disguised",
@@ -17965,7 +17965,7 @@
     "move_pos",
     "monster_handle"
    ],
-   "doc": "Chooses an attack by the target distance: attack 2 with a Vanguard shockwave when very close, attack 1 when near, and a spinning charge (attack 3) at the target when further. Returns the number of frames to rest afterwards."
+   "doc": "Chooses an attack by the target distance: under 40 units attack 2 with a Vanguard shockwave, under 60 attack 1, and under 120 a spinning charge (attack 3) at the target. Returns the frames to rest afterwards (30, 30 or 12), or 0 without attacking when the target is 120 or more away."
   },
   "672b9be3a29388a0": {
    "name": "step_back_from_melee",
@@ -18170,7 +18170,7 @@
     "offset_rad",
     "angle"
    ],
-   "doc": "Picks a point at the given radius and angle offset around a position, turns to it and walks there."
+   "doc": "Meant to pick the point radius units from the centre on the monster's side, rotated by angle_offset_deg, turn to it and fly there at height_offset above the ground. The angle reads, turn and move calls are old-numbered and reach unrelated natives, so it does not turn or fly there as meant. Returns an unset value."
   },
   "6810aa2deb45098d": {
    "name": "turn_to_target_and_wait",
@@ -18675,7 +18675,7 @@
     "ground_y",
     "result"
    ],
-   "doc": "Walks 90 degrees to the left or right of the current facing, as far as 100 units, using the clearance check to shorten the walk. Returns -1 if there is less than min_distance of room."
+   "doc": "Meant to fly 90 degrees to the right (go_right) or left of the facing, 100 units at height_offset above the ground. The clearance is measured straight ahead, not to the side, and any wall within 100 units leaves a distance of 0, so with a positive min_distance it returns -1 instead of shortening the move. The position, facing, clearance and move calls are old-numbered (the clearance check runs as set_lockon_mode), so the monster does not move; otherwise it returns an unset value."
   },
   "6a75eda3744eb06c": {
    "name": "play_knockback_swing",
@@ -18688,7 +18688,7 @@
    "locals": [
     "stall_event_done"
    ],
-   "doc": "After 900 frames since slot 0 was recorded, runs event script 550 once."
+   "doc": "Once more than 900 frames have passed since the time recorded in slot 0, runs event script 550 and sets variable 20 so it runs only once. threaten_for_frames also sets variable 20, so the event never runs after Shingala has threatened."
   },
   "6ac891e5ff626f22": {
    "name": "charge_with_combo_attack",
@@ -18886,7 +18886,7 @@
     "angle_offset",
     "angle_to"
    ],
-   "doc": "Turns toward and walks to a point on a circle around the given center, offset from the direction back toward the center by the angle."
+   "doc": "Turns toward and walks to a point radius units from the given center, angle_deg degrees around from the direction pointing from the center toward the monster (0 is the point on the monster's side). Returns the wait result: 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "6bf67887531c6ebf": {
    "name": "face_target_until_motion_progress",
@@ -18937,7 +18937,7 @@
     "wander_state",
     "target_dist"
    ],
-   "doc": "If it was wandering, circling or the target is far, runs at the target and slams after being shot at."
+   "doc": "Dodge-shot program: when monster var 0 has bit 2, 4 or 16 set (turning to fire or firing nose bullets, circling while wandering, or standing watching) or the target is over 300 units away, runs at the target and does the charging slam; otherwise does nothing."
   },
   "6c34520604e4ace4": {
    "name": "freeze_on_knockdown",
@@ -19325,7 +19325,7 @@
     "free_texture_block",
     "effect_handles"
    ],
-   "doc": "Registers the normal hit on attack 1 and loads the poison mist loop and hit effects."
+   "doc": "Registers the normal hit on attack 1, loads the poison mist loop and hit effects into a free texture block when one is available, and starts the monster AI with init_monster_ai."
   },
   "6e2eab9b5c73d7d6": {
    "name": "run_magma_phase",
@@ -19464,7 +19464,7 @@
     "rot",
     "target_angle"
    ],
-   "doc": "Snaps to face the target, then jumps 100 units straight backward with the step back motion, taking no damage during the jump."
+   "doc": "Snaps to face the target and plays the step back motion; after 5 frames it heads for a point 100 units straight behind at 4 units per frame but stops 14 frames later, about 56 units back. It takes no damage until the move stops."
   },
   "6f1ad10ecb13f07d": {
    "name": "play_attack_2_motion",
@@ -19510,7 +19510,7 @@
    "locals": [
     "pos"
    ],
-   "doc": "Cancels the current movement order by targeting the monster's own position."
+   "doc": "Meant to cancel the current movement order by sending the monster to its own position at speed 0 and stopping it. The calls are in this script's old native numbering and run as loop_se_on_monster, get_distance_to and get_home_pos, so nothing is stopped."
   },
   "6f6207a9310577a9": {
    "name": "fight_in_range_loop",
@@ -19538,7 +19538,7 @@
     "dest",
     "result"
    ],
-   "doc": "Flies the given distance along an absolute angle without turning first."
+   "doc": "Flies distance units along the absolute heading angle_deg without turning first, at height_offset above the ground under the monster. Returns the fly_to_point result: 1 on arrival, a negative value if blocked, or 0 after frames."
   },
   "6f8b3b7fee7fd238": {
    "name": "attack_at_mid_range",
@@ -19676,7 +19676,7 @@
   "70316b594c2c5869": {
    "name": "stop_actions_and_disable_lighting",
    "loose": "70316b594c2c5869",
-   "doc": "Stops moving and turning, resets the motion and turns model lighting off. Used first in the damage program."
+   "doc": "Meant to stop moving and turning, reset the motion and set act status 0 at the start of the damage program (recoil_from_damage in e08a, e09a and b07a_atora_yellow). In this toolkit's old numbering the stop, reset and act-status calls run get_home_pos, get_attack and set_model_lighting, and stop_turning does nothing here, so its only effect is turning the model's scene lighting off."
   },
   "703c5c5ce5fb8e85": {
    "name": "read_orbit_angle",
@@ -19727,7 +19727,7 @@
     "target_dist",
     "side_angle"
    ],
-   "doc": "Takes a random left or right step and flies 60 degrees around the target at the same distance, taking no damage meanwhile."
+   "doc": "Turns damage off, loops the step right or step left motion at random and flies at 3 units per frame toward the point 60 degrees around the target at the same distance, 25 units above the ground, for at most 8 frames (about 24 units); then turns damage back on, waits up to 25 frames for any walk to end and stops moving."
   },
   "70c8155fe1460e53": {
    "name": "wait_motion_reach_last_frame",
@@ -20000,7 +20000,7 @@
    "doc": "Flies the given distance along a heading in degrees without turning the model first. Returns the result of fly_straight_to_point."
   },
   "7287ff2f189f8985": {
-   "name": "reset_after_dodge_shot",
+   "name": "reset_jump_and_queue_on_guard",
    "loose": "7287ff2f189f8985",
    "doc": "Guard handler: clears the jump and immunity attributes and the queued actions."
   },
@@ -20079,7 +20079,7 @@
     "pos",
     "angle_to"
    ],
-   "doc": "Returns 1 if the point is inside the height limits and, unless bounds are ignored, the way to it is clear of walls."
+   "doc": "Returns 1 if the point's y is within the height limits in monster vars 0 and 1 and, unless var 14 is set, check_flight_step passes at the point: ground below it, not above the flyer's maximum height, and no wall within the distance to the point plus the wall margin from the monster along the cast heading. That heading is never set (the result of get_angle_to is not stored), so the wall probe does not look toward the point. The radius limits it reads are unused."
   },
   "72ce4718cbf09563": {
    "name": "charge_at_target_in_guard",
@@ -20197,7 +20197,7 @@
   "7369a0ddf6295fb3": {
    "name": "setup_sword_hit",
    "loose": "2223a29c81ecc219",
-   "doc": "Registers the weak knockback hit and sword trail on attack 1 and resets monster var 0."
+   "doc": "Registers the weak knockback hit and sword trail on attack 1, resets monster var 0 and starts the monster AI with init_monster_ai."
   },
   "73721e750dbca9e4": {
    "name": "act_at_long_range",
@@ -20320,7 +20320,7 @@
     "pos",
     "rot"
    ],
-   "doc": "Walks up to the target, then does attack 1, tracking the target for 24 frames and then sliding forward at speed 3.2 for 10 frames (toward a point 300 units ahead) during the swing."
+   "doc": "Walks up to the target, then does attack 1, tracking the target for 20 frames and then sliding forward at speed 3.2 for 8 frames (about 26 units, toward a point 300 units ahead) during the swing, and stands for 9 frames."
   },
   "73fea819811808e1": {
    "name": "steer_toward_target_until_aligned",
@@ -20353,7 +20353,7 @@
     "rot_y2",
     "rot_z2"
    ],
-   "doc": "Flies forward at height 850, turning toward the player when in view or toward the arena center otherwise, and returns 6 when facing the player. Not called by this script's main loop."
+   "doc": "Flies forward at height 850, turning toward the player when in view or toward the arena center otherwise. Returns 6 when facing the player, or 5 on the split signal. Never called."
   },
   "7406f8711c2eb548": {
    "name": "sum_var_15_by_flags",
@@ -20385,7 +20385,7 @@
     "frame",
     "move_end"
    ],
-   "doc": "Waits until the current move ends or the frame limit passes."
+   "doc": "Waits, ticking the fight tracking, until the current move ends or max_frames pass. Returns 0 when the move ended; on timeout it falls off the end without setting a return value."
   },
   "742e06b84de7ab71": {
    "name": "act_on_situation",
@@ -20422,7 +20422,7 @@
     "target_pos",
     "frames_run"
    ],
-   "doc": "Mid-range approach: runs the waypoint route if the target is on raised ground, otherwise drill-charges, then chases on foot and rests if the chase was long."
+   "doc": "Mid-range approach: runs the waypoint route if the target is on raised ground, otherwise drill-charges, then chases on foot for up to 150 frames and rests 90 frames out of breath if the chase timed out without reaching the target."
   },
   "7471597ee0c13733": {
    "name": "orbit_host_with_light",
@@ -20725,7 +20725,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle, then walks a random distance ahead if the way is clear. Returns -1 if blocked, otherwise the move result."
+   "doc": "Meant to turn up to turn_range_deg degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about turn_range_deg/57, always to the same side. If 100 units ahead are clear it walks min_distance + speed plus a random 0 to distance_range units; if less is clear but more than stop_dist it walks just the random amount; otherwise it returns -1 without moving. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "757728c698cbb4ef": {
    "name": "circle_or_watch_target",
@@ -20925,7 +20925,7 @@
    "locals": [
     "death_count"
    ],
-   "doc": "Counts deaths in monster variable 64 and plays the death motion. When the count reaches 2 it plays event script 504."
+   "doc": "Death program of Gaja Ein and Gaja Zwei: adds one to monster variable 64, which all monsters on the floor share, plays the death motion and finishes the death, then 30 frames later, if this was the second of the pair to die, resets the player camera and runs event script 504. Then waits forever."
   },
   "770c077a63840ec6": {
    "name": "fight_target_by_distance",
@@ -21056,7 +21056,7 @@
     "unused5",
     "result"
    ],
-   "doc": "Faces the target, then moves forward by the target's distance if the way is clear. Returns -1 if blocked."
+   "doc": "Faces the target, then moves straight ahead as far as the target is away. Returns -1 without moving if a wall is within speed + near_dist ahead, otherwise the result of waiting for the move (1 near the target, 2 arrived, 0 timeout)."
   },
   "77da33ce1bb87f1e": {
    "name": "die_and_count_kills",
@@ -21493,7 +21493,7 @@
     "revive_life",
     "roll"
    ],
-   "doc": "On death, 10% of the time the monster plays the death motion, comes back with 20 to 50% life and gets up. Otherwise it dies for good."
+   "doc": "On death, 10 percent of the time the monster plays the death motion invulnerable, comes back with 20 percent life (get_random_float(0.3) truncates to 0), gets up and returns 0. Otherwise it dies for good."
   },
   "7a4cb31d0f49d8a6": {
    "name": "sidestep_invulnerable",
@@ -21553,7 +21553,7 @@
    "doc": "Dives into the magma pool nearest the player if not already in magma; if it was already in magma it fires a flame volley instead. At enrage stage 2 it fires another volley, and 5 percent of the time a third."
   },
   "7b0935f653fc80d2": {
-   "name": "wait_until_move_arrives",
+   "name": "wait_until_target_within",
    "loose": "7b0935f653fc80d2",
    "params": [
     "target_x",
@@ -21572,7 +21572,7 @@
     "unused4",
     "frame"
    ],
-   "doc": "Waits frame by frame until the target is closer than arrive_distance or max_frames pass, then halts movement. The position arguments are unused. Returns 0."
+   "doc": "Meant to wait frame by frame until the target is closer than arrive_distance or max_frames pass, then halt movement. The old-numbered distance read runs as get_kind_pos, which writes nothing, so the test reads an unset value, and halt_movement does nothing. The position arguments are unused. Returns 0."
   },
   "7b13d3dc42974e11": {
    "name": "fly_to_point",
@@ -21825,7 +21825,7 @@
     "unused7",
     "unused8"
    ],
-   "doc": "Turns to the target, plays attack 1 for 45 frames and stands for 9 frames."
+   "doc": "Turns to the target, plays attack 1 for 37 frames and stands for 9 frames."
   },
   "7c543d08ab03094e": {
    "name": "guard_against_melee",
@@ -22210,7 +22210,7 @@
     "turn_angle",
     "result"
    ],
-   "doc": "Turns by a random angle and flies forward by min_distance plus a random extra amount."
+   "doc": "Turns to a random world heading from 0 to turn_range_deg degrees, then flies forward min_distance plus a random 0 to extra_distance_range units with fly_to_point for up to max_frames. Returns the fly_to_point result."
   },
   "7e62f9499758959e": {
    "name": "approach_at_long_range",
@@ -22256,7 +22256,7 @@
     "alpha",
     "yaw"
    ],
-   "doc": "Waits until monster var 8 is 0 (the swarm is gone), plays event 513 and the merge effect, fades the body back in at the arena center and runs event 510. Then flies out to the orbit height and returns 1."
+   "doc": "Waits 120 frames, then waits until monster var 8 is 0 (all seven butterflies have regrouped above the center after a wrong-order reset), plays event 513 and the merge effect, fades the body back in at the arena center and runs event 510. Then flies out to the orbit height and returns 1."
   },
   "7effa1816d273630": {
    "name": "dash_and_cast_tornado_sometimes",
@@ -22272,7 +22272,7 @@
   "7f3ce9256f52785a": {
    "name": "get_up_after_fall",
    "loose": "b72c212e7820eb91",
-   "doc": "Land program: recovers from the throw (damageable again, stops moving, ends the throw, waits 10 frames), does so a second time, then plays the get-up motion. Returns 1."
+   "doc": "Land program of e08a and e09a: meant to recover from the throw twice (damageable again, stop moving, end the throw, wait 10 frames, reset the motion) and then play the get-up motion. In this script pair's old numbering those calls run set_photo_window, get_home_pos, get_attack and set_life, or no native at all, so only the two 10-frame waits and the motion-end wait happen. Returns 1."
   },
   "7f4f19e69edc85f3": {
    "name": "fight_far_range",
@@ -22307,7 +22307,7 @@
     "free_texture_block",
     "effect_slots"
    ],
-   "doc": "Registers the slash hit window (stronger on grade 2 monsters) and loads the poison mist effects into a free texture block."
+   "doc": "Registers the attack 1 slash hit window (0.378 to 0.556): one capsule between entry objects 0 and 2 with radius argument 4, or on grade 2 two larger spheres instead (radius arguments 6 at object 0 and 8.8 at object 2). Then loads the poison mist effects into a free texture block when one is available and starts the monster AI with init_monster_ai."
   },
   "7fa35418546406cd": {
    "name": "dash_back_from_target",
@@ -22324,7 +22324,7 @@
     "unused_value",
     "extra_dist"
    ],
-   "doc": "Invulnerable dash to a point 30 to 40 units further from the target than now, then waits for the motion to end."
+   "doc": "Unused. Without playing a motion of its own, it moves at speed toward a point 30 to 40 units farther from the target than now, taking no damage for about the first 11 frames, then waits for the current motion to end and stops."
   },
   "7fabe20633a44551": {
    "name": "track_monster_frames",
@@ -22514,7 +22514,7 @@
     "current_speed",
     "frame"
    ],
-   "doc": "Flies on a curving path starting sideways by curve_angle and bending toward the point (or the target if track_target), turning the model to match."
+   "doc": "Flies on a curving path that starts turned curve_angle from the direct heading and bends toward the point (or the moving target if track_target) by homing_weight each frame, turning the model to match and applying the scale step. Stops within margin of the point, when blocked, or after max_frames, and returns the frames flown."
   },
   "809daa5a48997d46": {
    "name": "face_monster_for_frames",
@@ -22638,7 +22638,7 @@
    "locals": [
     "death_flag"
    ],
-   "doc": "If monster variable 64 is set, runs the death routine."
+   "doc": "If the shared monster variable 64 is set, which the Arch Demon boss (b13a) does when it dies, runs the death routine and never returns."
   },
   "81915d68716ed0af": {
    "name": "set_state",
@@ -22866,7 +22866,7 @@
    "locals": [
     "monster_grade"
    ],
-   "doc": "Registers the normal and knockback hits of the first attack, loads the Bombahe self-destruct effect and sets up the photo window for the self-destruct death."
+   "doc": "Registers the normal and knockback hits of the first attack, loads the Bombahe self-destruct effect, clears monster var 0, sets the photo window on the self-destruct death for grade 0 and starts the monster AI with init_monster_ai."
   },
   "831c69122d2a7add": {
    "name": "turn_to_target_random",
@@ -23305,7 +23305,7 @@
     "result",
     "air_height"
    ],
-   "doc": "Turns and dashes to a point on a circle around the target, at its height plus an offset."
+   "doc": "Turns toward the point radius units from the target at angle_deg around it and dashes there for up to 180 frames, at height_offset above the ground under the boss."
   },
   "85ab70ca3a7c608d": {
    "name": "circle_or_watch_target",
@@ -23465,7 +23465,7 @@
     "sway",
     "sway_step"
    ],
-   "doc": "Main loop of the red Atlamillia light: runs the state moves (circle, drift, rise, orbit) depending on state var 27 and keeps orbiting the leader monster with a swaying angle."
+   "doc": "Update program of the red light. Whenever the command in monster var 30 is 4 it rises above the leader; state 2 in var 27 then drifts to the circle start, state 16 circles above the leader with the light effect, and state 64 flies back to the orbit position and sets state 4. Every frame it orbits the leader, advancing its orbit angles by a sway step that swings between plus and minus pi/32."
   },
   "86158df4240d593c": {
    "name": "hover_idle_while_player_disguised",
@@ -23674,7 +23674,7 @@
     "pos",
     "rot"
    ],
-   "doc": "Turns to the target, plays attack 2 and lunges 100 units forward at 1.5x speed, then stands for 9 frames."
+   "doc": "Turns to the target and plays attack 2 while tracking it for 12 frames, then moves toward a point 100 units ahead at 2.625 units per frame for 14 frames (about 37 units), waits for the motion to end and stands for 9 frames."
   },
   "874b3bf28277ef3a": {
    "name": "face_player_while_disguised",
@@ -23823,7 +23823,7 @@
     "unused_value",
     "unused2"
    ],
-   "doc": "Walks the given distance along an absolute angle in degrees without turning first."
+   "doc": "Meant to fly distance (at least speed plus 1) along the absolute angle angle_deg without turning first, at height_offset above the ground, stopping early when the target comes within clearance. The position and move calls are old-numbered and reach unrelated natives, so the monster does not move."
   },
   "8822b142a9f12f48": {
    "name": "setup_griffon_attacks",
@@ -23982,9 +23982,9 @@
    "doc": "Idle behaviour for an unaware flier: turns away from walls, drifts home, circles, wanders or hovers waiting. Returns 1 when it notices the target."
   },
   "88b0a340ce1d28e9": {
-   "name": "setup_vanguard",
+   "name": "setup_linda",
    "loose": "f80b44cd419be2fd",
-   "doc": "Init program of the Vanguard: registers body parts and attack hit windows, sets starting monster vars, preloads the shockwave effect and clip distance, and stands."
+   "doc": "Init program of Linda the elephant (e214a and e214a2): registers body parts and attack hit windows, sets starting monster vars (queueing attack 2 then idle), preloads the Vanguard shockwave effect, sets the clip distance and stands."
   },
   "88bf6d77dadda0a0": {
    "name": "turn_to_target_random",
@@ -24011,7 +24011,7 @@
     "target_dist",
     "roll"
    ],
-   "doc": "While the target is 300 or more away, flies around it in step motions or stands and watches. Returns when the target is closer."
+   "doc": "While the target is 300 or more away, flies to the point 240 units from the target at 30 degrees (playing the step right or step left motion, but the same point either way), turns toward the target, or stands watching it. Returns 0 once the target is nearer. Not called by this script."
   },
   "88ddf6d00b043c47": {
    "name": "attack_at_close_range",
@@ -24198,7 +24198,7 @@
     "side_angle",
     "radius"
    ],
-   "doc": "Calm movement: half the time circles the player at about 90 units or stands in view, the rest of the time plays the idle motion."
+   "doc": "Half the time either walks to a point 30 to 60 degrees around the player at 90 to 120 units and turns back to face it, or stands waiting up to 30 frames for the player to come within 40 units; the rest of the time plays the idle play motion. Used while the player is 175 units or more away and when other monsters are nearer the player."
   },
   "89ee5945d921751d": {
    "name": "idle_forever",
@@ -24306,7 +24306,7 @@
     "free_texture_block",
     "effect_slots"
    ],
-   "doc": "Registers the attack 1 and attack 3 hits and loads the sticky goo effects into a free texture block."
+   "doc": "Registers the normal hits on the whole of attack 1 and on attack 3 (0.346 to 0.448), loads the sticky goo effects into a free texture block when one is available, and starts the monster AI with init_monster_ai."
   },
   "8ab0c8fe3608bda3": {
    "name": "fight_at_mid_range",
@@ -24592,7 +24592,7 @@
     "heading",
     "base_angle"
    ],
-   "doc": "Returns 1 if the target lies within angle_deg degrees either side of the monster's facing, otherwise 0."
+   "doc": "Meant to return 1 if the target lies within angle_deg degrees either side of the monster's facing, otherwise 0. In this script's old native numbering the target angle read runs get_pos and the rotation read has no native, so the result does not reflect the facing."
   },
   "8c5c74e01d74131d": {
    "name": "turn_to_face_target_and_wait",
@@ -24796,7 +24796,7 @@
    "locals": [
     "value"
    ],
-   "doc": "Land program in the b02a raw numbering: waits until the monster's height above the ground drops below 0.1, waits 3 frames, resets the motion and stops moving, waits 30 frames and returns 1."
+   "doc": "Land program in the b02a raw numbering, meant to wait until the monster's height above the ground drops below 0.1, wait 3 frames, reset the motion and stop moving, wait 30 frames and return 1. The motion reset is a call with no native on this disc (_EXT_155), so it never happens."
   },
   "8debda76153d6ab0": {
    "name": "wait_move_until_near_target",
@@ -25026,7 +25026,7 @@
     "roll",
     "result"
    ],
-   "doc": "Close-range sequence: runs the waypoint route if the target is on raised ground, swings, usually drill-charges, takes off, circles the arena dropping bombs when below 20% life, hovers toward the target and drops a bomb, half the time follows the target dropping bombs, and lands. It rests 90 frames after a completed follow, then chases on foot for up to 90 frames and rests again if the chase took over 30 frames."
+   "doc": "Close-range sequence: runs the waypoint route if the target is on raised ground, swings, usually drill-charges, takes off, circles the arena dropping bombs when below 20% life, hovers toward the target and drops a bomb, half the time follows the target dropping bombs, and lands. It rests 90 frames after a follow that did not fail, then chases on foot for up to 90 frames and rests again if the chase timed out without reaching the target."
   },
   "8f7a73511c32acbb": {
    "name": "get_up_after_landing",
@@ -25204,7 +25204,7 @@
    "locals": [
     "unused_value"
    ],
-   "doc": "Flies to a point 60 above the target, then repeats the feather volley, the feather rain and the energy absorb with 60, 60 and 20 frame flying pauses in between."
+   "doc": "Update program, meant to fly to 60 units above the ground at the target, then loop the feather volley, the feather rain and the energy absorb with 60, 60 and 20 frame flying pauses. Under this script's old numbering the monster neither turns nor flies, and the wait inside fire_feather_volley never ends, so it stalls in the first volley."
   },
   "9062ed0d5d6ca4a4": {
    "name": "dodge_step_right",
@@ -25216,7 +25216,7 @@
     "speed",
     "close_flag"
    ],
-   "doc": "Side-steps to the right with invulnerability while the step motion plays, sliding 200 units sideways when the player is close."
+   "doc": "Sidestep to the right, invulnerable from frame 10 to 24 of the step motion. When the target is within 110 units it heads for a point 200 units to its right at 3.6 per frame, covering about 50 units in that window; otherwise it moves to a point 85 units from the target, 30 degrees to its side, while turning to face it."
   },
   "906454c4c4a4726b": {
    "name": "get_aux_value_8",
@@ -25295,7 +25295,7 @@
   "90f0f37b2f6a8a3c": {
    "name": "reset_motion_old",
    "loose": "90f0f37b2f6a8a3c",
-   "doc": "Resets the motion; under this script's old native numbering the get_attack call is reset_motion."
+   "doc": "Meant to reset the motion, but in this script's old native numbering the call runs get_attack instead, so it does nothing."
   },
   "90f522a0e9eb6712": {
    "name": "act_at_far_range",
@@ -25622,9 +25622,9 @@
    "doc": "Leaps in a 50-frame arc to the spot 400 units from the arena centre on the side opposite the target (along the line from the target through the centre), turning toward the target and immune to damage during the jump. Shakes the camera on landing."
   },
   "923e129bba3928b9": {
-   "name": "setup_flower_bomb",
+   "name": "setup_nose_bomb",
    "loose": "67647492bdc00670",
-   "doc": "Sets the hana_obj action object, a clip distance of 120, no lock-on and clears the monster vars."
+   "doc": "Sets the hana_obj action object, a clip distance of 120, no lock-on and clears monster vars 0 and 1."
   },
   "9245c0173b71c99a": {
    "name": "wander_with_random_offset",
@@ -25894,12 +25894,12 @@
     "expected",
     "counter"
    ],
-   "doc": "Death program in the b02a raw numbering: compares a reading minus 18 with what is likely shared monster variable 8, adding one to it on a match and resetting it to 0 otherwise, so the b02a monsters can count defeats in order."
+   "doc": "Death program in the b02a raw numbering, meant to compare a reading minus 18 with what is likely shared monster variable 8, adding one to it on a match and resetting it to 0 otherwise, so the b02a monsters can count defeats in order. The variable read and writes are calls with no native on this disc (_EXT_18, _EXT_17), so nothing is counted."
   },
   "93c01329e7ab692e": {
    "name": "stop_motion_and_wait_forever",
    "loose": "f38e6d72e86f6ae8",
-   "doc": "Lifted program: stops the current motion (restart_motion only calls reset_motion) and then idles forever while held."
+   "doc": "Lifted program: stops the current motion (stop_current_motion only calls reset_motion) and then waits forever while held."
   },
   "93c93eddca458d69": {
    "name": "freeze_when_lifted",
@@ -26014,7 +26014,7 @@
     "life",
     "strafe_angle"
    ],
-   "doc": "Combat loop that slams when the target is within 75, fires nose bullets at mid range and otherwise approaches or circles. Not used by on_update."
+   "doc": "Unused combat loop: wanders or watches when its priority is above 2; within 75 it slams, from 75 to 200 it fires nose bullets, and beyond 200 it fires nose bullets 65 percent of the time, otherwise walks toward the target or circles it. Returns when there is no target."
   },
   "94e43c7ea21bd790": {
    "name": "choose_behavior_by_rage_and_aggro",
@@ -26274,7 +26274,7 @@
     "feather_variant",
     "round"
    ],
-   "doc": "Plays the attack animation, then six rounds of larger Griffon feathers fired at random angles from the four wing bones."
+   "doc": "Meant to play attack 1 and fire six rounds of Griffon feather L2 effects from the four wing bones (dcol_l00, dcol_l01, dcol_r00, dcol_r01) at random spread angles, then play the attack-out motion. The motion and spawn calls are old-numbered (the motions run as set_life, the spawns as get_monster_grade, set_damage_kind_rate and set_entry_object_size), and wait_motion_time can never end, so no feathers are fired and the script waits there forever."
   },
   "96819e13949658da": {
    "name": "fly_straight_to_point",
@@ -26743,7 +26743,7 @@
     "aggro_range",
     "rage_hits_left"
    ],
-   "doc": "Top-level AI step. With rage hits left it fights nearby targets, or chases a target in aggro range at a run; without, it uses the plain fight loop."
+   "doc": "Top-level AI step. While rage hits are left: without aggro it fights a target within 230 and otherwise wanders; with aggro it fights within 140, runs at the target within the aggro range, or drops the aggro. With no rage hits left it runs the enraged fight loop."
   },
   "9840b1761dfed8c6": {
    "name": "hover_if_player_disguised",
@@ -26773,7 +26773,7 @@
     "threaten_result",
     "monster_count"
    ],
-   "doc": "Steps through the attack cycle by variable 3 (spit, swing, rest, then random corner walk or swing), threatening and spawning a minion when recent damage passes 150."
+   "doc": "Runs one step of the attack cycle chosen by variable 3: 0 chases and spits, 1 chases and swings, 2 does nothing, 3 walks to a random corner (10 percent) or chases and swings, then 30 percent of the time chases and spits, and 4 spits 20 percent of the time before the cycle restarts. First, when the recent damage in variable 11 passes 150, it swings, spawns an Electric Fish if it is the only monster, threatens for 210 frames and clears the recent damage."
   },
   "98563649ddb6044a": {
    "name": "wait_frames_tracking_damage",
@@ -27281,7 +27281,7 @@
    ],
    "loose": "9c1633a0f2a4cc71",
    "locals": [],
-   "doc": "Sets the distance within which the monster notices the player regardless of facing, monster variable set 2 index 9."
+   "doc": "Stores the near aggro range in monster variable set 2, index 9. Nothing reads it back: get_aggro_near_range is never called."
   },
   "9c171085ca262400": {
    "name": "fight_by_distance_loop",
@@ -27600,7 +27600,7 @@
     "turn_angle",
     "spawn_pos"
    ],
-   "doc": "Vanguard attack 2: plays the attack motion, after 25 frames (30 scaled to PAL) starts turning toward the target at a speed that closes the gap in about 30 frames, and 21 frames later spawns the Vanguard shockwave 16 units ahead carrying the attack power; then stands for 12 frames."
+   "doc": "Linda's attack 2: plays the attack motion, after 25 frames (30 scaled to PAL) starts turning toward the target at a speed that closes the gap in about 30 frames, and 21 frames later spawns the Vanguard shockwave effect 16 units ahead carrying the attack power; then stands for 12 frames."
   },
   "9dd5c8d0f346798f": {
    "name": "watch_player_if_disguised",
@@ -27609,7 +27609,7 @@
     "player_disguise",
     "monster_kind"
    ],
-   "doc": "Starts watch_disguised_player only if the player is currently disguised."
+   "doc": "Starts watch_disguised_player only if the player is disguised in the form this monster's kind recognises as its own (get_player_disguise is not -1); otherwise returns at once."
   },
   "9de30e7f07aa9a7a": {
    "name": "fly_around_target",
@@ -27671,7 +27671,7 @@
     "rot",
     "angle_diff"
    ],
-   "doc": "Turns to the given world angle in degrees using the walk left or right motion, then stands."
+   "doc": "Meant to turn to the given world angle in degrees with the walk left or right motion, then stand. It converts the angle to radians before passing it to turn_to_angle, which expects degrees, so the monster always turns to within about 3 degrees of world yaw 0; the motion is picked from the sign of the unwrapped difference between the new angle and the current yaw."
   },
   "9e2c123cee460569": {
    "name": "throw_nose_bomb",
@@ -27694,7 +27694,7 @@
     "pos",
     "rot"
    ],
-   "doc": "Plays attack 1 and moves 100 units forward during the swing."
+   "doc": "Turns to the target, plays attack 1 and from frame 12 to frame 40 walks at 2.8 units per frame toward a point 100 units ahead (about 78 units in that time), then stands for 9 frames."
   },
   "9e48a48fcc86685c": {
    "name": "wait_frames_update",
@@ -27753,7 +27753,7 @@
     "ground_y",
     "frame"
    ],
-   "doc": "Waits max_frames frames while the movement order runs, then halts movement. Returns the number of frames waited."
+   "doc": "Waits max_frames frames, then calls halt_movement, which does nothing under this script's old numbering. Returns the frames waited. The per-frame read (meant as get_air_height, run as check_move_end) is discarded, and the other arguments are unused."
   },
   "9ebcbe4876dc3e41": {
    "name": "play_normal_attack",
@@ -27785,7 +27785,7 @@
     "unused5",
     "result"
    ],
-   "doc": "Turns toward the target and flies to its x and z at height_offset above the ground. Returns -1 if there is less than min_distance of room ahead."
+   "doc": "Meant to turn toward the target and fly to its x and z at height_offset above the ground, returning -1 when a wall lies within 100 units ahead (any hit leaves a distance of 0, below a positive min_distance). The turn, target, position and move calls are old-numbered (the target read runs as set_home_pos and overwrites the home position), so the monster neither turns nor flies; otherwise it returns an unset value."
   },
   "9ece6164bcb0b7ae": {
    "name": "play_boss_se",
@@ -27820,7 +27820,7 @@
   "9f1d627a02dbbd97": {
    "name": "get_knocked_over_and_up",
    "loose": "d606ad53b6a16d00",
-   "doc": "Plays the knocked flying and get up motions, then unlocks."
+   "doc": "Runs when the piece is stunned: makes it damageable and halts it, plays the knocked flying and get up motions, then plays the faint motion until the stun stars run out and allows guard and dodge again."
   },
   "9f1f0699974d40b6": {
    "name": "face_target_for_frames",
@@ -27915,7 +27915,7 @@
    ],
    "loose": "9f67c2d4e779d1e9",
    "params": [],
-   "doc": "Sets the view clipping distance: normal monsters record their start position in spawn_x, spawn_y, spawn_z and get clip distance 35 (700 world units), bosses 999999. Afterwards spawn_y is forced to 0."
+   "doc": "Sets the view clipping distance: normal monsters get clip distance 35 (700 world units) and record their start position in scratch_x, scratch_y and scratch_z, which nothing else reads; bosses get 999999. Afterwards scratch_y is forced to 0."
   },
   "9f7c2e298e453255": {
    "name": "fight_with_no_rage_hits_left",
@@ -27963,7 +27963,7 @@
     "move_end",
     "target_dist"
    ],
-   "doc": "Waits during a move_to until it finishes or the target is within stop_dist. Returns 1 if close or arrived, 2 if the move ended otherwise, 0 on timeout."
+   "doc": "Waits during a move_to, ticking the fight tracking, until the target is within stop_dist (stops and returns 1), the move ends (stops and returns 2) or max_frames pass (returns 0)."
   },
   "9f9c1b986e82819f": {
    "name": "get_ground_y",
@@ -28075,7 +28075,7 @@
     "angle_offset",
     "dist"
    ],
-   "doc": "Returns 1 if the target point is within half_angle of the facing direction and within max_dist."
+   "doc": "Meant to return 1 if the target point is within half_angle of the facing direction and within max_dist. In the b02a raw numbering neither the angle nor the distance is computed on this disc (see get_angle_difference_to_point and get_distance_2d), so the result does not reflect the target."
   },
   "a0382fa8ab379663": {
    "name": "walk_in_direction",
@@ -28158,7 +28158,7 @@
     "dest",
     "rot"
    ],
-   "doc": "Plays attack 3: winds up, then spins forward 300 units for 45 frames with the spin effect and a hitbox, and recovers."
+   "doc": "Plays attack 3: turns to the target and winds up, then spins toward a point 300 units ahead at 6.4 units per frame for 45 frames (about 290 units) with the spin effect, the loop motion's hit windows active, and recovers. spin_frames is ignored; the spin always lasts 45 frames."
   },
   "a0a7e7b44a7f25da": {
    "name": "turn_to_target_until_motion_time",
@@ -28541,7 +28541,7 @@
    "loose": "a390b97c64580ed6",
    "params": [],
    "locals": [],
-   "doc": "Sets up a flying monster: no height cap, wall margin of 35, view range 600 and scripted movement on."
+   "doc": "Sets up a flying monster: no height cap (999.9), wall margin of 35, clip distance 600 (12000 world units) and scripted movement on."
   },
   "a3ba434f474ddd4b": {
    "name": "wait_frames_checking_phase",
@@ -28753,9 +28753,9 @@
     "rot",
     "side_angle",
     "distance",
-    "unused_value"
+    "unset"
    ],
-   "doc": "Flies 300 units perpendicular to its facing, left when go_left is set, otherwise right."
+   "doc": "Flies toward a point 300 units to one side of its facing (facing minus 90 degrees when go_left is set, plus 90 otherwise) for up to max_frames, so a short max_frames cuts the move well short of 300. The returned value is never assigned."
   },
   "a4feefe767ec59c5": {
    "name": "trigger_event_after_harmless_hit",
@@ -28878,7 +28878,7 @@
     "turn_speed_rad",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for the given number of frames, then stops turning."
+   "doc": "Keeps turning toward the target for the given number of frames, then stops turning. The turn speed is passed to the turn in degrees without converting it, so the monster snaps round almost at once."
   },
   "a61021592a08dcee": {
    "name": "choose_passive_action",
@@ -28919,12 +28919,12 @@
     "revive_life",
     "roll"
    ],
-   "doc": "10 percent of the time the monster plays the death motion, then revives with 20 to 50 percent life and gets up; otherwise it dies normally."
+   "doc": "10 percent of the time the monster plays the death motion invulnerable, revives with 20 percent life (get_random_float(0.3) truncates to 0), gets up and returns 0; otherwise it dies normally."
   },
   "a664864b148a01f7": {
    "name": "spawn_water_splash_and_idle",
    "loose": "e3c0220bd17ad130",
-   "doc": "Allows guard and dodge, spawns the foot water splash effect above the monster and then waits forever."
+   "doc": "Allows guard and dodge, spawns the foot water splash effect at the world point 0, 50, 0 and then waits forever."
   },
   "a67d602bbc41bdd6": {
    "name": "chase_or_wander_forever",
@@ -29400,7 +29400,7 @@
     "angle",
     "unused_value"
    ],
-   "doc": "Turns to a random heading and lunges 200 units forward."
+   "doc": "Turns to a random heading and lunges with attack 1, with guard and dodge disabled during the lunge. The target point takes its X offset from the sine of the yaw but its Z offset from the cosine of the Z rotation, so it lies 200 units along Z plus a sideways yaw-dependent offset rather than straight ahead."
   },
   "aa03585eff78dffc": {
    "name": "finish_throw",
@@ -29610,12 +29610,12 @@
    "doc": "Turns to the target and plays attack 1 while tracking it."
   },
   "abd039808a1b8ced": {
-   "name": "absorb_energy_from_clones",
+   "name": "absorb_energy_from_lights",
    "loose": "a087382e8153631e",
    "locals": [
     "pos"
    ],
-   "doc": "Plays the energy absorb motion while the clones are charged, then returns to normal colour. Sets monster var 30 to 4."
+   "doc": "Stops in place and sets monster var 30 to 4, the command that sends the three Atramilia lights up to circle above the boss, then plays the energy absorb motions, staying invincible and flickering while all three circle. Afterwards it restores lighting and colour, plays the absorb-out motion and clears the invincibility."
   },
   "abd43ca23603e6a1": {
    "name": "act_at_far_range",
@@ -29672,7 +29672,7 @@
     "priority",
     "rage_hits_left"
    ],
-   "doc": "Returns bit flags describing the target: 1 near, 2 far, 4 monster is facing it, 8 facing away, 16 very close and in front, 32 free to attack (among the three nearest or enraged)."
+   "doc": "Returns bit flags describing the target: 1 within 320 units, 2 farther (which also clears monster var 0), 4 facing it within 90 degrees, 8 facing away, 16 within 40 units and within 30 degrees of the monster's facing, 32 free to attack (among the four monsters nearest the target, or no rage hits left)."
   },
   "ac175558599b1b6c": {
    "name": "wander_forward_in_random_direction",
@@ -29702,7 +29702,7 @@
     "unused3",
     "result"
    ],
-   "doc": "Turns a random angle and walks a random distance, shorter if a wall is ahead. Returns -1 if there is no room."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side. If 100 units ahead are clear it walks min_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than clearance it walks just the random amount; otherwise it returns -1 without moving. Returns 1 if the target comes within clearance, 2 when the walk ends, 0 after max_frames."
   },
   "ac3f90564b98285d": {
    "name": "choose_wander_action",
@@ -29838,7 +29838,7 @@
     "side_angle",
     "distance"
    ],
-   "doc": "Used when the monster must not attack yet: half the time circles the target, otherwise stands and watches or plays the taunt."
+   "doc": "Used when other monsters are nearer the target: half the time plays the taunt; otherwise it either circles the target at 130 to 160 units or stands and watches for up to 30 frames, evenly."
   },
   "acb07a51e2136776": {
    "name": "turn_to_face_target",
@@ -30340,7 +30340,7 @@
     "limit",
     "tolerance_rad"
    ],
-   "doc": "Waits until the monster's yaw is within the tolerance of the angle, or the turn stops making progress, or max_frames passes. Returns the frames waited and stops turning."
+   "doc": "Waits, checking the low life event each frame, until the monster's yaw is within tolerance_deg (or at least 3 degrees) of angle_deg or max_frames pass, then stops turning. Returns the frames waited."
   },
   "aed6781deb273c71": {
    "name": "is_wind_monster",
@@ -30420,7 +30420,7 @@
     "pulse_phase",
     "fuse"
    ],
-   "doc": "Stops the bomb and runs the fuse counter in monster var 2 up to 195 frames. In the last 30 frames it flashes between red and white with a beep, then explodes."
+   "doc": "Lifted program: stops the bomb, clears its velocity attribute and colour pulse, sets monster var 1 to 1 and keeps counting the fuse in monster var 2 from where it was up to 195 frames. In the last 30 frames it turns its lighting off and flashes red and yellow over its normal colour, beeping about every 8 frames, then explodes."
   },
   "af74a8f0b80d05f1": {
    "name": "face_user_monster_if_any",
@@ -30552,7 +30552,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns a random amount and walks forward a random distance if there is room ahead. Returns -1 if there is not."
+   "doc": "Turns a few degrees to one side and walks ahead. The angle range is converted to radians before the random pick and again after it, so the turn is only 0 to 6 degrees for a 360 degree range. With nothing within 100 units ahead it walks min_dist + speed + a random 0 to dist_range; otherwise it walks only the random distance, or returns -1 if a wall is within near_dist. Otherwise returns the result of waiting for the move."
   },
   "b0647e3ffa9d78e7": {
    "name": "choose_behavior_by_aggro",
@@ -30678,7 +30678,7 @@
   "b1c7cbee678f59fa": {
    "name": "recover_from_throw_and_wait",
    "loose": "b1c7cbee678f59fa",
-   "doc": "Clears the no-damage attribute, stops moving, ends the thrown state, waits 10 frames and resets the motion. Under this script's old native numbering set_photo_window is set_attrib, _EXT_143 is end_throw and get_attack is reset_motion."
+   "doc": "Meant to clear the no-damage attribute, stop moving, end the thrown state, wait 10 frames and reset the motion. In this script's old native numbering the calls run set_photo_window, get_home_pos and get_attack, and the end_throw call has no native, so only the 10-frame wait happens as meant."
   },
   "b1d797bc04c784cd": {
    "name": "fight_at_mid_range",
@@ -31038,7 +31038,7 @@
     "last_no_damage_count",
     "no_damage_count"
    ],
-   "doc": "Per frame boss logic: checks life, summons minions, updates phases and the flash, turns off body hits for the first 150 frames of a cycle, orbits the ring, and every 300 frames flies to the center, fires the beam and flies to the far side."
+   "doc": "Per frame boss logic: checks life (setting the shared variable 64 on death, which makes the minions die), summons minions, updates the phase and the flash, and orbits the ring. Body hits are off for 150 frames after each minion summon or beam (the slot 2 timer), and once that timer passes 300 frames with the flash finished it flies to the center, fires the beam, flies to the far side and swims back onto the ring."
   },
   "b3ce6302f4b3bd42": {
    "name": "block_attack_with_guard",
@@ -31099,7 +31099,7 @@
    "doc": "Fight loop while rage hits remain: picks the long, medium or close range behavior by distance. Returns when the target is past 240 or no rage hits remain."
   },
   "b4907131d52e12e3": {
-   "name": "fly_to_sky_then_sink_to_corner",
+   "name": "fly_to_sky_then_rise_at_corner",
    "loose": "758457edbd8d27b3",
    "locals": [
     "pos",
@@ -31116,7 +31116,7 @@
     "unused5",
     "unused6"
    ],
-   "doc": "Sky phase entry. Warps with an effect, climbs to height 500, flies off to a far point while shrinking, then drops underground at the arena corner nearest the target. It cannot be locked on meanwhile."
+   "doc": "Sky phase entry. Becomes impossible to lock on, warps with an effect, climbs to height 500 and curves off toward a far point while shrinking. It then takes damage from every damage kind, is placed 1000 units below the arena corner nearest the target at ten times its normal scale, and flies up to height -100 before it can be locked on again."
   },
   "b4a8262eb3c47ef5": {
    "name": "choose_idle_wander_action",
@@ -31345,7 +31345,7 @@
     "back_angle",
     "unused_value"
    ],
-   "doc": "Plays the back step motion and moves 100 units straight backward, invulnerable while moving."
+   "doc": "Plays the back step motion; after 10 frames turns invulnerable and moves toward a point 100 units straight behind at 4.2 units per frame for 8 frames (about 34 units), then stops, becomes damageable again and waits for the motion to end."
   },
   "b597a93ccf970ed4": {
    "name": "choose_combat_or_idle_behaviour",
@@ -31515,7 +31515,7 @@
     "roll",
     "unused_value"
    ],
-   "doc": "Repeats: glide to a random spot, fire a feather volley, fire the fast volley, absorb energy from the clones, and scatter feathers, with 60 frame pauses between."
+   "doc": "Update program. Repeats: glides to an arena edge point or a point near the target (even odds), then fires a feather volley, waits 60 frames, fires the fast volley, waits 60 frames, absorbs energy from the Atramilia lights, scatters feathers and waits 60 frames, setting monster var 30 to 8 after each attack."
   },
   "b6e18f30aa33661e": {
    "name": "backstep_from_target",
@@ -31533,7 +31533,7 @@
     "extra_dist",
     "pos"
    ],
-   "doc": "Turns to the target, plays the walk-back motion and after 8 frames walks at speed straight away from the target to 40 to 50 units farther than it is now, taking no damage until frame 16; stands once the motion ends."
+   "doc": "Turns to the target, plays the walk-back motion and from frame 8 walks at speed straight away from the target toward a point 40 to 50 units farther than it is now, taking no damage; at frame 16 it stops moving and can be damaged again, and it stands once the motion ends."
   },
   "b6f221c157de834e": {
    "name": "turn_to_target_limit",
@@ -31646,7 +31646,7 @@
   "b77c47180eeeb942": {
    "name": "setup_seadra_attacks",
    "loose": "12f64c63b2c05ca7",
-   "doc": "Registers the Seadra attack hits (two knockback strengths, a swing and the dodge return hit), resets the monster variable and extends the clip distance."
+   "doc": "Registers the Seadra attack hits: two Seadra attack 2 hits on attack 1 (radius 8 at object 1 and 13.2 at object 2), the Seadra attack hit on attack 2 and the Seadra attack 3 hit on the dodge return motion. Then resets monster variable 0, initialises the AI and extends the clip distance."
   },
   "b78f69aa66fe54ee": {
    "name": "turn_and_fly_toward_angle",
@@ -31749,7 +31749,7 @@
     "result"
    ],
    "loose": "b92f4448ed8f2618",
-   "doc": "Flies distance units along angle_deg (degrees) from the current position at the same height and returns the fly_to_point result."
+   "doc": "Flies distance units along angle_deg (degrees) from the current position, held at ground height plus height (fly_to_point ignores the y it is given), and returns the fly_to_point result."
   },
   "b82619ef5e60307c": {
    "name": "block_attack",
@@ -31894,7 +31894,7 @@
     "unused_value",
     "unused2"
    ],
-   "doc": "Faces the target, then chases it in short steps until closer than stop_dist (returns -1) or max_frames passes."
+   "doc": "Faces the target, then each frame steps toward a point speed + stop_dist toward it. Returns -1 once closer than stop_dist, otherwise max_frames when time runs out."
   },
   "b9136680608e4148": {
    "name": "setup_water_splash",
@@ -32193,7 +32193,7 @@
   "bacfdd8dd86a3a75": {
    "name": "setup_butterfly",
    "loose": "7cdaf9de990575b5",
-   "doc": "Makes the butterfly unhittable and unlockable until activated, sets its body and clip distance, and starts in state 1."
+   "doc": "Turns off map and body collision, makes the butterfly unlockable and undamageable until it flies to its start slot, sets a long clip distance, registers frame bcol00 as action object 0 and starts in state 1."
   },
   "bae21383c32ef91a": {
    "name": "turn_to_target_limit",
@@ -32213,7 +32213,7 @@
   "baec236e8c92a3e2": {
    "name": "get_stunned_after_hit",
    "loose": "0c4c35822a5481b8",
-   "doc": "Plays the damage motion, waits 8 frames and unlocks."
+   "doc": "Halts and makes the monster damageable, plays the damage motion and waits 8 frames, then plays the faint motion until the stun stars run out and allows guarding and dodging again."
   },
   "bafd7113508a09f3": {
    "name": "watch_user_monster",
@@ -32223,7 +32223,7 @@
    ],
    "loose": "c7165a13baae76b5",
    "params": [],
-   "doc": "If the player is currently disguised as a monster, runs face_player_while_disguised for this monster's kind; does nothing otherwise."
+   "doc": "If the player is disguised in the form this monster's kind recognises as its own (get_player_disguise is not -1), runs face_player_while_disguised until that ends; does nothing otherwise. The monster kind it passes is not used."
   },
   "bb01635395aec5d2": {
    "name": "fight_while_enraged",
@@ -32237,7 +32237,7 @@
     "rage_hits_left",
     "roll"
    ],
-   "doc": "Combat loop for the enraged state (rage counter at zero or below); returns 0 as soon as the counter is above zero. Otherwise it picks a chase, circle or sword attack by random roll, with a quieter option when other monsters are nearer the target."
+   "doc": "Combat loop for the enraged state (rage counter at zero or below); returns 0 as soon as the counter is above zero. When another monster is nearer the target it chases or stands for 30 frames. Otherwise it tests a target distance that is never set, so the 140 to 240 unit branch never runs and it always picks a sword combo, attack 2, the red wave swing or a chase. Nothing in this script calls it."
   },
   "bb10df8e2ddcf81e": {
    "name": "fade_out_light_on_death",
@@ -32353,7 +32353,7 @@
     "unused2"
    ],
    "loose": "3e3d09eb6f77c7b0",
-   "doc": "Moves a set distance toward angle_deg at move_speed without turning, waiting until within near_dist or max_frames. Stops moving afterward."
+   "doc": "Walks distance units (at least move_speed plus 1) toward angle_deg at move_speed without turning, until the walk ends, the target comes within near_dist or max_frames pass, then stops moving."
   },
   "bc09bd1c257fc2e3": {
    "name": "on_init",
@@ -32426,7 +32426,7 @@
     "iteration",
     "frames"
    ],
-   "doc": "Turns to a random yaw left or right of the current facing (30 plus base plus up to range degrees) and waits until done."
+   "doc": "Turns to a random yaw left or right of the current facing (30 plus base plus up to range degrees), using base as the turn speed too, and returns the frames waited. The loop over count never repeats because it returns after the first turn."
   },
   "bc8bfeae8f011640": {
    "name": "walk_toward_target",
@@ -32689,7 +32689,7 @@
     "ground_y",
     "pos"
    ],
-   "doc": "Turns toward the target and flies, slowing near the end, to the target's x and z at height_offset above the ground."
+   "doc": "Meant to turn toward the target and fly, slowing near the end, to the target's x and z at height_offset above the ground. The turn, position, target and height reads are old-numbered (the target read runs as set_home_pos and overwrites the home position) and fly_to_point_decelerating does not move the monster, so it neither turns nor flies."
   },
   "be7e2f8b3edeaf07": {
    "name": "chase_target_until_close",
@@ -32730,13 +32730,13 @@
    "doc": "Stops moving, starts the death drops, plays the death motion to its end, finishes the death and then waits forever."
   },
   "bec04af2aabac7a7": {
-   "name": "setup_vanguard_attacks",
+   "name": "setup_mammo_attacks",
    "loose": "20bcfcc8e2d4a8db",
    "locals": [
     "free_texture_block",
     "load_result"
    ],
-   "doc": "Registers the claw swipe hit boxes and loads the Vanguard shockwave effect if a texture block is free. Clears monster var 1."
+   "doc": "Init program: registers the two claw swipe hit windows on attack 1, loads the Vanguard shockwave effect if a texture block is free, clears monster var 1, starts the AI and extends the clip distance."
   },
   "bec924ae28788940": {
    "name": "fly_back_from_target",
@@ -32753,7 +32753,7 @@
     "target_rot_y",
     "random_float"
    ],
-   "doc": "Plays the step back motion and flies to a point 30 to 40 units farther from the target than now at the given speed, taking no damage meanwhile."
+   "doc": "Turns damage off, plays the step back motion and after 3 frames flies toward a point 30 to 40 units farther from the target than now, 25 units above the ground, at the given speed for at most 8 frames (about 24 units at the 3.0 its caller passes); then turns damage back on and waits for the motion to end."
   },
   "bed30abb8bd519fe": {
    "name": "choose_mid_range_action",
@@ -32840,7 +32840,7 @@
     "y",
     "z"
    ],
-   "doc": "Walks or spins toward the target a few units per frame until within 80 units, or until a random 40 to 100 frames have passed with the target behind it. Returns 0."
+   "doc": "Walks or spins toward the target a few units per frame until within 80 units, or until a random 40 to 99 frames have passed with the target behind it; then clears the stored AI choices (reset_ai_values) and stops. Returns 0."
   },
   "bf3f8c370dc502f4": {
    "name": "wait_until_facing_angle_or_target_seen",
@@ -32936,7 +32936,7 @@
    "locals": [
     "player_disguise"
    ],
-   "doc": "While the player is disguised, the monster stands and only turns toward the player (at 3.5 speed, walking) when the player leaves a 60 degree arc in front of it. Ends when the disguise is gone. The argument is not used."
+   "doc": "While the player is disguised, the monster stands and only turns toward the target (at 3.5 speed, walking) when it is more than 60 degrees to either side of its facing. Ends when the disguise is gone. The argument is not used."
   },
   "bfab4643dceb23ce": {
    "name": "face_target_for_frames",
@@ -33034,7 +33034,7 @@
     "unused5",
     "result"
    ],
-   "doc": "Faces the target then walks straight ahead as far as the target is away. Returns -1 if the way is shorter than that."
+   "doc": "Faces the target, then walks straight ahead as far as the target is away. Returns -1 without moving if a wall is closer than speed + arrive_dist ahead, otherwise the result of waiting for the move (1 near the target, 2 arrived, 0 timeout)."
   },
   "c02a96b410dd596d": {
    "name": "fly_and_get_up_when_stunned",
@@ -33326,7 +33326,7 @@
     "stage",
     "pollen_cooldown"
    ],
-   "doc": "If the flower has reached stage 7 it creates the rafflesia pollen effect and sets monster var 8 to 16 when that cooldown is 0. Otherwise it does nothing."
+   "doc": "If the shared pistil stage in monster var 17 is 7, creates the rafflesia pollen effect and, when monster var 8 is 0 (the Rainbow Butterfly is whole), sets var 8 to 16 to make the butterfly boss split. Returns 0."
   },
   "c1add27ac03c28b2": {
    "name": "is_facing_target_deg",
@@ -33414,7 +33414,7 @@
     "target_dist",
     "result"
    ],
-   "doc": "Moves to the point at the given angle around the target at the current target distance, stopping early at a wall. Returns -1 if there is no room."
+   "doc": "Unused. Walks without turning toward the point angle_deg around the target at the current target distance (0 is the side facing this monster). The wall check probes straight ahead along its facing, not toward the point: if less than 100 units ahead are clear the move is cut to that length along the direction to the point, and -1 is returned without moving when that leaves less than twice stop_dist. Otherwise returns the wait result: 1 if the target comes within stop_dist, 2 when the move ends, 0 after max_frames."
   },
   "c213199d517588ae": {
    "name": "stand_idle_frames_updating",
@@ -33580,7 +33580,7 @@
     "target_angle",
     "frame"
    ],
-   "doc": "Each frame turns toward the target and walks at it, returning -1 once closer than stop_dist, or the frames spent when max_frames is reached."
+   "doc": "Meant to turn toward the target and walk at it each frame, returning -1 once closer than stop_dist or the frames spent after max_frames. In this toolkit's old numbering the distance read, target read, move and stops run get_kind_pos, set_home_pos, get_distance_to and get_home_pos, the rotation read has no native, and this toolkit's turn helpers do not turn either, so the monster neither turns nor moves, its home position is overwritten each frame, and the -1 exit tests a distance that is never read."
   },
   "c36efd245bcc1e2b": {
    "name": "run_at_target",
@@ -33830,7 +33830,7 @@
     "frames"
    ],
    "loose": "8ec37c34951a5712",
-   "doc": "Turns to a random side of the current facing by up to angle_range degrees plus the turn speed plus 30, waits until done and returns the frames used. Only the first try runs, because the loop returns inside its first pass."
+   "doc": "Meant to turn left or right at random by up to angle_range degrees plus the turn speed plus 30, but get_random_float and get_random_int are handed angle and roll by value instead of by address, so neither is set and the turn uses whatever those locals hold. Waits for the turn and returns the frames used; the loop returns on its first pass, so tries does not matter."
   },
   "c54eb98258006494": {
    "name": "run_ai_step",
@@ -33926,7 +33926,7 @@
     "angle_to",
     "current_ratio"
    ],
-   "doc": "Once monster var 7 has reached 300, picks the monster within 200 units with the lowest life ratio, or itself if its own is lower, and if that ratio is at most 0.9 plays the recover motion and heals it for 24 to 30 percent of its max life with a green damage number. Returns -1 when nobody needs healing and resets var 7 after a heal."
+   "doc": "Once monster var 7 has reached 300, picks the monster within 200 units with the lowest life ratio, or itself if its own is lower, and if that ratio is at most 0.9 plays the recover motion and heals it for 24 to 30 percent of its max life with a green damage number, then resets var 7. Returns 0 when var 7 is still under 300 or the patient's life reaches 0 during the heal, and -1 when nobody needs healing."
   },
   "c587cb877c1fd429": {
    "name": "halt_and_forbid_guard_and_dodge",
@@ -34024,7 +34024,7 @@
     "flat_dist",
     "aggro_range"
    ],
-   "doc": "Main loop: an unaware monster transforms when the target comes within 290 and fights by distance, otherwise wanders; an aggroed one fights or runs at the target; once it cannot be enraged it uses the simpler attack logic."
+   "doc": "Main loop. While rage hits remain and it is not aggroed: when the target is within 290 (flat) it fights by distance, first flying at the target and playing the transform motion if monster var 7 is 2 (then setting it to 1); otherwise it wanders, beforehand setting var 7 to 2 and playing the front-facing stand motion when its last read of var 7 was not 2, and afterwards setting var 7 to 1. Because a finished wander leaves var 7 at 1, the transform plays only when the target comes near before a wander has finished. When aggroed it fights within 160 or runs at the target inside the aggro range, judged by the flat distance read on the last unaggroed frame. With no rage hits left (enraged, or a boss) it uses attack_while_enraged."
   },
   "c6287ff642144647": {
    "name": "on_knockdown",
@@ -34197,7 +34197,7 @@
     "target_dist_2",
     "post_turn_angle_2"
    ],
-   "doc": "Idle AI step for a flyer: picks a random behaviour (fly away from a close wall, circle the home point, hover and watch, turn in place, circle the target, fly straight ahead) and records it in slot 0 of the second variable set (4 circling, 8 watching, 16 turning, 32 straight). Returns 1 when it detects the target while watching."
+   "doc": "Idle AI step for a flyer: picks a random behaviour (fly away from a close wall, circle the home point, hover and watch, turn in place, circle the target, fly straight ahead) and records it in slot 0 of the second variable set (4 circling, 8 watching, 16 turning, 32 straight). Returns 1 when one of the two rarer watch branches detects the target and 0 after the far-from-home branch; other paths end without a return value. A seventh branch (random flight, recording 1 in monster var 0) tests a variable that is never set."
   },
   "c6e4b7e16d5a1740": {
    "name": "rise_and_droop_on_hit",
@@ -34446,7 +34446,7 @@
     "pulse_phase",
     "timer"
    ],
-   "doc": "Lobs the bomb toward the target on a decaying arc for up to 120 frames, until it drops below the target's height (when it starts within 30 units horizontally of the target it drops 15 units and arcs straight up instead). Then runs the 195-frame fuse, pulsing in size in the last 30 frames, and self-destructs; coming within 50 units of the target during the arc detonates it at once."
+   "doc": "Lobs the bomb toward the target on a decaying arc until it drops below the target's height or its speed runs out after about 63 frames (when it starts within 30 units horizontally of the target it drops 15 units and arcs straight up instead). Then runs the 195-frame fuse, pulsing in size and colour in the last 30 frames, and self-destructs; coming within 50 units of the target during the arc detonates it at once."
   },
   "c7dcf6c310089653": {
    "name": "fight_at_long_range",
@@ -34540,7 +34540,7 @@
     "roll",
     "target_dist_2"
    ],
-   "doc": "Runs at the target if farther than 80 units, then uses the double or mid-range attack with a 5% chance, otherwise a moonsault."
+   "doc": "Runs at the target if farther than 80 units, then uses the double or mid-range attack with a 4% chance, otherwise a moonsault."
   },
   "c832c7162ddc9608": {
    "name": "fly_toward_heading",
@@ -34690,7 +34690,7 @@
     "blocked_value",
     "unused2"
    ],
-   "doc": "Moves vertically to the target height at the given speed, updating the boss each frame."
+   "doc": "Moves straight up speed units per frame (down only when target_y is negative, since only its sign sets the direction) until within speed plus stop_margin of height target_y, updating the boss each frame; vertical movement stops for good 200 units above the ground or at ground level. Returns 1 on arrival, the check_flight_step result if blocked, or 0 after max_frames."
   },
   "c8f35923fb4e2a5b": {
    "name": "recover_from_throw_and_resume_flying",
@@ -35009,7 +35009,7 @@
    ],
    "loose": "69dfbb8541fd26ea",
    "params": [],
-   "doc": "Picks and runs one flying behaviour for a wandering flyer: turns away from walls, heads home when over 300 away, or randomly waits for the target, turns, orbits home or the target, flies ahead or wanders. Sets monster variable 2 slot 0 to the chosen behaviour bit. Returns 1 when it detects the target while waiting, else 0."
+   "doc": "Picks and runs one flying behaviour for a wandering flyer: turns to a random heading when a wall is close ahead, and when over 300 from home either circles the home point or hovers watching for the target; otherwise it randomly hovers and watches, turns in place, circles the target or flies ahead (a last wander branch tests a local that is never set). Sets monster variable 2 slot 0 to the chosen behaviour bit. Returns 1 when one of the two checked watches spots the target and 0 after the far-from-home choice; on the other paths it returns without setting a value."
   },
   "cb18a7f9fabe8ccf": {
    "name": "wait_move_until_near_target",
@@ -35057,7 +35057,7 @@
     "player_disguise",
     "monster_kind"
    ],
-   "doc": "If the player is wearing a transformation disguise, runs the idle routine until the disguise ends."
+   "doc": "If the player is disguised in the form this monster's kind recognises as its own (get_player_disguise is not -1), runs idle_until_disguise_ends until that ends; otherwise returns at once."
   },
   "cb7f168b1ecc2517": {
    "name": "summon_sprouts",
@@ -35202,7 +35202,7 @@
     "pos",
     "rot"
    ],
-   "doc": "Faces the target and plays attack 1 (the poison hit), stepping 100 units forward during it."
+   "doc": "Faces the target and plays attack 1 (the poison hit); after 10 frames moves toward a point 100 units ahead at 2.7 units per frame for 12 frames (about 32 units), then stops and waits 3 more frames without returning to the stand motion."
   },
   "cc0598ba77ed7790": {
    "name": "setup_flying_limits",
@@ -35218,7 +35218,7 @@
    "locals": [
     "boost"
    ],
-   "doc": "Reads the speed boost. The original passes the variable by mistake, so it never loads the stored value."
+   "doc": "Meant to read the speed boost from monster var 9, but it calls set_monster_var with the local's address instead of get_monster_var, so it overwrites var 9 and writes the unset local to out_boost."
   },
   "cc290fd6f80f10de": {
    "name": "act_at_long_range",
@@ -35284,7 +35284,7 @@
    "locals": [
     "boost"
    ],
-   "doc": "Adds the speed boost to the given speed."
+   "doc": "Meant to add the speed boost from monster var 9 to the given speed, but get_speed_boost never loads it, so it adds an unset local instead (and overwrites var 9)."
   },
   "ccbb0c136e7e831d": {
    "name": "approach_until_in_range",
@@ -35484,7 +35484,7 @@
     "unused3",
     "result"
    ],
-   "doc": "Turns a random amount within the angle range, then walks a random distance ahead if the path is clear. Returns -1 when blocked."
+   "doc": "Meant to turn up to angle_range degrees, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about angle_range/57, always to the same side. If 100 units ahead are clear it walks base_dist + move_speed plus a random 0 to dist_range units; if less is clear but more than stop_dist it walks just the random amount; otherwise it returns -1 without moving. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "cda3719057dbaa01": {
    "name": "tick_until_motion_progress",
@@ -35553,7 +35553,7 @@
     "value",
     "target_dist"
    ],
-   "doc": "When monster var 0 has bit 2, 4 or 16 set (a wander or watch state) or the target is over 300 units away, runs at the target and does the charge and shockwave instead of dodging the shot; otherwise does nothing."
+   "doc": "When monster var 0 has bit 2, 4 or 16 set (turning to fire or firing nose bullets, circling while wandering, or standing watching) or the target is over 300 units away, runs at the target and does the charge and shockwave instead of dodging the shot; otherwise does nothing."
   },
   "cdf3bb42d60b7de5": {
    "name": "halt_on_dodge",
@@ -35660,7 +35660,7 @@
     "target_dist",
     "life"
    ],
-   "doc": "Chooses an action for a close target: fire a thunder shot, sidestep first, back away, or fly off diagonally."
+   "doc": "Chooses an action for a target under 120 units away: first fires a thunder shot if the target is within 40, then fires a thunder shot (sometimes after a random sidestep), backsteps, or flies 100 units away at 35 degrees off straight back."
   },
   "ce7f0df4f3d4c624": {
    "name": "arc_toward_point",
@@ -35737,7 +35737,7 @@
   "ceb9aaf8492fb839": {
    "name": "attack_with_swing",
    "loose": "7b9a686fb878f1f1",
-   "doc": "Vanguard attack 1: plays the attack motion, returns to standing and waits 12 frames."
+   "doc": "Linda's attack 1: plays the attack motion, returns to standing and waits 12 frames."
   },
   "cee4febae5cce413": {
    "name": "wait_until_target_detected",
@@ -35938,7 +35938,7 @@
    "locals": [
     "x"
    ],
-   "doc": "Dodge melee program: forbids guard and dodge, turns at once to face the target, stands and allows guard and dodge again."
+   "doc": "Dodge melee program, meant to forbid guard and dodge, turn at once to face the target, stand and allow guard and dodge again. The calls are old-numbered: the facing call (_EXT_68) has no native, the stand motion runs as set_life and the guard and dodge locks set the floor's visible monster limit, so it only waits a frame."
   },
   "d013df2e7e618bdb": {
    "name": "get_up_from_stun",
@@ -36105,7 +36105,7 @@
   "d0fbb2c38883e856": {
    "name": "slash_attack_1_tracking",
    "loose": "fdf2814c9d605739",
-   "doc": "Plays attack 1 while turning toward the target for 11 frames."
+   "doc": "Plays attack 1 while turning toward the target for 9 frames (11 at 30 fps scaled to PAL), then waits for the motion to end."
   },
   "d108b815391c2cb8": {
    "name": "recover_from_limp",
@@ -36214,7 +36214,7 @@
     "roll",
     "rage_hits_left"
    ],
-   "doc": "Fight loop used while the rage counter is zero: picks between walking or running up to the target and swinging attack 1 or 2, or a combo. Returns as soon as the rage hits left becomes positive."
+   "doc": "Enraged fight loop, used while no rage hits are left: unless more than four monsters are nearer the target, walks or runs up to it and swings attack 1 or 2 or a combo. The close-or-far test reads target_dist, which this function never sets, so the branch is fixed by the uninitialised value. Returns 0 as soon as rage hits left becomes positive; distance never ends it."
   },
   "d19d782922a8c274": {
    "name": "track_target_until_motion_progress",
@@ -36340,14 +36340,14 @@
    "doc": "Turns toward the target, with a percent chance of aiming off to a random side by the offset."
   },
   "d20515f68a211e20": {
-   "name": "setup_boss_and_clones",
+   "name": "setup_boss_and_lights",
    "loose": "826867d23e2d96b7",
    "locals": [
     "monster_handle",
     "free_texture_block",
     "load_results"
    ],
-   "doc": "Sets the boss attributes, creates the three clone monsters 618 to 620 and loads the Griffon feather effects."
+   "doc": "Init program: sets the boss attributes (always visible, free velocity, no map or body collision, visible monster limit 15) and the low player camera, stores its handle in monster var 31 for the lights and clears the command in var 30, creates the three Atramilia lights (kinds 618 to 620), loads the Griffon feather effects into a free texture block, and clears var 7 and the flicker counter."
   },
   "d2064979e7e013bf": {
    "name": "face_target_while_disguised",
@@ -36678,7 +36678,7 @@
   "d3c9567371b5c247": {
    "name": "swing_attack_one_then_two",
    "loose": "941a00b11116fe9c",
-   "doc": "Plays attack 1, then switches to attack 2 after 22 frames."
+   "doc": "Plays attack 1, then switches to attack 2 after 18 frames (22 at 30 fps scaled to PAL) and waits for it to end."
   },
   "d3e3a3defeb87b97": {
    "name": "track_target_until_motion_end",
@@ -36741,7 +36741,7 @@
     "count",
     "seen"
    ],
-   "doc": "Loops the idle play motion for repeat_count periods of 84 frames. When watch_target is 1, returns 1 as soon as the target comes within 75 units in front."
+   "doc": "Loops the idle play motion for repeat_count periods of 70 frames (84 at 30 fps scaled to PAL). When watch_target is 1, returns 1 as soon as the target comes within 75 units and 45 degrees of the front; otherwise returns 0 after the last period."
   },
   "d40c26dea3aae521": {
    "name": "dodge_sideways",
@@ -36772,10 +36772,10 @@
   "d42298b1aa1ab5f6": {
    "name": "setup_attack_hit_and_lighting",
    "loose": "4d219842cc272c4a",
-   "doc": "Registers the attack 2 hit window, disables lock-on, sets the model color and lighting, starts the AI and extends the clip distance so the boss is never culled."
+   "doc": "Init program: registers the attack 2 knockback hit window, disables lock-on, clears monster variable 0 so the minion plays its landing on first update, sets the model color and lighting, starts the AI and extends the clip distance so the minion is never culled."
   },
   "d4252e56ce98fe91": {
-   "name": "fight_loop_without_rage",
+   "name": "fight_loop_once_enraged",
    "loose": "dbd52d68cd8111a0",
    "locals": [
     "unused_value",
@@ -36789,7 +36789,7 @@
     "life",
     "strafe_angle"
    ],
-   "doc": "Fight loop while no rage hits remain; returns once rage hits are back. Repositions when another monster has priority; otherwise claws under 75 units, rolls at 75 to 90, and farther away mostly rolls (70 percent) or else chases or circles."
+   "doc": "Enraged fight loop, run while no rage hits remain; returns once rage hits are back. Repositions when more than four monsters are nearer the target; otherwise claws under 75 units, rolls at 75 to 90, and farther away mostly rolls (70 percent) or else chases or circles."
   },
   "d42deb1a21bebc2f": {
    "name": "dodge_melee_by_stepping_back",
@@ -37292,7 +37292,7 @@
     "unused7",
     "life"
    ],
-   "doc": "Waits until the current motion ends, then halts movement and returns 1. Under this script's old native numbering get_life is check_motion_end; the arguments are unused."
+   "doc": "Meant to wait until the current motion ends, then halt movement and return 1. The old-numbered motion-end check runs as get_life, which reads nonzero while the monster is alive, so it returns 1 at once without waiting, and halt_movement does nothing. The arguments are unused."
   },
   "d73105be3a3d7217": {
    "name": "chase_target_by_steps",
@@ -37375,7 +37375,7 @@
     "turn_speed_rad",
     "frame"
    ],
-   "doc": "Keeps turning toward the target for the given number of frames, then stops turning."
+   "doc": "Turns toward the target every frame for the given number of frames, then stops turning. Despite the parameter name, turn_speed_deg goes to the turn unconverted, so it is in radians per frame; a degree value such as 4.2 makes the monster face the target almost at once."
   },
   "d7c39cabd1668113": {
    "name": "set_wall_margin",
@@ -37469,7 +37469,7 @@
   "d8357b608dc54c4e": {
    "name": "recoil_from_damage",
    "loose": "a667bec723c7b02c",
-   "doc": "Plays the damage animation, waits 12 frames and returns to standing."
+   "doc": "Damage program, meant to stop, play the damage motion with a knockback, wait 12 frames and return to standing. The motion and knockback calls are old-numbered (set_life and get_body_radius), wait_motion_end returns after one frame, and stop_actions_and_disable_lighting turns the model lighting off, so it only waits about 13 frames with the model unlit."
   },
   "d836c5fa04f62871": {
    "name": "get_up_after_throw",
@@ -37578,7 +37578,7 @@
     "target_dist",
     "move_speed"
    ],
-   "doc": "Attack 1: faces the target, lunges forward to the target's distance over about 22 frames, then moves back to where it started."
+   "doc": "Attack 1: faces the target, lunges forward to the target's distance over about 22 frames, then moves back for 25 frames toward its starting X but the lunge's Z, so it only returns to where it started when the lunge was along X."
   },
   "d8e8d35ac8366e83": {
    "name": "on_lifted",
@@ -37636,7 +37636,7 @@
     "side_angle",
     "roll"
    ],
-   "doc": "Steps 100 units left or right at random with damage disabled."
+   "doc": "Turns to face the target, then steps left or right at random with damage disabled, flying toward a point 100 units to that side at 9.8 units per frame for only 6 frames, so it covers about 59 units."
   },
   "d9b60141c7000659": {
    "name": "play_damage_blowback",
@@ -37650,7 +37650,7 @@
     "pos",
     "rot"
    ],
-   "doc": "Attack 1: turns to the target, plays the attack and lunges 100 units forward during it."
+   "doc": "Attack 1: turns to the target, plays the attack and 12 frames in lunges toward a point 100 units ahead at 2.55 units per frame, stopping after 15 frames (about 38 units), then waits 4 more frames."
   },
   "d9c243f0e2f12563": {
    "name": "approach_at_long_range",
@@ -37717,7 +37717,7 @@
    "locals": [
     "life_status"
    ],
-   "doc": "Counts hits landing within 100 ticks of each other and calls do_nothing after more than 3. Also raises var 22 every 600 ticks (flip form) and var 23 every 1500 ticks (go to the sky phase)."
+   "doc": "Counts hits that land within 100 frames of the hit that opened the current burst (a later hit restarts slot timer 2 and zeroes the count) and calls do_nothing when the count passes 3. Also raises var 22 every 600 frames (flip form) and var 23 every 1500 frames (go to the sky phase)."
   },
   "da295759f1ffe034": {
    "name": "rise_and_sway_instead_of_dying",
@@ -38010,7 +38010,7 @@
     "unused_value",
     "pattern"
    ],
-   "doc": "Picks one of six patterns at random and commands the roses to act in it: all odd, all even, a half, the other half, or one by one in either direction."
+   "doc": "Picks one of six patterns at random and commands all six roses to act: the odd roses then the even ones, the even then the odd, roses 3 to 5 then 0 to 2, or 0 to 2 then 3 to 5 (the two groups 90 frames apart), or one at a time 30 frames apart from rose 5 down to 0 or from 0 up to 5. It then waits 90 frames."
   },
   "dbf6d12eccbc71da": {
    "name": "wait_until_target_detected",
@@ -38072,7 +38072,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle within angle_range and flies a random distance at height_offset above the ground, shortened by the clearance check. Returns -1 if there is no room."
+   "doc": "Meant to turn by a random angle of up to angle_range degrees and fly base_distance plus speed plus a random distance up to distance_range at height_offset above the ground, or only the random distance when a wall is within 100 units ahead, returning -1 when that wall is closer than clearance. The turn, facing, clearance and move calls are old-numbered and reach unrelated natives, so the monster neither turns nor flies; otherwise it returns an unset value."
   },
   "dc14f001af5bc0b6": {
    "name": "move_in_direction",
@@ -38139,7 +38139,7 @@
     "run_result",
     "roll"
    ],
-   "doc": "Runs at the target, then 70% of the time shoots an elemental ball."
+   "doc": "Runs at the target for up to 60 frames and, if it does not reach it, rises back to hover height; then 70% of the time shoots an elemental ball."
   },
   "dcd0153c556f4040": {
    "name": "fly_backward",
@@ -38220,7 +38220,7 @@
     "roll",
     "target_dist"
    ],
-   "doc": "Loop for when the player is more than 1200 away. Leaves the magma or walks to the ring and dives into a magma pool, then repeats until the player comes back in range."
+   "doc": "Loop for when the player is 1200 or more units away: sets var 5 to 8, then each round leaves the magma if in it, or else walks to a ring point and fires the flame ring, 80 percent of the time then diving into the magma pool nearest the player. Returns 0 once the player is back within 1200 units. Nothing in this script calls it."
   },
   "dd6251fa106f785a": {
    "name": "sidestep_with_brief_invulnerability",
@@ -38274,7 +38274,7 @@
     "rage_hits_left",
     "flat_target_dist"
    ],
-   "doc": "Main loop: with rage hits left it fights by distance or flies toward the target, otherwise runs the no-rage fight loop."
+   "doc": "Main loop: while rage hits remain it fights by distance when the target is within 220 units horizontally, otherwise picks a wandering flying action; with no rage hits left it runs the no-rage fight loop."
   },
   "dd8127ccc06278d4": {
    "name": "wait_move_end_update",
@@ -38450,7 +38450,7 @@
     "player_disguise",
     "monster_kind"
    ],
-   "doc": "If the player is currently disguised, runs the disguised idle loop with this monster's kind."
+   "doc": "If the player is disguised in the form this monster's kind recognises as its own (get_player_disguise is not -1), runs face_target_while_disguised until that ends; otherwise returns at once. The monster kind it passes is not used."
   },
   "dec5dd6243daf4ce": {
    "name": "on_init",
@@ -38527,7 +38527,7 @@
   "df4316d71a1652e8": {
    "name": "setup_feather_flyer",
    "loose": "8c6154aeee29b6de",
-   "doc": "Forbids guard and dodge, halts, turns on free velocity and no map collision, sets a 9999.9 clip distance and the player camera, loads the three Griffon feather effects and stores the position in the globals."
+   "doc": "Meant to forbid guard and dodge, halt, turn on free velocity and no map collision, set a 9999.9 clip distance, load the three Griffon feather effects and store the position in the globals. Only the player camera mode is set as meant: the other calls are old-numbered and reach unrelated natives (set_visible_monster_limit, set_photo_window, stop_color_pulse, get_entry_object_pos), and store_position_in_globals reads nothing, leaving spawn_y 0."
   },
   "df4cd2f57e431112": {
    "name": "dodge_melee_by_stepping_back",
@@ -38613,13 +38613,13 @@
    "doc": "Stun program: clears no-damage and halts, plays the knocked-flying and get-up motions, then plays the faint motion until the stun stars run out and allows guard and dodge again."
   },
   "dfea7beeb693bd2c": {
-   "name": "sidestep_from_shot",
+   "name": "counter_or_sidestep_shot",
    "loose": "44fc7da3f91b01ff",
    "locals": [
     "roll",
     "target_angle"
    ],
-   "doc": "Reacts to a shot with a cross cutter counter (70 percent) or a sidestep."
+   "doc": "Reacts to a shot with a cross cutter counter (70 percent) or a sidestep, to the right when the world yaw toward the target is negative and to the left otherwise."
   },
   "dfeec0aea733c9dd": {
    "name": "track_monster_until_time",
@@ -38760,7 +38760,7 @@
     "angle_to",
     "target_ratio"
    ],
-   "doc": "When the heal timer in monster var 7 is at least 300, finds the monster within 150 units with the lowest life (or itself) and, if that is under 90% life, casts the recovery spell on it, healing about 24% to 30% of its maximum life with a green damage number. Resets the timer. Returns -1 when nothing needed healing, 0 if the target died."
+   "doc": "When the heal timer in monster var 7 is at least 300, finds the monster within 150 units with the lowest life (or itself) and, if that is under 90% life, casts the recovery spell on it, healing about 24% to 30% of its maximum life with a green damage number, and resets the timer. Returns 0 at once while the timer is under 300 and 0 if the target dies during the cast, -1 when nothing needed healing; after a heal the return value is undefined."
   },
   "e0f0dc65504d1681": {
    "name": "shoot_ice_ball",
@@ -38863,7 +38863,7 @@
     "unused_value",
     "roll"
    ],
-   "doc": "Steps 100 units to a random side with the side step motion, invulnerable during the step."
+   "doc": "Plays the left or right side step motion (random) and, after 6 frames, heads for a point 100 units to that side at 1.75 units per frame, stopping 8 frames later (about 14 units). It takes no damage only during those 8 moving frames, then waits for the motion to end and stands."
   },
   "e156f6385affc1d1": {
    "name": "attack_at_mid_range",
@@ -39140,7 +39140,7 @@
     "unused3",
     "result"
    ],
-   "doc": "Turns to a random heading within a range, checks for a wall ahead and walks a random distance along it. Returns -1 if there is no room."
+   "doc": "Meant to turn up to max_angle_deg, but converts the range to radians and then the random turn to radians again, so it turns a whole number of degrees from 0 to about max_angle_deg/57, always to the same side. If 100 units ahead are clear it walks min_dist + speed plus a random 0 to max_dist units; if less is clear but more than wall_margin it walks just the random amount; otherwise it returns -1 without moving. Then returns the wait result: 1 if the target comes within wall_margin, 2 when the walk ends, 0 after max_frames."
   },
   "e314bc710c8417d7": {
    "name": "fly_toward_angle_updating",
@@ -39428,7 +39428,7 @@
     "situation",
     "situation_2"
    ],
-   "doc": "One AI step. Unaggroed: wanders, or acts on the situation if the target is under 100 units. Aggroed: acts if under 75, charges if inside the aggro range, otherwise drops aggro."
+   "doc": "One AI step. Unaggroed: wanders, or acts on the situation if the target is under 100 units. Aggroed: within 75 it resets the guard rate to normal, drops aggro and acts on the situation; elsewhere inside the aggro range it quadruples its guard rate and charges; outside the range it resets the guard rate and drops aggro."
   },
   "e43d0c5372d5df8e": {
    "name": "on_init",
@@ -39644,7 +39644,7 @@
     "target_angle",
     "ground_delta"
    ],
-   "doc": "Turns to the target, plays attack 1, flies down onto the target position, then turns and flies 150 units back away from it."
+   "doc": "Turns to the target and plays attack 1, then flies at 5.25 units per frame to 10 units above the ground at the target's starting position (up to 60 frames). It then faces the target and, with the attack 1 out motion, flies toward a point 150 units beyond itself on the far side from the target, 50 units above the ground, at 2.1 units per frame for at most 30 frames (about 63 units)."
   },
   "e55073fbb10eb95b": {
    "name": "fight_mid_range",
@@ -39751,7 +39751,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Flies backward from the facing direction."
+   "doc": "Meant to fly backward, away from the monster's facing, at hover_height above the ground, but the distance is never set, so how far it goes is undefined; the return value is undefined too."
   },
   "e5ee34d906fe5a95": {
    "name": "step_back_with_invincibility",
@@ -39829,7 +39829,7 @@
     "pos",
     "ground_y"
    ],
-   "doc": "After a throw lands, gets up and sets the height 10 above the ground."
+   "doc": "Land program: recovers from the throw with scripted flight restored, waits, gets up and sets its height 10 above the ground. Returns 1."
   },
   "e64c63e4ff23e8af": {
    "name": "run_battle_ai",
@@ -39934,7 +39934,7 @@
    "locals": [
     "target_angle"
    ],
-   "doc": "Turns to face the target and steps sideways invulnerable to dodge a shot."
+   "doc": "Dodge program for shots: halts, turns to face the target, steps 100 units to a random side, returns to standing and allows guarding and dodging again. step_sideways sets and clears the no-damage bit in the same frame, so the step is not invulnerable."
   },
   "e710be47e316f807": {
    "name": "fight_while_calm",
@@ -39970,7 +39970,7 @@
     "angle_step",
     "angle_accel"
    ],
-   "doc": "Main loop of the light: orbits the owning monster with a swinging angular speed, and steps through the states set by the owner (rise, move, circle with the light effect, return) while monster var 30 equals 4."
+   "doc": "Update program of the yellow light. Whenever the command in monster var 30 is 4 and the angle step is not within 0.0004 of zero it rises above the owner; state 2 in var 29 then moves to the circle start, state 16 circles with the light effect, and state 64 flies back to the orbit position and sets state 4. Every frame it orbits the owner with an angle step that swings between plus and minus pi/32."
   },
   "e71a2e773e70e64f": {
    "name": "set_attack_enabled",
@@ -39996,7 +39996,7 @@
     "unused7",
     "unused8"
    ],
-   "doc": "Turns to the player, swings (attack 1) for 45 frames and stands."
+   "doc": "Turns to the player, swings (attack 1) for 37 frames and stands for 9 frames."
   },
   "e73ddf2d6901f240": {
    "name": "wait_or_circle_target",
@@ -40017,7 +40017,7 @@
     "free_texture_block",
     "effect_handles"
    ],
-   "doc": "Resets monster var 0 and loads the fast shot, pirate bomb explosion and smoke effects into a free texture block."
+   "doc": "Init program: resets monster var 0, loads the fast shot, pirate bomb explosion and M smoke effects into a free texture block when one is available, and starts the monster AI with init_monster_ai."
   },
   "e7479ee80fad0db5": {
    "name": "circle_around_point",
@@ -40249,7 +40249,7 @@
    "doc": "Returns 1 if the player is closer than the given distance, else 0."
   },
   "e8441275bbc5e3a9": {
-   "name": "run_boss_ai",
+   "name": "run_minion_ai",
    "loose": "adbb14e25a75bb63",
    "locals": [
     "has_landed",
@@ -40257,7 +40257,7 @@
     "unused_value",
     "air_height"
    ],
-   "doc": "On first spawn it plays the fall motion until about 30 units above the ground and then lands. After that it fights by distance every frame."
+   "doc": "Update program of the summoned Arch Demon minion. On first spawn (monster variable 0 clear) it plays the fall motion until it is under 30 units above the ground, lands and sets the variable. After that it fights by distance every frame."
   },
   "e85800e15f86d8a7": {
    "name": "recoil_from_hit",
@@ -40437,7 +40437,7 @@
   "e963bc08cff6c756": {
    "name": "setup_pollen_flower",
    "loose": "e5af67c054d529aa",
-   "doc": "Disables map collision and lock-on, loads the rafflesia pollen effects and binds the shokushu (tentacle) object with a body size of 12."
+   "doc": "Disables map collision and lock-on, loads the rafflesia pollen effects and registers the shokushu (tentacle) frame as action object 0."
   },
   "e97304091f827f8a": {
    "name": "fight_at_mid_range",
@@ -40501,7 +40501,7 @@
    "locals": [
     "pos"
    ],
-   "doc": "Turns to the given yaw at the current height; returns 5 if the split signal arrives."
+   "doc": "Turns to the given yaw at the current height, stopping early if the split signal arrives. It drops the turn's result and always returns 0, so its callers' checks for 5 never succeed."
   },
   "e9b156c5d44ceb8d": {
    "name": "dash_with_attack_two",
@@ -40514,7 +40514,7 @@
   "e9b259b02e2bf565": {
    "name": "setup_butterfly_boss",
    "loose": "d88d1b2577c93d7a",
-   "doc": "Sets no map or body collision, loads the butterfly effects, places the boss at (260, 850, -320), sets the photo window and body radius 12 for the merge motion."
+   "doc": "Allows up to 15 visible monsters, turns off map and body collision, places the boss at (260, 850, -320), loads the butterfly effects, allows a photo (number 1015) during the whole merge motion and registers frame body2--a40 as action object 0."
   },
   "e9e389024a96a4ec": {
    "name": "wander_until_target_detected",
@@ -40852,7 +40852,7 @@
     "aggro_range",
     "rage_hits_left"
    ],
-   "doc": "Per-update choice: enraged fighting, calm fighting or approaching depending on rage hits, aggro and the distance to the target."
+   "doc": "Per-update choice. With no rage hits left it runs the enraged fight loop. Otherwise, when not aggroed, it fights calmly within 280 units or picks an idle move beyond; when aggroed and the target is inside the aggro range, it clears aggro and fights calmly under 110 units or turns and lunges or shoots a curse bullet from farther; outside the range it just clears aggro."
   },
   "eb81941c22a35ef0": {
    "name": "fly_toward_angle",
@@ -40988,7 +40988,7 @@
     "unused2",
     "result"
    ],
-   "doc": "Turns by a random angle and walks a random distance ahead, keeping arrive_dist clear of walls. Returns -1 if there is no room."
+   "doc": "Turns a few degrees to one side and walks ahead. The angle range is converted to radians before the random pick and again after it, so the turn is only 0 to 6 degrees for a 360 degree range. With nothing within 100 units ahead it walks base_dist + speed + a random 0 to random_dist; otherwise it walks only the random distance, or returns -1 if a wall is within arrive_dist. Otherwise returns the result of waiting for the move."
   },
   "ec289dd2045ed613": {
    "name": "fly_at_target",
@@ -41061,12 +41061,12 @@
     "target_seen",
     "random_float"
    ],
-   "doc": "Turns a random angle, stands briefly, and if the target is in view within 300 units flies after it."
+   "doc": "Turns to a random world heading, stands for 9 frames, then watches for up to 45 frames; if the target comes into view within 300 units it flies after it for up to 150 frames."
   },
   "ecd05134c911cc8c": {
    "name": "slash_combo_two_hits",
    "loose": "211d3710eaecd8f1",
-   "doc": "Plays attack 1, then after 22 frames switches to attack 2."
+   "doc": "Plays attack 1, then after 18 frames (22 at 30 fps scaled to PAL) switches to attack 2 and waits for it to end."
   },
   "ecdcc7e42f7c7914": {
    "name": "maybe_melee_combo",
@@ -41571,7 +41571,7 @@
    "locals": [
     "roll",
     "detected",
-    "unused_value",
+    "unset",
     "unused2",
     "target_dist",
     "home_dist",
@@ -41590,7 +41590,7 @@
     "target_dist_2",
     "post_circle_turn"
    ],
-   "doc": "Idle behaviour (not called by this boss's main loop): flies away from walls, around its home point or the target, ahead along its facing, or stands watching. Records the chosen action in slot 0 of the second variable set and returns 1 as soon as the target is detected."
+   "doc": "Idle behaviour (not called by this boss's main loop): flies away from walls, around its home point or the target, ahead along its facing, or stands watching, recording the chosen action in slot 0 of the second variable set. Returns 1 if a watch detects the target and 0 after the moves made far from home; the near-home moves fall off the end with no defined result, and one of the near-home watches ignores detection. The random wander branch tests a variable that is never set, so it never runs."
   },
   "ef617baa7f25d651": {
    "name": "perform_next_attack_step",
@@ -41610,7 +41610,7 @@
    "locals": [
     "rage_hits_left"
    ],
-   "doc": "Update program: allows guard and dodge and clears the act status, then loops forever: strafes or waits until the target is within 175 units, then picks far (140-175), mid (90-140) or close range actions by distance until it moves away."
+   "doc": "Update program: allows guard and dodge and clears the act status, then loops forever: strafes or waits until the target is within 175 units, then picks far (140-175), mid (90-140) or close range actions by distance until it moves away. Once no rage hits are left, fight_by_range_until_far returns at once, so near the target the monster only waits."
   },
   "ef994603e970ad6f": {
    "name": "look_around_for_target",
@@ -41790,7 +41790,7 @@
     "unused_value",
     "unused2"
    ],
-   "doc": "Chases the target in steps like chase_target_in_steps, but returns -2 if the straight line to the target is blocked and -1 if it gets closer than stop_dist."
+   "doc": "Faces the target, then each frame steps toward a point speed * 10 toward it. Returns -1 once closer than stop_dist, -2 when map collision blocks the next speed + stop_dist units toward the target (checked 25 units above the ground), otherwise max_frames when time runs out."
   },
   "f101e9191d73bb44": {
    "name": "stop_jet_effects",
@@ -41827,7 +41827,7 @@
     "target_pos",
     "rot"
    ],
-   "doc": "Steps 200 units backwards with invulnerability."
+   "doc": "Invulnerable back step: from frame 9 to 24 of the step back motion it heads for a point 200 units behind at 3.6 per frame, covering about 54 units."
   },
   "f18d5a9b15b3543c": {
    "name": "run_venom_spitter_ai",
@@ -42126,7 +42126,7 @@
     "roll",
     "timer_flag"
    ],
-   "doc": "Picks a random starting form, then each frame handles the flip-form and sky-phase timers and either does the sky-phase action or picks an attack by distance."
+   "doc": "On its first run it flips to the form hurt by Monica: the roll sets bit 1 or 2, but setup already set bit 1, so flip_vulnerable_form always lands on form 2. It then loops forever, flipping form when the 600-tick timer has fired (unless in the sky phase) or entering the sky phase when the 1500-tick timer has fired, and then doing the sky-phase action or picking an attack by distance."
   },
   "f362fcd6c3ac40bb": {
    "name": "track_target_until_time",
@@ -42195,7 +42195,7 @@
     "result",
     "unused_b"
    ],
-   "doc": "Turns to an angle, then moves a distance in that direction until stop_dist or the frame limit."
+   "doc": "Despite the parameter names, the first argument is the turn speed in degrees and the second the walk speed. Turns to the world heading angle_deg, then walks dist units along it (at least the walk speed + 1), updating the boss each frame. A heading below the turn speed, including every negative heading, is first increased by the turn speed. Returns 1 if the target comes within stop_dist, 2 when the walk ends, 0 after max_frames."
   },
   "f39053e9beafb141": {
    "name": "play_damage_blowback",
@@ -42651,7 +42651,7 @@
     "pos",
     "rot"
    ],
-   "doc": "Steps 100 units backward with the back step motion, invulnerable during the step."
+   "doc": "Plays the back step motion and, after 6 frames, heads for a point 100 units behind at 1.75 units per frame, stopping 8 frames later (about 14 units). It takes no damage from the start until the move stops, then waits for the motion to end and stands."
   },
   "f635f2409ed86006": {
    "name": "dodge_melee_attack",
@@ -42679,7 +42679,7 @@
     "roll",
     "pos"
    ],
-   "doc": "Attack 2: wind-up, then a spinning rush at the target for 20 frames per spin_periods, then the wind-down. If the rush ended without a wall hit it hovers and half the time follows up with a fireball."
+   "doc": "Attack 2: wind-up, then a spinning flying rush at the target for up to 20 frames per spin_periods, then the wind-down. If the rush reached the target or stopped at a wall (not on timeout or a height block) it hovers for up to 30 frames and half the time follows up with a fireball."
   },
   "f67ab18250d7ba86": {
    "name": "wait_move_end_timeout",
@@ -43169,7 +43169,7 @@
     "counter",
     "roll"
    ],
-   "doc": "One step of the tornado mode, chosen by the move counter: dash and tornado, circle, and finally back to rose mode."
+   "doc": "One step of the tornado mode, chosen by the move counter, which counts down from 0: at 0 it dashes in with a tornado and then dashes in again (80 percent chance of a second tornado), at -1 it circles the target or chases it with a tornado, at -2 it dashes in with a tornado again, and at -3 or below it switches back to the rose mode."
   },
   "f9061ad5406812cf": {
    "name": "fight_at_far_range",
@@ -43243,7 +43243,7 @@
    "locals": [
     "damage_count"
    ],
-   "doc": "Tracks damage and sets the orbit speed variables (10 and 1) according to whether the damage count is 3, 4 or 5, then moves the boss one orbit step."
+   "doc": "Tracks damage, then while the damage count in variable 8 is exactly 3, 4 or 5 sets the sway step in variable 1 to 1.5, 2 or 3 times its starting value (rewriting it as positive every frame, so the sign flip in orbit_around_center does not last) and stores pi/720, pi/540 or pi/360 in variable 10, which nothing in this script reads. Then moves the boss one orbit step."
   },
   "f936ffaf76f2b6ec": {
    "name": "approach_distant_target",
@@ -43291,7 +43291,7 @@
     "unused_value",
     "roll"
    ],
-   "doc": "Invulnerable dash of 100 units to a random side, with the step motion; invulnerability is on only from 0.3 to 0.6 of the motion."
+   "doc": "Sidestep dash to a random side with the matching step motion, aimed at a point 100 units away: it moves at 2.96 units per frame only from 0.3 to 0.6 of the motion, and is invulnerable from the start of the motion until 0.6. Ends in the stand motion."
   },
   "f98831bdf03458bc": {
    "name": "trigger_phase_two_at_half_life",
@@ -43310,7 +43310,7 @@
   "f98df4ffbd506ce3": {
    "name": "absorb_energy",
    "loose": "5ec6237437d03c8e",
-   "doc": "Plays the energy absorb animation (in, loop, out)."
+   "doc": "Meant to play the energy absorb motions (in, loop, out). The motion calls are old-numbered and run as set_life, and each wait_motion_end returns after one frame, so it only waits three frames."
   },
   "f9b40b8c60904dcd": {
    "name": "get_knocked_down_and_up",
@@ -43568,7 +43568,7 @@
     "attack",
     "target_angle"
    ],
-   "doc": "Turns to the target, swings attack 1 while advancing 100 units, then spawns a Vanguard shockwave at the chn76 joint carrying its attack power. Cannot be dodged while it runs."
+   "doc": "Turns to the target and swings attack 1, tracking the target for 12 frames, then heads for a point 100 units toward it at 5.4 units per frame; 14 frames later (about 76 units) it spawns a Vanguard shockwave below the chn76 joint carrying its attack power and stops. Cannot dodge while it runs."
   },
   "fba5a92923fdc9df": {
    "name": "slash_attack_1_repeatedly",
@@ -43596,7 +43596,7 @@
    "locals": [
     "monster_grade"
    ],
-   "doc": "Registers the weak attack 1 hit and the knockback hit on the attack 2 loop, resets the wander var and, for grade 0, sets the photo window to attack 1."
+   "doc": "Registers the weak hit on attack 1 (0.365 to 0.487) and the knockback hit on the whole attack 2 loop, clears monster var 0, sets the attack 1 photo window for grade 0 and starts the monster AI with init_monster_ai."
   },
   "fc07c06b0a1ed3c6": {
    "name": "halt_on_guard",
@@ -43627,7 +43627,7 @@
     "circle_frame",
     "move_angle"
    ],
-   "doc": "Moves along a ring of radius 300 around the arena center (-2195, 488, -475) toward the far side from the target, or jumps there with a moonsault below 40% life. Then casts magic."
+   "doc": "Below 40% life, moonsaults across the arena center (-2195, 488, -475) to the point opposite its own position, up to 270 units from the center. Otherwise runs to the ring of radius 300 on the side away from the target, circling half the arena if the target is nearer the center. Then casts magic. Never runs: its only call is in a branch under if (0)."
   },
   "fc24186d49a7b38b": {
    "name": "teleport_in",
@@ -43646,7 +43646,7 @@
    "locals": [
     "target_pos"
    ],
-   "doc": "Turns to the target and rushes to its position at constant speed."
+   "doc": "Turns to the target and plays the run motion, meaning to rush to its position, but fly_constant_speed_to_point never sets its step length, so the boss does not actually fly there."
   },
   "fc68caadc732d97b": {
    "name": "choose_idle_movement",
@@ -43694,7 +43694,7 @@
    "locals": [
     "roll"
    ],
-   "doc": "Plays a step to the right or left (33 frames) and returns to standing."
+   "doc": "Plays the step right or step left motion at random, waits 27 frames and returns to standing. It does not move the monster or make it invulnerable; the motion carries the step."
   },
   "fca407d1837187fe": {
    "name": "watch_player_if_disguised",
@@ -43814,7 +43814,7 @@
     "pos",
     "rot"
    ],
-   "doc": "Turns to the target, plays attack 1 and lunges 100 units forward during it."
+   "doc": "Turns to the target and plays attack 1; after 10 frames moves toward a point 100 units ahead at 3.08 units per frame for 23 frames (about 71 units), then stops, stands and waits 9 frames."
   },
   "fd6cea4fa182a462": {
    "name": "run_toward_target",
@@ -43846,7 +43846,7 @@
     "result",
     "round_state"
    ],
-   "doc": "Spawns a looping sticky-butterfly effect toward the player, flies to the arena centre point and advances the round counter, then waits until the counter returns to 0. Returns 0 or 1 for the next state."
+   "doc": "Frees its formation slot, makes itself untargetable and fires a sticky ball at the player, then flies to the point 1050 high above the arena centre and adds one to monster variable 8; the butterfly that finds it at 15 (the last of the seven to regroup after a reset at 9) sets it to 0 instead, and the others wait until it is 0. Returns 0 if the round ends (variable 8 reaches 8) during the flight, otherwise 1."
   },
   "fda2801989256b13": {
    "name": "walk_random_direction",
@@ -44092,7 +44092,7 @@
     "roll",
     "spread_angle"
    ],
-   "doc": "Plays attack 3 and fires a homing rocket from the dcol2 point every 8 frames, launched upward in a random world direction within 90 degrees of +Z, not of the boss's facing. The volley_frames argument is ignored: the volley lasts 32 frames (4 rockets), or 64 (8 rockets) when no rage hits are left."
+   "doc": "Plays attack 3 and fires a homing rocket from the dcol2 point every 8 frames, launched upward toward world +Z or turned 1 radian to either side (the random spread is truncated to a whole number), not along the monster's facing. The volley_frames argument is ignored: the volley lasts 32 frames (4 rockets), or 64 (8 rockets) when rage hits left are 0 or below, which includes a boss's -1."
   },
   "fe98d06f42a72cf9": {
    "name": "watch_disguised_player",
@@ -44280,7 +44280,7 @@
     "pos",
     "rot"
    ],
-   "doc": "Turns to the target, plays attack 1 while tracking it, lunges 100 units forward and stands for 9 frames."
+   "doc": "Turns to the target and plays attack 1 while tracking it for 20 frames, then moves toward a point 100 units ahead at 1.75 units per frame for 5 frames (about 9 units), waits for the motion to end and stands for 9 frames."
   },
   "ffa5e2665b6e03cb": {
    "name": "block_shot_with_guard",
