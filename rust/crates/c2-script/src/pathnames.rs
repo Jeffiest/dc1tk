@@ -69,7 +69,7 @@ pub fn lookups(root: &Path, defs: &Definitions) -> Lookups {
 }
 
 /// Each AI script's name: the kind whose model is the script, else the lowest kind that runs it.
-fn ai_names(rows: &IndexMap<i64, disc::MonsterRow>) -> HashMap<String, String> {
+pub fn ai_names(rows: &IndexMap<i64, disc::MonsterRow>) -> HashMap<String, String> {
     let sorted: BTreeMap<i64, &disc::MonsterRow> = rows.iter().map(|(kind, row)| (*kind, row)).collect();
     let mut ais: HashMap<String, (bool, String)> = HashMap::new();
     for row in sorted.values() {

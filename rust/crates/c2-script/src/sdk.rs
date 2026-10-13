@@ -1193,7 +1193,7 @@ fn default_local(name: &str) -> bool {
 /// Names locals after the natives that fill them: a slot-numbered local takes the name of the
 /// result it first holds, and a local with only that generic name (flag, flag_2) takes the name of
 /// what it reads when every read agrees (griffon_defeated for get_flag(FLAG_GRIFFON_DEFEATED)).
-fn named_locals(function: Node, found: &Context, function_names: &HashSet<String>) -> Node {
+pub fn named_locals(function: Node, found: &Context, function_names: &HashSet<String>) -> Node {
     let mut uses = Vec::new();
     out_uses(list(&function, "body"), found, &mut uses);
     let mut by_variable: HashMap<&str, HashSet<(&str, &str)>> = HashMap::new();
@@ -1466,7 +1466,7 @@ pub fn numbering_of(entry: &Node) -> Option<String> {
 /// native that many numbers on (old_groups); a call by raw number where the header gives the
 /// native a group (shown as DIRECT) comes from an older table, and old_direct maps the numbers
 /// whose same-shaped twins elsewhere on the disc show what they stand for.
-fn meant_native(node: &Node, found: &Context) -> Option<String> {
+pub fn meant_native(node: &Node, found: &Context) -> Option<String> {
     let name = text(node, "name");
     let (no, declared_base) = match found.by_original.get(name) {
         Some(declared) => (declared["no"].as_i64()?, declared["base"].clone()),

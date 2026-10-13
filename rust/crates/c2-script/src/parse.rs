@@ -1019,7 +1019,7 @@ fn read_asm(text: &[char], position: usize, line: usize) -> Parsed<(Token, usize
 }
 
 /// The comment lines right above a line, as paragraphs (a blank comment line between them).
-fn comment_block(comments: &[(usize, String)], line: usize) -> String {
+pub fn comment_block(comments: &[(usize, String)], line: usize) -> String {
     if comments.last().is_none_or(|(number, _)| number + 1 != line) {
         return String::new();
     }
