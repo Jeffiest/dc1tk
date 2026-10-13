@@ -2,8 +2,8 @@
 
 How the PAL disc stores sound effects, how `play_se(bank, n)` turns entry
 `n` into SPU2 voices, and what a mod must keep consistent to replace or add
-sounds. `src/c2s/soundbank.py` implements all of it, and
-`src/c2s/sounds.py` turns it into the WAV folders mods use; the counts
+sounds. `soundbank.rs` (in `src/crates/c2-assets/src/`) implements all of it,
+and `sounds.rs` turns it into the WAV folders mods use; the counts
 below come from a check run over every bank on the disc while the format
 was worked out.
 
@@ -25,7 +25,7 @@ Evidence is of three kinds, marked where it matters:
 
 ## 1. The `.snd` pack
 
-The same chain format as the game's other packs (`c2s.archive.parse_pack`):
+The same chain format as the game's other packs (`c2_disc::archive::parse_pack`):
 
 | Offset | Size | Field |
 |---|---|---|
@@ -40,7 +40,7 @@ The chain ends with a slot whose name starts with NUL (0x50 bytes, also
 holding leftovers: `.. 50 00 00 00 ff ff ff ff ff ff ff ff xx xx xx xx`).
 Byte-exact rewriting keeps each slot's 64-byte name field, its fourth word
 and the end slot as found; new members get zeros (as the project's
-`discfiles.py` writes them).
+`discfiles.rs` writes them).
 
 Members (engine, `sndLoadSound`): looked up by extension with
 `GetPackFileExt`, which compares extensions ignoring case and returns
@@ -378,29 +378,37 @@ program 0, volume/expression 127, pan 64.
   whose size this research did not establish; stay within the size of the
   largest bank loaded the same way.
 
-## 9. Changing a bank with `soundbank.py`
+## 9. Changing a bank with `soundbank.rs`
 
-```python
-import soundbank as sb
-bank = sb.Bank.from_snd("extracted/snd2/SY_000.snd")
-for e in bank.entries():
-    print(e.index, e.kind, e.name, bank.voices(e))
-sb.write_wav("cursor.wav", bank.decode_vag(bank.voices(0)[0].vag))
+`c2_assets::soundbank` (`src/crates/c2-assets/src/soundbank.rs`); mods
+reach it through `sounds.rs` (the WAV folders) and `replace` lines by
+sound id.
 
-# replace entry 0 only (adds a VAG, sample, set and program; cfg row 0
-# becomes KeyOn of the new program; nothing else changes)
-bank.replace_entry(0, sb.read_wav("my_cursor.wav"))
-# or overwrite the VAG(s) in place: every entry sharing them changes,
-# the bank grows only by the size difference
-bank.replace_entry(2, sb.read_wav("x.wav"), mode="inplace")
-# new entry, played by play_se(id, n)
-n = bank.add_entry(sb.read_wav("new.wav"), name="MY_SOUND", volume=100)
-open("SY_000.snd", "wb").write(bank.build())
+```rust
+use c2_assets::soundbank::{self as sb, Bank, Mode};
+use std::fs;
+
+let mut bank = Bank::from_bytes(&fs::read("extracted/disc/snd2/SY_000.snd")?)?;
+for e in bank.entries()? {
+    println!("{} {:?} {} {:?}", e.index, e.kind, e.name, bank.voices(&e)?);
+}
+let first = bank.voices(&bank.entries()?[0])?[0];
+fs::write("cursor.wav", sb::wav_bytes(&bank.decode_vag(first.vag)?)?)?;
+
+// replace entry 0 only (adds a VAG, sample, set and program; cfg row 0
+// becomes KeyOn of the new program; nothing else changes)
+bank.replace_entry(0, &sb::read_wav(&fs::read("my_cursor.wav")?)?, Mode::Detach, None)?;
+// or overwrite the VAG(s) in place: every entry sharing them changes,
+// the bank grows only by the size difference
+bank.replace_entry(2, &sb::read_wav(&fs::read("x.wav")?)?, Mode::InPlace, None)?;
+// new entry, played by play_se(id, n): name, category, volume, key
+let n = bank.add_entry(&sb::read_wav(&fs::read("new.wav")?)?, "MY_SOUND", "MOD", 100, 60)?;
+fs::write("SY_000.snd", bank.build()?)?;
 ```
 
 - WAV input: PCM 8/16/24/32-bit or float, any channel count (averaged to
-  mono), any rate (kept, or resampled with `rate=`; above 48000 is
-  resampled to 48000). A `smpl` chunk loop is honoured: the start is moved
+  mono), any rate (kept, or resampled with `replace_vag`'s `rate`; above
+  48000 is resampled to 48000). A `smpl` chunk loop is honoured: the start is moved
   to a block boundary by leading silence, and the loop body is made a whole
   number of blocks by repeating it (when 4 copies or fewer suffice) or
   stretching it by resampling (pitch change under 28 / body length).
@@ -431,7 +439,7 @@ All 861 banks, 16 processes, about 6 minutes (`check_results.txt`):
 | every VAG ends at its end block (+ silent block), flags agree with the Vagi loop bit | 7,397 VAGs (2,106 looped), 222,046,748 samples decoded |
 | re-encoding a decoded VAG gives Sony's length and flag bytes | 7,397 / 7,397 |
 | decode -> re-encode -> decode | 7,395 VAGs reproduced exactly; the other 2 at 53.5 and 55.6 dB |
-| replace an entry (detach) + add an entry, build, re-parse: build idempotent, the two entries play exactly the two new VAGs, every other entry plays identical bytes and parameters, volumes kept, Head sizes and VAG offsets consistent, `c2s.archive.parse_pack` accepts the pack | 861 / 861 |
+| replace an entry (detach) + add an entry, build, re-parse: build idempotent, the two entries play exactly the two new VAGs, every other entry plays identical bytes and parameters, volumes kept, Head sizes and VAG offsets consistent, `c2_disc::archive::parse_pack` accepts the pack | 861 / 861 |
 | in-place VAG replacement, re-parse, other VAGs unchanged | 861 / 861 |
 
 Decode -> re-encode is near-lossless only because the input already lies on

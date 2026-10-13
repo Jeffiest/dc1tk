@@ -1,8 +1,9 @@
 # Assembly
 
-`src/c2s/asm.py`. The disassembler prints a parsed script as text; the assembler
-parses the text back into the same region dicts `stb.read` returns and hands
-them to `stb.write`, so both directions share one writer.
+`rust/crates/c2-script/src/asm.rs`. The disassembler prints a parsed script
+as text; the assembler parses the text back into the same regions
+`stb::read` returns and hands them to `stb::write`, so both directions share
+one writer.
 
 ```
 .natives event

@@ -7,18 +7,18 @@ the whole corpus unless a sample is named; they come from scripts run over
 all of it while the formats were worked out (the "evidence" scripts named
 below).
 
-The code, in `src/c2s/` (standard library only):
+The code, in `src/crates/c2-assets/src/`:
 
 | file | what |
 |---|---|
-| `mds.py` | MDS parse/edit/write |
-| `mot.py` | .mot/.wgt key-list files and .bbp tables |
-| `info_cfg.py` | info.cfg reader (same tokenising rules as `CScriptInterpreter`) |
-| `to_gltf.py` | character pack -> glTF 2.0 (.gltf + .bin + textures) |
-| `from_gltf.py` | glTF -> MDS + .wgt + .bbp, with the original MDS as a template (section 7) |
-| `models.py` | the glTF folders mods use (`mod asset --as gltf`, `build`) |
+| `mds.rs` | MDS parse/edit/write |
+| `mot.rs` | .mot/.wgt key-list files and .bbp tables |
+| `info_cfg.rs` | info.cfg reader (same tokenising rules as `CScriptInterpreter`) |
+| `to_gltf.rs` | character pack -> glTF 2.0 (.gltf + .bin + textures) |
+| `from_gltf.rs` | glTF -> MDS + .wgt + .bbp, with the original MDS as a template (section 7) |
+| `models.rs` | the glTF folders mods use (`mod asset --as gltf`, `build`) |
 
-Mods use these through `models.py`: textures come from the pack's own
+Mods use these through `models.rs`: textures come from the pack's own
 `.img` files (not placeholders), only meshes that differ from the export are
 rebuilt, and the template's bind pose is kept unless the glTF changes it.
 
@@ -55,7 +55,7 @@ rebuilt, and the template's bind pose is kept unless the glTF changes it.
 - The CPU skinning path (`SHADOW_MOTION` and the .wgt given in `MOTION`'s 4th argument) is only
   partly followed. `_MOTION` ignores its 4th argument (sets `entry[2].data = 0`), so the main model
   is skinned only by the VU1 path, from `<model>.wgt`.
-- The importer (`from_gltf.py`) is experimental. It round-trips our own exports (section 7) but has
+- The importer (`from_gltf.rs`) is experimental. It round-trips our own exports (section 7) but has
   not been tried on a Blender re-export or in the game.
 
 ---
@@ -68,7 +68,7 @@ Struct declarations: include/mg_dataset.hpp (`MDS_HEADER`, `MDTOBJ_HEADER`, `MDT
 `MDT_MATERIAL_`, `MDT_FACES`, `FACES_ID`).
 
 The data must be 16-byte aligned in memory (`printf("address error!!")` otherwise). Pack members
-are 16-aligned (`PACK_ALIGN` in src/c2s/archive.py). The vertex arrays are used in place
+are 16-aligned (`PACK_ALIGN` in `src/crates/c2-disc/src/archive.rs`). The vertex arrays are used in place
 (`CopyMDTDataPointer`), so the file is also the runtime array.
 
 ### 1.1 Header (0x10)
@@ -123,7 +123,7 @@ header, vertices, faces, pad, normals, uvs, colours, materials. Two exporters:
   bytes after the normals, 16 after the uvs only when colours follow, and 16 after the materials.
   colour_ofs = 0 when there are no colours. uv_ofs is set even when uv_num = 0.
 - style B (78 blocks, `colour_ofs = -1`): only pads faces to 16 (0..15 bytes). In 38 of these the
-  pad holds leftover non-zero bytes, which `mds.py` keeps.
+  pad holds leftover non-zero bytes, which `mds.rs` keeps.
 - the faces header's first word is garbage (12255244) in 22 blocks; kept.
 
 ### 1.4 Faces
@@ -176,7 +176,7 @@ Common in the corpus: `ba` (3,014), `n1s1-`, `c0`, `N1`, `s1-`, `n1z0c0f2app-`, 
 | 0x34 | char[32] | texture name -> `mgCTextureManager::GetTexture(name, -1)` (strcmp, optional global suffix) |
 | 0x54 | s32, f32, f32 | not read. Always 0 |
 `CopyMaterial` (src/mg_visual.cpp:184) copies only diffuse, 0x10 and the texture lookup. 70 names
-have bytes after the NUL, which `mds.py` keeps.
+have bytes after the NUL, which `mds.rs` keeps.
 
 **Texture reference:** only by name. Textures come from the IMG files that info.cfg's `IMG n,
 "file.img"` loads (`_IMG`/`_IMG_END` -> `EnterIMGFile`). For Max: material names `c01b01..c01b04`,
@@ -232,7 +232,7 @@ v_model = boneLW * inv(bbp[bone]) * bbp[mesh] * v_mesh_local      (summed over w
 ```
 Normals use the same matrix without translation. In glTF this is: mesh vertices = bbp[mesh] *
 v_local (model space), joint inverse bind matrix = inv(bbp[bone]), mesh node at the scene root.
-`to_gltf.py` does exactly this. `check_gltf.py` confirms world(joint) * IBM = I to 3e-5 on Max.
+`to_gltf.rs` does exactly this. The `check_gltf` evidence script confirmed world(joint) * IBM = I to 3e-5 on Max.
 
 ### 2.5 Costumes (LoadSkin)
 `chara/c01_base.chr.d/c01b.mds` holds only the skeleton plus 3-vertex placeholder meshes. The
@@ -331,11 +331,11 @@ frame; _C velocity_rate 1, _S -1), `FRAME_POSE[_L] frame, "bone"|"bone_xy"|"b_cd
 `GRAVITY x,y,z` (default (0,-0.6,0)), `K k`, `WIND scale`. Not needed for mesh import.
 Cloth frames are found by name, so they keep working on an imported mesh if names are kept.
 
-## 6. glTF export (`to_gltf.py`)
+## 6. glTF export (`to_gltf.rs`)
 
-```
-python -I -X utf8 to_gltf.py <base chr.d> <out.gltf> [--skin <costume chr.d>] [--fps 30] [--no-anim] [--clips N]
-```
+`to_gltf::export` writes a character pack's folder as `<name>.gltf` and `<name>.bin` (30 fps).
+`c2 mod asset ISO NAME chara/c02a.chr --as gltf` and `c2 assets` run it, through `models.rs`,
+which puts the pack's own textures in place of the placeholders.
 - glTF node i = MDS node i (`extras.mds_index`, `extras.mds_name` keep the full name with flags).
   Local TRS comes from decomposing the MDS matrix. 4 two-root files get a synthetic `_mds_roots`
   parent, appended last.
@@ -356,19 +356,19 @@ python -I -X utf8 to_gltf.py <base chr.d> <out.gltf> [--skin <costume chr.d>] [-
   before a motion runs.
 
 ### Sample: Max
-`sample_c01_base/c01_base_max.gltf` = `chara/c01_base.chr.d` (skeleton, 23 clips from c01b.mot)
-+ `--skin mainchr/c01fuku1.chr.d` (green default outfit, c01f.mds/.wgt/.bbp). 127 nodes,
+An export made while the format was worked out: `c01_base_max.gltf` = `chara/c01_base.chr.d`
+(skeleton, 23 clips from c01b.mot) with the meshes of `mainchr/c01fuku1.chr.d` (green default outfit, c01f.mds/.wgt/.bbp). 127 nodes,
 14 meshes, 2,676 triangles, 7 materials, 4 placeholder textures (c01b01-04).
-`preview_rest.png` and `preview_walk.png` (clip 歩き at 0.25 s) are renders by `check_gltf.py`.
+`preview_rest.png` and `preview_walk.png` (clip 歩き at 0.25 s) are renders by the `check_gltf` evidence script.
 c01_base on its own would only give placeholder triangles.
 
 ## 7. Importing back: glTF -> MDS/WGT/BBP
 
-### 7.1 `from_gltf.py` (experimental)
-```
-python -I -X utf8 from_gltf.py <in.gltf|.glb> <template.mds> <out_dir> [--bbp t.bbp] [--wgt t.wgt] [--name stem] [--drop-missing]
-```
-It keeps the template's nodes and replaces MDT blocks by mesh name (`X` or `X_skin`; Blender
+### 7.1 `from_gltf.rs` (experimental)
+
+`from_gltf::import_gltf` takes a glTF, the template .mds and optionally the template .bbp and .wgt,
+and gives the new .mds, .wgt and .bbp; `build` runs it, through `models.rs`, for a mod's glTF
+folder, with only the meshes that differ from the export. It keeps the template's nodes and replaces MDT blocks by mesh name (`X` or `X_skin`; Blender
 `.001` suffixes are dropped). Steps:
 - rigid meshes are brought into frame space through the glTF hierarchy;
 - skinned meshes are brought from model space into mesh space with inv(bbp[mesh]);
@@ -382,14 +382,14 @@ It keeps the template's nodes and replaces MDT blocks by mesh name (`X` or `X_sk
 An unknown mesh name becomes a new node, appended under the root. Its name must then be added to
 `VERTEX_ANIME` if it is skinned.
 
-Round trip (`evidence/roundtrip_gltf.py`: export -> import -> export, then compare every
+Round trip (the `roundtrip_gltf` evidence script: export -> import -> export, then compare every
 triangle's corner positions, normals, uvs and weights to 1e-3 and the winding):
 - Max (c01_base + c01fuku1): 14/14 meshes identical. Unused vertices are dropped
   (skin1 344 -> 341 vertices).
 - e230_utan (24 meshes) and b02a (25 meshes, skinned + rigid): all identical.
 - c01_base + c01fuku4: 11/14 identical. The 3 that differ are 1-triangle placeholder meshes whose
   three vertices share one position, so the import merges them into a 0-area triangle. Harmless.
-- The rebuilt .mds parses and re-writes byte for byte through `mds.py`.
+- The rebuilt .mds parses and re-writes byte for byte through `mds.rs`.
 It has not been run in the game or on a Blender re-export, so the Blender-specific parts are
 unexercised: node naming, mesh objects parented to bones, Y-up/Z-up conversion.
 
@@ -416,13 +416,13 @@ Nothing VU-specific: the file is an indexed mesh and the engine batches it. Requ
    (`MotionProc3`).
 4. **Materials.** Texture names <= 31 bytes cp932, matching textures in the pack's .img.
    diffuse (1,1,1,1), 0x10 (1,1,1,0), power 50 as defaults.
-5. **Layout.** Use `mds.build()` (style A layout). The pack writer must keep members 16-aligned.
+5. **Layout.** Use `mds::build()` (style A layout). The pack writer must keep members 16-aligned.
 6. **Budget.** Memory comes from fixed character stacks: the MDS visuals and packets are built
    into `base_stack`, and `_MODEL` uses a 6400-qword work buffer. Larger meshes than the original
    may overflow. The limits are not measured yet. POLY_NUM in info.cfg may also need updating
    (meaning not traced).
 
-## 8. Evidence log (scripts in `evidence/`, run with `python -I -X utf8`)
+## 8. Evidence log (research scripts run while the formats were worked out; not in this repository)
 - explore1/2: header/record/layout statistics over all 16,876 .mds (section 1).
 - explore3: corner-slot index-range test per face type (index order).
 - explore4: .mot/.wgt/.bbp block statistics.

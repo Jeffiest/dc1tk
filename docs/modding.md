@@ -9,13 +9,13 @@ comes from. The commands are in [usage](usage.md).
 
 | Question | Command |
 | --- | --- |
-| What runs program 510 of map s51, and what asks for it? | `cli.py xref decompiled event 510 --map s51` |
-| How does the game get to map s51, and at which program? | `cli.py xref decompiled map s51` |
-| Which model and AI script does a monster kind use, and who places it? | `cli.py xref decompiled monster golem` |
-| Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `cli.py flags decompiled`, `cli.py flags decompiled --flag 54` |
-| Which maps can a scene start in, and where does the player play? | `cli.py maps decompiled` |
-| A map's programs, free program numbers, trigger points and player positions? | `cli.py map decompiled s17` |
-| What have I changed? | `cli.py changes decompiled` |
+| What runs program 510 of map s51, and what asks for it? | `c2 xref decompiled event 510 --map s51` |
+| How does the game get to map s51, and at which program? | `c2 xref decompiled map s51` |
+| Which model and AI script does a monster kind use, and who places it? | `c2 xref decompiled monster golem` |
+| Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `c2 flags decompiled`, `c2 flags decompiled --flag 54` |
+| Which maps can a scene start in, and where does the player play? | `c2 maps decompiled` |
+| A map's programs, free program numbers, trigger points and player positions? | `c2 map decompiled s17` |
+| What have I changed? | `c2 changes decompiled` |
 
 Files keep the game's codes with a readable name after them
 (`map/s/s51_raybrandt_castle/`, `dungeon/monster/e33a_golem.c`); commands
@@ -159,7 +159,7 @@ the player is alive and on the ground:
 | `monster_talk` (1150) | the player presses the button by a monster placed as talkable, on maps whose dungeon data allows talking (`dbinfo.monster_talk`) |
 | `monsters_cleared` (1500) | no monster is left on the floor; once per floor |
 | a monster's `run_event_script(n)` | program `n`, on the monster's request |
-| a trigger point's program | the player touches it, presses the action button at it or uses an item there, as `cli.py map` lists |
+| a trigger point's program | the player touches it, presses the action button at it or uses an item there, as `c2 map` lists |
 
 ## Editing shared code
 
@@ -176,7 +176,7 @@ reaches scripts you did not edit, and `fork` gives some scripts their own
 copy of a library first:
 
 ```
-python3 cli.py fork decompiled lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
+c2 fork decompiled lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
 ```
 
 ## A pattern: a caption every five seconds during a fight
@@ -277,8 +277,8 @@ The flag keeps the same monsters elsewhere in the game from asking.
 ## Trying a change quickly
 
 Four things keep the loop short: test a mod's logic without the game
-(`cli.py mod test`, see [usage](usage.md#mods)); compile what it changes
-without a disc (`cli.py mod check`); build only what changed, which `build`
+(`c2 mod test`, see [usage](usage.md#mods)); compile what it changes
+without a disc (`c2 mod check`); build only what changed, which `build`
 does by itself; and start New Game at the scene you are working on, then
 boot it with `--play`. A mod can name its scene in `mod.json`
 (`"start_at": "s17:9000"`, or one of its own programs:
@@ -288,7 +288,7 @@ boot it with `--play`. A mod can name its scene in `mod.json`
 straight to a scene, without changing the source tree:
 
 ```
-python3 cli.py build decompiled dc2.iso -o test.iso --start-at s51:story_50
+c2 build decompiled dc2.iso -o test.iso --start-at s51:story_50
 ```
 
 A new game starts in dungeon 1's script at `floor_start` (`title.cpp`,
@@ -307,17 +307,17 @@ only.
 `setup` and `decompile` write `original-hashes.json` at the root of the tree,
 recording what they wrote. From it:
 
-- `cli.py changes decompiled` lists every file you edited, added or removed;
+- `c2 changes decompiled` lists every file you edited, added or removed;
 - `setup` and `decompile` refuse to overwrite edited files (`--force`
   overrides);
-- `cli.py mod save decompiled castle` copies your edited and added files into
+- `c2 mod save decompiled castle` copies your edited and added files into
   the mod `mods/castle`.
 
-Better still, keep the tree untouched and do the work in mods: `cli.py mod
-override decompiled castle --map s51 start_castle_battle` starts a patch
-holding just that function, and `cli.py build decompiled dc2.iso -o
-modded.iso --mod castle --mod another` merges the chosen mods into the
-scripts they target. A patch holds only what it changes, so a fresh tree,
+Better still, keep the tree untouched and do the work in mods:
+`c2 mod override decompiled castle --map s51 start_castle_battle` starts a
+patch holding just that function, and
+`c2 build decompiled dc2.iso -o modded.iso --mod castle --mod another`
+merges the chosen mods into the scripts they target. A patch holds only what it changes, so a fresh tree,
 decompiled after a tools update, takes the same mods, and several mods can
 change one script. (`mod new` copies whole files into a mod instead; `mod
 list` marks a copied file whose decompiler version has changed since, to

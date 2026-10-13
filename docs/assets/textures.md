@@ -15,8 +15,8 @@ Sources: engine `ps2/include/mg_texture.hpp` (structs, lines 54-174) and
 `ps2/asm/pal/data/mg_texture.data.s` (`lut_1246`, `block_table8_1266`,
 `block_table32_1267`). The corpus is all 5,217 `*.img` files under
 `extracted/`; the counts below come from scripts run over all of them
-while the format was worked out. `src/c2s/im3.py` implements it, and
-`src/c2s/textures.py` turns it into the PNG folders mods use.
+while the format was worked out. `im3.rs` (in `src/crates/c2-assets/src/`)
+implements it, and `textures.rs` turns it into the PNG folders mods use.
 
 All values are little-endian.
 
@@ -151,7 +151,7 @@ the palette follows the last level.
 `(4, 0, total = exact)` 2,716; `(3, 0, exact)` 314; `(3, 0, header + 4·pixels)` 209.
 "4·pixels" counts every pixel of every mip level at 4 bytes, as though the
 picture were RGBA32. The engine ignores the total, so either is safe.
-`im3.py` keeps whichever rule the original used; regenerating every header
+`im3.rs` keeps whichever rule the original used; regenerating every header
 from the picture under that rule reproduces all 15,000 headers exactly.
 
 ## 5. Pixel formats
@@ -218,23 +218,23 @@ byte   = ((y >> 1) & 1) + ((x >> 2) & 2)
 offset = block + column + byte
 ```
 
-`probe.py` checks that the engine-table derivation, the formula and a full
-simulation of `PageConv32to8` over a 128×64 page all agree, for sizes from
-16×16 to 640×192.
+A research script checked that the engine-table derivation, the formula
+and a full simulation of `PageConv32to8` over a 128×64 page all agree, for
+sizes from 16×16 to 640×192.
 
 Constraints: w must be a multiple of 16. When h is not a multiple of 16, the
 last block row is partial. In the corpus this happens with 128×876, 128×680
 and 128×748 (heights are multiples of 4, so nothing is lost) and with 4
 pictures of **256×255**. For those, the stored 65,280 bytes cover all but
 128 pixels of the last two rows (they read as 0), and 128 stored bytes belong
-to no visible pixel. `im3.py` keeps those bytes from the original.
+to no visible pixel. `im3.rs` keeps those bytes from the original.
 
 Mip levels of a swizzled texture are each swizzled on their own: the upload
 halves TBW per level, and these textures are not converted in place because
 they have more than one level.
 
 Evidence from neighbour-pixel RGB smoothness over a sample of 2,000 8-bit
-pictures and all 278 4-bit ones (`smooth.py`, `smooth_report.txt`):
+pictures and all 278 4-bit ones:
 
 * **8-bit, flag 1:** read unswizzled, 1,949 of 1,949 are smoother than in
   raster order.
@@ -328,27 +328,27 @@ exposes entries by index (for example `character.cpp:2625`).
   `size` must follow it. Keep 16-byte alignment. The IM3 table is not
   sorted on disk, but the engine sorts it in memory, so entry order is free.
 
-## 9. `src/c2s/im3.py`
+## 9. `im3.rs`
 
-Standard library only.
+`c2_assets::im3`, in `src/crates/c2-assets/src/im3.rs`.
 
-* `read(data) -> [Image]` returns one Image per picture entry (scripts
+* `read(data) -> Result<Vec<Image>>` returns one `Image` per picture entry (scripts
   skipped), with `name`, `index` (entry number), `format`, `width`,
-  `height`, `palette` (list of RGBA tuples in index order, CSM1 undone, PS2
+  `height`, `palette` (RGBA entries in index order, CSM1 undone, PS2
   alpha), `indices` (paletted, one byte per pixel) or `pixels` (RGBA bytes),
-  `rgba` (base level expanded), `mips`, `swizzled`, `no_image`, `block`,
-  `clamp`, and `tim2` (the original bytes). An empty file returns `[]`.
-* `to_png(image, indexed=True) -> bytes` writes the base level. Paletted
+  `rgba()` (base level expanded), `mips`, `swizzled`, `no_image`, `block`,
+  `clamp`, and `tim2` (the original bytes). An empty file gives no pictures.
+* `to_png(image, indexed) -> Result<Vec<u8>>` writes the base level. Paletted
   pictures become indexed PNGs (PLTE + tRNS, in index order), and the rest
   become RGBA, or RGB when there is no meaningful alpha. Alpha mapping
-  (`alpha_mode`):
-  `ps2` (every alpha ≤ 0x80): PNG = round(a·255/128), exactly invertible for 0..128;
-  `raw` (some alpha > 0x80; one picture in the corpus): PNG = a;
-  `zero` (all alpha 0; 105 PSMCT32 pictures): written as an opaque RGB PNG,
+  (`alpha_mode`, an `AlphaMode`):
+  `Ps2` (every alpha ≤ 0x80): PNG = round(a·255/128), exactly invertible for 0..128;
+  `Raw` (some alpha > 0x80; one picture in the corpus): PNG = a;
+  `Zero` (all alpha 0; 105 PSMCT32 pictures): written as an opaque RGB PNG,
   so it can be seen and edited;
-  `opaque` (PSMCT24).
+  `Opaque` (PSMCT24).
   Name, format and mode go into `tEXt` chunks for information only.
-* `from_png(png, like=image) -> Image` decodes any PNG: all colour types and
+* `from_png(png, &like) -> Result<Image>` decodes any PNG: all colour types and
   bit depths, tRNS, Adam7. The format, flags and header come from `like`,
   and so does the alpha mode, so the export and import mappings match.
   Paletted targets work in this order:
@@ -361,14 +361,14 @@ Standard library only.
 
   Mip levels are kept when the base level is unchanged, and otherwise
   rebuilt by 2×2 box filtering (then mapped to the palette).
-* `write(images, like=original) -> bytes` re-encodes each picture into its
+* `write(images, Some(original)) -> Result<Vec<u8>>` re-encodes each picture into its
   entry. Unchanged headers, junk name bytes, scripts, entry fields, IM3 size
   quirks and the hidden swizzle bytes are all kept. When a TIM2 changes
   length, the following offsets (and the IM3 size field, by the same delta)
   are updated and 16-byte alignment is kept. Pictures with
-  `index=None` are appended to IM3 archives. Pictures left out of the list
-  are kept as they were; deletion is not supported. `write(images)` without
-  `like` builds a fresh IM3 (version 3 TIM2 headers, exact total size).
+  `index: None` are appended to IM3 archives. Pictures left out of the list
+  are kept as they were; deletion is not supported. `write(images, None)`
+  builds a fresh IM3 (version 3 TIM2 headers, exact total size).
 
 ## 10. Verification
 
@@ -376,8 +376,8 @@ Across all 5,217 `.img` files (15,228 pictures, 15,000 with pixels):
 
 | check | result |
 |---|---|
-| `write(read(data), like=data) == data` | **5,217 / 5,217** files |
-| indexed/true-colour PNG export → `from_png(like=…)` → write == data | **5,217 / 5,217** files (15,000 / 15,000 pictures identical; 228 `no_image` have no pixels to export) |
+| `write(&read(data)?, Some(data)) == data` | **5,217 / 5,217** files |
+| indexed/true-colour PNG export → `from_png(png, &like)` → write == data | **5,217 / 5,217** files (15,000 / 15,000 pictures identical; 228 `no_image` have no pixels to export) |
 | paletted pictures exported as plain RGBA PNG → colour-matched back → write == data | **5,217 / 5,217** files |
 | TIM2 header regenerated from the picture (rules of §4) == original | 15,000 / 15,000 |
 | functional, 40 files: fresh archive reads back; RGBA edit (invert) → quantise → write → read; half-size resize keeps other pictures | 40/40, 40/40 (max error ≤ 8), 40/40 |
@@ -399,7 +399,7 @@ The whole check takes about 100 s on 16 processes.
 * The **256×255** pictures (4, `map/f/f04/f04.ipk.d/f0401.img`): at load,
   `Conv32To8` walks whole 64-row pages and reads 256 bytes past the pixels
   (into the palette). The 128 pixels of the last rows that have no stored
-  byte therefore show junk in the game. `im3.py` decodes them as index 0 and
+  byte therefore show junk in the game. `im3.rs` decodes them as index 0 and
   keeps the 128 stored bytes that no pixel uses.
 * **Junk fields** are preserved but unexplained: IM3 `size` short by 276 or
   302 (11 entries), CLAMP and `unk_32` junk (`e207a01`, `d01e01`), name

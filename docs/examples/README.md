@@ -2,8 +2,8 @@
 
 Made-up scripts written for these docs, to show how to write each kind of
 script with the SDK. No retail code appears here. Each compiles as it is
-(`python3 cli.py compile docs/examples/greeting.c -o greeting.stb`), and
-`src/tests/test_examples.py` checks that they all still do.
+(`c2 compile docs/examples/greeting.c -o greeting.stb`), and a test
+(`rust/crates/c2-script/tests/examples.rs`) checks that they all still do.
 
 The examples define English names for the few Japanese asset names they
 use (`#define MOTION_STAND "立ち"`). Inside a decompiled tree you do not

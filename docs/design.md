@@ -4,6 +4,9 @@ Three changes, in this order: decide the formats below, port the tools to
 Rust with the Python as the reference, then build the asset tree and the new
 mod format in Rust only. Nothing is written twice.
 
+All three are done: `c2` is the only tool, and the Python it was ported
+from has been removed. Section 3 is kept as the plan the port followed.
+
 ## 1. The asset tree
 
 `extract` already writes every file of the disc, and `decompile` turns the
@@ -179,8 +182,8 @@ bank places build back, no problems, in 13 s.
 
 A mod is a folder with a `mod.json`. Where files sit inside the folder does
 not matter: `mod.json` says what each one replaces, by asset id (section
-1). Built in `c2` only (`c2-script`'s `replace` and `migrate`, the index of
-ids in `c2-assets`' `ids`); `cli.py` builds the old `disc/` layout alone.
+1). Built in `c2` (`c2-script`'s `replace` and `migrate`, the index of ids
+in `c2-assets`' `ids`).
 
 ```json
 {
@@ -343,8 +346,9 @@ as built before. The old `disc/` layout keeps working, alone or beside
 
 ## 3. The Rust port
 
-One Rust tool, `c2`, doing everything `cli.py` does, with the same command
-names and output, so the docs change little.
+One Rust tool, `c2`, doing everything the Python tool (`cli.py`) did, with
+the same command names and output, so the docs change little. Done: what
+was built is described in [rust/README.md](../rust/README.md).
 
 ### Layout
 
@@ -358,7 +362,11 @@ A Cargo workspace at `rust/`:
 | `c2-mods` | mods, patches, additions, numbers, flags, startat, assets (manifest) |
 | `c2` | the command line, maps, xref, verify, coverage, learn, play |
 
-The definitions (`definitions/`), tables (`src/c2s/tables/*.json`) and SDK
+As built, the mod modules went into `c2-script` rather than a crate of
+their own, and a `c2-py` crate does the number and text formatting the
+output depends on as CPython did.
+
+The definitions (`definitions/`), tables (now `natives/*.json`) and SDK
 headers stay data files, read by both tools during the port.
 
 ### Speed

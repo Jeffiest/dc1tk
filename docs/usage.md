@@ -1,41 +1,47 @@
 # Usage
 
-Everything runs through `cli.py`, with Python 3 and nothing else installed.
+Everything runs through one program, `c2`, built from `rust/` (see the
+[README](../README.md#1-what-you-need)). `c2 help COMMAND` lists a command's
+options.
 
 ```
-python3 cli.py setup dc2.iso decompiled       extract the disc and decompile it all
-python3 cli.py extract dc2.iso extracted  write every file on the disc
-python3 cli.py decompile <script.stb | extracted dir> [-o out]
-python3 cli.py compile <script.c> [-o script.stb]
-python3 cli.py build decompiled dc2.iso -o modded.iso   new disc image with your changes
-python3 cli.py build decompiled dc2.iso -o test.iso --start-at s51:story_50
-python3 cli.py changes decompiled             what you edited since decompiling
-python3 cli.py mod override decompiled castle --map s51 start_castle_battle   start a patch
-python3 cli.py mod check decompiled castle    compile what a mod changes, without a disc
-python3 cli.py build decompiled dc2.iso -o modded.iso --mod castle --mod other  build with mods
-python3 cli.py mod list decompiled            every mod, its patches, numbers and files
-python3 cli.py mod new decompiled castle map/s/s51_raybrandt_castle/s51_1.c   copy whole files into a mod
-python3 cli.py mod test decompiled calculator run a mod's tests.c without the game
-python3 cli.py play modded.iso            boot an image in PCSX2 (or build ... --play)
-python3 cli.py maps decompiled                every map: town or dungeon-style, playable or not
-python3 cli.py map decompiled s17             one map: programs, free numbers, trigger points, positions
-python3 cli.py xref decompiled event 510 --map s51     what defines, starts and requests an event
-python3 cli.py xref decompiled map s51        how the game enters a map
-python3 cli.py xref decompiled monster golem  a monster's model, AI script and users
-python3 cli.py flags decompiled [--flag N]    save flags in use, and free ones
-python3 cli.py fork decompiled lib/x.c lib/y.c script.c   a library copy for some scripts
-python3 cli.py mod save decompiled castle copy edits made in the tree into a mod
-python3 cli.py mod apply decompiled castle write a mod into the tree
-python3 cli.py verify extracted           prove every script round-trips
-python3 cli.py defs check extracted       how much of the disc the definitions name
-python3 cli.py defs todo extracted        unnamed functions, most called first
-python3 cli.py disassemble <script.stb>   text assembly, for debugging
-python3 cli.py assemble <script.asm> -o <script.stb>
-python3 cli.py defs learn <source> <definition set>
-python3 cli.py defs disc extracted <definition set>  record which disc a set is for
-python3 cli.py natives <ChronicleTwo checkout>
-python3 cli.py test                       run the tests
+c2 setup dc2.iso decompiled               extract the disc and decompile it all
+c2 extract dc2.iso extracted              write every file on the disc
+c2 decompile <script.stb | extracted dir> [-o out]
+c2 compile <script.c> [-o script.stb]
+c2 build decompiled dc2.iso -o modded.iso   new disc image with your changes
+c2 build decompiled dc2.iso -o test.iso --start-at s51:story_50
+c2 changes decompiled                     what you edited since decompiling
+c2 mod override decompiled castle --map s51 start_castle_battle   start a patch
+c2 mod check decompiled castle            compile what a mod changes, without a disc
+c2 build decompiled dc2.iso -o modded.iso --mod castle --mod other   build with mods
+c2 mod list decompiled                    every mod, its patches, numbers and files
+c2 mod new decompiled castle map/s/s51_raybrandt_castle/s51_1.c   copy whole files into a mod
+c2 mod test decompiled calculator         run a mod's tests.c without the game
+c2 assets dc2.iso -o assets               every texture, model and sound, by asset id
+c2 mod asset dc2.iso castle texture:e254a1   copy an asset into a mod to replace it
+c2 mod migrate dc2.iso castle             turn a mod's disc/ folder into asset ids
+c2 play modded.iso                        boot an image in PCSX2 (or build ... --play)
+c2 maps decompiled                        every map: town or dungeon-style, playable or not
+c2 map decompiled s17                     one map: programs, free numbers, trigger points, positions
+c2 xref decompiled event 510 --map s51    what defines, starts and requests an event
+c2 xref decompiled map s51                how the game enters a map
+c2 xref decompiled monster golem          a monster's model, AI script and users
+c2 flags decompiled [--flag N]            save flags in use, and free ones
+c2 fork decompiled lib/x.c lib/y.c script.c   a library copy for some scripts
+c2 mod save decompiled castle             copy edits made in the tree into a mod
+c2 mod apply decompiled castle            write a mod into the tree
+c2 verify extracted                       prove every script round-trips
+c2 defs check extracted                   how much of the disc the definitions name
+c2 defs todo extracted                    unnamed functions, most called first
+c2 disassemble <script.stb>               text assembly, for debugging
+c2 assemble <script.asm> -o <script.stb>
+c2 defs learn <source> <definition set>
+c2 defs disc extracted <definition set>   record which disc a set is for
+c2 natives <ChronicleTwo checkout>
 ```
+
+The tests run with `cargo test --release` in `rust/`.
 
 ## Options shared by most commands
 
@@ -44,9 +50,10 @@ python3 cli.py test                       run the tests
   none` uses no definitions at all.
 - `--sdk DIR` points at the SDK headers and shared libraries (default
   `sdk/`).
-- `--natives DIR` points at the native tables (default `src/c2s/tables/`).
+- `--natives DIR` points at the native tables (default `natives/`).
 - `--table NAME` forces a native table (`event`, `monster`, `action`,
   `effect`, `arg`) instead of choosing it from the script's path.
+- `--time` prints how long the command took.
 
 ## Decompiling
 
@@ -81,6 +88,22 @@ whole-disc decompile gives them (`out/map/s/s05_fish_monster_swamp/s05.c`), so t
 text apply as they do for the whole disc. Code is shared into libraries
 only among the scripts decompiled together.
 
+## The asset tree
+
+`assets` does for textures, character models and sounds what `decompile`
+does for scripts: it writes each distinct one once, in a format common
+tools open (PNG, glTF, WAV), with `manifest.json` giving each its id
+(`texture:e254a1`, `model:c02fuku*`, `sound:SE_CURSOR_MOVE`) and every place
+the disc has it.
+
+```
+c2 assets dc2.iso -o assets       (or c2 assets extracted; --force replaces a tree already there)
+```
+
+The ids are what a mod names the assets it replaces by (see
+[mods](#mods)). The layout and the rules are in [the design](design.md),
+"The asset tree".
+
 ## Compiling
 
 `compile` reads a `.c`, follows its `#include`s (library files are looked
@@ -92,13 +115,13 @@ The output is byte-identical to the original when the source is unchanged.
 
 ## Modding workflow
 
-1. `python3 cli.py setup dc2.iso decompiled` extracts the disc and decompiles
+1. `c2 setup dc2.iso decompiled` extracts the disc and decompiles
    every script into `decompiled/`.
 2. Edit scripts in `decompiled/`, and shared code in `decompiled/lib/` (an edit to a
    library changes every script that includes it; `fork` gives some scripts
    their own copy). The [modding guide](modding.md) covers how scripts run
    and the commands that find what to edit.
-3. `python3 cli.py build decompiled dc2.iso -o modded.iso` writes a new disc
+3. `c2 build decompiled dc2.iso -o modded.iso` writes a new disc
    image.
 4. Boot `modded.iso` in PCSX2.
 
@@ -137,8 +160,8 @@ edited.
 image; `--pcsx2 PATH` or `$PCSX2` when it is not installed in the usual
 place).
 
-To build one script without a disc, `python3 cli.py compile
-decompiled/<path>.c -o <path>.stb`.
+To build one script without a disc,
+`c2 compile decompiled/<path>.c -o <path>.stb`.
 
 ### Testing without replaying
 
@@ -154,8 +177,8 @@ A mod is a folder in `mods/`. Keep the decompiled tree as the decompiler
 wrote it and build any set of mods over it:
 
 ```
-python3 cli.py mod override decompiled castle --map s51 start_castle_battle
-python3 cli.py build decompiled dc2.iso -o modded.iso --mod castle --mod other
+c2 mod override decompiled castle --map s51 start_castle_battle
+c2 build decompiled dc2.iso -o modded.iso --mod castle --mod other
 ```
 
 A mod holds **patches**: C files that name the scripts they change and hold
@@ -254,10 +277,10 @@ the game's scripts; whole files suit scripts and libraries of the mod's own.
 A mod made on a tree with readable names applies to one without, and the
 other way round: files and `#include` lines follow each tree's layout.
 
-**Game assets by id (`c2` only).** A mod names the textures, models and
-sounds it replaces by their asset ids (see `c2 assets`) in `mod.json`,
-with the files anywhere in its folder, and `build` replaces each at every
-place the disc has it:
+**Game assets by id.** A mod names the textures, models and sounds it
+replaces by their asset ids (see [the asset tree](#the-asset-tree)) in
+`mod.json`, with the files anywhere in its folder, and `build` replaces
+each at every place the disc has it:
 
 ```json
 "replace": {
@@ -385,7 +408,7 @@ script's folder up, then in `sdk/`. Libraries can include libraries; each is
 included once.
 
 **Tests.** `mods/NAME/tests.c` holds `int test_...(void)` functions;
-`cli.py mod test SOURCE NAME` compiles them with the mod over the tree and
+`c2 mod test SOURCE NAME` compiles them with the mod over the tree and
 runs them in an interpreter of the script VM, without the game. A test
 passes when it returns nonzero, and `print(...)` output is shown for the
 ones that fail. Natives do nothing there (a result they would give is 0),
@@ -405,8 +428,8 @@ Two edits that show within minutes of starting a new game:
   `show_narration_line` calls (messages 10010, 10020, 10030) and change
   `set_sprite_color(0, 0, 0, 0, 128)` to `set_sprite_color(0, 128, 0, 0,
   128)`. The letter is narrated last line first, over red instead of black.
-- **Monica's first fight**, as a mod. `python3 cli.py mod override
-  decompiled first-fight --map s51 start_castle_battle` writes
+- **Monica's first fight**, as a mod.
+  `c2 mod override decompiled first-fight --map s51 start_castle_battle` writes
   `mods/first-fight/s51.c` with the function in it. There, replace the four
   `MONSTER_GRIFFON_SOLDIER_523` with other kinds from
   `decompiled/include/disc.h`, loading each first:
@@ -425,7 +448,7 @@ Names, docs and global names you write in decompiled source can be fed back
 into a definition set, so everyone's next decompile gets them:
 
 ```
-python3 cli.py defs learn decompiled definitions/pal
+c2 defs learn decompiled definitions/pal
 ```
 
 `learn` compiles each script, matches functions by their bytecode

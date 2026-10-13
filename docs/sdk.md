@@ -98,7 +98,7 @@ AT(60) get_pos(&target_angle);  // old numbering, meant as get_target_angle
 
 The rule (old group 60 is group 70, so the native ten numbers on) fits the
 arguments of all 197 such calls on the disc, and functions with a modern
-twin elsewhere confirm it; `old_groups` in `src/c2s/tables/monster.json`
+twin elsewhere confirm it; `old_groups` in `natives/monster.json`
 records it.
 
 The scripts with those calls (`b07a_atora_yellow`, `e08a`, `e09a` and the

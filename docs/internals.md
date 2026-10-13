@@ -14,7 +14,7 @@ plus the native table (see
 [how definitions find things](definitions.md#how-definitions-find-things)). No script calls a later function or
 itself, so fingerprints are well defined and the same in every file.
 
-`src/c2s/library.py` finds the libraries over the whole disc:
+`rust/crates/c2-script/src/library.rs` finds the libraries over the whole disc:
 
 1. A function can join a library when it is the first copy of its body in
    the file and everything it calls can too.
@@ -67,9 +67,10 @@ globals.
 
 ## Decompiler
 
-`src/c2s/decompile.py` turns a parsed script into a plain dict tree;
-`src/c2s/sdk.py` presents it with the SDK's names and helpers, and
-`src/c2s/source.py` prints it as C.
+`decompile.rs` (in `rust/crates/c2-script/src/`) turns a parsed script into a
+program tree (`Node`, `node.rs`: maps and lists that dump as JSON);
+`sdk.rs` presents it with the SDK's names and helpers, and `source.rs` prints
+it as C; `decompiler.rs` runs the three with the definitions.
 
 1. Declarations come from the addressing modes: each slot is used with one
    mode, so it is an `int` or `float` scalar, a local array (indexed modes, the
@@ -90,27 +91,31 @@ globals.
 
 ## Compiler
 
-`src/c2s/parse.py` reads `.c` into the same tree and `src/c2s/compile.py` turns
-the tree into text assembly, which `asm.assemble` lays out. Slots, label
+`parse.rs` reads `.c` into the same tree and `compile.rs` turns
+the tree into text assembly, which `asm::assemble` lays out. Slots, label
 numbers, native numbers and string indices are assigned by the rules above;
 the assembler computes every offset, record field and header field.
 
 String blocks hold the function's strings in push order, padded to 16 bytes
 with whatever the compiler's string buffer held there from earlier blocks
-(`stb.block_padding`), and the code section ends zero-filled to 16
-(`stb.tail_padding`, the assembler's `.tail`). In the 55 files marked
+(`stb::block_padding`), and the code section ends zero-filled to 16
+(`stb::tail_padding`, the assembler's `.tail`). In the 55 files marked
 `#pragma string_pool` the buffer was never reset, so each block starts with
 the file's strings so far and a function with no strings writes them all
-(`stb.pool_block`). The decompiler tries both and keeps the one that
+(`stb::pool_block`). The decompiler tries both and keeps the one that
 predicts every block; together they give every block on the PAL disc, so no
 `#pragma padding_of` or `#pragma strings` lines are printed. They are still
 read, and printed for a block neither rule gives.
 
 # Code style
 
-- Python 3, standard library only.
-- Functions and plain data: dicts, lists, tuples. No classes, no wrappers, no
-  higher-order functions.
-- No comments. If code needs one, it needs to be simpler.
-- Intermediate forms (parsed file, instruction lists, syntax trees) are plain
-  dicts that can be dumped as JSON, which makes every stage inspectable.
+- Rust, one Cargo workspace in `rust/` (see [its README](../rust/README.md)),
+  formatted with `cargo fmt` (`rust/rustfmt.toml`), with few dependencies.
+- Functions and plain data: structs for fixed records (the `.stb` header,
+  instructions, functions), and few traits or wrappers.
+- Each module starts with a doc comment saying what it is for; comments
+  inside functions are rare. If code needs one, it may need to be simpler.
+- Intermediate forms (parsed file, instruction lists, syntax trees) are
+  plain data that can be dumped as JSON (`Node` for the program tree), which
+  makes every stage inspectable.
+- Work over many files runs on every core (`rayon`).
