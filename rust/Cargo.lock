@@ -98,7 +98,6 @@ dependencies = [
  "c2-disc",
  "c2-py",
  "flate2",
- "serde",
  "thiserror",
 ]
 
