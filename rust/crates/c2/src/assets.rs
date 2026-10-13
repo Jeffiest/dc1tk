@@ -39,7 +39,7 @@ impl Kind {
     fn export(self, data: &[u8]) -> c2_assets::Result<Vec<(String, Vec<u8>)>> {
         match self {
             Kind::Png => textures::export(data),
-            Kind::Wav => todo!(),
+            Kind::Wav => c2_assets::sounds::export(data),
             Kind::Gltf => todo!(),
         }
     }
@@ -47,7 +47,7 @@ impl Kind {
     fn build(self, folder: &Path, original: &[u8]) -> c2_assets::Result<Vec<u8>> {
         match self {
             Kind::Png => textures::build(folder, original),
-            Kind::Wav => todo!(),
+            Kind::Wav => c2_assets::sounds::build(folder, original),
             Kind::Gltf => todo!(),
         }
     }

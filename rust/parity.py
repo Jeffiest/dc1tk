@@ -423,6 +423,90 @@ def check_textures(args):
     return problems + check_asset_edits("png", args, work, files, edited)
 
 
+def wav_file(rate, channels, bits, values, loop=None, floating=False):
+    """A WAV of interleaved sample values (-1.0..1.0), PCM of the bits or float, with a 'smpl' loop
+    (start, end) when given."""
+    import struct
+    if floating:
+        body = struct.pack("<%d%s" % (len(values), "f" if bits == 32 else "d"), *values)
+    elif bits == 8:
+        body = bytes(max(0, min(255, int(128 + v * 127))) for v in values)
+    elif bits == 24:
+        body = b"".join(int(v * 8388607).to_bytes(3, "little", signed=True) for v in values)
+    else:
+        body = struct.pack("<%d%s" % (len(values), "h" if bits == 16 else "i"),
+                           *(int(v * (32767 if bits == 16 else 2147483647)) for v in values))
+    align = channels * bits // 8
+    chunks = b"fmt " + struct.pack("<IHHIIHH", 16, 3 if floating else 1, channels, rate, rate * align, align, bits)
+    chunks += b"data" + struct.pack("<I", len(body)) + body + (b"\0" if len(body) % 2 else b"")
+    if loop:
+        smpl = struct.pack("<9I", 0, 0, 0, 60, 0, 0, 0, 1, 0) + struct.pack("<6I", 0, 0, loop[0], loop[1], 0, 0)
+        chunks += b"smpl" + struct.pack("<I", len(smpl)) + smpl
+    return b"RIFF" + struct.pack("<I", 4 + len(chunks)) + b"WAVE" + chunks
+
+
+def synthetic_sounds(seed):
+    """WAVs to put into a bank: a tone, stereo noise at 96 kHz (resampled to 48 kHz), a looped
+    sweep whose loop needs stretching, and 8-bit, 24-bit and float ones at other rates."""
+    import math
+    state = [seed * 7919 + 1]
+
+    def noise():
+        state[0] = (state[0] * 1103515245 + 12345) % (1 << 31)
+        return state[0] / (1 << 30) - 1.0
+    tone = [0.6 * math.sin(2 * math.pi * 440 * i / 22050) for i in range(6000 + 37 * seed)]
+    stereo = [0.3 * noise() for _ in range(2 * 4000)]
+    sweep = [0.5 * math.sin(i * i / 9000.0) for i in range(5000)]
+    return [
+        wav_file(22050, 1, 16, tone),
+        wav_file(96000, 2, 16, stereo),
+        wav_file(32000, 1, 16, sweep, loop=(1234 + seed, 4999)),
+        wav_file(11025, 1, 8, tone[:3000]),
+        wav_file(44100, 2, 24, [v * 0.5 for v in tone[:4000] for _ in range(2)]),
+        wav_file(16000, 1, 32, tone[:2500], floating=True),
+    ]
+
+
+def edited_wavs(root, exported, edited, every):
+    """Deterministic WAV sets for every n-th bank: exported entries replaced by synthetic sounds
+    (in place or detached, as the bank's sharing decides), one left as exported, a sequence entry
+    replaced, and a new entry added."""
+    from c2s import soundbank
+    folders = sorted(path for path in exported.rglob("*.snd.wav") if path.is_dir())
+    count = 0
+    for number, folder in enumerate(folders[::every]):
+        relative = folder.relative_to(exported).as_posix()[:-len(".wav")]
+        bank = soundbank.Bank.from_bytes((root / relative).read_bytes())
+        entries = bank.entries()
+        target = edited / folder.relative_to(exported)
+        target.mkdir(parents=True)
+        sounds = synthetic_sounds(number)
+        wavs = sorted(folder.glob("*.wav"))
+        for k, wav in enumerate(wavs[:5]):
+            if k == 1:
+                (target / wav.name).write_bytes(wav.read_bytes())
+            else:
+                (target / wav.name).write_bytes(sounds[(number + k) % len(sounds)])
+            count += 1
+        exported_numbers = {int(wav.name[:3]) for wav in wavs}
+        others = [entry.index for entry in entries if entry.index not in exported_numbers]
+        if others:
+            (target / ("%03d_sequence.wav" % others[number % len(others)])).write_bytes(sounds[number % len(sounds)])
+            count += 1
+        (target / ("%03d_new_tone.wav" % len(entries))).write_bytes(sounds[(number + 2) % len(sounds)])
+        count += 1
+    print("%d edited WAVs in %d banks" % (count, len(folders[::every])))
+
+
+def check_sounds(args):
+    work = Path(args.work)
+    problems, files, exported = check_asset_exports("wav", args, work)
+    edited = work / "wav_edits"
+    fresh(edited)
+    edited_wavs(Path(args.extracted), exported, edited, args.every)
+    return problems + check_asset_edits("wav", args, work, files, edited)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     checks = parser.add_subparsers(dest="check", required=True)
@@ -446,7 +530,7 @@ def main():
     command.add_argument("--source", action="store_true", help="compare the source text instead of the tree")
     command.add_argument("--named", action="store_true", help="with the definitions' names, script entries and "
                          "translations (without the SDK's names)")
-    for name, every in (("textures", 25),):
+    for name, every in (("textures", 25), ("sounds", 20)):
         command = checks.add_parser(name)
         command.add_argument("extracted")
         command.add_argument("work")
@@ -457,7 +541,8 @@ def main():
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
     checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble,
-              "decompile": check_decompile, "textures": check_textures}
+              "decompile": check_decompile, "textures": check_textures,
+              "sounds": check_sounds}
     problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)

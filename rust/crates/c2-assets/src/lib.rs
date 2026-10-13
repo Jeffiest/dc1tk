@@ -5,6 +5,8 @@
 
 pub mod im3;
 pub mod py;
+pub mod soundbank;
+pub mod sounds;
 pub mod textures;
 
 /// What went wrong, as the Python's exception message says it.
