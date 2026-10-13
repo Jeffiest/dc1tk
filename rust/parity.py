@@ -12,6 +12,16 @@ same input in a work folder and compares; exit status 1 when anything differs.
                                                       assembling each listing back to the script
   python rust/parity.py decompile extracted WORK      every script's program tree (before names), as JSON
   python rust/parity.py decompile extracted WORK --source   the same written as C
+  python rust/parity.py textures extracted WORK       every .img exported to PNGs by both; c2 building
+                                                      each unedited export back to the original; both
+                                                      building a set of edited PNGs (--every N)
+  python rust/parity.py sounds extracted WORK         the same for every .snd bank as WAVs, with
+                                                      synthetic WAVs replacing and adding entries
+  python rust/parity.py models extracted WORK         the same for every .chr pack as glTF, with
+                                                      meshes moved, scaled and added, bind poses and
+                                                      textures changed
+                                                      (each with --python-builds: the Python builds
+                                                      every unedited export too)
 
 Run from the repository folder, after cargo build --release in rust/. Images are 4.7 GB each; the
 work folder needs room for two.
@@ -380,7 +390,7 @@ def check_asset_edits(kind, args, work, files, edited):
     return compare_builds(py, rs)
 
 
-def edited_pngs(exported, edited, every):
+def edited_pngs(root, exported, edited, every):
     """Deterministic edits of every n-th texture file's PNGs: colours inverted (true colour, so a
     paletted picture is matched or quantised), the palette's red and blue swapped, pixels moved to
     other colours of the palette, and pictures halved in size."""
@@ -411,7 +421,22 @@ def edited_pngs(exported, edited, every):
                 continue
             (target / png.name).write_bytes(out)
             count += 1
-    print("%d edited PNGs in %d texture files" % (count, len(folders[::every])))
+    # sizes and names a build refuses: a swizzled 8-bit picture (IM2) made 8 pixels narrower, so
+    # not a multiple of 16 wide, and a PNG naming no picture
+    im2 = [folder for folder in folders if (root / folder.relative_to(exported).as_posix()[:-len(".png")]).read_bytes()[:3] == b"IM2"]
+    for number, folder in enumerate(im2[:12]):
+        target = edited / folder.relative_to(exported)
+        target.mkdir(parents=True, exist_ok=True)
+        png = sorted(folder.glob("*.png"))[0]
+        w, h, mode, data, palette = im3.read_png(png.read_bytes())
+        if mode == "P" and w > 8:
+            narrow = b"".join(data[y * w:y * w + w - 8] for y in range(h))
+            (target / png.name).write_bytes(im3.write_png(w - 8, h, "P", narrow, palette))
+            count += 1
+        if number % 4 == 0:
+            (target / "zz_no_such_picture.png").write_bytes(im3.write_png(4, 4, "RGB", bytes(48)))
+            count += 1
+    print("%d edited PNGs in %d texture files" % (count, len(folders[::every]) + len(im2[:12])))
 
 
 def check_textures(args):
@@ -419,7 +444,7 @@ def check_textures(args):
     problems, files, exported = check_asset_exports("png", args, work)
     edited = work / "png_edits"
     fresh(edited)
-    edited_pngs(exported, edited, args.every)
+    edited_pngs(Path(args.extracted), exported, edited, args.every)
     return problems + check_asset_edits("png", args, work, files, edited)
 
 
@@ -495,6 +520,13 @@ def edited_wavs(root, exported, edited, every):
             count += 1
         (target / ("%03d_new_tone.wav" % len(entries))).write_bytes(sounds[(number + 2) % len(sounds)])
         count += 1
+        # ones a build refuses: an entry number past the next one, a WAV format it does not read
+        if number % 10 == 3:
+            (target / ("%03d.wav" % (len(entries) + 3))).write_bytes(sounds[0])
+            count += 1
+        if number % 10 == 7 and len(wavs) > 2:
+            (target / wavs[2].name).write_bytes(sounds[0][:20] + b"\x02" + sounds[0][21:])
+            count += 1
     print("%d edited WAVs in %d banks" % (count, len(folders[::every])))
 
 
@@ -532,10 +564,27 @@ def edited_models(exported, edited, every):
                     x, y, z = struct.unpack_from("<3f", buffer, base + 12 * i)
                     struct.pack_into("<3f", buffer, base + 12 * i, x * 1.25, y * 0.75, z + 0.5)
             count += 1
-        bin_path.write_bytes(bytes(buffer))
         rigid = [node for node in gltf["nodes"] if "mesh" in node and "skin" not in node]
+        changed = False
         if rigid and number % 3 == 0:
             rigid[0]["translation"] = [v + 0.25 for v in rigid[0].get("translation", [0.0, 0.0, 0.0])]
+            changed = True
+        if rigid and number % 5 == 2:
+            # a mesh for a frame the model does not have: a new node under the first frame
+            gltf["nodes"].append({"name": "mod_added", "mesh": rigid[-1]["mesh"], "translation": [0.0, 1.0, 0.0]})
+            gltf["nodes"][0].setdefault("children", []).append(len(gltf["nodes"]) - 1)
+            changed = True
+        if gltf.get("skins") and number % 4 == 1:
+            # a joint's bind pose moved: its inverse bind matrix's translation changed
+            accessor = gltf["accessors"][gltf["skins"][0]["inverseBindMatrices"]]
+            base = gltf["bufferViews"][accessor["bufferView"]].get("byteOffset", 0) + accessor.get("byteOffset", 0)
+            joint = min(1, accessor["count"] - 1)
+            for k in (12, 13, 14):
+                (value,) = struct.unpack_from("<f", buffer, base + 64 * joint + 4 * k)
+                struct.pack_into("<f", buffer, base + 64 * joint + 4 * k, value + 0.5)
+            count += 1
+        bin_path.write_bytes(bytes(buffer))
+        if changed:
             gltf_path.write_text(json.dumps(gltf, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
             count += 1
         pngs = sorted((target / "textures").glob("*.png")) if (target / "textures").is_dir() else []
