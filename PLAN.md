@@ -135,9 +135,17 @@ scripts (see [usage](docs/usage.md#mods) and [the formats](docs/assets/)):
 Unedited exports build back to the disc's own bytes in every case. Still to
 do:
 
-1. **Try them in the game.** None of the converted assets has been booted
-   yet: a reskinned, re-voiced and remodelled character in PCSX2 with
-   `--start-at`, to confirm what the format checks and renders say.
+1. **Sounds in the game.** A test mod in Monica's first fight (recoloured
+   PNG textures, a bigger head from glTF, green soldiers, two event sounds
+   as WAV) showed every change in PCSX2 but the sounds: the old ones were
+   heard. The bank on the disc is the new one (one copy, the one sound set
+   800 names), its rows 4 and 13 are KeyOn rows of new programs, and the
+   engine's cfg reader and IOP upload read it as written. Likely the test
+   sounds: the crash was a 40-140 Hz boom, near silent on TV speakers, and
+   the original's glass layer, shared with entry 6, still plays; the chime
+   was at the fade. Rebuild with loud mid-range sounds; if the old ones are
+   still heard, read the engine's sound table over PINE once event 50 has
+   loaded (`PortInfo` 0x3F6540, port 4) to see what the rows became.
 2. **Memory.** Models, textures and sound banks load into fixed memory the
    build cannot see, so it only warns when a file grows. Measure the
    budgets: the character memory stacks, how much of a texture block a
