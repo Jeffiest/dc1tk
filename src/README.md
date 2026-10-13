@@ -19,8 +19,7 @@ above the executable that has `definitions/`, or in the folder `$C2_ROOT`
 names.
 
 The tests use small discs and scripts built in memory
-(`c2_disc::samples`), the SDK, the definitions and `docs/examples/`; no
-game files. With `C2S_CORPUS` set to the absolute path of an extracted disc
+(`c2_disc::samples`), the SDK and the definitions; no game files. With `C2S_CORPUS` set to the absolute path of an extracted disc
 (`extracted/disc`), `cargo test --release corpus` also round-trips every
 script on it (about 40 s).
 

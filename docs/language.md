@@ -97,8 +97,8 @@ void on_talk(void)
 }
 ```
 
-This is [`docs/examples/greeting.c`](examples/greeting.c), a made-up script. The
-[examples](examples/README.md) have more: a cutscene, a monster AI and a town talk handler.
+This is a made-up script. For a whole mod, see the
+[calculator example](examples/calculator/calculator.c).
 
 - Types are `int`, `float` and `string`, with `int x[4]` for a local array
   and `int x[]` or `int *x` for an array or variable passed by pointer. A

@@ -133,9 +133,9 @@ c2 play modded.iso
   the shared library for mods.
 - [Definitions](docs/definitions.md): how names and documentation are shared
   without sharing the scripts.
-- [Examples](docs/examples/README.md): made-up scripts showing how to write
-  a scene, a cutscene, a monster AI and a town talk handler, and an example
-  mod: a calculator with its own model, screen and sounds.
+- [Example mod](docs/examples/calculator/calculator.c): a calculator with its
+  own model, screen and sounds (`c2 build extracted/scripts dc2.iso -o
+  calculator.iso --mod calculator --mods docs/examples`).
 - [The script format](docs/format.md), [assembly](docs/assembly.md) and
   [how the tools work](docs/internals.md).
 

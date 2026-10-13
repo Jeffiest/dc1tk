@@ -75,8 +75,7 @@ definitions.
     in the original Japanese scripts stays Japanese. Locals are named for
     what fills them or what they are passed to (`griffon_defeated`,
     `home_x`, `sound_id`; `unset_...` for a slot the function reads but
-    never sets). The [examples](docs/examples/README.md) are commented
-    scripts showing how to write each kind.
+    never sets).
 
 15. **Mod patches.** A mod no longer copies whole files to change them. A
     patch names its scripts (`#pragma target map s51`, `monster golem`,
