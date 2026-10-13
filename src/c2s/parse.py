@@ -1028,6 +1028,8 @@ def pragma(state, token, program, pending):
         pending["padding"] = rest[0] if rest else ""
     elif key == "padding_of":
         program["padding_of"][rest[0]] = rest[1] if len(rest) > 1 else ""
+    elif key == "string_pool":
+        program["string_pool"] = True
     else:
         fail(state, "unknown pragma " + key)
 
@@ -1060,6 +1062,7 @@ def parse(text):
         "main": None,
         "programs": [],
         "functions": [],
+        "string_pool": False,
         "padding_of": {},
         "declarations": {"natives": [], "programs": [], "inlines": [], "constants": [], "kinds": {}},
     }

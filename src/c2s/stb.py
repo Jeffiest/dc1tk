@@ -195,6 +195,12 @@ def encode_string(text):
     return text.encode("cp932") + b"\x00"
 
 
+# The original compiler kept one string buffer per file, zero-filled at the start. A function wrote
+# its pushed strings into it, rounded the write offset up to 16 and wrote the buffer up to there
+# after FUNC_END. Most files reset the offset for each function (block_padding: the strings, then
+# whatever the buffer held up to the next 16); some never reset it, so every function writes the
+# whole pool of the file's strings so far with its own after them (pool_block). After the last
+# function the code section is zero-filled to a multiple of 16 (tail_padding).
 def block_padding(previous, strings):
     raw = b"".join(encode_string(text) for text in strings)
     if not raw:
@@ -203,6 +209,31 @@ def block_padding(previous, strings):
     buffer = raw + previous[len(raw):]
     buffer += bytes(max(0, end - len(buffer)))
     return buffer[len(raw):end].hex(), buffer
+
+
+def split_strings(data):
+    out, position = [], 0
+    while position < len(data):
+        terminator = data.index(b"\x00", position)
+        out.append(data[position:terminator].decode("cp932"))
+        position = terminator + 1
+    return out
+
+
+# A function's block in a file whose string pool is never reset: (the pool's strings, which come
+# before its own in the block, the padding after them, the pool after the function). A function
+# that pushes nothing writes the pool as padding, as the reader splits a block.
+def pool_block(pool, strings):
+    raw = b"".join(encode_string(text) for text in strings)
+    if not raw:
+        return [], pool.hex(), pool
+    block = pool + raw
+    end = len(block) + (-len(block) % 16)
+    return split_strings(pool), "00" * (end - len(block)), block + bytes(end - len(block))
+
+
+def tail_padding(end, code):
+    return "00" * (-(end - code) % 16)
 
 
 def encode(region):

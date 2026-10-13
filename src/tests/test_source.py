@@ -237,3 +237,13 @@ def test_a_program_naming_no_function_says_so():
         assert str(error) == "PROGRAM(200, renamed_away): no function renamed_away"
     else:
         raise AssertionError("compiled a broken program")
+
+
+
+def test_a_string_pool_file_round_trips_without_pragmas_per_function():
+    text = EVENT.replace("#pragma natives event\n", "#pragma natives event\n#pragma string_pool\n", 1)
+    data = build_text(text)
+    again = decompiled(data, "event")
+    assert "#pragma string_pool\n" in again
+    assert "#pragma strings" not in again and "#pragma padding_of" not in again
+    assert build_text(again) == data

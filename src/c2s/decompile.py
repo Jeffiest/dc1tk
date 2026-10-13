@@ -491,6 +491,47 @@ def fallback(region, context, reason):
             "reason": reason, "lines": lines}
 
 
+# What the compiler's string buffer predicts for each function's block, as (strings before the
+# pushed ones, padding), with the end-of-file zero fill on the last (see stb.block_padding).
+def predicted(regions, functions, code, pool):
+    buffer, out = b"", []
+    for position, (region, function) in enumerate(zip(regions, functions)):
+        pushed = region["strings"][len(function.get("unused_strings", [])):]
+        if pool:
+            prefix, padding, buffer = stb.pool_block(buffer, pushed)
+        else:
+            prefix = function.get("unused_strings", [])
+            padding, buffer = stb.block_padding(buffer, region["strings"])
+        if position == len(regions) - 1:
+            end = region["offset"] + region["size"] - len(region["padding"]) // 2 + len(padding) // 2
+            padding += stb.tail_padding(end, code)
+        out.append((prefix, padding))
+    return out
+
+
+def matches(regions, functions, code, pool):
+    return [function["kind"] == "function" and function["unused_strings"] == prefix and region["padding"] == padding
+            for region, function, (prefix, padding) in zip(regions, functions, predicted(regions, functions, code, pool))]
+
+
+# Whether the file's string buffer was never reset between functions: only when that predicts
+# every block and resetting does not.
+def string_pool(regions, functions, code):
+    if any(function["kind"] != "function" for function in functions) or all(matches(regions, functions, code, False)):
+        return False
+    return all(matches(regions, functions, code, True))
+
+
+# Drops the padding the buffer predicts, and in a pool file the leading strings it implies.
+def predicted_blocks(regions, functions, code, pool):
+    out = []
+    for function, matched in zip(functions, matches(regions, functions, code, pool)):
+        if matched:
+            function = dict(function, padding=None, unused_strings=[] if pool else function["unused_strings"])
+        out.append(function)
+    return out
+
+
 def global_types(script):
     types = {}
     for region in script["regions"]:
@@ -538,16 +579,13 @@ def decompile(script, table, tables):
         globals_.append({"name": "g%d" % slot, "type": types.pop()})
     context["global_types"] = {declared["name"]: declared["type"] for declared in globals_}
     functions = []
-    buffer = b""
     for region in script["regions"][2:]:
-        predicted, buffer = stb.block_padding(buffer, region["strings"])
         try:
-            function = structured(region, context)
-            if function["padding"] == predicted:
-                function["padding"] = None
-            functions.append(function)
+            functions.append(structured(region, context))
         except ValueError as error:
             functions.append(fallback(region, context, str(error)))
+    pool = string_pool(script["regions"][2:], functions, code)
+    functions = predicted_blocks(script["regions"][2:], functions, code, pool)
     prints = fingerprint.both_fingerprints(script, table)
     used = valued_calls([function.get("body", []) for function in functions], [])
     functions = [dict(function, returns="int") if function.get("returns") == "void" and function["name"] in used else function
@@ -564,6 +602,7 @@ def decompile(script, table, tables):
         "programs": [{"no": entry["no"], "function": function_name(entry["func"] - code)}
                      for entry in script["regions"][1]["entries"]],
         "functions": functions,
+        "string_pool": pool,
         "padding_of": {},
         "declarations": {"natives": [], "programs": [], "inlines": [], "constants": [], "kinds": {}},
         "fingerprints": {function_name(offset): found for offset, found in prints["exact"].items()},

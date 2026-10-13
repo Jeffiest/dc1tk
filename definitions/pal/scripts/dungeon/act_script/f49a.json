@@ -1,3 +1,3 @@
 {
- "doc": "Action script for Monica's Bomber Head monster transformation (e49a). Confirm attacks with two hit volumes and square blows itself up when HP is at least half."
+ "doc": "Action script for Monica's Bomber Head monster transformation (e49a). Confirm attacks with two hit volumes and square blows itself up only at full HP (get_hp_rate divides in integers, so it reads 1.0 only then)."
 }

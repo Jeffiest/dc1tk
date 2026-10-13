@@ -76,3 +76,20 @@ def test_unknown_bytes_survive():
 def test_short_and_empty_files_survive():
     for data in (b"", b"SB2", b"SB2\x00" + b"\xff" * 30, b"SB2\x00" + b"\xff" * 80):
         assert stb.write(stb.read(data)) == data
+
+
+def test_a_pool_block_holds_the_file_strings_so_far():
+    # the first function's strings, rounded up to 16 with zeros
+    prefix, padding, pool = stb.pool_block(b"", ["ab"])
+    assert (prefix, padding, pool) == ([], "00" * 13, b"ab\x00" + bytes(13))
+    # the next one writes the pool, then its own strings
+    prefix, padding, pool = stb.pool_block(pool, ["cd"])
+    assert prefix == ["ab"] + [""] * 13 and padding == "00" * 13 and len(pool) == 32
+    # a function with no strings writes the whole pool, which the reader takes as padding
+    prefix, padding, after = stb.pool_block(pool, [])
+    assert (prefix, padding, after) == ([], pool.hex(), pool)
+
+
+def test_the_code_section_ends_on_16():
+    assert stb.tail_padding(0x40 + 0x38, 0x40) == "00" * 8
+    assert stb.tail_padding(0x50, 0x40) == ""

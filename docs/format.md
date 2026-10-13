@@ -67,18 +67,28 @@ code  function      0x38-byte record, instructions, FUNC_END, string block
   - `local` counts frame slots including arguments.
   - `arg_types` has one entry per argument: 1 for a value (int or float), 0
     for an array passed by pointer (read through modes `0x4` and `0x20`).
-    Entries past `arg` are 0. One function has 11 arguments, one more than
-    the table holds.
+    Entries past `arg` are 0. Three functions take 11 arguments, one more
+    than the table holds (`get_jump_velocity` in 968 records, and two arc
+    moves in `map/e01.stb`); nothing calls any of them. The engine never
+    reads `arg_types`: `call_func` uses only `addr`, `local` and `arg`, and an
+    argument's kind comes from its stack tag at run time, so the eleventh
+    slot's type is just how the body addresses it.
 - **Instructions** (`vmcode_t`, 12 bytes): `op`, `arg1`, `arg2` (int or float).
   Jump targets are byte offsets from the code section. `CALL`'s `arg2` is a
   `funcdata` offset **from the code section**, unlike the program table.
 - **String blocks**: null-terminated Shift-JIS strings in push order, one copy
-  per push (no deduplication), padded to a multiple of 16 bytes. A function
-  that pushes no strings usually has no block; the last block in a file and a
-  few hundred others break the rule and are kept as bytes. The padding bytes are left over from the compiler's
-  string buffer: in 41,343 of 41,637 blocks they match the bytes the previous
-  block left at the same positions. The rest still need a rule (see the
-  [open questions](../PLAN.md#open-questions)). Some files end in stale bytes the same way.
+  per push (no deduplication), padded to a multiple of 16 bytes. The
+  original compiler kept one string buffer per file, zero-filled at the
+  start: each function wrote its strings into it, rounded the write offset
+  up to 16 and wrote the buffer up to there after `FUNC_END`. Most files
+  reset the offset for each function, so the padding is whatever earlier
+  blocks left at those positions and a function with no strings has no
+  block. 55 files (the nine `STB` files and 46 `SB2` ones: the d01 to d05
+  dungeon scripts, `e236a` and effect scripts) never reset it, so every
+  block holds the file's strings so far before its own, and a function with
+  no strings writes all of them. After the last function the code section is
+  zero-filled to a multiple of 16. That predicts every block and tail on the
+  PAL disc.
 - **Globals**: an `SB2` program carves `global_num` slots off the bottom of the
   value stack. Dark Cloud 1 scripts have no magic and no globals (version 1).
 

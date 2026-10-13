@@ -223,6 +223,9 @@ def text(program):
         lines.append("#pragma header_padding " + program["header_padding"])
     if program["global_num"] != len(program["globals"]):
         lines.append("#pragma globals %d" % program["global_num"])
+    if program.get("string_pool"):
+        # built by a compiler that never reset its string buffer between functions (stb.pool_block)
+        lines.append("#pragma string_pool")
     lines.append("")
     for declared in program["globals"]:
         lines.append("%s %s;" % (declared["type"], declared["name"]))

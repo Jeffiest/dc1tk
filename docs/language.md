@@ -140,10 +140,11 @@ This is [`docs/examples/greeting.c`](examples/greeting.c), a made-up script. The
   `#define`s, enums, typedefs and helpers become the including script's, as
   with a header.
 - `#pragma` lines carry what the bytes need and the language does not say:
-  `magic`, `unk_14`, `header_padding` and `globals N` for the file;
-  `strings` before a function; `padding_of NAME HEX` for the leftover bytes
-  after a function, printed together at the end of the file so they stay
-  out of the code (`padding HEX` before a function still works). C
+  `magic`, `unk_14`, `header_padding`, `globals N` and `string_pool` (the
+  file's string buffer was never reset between functions) for the file;
+  `strings` before a function and `padding_of NAME HEX` after the code for
+  string-block bytes no rule predicts (`padding HEX` before a function
+  still works). None of the PAL disc's scripts need the last two. C
   compilers ignore unknown pragmas.
 - A function the decompiler cannot structure prints as
   `asm f_0388 arg 0 { ... }` around its text assembly, and a file it cannot

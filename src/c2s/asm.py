@@ -377,6 +377,9 @@ def parse(text):
             program["items"].append({"kind": "program", "no": number(rest[0]), "target": rest[1], **where})
         elif head == ".bytes":
             program["items"].append({"kind": "raw", "hex": rest[0], **where})
+        elif head == ".tail":
+            # zero-fill the code section to a multiple of 16 after the last function
+            program["tail"] = True
         elif head == ".code":
             program["items"].append({"kind": "code", **where})
         elif head == ".function":
@@ -429,6 +432,11 @@ def layout(program):
             for label, index in item["labels"].items():
                 symbols[label] = offset + stb.FUNCDATA_SIZE + index * stb.VMCODE_SIZE
             offset += function_size(item)
+    functions = [item for item in program["items"] if item["kind"] == "function"]
+    if program.get("tail") and functions and functions[-1] is program["items"][-1]:
+        fill = stb.tail_padding(offset, code if code is not None else 0)
+        functions[-1]["padding"] += fill
+        offset += len(fill) // 2
     return {"code": code if code is not None else offset, "symbols": symbols, "size": offset}
 
 

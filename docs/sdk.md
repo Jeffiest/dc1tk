@@ -107,15 +107,18 @@ older table (`"numbering": "old"` in their `scripts/` entry), and only in
 them, and in libraries only they use, are these calls commented
 (`old_table_groups` in `monster.json`).
 
-Six monster scripts (`b02a1` to `b02a4`, `e236a`, `p00_23a`) call natives
-by raw number with no group, from an older, smaller table; they show as
-`DIRECT` calls, which no other script needs. No single offset maps that
-table, but same-shaped twins pin down 18 of its numbers (raw 52 to 61 are
-the current 77 to 86, for example), and `old_direct` in `monster.json`
-records them. A `DIRECT` call to one of those numbers gets the same
-comment anywhere; in the scripts a definition set marks `"numbering":
-"raw"` (`b02a1` to `b02a7`, `e236a`, `p00_23a`) and the libraries only they
-use, so does a call that lands on a native the header gives no group:
+Seven monster scripts (`b02a2` to `b02a7`, which are byte-identical, and
+`e236a`) call natives by raw number with no group, from an older, smaller
+table; they show as `DIRECT` calls, which no other script needs. No single
+offset maps that table, but same-shaped twins (`e228a` for `e236a`; `b02a1`,
+`b02a` and `b04a` for the b02a bosses) pin down 41 of its numbers (raw 52 to
+61 are the current 77 to 86, for example), and `old_direct` in
+`monster.json` records them. A call by number alone is not a sign of the old
+table: current scripts call the first native of a group by its bare number
+too (`b02a1` and `p00_23a` do, and use the current table). In the scripts a
+definition set marks `"numbering": "raw"` (`b02a2` to `b02a7`, `e236a`) and
+the libraries only they use, a `DIRECT` call to one of those numbers, or a
+call that lands on a native the header gives no group, gets the comment:
 
 ```c
 DIRECT get_monster_var2(&turn_target);  // old numbering, meant as get_target_angle
@@ -124,11 +127,11 @@ set_dungeon_flag(turn_target, speed);  // old numbering, meant as turn_to
 
 Two action scripts, `c01win` (an old build of Max's script) and `f204a`,
 were compiled against an older action table too. Aligning their calls with
-those of their current twins (`c01`, the other `f` scripts) pins down 16
-numbers, recorded as `old_direct` in `action.json`; the definition set
-marks both `"raw"`, so their calls, `_EXT_` ones included, name the native
-they were written for (`_EXT_80(...)  // old numbering, meant as
-add_motion_se`).
+those of their current twins (`c01`, the action libraries and the other
+`f` scripts) pins down 27 numbers, recorded as `old_direct` in
+`action.json`; the definition set marks both `"raw"`, so their calls,
+`_EXT_` ones included, name the native they were written for
+(`_EXT_80(...)  // old numbering, meant as add_motion_se`).
 
 ## Constants
 

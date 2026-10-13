@@ -33,9 +33,9 @@ about one function of its own; the scripts shrink from 3.9 million lines to
 587,000.
 
 The compiler expands each `#include` in place, so the bytes do not change.
-Library files carry no padding pragmas; each script lists the padding of
-its own and its included functions with `#pragma padding_of NAME HEX` at
-the end of the file.
+Library files carry no padding pragmas; a block the buffer rules do not
+give would be listed by the script, for its own and its included functions,
+with `#pragma padding_of NAME HEX` at the end of the file.
 
 ## Names
 
@@ -97,13 +97,14 @@ the assembler computes every offset, record field and header field.
 
 String blocks hold the function's strings in push order, padded to 16 bytes
 with whatever the compiler's string buffer held there from earlier blocks
-(`stb.block_padding`). That rule gives 41,343 of the 41,637 string blocks;
-the other 294, and 1,091 functions with padding but no strings, carry
-`#pragma padding_of NAME HEX`. For 403 of them the bytes are the start of
-the leftover buffer, zero-filled past its end, but nothing on the disc
-says how long the block is, so the bytes are kept as they are. 198 functions in 15 files (mostly
-`dungeon/sys_script/d0*.stb`) start their block with strings no instruction
-pushes; they carry `#pragma strings "..."`.
+(`stb.block_padding`), and the code section ends zero-filled to 16
+(`stb.tail_padding`, the assembler's `.tail`). In the 55 files marked
+`#pragma string_pool` the buffer was never reset, so each block starts with
+the file's strings so far and a function with no strings writes them all
+(`stb.pool_block`). The decompiler tries both and keeps the one that
+predicts every block; together they give every block on the PAL disc, so no
+`#pragma padding_of` or `#pragma strings` lines are printed. They are still
+read, and printed for a block neither rule gives.
 
 # Code style
 

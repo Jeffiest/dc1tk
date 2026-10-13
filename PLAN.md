@@ -157,26 +157,25 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
 
 ## Open questions
 
-- Raw-number monster calls. Six monster scripts (`b02a1` to `b02a4`,
-  `e236a`, `p00_23a`) call natives by number with no group, from an older
-  table, marked `"numbering": "raw"` in the definition set. Same-shaped
-  twins pin down 18 of its numbers (`old_direct` in
-  `src/c2s/tables/monster.json`); the rest, mostly in `b02a1` and
-  `p00_23a`, have no twin.
-- Two action scripts (`c01win`, `f204a`) use an older action table too;
-  aligning them with their twins pins down 16 of its numbers (`old_direct`
-  in `action.json`).
-- Calls to numbers the engine does not register (`_EXT_67`, `_EXT_6` and
-  others) do nothing: the VM finds no function and goes on. What they did
-  in the table they were written for is unknown.
-- Padding. Of the bytes after functions, 1,385 blocks follow no known rule:
-  294 string blocks the leftover-buffer rule misses and 1,091 functions
-  with padding but no strings. 403 of those match the leftover buffer when
-  the block length is known, but nothing on the disc gives the length.
-  They are kept as `#pragma padding_of` lines.
-- Where the leading unpushed strings in 198 functions come from (kept as
-  `#pragma strings`).
-- Whether the original language had a `for` loop. Loops with an increment
-  before the backward jump decompile as `while`, which compiles the same.
-- How the eleventh argument of the one 11-argument function is typed, given
-  that `arg_types` has ten entries.
+- Old native tables. Seven monster scripts (`b02a2` to `b02a7`, `e236a`)
+  and two action scripts (`c01win`, `f204a`) were built for older native
+  tables. Lining their calls up with current twins pins down 41 monster and
+  27 action numbers (`old_direct` in `src/c2s/tables/`), which also says
+  what most of their unregistered `_EXT_n` calls were meant to be. Still
+  unknown: monster old 161 and 162 (only in the b02a2 to b02a7 init), and
+  what the current-numbered `_EXT_20(1)` and `_EXT_20(5)` in `b02a1` did
+  (the base of the sound group, which the engine leaves unregistered).
+  `b02a1` and `p00_23a` use the current table: a call by bare number is
+  how any script calls the first native of a group.
+- Whether the original language had a `for` loop. All 36,503 loops on the
+  disc have the one shape a `while` gives (condition at the top, one jump
+  back, two labels), and all 278 `continue`s jump to the condition. Of the
+  5,579 loops that end by stepping a variable the condition reads, the 109
+  with a `continue` repeat the step by hand before it, which leans against
+  a `for` with a continue-to-step label, but does not settle whether the
+  keyword existed.
+
+Settled: the bytes after functions and the leading strings (the compiler's
+string buffer, see [the format notes](docs/format.md)); the eleventh
+argument (three functions take 11, nothing calls them, and the engine never
+reads `arg_types`).

@@ -1,7 +1,7 @@
 import struct
 from pathlib import Path
 
-from c2s import asm, compile, decompile, definitions, library, natives, parse, sdk, source, stack, stb
+from c2s import asm, assets, compile, decompile, definitions, disc, library, natives, parse, sdk, slots, source, stack, stb
 
 STAGES = ("format", "natives", "assembly", "source")
 STATUSES = ("pass", "fail", "error", "pending")
@@ -159,8 +159,13 @@ def verify(root, tables, defs=None, headers=None):
     defs = defs or definitions.empty()
     paths = find_scripts(root)
     model = library.model_for(root, paths, tables, defs, headers)
+    headers = dict(headers or {})
+    if disc.HEADER in headers:
+        # the names a disc decompile adds to disc.h, which the presented scripts use
+        headers[disc.HEADER] = assets.with_header(slots.with_header(headers[disc.HEADER], model.get("folder_slots")),
+                                                  model.get("asset_names"))
     texts = library.library_texts(model)
-    results = [verify_file(path, (Path(root) / path).read_bytes(), tables, model, texts, headers or {}, defs["tables"])
+    results = [verify_file(path, (Path(root) / path).read_bytes(), tables, model, texts, headers, defs["tables"])
                for path in paths]
     report = {"summary": summarize(results), "files": results}
     report["summary"]["libraries"] = len(texts)

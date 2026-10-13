@@ -408,7 +408,8 @@ def function_lines(function, context):
         "functions": context["functions"],
         "natives": context["natives"],
         "lines": [header],
-        "strings": list(function["unused_strings"]),
+        # in a pool file the block starts with the file's strings so far (stb.pool_block)
+        "strings": (stb.split_strings(context["buffer"]) if context.get("pool") else []) + list(function["unused_strings"]),
         "next_label": 0,
         "next_slot": size,
         "loops": [],
@@ -421,9 +422,16 @@ def function_lines(function, context):
     emit(state, "ret")
     if state["next_slot"] != size:
         state["lines"][0] = header.replace(" local %d " % size, " local %d " % state["next_slot"], 1)
+    if context.get("pool"):
+        prefix = len(stb.split_strings(context["buffer"]))
+        _, padding, buffer = stb.pool_block(context["buffer"], state["strings"][prefix:])
+        if prefix == len(state["strings"]):
+            # a function that pushes nothing writes the pool as padding, not as strings
+            state["strings"] = []
     for text in state["strings"]:
         state["lines"].append(".string " + asm.quote(text))
-    padding, buffer = stb.block_padding(context["buffer"], state["strings"])
+    if not context.get("pool"):
+        padding, buffer = stb.block_padding(context["buffer"], state["strings"])
     context["buffer"] = buffer
     if function["padding"] is not None:
         padding = function["padding"]
@@ -439,6 +447,16 @@ def asm_strings(lines):
         if tokens and tokens[0] == ".string":
             strings.append(tokens[1]["string"])
     return strings
+
+
+# The bytes an assembly function's block holds, which is the pool after it in a pool file.
+def asm_block(lines):
+    padding = ""
+    for line in lines:
+        tokens = asm.tokenize(line)
+        if tokens and tokens[0] == ".padding":
+            padding = tokens[1]
+    return b"".join(stb.encode_string(text) for text in asm_strings(lines)) + bytes.fromhex(padding)
 
 
 def header_line(program):
@@ -464,6 +482,7 @@ def to_asm(program, tables, notes=None):
                       for function in program["functions"]},
         "natives": {native["name"]: native["no"] for native in table["natives"]},
         "buffer": b"",
+        "pool": program.get("string_pool", False),
         "notes": notes,
     }
     for entry in program["programs"]:
@@ -478,10 +497,17 @@ def to_asm(program, tables, notes=None):
     for function in program["functions"]:
         lines.append("")
         if function["kind"] == "asm":
-            context["buffer"] = stb.block_padding(context["buffer"], asm_strings(function["lines"]))[1]
+            if context["pool"]:
+                context["buffer"] = asm_block(function["lines"])
+            else:
+                context["buffer"] = stb.block_padding(context["buffer"], asm_strings(function["lines"]))[1]
             lines += function["lines"]
         else:
             lines += function_lines(function, context)
+    # the code section ends zero-filled to 16, unless the last block was given in full
+    last = next((function for function in reversed(program["functions"]) if function["kind"] in ("function", "asm")), None)
+    if last is not None and last["kind"] == "function" and last["padding"] is None:
+        lines.append(".tail")
     return "\n".join(lines) + "\n"
 
 
