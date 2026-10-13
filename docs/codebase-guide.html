@@ -732,8 +732,10 @@ talk_to_npc(npc_slot, -1, 0, 0);    // -1 = show what's laid out; bubble, wait, 
   Trigger points are drawn into each map's <code>.map</code> file: a door, a spot to step
   on, a spot to press the button at. Each one names a program number.
   <code>c2 map extracted/scripts g01</code> lists them all, for example "door to g01i07, runs
-  program 200". Scripts switch points on and off with
-  <code>set_func_point_enabled(part, "door", on)</code>, which is how a house stays locked
+  program 200", with the part each belongs to: the placement that carries it (a point of a
+  template is listed once for every placement of it) or the map's own. Scripts switch points on
+  and off with <code>set_func_point_enabled(part, "door", on)</code> (part <code>""</code> for the
+  map's own points), which is how a house stays locked
   until a story flag is set. Inside the program, <code>get_event_data(EVENT_DATA_ARG1, &amp;x)</code>
   reads the point's argument.
 </p>
