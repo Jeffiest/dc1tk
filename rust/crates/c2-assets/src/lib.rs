@@ -16,6 +16,8 @@ pub mod soundbank;
 pub mod sounds;
 pub mod textures;
 pub mod to_gltf;
+pub mod tree;
+pub mod tree_check;
 
 /// What went wrong, as the Python's exception message says it.
 #[derive(Debug, thiserror::Error)]
