@@ -329,7 +329,7 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn magic_text(magic: &[u8; 4]) -> String {
+pub fn magic_text(magic: &[u8; 4]) -> String {
     if magic[3] == 0 && magic[..3].iter().all(u8::is_ascii_alphanumeric) {
         return String::from_utf8_lossy(&magic[..3]).into_owned();
     }

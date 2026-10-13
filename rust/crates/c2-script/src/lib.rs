@@ -6,6 +6,7 @@ pub mod decompile;
 pub mod definitions;
 pub mod fingerprint;
 pub mod natives;
+pub mod source;
 #[macro_use]
 pub mod node;
 pub mod stack;

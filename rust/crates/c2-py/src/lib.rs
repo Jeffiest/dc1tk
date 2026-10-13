@@ -166,6 +166,82 @@ pub fn parse_float(text: &str) -> Option<f64> {
     plain.parse().ok()
 }
 
+/// The whitespace textwrap knows: ASCII only.
+fn wrap_space(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\x0b' | '\x0c' | '\r' | ' ')
+}
+
+/// str.expandtabs(8).
+pub fn expand_tabs(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut column = 0;
+    for c in text.chars() {
+        match c {
+            '\t' => {
+                let spaces = 8 - column % 8;
+                out.extend(std::iter::repeat_n(' ', spaces));
+                column += spaces;
+            }
+            '\n' | '\r' => {
+                out.push(c);
+                column = 0;
+            }
+            c => {
+                out.push(c);
+                column += 1;
+            }
+        }
+    }
+    out
+}
+
+/// textwrap.wrap(text, width, break_on_hyphens=False) with the other options at their defaults:
+/// lines of at most width characters, broken at whitespace, long words split.
+pub fn wrap(text: &str, width: usize) -> Vec<String> {
+    let text: String = expand_tabs(text).chars().map(|c| if wrap_space(c) { ' ' } else { c }).collect();
+    // chunks: runs of spaces and runs of anything else
+    let mut chunks: Vec<Vec<char>> = Vec::new();
+    for c in text.chars() {
+        match chunks.last_mut() {
+            Some(last) if (last[0] == ' ') == (c == ' ') => last.push(c),
+            _ => chunks.push(vec![c]),
+        }
+    }
+    let blank = |chunk: &[char]| chunk.iter().all(|&c| is_space(c));
+    chunks.reverse();
+    let mut lines: Vec<String> = Vec::new();
+    while !chunks.is_empty() {
+        let mut line: Vec<Vec<char>> = Vec::new();
+        let mut length = 0;
+        if blank(chunks.last().unwrap()) && !lines.is_empty() {
+            chunks.pop();
+        }
+        while let Some(next) = chunks.last() {
+            if length + next.len() <= width {
+                length += next.len();
+                line.push(chunks.pop().unwrap());
+            } else {
+                break;
+            }
+        }
+        if chunks.last().is_some_and(|next| next.len() > width) {
+            let space_left = if width < 1 { 1 } else { width - length };
+            if space_left > 0 {
+                let chunk = chunks.pop().unwrap();
+                line.push(chunk[..space_left].to_vec());
+                chunks.push(chunk[space_left..].to_vec());
+            }
+        }
+        if line.last().is_some_and(|last| blank(last)) {
+            line.pop();
+        }
+        if !line.is_empty() {
+            lines.push(line.into_iter().flatten().collect());
+        }
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,6 +308,16 @@ mod tests {
         assert_eq!(parse_float("1._5"), None);
         assert!(parse_float("inf").unwrap().is_infinite());
         assert_eq!(parse_float("0x10"), None);
+    }
+
+    #[test]
+    fn wrap_like_python() {
+        assert_eq!(wrap("note: a b c", 7), vec!["note: a", "b c"]);
+        assert_eq!(wrap("", 10), Vec::<String>::new());
+        assert_eq!(wrap("  lead and  double", 8), vec!["  lead", "and", "double"]);
+        assert_eq!(wrap("abcdefghij", 4), vec!["abcd", "efgh", "ij"]);
+        assert_eq!(wrap("mid-motion text", 6), vec!["mid-mo", "tion", "text"]);
+        assert_eq!(wrap("a\tb", 20), vec!["a       b"]);
     }
 
     #[test]

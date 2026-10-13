@@ -16,7 +16,7 @@ use clap::{Args, Parser, Subcommand};
 use rayon::prelude::*;
 
 use c2_disc::{extract, rebuild, Image};
-use c2_script::{asm, decompile, definitions, natives, stb};
+use c2_script::{asm, decompile, definitions, natives, source, stb};
 
 #[derive(Parser)]
 #[command(name = "c2", about = "Decompile, compile and mod Dark Chronicle (Dark Cloud 2)")]
@@ -112,6 +112,9 @@ enum Command {
     DecompileDump {
         root: PathBuf,
         out: PathBuf,
+        /// Write the program as source text (OUT/<path>.c) instead of JSON.
+        #[arg(long)]
+        source: bool,
         #[command(flatten)]
         common: Common,
     },
@@ -175,7 +178,7 @@ fn run_disassemble_tree(root: &Path, out: &Path, common: &Common) -> Result<Exit
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_decompile_dump(root: &Path, out: &Path, common: &Common) -> Result<ExitCode> {
+fn run_decompile_dump(root: &Path, out: &Path, as_source: bool, common: &Common) -> Result<ExitCode> {
     let rules = common.table_rules()?;
     let tables = common.tables()?;
     let scripts = files::find_scripts(root)?;
@@ -183,9 +186,13 @@ fn run_decompile_dump(root: &Path, out: &Path, common: &Common) -> Result<ExitCo
         let path = root.join(relative);
         let script = stb::read(&std::fs::read(&path)?);
         let program = decompile::decompile(&script, &chosen_table(&None, &path, &rules), &tables);
-        let target = out.join(format!("{relative}.json"));
+        let (target, text) = if as_source {
+            (out.join(format!("{relative}.c")), source::text(&program).with_context(|| relative.clone())?)
+        } else {
+            (out.join(format!("{relative}.json")), serde_json::to_string(&program)?)
+        };
         std::fs::create_dir_all(target.parent().unwrap())?;
-        std::fs::write(target, serde_json::to_string(&program)?)?;
+        std::fs::write(target, text)?;
         Ok(())
     })?;
     println!("{} scripts decompiled into {}", scripts.len(), out.display());
@@ -250,7 +257,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::WriteDisc { iso, out, files } => run_write_disc(iso, out, files),
         Command::DisassembleTree { root, out, common } => run_disassemble_tree(root, out, common),
         Command::AssembleTree { root, asm, natives } => run_assemble_tree(root, asm, natives),
-        Command::DecompileDump { root, out, common } => run_decompile_dump(root, out, common),
+        Command::DecompileDump { root, out, source, common } => run_decompile_dump(root, out, *source, common),
     }
 }
 

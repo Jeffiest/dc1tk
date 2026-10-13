@@ -11,6 +11,7 @@ same input in a work folder and compares; exit status 1 when anything differs.
   python rust/parity.py disassemble extracted WORK    every script disassembled by both, and c2
                                                       assembling each listing back to the script
   python rust/parity.py decompile extracted WORK      every script's program tree (before names), as JSON
+  python rust/parity.py decompile extracted WORK --source   the same written as C
 
 Run from the repository folder, after cargo build --release in rust/. Images are 4.7 GB each; the
 work folder needs room for two.
@@ -189,7 +190,7 @@ def check_disassemble(args):
 def check_decompile(args):
     """Every script's program tree from decompile.decompile, before names and docs, compared as
     JSON."""
-    from c2s import decompile, definitions, natives, stb, verify
+    from c2s import decompile, definitions, natives, source, stb, verify
     work = Path(args.work)
     py, rs = work / "py_tree", work / "rs_tree"
     for folder in (py, rs):
@@ -204,11 +205,14 @@ def check_decompile(args):
         path = root / relative
         table = natives.table_for(path.resolve().as_posix(), defs["tables"])
         program = decompile.decompile(stb.read(path.read_bytes()), table, tables)
-        target = py / (relative + ".json")
+        if args.source:
+            target, text = py / (relative + ".c"), source.text(program)
+        else:
+            target, text = py / (relative + ".json"), json.dumps(program, ensure_ascii=False, separators=(",", ":"))
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(json.dumps(program, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        target.write_bytes(text.encode("utf-8"))
     py_time = time.time() - start
-    _, rs_time = run([C2, "decompile-dump", root, rs])
+    _, rs_time = run([C2, "decompile-dump", root, rs] + (["--source"] if args.source else []))
     print("%d scripts; python %.1fs, rust %.1fs" % (len(scripts), py_time, rs_time))
     return compare_trees(py, rs)
 
@@ -270,6 +274,7 @@ def main():
     command = checks.add_parser("decompile")
     command.add_argument("extracted")
     command.add_argument("work")
+    command.add_argument("--source", action="store_true", help="compare the source text instead of the tree")
     args = parser.parse_args()
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
