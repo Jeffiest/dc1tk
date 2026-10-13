@@ -55,6 +55,8 @@ use crate::{mods, Error, Result};
 pub const REPLACE: &str = "replace";
 pub const ADD: &str = "add";
 pub const FILE: &str = "file:";
+/// A map edited as a glTF scene (docs/assets/maps.md section 8): `"map:s17": "maps/s17/s17.gltf"`.
+pub const MAP: &str = "map:";
 
 /// One line of a mod's replace or add.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,6 +78,15 @@ pub struct Line {
 impl Line {
     pub fn is_file(&self) -> bool {
         self.key.starts_with(FILE)
+    }
+
+    pub fn is_map(&self) -> bool {
+        self.key.starts_with(MAP)
+    }
+
+    /// The map a map: line edits (s17).
+    pub fn map_name(&self) -> String {
+        self.key[MAP.len()..].trim().to_string()
     }
 
     /// The disc path of a file: line.
@@ -139,8 +150,10 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         like: None,
     };
     let kind = ids::kind_of(key);
-    if kind.is_none() && !line.is_file() {
-        return Err(line.fail("a key is an asset id (texture:, model:, sound:, bank:) or file: and a disc path"));
+    if kind.is_none() && !line.is_file() && !line.is_map() {
+        return Err(line.fail(
+            "a key is an asset id (texture:, model:, sound:, bank:), file: and a disc path, or map: and a map's name",
+        ));
     }
     let options = match value {
         Value::String(file) => {
@@ -194,6 +207,16 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     line.file = line.shown.split(['/', '\\']).fold(mod_dir.to_path_buf(), |path, part| path.join(part));
     if !line.file.exists() {
         return Err(line.fail(format!("{} is not in the mod's folder", line.shown)));
+    }
+    if line.is_map() {
+        let name = line.map_name();
+        if add || name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(line.fail("a map: line replaces a map, named as the game names it (map:s17)"));
+        }
+        if !(line.file.is_file() && suffix_is(&line.file, ".gltf")) {
+            return Err(line.fail(format!("{} is not a .gltf file (c2 map export writes one)", line.shown)));
+        }
+        return Ok(line);
     }
     if add {
         match kind {
@@ -320,7 +343,7 @@ pub fn raw_files(mod_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
 
 /// Whether any of the lines names an id, so that the build needs the disc's index.
 pub fn needs_index(lines: &[Line]) -> bool {
-    lines.iter().any(|line| !line.is_file() || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some()))
+    lines.iter().any(|line| (!line.is_file() && !line.is_map()) || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some()))
 }
 
 /// What one line does at one place.
@@ -388,7 +411,8 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
     }
     let mut added_to: HashMap<String, usize> = HashMap::new();
     for module in modules {
-        let mine: Vec<&Line> = lines.iter().filter(|line| line.module == module && !line.is_file()).collect();
+        let mine: Vec<&Line> =
+            lines.iter().filter(|line| line.module == module && !line.is_file() && !line.is_map()).collect();
         // each id by the line that gives it: an exact id wins over a pattern
         let mut chosen: BTreeMap<String, (&Line, bool)> = BTreeMap::new();
         for line in mine.iter().filter(|line| !line.add) {

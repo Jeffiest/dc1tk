@@ -18,6 +18,7 @@ pub mod flags;
 pub mod index;
 pub mod learn;
 pub mod library;
+pub mod mapedit;
 pub mod maps;
 pub mod messages;
 pub mod migrate;
