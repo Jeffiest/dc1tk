@@ -148,7 +148,12 @@ fn assets(assets_dir: &Path, changes: &mut Changes) -> Result<()> {
 /// Every copy of the bytes the disc has at a path of the extracted disc: a DATA.DAT file, or a
 /// member of a pack (a.chr.d/b.img). A pack can hold two members of one name (and the index two
 /// files differing in case), which extract writes as one file holding the last.
-fn disc_copies<'a>(image: &'a [u8], disc: &Archive, entries: &HashMap<String, Vec<&Entry>>, path: &str) -> Vec<&'a [u8]> {
+fn disc_copies<'a>(
+    image: &'a [u8],
+    disc: &Archive,
+    entries: &HashMap<String, Vec<&Entry>>,
+    path: &str,
+) -> Vec<&'a [u8]> {
     let (top, members) = discfiles::location(path);
     let mut found: Vec<&'a [u8]> =
         entries.get(&top.to_lowercase()).into_iter().flatten().map(|entry| disc.read(image, entry)).collect();
@@ -157,7 +162,9 @@ fn disc_copies<'a>(image: &'a [u8], disc: &Archive, entries: &HashMap<String, Ve
         found = found
             .into_iter()
             .filter_map(c2_disc::archive::parse_pack_with_data)
-            .flat_map(|members| members.into_iter().filter(|(name, _)| name.to_lowercase() == wanted).map(|(_, data)| data))
+            .flat_map(|members| {
+                members.into_iter().filter(|(name, _)| name.to_lowercase() == wanted).map(|(_, data)| data)
+            })
             .collect();
     }
     found
@@ -226,11 +233,8 @@ fn disc(disc_dir: &Path, iso_path: &Path, changes: &mut Changes) -> Result<()> {
     let own: HashSet<String> = match &layout {
         Some(layout) => {
             for file in &layout.files {
-                let bytes = c2_disc::iso::read_at(
-                    image.bytes(),
-                    file.extent as u64 * c2_disc::iso::SECTOR,
-                    file.size as u64,
-                );
+                let bytes =
+                    c2_disc::iso::read_at(image.bytes(), file.extent as u64 * c2_disc::iso::SECTOR, file.size as u64);
                 if fs::read(disc_dir.join(&file.path)).ok().as_deref() != Some(bytes) {
                     changes.unsupported.push(file.path.clone());
                 }
@@ -291,7 +295,9 @@ pub fn report(changes: &Changes) -> String {
         .iter()
         .map(|(id, files)| format!("changed  {id}  ({})", files.join(", ")))
         .chain(changes.assets_added.iter().map(|path| format!("added    {path} (no asset is made of it; left out)")))
-        .chain(changes.assets_removed.iter().map(|path| format!("removed  {path} (the asset stays as the disc has it)")))
+        .chain(
+            changes.assets_removed.iter().map(|path| format!("removed  {path} (the asset stays as the disc has it)")),
+        )
         .collect();
     section("assets", assets);
     let disc: Vec<String> = changes
@@ -299,9 +305,19 @@ pub fn report(changes: &Changes) -> String {
         .iter()
         .map(|path| format!("changed  {path}"))
         .chain(changes.disc_added.iter().map(|path| format!("added    {path}")))
-        .chain(changes.disc_shadowed.iter().map(|path| format!("changed  {path} (inside a changed pack, which carries it)")))
+        .chain(
+            changes
+                .disc_shadowed
+                .iter()
+                .map(|path| format!("changed  {path} (inside a changed pack, which carries it)")),
+        )
         .chain(changes.disc_removed.iter().map(|path| format!("removed  {path} (a mod cannot remove it)")))
-        .chain(changes.unsupported.iter().map(|path| format!("changed  {path} (one of the disc's own files; build cannot write it)")))
+        .chain(
+            changes
+                .unsupported
+                .iter()
+                .map(|path| format!("changed  {path} (one of the disc's own files; build cannot write it)")),
+        )
         .collect();
     section("disc files", disc);
     for note in &changes.skipped {
@@ -345,7 +361,8 @@ pub fn make(extracted: &Path, mod_dir: &Path, changes: &Changes) -> Result<Made>
     fs::create_dir_all(mod_dir)?;
     let tree_dir = extracted.join(SCRIPTS);
     let script_paths: Vec<String> = changes.scripts_edited.iter().chain(&changes.scripts_added).cloned().collect();
-    let scripts = if script_paths.is_empty() { Vec::new() } else { mods::add(&tree_dir, mod_dir, &script_paths, true)? };
+    let scripts =
+        if script_paths.is_empty() { Vec::new() } else { mods::add(&tree_dir, mod_dir, &script_paths, true)? };
     let mut lines: Vec<(String, Value)> = Vec::new();
     let assets_dir = extracted.join(ASSETS);
     for (id, files) in &changes.assets_changed {

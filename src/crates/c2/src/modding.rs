@@ -603,7 +603,13 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 if made.lines.len() == 1 { "" } else { "s" },
                 shown(&mod_dir)
             );
-            println!("try it: c2 build {} {} -o {}.iso --mod {}", shown(&extracted.join("scripts")), iso.display(), name, name);
+            println!(
+                "try it: c2 build {} {} -o {}.iso --mod {}",
+                shown(&extracted.join("scripts")),
+                iso.display(),
+                name,
+                name
+            );
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Migrate { iso, name, mods: mods_dir, defs } => {

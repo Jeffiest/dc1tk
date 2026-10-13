@@ -8,14 +8,15 @@
 //!
 //! writes, under the folder given:
 //!
-//! - ui/calc_body.png: the calculator's face (256x256), and ui/calc_layout.json: where its display,
-//!   digit cells and buttons are, with each button's key name;
+//! - ui/calc_body.png: the calculator's face (256x256);
 //! - ui/calc_cursor.png, ui/calc_cursor_wide.png: the highlight frame of a button and of the wide 0;
-//! - ui/calc_digits.png, ui/calc_digits.json: the LCD's seven-segment glyphs, one row of cells;
+//! - ui/calc_digits.png: the LCD's seven-segment glyphs, one row of 16x32 cells (0-9, minus, E,
+//!   blank);
 //! - model/calc.gltf, calc.bin, calc.png: a desk calculator prop (glTF 2.0, Y up, 1 unit = 1 cm);
 //! - sounds/*.wav: key, equals, error, clear, open and close (mono, 16-bit, 24000 Hz).
 //!
-//! Every file is read back with c2-assets' own readers and checked before the program ends.
+//! The mod's calculator.c places the cursor and digits by the same layout (KEYS, CELL_X and so on
+//! below), as constants of its own. Every file is read back with c2-assets' own readers and checked before the program ends.
 
 use std::collections::HashMap;
 use std::f64::consts::TAU;
@@ -92,10 +93,6 @@ impl Rect {
         let cx = px.clamp(self.x + r, self.x + self.w - r);
         let cy = py.clamp(self.y + r, self.y + self.h - r);
         (px - cx).powi(2) + (py - cy).powi(2) <= r * r
-    }
-
-    fn json(self) -> serde_json::Value {
-        json!({"x": self.x as i32, "y": self.y as i32, "w": self.w as i32, "h": self.h as i32})
     }
 }
 
@@ -396,7 +393,6 @@ const SOLAR: Rect = rect(178.0, 9.0, 54.0, 12.0);
 
 /// The LCD: cells of the digit atlas, left to right, the number right-aligned in them.
 const CELLS: usize = 9;
-const MAX_DIGITS: usize = 8;
 const CELL_W: usize = 16;
 const CELL_H: usize = 32;
 const CELL_STEP: usize = 20;
@@ -436,7 +432,6 @@ fn style_colours(style: Style) -> [Rgba; 4] {
 }
 
 struct Key {
-    name: &'static str,
     label: char,
     row: usize,
     col: usize,
@@ -444,31 +439,31 @@ struct Key {
     style: Style,
 }
 
-const fn key(name: &'static str, label: char, row: usize, col: usize, span: usize, style: Style) -> Key {
-    Key { name, label, row, col, span, style }
+const fn key(label: char, row: usize, col: usize, span: usize, style: Style) -> Key {
+    Key { label, row, col, span, style }
 }
 
 /// The buttons, row by row (the 0 is two columns wide).
 const KEYS: [Key; 19] = [
-    key("close", '\u{23FB}', 0, 0, 1, Style::Power),
-    key("clear", 'C', 0, 1, 1, Style::Clear),
-    key("erase", '\u{232B}', 0, 2, 1, Style::Clear),
-    key("div", '\u{00F7}', 0, 3, 1, Style::Operator),
-    key("7", '7', 1, 0, 1, Style::Digit),
-    key("8", '8', 1, 1, 1, Style::Digit),
-    key("9", '9', 1, 2, 1, Style::Digit),
-    key("mul", '\u{00D7}', 1, 3, 1, Style::Operator),
-    key("4", '4', 2, 0, 1, Style::Digit),
-    key("5", '5', 2, 1, 1, Style::Digit),
-    key("6", '6', 2, 2, 1, Style::Digit),
-    key("sub", '\u{2212}', 2, 3, 1, Style::Operator),
-    key("1", '1', 3, 0, 1, Style::Digit),
-    key("2", '2', 3, 1, 1, Style::Digit),
-    key("3", '3', 3, 2, 1, Style::Digit),
-    key("add", '+', 3, 3, 1, Style::Operator),
-    key("0", '0', 4, 0, 2, Style::Digit),
-    key("neg", '\u{00B1}', 4, 2, 1, Style::Function),
-    key("equals", '=', 4, 3, 1, Style::Equals),
+    key('\u{23FB}', 0, 0, 1, Style::Power),    // close
+    key('C', 0, 1, 1, Style::Clear),           // clear
+    key('\u{232B}', 0, 2, 1, Style::Clear),    // erase
+    key('\u{00F7}', 0, 3, 1, Style::Operator), // div
+    key('7', 1, 0, 1, Style::Digit),           // 7
+    key('8', 1, 1, 1, Style::Digit),           // 8
+    key('9', 1, 2, 1, Style::Digit),           // 9
+    key('\u{00D7}', 1, 3, 1, Style::Operator), // mul
+    key('4', 2, 0, 1, Style::Digit),           // 4
+    key('5', 2, 1, 1, Style::Digit),           // 5
+    key('6', 2, 2, 1, Style::Digit),           // 6
+    key('\u{2212}', 2, 3, 1, Style::Operator), // sub
+    key('1', 3, 0, 1, Style::Digit),           // 1
+    key('2', 3, 1, 1, Style::Digit),           // 2
+    key('3', 3, 2, 1, Style::Digit),           // 3
+    key('+', 3, 3, 1, Style::Operator),        // add
+    key('0', 4, 0, 2, Style::Digit),           // 0
+    key('\u{00B1}', 4, 2, 1, Style::Function), // neg
+    key('=', 4, 3, 1, Style::Equals),          // equals
 ];
 
 impl Key {
@@ -676,66 +671,6 @@ fn write_ui(dir: &Path) -> Result<()> {
     save_png(&draw_cursor(narrow, 64), &dir.join("calc_cursor.png"))?;
     save_png(&draw_cursor(wide, 128), &dir.join("calc_cursor_wide.png"))?;
     save_png(&draw_digits(), &dir.join("calc_digits.png"))?;
-
-    let digits = json!({
-        "image": "calc_digits.png",
-        "image_width": CELL_W * 16,
-        "image_height": CELL_H,
-        "cell_width": CELL_W,
-        "cell_height": CELL_H,
-        "columns": 16,
-        "rows": 1,
-        "glyphs": GLYPHS.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
-        "note": "glyph i is the cell at x = i * cell_width, y = 0; lit segments on transparent, \
-                 drawn over the faint unlit segments already painted on calc_body.png",
-    });
-    fs::write(dir.join("calc_digits.json"), serde_json::to_string_pretty(&digits)? + "\n")?;
-
-    let buttons: Vec<_> = KEYS
-        .iter()
-        .map(|k| {
-            let r = k.rect();
-            json!({
-                "key": k.name,
-                "label": k.label.to_string(),
-                "row": k.row,
-                "col": k.col,
-                "span": k.span,
-                "x": r.x as i32, "y": r.y as i32, "w": r.w as i32, "h": r.h as i32,
-                "cursor": if k.span == 2 { "calc_cursor_wide.png" } else { "calc_cursor.png" },
-            })
-        })
-        .collect();
-    let layout = json!({
-        "image": "calc_body.png",
-        "image_width": FACE_SIZE,
-        "image_height": FACE_SIZE,
-        "body": BODY.json(),
-        "display": LCD.json(),
-        "digits": {
-            "atlas": "calc_digits.json",
-            "cells": CELLS,
-            "max_digits": MAX_DIGITS,
-            "x": CELL_X,
-            "y": CELL_Y,
-            "step": CELL_STEP,
-            "cell_width": CELL_W,
-            "cell_height": CELL_H,
-            "align": "right",
-            "note": "cell i's top left is (x + i * step, y); a number is right-aligned, a minus sign \
-                     in the cell left of its first digit, so up to max_digits digits and a sign fit",
-        },
-        "cursor": {
-            "image": "calc_cursor.png",
-            "wide_image": "calc_cursor_wide.png",
-            "offset_x": -CURSOR_OUT as i32,
-            "offset_y": -CURSOR_OUT as i32,
-            "note": "draw a button's cursor image with its top left at (button x + offset_x, button y + offset_y)",
-        },
-        "grid": {"columns": 4, "rows": 5},
-        "buttons": buttons,
-    });
-    fs::write(dir.join("calc_layout.json"), serde_json::to_string_pretty(&layout)? + "\n")?;
     Ok(())
 }
 
