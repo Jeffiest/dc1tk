@@ -188,7 +188,16 @@ def write_disc(iso_path, out_path, files):
         else:
             space = {"next": filler["extent"], "limit": filler["extent"] + sectors(filler["size"]), "volume": volume}
         placed = []
+        added = []
         for path, data in sorted(files.items()):
+            if path not in position:
+                # a file the disc does not have: into free space, with a new index record
+                lba = allocate(space, sectors(len(data)))
+                f.seek(lba * iso.SECTOR)
+                f.write(data + bytes(sectors(len(data)) * iso.SECTOR - len(data)))
+                added.append((path, len(data), lba - data_record["extent"]))
+                placed.append({"path": path, "size": len(data), "moved": True, "added": True})
+                continue
             entry = entries[position[path]]
             moved = sectors(len(data)) > sectors(entry["size"])
             lba = allocate(space, sectors(len(data))) if moved else data_record["extent"] + entry["sector"]
@@ -196,14 +205,25 @@ def write_disc(iso_path, out_path, files):
             f.write(data + bytes(sectors(len(data)) * iso.SECTOR - len(data)))
             struct.pack_into("<ii", index_data, position[path] * archive.INDEX_RECORD + 4, len(data), lba - data_record["extent"])
             placed.append({"path": path, "size": len(data), "moved": moved})
-        f.seek(index_record["extent"] * iso.SECTOR)
-        f.write(bytes(index_data))
+        if added:
+            index_data = bytearray(archive.with_entries(bytes(index_data), added))
+            if len(index_data) > archive.INDEX_LIMIT:
+                raise ValueError("the game's file index would be %d bytes with %d new files, and the game reads at most %d; "
+                                 "put new files into packs instead" % (len(index_data), len(added), archive.INDEX_LIMIT))
+        index_extent = index_record["extent"]
+        if sectors(len(index_data)) > sectors(index_record["size"]):
+            index_extent = allocate(space, sectors(len(index_data)))
+        f.seek(index_extent * iso.SECTOR)
+        f.write(bytes(index_data) + bytes(sectors(len(index_data)) * iso.SECTOR - len(index_data)))
+        if added:
+            # the engine sizes the index by its directory record (sceLseek in InitCDFile)
+            iso.set_extent(f, index_record, index_extent, len(index_data))
         if space["volume"] > volume:
             struct.pack_into("<I", pvd, VOLUME_SIZE, space["volume"])
             struct.pack_into(">I", pvd, VOLUME_SIZE + 4, space["volume"])
             f.seek(iso.PVD_SECTOR * iso.SECTOR)
             f.write(bytes(pvd))
-    return {"placed": placed, "grown": space["volume"] - volume}
+    return {"placed": placed, "grown": space["volume"] - volume, "index_free": archive.INDEX_LIMIT - len(index_data)}
 
 
 def check(out_path, found):

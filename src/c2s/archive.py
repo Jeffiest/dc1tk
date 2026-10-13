@@ -25,6 +25,29 @@ def parse_index(data):
     return entries
 
 
+# The engine reads DATA.HD4 into a buffer of this size (dataread.cpp, header_buff).
+INDEX_LIMIT = 0x50000
+
+
+# The index with records added for new files, [(path, size, sector)], before the terminator. The
+# names follow the records, so every name moves by the records added; the game's paths keep their
+# order and spelling, and new ones are written with "\" as the game's are.
+def with_entries(data, added):
+    count = struct.unpack_from("<I", data, 0)[0] // INDEX_RECORD
+    records = [struct.unpack_from("<iii", data, i * INDEX_RECORD) for i in range(count)]
+    names = [data[offset:data.index(b"\x00", offset)] for offset, _, _ in records]
+    rows = [(name, size, sector) for name, (_, size, sector) in zip(names, records)][:-1]
+    rows += [(path.replace("/", "\\").encode("cp932"), size, sector) for path, size, sector in added]
+    rows.append((b"", 0, 0))
+    table, text = b"", b""
+    start = len(rows) * INDEX_RECORD
+    for name, size, sector in rows:
+        table += struct.pack("<iii", start + len(text), size, sector)
+        text += name + b"\x00"
+    out = table + text
+    return out + bytes(-len(out) % 4)
+
+
 def open_archive(f):
     index = iso.find(f, "DATA.HD4")
     dat = iso.find(f, "DATA.DAT")

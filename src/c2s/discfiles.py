@@ -117,8 +117,20 @@ def replaced(iso_path, wanted, files, script_tops=()):
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
         index = {entry["path"]: entry for entry in disc["entries"]}
+        lower = {name.lower(): name for name in index}
         for path, (mod, file) in sorted(wanted.items()):
             top, members = location(path)
+            if top not in index and not members:
+                # a new file: build gives it a record in the game's file index (rebuild.write_disc)
+                if top.lower() in lower:
+                    raise ValueError("%s (mod %s): the disc has %s, in other case; the game would find that one"
+                                     % (path, mod, lower[top.lower()]))
+                if converter_for(Path(file).as_posix())[1] is not None:
+                    raise ValueError("%s (mod %s): a new file is given as the game file itself" % (path, mod))
+                new = Path(file).read_bytes()
+                files[top] = new
+                report.append({"path": path, "mod": mod, "old": None, "new": len(new), "data": new, "new_file": True})
+                continue
             if top not in index:
                 raise ValueError("%s (mod %s): %s is not a file on the disc" % (path, mod, top))
             if not members and top in script_tops:

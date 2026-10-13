@@ -270,7 +270,14 @@ character pack; packs inside packs work the same way).
 - A member a pack does not have is added at the end of the pack, so the
   members it had keep their places (the game finds members by name,
   ignoring case; a name that differs from one the pack has only in case is
-  refused). New files outside packs are planned (see [the plan](../PLAN.md)).
+  refused).
+- A path the disc does not have at all is a new file: `build` puts it in
+  free space and gives it a record in `DATA.HD4`, the index the game reads
+  at boot. The game reads that index into a fixed buffer with room for
+  about 7.8 KB more on the PAL disc (each new file takes 13 bytes plus its
+  path, so about 150 files), and `build` refuses when it would overflow and
+  says how much is left after each build. Put new models, textures and
+  sounds into packs where you can: a new member costs nothing there.
 - A game file can also be given in a common format, named after the file it
   stands for plus the format's suffix (`c01b.img.png`): `build` converts it,
   with the disc's own file as the template. `mod asset --as png` exports to

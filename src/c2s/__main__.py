@@ -275,22 +275,30 @@ def run_build(args):
         raise SystemExit(str(error))
     for item in replaced:
         if item["old"] is None:
-            print("added: %s (mod %s, %d bytes)" % (item["path"], item["mod"], item["new"]))
+            print("added: %s (mod %s, %d bytes%s)" % (item["path"], item["mod"], item["new"],
+                                                     ", a new file" if item.get("new_file") else ""))
             continue
         print("replaced: %s (mod %s, %d bytes, was %d)" % (item["path"], item["mod"], item["new"], item["old"]))
         if item["new"] > item["old"]:
             # models, textures and sounds load into fixed memory the build cannot see
             print("warning: %s grew by %d bytes; if the game runs short of memory where it loads, keep it nearer "
                   "the original's size" % (item["path"], item["new"] - item["old"]))
-    result = rebuild.write_disc(args.iso, args.output, files)
+    try:
+        result = rebuild.write_disc(args.iso, args.output, files)
+    except ValueError as error:
+        raise SystemExit(str(error))
     for item in result["placed"]:
-        print("%s %s (%d bytes)" % ("moved" if item["moved"] else "in place", item["path"], item["size"]))
+        print("%s %s (%d bytes)" % ("new" if item.get("added") else "moved" if item["moved"] else "in place",
+                                    item["path"], item["size"]))
     if result["grown"]:
         print("the image grew by %d sectors" % result["grown"])
+    if any(item.get("added") for item in result["placed"]):
+        print("the game's file index has %d bytes free for more new files (each takes 13 plus its path)"
+              % result["index_free"])
     wrong = rebuild.check(args.output, found["scripts"]) + discfiles.check(args.output, replaced)
     for path in wrong:
         print("reads back wrong: %s" % path)
-    print("%d scripts changed, %d game files replaced, %d disc files rewritten, written to %s"
+    print("%d scripts changed, %d game files replaced or added, %d disc files rewritten, written to %s"
           % (len(found["scripts"]), len(replaced), len(files), args.output))
     if wrong:
         return 1

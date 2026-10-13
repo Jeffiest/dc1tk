@@ -43,6 +43,8 @@ def list_directory(f, record):
             continue
         entry = parse_record(data[offset:offset + length])
         if entry["name"]:
+            # where the record itself is, to update a file's extent and size
+            entry["at"] = record["extent"] * SECTOR + offset
             entries.append(entry)
         offset += length
     return entries
@@ -60,3 +62,10 @@ def find(f, path):
 
 def read_file(f, record):
     return read_at(f, record["extent"] * SECTOR, record["size"])
+
+
+# Points a file's directory record (from find) at a new extent and size; ISO 9660 stores both
+# little- and big-endian.
+def set_extent(f, record, extent, size):
+    f.seek(record["at"] + 2)
+    f.write(struct.pack("<I", extent) + struct.pack(">I", extent) + struct.pack("<I", size) + struct.pack(">I", size))

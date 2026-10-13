@@ -39,6 +39,17 @@ def test_a_new_member_goes_at_the_end_of_its_pack():
         raise AssertionError("added a member shadowed by another")
 
 
+def test_new_files_get_index_records_before_the_terminator():
+    index, _ = build.archive_files([("edit.cfg", b"cfg"), ("chara\\a.chr", b"model")])
+    grown = archive.with_entries(index, [("chara/mod/new.chr", 5, 99)])
+    entries = archive.parse_index(grown)
+    assert [entry["path"] for entry in entries] == ["edit.cfg", "chara/a.chr", "chara/mod/new.chr"]
+    assert entries[2]["size"] == 5 and entries[2]["sector"] == 99
+    assert entries[1]["sector"] == archive.parse_index(index)[1]["sector"]
+    # stored with the game's separator
+    assert b"chara\\mod\\new.chr" in grown
+
+
 def test_two_mods_replacing_one_game_file_clash():
     with tempfile.TemporaryDirectory() as folder:
         for name in ("a", "b"):
