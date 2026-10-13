@@ -2,6 +2,7 @@
 //! cli.py's do.
 
 mod files;
+mod tree_decompile;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -96,12 +97,16 @@ enum Command {
         #[command(flatten)]
         common: Common,
     },
-    /// Write a script as C source.
+    /// Write a script, or a whole extracted disc, as C source.
     Decompile {
+        /// A script, or an extracted disc directory.
         stb: PathBuf,
-        /// File to write; standard output when omitted.
+        /// File or directory to write; standard output for one script when omitted.
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Overwrite files edited since the last decompile.
+        #[arg(long)]
+        force: bool,
         /// Native table; chosen by the definitions' path rules when omitted.
         #[arg(long, value_parser = natives::TABLES)]
         table: Option<String>,
@@ -113,6 +118,26 @@ enum Command {
     ScriptSources {
         root: PathBuf,
         out: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// Build a script from C source.
+    Compile {
+        source: PathBuf,
+        /// Script file to write; the source path with .stb when omitted.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Native table, when the source does not name one.
+        #[arg(long, value_parser = natives::TABLES)]
+        table: Option<String>,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// Compile every script of a decompiled tree and compare each with the disc's.
+    #[command(hide = true)]
+    CompileTree {
+        tree: PathBuf,
+        extracted: PathBuf,
         #[command(flatten)]
         common: Common,
     },
@@ -283,9 +308,16 @@ fn decompile_setup(common: &Common) -> Result<c2_script::decompiler::Setup> {
     Ok(c2_script::decompiler::Setup::new(common.definitions()?, common.tables()?, &common.sdk_dir())?)
 }
 
-fn run_decompile(path: &Path, output: Option<&Path>, table: &Option<String>, common: &Common) -> Result<ExitCode> {
+fn run_decompile(
+    path: &Path,
+    output: Option<&Path>,
+    force: bool,
+    table: &Option<String>,
+    common: &Common,
+) -> Result<ExitCode> {
     if path.is_dir() {
-        anyhow::bail!("decompiling a whole extracted disc is not ported yet; use cli.py decompile for that");
+        tree_decompile::run(path, output, force, common.definitions()?, common.tables()?, &common.sdk_dir())?;
+        return Ok(ExitCode::SUCCESS);
     }
     let setup = decompile_setup(common)?;
     let table = chosen_table(table, path, &setup.defs.tables);
@@ -317,6 +349,64 @@ fn run_script_sources(root: &Path, out: &Path, common: &Common) -> Result<ExitCo
     }
     println!("{} scripts decompiled into {}, {} failed", scripts.len(), out.display(), failed.len());
     Ok(if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
+}
+
+fn run_compile(source_path: &Path, output: Option<&Path>, table: &Option<String>, common: &Common) -> Result<ExitCode> {
+    let defs = common.definitions()?;
+    let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
+    let tables = common.tables()?;
+    let sdk_dir = common.sdk_dir();
+    let tools =
+        c2_script::compile::Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    let options = c2_script::compile::Options { table: table.as_deref(), ..Default::default() };
+    let data = c2_script::compile::compile_file(source_path, &tools, &options)
+        .with_context(|| source_path.display().to_string())?;
+    let output = output.map(Path::to_path_buf).unwrap_or_else(|| source_path.with_extension("stb"));
+    std::fs::write(&output, data).with_context(|| format!("cannot write {}", output.display()))?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The scripts of a decompiled tree (outside lib/), by path from it.
+fn source_scripts(tree: &Path) -> Vec<String> {
+    sdk::files_under(tree, "c").into_iter().filter(|path| !path.starts_with("lib/")).collect()
+}
+
+fn run_compile_tree(tree: &Path, extracted: &Path, common: &Common) -> Result<ExitCode> {
+    let defs = common.definitions()?;
+    let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
+    let tables = common.tables()?;
+    let sdk_dir = common.sdk_dir();
+    let tools =
+        c2_script::compile::Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    let scripts = source_scripts(tree);
+    let results: Vec<(String, Option<String>)> = scripts
+        .par_iter()
+        .map(|relative| {
+            let result = (|| -> Result<Option<String>> {
+                let plain = c2_script::pathnames::unnamed(tree, relative)?;
+                let table_path = plain.clone();
+                let options = c2_script::compile::Options { table_path: Some(&table_path), ..Default::default() };
+                let data = c2_script::compile::compile_file(&tree.join(relative), &tools, &options)?;
+                let stem = plain.strip_suffix(".c").unwrap_or(&plain);
+                for suffix in [".stb", ".STB"] {
+                    if let Ok(original) = std::fs::read(extracted.join(format!("{stem}{suffix}"))) {
+                        return Ok((original != data).then(|| "differs from the disc".to_string()));
+                    }
+                }
+                Ok(Some("no script on the disc to compare".into()))
+            })();
+            (relative.clone(), result.unwrap_or_else(|error| Some(format!("{error:#}"))))
+        })
+        .collect();
+    let mut wrong = 0;
+    for (path, problem) in &results {
+        if let Some(problem) = problem {
+            wrong += 1;
+            println!("{path}: {problem}");
+        }
+    }
+    println!("{} scripts compiled, {} not the disc's bytes", results.len(), wrong);
+    Ok(if wrong == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) })
 }
 
 fn run_index_dump(tree: &Path, names: &[String], common: &Common) -> Result<ExitCode> {
@@ -475,7 +565,11 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Extract { iso, out } => run_extract(iso, out),
         Command::Disassemble { stb, output, table, common } => run_disassemble(stb, output.as_deref(), table, common),
         Command::Assemble { source, output, natives } => run_assemble(source, output, natives),
-        Command::Decompile { stb, output, table, common } => run_decompile(stb, output.as_deref(), table, common),
+        Command::Compile { source, output, table, common } => run_compile(source, output.as_deref(), table, common),
+        Command::CompileTree { tree, extracted, common } => run_compile_tree(tree, extracted, common),
+        Command::Decompile { stb, output, force, table, common } => {
+            run_decompile(stb, output.as_deref(), *force, table, common)
+        }
         Command::ScriptSources { root, out, common } => run_script_sources(root, out, common),
         Command::WriteDisc { iso, out, files } => run_write_disc(iso, out, files),
         Command::DisassembleTree { root, out, common } => run_disassemble_tree(root, out, common),

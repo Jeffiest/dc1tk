@@ -822,3 +822,58 @@ pub fn to_asm(
     }
     Ok(lines.join("\n") + "\n")
 }
+
+/// A program (includes expanded) compiled to script bytes.
+pub fn compile_program(program: &Node, tables: &std::collections::BTreeMap<String, Table>) -> Result<Vec<u8>> {
+    let resolved = crate::sdk::resolve(program, tables)?;
+    asm::assemble(&to_asm(&resolved, tables, None)?, tables)
+}
+
+/// What compiling a source file needs besides the file: the SDK and definition headers, the
+/// native table rules, the native tables and the SDK folder (for its libraries).
+pub struct Toolchain<'a> {
+    pub headers: &'a IndexMap<String, String>,
+    pub rules: &'a [(String, String)],
+    pub tables: &'a std::collections::BTreeMap<String, Table>,
+    pub sdk_dir: &'a std::path::Path,
+}
+
+/// How to compile one source file: its text when it is not the file's own, the path that picks its
+/// native table (its disc path, in a tree with readable names), files that stand in for its
+/// includes, and the table to use when the file names none.
+#[derive(Default)]
+pub struct Options<'a> {
+    pub text: Option<&'a str>,
+    pub table_path: Option<&'a str>,
+    pub overlay: Option<&'a IndexMap<String, String>>,
+    pub table: Option<&'a str>,
+}
+
+/// A source file compiled to script bytes: its includes read from beside it and the SDK, the
+/// native table given (or the one the definitions' path rules give it) when the file names none.
+pub fn compile_file(path: &std::path::Path, tools: &Toolchain, options: &Options) -> Result<Vec<u8>> {
+    let owned;
+    let text = match options.text {
+        Some(text) => text,
+        None => {
+            owned = c2_py::read_text(path)?;
+            &owned
+        }
+    };
+    let mut program = crate::parse::parse(text)?;
+    if let Some(table) = options.table.filter(|_| program.get("asm").is_none() && program["natives"].is_null()) {
+        program = program.with("natives", table);
+    }
+    let mut headers = tools.headers.clone();
+    headers.extend(crate::definitions::source_headers(path)?);
+    let includes = crate::library::read_includes(&program, path, options.overlay, tools.sdk_dir, &[])?;
+    let mut program = crate::library::expand(program, &includes, &headers)?;
+    if program.get("asm").is_none() && program["natives"].is_null() {
+        let table_path = match options.table_path {
+            Some(path) => path.to_string(),
+            None => crate::definitions::resolved_posix(path),
+        };
+        program = program.with("natives", crate::natives::table_for(&table_path, tools.rules));
+    }
+    compile_program(&program, tools.tables)
+}

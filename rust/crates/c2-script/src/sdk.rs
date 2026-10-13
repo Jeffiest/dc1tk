@@ -119,6 +119,22 @@ impl Declarations {
         }
     }
 
+    /// The declarations as a program tree holds them.
+    pub fn to_node(&self) -> Node {
+        node!({
+            "natives": self.natives.clone(),
+            "programs": self.programs.clone(),
+            "inlines": self.inlines.clone(),
+            "constants": self.constants.clone(),
+            "kinds": Node::Map(self.kinds.clone()),
+        })
+    }
+
+    /// Adds another file's declarations: lists after this one's, kinds over it.
+    pub fn add_from(&mut self, other: &Node) {
+        self.add(other);
+    }
+
     fn add(&mut self, other: &Node) {
         for key in DECLARATION_KEYS {
             match key {
@@ -1603,9 +1619,8 @@ pub fn present_functions(
     }
     let all: Vec<Node> = prepared.iter().chain(&prepared_hidden).cloned().collect();
     let (known, seen) = crate::soundpass::program_sounds(&all, found, sounds.seed.as_ref());
-    if let Some(out) = &mut sounds.out {
-        let passed = crate::soundpass::passed_sounds(&prepared_hidden, &known, &seen);
-        *out = passed;
+    if sounds.want_out {
+        sounds.out = Some(crate::soundpass::passed_sounds(&prepared_hidden, &known, &seen));
     }
     let float_names: Vec<&String> = found.float_names.values().collect();
     prepared

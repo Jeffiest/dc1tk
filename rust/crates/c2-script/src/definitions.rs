@@ -291,3 +291,54 @@ pub fn script_entry<'a>(defs: &'a Definitions, path: &str) -> Option<&'a Node> {
     }
     sibling
 }
+
+/// A script's hash in a set's disc.json: the first 16 hex digits of its SHA-1.
+pub fn script_hash(data: &[u8]) -> String {
+    sha1_smol::Sha1::from(data).digest().to_string()[..16].to_string()
+}
+
+/// How an extracted disc (or a folder of one) differs from the one the sets were made from.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DiscDifferences {
+    pub differ: Vec<String>,
+    pub missing: Vec<String>,
+    pub unknown: Vec<String>,
+}
+
+/// The scripts that differ, that the disc lacks, and that the sets do not know; empty when no set
+/// records a disc. prefix is the folder of the disc the scripts are under ("map/s/s51/", or "").
+pub fn disc_differences(scripts: &[(String, Vec<u8>)], defs: &Definitions, prefix: &str) -> DiscDifferences {
+    if defs.disc.is_empty() {
+        return DiscDifferences::default();
+    }
+    let found: IndexMap<String, String> =
+        scripts.iter().map(|(path, data)| (format!("{prefix}{path}"), script_hash(data))).collect();
+    let expected: IndexMap<&String, &String> = defs.disc.iter().filter(|(path, _)| path.starts_with(prefix)).collect();
+    let mut differ: Vec<String> = found
+        .iter()
+        .filter(|(path, value)| expected.get(path).is_some_and(|known| known != value))
+        .map(|(path, _)| path.clone())
+        .collect();
+    let mut missing: Vec<String> =
+        expected.keys().filter(|path| !found.contains_key(**path)).map(|path| (*path).clone()).collect();
+    let mut unknown: Vec<String> = found.keys().filter(|path| !expected.contains_key(path)).cloned().collect();
+    differ.sort();
+    missing.sort();
+    unknown.sort();
+    DiscDifferences { differ, missing, unknown }
+}
+
+/// The headers in the include folders above a source file (a tree's own disc.h), the nearest
+/// folder's winning.
+pub fn source_headers(path: &Path) -> Result<IndexMap<String, String>> {
+    let full = PathBuf::from(resolved_posix(path));
+    let folders: Vec<&Path> = full.ancestors().skip(1).collect();
+    let mut texts = IndexMap::new();
+    for folder in folders.into_iter().rev() {
+        let include = folder.join("include");
+        if include.is_dir() {
+            texts.extend(crate::sdk::load_texts(&include)?);
+        }
+    }
+    Ok(texts)
+}

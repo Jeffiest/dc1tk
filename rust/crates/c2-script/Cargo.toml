@@ -10,6 +10,7 @@ c2-disc.workspace = true
 c2-py.workspace = true
 indexmap.workspace = true
 serde.workspace = true
+rayon.workspace = true
 regex.workspace = true
 serde_json.workspace = true
 sha1_smol.workspace = true

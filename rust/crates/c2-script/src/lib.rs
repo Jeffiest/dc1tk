@@ -10,6 +10,8 @@ pub mod definitions;
 pub mod disc;
 pub mod fingerprint;
 pub mod index;
+pub mod library;
+pub mod maps;
 pub mod messages;
 pub mod names;
 pub mod natives;

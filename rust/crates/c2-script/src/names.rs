@@ -219,7 +219,7 @@ impl Known {
     /// The entries for one program: with its functions known only by their loose fingerprint
     /// added, where that names one function only.
     pub fn with_loose(&self, exact_to_loose: &IndexMap<String, String>) -> Lookup<'_> {
-        let mut added = HashMap::new();
+        let mut added = IndexMap::new();
         for (exact, loose) in exact_to_loose {
             if !self.entries.contains_key(exact) && !self.ambiguous.contains(loose) {
                 if let Some(&at) = self.loose.get(loose) {
@@ -234,13 +234,66 @@ impl Known {
 /// The entries one program's functions are looked up in.
 pub struct Lookup<'a> {
     known: &'a Known,
-    added: HashMap<String, &'a Node>,
+    added: IndexMap<String, &'a Node>,
 }
 
 impl Lookup<'_> {
     pub fn get(&self, fingerprint: &str) -> Option<&Node> {
         self.known.entries.get(fingerprint).or_else(|| self.added.get(fingerprint).copied())
     }
+
+    /// Every entry, the added ones after the rest (as Python's dict copy with them set).
+    pub fn entries(&self) -> Entries {
+        let mut out = self.known.entries.clone();
+        for (exact, entry) in &self.added {
+            out.insert(exact.clone(), (*entry).clone());
+        }
+        out
+    }
+}
+
+/// The entries with the functions of a script's language variants (s51_0.stb to s51_5.stb) named
+/// where another variant's function at the same position is: by loose fingerprint, for variants
+/// with the same number of functions.
+pub fn with_positions(
+    entries: &Entries,
+    script_prints: &IndexMap<String, Vec<Option<String>>>,
+    exact_to_loose: &IndexMap<String, String>,
+) -> Entries {
+    let mut groups: IndexMap<String, Vec<&Vec<Option<String>>>> = IndexMap::new();
+    for (path, prints) in script_prints {
+        groups.entry(crate::definitions::variant_base(path)).or_default().push(prints);
+    }
+    let mut out = entries.clone();
+    for variants in groups.values() {
+        let lengths: HashSet<usize> = variants.iter().map(|prints| prints.len()).collect();
+        if lengths.len() != 1 {
+            continue;
+        }
+        for column in 0..variants[0].len() {
+            let exacts: Vec<&Option<String>> = variants.iter().map(|prints| &prints[column]).collect();
+            let loose_of = |exact: &Option<String>| exact.as_ref().and_then(|exact| exact_to_loose.get(exact)).cloned();
+            let mut named: HashMap<Option<String>, &Node> = HashMap::new();
+            for exact in &exacts {
+                if let Some(entry) =
+                    exact.as_ref().and_then(|exact| entries.get(exact)).filter(|entry| entry.get("name").is_some())
+                {
+                    named.insert(loose_of(exact), entry);
+                }
+            }
+            for exact in &exacts {
+                let Some(name) = exact else {
+                    continue;
+                };
+                if !out.contains_key(name) {
+                    if let Some(entry) = named.get(&loose_of(exact)) {
+                        out.insert(name.clone(), (*entry).clone());
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The names an entry gives a function's parameters and locals, made unique and kept off the
@@ -339,7 +392,7 @@ fn with_notes(nodes: &[Node], notes: &crate::node::Map) -> Node {
         .collect()
 }
 
-fn with_variables(mut function: Node, entry: &Node, reserved: &HashSet<String>) -> Node {
+pub fn with_variables(mut function: Node, entry: &Node, reserved: &HashSet<String>) -> Node {
     if let Some(doc) = entry.get("doc").filter(|doc| truthy(doc)) {
         function = function.with("doc", doc.clone());
     }
@@ -369,7 +422,7 @@ fn with_variables(mut function: Node, entry: &Node, reserved: &HashSet<String>) 
     function.with("params", params).with("locals", locals).with("body", body)
 }
 
-fn described(program: Node, found: &[Option<String>], entries: &Lookup, reserved: &HashSet<String>) -> Node {
+pub fn described(program: Node, found: &[Option<String>], entries: &Lookup, reserved: &HashSet<String>) -> Node {
     let functions: Node = list(&program, "functions")
         .iter()
         .zip(found)
@@ -406,7 +459,7 @@ fn entry_alias(base: &str, entry: &str) -> String {
     }
 }
 
-fn assign(
+pub fn assign(
     program: &Node,
     found: &IndexMap<String, Option<String>>,
     class_names: &HashMap<String, String>,
@@ -458,7 +511,7 @@ fn assign(
     mapping
 }
 
-fn rename(program: Node, mapping: &HashMap<String, String>) -> Result<Node> {
+pub fn rename(program: Node, mapping: &HashMap<String, String>) -> Result<Node> {
     let lookup = |name: &Node| -> Result<String> {
         let name = name.as_str().unwrap_or("");
         mapping.get(name).cloned().ok_or_else(|| Error::invalid(format!("{name} is not a function")))
@@ -479,7 +532,7 @@ fn rename(program: Node, mapping: &HashMap<String, String>) -> Result<Node> {
     Ok(program.with("functions", functions).with("programs", programs).with("main", main))
 }
 
-fn global_mapping(
+pub fn global_mapping(
     program: &Node,
     entry: &Node,
     protected: &HashSet<String>,

@@ -142,6 +142,8 @@ pub struct Passed {
 #[derive(Default)]
 pub struct Sounds {
     pub seed: Option<Seed>,
+    /// Whether to record what the script passes its libraries, into out.
+    pub want_out: bool,
     pub out: Option<Passed>,
     pub cache: HashMap<String, Node>,
     pub keys: HashMap<String, String>,

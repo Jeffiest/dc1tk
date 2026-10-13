@@ -15,6 +15,7 @@ c2-script.workspace = true
 c2-py.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+indexmap.workspace = true
 mimalloc.workspace = true
 rayon.workspace = true
 serde_json.workspace = true
