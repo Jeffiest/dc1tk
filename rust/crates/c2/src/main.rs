@@ -5,6 +5,7 @@ mod assets;
 mod files;
 mod modding;
 mod tree_decompile;
+mod verify;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -149,6 +150,18 @@ enum Command {
     Mod {
         #[command(subcommand)]
         command: modding::ModCommand,
+    },
+    /// Round-trip every script in an extracted disc.
+    Verify {
+        extracted: PathBuf,
+        /// Also write the full report to this file.
+        #[arg(long)]
+        json: Option<PathBuf>,
+        /// Failures to print.
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[command(flatten)]
+        common: Common,
     },
     /// List files edited, added or removed since the tree was decompiled.
     Changes {
@@ -631,6 +644,17 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Extract { iso, out } => run_extract(iso, out),
         Command::Disassemble { stb, output, table, common } => run_disassemble(stb, output.as_deref(), table, common),
         Command::Assemble { source, output, natives } => run_assemble(source, output, natives),
+        Command::Verify { extracted, json, limit, common } => {
+            let defs = common.definitions()?;
+            let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
+            let report = verify::verify(extracted, &common.tables()?, defs, headers)?;
+            println!("{}", verify::format_report(&report, *limit));
+            if let Some(json) = json {
+                let options = c2_py::json::Options { ensure_ascii: false, ..c2_py::json::Options::indented(1) };
+                c2_py::write_text(json, &c2_py::json::dumps(&report, &options))?;
+            }
+            Ok(if report["summary"]["ok"] == true { ExitCode::SUCCESS } else { ExitCode::from(1) })
+        }
         Command::Changes { source } => {
             println!("{}", c2_script::tree::changes_text(source)?);
             Ok(ExitCode::SUCCESS)

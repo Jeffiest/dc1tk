@@ -64,6 +64,39 @@ pub fn float_repr(value: f64) -> String {
     format!("{sign}{body}")
 }
 
+/// "%.*f" % (precision, value): Rust's fixed notation rounds correctly, as Python's does.
+pub fn format_f(value: f64, precision: usize) -> String {
+    if let Some(text) = special(value) {
+        return text;
+    }
+    format!("{value:.precision$}")
+}
+
+/// sum() of floats: the start value is the int 0, so the first float is added to 0.0 plainly,
+/// then Neumaier's compensated summation (CPython 3.12), the compensation added at the end when
+/// finite.
+pub fn sum_floats(items: impl IntoIterator<Item = f64>) -> f64 {
+    let mut items = items.into_iter();
+    let Some(first) = items.next() else {
+        return 0.0;
+    };
+    let mut total = 0.0 + first;
+    let mut compensation = 0.0;
+    for x in items {
+        let t = total + x;
+        if total.abs() >= x.abs() {
+            compensation += (total - t) + x;
+        } else {
+            compensation += (x - t) + total;
+        }
+        total = t;
+    }
+    if compensation != 0.0 && compensation.is_finite() {
+        total += compensation;
+    }
+    total
+}
+
 /// "%.*g" % (precision, value): precision significant digits, trailing zeros dropped, exponential
 /// when the exponent is below -4 or not below the precision.
 pub fn format_g(value: f64, precision: usize) -> String {
