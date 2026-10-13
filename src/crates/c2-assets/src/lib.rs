@@ -9,6 +9,7 @@ pub mod ids;
 pub mod im3;
 pub mod info_cfg;
 pub mod json;
+pub mod map_edit;
 pub mod mapfile;
 pub mod mds;
 pub mod models;
