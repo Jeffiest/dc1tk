@@ -5,6 +5,7 @@ pub mod asm;
 pub mod assets;
 pub mod compile;
 pub mod decompile;
+pub mod decompiler;
 pub mod definitions;
 pub mod disc;
 pub mod fingerprint;

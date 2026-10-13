@@ -13,6 +13,7 @@ same input in a work folder and compares; exit status 1 when anything differs.
   python rust/parity.py decompile extracted WORK      every script's program tree (before names), as JSON
   python rust/parity.py decompile extracted WORK --source   the same written as C
   python rust/parity.py compile decompiled WORK       every script's resolved program compiled by both
+  python rust/parity.py sources extracted WORK        every script decompiled to C one at a time, by both
   python rust/parity.py parse WORK [--data FOLDER]    every source file (decompiled/, mods/ under
                                                       FOLDER; sdk/ and the definitions' headers),
                                                       cut short and with a line gone, and probes of
@@ -474,6 +475,50 @@ def check_parse(args):
     return problems
 
 
+def check_sources(args):
+    """Every script decompiled to C one at a time, as cli.py decompile does for one script (names,
+    messages, notes, the SDK's presentation), by both."""
+    from c2s import __main__ as c2s_main
+    from c2s import decompile, definitions, messages, names, natives, notes, sdk, source, stb, verify
+    work = Path(args.work)
+    py, rs = work / "py_sources", work / "rs_sources"
+    for folder in (py, rs):
+        if folder.exists():
+            raise SystemExit("%s exists; give an empty work folder" % folder)
+    root = Path(args.extracted)
+    defs = definitions.load([definitions.DEFAULT_SET])
+    tables = natives.load()
+    headers = definitions.header_texts(defs, sdk.SDK_DIR)
+    contexts = {}
+    start = time.time()
+    scripts = verify.find_scripts(root)
+    for relative in scripts:
+        path = str(root / relative)
+        # run_decompile's steps for one script, with the header context read once per table
+        table = natives.table_for(Path(path).resolve().as_posix(), defs["tables"])
+        program = decompile.decompile(stb.read(Path(path).read_bytes()), table, tables)
+        if table not in contexts:
+            contexts[table] = sdk.with_sound_sets(sdk.header_context(table, headers, tables, defs["include"]), defs)
+        found = contexts[table]
+        program_names = found["program_names"] if found is not None else {}
+        entries = names.with_loose(names.merged(defs["names"]), names.loose_map(program))
+        named = names.apply(program, entries, sdk.reserved(found), program_names)
+        named = c2s_main.with_messages(named, found, defs, path)
+        entry = definitions.script_entry(defs, path)
+        scripted = names.with_script(named, entry)
+        params = messages.kind_params(named["functions"], found) if found is not None and "asm" not in named else {}
+        numbered = sdk.numbered(found, sdk.numbering_of(entry))
+        text = source.text(notes.annotate(sdk.present(scripted, numbered, params), defs["strings"]))
+        target = py / (relative + ".c")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(text.encode("utf-8"))
+    py_time = time.time() - start
+    out, rs_time = run_status([C2, "script-sources", root, rs])
+    print("%d scripts; python %.1fs, rust %.1fs" % (len(scripts), py_time, rs_time))
+    print(out.strip().splitlines()[-1] if out.strip() else "")
+    return [line for line in out.splitlines() if line.startswith("failed")] + compare_trees(py, rs)
+
+
 def run_status(command):
     start = time.time()
     result = subprocess.run([str(part) for part in command], capture_output=True, text=True, encoding="utf-8")
@@ -528,6 +573,9 @@ def main():
     command = checks.add_parser("disassemble")
     command.add_argument("extracted")
     command.add_argument("work")
+    command = checks.add_parser("sources")
+    command.add_argument("extracted")
+    command.add_argument("work")
     command = checks.add_parser("compile")
     command.add_argument("source", help="a decompiled tree")
     command.add_argument("work")
@@ -544,7 +592,8 @@ def main():
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
     checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble,
-              "decompile": check_decompile, "compile": check_compile, "parse": check_parse}
+              "decompile": check_decompile, "compile": check_compile,
+              "sources": check_sources, "parse": check_parse}
     problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)

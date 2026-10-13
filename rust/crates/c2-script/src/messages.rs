@@ -84,20 +84,35 @@ pub fn decoded(body: &[u8], language: i64) -> String {
 /// Text with the game's [UNIxxxx] escapes as their characters (a few remapped as the game draws
 /// them).
 pub fn expanded(text: &str) -> String {
-    let uni = regex(r"\[UNI([0-9a-fA-F]{4})\]");
-    uni.replace_all(text, |found: &regex::Captures| {
-        let code = found[1].to_lowercase();
-        let code = match code.as_str() {
-            "011d" => "00e8",
-            "0129" => "00ea",
-            "0155" => "00e0",
-            "0171" => "00fb",
-            "017f" => "00f9",
-            other => other,
-        };
-        char::from_u32(u32::from_str_radix(code, 16).unwrap()).map(String::from).unwrap_or_default()
-    })
-    .into_owned()
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("[UNI") {
+        let digits = rest[at + 4..].get(..4).filter(|digits| digits.bytes().all(|b| b.is_ascii_hexdigit()));
+        match digits {
+            Some(digits) if rest[at + 8..].starts_with(']') => {
+                out.push_str(&rest[..at]);
+                let code = digits.to_lowercase();
+                let code = match code.as_str() {
+                    "011d" => "00e8",
+                    "0129" => "00ea",
+                    "0155" => "00e0",
+                    "0171" => "00fb",
+                    "017f" => "00f9",
+                    other => other,
+                };
+                if let Some(c) = char::from_u32(u32::from_str_radix(code, 16).unwrap()) {
+                    out.push(c);
+                }
+                rest = &rest[at + 9..];
+            }
+            _ => {
+                out.push_str(&rest[..at + 1]);
+                rest = &rest[at + 1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// A message file's messages, by number (the first of a number wins).
@@ -105,13 +120,22 @@ pub fn read_messages(path: &Path, language: i64) -> IndexMap<i64, String> {
     let Ok(data) = fs::read(path) else {
         return IndexMap::new();
     };
-    let record = regex::bytes::Regex::new(r"@(-?[0-9]+)").unwrap();
     let mut found = IndexMap::new();
-    for capture in record.captures_iter(&data) {
-        let Some(number) = std::str::from_utf8(&capture[1]).ok().and_then(|text| text.parse::<i64>().ok()) else {
+    // each @-N record number, as re.finditer(rb"@(-?\d+)") finds them
+    let mut position = 0;
+    while let Some(at) = data[position..].iter().position(|&b| b == b'@').map(|at| position + at) {
+        let sign = usize::from(data.get(at + 1) == Some(&b'-'));
+        let digits = data[at + 1 + sign..].iter().take_while(|b| b.is_ascii_digit()).count();
+        if digits == 0 {
+            position = at + 1;
+            continue;
+        }
+        let end = at + 1 + sign + digits;
+        position = end;
+        let Some(number) = std::str::from_utf8(&data[at + 1..end]).ok().and_then(|text| text.parse::<i64>().ok())
+        else {
             continue;
         };
-        let end = capture.get(0).unwrap().end();
         let Some(newline) = data[end..].iter().position(|&b| b == b'\n').map(|at| end + at) else {
             continue;
         };

@@ -96,6 +96,26 @@ enum Command {
         #[command(flatten)]
         common: Common,
     },
+    /// Write a script as C source.
+    Decompile {
+        stb: PathBuf,
+        /// File to write; standard output when omitted.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Native table; chosen by the definitions' path rules when omitted.
+        #[arg(long, value_parser = natives::TABLES)]
+        table: Option<String>,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// Decompile every script under a folder, one at a time as decompile does, into OUT/<path>.c.
+    #[command(hide = true)]
+    ScriptSources {
+        root: PathBuf,
+        out: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
     /// Build a script from assembly text.
     Assemble {
         source: PathBuf,
@@ -259,6 +279,46 @@ fn run_decompile_dump(root: &Path, out: &Path, as_source: bool, named: bool, com
     Ok(ExitCode::SUCCESS)
 }
 
+fn decompile_setup(common: &Common) -> Result<c2_script::decompiler::Setup> {
+    Ok(c2_script::decompiler::Setup::new(common.definitions()?, common.tables()?, &common.sdk_dir())?)
+}
+
+fn run_decompile(path: &Path, output: Option<&Path>, table: &Option<String>, common: &Common) -> Result<ExitCode> {
+    if path.is_dir() {
+        anyhow::bail!("decompiling a whole extracted disc is not ported yet; use cli.py decompile for that");
+    }
+    let setup = decompile_setup(common)?;
+    let table = chosen_table(table, path, &setup.defs.tables);
+    let text = c2_script::decompiler::script_source(&setup, path, &table)?;
+    files::write_output(output, &text)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn run_script_sources(root: &Path, out: &Path, common: &Common) -> Result<ExitCode> {
+    let setup = decompile_setup(common)?;
+    let scripts = files::find_scripts(root)?;
+    let failed: Vec<String> = scripts
+        .par_iter()
+        .filter_map(|relative| {
+            let path = root.join(relative);
+            let result = (|| -> Result<()> {
+                let table = chosen_table(&None, &path, &setup.defs.tables);
+                let text = c2_script::decompiler::script_source(&setup, &path, &table)?;
+                let target = out.join(format!("{relative}.c"));
+                std::fs::create_dir_all(target.parent().unwrap())?;
+                std::fs::write(target, text)?;
+                Ok(())
+            })();
+            result.err().map(|error| format!("{relative}: {error:#}"))
+        })
+        .collect();
+    for line in &failed {
+        println!("failed: {line}");
+    }
+    println!("{} scripts decompiled into {}, {} failed", scripts.len(), out.display(), failed.len());
+    Ok(if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
+}
+
 fn run_index_dump(tree: &Path, names: &[String], common: &Common) -> Result<ExitCode> {
     use c2_script::index;
     let defs = common.definitions()?;
@@ -415,6 +475,8 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Extract { iso, out } => run_extract(iso, out),
         Command::Disassemble { stb, output, table, common } => run_disassemble(stb, output.as_deref(), table, common),
         Command::Assemble { source, output, natives } => run_assemble(source, output, natives),
+        Command::Decompile { stb, output, table, common } => run_decompile(stb, output.as_deref(), table, common),
+        Command::ScriptSources { root, out, common } => run_script_sources(root, out, common),
         Command::WriteDisc { iso, out, files } => run_write_disc(iso, out, files),
         Command::DisassembleTree { root, out, common } => run_disassemble_tree(root, out, common),
         Command::AssembleTree { root, asm, natives } => run_assemble_tree(root, asm, natives),

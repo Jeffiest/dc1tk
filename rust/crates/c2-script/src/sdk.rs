@@ -8,10 +8,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use indexmap::IndexMap;
-use regex::Regex;
 
 use crate::definitions::Definitions;
 use crate::natives::Table;
@@ -753,9 +751,11 @@ fn matches(pattern: &Node, node: &Node, params: &HashMap<String, Param>, binding
                     bindings,
                 );
             }
-            let keys: HashSet<&str> = map.keys().filter(|key| *key != "line" && *key != "start").collect();
-            let other_keys: HashSet<&str> = other.keys().filter(|key| *key != "line" && *key != "start").collect();
-            if keys != other_keys {
+            // the same keys, line and start aside
+            let counted = |map: &Map| map.keys().filter(|key| *key != "line" && *key != "start").count();
+            if counted(map) != counted(other)
+                || !map.keys().filter(|key| *key != "line" && *key != "start").all(|key| other.contains_key(key))
+            {
                 return false;
             }
             map.iter()
@@ -800,8 +800,10 @@ fn helper_call(inline: &Node, nodes: &[Node], position: usize) -> Option<(Node, 
         })
         .collect();
     let mut bindings = HashMap::new();
-    let window = Node::List(nodes[position..(position + body.len()).min(nodes.len())].to_vec());
-    if !matches(&inline["body"], &window, &params, &mut bindings) || bindings.len() != params.len() {
+    let window = &nodes[position..(position + body.len()).min(nodes.len())];
+    let matched = body.len() == window.len()
+        && body.iter().zip(window).all(|(pattern, node)| matches(pattern, node, &params, &mut bindings));
+    if !matched || bindings.len() != params.len() {
         return None;
     }
     let args: Vec<Node> = list(inline, "params").iter().map(|param| bindings[text(param, "name")].clone()).collect();
@@ -814,10 +816,27 @@ fn helper_call(inline: &Node, nodes: &[Node], position: usize) -> Option<(Node, 
 fn folded(nodes: &[Node], found: &Context, inlines: &[&Node], pointers: &HashSet<String>) -> Vec<Node> {
     let mut best: Vec<(usize, usize)> = vec![(0, 0); nodes.len() + 1];
     let mut choice: Vec<Option<(Node, Vec<Node>, usize)>> = vec![None; nodes.len()];
+    // a helper can only start where its first statement's kind (and native) is
+    let first: Vec<Option<(&str, &Node)>> = inlines
+        .iter()
+        .map(|inline| {
+            let pattern = list(inline, "body").first()?;
+            let kind = pattern.get("kind")?.as_str()?;
+            (!matches!(kind, "var" | "deref")).then(|| (kind, &pattern["name"]))
+        })
+        .collect();
     for position in (0..nodes.len()).rev() {
         let (statements_after, natives_after) = best[position + 1];
         best[position] = (statements_after + 1, natives_after + usize::from(nodes[position].kind() == "native"));
-        for inline in inlines {
+        let here = &nodes[position];
+        for (inline, first) in inlines.iter().zip(&first) {
+            if let Some((kind, name)) = first {
+                if here.get("kind").and_then(Node::as_str) != Some(kind)
+                    || (*kind == "native" && !name.py_eq(&here["name"]))
+                {
+                    continue;
+                }
+            }
             let size = list(inline, "body").len();
             if position + size > nodes.len() {
                 continue;
@@ -991,9 +1010,14 @@ fn subject_prefix(kind: &str) -> Option<&'static str> {
     }
 }
 
-fn vector_getter() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r"^get_([a-z][a-z_]*?)_(?:pos|rot|vec|dir|scale)$").unwrap())
+/// What a vector getter reads (home for get_home_pos), as get_([a-z][a-z_]*?)_(pos|rot|vec|dir|scale)
+/// matches it.
+fn vector_subject(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix("get_")?;
+    let (thing, part) = rest.rsplit_once('_')?;
+    let thing_ok = thing.starts_with(|c: char| c.is_ascii_lowercase())
+        && thing.bytes().all(|b| b.is_ascii_lowercase() || b == b'_');
+    (thing_ok && ["pos", "rot", "vec", "dir", "scale"].contains(&part)).then_some(thing)
 }
 
 fn call_subject(node: &Node, declared: &Node, found: &Context) -> Option<(String, String)> {
@@ -1035,7 +1059,7 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
                     })
                     .collect();
                 // get_home_pos(&x, &y, &z) reads the home's position: home_x, home_y, home_z
-                let thing = vector_getter().captures(text(declared, "name")).map(|found| found[1].to_string());
+                let thing = vector_subject(text(declared, "name")).map(str::to_string);
                 for (position, arg) in &outs {
                     let generic = text(&params[*position], "name").to_string();
                     let mut wanted = generic.clone();
@@ -1124,9 +1148,26 @@ fn variable_access(node: &Node, reads: &mut HashSet<String>, writes: &mut HashSe
     }
 }
 
-fn unused_local() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r"^unused(\d+|_value|_\d+)?$").unwrap())
+fn digits(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// unused, unused3, unused_value or unused_2.
+fn is_unused_local(name: &str) -> bool {
+    match name.strip_prefix("unused") {
+        Some("") | Some("_value") => true,
+        Some(rest) => digits(rest) || rest.strip_prefix('_').is_some_and(digits),
+        None => false,
+    }
+}
+
+/// The name, or the name with _N after it.
+fn is_name_or_numbered(name: &str, base: &str) -> bool {
+    match name.strip_prefix(base) {
+        Some("") => true,
+        Some(rest) => rest.strip_prefix('_').is_some_and(digits),
+        None => false,
+    }
 }
 
 fn default_local(name: &str) -> bool {
@@ -1149,8 +1190,7 @@ fn named_locals(function: Node, found: &Context, function_names: &HashSet<String
         let name = text(declared, "name");
         if let Some(seen) = by_variable.get(name).filter(|seen| seen.len() == 1) {
             let (wanted, generic) = *seen.iter().next().unwrap();
-            let pattern = Regex::new(&format!(r"^{}(_\d+)?$", regex::escape(generic))).unwrap();
-            if wanted != generic && pattern.is_match(name) {
+            if wanted != generic && is_name_or_numbered(name, generic) {
                 generic_names.insert(name.to_string());
             }
         }
@@ -1162,7 +1202,7 @@ fn named_locals(function: Node, found: &Context, function_names: &HashSet<String
     let misnamed: HashSet<String> = locals
         .iter()
         .map(|declared| text(declared, "name"))
-        .filter(|name| unused_local().is_match(name) && reads.contains(*name))
+        .filter(|name| is_unused_local(name) && reads.contains(*name))
         .map(str::to_string)
         .collect();
     let mut unnamed: HashSet<String> = locals
@@ -1180,7 +1220,7 @@ fn named_locals(function: Node, found: &Context, function_names: &HashSet<String
         list(&function, "params").iter().map(|param| text(param, "name").to_string()).collect();
     taken.extend(locals.iter().map(|declared| text(declared, "name").to_string()));
     taken.extend(names::variables(&function["body"]));
-    taken.extend(reserved(Some(found)));
+    // the SDK's names are taken too; checked in place, as there are thousands
     taken.extend(function_names.iter().cloned());
     let mut mapping: IndexMap<String, String> = IndexMap::new();
     for (variable, wanted, _) in &uses {
@@ -1189,7 +1229,7 @@ fn named_locals(function: Node, found: &Context, function_names: &HashSet<String
         }
         let mut candidate = wanted.clone();
         let mut copy = 1;
-        while taken.contains(&candidate) {
+        while taken.contains(&candidate) || found.reserved.contains(&candidate) {
             copy += 1;
             candidate = format!("{wanted}_{copy}");
         }
@@ -1211,7 +1251,7 @@ fn named_locals(function: Node, found: &Context, function_names: &HashSet<String
         }
         let mut candidate = wanted.clone();
         let mut copy = 1;
-        while taken.contains(&candidate) {
+        while taken.contains(&candidate) || found.reserved.contains(&candidate) {
             copy += 1;
             candidate = format!("{wanted}_{copy}");
         }

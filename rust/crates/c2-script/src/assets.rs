@@ -30,9 +30,9 @@ fn prefix_of(param: &str) -> Option<&'static str> {
     })
 }
 
-fn japanese() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new("[\u{3040}-\u{30ff}\u{4e00}-\u{9fff}\u{ff00}-\u{ffef}]").unwrap())
+/// Whether text has kana, kanji or full-width forms.
+fn has_japanese(text: &str) -> bool {
+    text.chars().any(|c| matches!(c, '\u{3040}'..='\u{30ff}' | '\u{4e00}'..='\u{9fff}' | '\u{ff00}'..='\u{ffef}'))
 }
 
 fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
@@ -52,7 +52,7 @@ fn asset_args(node: &Node, found: &Context) -> Vec<(usize, &'static str, String)
         }
         let text = arg["text"].as_str().unwrap_or("");
         if let Some(prefix) = prefix_of(params[position]["name"].as_str().unwrap_or("")) {
-            if japanese().is_match(text) && !text.contains('/') {
+            if has_japanese(text) && !text.contains('/') {
                 out.push((position, prefix, text.to_string()));
             }
         }
