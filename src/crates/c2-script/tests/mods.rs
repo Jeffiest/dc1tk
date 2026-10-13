@@ -12,7 +12,13 @@ use build_common::{
 use c2_script::{build, definitions, mods, pathnames, source, tree};
 use indexmap::IndexMap;
 
-fn changes(tools: &Tools, root: &Path, iso_path: &Path, texts: &IndexMap<String, String>, full: bool) -> build::Changes {
+fn changes(
+    tools: &Tools,
+    root: &Path,
+    iso_path: &Path,
+    texts: &IndexMap<String, String>,
+    full: bool,
+) -> build::Changes {
     build::changes(root, iso_path, &tools.toolchain(), texts, full, None).unwrap()
 }
 
@@ -33,7 +39,10 @@ fn new_copies_files_to_edit_and_keeps_the_mods_own_copies() {
     let module = folder.path().join("mods").join("faster");
     assert_eq!(mods::new(&root, &module, &strings(&["lib/m/shared.c"])).unwrap(), strings(&["lib/m/shared.c"]));
     write(&module.join(mods::FILES), "lib/m/shared.c", "void helper(void)\n{\n}\n");
-    assert_eq!(mods::new(&root, &module, &strings(&["lib/m/shared.c", "map/m/t01.c"])).unwrap(), strings(&["map/m/t01.c"]));
+    assert_eq!(
+        mods::new(&root, &module, &strings(&["lib/m/shared.c", "map/m/t01.c"])).unwrap(),
+        strings(&["map/m/t01.c"])
+    );
     assert_eq!(read(&module.join(mods::FILES).join("lib/m/shared.c")), "void helper(void)\n{\n}\n");
     let found = mods::entries(&module).unwrap();
     let entry = &found["files"]["lib/m/shared.c"];
@@ -69,7 +78,10 @@ fn two_mods_that_change_the_same_file_cannot_be_chosen_together() {
     mods::new(&root, &third, &strings(&["map/m/t02.c"])).unwrap();
     assert!(mods::overlay(&[first.clone(), third], &root, &no_consts()).unwrap().1.is_empty());
     let clashes = mods::overlay(&[first, second], &root, &no_consts()).unwrap().1;
-    assert_eq!(clashes.into_iter().collect::<Vec<_>>(), vec![("lib/m/shared.c".to_string(), strings(&["first", "second"]))]);
+    assert_eq!(
+        clashes.into_iter().collect::<Vec<_>>(),
+        vec![("lib/m/shared.c".to_string(), strings(&["first", "second"]))]
+    );
     let listing = mods::listing(&mods_dir, &root, &no_consts()).unwrap();
     assert!(listing.contains("first  (1 file)") && listing.contains("lib/m/shared.c: first, second"), "{listing}");
 }
@@ -84,7 +96,10 @@ fn save_copies_tree_edits_into_a_mod_and_apply_writes_them_back() {
     assert_eq!(mods::save(&root, &module).unwrap(), (strings(&["lib/m/shared.c", "lib/m/extra.c"]), vec![]));
     let fresh = recorded(&folder.path().join("fresh"));
     let modules = [module];
-    assert_eq!(mods::apply(&modules, &fresh, false, &no_consts()).unwrap().0, strings(&["lib/m/extra.c", "lib/m/shared.c"]));
+    assert_eq!(
+        mods::apply(&modules, &fresh, false, &no_consts()).unwrap().0,
+        strings(&["lib/m/extra.c", "lib/m/shared.c"])
+    );
     assert_eq!(read(&fresh.join("lib/m/shared.c")), "mine\n");
     write(&fresh, "lib/m/shared.c", "changed again\n");
     match mods::apply(&modules, &fresh, false, &no_consts()) {

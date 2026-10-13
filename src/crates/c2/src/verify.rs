@@ -44,7 +44,12 @@ fn check_format(data: &[u8], script: &stb::Script) -> Value {
     }
 }
 
-fn check_natives(path: &str, script: &stb::Script, tables: &BTreeMap<String, Table>, rules: &[(String, String)]) -> Value {
+fn check_natives(
+    path: &str,
+    script: &stb::Script,
+    tables: &BTreeMap<String, Table>,
+    rules: &[(String, String)],
+) -> Value {
     let table = natives::table_for(path, rules);
     let Some(found) = tables.get(table) else {
         return json!({"status": "pending"});
@@ -63,7 +68,13 @@ fn check_natives(path: &str, script: &stb::Script, tables: &BTreeMap<String, Tab
     json!({"status": "pass", "table": table, "calls": calls.len(), "unregistered": unregistered})
 }
 
-fn check_assembly(path: &str, data: &[u8], script: &stb::Script, tables: &BTreeMap<String, Table>, rules: &[(String, String)]) -> Value {
+fn check_assembly(
+    path: &str,
+    data: &[u8],
+    script: &stb::Script,
+    tables: &BTreeMap<String, Table>,
+    rules: &[(String, String)],
+) -> Value {
     let text = asm::disassemble(script, natives::table_for(path, rules), tables);
     match asm::assemble(&text, tables) {
         Err(problem) => error(problem),
@@ -87,7 +98,9 @@ fn asm_functions(program: &c2_script::node::Node) -> usize {
     if let Some(text) = program.get("asm").and_then(|text| text.as_str()) {
         return text.split('\n').filter(|region| region.starts_with(".function")).count();
     }
-    program["functions"].as_array().map_or(0, |functions| functions.iter().filter(|function| function.kind() == "asm").count())
+    program["functions"]
+        .as_array()
+        .map_or(0, |functions| functions.iter().filter(|function| function.kind() == "asm").count())
 }
 
 fn check_source(
@@ -110,8 +123,9 @@ fn check_source(
         Ok((text, parsed, rebuilt)) => match compare(data, &rebuilt) {
             Some(difference) => fail(difference),
             None => {
-                let includes =
-                    parsed["functions"].as_array().map_or(0, |items| items.iter().filter(|item| item.kind() == "include").count());
+                let includes = parsed["functions"]
+                    .as_array()
+                    .map_or(0, |items| items.iter().filter(|item| item.kind() == "include").count());
                 json!({"status": "pass", "asm_functions": asm_functions(program), "lines": text.matches('\n').count(),
                        "includes": includes})
             }
@@ -133,8 +147,11 @@ fn summarize(results: &[Value]) -> Value {
         }
         counts.insert(stage.into(), Value::Object(by_status));
     }
-    let covered: Vec<f64> =
-        results.iter().filter(|result| result["format"]["status"] == "pass").filter_map(|result| result["format"]["coverage"].as_f64()).collect();
+    let covered: Vec<f64> = results
+        .iter()
+        .filter(|result| result["format"]["status"] == "pass")
+        .filter_map(|result| result["format"]["coverage"].as_f64())
+        .collect();
     let mut includes: Vec<u64> = results.iter().map(|result| number(&result["source"], "includes")).collect();
     includes.sort();
     let mut calls = 0;
@@ -149,7 +166,8 @@ fn summarize(results: &[Value]) -> Value {
         }
     }
     let ok = STAGES.iter().all(|stage| counts[*stage]["fail"] == 0 && counts[*stage]["error"] == 0);
-    let coverage = if covered.is_empty() { 0.0 } else { c2_py::sum_floats(covered.iter().copied()) / covered.len() as f64 };
+    let coverage =
+        if covered.is_empty() { 0.0 } else { c2_py::sum_floats(covered.iter().copied()) / covered.len() as f64 };
     json!({
         "scripts": results.len(),
         "stages": counts,
@@ -165,7 +183,12 @@ fn summarize(results: &[Value]) -> Value {
 }
 
 /// The report: {"summary", "files": [one result per script]}.
-pub fn verify(root: &Path, tables: &BTreeMap<String, Table>, defs: Definitions, headers: indexmap::IndexMap<String, String>) -> Result<Value> {
+pub fn verify(
+    root: &Path,
+    tables: &BTreeMap<String, Table>,
+    defs: Definitions,
+    headers: indexmap::IndexMap<String, String>,
+) -> Result<Value> {
     let paths = files::find_scripts(root)?;
     let (defs, mut headers, _) = disc::with_header(root, defs, headers);
     let model = library::model_for(root, &paths, tables, &defs, &headers)?;
@@ -240,16 +263,25 @@ pub fn format_report(report: &Value, limit: usize) -> String {
         c2_py::format_f(summary["coverage"].as_f64().unwrap_or(0.0) * 100.0, 1)
     ));
     lines.push(format!("assembly fallbacks: {} raw .op or .bytes lines", summary["fallbacks"]));
-    lines.push(format!("source: {} script lines, {} functions left as asm blocks", summary["source_lines"], summary["asm_functions"]));
+    lines.push(format!(
+        "source: {} script lines, {} functions left as asm blocks",
+        summary["source_lines"], summary["asm_functions"]
+    ));
     lines.push(format!(
         "libraries: {} files, {} lines; median script includes {}",
         summary["libraries"], summary["library_lines"], summary["median_includes"]
     ));
     let unregistered = summary["unregistered"].as_object().cloned().unwrap_or_default();
     let unregistered_calls: u64 = unregistered.values().filter_map(Value::as_u64).sum();
-    lines.push(format!("native calls: {}, of which {} use numbers the game does not register", summary["native_calls"], unregistered_calls));
+    lines.push(format!(
+        "native calls: {}, of which {} use numbers the game does not register",
+        summary["native_calls"], unregistered_calls
+    ));
     if !unregistered.is_empty() {
-        lines.push(format!("  {}", unregistered.iter().map(|(key, count)| format!("{key} x{count}")).collect::<Vec<_>>().join(", ")));
+        lines.push(format!(
+            "  {}",
+            unregistered.iter().map(|(key, count)| format!("{key} x{count}")).collect::<Vec<_>>().join(", ")
+        ));
     }
     let (shown, total) = failures(report, limit);
     if total > 0 {
@@ -267,9 +299,28 @@ mod tests {
     use super::*;
 
     const UNREGISTERED: [&str; 22] = [
-        "action:6", "action:7", "action:13", "action:14", "action:44", "action:80", "effect:250", "event:492", "event:800",
-        "monster:17", "monster:18", "monster:20", "monster:67", "monster:68", "monster:69", "monster:141", "monster:142",
-        "monster:143", "monster:154", "monster:155", "monster:157", "monster:159",
+        "action:6",
+        "action:7",
+        "action:13",
+        "action:14",
+        "action:44",
+        "action:80",
+        "effect:250",
+        "event:492",
+        "event:800",
+        "monster:17",
+        "monster:18",
+        "monster:20",
+        "monster:67",
+        "monster:68",
+        "monster:69",
+        "monster:141",
+        "monster:142",
+        "monster:143",
+        "monster:154",
+        "monster:155",
+        "monster:157",
+        "monster:159",
     ];
 
     fn tables() -> BTreeMap<String, Table> {

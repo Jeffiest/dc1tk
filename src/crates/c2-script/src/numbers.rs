@@ -58,7 +58,8 @@ fn calls(kind: &str) -> Vec<&'static str> {
 
 fn literal_calls(text: &str, names: &[&str]) -> BTreeSet<i64> {
     let alternatives: Vec<String> = names.iter().map(|name| regex::escape(name)).collect();
-    let pattern = Regex::new(&format!(r#"\b(?:{})\s*\(\s*(?:"[^"]*"\s*,\s*)?(\d+)\s*[,)]"#, alternatives.join("|"))).unwrap();
+    let pattern =
+        Regex::new(&format!(r#"\b(?:{})\s*\(\s*(?:"[^"]*"\s*,\s*)?(\d+)\s*[,)]"#, alternatives.join("|"))).unwrap();
     pattern.captures_iter(&index::without_comments(text)).filter_map(|found| found[1].parse().ok()).collect()
 }
 
@@ -89,7 +90,10 @@ pub fn written<'a>(texts: impl IntoIterator<Item = &'a String>) -> Used {
         for kind in KINDS {
             found.get_mut(kind).unwrap().extend(literal_calls(text, &calls(kind)));
         }
-        found.get_mut("program").unwrap().extend(literal_program.captures_iter(text).filter_map(|found| found[1].parse::<i64>().ok()));
+        found
+            .get_mut("program")
+            .unwrap()
+            .extend(literal_program.captures_iter(text).filter_map(|found| found[1].parse::<i64>().ok()));
     }
     found
 }
@@ -125,7 +129,8 @@ pub type Lock = BTreeMap<String, IndexMap<String, i64>>;
 
 pub fn read_lock(path: Option<&Path>) -> Result<Lock> {
     let value: serde_json::Value = match path.filter(|path| path.is_file()) {
-        Some(path) => serde_json::from_str(&c2_py::read_text(path)?).map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?,
+        Some(path) => serde_json::from_str(&c2_py::read_text(path)?)
+            .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?,
         None => serde_json::Value::Null,
     };
     Ok(KINDS
@@ -133,7 +138,9 @@ pub fn read_lock(path: Option<&Path>) -> Result<Lock> {
         .map(|kind| {
             let held = value[*kind]
                 .as_object()
-                .map(|entries| entries.iter().filter_map(|(key, number)| Some((key.clone(), number.as_i64()?))).collect())
+                .map(|entries| {
+                    entries.iter().filter_map(|(key, number)| Some((key.clone(), number.as_i64()?))).collect()
+                })
                 .unwrap_or_default();
             (kind.to_string(), held)
         })

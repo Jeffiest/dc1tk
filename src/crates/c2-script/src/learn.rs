@@ -16,13 +16,12 @@ use crate::node;
 use crate::node::{Map, Node};
 use crate::source::truthy;
 use crate::{
-    asm, compile, decompile, definitions, fingerprint, library, names, natives, parse, pathnames, sdk, stb,
-    Error, Result,
+    asm, compile, decompile, definitions, fingerprint, library, names, natives, parse, pathnames, sdk, stb, Error,
+    Result,
 };
 
-static DEFAULT_NAME: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(f_[0-9a-f]+|func_\d+|program_\d+|shared_\d+|start|[a-z0-9_]+_\d+_\d+)$").unwrap()
-});
+static DEFAULT_NAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(f_[0-9a-f]+|func_\d+|program_\d+|shared_\d+|start|[a-z0-9_]+_\d+_\d+)$").unwrap());
 static DEFAULT_VARIABLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[av]\d+$").unwrap());
 static DEFAULT_GLOBAL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^g\d+$").unwrap());
 static ALIAS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.+?)(?:_for_program_\d+|_\d+)$").unwrap());
@@ -229,8 +228,11 @@ pub fn library_entries(
         }
         let mut used = HashSet::new();
         for function in &members {
-            let own: HashSet<&str> =
-                list(function, "params").iter().chain(list(function, "locals")).map(|variable| text(variable, "name")).collect();
+            let own: HashSet<&str> = list(function, "params")
+                .iter()
+                .chain(list(function, "locals"))
+                .map(|variable| text(variable, "name"))
+                .collect();
             for name in names::variables(&function["body"]) {
                 if !own.contains(name.as_str()) {
                     used.insert(name);
@@ -725,7 +727,8 @@ void on_init(void)
 
     #[test]
     fn docs_wrapped_at_a_hyphen_join_without_a_space() {
-        let comment = "// Pushes backwards while the flip is mid-\n// motion, then stops - briefly.\nvoid f(void)\n{\n}\n";
+        let comment =
+            "// Pushes backwards while the flip is mid-\n// motion, then stops - briefly.\nvoid f(void)\n{\n}\n";
         let program = parse::parse(comment).unwrap();
         let function = list(&program, "functions").iter().find(|item| item.kind() == "function").unwrap();
         assert_eq!(text(function, "doc"), "Pushes backwards while the flip is mid-motion, then stops - briefly.");
@@ -764,7 +767,8 @@ void on_init(void)
     #[test]
     fn a_declared_return_type_is_learned_when_it_differs() {
         let headers = typed_headers();
-        let source = TYPED.replace("void on_init(void)", "float scale(void)\n{\n    return 2;\n}\n\nvoid on_init(void)");
+        let source =
+            TYPED.replace("void on_init(void)", "float scale(void)\n{\n    return 2;\n}\n\nvoid on_init(void)");
         let folder = folder("returns");
         learn_text(&folder, "typed.c", &source, &headers);
         let entries = learned_entries(&folder);
@@ -778,7 +782,8 @@ void on_init(void)
     #[test]
     fn line_notes_come_back_above_their_statements() {
         let headers = typed_headers();
-        let source = TYPED.replace("    if (track == 22) {", "    // note: 22 is the town theme.\n    if (track == 22) {");
+        let source =
+            TYPED.replace("    if (track == 22) {", "    // note: 22 is the town theme.\n    if (track == 22) {");
         let folder = folder("notes");
         learn_text(&folder, "noted.c", &source, &headers);
         let entries = learned_entries(&folder);
@@ -829,8 +834,7 @@ void on_init(void)
         let x = library::library_fingerprint("event", &["f1".into(), "f2".into()]);
         let y = library::library_fingerprint("event", &["f3".into()]);
         assert_eq!(entries.keys().cloned().collect::<Vec<_>>(), vec![x.clone(), y.clone()]);
-        assert!(entries[&x]
-            .py_eq(&node!({"path": "lib/x.c", "doc": "Shared helpers.", "globals": {"g0": "visits"}})));
+        assert!(entries[&x].py_eq(&node!({"path": "lib/x.c", "doc": "Shared helpers.", "globals": {"g0": "visits"}})));
         assert!(entries[&y].py_eq(&node!({"path": "lib/y.c"})));
     }
 

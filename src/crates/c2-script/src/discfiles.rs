@@ -191,7 +191,10 @@ pub fn game_files(mod_dir: &Path) -> Result<IndexMap<String, PathBuf>> {
     let mut found = mod_files(mod_dir)?;
     for (path, file) in crate::replace::raw_files(mod_dir)? {
         if found.keys().any(|known| lower(known) == lower(&path)) {
-            return Err(Error::invalid(format!("{}: {path} is given twice, in {DISC}/ and as file:{path}", name_of(mod_dir))));
+            return Err(Error::invalid(format!(
+                "{}: {path} is given twice, in {DISC}/ and as file:{path}",
+                name_of(mod_dir)
+            )));
         }
         found.insert(path, file);
     }
@@ -364,7 +367,13 @@ pub fn replaced(
         };
         let (new, packed) = step().map_err(|error| fail(error.to_string()))?;
         files.insert(top, packed);
-        report.push(Replaced { path: path.clone(), module: module.clone(), old: old.map(|old| old.len()), data: new, new_file: false });
+        report.push(Replaced {
+            path: path.clone(),
+            module: module.clone(),
+            old: old.map(|old| old.len()),
+            data: new,
+            new_file: false,
+        });
     }
     Ok((files, report))
 }
@@ -418,7 +427,8 @@ pub fn check(out_path: &Path, report: &[Replaced]) -> Result<Vec<String>> {
     let mut wrong = Vec::new();
     for item in report {
         let (top, members) = location(&item.path);
-        let found = index.get(&lower(&top)).and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &members));
+        let found =
+            index.get(&lower(&top)).and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &members));
         if found != Some(&item.data[..]) {
             wrong.push(item.path.clone());
         }

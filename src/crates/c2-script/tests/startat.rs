@@ -69,7 +69,8 @@ fn patched_new_game_script_compiles_with_the_warp() {
 #[test]
 fn warns_when_the_game_never_loads_the_map_that_way() {
     let folder = TempDir::new("startat-warns");
-    let root = make_tree(folder.path(), &[("map/d/d01/d01_1.c", "void w(void)\n{\n    load_dungeon_map(\"s51\");\n}\n")]);
+    let root =
+        make_tree(folder.path(), &[("map/d/d01/d01_1.c", "void w(void)\n{\n    load_dungeon_map(\"s51\");\n}\n")]);
     assert!(startat::warnings(&root, &consts(&[("story_50", 10500)]), &target("s51:story_50")).unwrap().is_empty());
     let found = startat::warnings(&root, &IndexMap::new(), &target("t01:map_start")).unwrap();
     assert_eq!(found.len(), 2);

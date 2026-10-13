@@ -45,10 +45,16 @@ fn source(folder: &Path, scripts: &[(&str, &str)]) -> PathBuf {
     root
 }
 
-fn built(tools: &Tools, folder: &Path, filler: usize, scripts: &[(&str, &str)]) -> (PathBuf, PathBuf, Changes, Written) {
+fn built(
+    tools: &Tools,
+    folder: &Path,
+    filler: usize,
+    scripts: &[(&str, &str)],
+) -> (PathBuf, PathBuf, Changes, Written) {
     let iso_path = disc(tools, folder, filler);
     let out = folder.join("out.iso");
-    let found = build::changes(&source(folder, scripts), &iso_path, &tools.toolchain(), &IndexMap::new(), false, None).unwrap();
+    let found =
+        build::changes(&source(folder, scripts), &iso_path, &tools.toolchain(), &IndexMap::new(), false, None).unwrap();
     let result = rebuild::write_disc(&iso_path, &out, &found.files).unwrap();
     (iso_path, out, found, result)
 }
@@ -70,7 +76,8 @@ fn sources(found: &Changes) -> Vec<String> {
 fn unchanged_source_rebuilds_the_same_image() {
     let tools = Tools::new();
     let folder = TempDir::new("rebuild-unchanged");
-    let (iso_path, out, found, _) = built(&tools, folder.path(), 4, &[("map/t01.c", "    wait;\n"), ("map/t02.c", "    end;\n")]);
+    let (iso_path, out, found, _) =
+        built(&tools, folder.path(), 4, &[("map/t01.c", "    wait;\n"), ("map/t02.c", "    end;\n")]);
     assert!(found.scripts.is_empty());
     assert!(fs::read(&out).unwrap() == fs::read(&iso_path).unwrap());
 }
@@ -104,6 +111,9 @@ fn image_grows_when_there_is_no_filler() {
     let long_body = "    wait;\n".repeat(400);
     let (iso_path, out, _, result) = built(&tools, folder.path(), 0, &[("map/t01.c", &long_body)]);
     assert!(result.grown > 0);
-    assert_eq!(fs::metadata(&out).unwrap().len(), fs::metadata(&iso_path).unwrap().len() + result.grown * SECTOR as u64);
+    assert_eq!(
+        fs::metadata(&out).unwrap().len(),
+        fs::metadata(&iso_path).unwrap().len() + result.grown * SECTOR as u64
+    );
     assert_eq!(read(&out, "map/t01.stb", &[]), script(&tools, &long_body));
 }

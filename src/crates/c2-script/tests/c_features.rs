@@ -160,7 +160,8 @@ fn pointer_locals_point_at_variables() {
 
 #[test]
 fn string_variables_hold_strings() {
-    let text = "int f(void)\n{\n    string s = \"hello\";\n    string t;\n\n    t = s;\n    print(t);\n    return 1;\n}\n";
+    let text =
+        "int f(void)\n{\n    string s = \"hello\";\n    string t;\n\n    t = s;\n    print(t);\n    return 1;\n}\n";
     assert_eq!(result(text, &[]), int(1));
 }
 
@@ -180,7 +181,8 @@ fn errors_name_the_line() {
 #[test]
 fn a_librarys_defines_reach_the_script_that_includes_it() {
     let script =
-        parse::parse(&format!("{HEAD}#include \"lib/sizes.c\"\n\nint f(void)\n{{\n    return twice(SIZE);\n}}\n")).unwrap();
+        parse::parse(&format!("{HEAD}#include \"lib/sizes.c\"\n\nint f(void)\n{{\n    return twice(SIZE);\n}}\n"))
+            .unwrap();
     let found = texts(&[("lib/sizes.c", "#define SIZE 21\n\nint twice(int value)\n{\n    return value * 2;\n}\n")]);
     let program = library::expand(script, &found, sdk_texts()).unwrap();
     let table = vm::table_of(&program, tables()).unwrap();

@@ -36,10 +36,8 @@ fn names(pairs: &[(i64, &str)]) -> NameTable {
 
 #[test]
 fn monster_table_reads_records_until_the_empty_one() {
-    let elf = elf_with(
-        0x1000,
-        &[record(0, "Sewer Rat", "e201a", "e201a"), record(523, "Griffon Soldier", "e254a", "b254a")],
-    );
+    let elf =
+        elf_with(0x1000, &[record(0, "Sewer Rat", "e201a", "e201a"), record(523, "Griffon Soldier", "e254a", "b254a")]);
     let table = disc::monster_table(&elf, &node!({"address": 0x1000, "record_size": 184}));
     let rows: Vec<(i64, &str, &str, &str)> =
         table.iter().map(|(kind, row)| (*kind, row.name.as_str(), row.model.as_str(), row.script.as_str())).collect();
@@ -50,8 +48,13 @@ fn monster_table_reads_records_until_the_empty_one() {
 fn monster_lines_say_which_model_and_ai_script_each_kind_uses() {
     let row = MonsterRow { name: String::new(), model: "e254a".into(), script: "b254a".into() };
     let notes: NameTable = [(NameKey::Int(523), disc::monster_note(&row))].into_iter().collect();
-    let lines =
-        disc::enum_lines("monster_kind", "MONSTER", &names(&[(523, "Griffon Soldier")]), &mut HashSet::new(), Some(&notes));
+    let lines = disc::enum_lines(
+        "monster_kind",
+        "MONSTER",
+        &names(&[(523, "Griffon Soldier")]),
+        &mut HashSet::new(),
+        Some(&notes),
+    );
     assert!(lines.contains(&"    MONSTER_GRIFFON_SOLDIER = 523,  // model e254a, AI b254a".to_string()));
 }
 

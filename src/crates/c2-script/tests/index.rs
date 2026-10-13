@@ -24,14 +24,17 @@ fn constants_come_from_enums_and_defines() {
         ("a.h", "enum program {\n    map_start = 100,\n    story_50 = 10500,  // note\n};\n#define LIMIT 0x10\n"),
         ("b.h", "static inline void f(int x)\n{\n    x = 5;\n}\n"),
     ]);
-    let expected: IndexMap<String, i64> =
-        [("map_start", 100), ("story_50", 10500), ("LIMIT", 16)].iter().map(|(name, value)| (name.to_string(), *value)).collect();
+    let expected: IndexMap<String, i64> = [("map_start", 100), ("story_50", 10500), ("LIMIT", 16)]
+        .iter()
+        .map(|(name, value)| (name.to_string(), *value))
+        .collect();
     assert_eq!(index::constants(found.values()), expected);
 }
 
 #[test]
 fn values_fold_like_the_compiler() {
-    let consts: IndexMap<String, i64> = [("story_50".to_string(), 10500), ("BASE".to_string(), 8)].into_iter().collect();
+    let consts: IndexMap<String, i64> =
+        [("story_50".to_string(), 10500), ("BASE".to_string(), 8)].into_iter().collect();
     assert_eq!(index::value("50 * 10 + 0 + 10000", &consts), Some(Folded::Int(10500)));
     assert_eq!(index::value("story_50", &consts), Some(Folded::Int(10500)));
     assert_eq!(index::value("-(BASE + 1)", &consts), Some(Folded::Int(-9)));

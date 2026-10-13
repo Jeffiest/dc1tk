@@ -36,7 +36,8 @@ fn slots_a_folder_always_fills_with_one_character_are_named() {
         "map/m/m01/m01b.stb",
         &program(vec![load(32, "event/e110/e110_starbre.chr"), load(37, "chara/c01_base.chr"), load(40, "b.chr")]),
     );
-    let pack_names: NameTable = [(NameKey::Text("chara/p01_20a.chr".into()), "Giles or Apia".to_string())].into_iter().collect();
+    let pack_names: NameTable =
+        [(NameKey::Text("chara/p01_20a.chr".into()), "Giles or Apia".to_string())].into_iter().collect();
     let names = slots::names(&found, &pack_names);
     // 32 holds Star Breaker from two events; 9 is a shared villager model and 40 two characters
     let folder: BTreeMap<i64, String> =

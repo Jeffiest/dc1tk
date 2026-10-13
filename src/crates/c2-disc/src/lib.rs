@@ -8,6 +8,7 @@ pub mod archive;
 mod cp932_fixes;
 pub mod extract;
 pub mod iso;
+pub mod layout;
 pub mod rebuild;
 #[doc(hidden)]
 pub mod samples;

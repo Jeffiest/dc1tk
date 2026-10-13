@@ -50,7 +50,8 @@ fn corpus(folder: &Path) -> (PathBuf, Vec<String>) {
         write(&root.join(format!("map/m{number}.stb")), script_bytes(number));
     }
     write(&root.join("map/solo.stb"), compiled(&script_text("", 0).replace("twice(0)", "1")));
-    let paths = ["map/m0.stb", "map/m1.stb", "map/m2.stb", "map/solo.stb"].iter().map(|path| path.to_string()).collect();
+    let paths =
+        ["map/m0.stb", "map/m1.stb", "map/m2.stb", "map/solo.stb"].iter().map(|path| path.to_string()).collect();
     (root, paths)
 }
 
@@ -66,7 +67,8 @@ fn script_source(root: &Path, path: &str, model: &Model) -> (Vec<u8>, String) {
 }
 
 fn compiled_with(text: &str, found: &IndexMap<String, String>) -> Vec<u8> {
-    compile::compile_program(&library::expand(parse::parse(text).unwrap(), found, &no_texts()).unwrap(), tables()).unwrap()
+    compile::compile_program(&library::expand(parse::parse(text).unwrap(), found, &no_texts()).unwrap(), tables())
+        .unwrap()
 }
 
 #[test]
@@ -114,7 +116,8 @@ fn name_table_renames_everywhere() {
 
 #[test]
 fn clashing_variable_names_are_numbered() {
-    let function = parse::parse("MAIN(f);\nvoid f(int a0, int a1)\n{\n    g0 = a0;\n}\n").unwrap()["functions"][0].clone();
+    let function =
+        parse::parse("MAIN(f);\nvoid f(int a0, int a1)\n{\n    g0 = a0;\n}\n").unwrap()["functions"][0].clone();
     let params = |entry: Node| -> Vec<String> {
         names::with_variables(function.clone(), &entry, &HashSet::new())["params"]
             .as_array()
@@ -137,7 +140,10 @@ fn padding_of_overrides_an_included_function() {
     let found = texts(&[("lib.c", "#pragma natives event\nvoid helper(void)\n{\n    print(\"abc\");\n}\n")]);
     let expanded = library::expand(program, &found, &no_texts()).unwrap();
     let functions = expanded["functions"].as_array().unwrap();
-    assert_eq!(functions.iter().map(|function| function["name"].as_str().unwrap()).collect::<Vec<_>>(), ["helper", "talk"]);
+    assert_eq!(
+        functions.iter().map(|function| function["name"].as_str().unwrap()).collect::<Vec<_>>(),
+        ["helper", "talk"]
+    );
     assert_eq!(functions[0]["padding"], "01020304");
     let script = stb::read(&compile::compile_program(&expanded, tables()).unwrap());
     let Region::Function(helper) = &script.regions[2] else { panic!("no function") };
@@ -223,8 +229,7 @@ fn libraries_json_names_the_globals_a_library_uses() {
     }
     let first = model(root, &paths, &Definitions::empty());
     let identity = first.libraries.values().next().unwrap().fingerprint.clone();
-    let libraries: IndexMap<String, Node> =
-        [(identity, node!({"globals": {"g0": "visits"}}))].into_iter().collect();
+    let libraries: IndexMap<String, Node> = [(identity, node!({"globals": {"g0": "visits"}}))].into_iter().collect();
     let defs = Definitions { libraries, ..Definitions::empty() };
     let model = model(root, &paths, &defs);
     let found = model.library_texts().unwrap();

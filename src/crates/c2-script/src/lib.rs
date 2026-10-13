@@ -3,8 +3,8 @@
 
 pub mod additions;
 pub mod asm;
-pub mod build;
 pub mod assets;
+pub mod build;
 pub mod compile;
 pub mod coverage;
 pub mod decompile;
@@ -25,14 +25,14 @@ pub mod names;
 pub mod natives;
 pub mod notes;
 pub mod numbers;
+pub mod patches;
 pub mod pathnames;
 pub mod replace;
-pub mod patches;
 pub mod sdk;
 pub mod slots;
 pub mod soundpass;
-pub mod startat;
 pub mod source;
+pub mod startat;
 #[macro_use]
 pub mod node;
 pub mod parse;

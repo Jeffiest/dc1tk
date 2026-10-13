@@ -39,10 +39,9 @@ fn asset_names_come_from_glosses_and_stay_apart() {
 #[test]
 fn asset_strings_passed_to_known_parameters_are_replaced() {
     let mut found = Context::default();
-    found
-        .by_original
-        .insert("_SET_MOTION".into(), node!({"name": "set_motion", "params": [{"name": "motion_name"}]}));
+    found.by_original.insert("_SET_MOTION".into(), node!({"name": "set_motion", "params": [{"name": "motion_name"}]}));
     found.asset_names.insert(key("MOTION", "\u{7acb}\u{3061}"), "MOTION_STAND".into());
-    let nodes = node!([{"kind": "native", "name": "_SET_MOTION", "args": [{"kind": "string", "text": "\u{7acb}\u{3061}"}]}]);
+    let nodes =
+        node!([{"kind": "native", "name": "_SET_MOTION", "args": [{"kind": "string", "text": "\u{7acb}\u{3061}"}]}]);
     assert_eq!(assets::named(&nodes, &found)[0]["args"], node!([{"kind": "var", "name": "MOTION_STAND"}]));
 }

@@ -1,5 +1,6 @@
 //! Writing every file of DATA.DAT, and every member of the packs inside them, as a folder tree:
-//! a pack X keeps its bytes as X and its members under X.d/.
+//! a pack X keeps its bytes as X and its members under X.d/. The disc's other files and its layout
+//! go beside them (layout), so the folder packs back into the image.
 
 use std::collections::HashMap;
 use std::fs;
@@ -152,6 +153,7 @@ pub fn extract(image: &[u8], out_dir: &Path) -> Result<Manifest> {
     let scripts =
         files.iter().filter(|item| item.path.to_lowercase().ends_with(".stb")).map(|item| item.path.clone()).collect();
     let boot = extract_boot(image, out_dir)?;
+    crate::layout::record(image, out_dir)?;
     let manifest = Manifest { files, scripts, boot };
     // The manifest marks a finished extraction (setup reuses a folder that has one), so it is written
     // whole or not at all.

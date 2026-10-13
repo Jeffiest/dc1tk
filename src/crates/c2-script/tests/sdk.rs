@@ -184,10 +184,8 @@ fn natives_in_expressions_are_called_first() {
 
 #[test]
 fn header_declarations_parse() {
-    let header = parse::parse(&format!(
-        "{EVENT_HEADER}extern void get_pos(OPTIONAL(float *x, ...)) NATIVE(70, 15);\n"
-    ))
-    .unwrap();
+    let header =
+        parse::parse(&format!("{EVENT_HEADER}extern void get_pos(OPTIONAL(float *x, ...)) NATIVE(70, 15);\n")).unwrap();
     let declared = header["declarations"]["natives"].as_array().unwrap();
     assert_eq!(declared[0]["returns"], "int");
     let params = declared[0]["params"].as_array().unwrap();
@@ -195,7 +193,9 @@ fn header_declarations_parse() {
         .last()
         .unwrap()
         .py_eq(&node!({"name": "flag", "type": "int", "out": true, "optional": false, "result": true})));
-    assert!(declared[1]["params"][2].py_eq(&node!({"name": "anim_name", "type": "string", "out": false, "optional": true})));
+    assert!(
+        declared[1]["params"][2].py_eq(&node!({"name": "anim_name", "type": "string", "out": false, "optional": true}))
+    );
     assert!(declared[2]["base"] == Node::Int(70) && declared[2]["no"] == Node::Int(85));
     assert_eq!(declared[2]["variadic"], Node::Bool(true));
     assert_eq!(declared[2]["params"][0]["out"], Node::Bool(true));
@@ -213,10 +213,7 @@ fn pointer_parameters_of_helpers() {
 #[test]
 fn declarations_print_as_c() {
     let header = parse::parse(EVENT_HEADER).unwrap()["declarations"].clone();
-    assert_eq!(
-        source::native_declaration(&header["natives"][0]).unwrap(),
-        "extern int get_flag(int flag) NATIVE(14);"
-    );
+    assert_eq!(source::native_declaration(&header["natives"][0]).unwrap(), "extern int get_flag(int flag) NATIVE(14);");
     assert_eq!(
         source::native_declaration(&header["natives"][1]).unwrap(),
         "extern void set_actor_texture_anim(int actor, int on, OPTIONAL(string anim_name)) NATIVE(471);"
@@ -305,7 +302,10 @@ fn raw_numbered_calls_name_the_native_they_were_written_for() {
     let data = build_with(&text, &headers).unwrap();
     let shown = shown(&data, "monster", &headers, true);
     // raw 60 is get_target_angle in the table the call was written for
-    assert!(shown.contains("    DIRECT get_monster_var2(1);  // old numbering, meant as get_target_angle\n"), "{shown}");
+    assert!(
+        shown.contains("    DIRECT get_monster_var2(1);  // old numbering, meant as get_target_angle\n"),
+        "{shown}"
+    );
     assert!(shown.contains("    DIRECT target_angle = get_target_angle();\n"));
 }
 
@@ -317,7 +317,8 @@ fn scripts_built_for_the_old_table_read_current_groups_as_old() {
             "{MONSTER_HEADER}extern void set_visible_monster_limit(int count, OPTIONAL(int extra2)) NATIVE(110, 9);\nextern void set_mask_flag(int mask, int on) NATIVE(120, 9);\n"
         ),
     );
-    let text = MONSTER.replace("    AT(60) target_angle = get_target_angle();\n", "    set_visible_monster_limit(4, 1);\n");
+    let text =
+        MONSTER.replace("    AT(60) target_angle = get_target_angle();\n", "    set_visible_monster_limit(4, 1);\n");
     let data = build_with(&text, &headers).unwrap();
     let found = header_context("monster", &headers);
     let program = decompile::decompile(&stb::read(&data), "monster", tables());
@@ -325,7 +326,10 @@ fn scripts_built_for_the_old_table_read_current_groups_as_old() {
     assert!(!source::text(&present(named.clone(), &found)).unwrap().contains("old numbering"));
     let old = sdk::numbered(Some(found.clone()), Some("old")).unwrap();
     let shown = source::text(&present(named, &old)).unwrap();
-    assert!(shown.contains("    set_visible_monster_limit(4, 1);  // old numbering, meant as set_mask_flag\n"), "{shown}");
+    assert!(
+        shown.contains("    set_visible_monster_limit(4, 1);  // old numbering, meant as set_mask_flag\n"),
+        "{shown}"
+    );
 }
 
 #[test]

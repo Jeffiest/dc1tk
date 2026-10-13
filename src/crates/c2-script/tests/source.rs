@@ -206,10 +206,8 @@ fn labels_follow_allocation_order() {
 
 #[test]
 fn unused_strings_and_padding_pragmas() {
-    let text = EVENT.replace(
-        "void f_0000(void)",
-        "#pragma strings \"old\" \"older\"\n#pragma padding 01020304\nvoid f_0000(void)",
-    );
+    let text = EVENT
+        .replace("void f_0000(void)", "#pragma strings \"old\" \"older\"\n#pragma padding 01020304\nvoid f_0000(void)");
     let data = built(&text);
     let Region::Function(main) = &stb::read(&data).regions[2] else { panic!("no main") };
     assert_eq!(main.strings, ["old", "older", "hello"]);

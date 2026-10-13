@@ -33,9 +33,9 @@ use serde_json::Value;
 
 use crate::build::{self, Patched};
 use crate::compile::Toolchain;
+use crate::discfiles::Clashes;
 use crate::node::Node;
 use crate::patches::{self, ModTexts, Plan, Scripts, Target};
-use crate::discfiles::Clashes;
 use crate::{additions, discfiles, index, numbers, pathnames, source, tree, Error, Result};
 
 pub const INDEX: &str = "mod.json";
@@ -63,7 +63,8 @@ pub fn folder(mods_dir: &Path, name: &str) -> Result<PathBuf> {
 pub fn entries(mod_dir: &Path) -> Result<Value> {
     let path = mod_dir.join(INDEX);
     let mut found = if path.is_file() {
-        serde_json::from_str(&c2_py::read_text(&path)?).map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?
+        serde_json::from_str(&c2_py::read_text(&path)?)
+            .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?
     } else {
         Value::Object(Default::default())
     };
@@ -146,9 +147,16 @@ pub struct Overridden {
 
 /// Starts or extends a patch of the mod: copies functions of the scripts --map/--script/... picks
 /// (from the English one of a map's languages) into NAME.c in the mod, each after #pragma override.
-pub fn override_functions(tree_dir: &Path, mod_dir: &Path, kind: &str, value: &str, functions: &[String]) -> Result<Overridden> {
+pub fn override_functions(
+    tree_dir: &Path,
+    mod_dir: &Path,
+    kind: &str,
+    value: &str,
+    functions: &[String],
+) -> Result<Overridden> {
     let scripts = Scripts::new(tree_dir)?;
-    let chosen: Vec<String> = scripts.picked(&Target { kind: kind.into(), values: vec![value.into()] })?.into_iter().collect();
+    let chosen: Vec<String> =
+        scripts.picked(&Target { kind: kind.into(), values: vec![value.into()] })?.into_iter().collect();
     if chosen.is_empty() {
         return Err(Error::invalid(format!("--{} {} picks no script in {}", kind, value, tree_dir.display())));
     }
@@ -187,7 +195,8 @@ pub fn override_functions(tree_dir: &Path, mod_dir: &Path, kind: &str, value: &s
         }
     }
     let stem = Path::new(value).file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
-    let safe: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() || "_.-".contains(c) { c } else { '_' }).collect();
+    let safe: String =
+        stem.chars().map(|c| if c.is_ascii_alphanumeric() || "_.-".contains(c) { c } else { '_' }).collect();
     let path = mod_dir.join(format!("{safe}{}", source::EXTENSION));
     fs::create_dir_all(path.parent().unwrap())?;
     let mut text = if path.is_file() {
@@ -210,7 +219,10 @@ pub fn override_functions(tree_dir: &Path, mod_dir: &Path, kind: &str, value: &s
 /// compile_flags.txt in the mod's own folder, so an editor reads its patches with the SDK, the
 /// mod's libraries and the tree's.
 pub fn write_patch_flags(mod_dir: &Path, tree_dir: &Path, sdk_dir: &Path, definition_sets: &[PathBuf]) -> Result<()> {
-    c2_py::write_text(&mod_dir.join(source::EDITOR_FLAGS), &source::editor_flags(sdk_dir, definition_sets, Some(tree_dir)))?;
+    c2_py::write_text(
+        &mod_dir.join(source::EDITOR_FLAGS),
+        &source::editor_flags(sdk_dir, definition_sets, Some(tree_dir)),
+    )?;
     Ok(())
 }
 
@@ -222,7 +234,12 @@ pub struct Checked {
 
 /// Compiles every script the chosen mods change, as build would, without a disc: the scripts their
 /// files replace or reach through a library, and the scripts their patches change.
-pub fn check(mod_dirs: &[PathBuf], tree_dir: &Path, tools: &Toolchain, consts: &IndexMap<String, i64>) -> Result<Checked> {
+pub fn check(
+    mod_dirs: &[PathBuf],
+    tree_dir: &Path,
+    tools: &Toolchain,
+    consts: &IndexMap<String, i64>,
+) -> Result<Checked> {
     check_with(mod_dirs, tree_dir, tools, consts, &BTreeMap::new())
 }
 
@@ -319,7 +336,10 @@ pub fn mod_files(mod_dir: &Path) -> Vec<String> {
 pub fn write_editor_flags(mod_dir: &Path, tree_dir: &Path, sdk_dir: &Path, definition_sets: &[PathBuf]) -> Result<()> {
     let root = mod_dir.join(FILES);
     fs::create_dir_all(&root)?;
-    c2_py::write_text(&root.join(source::EDITOR_FLAGS), &source::editor_flags(sdk_dir, definition_sets, Some(tree_dir)))?;
+    c2_py::write_text(
+        &root.join(source::EDITOR_FLAGS),
+        &source::editor_flags(sdk_dir, definition_sets, Some(tree_dir)),
+    )?;
     Ok(())
 }
 
@@ -354,7 +374,8 @@ pub fn add(tree_dir: &Path, mod_dir: &Path, paths: &[String], overwrite: bool) -
 
 /// Starts or extends a mod with tree files to edit; files the mod already has are kept.
 pub fn new(tree_dir: &Path, mod_dir: &Path, paths: &[String]) -> Result<Vec<String>> {
-    let missing: Vec<&str> = paths.iter().filter(|path| !joined(tree_dir, path).is_file()).map(String::as_str).collect();
+    let missing: Vec<&str> =
+        paths.iter().filter(|path| !joined(tree_dir, path).is_file()).map(String::as_str).collect();
     if !missing.is_empty() {
         return Err(Error::invalid(format!("not in {}:\n  {}", tree_dir.display(), missing.join("\n  "))));
     }
@@ -373,7 +394,10 @@ pub fn save(tree_dir: &Path, mod_dir: &Path) -> Result<(Vec<String>, Vec<String>
         )));
     };
     if mod_dir.exists() && !mod_dir.join(INDEX).is_file() && fs::read_dir(mod_dir)?.next().is_some() {
-        return Err(Error::invalid(format!("{} is not empty and holds no mod; choose another name", mod_dir.display())));
+        return Err(Error::invalid(format!(
+            "{} is not empty and holds no mod; choose another name",
+            mod_dir.display()
+        )));
     }
     fs::create_dir_all(mod_dir)?;
     let paths: Vec<String> = found.edited.iter().chain(&found.added).cloned().collect();
@@ -474,7 +498,10 @@ pub fn overlay(
     let mut scripts: Option<BTreeSet<String>> = None;
     for mod_dir in mod_dirs {
         let found = entries(mod_dir)?;
-        let listed: Vec<Node> = found["additions"].as_array().map(|items| items.iter().cloned().map(Node::from).collect()).unwrap_or_default();
+        let listed: Vec<Node> = found["additions"]
+            .as_array()
+            .map(|items| items.iter().cloned().map(Node::from).collect())
+            .unwrap_or_default();
         if listed.is_empty() {
             continue;
         }
@@ -508,7 +535,12 @@ pub fn clash_text(clashes: &IndexMap<String, Vec<String>>) -> String {
 }
 
 /// Writes the chosen mods into the tree. Returns (the paths written, warnings).
-pub fn apply(mod_dirs: &[PathBuf], tree_dir: &Path, force: bool, consts: &IndexMap<String, i64>) -> Result<(Vec<String>, Vec<String>)> {
+pub fn apply(
+    mod_dirs: &[PathBuf],
+    tree_dir: &Path,
+    force: bool,
+    consts: &IndexMap<String, i64>,
+) -> Result<(Vec<String>, Vec<String>)> {
     let (texts, clashes) = overlay(mod_dirs, tree_dir, consts)?;
     if !clashes.is_empty() {
         return Err(Error::invalid(clash_text(&clashes)));
@@ -537,13 +569,21 @@ pub fn apply(mod_dirs: &[PathBuf], tree_dir: &Path, force: bool, consts: &IndexM
     let mut warnings = Vec::new();
     for mod_dir in mod_dirs {
         for path in stale(mod_dir, tree_dir)? {
-            warnings.push(format!("{} changed in the decompiler's output since {} was made; compare them", path, name_of(mod_dir)));
+            warnings.push(format!(
+                "{} changed in the decompiler's output since {} was made; compare them",
+                path,
+                name_of(mod_dir)
+            ));
         }
     }
     for mod_dir in mod_dirs {
         for (path, text) in sources(mod_dir)? {
             if patches::is_patch(&text) {
-                warnings.push(format!("{}'s patch {} is merged in by build only, not written into the tree", name_of(mod_dir), name_of(&path)));
+                warnings.push(format!(
+                    "{}'s patch {} is merged in by build only, not written into the tree",
+                    name_of(mod_dir),
+                    name_of(&path)
+                ));
             }
         }
     }
@@ -554,7 +594,11 @@ pub fn apply(mod_dirs: &[PathBuf], tree_dir: &Path, force: bool, consts: &IndexM
 
 pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>) -> Result<String> {
     let mut mods: Vec<PathBuf> = if mods_dir.is_dir() {
-        fs::read_dir(mods_dir)?.flatten().map(|entry| mods_dir.join(entry.file_name())).filter(|path| exists(path)).collect()
+        fs::read_dir(mods_dir)?
+            .flatten()
+            .map(|entry| mods_dir.join(entry.file_name()))
+            .filter(|path| exists(path))
+            .collect()
     } else {
         Vec::new()
     };
@@ -569,7 +613,8 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         let texts = contents(mod_dir, tree_dir)?;
         let found = entries(mod_dir)?;
         let own = sources(mod_dir)?;
-        let (_, mine) = patches::located(&[ModTexts { name: name.clone(), texts: own.clone(), written: Vec::new() }], tree_dir)?;
+        let (_, mine) =
+            patches::located(&[ModTexts { name: name.clone(), texts: own.clone(), written: Vec::new() }], tree_dir)?;
         let mut counted = format!("{} file{}", texts.len(), if texts.len() == 1 { "" } else { "s" });
         if !mine.is_empty() {
             counted = format!("{} patch{}, {}", mine.len(), if mine.len() == 1 { "" } else { "es" }, counted);
@@ -595,11 +640,27 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         for addition in found["additions"].as_array().into_iter().flatten() {
             let where_ = match addition["map"].as_str().filter(|map| !map.is_empty()) {
                 Some(map) => map.to_string(),
-                None => addition["scripts"].as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(", "),
+                None => addition["scripts"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", "),
             };
-            let keys = |key: &str| -> Vec<String> { addition[key].as_object().map(|map| map.keys().cloned().collect()).unwrap_or_default() };
-            let mut parts: Vec<String> = keys("programs").into_iter().map(|program| format!("program {program}")).collect();
-            parts.extend(addition["includes"].as_array().into_iter().flatten().filter_map(Value::as_str).map(|path| format!("include {path}")));
+            let keys = |key: &str| -> Vec<String> {
+                addition[key].as_object().map(|map| map.keys().cloned().collect()).unwrap_or_default()
+            };
+            let mut parts: Vec<String> =
+                keys("programs").into_iter().map(|program| format!("program {program}")).collect();
+            parts.extend(
+                addition["includes"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(|path| format!("include {path}")),
+            );
             parts.extend(keys("wrap").into_iter().map(|program| format!("wrap {program}")));
             lines.push(format!("    adds to {}: {}", where_, parts.join(", ")));
         }
@@ -635,13 +696,25 @@ pub struct TestResult {
 /// mod layered over the tree and run in the script interpreter (vm), where natives do nothing and
 /// controller input is whatever the test passes in. A test passes when it returns nonzero. tests.c
 /// can include the mod's own libraries and use its NEW_FLAG and kin names.
-pub fn run_tests(mod_dir: &Path, tree_dir: &Path, tools: &Toolchain, consts: &IndexMap<String, i64>) -> Result<Vec<TestResult>> {
+pub fn run_tests(
+    mod_dir: &Path,
+    tree_dir: &Path,
+    tools: &Toolchain,
+    consts: &IndexMap<String, i64>,
+) -> Result<Vec<TestResult>> {
     let path = mod_dir.join(TESTS);
     if !path.is_file() {
-        return Err(Error::invalid(format!("{} has no {}; write int test_...(void) functions there", mod_dir.display(), TESTS)));
+        return Err(Error::invalid(format!(
+            "{} has no {}; write int test_...(void) functions there",
+            mod_dir.display(),
+            TESTS
+        )));
     }
     let (texts, _) = overlay(&[mod_dir.to_path_buf()], tree_dir, consts)?;
-    let given = patch_plan(&[mod_dir.to_path_buf()], tree_dir, consts, true)?.numbers.remove(&name_of(mod_dir)).unwrap_or_default();
+    let given = patch_plan(&[mod_dir.to_path_buf()], tree_dir, consts, true)?
+        .numbers
+        .remove(&name_of(mod_dir))
+        .unwrap_or_default();
     let mut program = crate::parse::parse(&c2_py::read_text(&path)?)?;
     if !crate::source::truthy(&program["main"]) {
         let first = program["functions"]
@@ -655,7 +728,8 @@ pub fn run_tests(mod_dir: &Path, tree_dir: &Path, tools: &Toolchain, consts: &In
     let standing_in = tree_dir.join(TESTS);
     let mut headers = tools.headers.clone();
     headers.extend(crate::definitions::source_headers(&standing_in)?);
-    let includes = crate::library::read_includes(&program, &standing_in, Some(&texts), tools.sdk_dir, &[mod_dir.to_path_buf()])?;
+    let includes =
+        crate::library::read_includes(&program, &standing_in, Some(&texts), tools.sdk_dir, &[mod_dir.to_path_buf()])?;
     let mut program = crate::library::expand(program, &includes, &headers)?;
     let constants = &mut program["declarations"]["constants"];
     if let Some(list) = constants.as_array_mut() {

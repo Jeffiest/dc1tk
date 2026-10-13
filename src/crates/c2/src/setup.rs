@@ -45,6 +45,10 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
             println!("{} files extracted to {}", manifest.files.len(), files::python_path(&args.extracted));
         } else {
             extract::extract_boot(image.bytes(), extracted)?;
+            if !extracted.join(c2_disc::layout::LAYOUT).is_file() {
+                c2_disc::layout::record(image.bytes(), extracted)?;
+                println!("the disc's other files and layout written to {}", files::python_path(&args.extracted));
+            }
         }
     }
     let common = &args.common;

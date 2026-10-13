@@ -54,7 +54,9 @@ impl Value {
             Value::Int(value) => value.to_string(),
             Value::Float(value) => c2_py::float_repr(*value),
             Value::Text(text) => text.clone(),
-            Value::Pointer(frame, slot) => format!("({}, {})", frame.map_or("globals".into(), |frame| frame.to_string()), slot),
+            Value::Pointer(frame, slot) => {
+                format!("({}, {})", frame.map_or("globals".into(), |frame| frame.to_string()), slot)
+            }
         }
     }
 }
@@ -88,16 +90,26 @@ pub fn lines_table(text: &str) -> Result<Functions> {
         if line.starts_with(".function ") {
             let words = c2_py::split(line);
             let after = |key: &str| -> usize {
-                words.iter().position(|word| *word == key).and_then(|at| words.get(at + 1)).and_then(|word| word.parse().ok()).unwrap_or(0)
+                words
+                    .iter()
+                    .position(|word| *word == key)
+                    .and_then(|at| words.get(at + 1))
+                    .and_then(|word| word.parse().ok())
+                    .unwrap_or(0)
             };
-            found.insert(words[1].to_string(), Function { locals: after("local"), args: after("arg"), ..Default::default() });
+            found.insert(
+                words[1].to_string(),
+                Function { locals: after("local"), args: after("arg"), ..Default::default() },
+            );
             current = Some(words[1].to_string());
             continue;
         }
         let Some(name) = current.as_ref() else {
             continue;
         };
-        if line.is_empty() || [".padding", ".natives", ".header", ".program", ".code"].iter().any(|start| line.starts_with(start)) {
+        if line.is_empty()
+            || [".padding", ".natives", ".header", ".program", ".code"].iter().any(|start| line.starts_with(start))
+        {
             continue;
         }
         let function = found.get_mut(name).unwrap();
@@ -227,15 +239,25 @@ impl<'a> Machine<'a> {
             let words = function.code.get(pc).ok_or_else(|| Error::invalid("list index out of range"))?;
             pc += 1;
             let word = |at: usize| words.get(at).map(String::as_str).unwrap_or("");
-            let number = |at: usize| -> Result<usize> { word(at).parse().map_err(|_| Error::invalid(format!("bad operand {}", word(at)))) };
+            let number = |at: usize| -> Result<usize> {
+                word(at).parse().map_err(|_| Error::invalid(format!("bad operand {}", word(at))))
+            };
             match word(0) {
                 "push" => {
                     let value = if word(1) == "string" {
-                        Value::Text(function.strings.get(number(2)?).cloned().ok_or_else(|| Error::invalid("list index out of range"))?)
+                        Value::Text(
+                            function
+                                .strings
+                                .get(number(2)?)
+                                .cloned()
+                                .ok_or_else(|| Error::invalid("list index out of range"))?,
+                        )
                     } else if let Ok(value) = word(1).parse::<i128>() {
                         Value::Int(value)
                     } else {
-                        Value::Float(c2_py::parse_float(word(1)).ok_or_else(|| Error::invalid(format!("could not convert string to float: '{}'", word(1))))?)
+                        Value::Float(c2_py::parse_float(word(1)).ok_or_else(|| {
+                            Error::invalid(format!("could not convert string to float: '{}'", word(1)))
+                        })?)
                     };
                     stack.push(value);
                 }

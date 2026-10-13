@@ -211,7 +211,8 @@ pub fn overwrites(tree: &Path, paths: &[String]) -> Result<Vec<String>> {
 /// Notes for build on edited libraries: how many scripts include each, and how many of those were
 /// not edited themselves.
 pub fn library_notes(tree: &Path, found: &Status) -> Result<Vec<String>> {
-    let libraries: Vec<&String> = found.edited.iter().chain(&found.added).filter(|path| crate::index::is_library(path)).collect();
+    let libraries: Vec<&String> =
+        found.edited.iter().chain(&found.added).filter(|path| crate::index::is_library(path)).collect();
     if libraries.is_empty() {
         return Ok(Vec::new());
     }
@@ -235,7 +236,11 @@ pub fn library_notes(tree: &Path, found: &Status) -> Result<Vec<String>> {
 /// What changed in the tree since it was decompiled, as changes prints it.
 pub fn changes_text(tree: &Path) -> Result<String> {
     let Some(found) = status(tree)? else {
-        return Ok(format!("{} has no {}, so edits cannot be told apart from decompiler output", tree.display(), ORIGINALS));
+        return Ok(format!(
+            "{} has no {}, so edits cannot be told apart from decompiler output",
+            tree.display(),
+            ORIGINALS
+        ));
     };
     let mut lines = Vec::new();
     for (label, paths) in [("edited", &found.edited), ("added", &found.added), ("removed", &found.removed)] {
@@ -265,7 +270,9 @@ pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Resul
         return Err(Error::invalid(format!("the copy must be a lib/...{} path", crate::source::EXTENSION)));
     }
     let includes_library = |line: &str| {
-        crate::index::include_pattern().captures(line).is_some_and(|found| found.get(0).unwrap().start() == 0 && &found[1] == library)
+        crate::index::include_pattern()
+            .captures(line)
+            .is_some_and(|found| found.get(0).unwrap().start() == 0 && &found[1] == library)
     };
     let mut missing = Vec::new();
     for script in scripts {
@@ -274,11 +281,18 @@ pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Resul
         }
     }
     if !missing.is_empty() {
-        return Err(Error::invalid(format!("these scripts do not include {} directly:\n  {}", library, missing.join("\n  "))));
+        return Err(Error::invalid(format!(
+            "these scripts do not include {} directly:\n  {}",
+            library,
+            missing.join("\n  ")
+        )));
     }
     let text = c2_py::read_text(&tree.join(library))?;
-    let header =
-        format!("// Copy of {} for {}, made by c2 fork. Other scripts still include the original.\n\n", library, scripts.join(", "));
+    let header = format!(
+        "// Copy of {} for {}, made by c2 fork. Other scripts still include the original.\n\n",
+        library,
+        scripts.join(", ")
+    );
     fs::create_dir_all(tree.join(copy).parent().unwrap())?;
     c2_py::write_text(&tree.join(copy), &(header + &text))?;
     for script in scripts {

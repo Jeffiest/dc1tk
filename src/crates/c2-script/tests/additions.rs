@@ -36,7 +36,10 @@ fn programs_and_includes_are_added_before_main_and_the_padding_pragmas() {
         "mine",
     )
     .unwrap();
-    assert!(text.contains("PROGRAM(500, talk);\nPROGRAM(9000, go);\nPROGRAM(treasure_chest, open);\nMAIN(start);"), "{text}");
+    assert!(
+        text.contains("PROGRAM(500, talk);\nPROGRAM(9000, go);\nPROGRAM(treasure_chest, open);\nMAIN(start);"),
+        "{text}"
+    );
     assert!(text.find("#include \"lib/mods/mine/mine.c\"").unwrap() < text.find("#pragma padding_of talk").unwrap());
 }
 
@@ -96,5 +99,8 @@ fn wrapping_a_program_twice_in_one_mod_gives_each_wrapper_its_own_name() {
     let once = applied(SCRIPT, &node!({"wrap": {"map_start": {"before": ["first"]}}}), "mine").unwrap();
     let twice = applied(&once, &node!({"wrap": {"map_start": {"before": ["second"]}}}), "mine").unwrap();
     assert!(twice.contains("PROGRAM(map_start, mod_mine_map_start_2);"), "{twice}");
-    assert!(twice.contains("void mod_mine_map_start_2(void)\n{\n    second();\n    mod_mine_map_start();\n}"), "{twice}");
+    assert!(
+        twice.contains("void mod_mine_map_start_2(void)\n{\n    second();\n    mod_mine_map_start();\n}"),
+        "{twice}"
+    );
 }

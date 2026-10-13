@@ -94,8 +94,21 @@ enum Command {
     Setup(setup::SetupArgs),
     /// Generate native function tables from a ChronicleTwo checkout.
     Natives(setup::NativesArgs),
-    /// Write every file in the disc's DATA.DAT.
+    /// Write every file of the disc: DATA.DAT's files and the packs' members, the disc's other files
+    /// and its layout.
     Extract { iso: PathBuf, out: String },
+    /// Write a disc image back from an extracted disc (its files, DATA.DAT's files and its layout).
+    Pack {
+        /// The extracted disc.
+        #[arg(default_value = "extracted/disc")]
+        extracted: PathBuf,
+        /// Image to write.
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Compare the image written with this one, byte for byte.
+        #[arg(long)]
+        check: Option<PathBuf>,
+    },
     /// Write a script as assembly text.
     Disassemble {
         stb: PathBuf,
@@ -316,6 +329,32 @@ fn run_extract(iso: &Path, out: &str) -> Result<ExitCode> {
     println!("{} files written to {} ({} from packs)", manifest.files.len(), out, packed);
     println!("{} scripts listed in {}", manifest.scripts.len(), files::python_path(&format!("{out}/manifest.json")));
     Ok(ExitCode::SUCCESS)
+}
+
+fn run_pack(extracted: &Path, output: &Path, check: Option<&Path>) -> Result<ExitCode> {
+    let packed = c2_disc::layout::pack(extracted, output)?;
+    println!(
+        "{} written: {} disc files, {} files of DATA.DAT, {} structure sectors, {} bytes",
+        output.display(),
+        packed.files,
+        packed.data_files,
+        packed.structure_sectors,
+        packed.size
+    );
+    let Some(original) = check else {
+        return Ok(ExitCode::SUCCESS);
+    };
+    let (a, b) = (Image::open(original)?, Image::open(output)?);
+    match c2_disc::layout::first_difference(a.bytes(), b.bytes()) {
+        None => {
+            println!("identical to {}, byte for byte", original.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        Some(at) => {
+            println!("differs from {} at byte {} (sector {})", original.display(), at, at / 2048);
+            Ok(ExitCode::from(1))
+        }
+    }
 }
 
 fn chosen_table(table: &Option<String>, path: &Path, rules: &[(String, String)]) -> String {
@@ -665,6 +704,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Setup(args) => setup::run_setup(args),
         Command::Natives(args) => setup::run_natives(args),
         Command::Extract { iso, out } => run_extract(iso, out),
+        Command::Pack { extracted, output, check } => run_pack(extracted, output, check.as_deref()),
         Command::Disassemble { stb, output, table, common } => run_disassemble(stb, output.as_deref(), table, common),
         Command::Assemble { source, output, natives } => run_assemble(source, output, natives),
         Command::Verify { extracted, json, limit, common } => {

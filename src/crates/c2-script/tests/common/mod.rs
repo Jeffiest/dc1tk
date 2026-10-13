@@ -298,7 +298,12 @@ pub fn functions(text: &str) -> c2_script::Result<vm::Functions> {
 }
 
 /// vm.run_function: runs a function with 64 zero globals unless given.
-pub fn run_function(table: &vm::Functions, name: &str, args: Vec<Value>, globals: Vec<Value>) -> c2_script::Result<Value> {
+pub fn run_function(
+    table: &vm::Functions,
+    name: &str,
+    args: Vec<Value>,
+    globals: Vec<Value>,
+) -> c2_script::Result<Value> {
     vm::Machine::new(table, globals).run(name, args)
 }
 

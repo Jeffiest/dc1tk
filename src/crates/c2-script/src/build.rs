@@ -45,7 +45,15 @@ pub fn compiled(
     let includes = library::read_includes(&program, source_path, overlay, tools.sdk_dir, &[])?;
     let mut program = library::expand(program, &includes, &headers)?;
     if let Some(patched) = patched {
-        program = patches::applied(program, &patched.patches, patched.relative, patched.tree, &headers, overlay, tools.sdk_dir)?;
+        program = patches::applied(
+            program,
+            &patched.patches,
+            patched.relative,
+            patched.tree,
+            &headers,
+            overlay,
+            tools.sdk_dir,
+        )?;
     }
     if program.get("asm").is_none() && program["natives"].is_null() {
         let table_path = match table_path {
@@ -93,11 +101,19 @@ pub fn settled_and_why(
     overrides: &IndexMap<String, String>,
     headers: &IndexMap<String, String>,
 ) -> Result<(HashSet<String>, Option<String>)> {
-    let Some(record) = tree::read_record(tree_dir)?.filter(|record| record.as_object().is_some_and(|map| !map.is_empty())) else {
-        return Ok((HashSet::new(), Some("the tree has no record of what was decompiled; decompile it again for fast builds".into())));
+    let Some(record) =
+        tree::read_record(tree_dir)?.filter(|record| record.as_object().is_some_and(|map| !map.is_empty()))
+    else {
+        return Ok((
+            HashSet::new(),
+            Some("the tree has no record of what was decompiled; decompile it again for fast builds".into()),
+        ));
     };
     if record["headers"].as_str() != Some(tree::headers_hash(headers).as_str()) {
-        return Ok((HashSet::new(), Some("the SDK or definition headers differ from the ones the tree was decompiled with".into())));
+        return Ok((
+            HashSet::new(),
+            Some("the SDK or definition headers differ from the ones the tree was decompiled with".into()),
+        ));
     }
     let recorded: IndexMap<String, String> = record["files"]
         .as_object()
@@ -114,7 +130,11 @@ pub fn settled_and_why(
     Ok((settled_scripts(tree_dir, overrides, &recorded)?, None))
 }
 
-fn settled_scripts(tree_dir: &Path, overrides: &IndexMap<String, String>, recorded: &IndexMap<String, String>) -> Result<HashSet<String>> {
+fn settled_scripts(
+    tree_dir: &Path,
+    overrides: &IndexMap<String, String>,
+    recorded: &IndexMap<String, String>,
+) -> Result<HashSet<String>> {
     let outlines = index::outlines(tree_dir)?;
     let mut paths: BTreeSet<&String> = BTreeSet::new();
     for (path, entry) in &outlines {
@@ -128,14 +148,18 @@ fn settled_scripts(tree_dir: &Path, overrides: &IndexMap<String, String>, record
         .map(|path| {
             let file = tree_dir.join(path);
             let unchanged = recorded.get(path).is_some_and(|hash| {
-                !overrides.contains_key(path) && file.is_file() && tree::file_hash(&file).is_ok_and(|found| found == *hash)
+                !overrides.contains_key(path)
+                    && file.is_file()
+                    && tree::file_hash(&file).is_ok_and(|found| found == *hash)
             });
             (path, unchanged)
         })
         .collect();
     Ok(outlines
         .iter()
-        .filter(|(path, entry)| !index::is_library(path) && known[path] && entry.includes.iter().all(|item| known[item]))
+        .filter(|(path, entry)| {
+            !index::is_library(path) && known[path] && entry.includes.iter().all(|item| known[item])
+        })
         .map(|(path, _)| path.clone())
         .collect())
 }
@@ -169,8 +193,11 @@ pub fn changes(
     full: bool,
     plan: Option<&patches::Plan>,
 ) -> Result<Changes> {
-    let (mut skip, why) =
-        if full { (HashSet::new(), Some("--full".to_string())) } else { settled_and_why(tree_dir, overrides, tools.headers)? };
+    let (mut skip, why) = if full {
+        (HashSet::new(), Some("--full".to_string()))
+    } else {
+        settled_and_why(tree_dir, overrides, tools.headers)?
+    };
     if let Some(plan) = plan {
         skip.retain(|path| !plan.scripts.contains_key(path));
     }
@@ -178,7 +205,8 @@ pub fn changes(
     let disc = Archive::open(image.bytes())?;
     let entries: HashMap<&str, &Entry> = disc.entries.iter().map(|entry| (entry.path.as_str(), entry)).collect();
     let mut scripts = source_scripts(tree_dir);
-    scripts.extend(overrides.keys().filter(|path| path.ends_with(source::EXTENSION) && !index::is_library(path)).cloned());
+    scripts
+        .extend(overrides.keys().filter(|path| path.ends_with(source::EXTENSION) && !index::is_library(path)).cloned());
     let mut skipped = Vec::new();
     let mut wanted = Vec::new();
     for relative in &scripts {
@@ -248,7 +276,9 @@ pub fn check(out_path: &Path, found: &[Change]) -> Result<Vec<String>> {
     let disc = Archive::open(image.bytes())?;
     Ok(found
         .iter()
-        .filter(|change| rebuild::read_back(image.bytes(), &disc, &change.top, &change.members).as_deref() != Some(&change.data[..]))
+        .filter(|change| {
+            rebuild::read_back(image.bytes(), &disc, &change.top, &change.members).as_deref() != Some(&change.data[..])
+        })
         .map(|change| change.source.clone())
         .collect())
 }

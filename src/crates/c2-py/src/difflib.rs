@@ -128,7 +128,8 @@ mod tests {
     fn like_python() {
         let words: Vec<String> = ["ape", "apple", "peach", "puppy"].iter().map(|word| word.to_string()).collect();
         assert_eq!(get_close_matches("appel", &words, 3, 0.6), ["apple", "ape"]);
-        let names: Vec<String> = ["floor_start", "floor_end", "map_start", "start"].iter().map(|w| w.to_string()).collect();
+        let names: Vec<String> =
+            ["floor_start", "floor_end", "map_start", "start"].iter().map(|w| w.to_string()).collect();
         assert_eq!(get_close_matches("flor_start", &names, 3, 0.6), ["floor_start", "start", "map_start"]);
     }
 }

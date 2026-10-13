@@ -989,7 +989,8 @@ fn uri_decoded(uri: &str) -> String {
     let mut out = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
-        let hex = bytes.get(at + 1..at + 3).and_then(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok());
+        let hex =
+            bytes.get(at + 1..at + 3).and_then(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok());
         match (bytes[at], hex) {
             (b'%', Some(byte)) => {
                 out.push(byte);

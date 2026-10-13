@@ -5,11 +5,15 @@ in the repository folder (see the [README](../README.md#1-what-you-need)).
 `c2 help COMMAND` lists a command's options. Everything taken from the disc
 goes under `extracted/`: the disc's files in `extracted/disc/`, the
 decompiled scripts in `extracted/scripts/` and the asset tree in
-`extracted/assets/`.
+`extracted/assets/`. `extracted/disc/` holds every file of the disc (DATA.DAT's
+files, unpacked, beside the movies, SOUND.DAT and the rest) and the disc's
+layout (`disc.json`, `disc-structure.bin`), so `c2 pack` writes the image back
+from it byte for byte.
 
 ```
 c2 setup dc2.iso                                 extract the disc, decompile it all, write the assets
-c2 extract dc2.iso extracted/disc                write every file on the disc
+c2 extract dc2.iso extracted/disc                write every file on the disc, and its layout
+c2 pack -o copy.iso --check dc2.iso              write the image back from extracted/disc
 c2 decompile <script.stb | extracted dir> [-o out]
 c2 compile <script.c> [-o script.stb]
 c2 build extracted/scripts dc2.iso -o modded.iso   new disc image with your changes

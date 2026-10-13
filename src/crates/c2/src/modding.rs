@@ -13,8 +13,8 @@ use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
 use c2_script::{build, definitions, discfiles, index, migrate, mods, patches, replace, sdk, startat, tree};
 
-use crate::{asset_tree, files};
 use crate::Common;
+use crate::{asset_tree, files};
 
 #[derive(Args)]
 pub struct BuildArgs {
@@ -213,7 +213,10 @@ fn resolved(mod_dirs: &[PathBuf], disc: &Path, defs: &[PathBuf]) -> Result<repla
 /// The sound entries the mods add, as constants their patches see.
 fn with_added(plan: &mut patches::Plan, resolved: &replace::Resolved) {
     for (module, added) in &resolved.added {
-        plan.numbers.entry(module.clone()).or_default().extend(added.iter().map(|(name, number)| (name.clone(), *number)));
+        plan.numbers
+            .entry(module.clone())
+            .or_default()
+            .extend(added.iter().map(|(name, number)| (name.clone(), *number)));
         for patch in plan.patches.iter_mut().filter(|patch| patch.module == *module) {
             patch.numbers.extend(added.iter().map(|(name, number)| (name.clone(), *number)));
         }
@@ -236,7 +239,9 @@ fn reached_lines(resolved: &replace::Resolved, module: &str) -> Vec<String> {
             }
             places.len()
         };
-        if let Some(number) = resolved.added.get(module).and_then(|added| added.get(key.split_once(':').map_or("", |(_, name)| name))) {
+        if let Some(number) =
+            resolved.added.get(module).and_then(|added| added.get(key.split_once(':').map_or("", |(_, name)| name)))
+        {
             out.push(format!("adds {key} to {} as entry {number}", ids.join(", ")));
             continue;
         }
@@ -287,7 +292,8 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         for line in reached_lines(&resolved, &name) {
             println!("  {line}");
         }
-        let given: BTreeMap<&String, &i64> = plan.numbers.get(&name).map(|found| found.iter().collect()).unwrap_or_default();
+        let given: BTreeMap<&String, &i64> =
+            plan.numbers.get(&name).map(|found| found.iter().collect()).unwrap_or_default();
         for (constant, number) in given {
             println!("  {constant} = {number}");
         }
@@ -424,7 +430,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         println!("the image grew by {} sectors", written.grown);
     }
     if written.placed.iter().any(|item| item.added) {
-        println!("the game's file index has {} bytes free for more new files (each takes 13 plus its path)", written.index_free);
+        println!(
+            "the game's file index has {} bytes free for more new files (each takes 13 plus its path)",
+            written.index_free
+        );
     }
     let mut wrong = build::check(&args.output, &found.scripts)?;
     wrong.extend(discfiles::check(&args.output, &replaced)?);
@@ -477,7 +486,8 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Apply { source, names, force, mods: mods_dir } => {
-            let (applied, warnings) = mods::apply(&mod_folders(mods_dir, names)?, source, *force, &default_constants(source)?)?;
+            let (applied, warnings) =
+                mods::apply(&mod_folders(mods_dir, names)?, source, *force, &default_constants(source)?)?;
             for warning in warnings {
                 println!("warning: {warning}");
             }
@@ -514,11 +524,21 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 None => {
                     let clashes = replace::key_clashes(&mod_dirs)?;
                     if !clashes.is_empty() {
-                        let shown: Vec<String> = clashes.iter().map(|(id, names)| format!("{id} ({})", names.join(", "))).collect();
-                        bail!("these assets are replaced by more than one of the chosen mods:\n  {}", shown.join("\n  "));
+                        let shown: Vec<String> =
+                            clashes.iter().map(|(id, names)| format!("{id} ({})", names.join(", "))).collect();
+                        bail!(
+                            "these assets are replaced by more than one of the chosen mods:\n  {}",
+                            shown.join("\n  ")
+                        );
                     }
                     for line in &lines {
-                        println!("{}: {} {}: {}", line.module, if line.add { "adds" } else { "replaces" }, line.key, line.shown);
+                        println!(
+                            "{}: {} {}: {}",
+                            line.module,
+                            if line.add { "adds" } else { "replaces" },
+                            line.key,
+                            line.shown
+                        );
                     }
                     if replace::needs_index(&lines) {
                         println!("asset ids not looked up: pass --disc with the disc image to check they resolve");
@@ -564,7 +584,10 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 for (id, file, written) in replace::copy_out(iso, &mod_dir, &keys, &asset_tree::index_of(iso, defs)?)? {
                     let place = file.split('/').fold(mod_dir.clone(), |folder, part| folder.join(part));
                     if written {
-                        println!("{}: {id}; edit it there, and build puts it at every place the disc has it", shown(&place));
+                        println!(
+                            "{}: {id}; edit it there, and build puts it at every place the disc has it",
+                            shown(&place)
+                        );
                     } else {
                         println!("{}: {id} is in the mod already; left as it is", shown(&place));
                     }
@@ -578,15 +601,19 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
         }
         ModCommand::Override { source, name, functions, map, script, monster, library, mods: mods_dir, common } => {
             let mod_dir = mods::folder(mods_dir, name)?;
-            let kinds: Vec<(&str, &String)> = [("map", map), ("script", script), ("monster", monster), ("library", library)]
-                .into_iter()
-                .filter_map(|(kind, value)| value.as_ref().filter(|value| !value.is_empty()).map(|value| (kind, value)))
-                .collect();
+            let kinds: Vec<(&str, &String)> =
+                [("map", map), ("script", script), ("monster", monster), ("library", library)]
+                    .into_iter()
+                    .filter_map(|(kind, value)| {
+                        value.as_ref().filter(|value| !value.is_empty()).map(|value| (kind, value))
+                    })
+                    .collect();
             if kinds.len() != 1 {
                 bail!("give one of --map, --script, --monster and --library: the scripts to patch");
             }
             let result = mods::override_functions(source, &mod_dir, kinds[0].0, kinds[0].1, functions)?;
-            let added = if result.added.is_empty() { "already overrides them".to_string() } else { result.added.join(", ") };
+            let added =
+                if result.added.is_empty() { "already overrides them".to_string() } else { result.added.join(", ") };
             println!("{}: {}", shown(&result.path), added);
             println!(
                 "patches {} script{}; edit the functions there, and call original() to run the script's own",

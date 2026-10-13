@@ -147,17 +147,21 @@ pub struct Scripts {
 
 impl Scripts {
     pub fn new(tree: &Path) -> Result<Scripts> {
-        let mut paths: Vec<String> = index::source_files(tree).into_iter().filter(|path| !index::is_library(path)).collect();
+        let mut paths: Vec<String> =
+            index::source_files(tree).into_iter().filter(|path| !index::is_library(path)).collect();
         paths.sort();
-        let plain = paths.iter().map(|path| Ok((path.clone(), pathnames::unnamed(tree, path)?))).collect::<Result<_>>()?;
+        let plain =
+            paths.iter().map(|path| Ok((path.clone(), pathnames::unnamed(tree, path)?))).collect::<Result<_>>()?;
         Ok(Scripts { tree: tree.to_path_buf(), paths, plain, monsters: OnceLock::new(), includers: OnceLock::new() })
     }
 
     pub fn in_map(&self, code: &str) -> Vec<String> {
-        let found: Vec<&String> = self.paths.iter().filter(|path| additions::in_map(&self.plain[*path], code)).collect();
+        let found: Vec<&String> =
+            self.paths.iter().filter(|path| additions::in_map(&self.plain[*path], code)).collect();
         // the PAL game loads the numbered language variants; the unnumbered Japanese script only
         // when a map has nothing else
-        let variants: Vec<&String> = found.iter().copied().filter(|path| variant().is_match(&self.plain[*path])).collect();
+        let variants: Vec<&String> =
+            found.iter().copied().filter(|path| variant().is_match(&self.plain[*path])).collect();
         if variants.is_empty() { found } else { variants }.into_iter().cloned().collect()
     }
 
@@ -353,7 +357,8 @@ pub fn prepared(
     sdk_dir: &Path,
 ) -> Result<(Node, IndexMap<String, Node>)> {
     let language = language_of(patch.plain.get(script).map_or(script, String::as_str));
-    let mut defines: HashMap<String, String> = LANGUAGES.iter().map(|(name, value)| (name.to_string(), value.to_string())).collect();
+    let mut defines: HashMap<String, String> =
+        LANGUAGES.iter().map(|(name, value)| (name.to_string(), value.to_string())).collect();
     defines.insert("LANGUAGE".into(), language.to_string());
     let parsed = parse::parse_with(&patch.text, &defines)?;
     if parsed.get("asm").is_some() {
@@ -364,10 +369,12 @@ pub fn prepared(
     }
     let texts = library::read_includes(&parsed, &patch.path, overlay, sdk_dir, &[tree.to_path_buf()])?;
     // the script's own libraries never declare globals; a mod's can
-    let mut own_globals: Vec<Node> = list(&parsed, "globals").iter().map(|declared| declared.clone().with("source", Node::Null)).collect();
+    let mut own_globals: Vec<Node> =
+        list(&parsed, "globals").iter().map(|declared| declared.clone().with("source", Node::Null)).collect();
     for (path, text) in &texts {
         if let Ok(library_program) = parse::parse_with(text, &defines) {
-            own_globals.extend(list(&library_program, "globals").iter().map(|declared| declared.clone().with("source", path)));
+            own_globals
+                .extend(list(&library_program, "globals").iter().map(|declared| declared.clone().with("source", path)));
         }
     }
     let expanded = library::expand(parsed, &texts, headers)?;
@@ -376,7 +383,9 @@ pub fn prepared(
         .map(|declared| (text(declared, "name").to_string(), declared["value"].clone()))
         .collect();
     for declared in list(&expanded["declarations"], "programs") {
-        consts.entry(text(declared, "name").to_string()).or_insert_with(|| int_node(declared["no"].as_i64().unwrap_or(0)));
+        consts
+            .entry(text(declared, "name").to_string())
+            .or_insert_with(|| int_node(declared["no"].as_i64().unwrap_or(0)));
     }
     for (name, value) in LANGUAGES {
         consts.insert(name.to_string(), int_node(value));
@@ -403,11 +412,18 @@ fn mod_identifier(module: &str) -> String {
     module.chars().map(|c| if c2_py::is_word(c) { c } else { '_' }).collect()
 }
 
-fn renamed(node: &Node, calls: &IndexMap<String, String>, variables: &IndexMap<String, String>, shadowed: &HashSet<String>) -> Node {
+fn renamed(
+    node: &Node,
+    calls: &IndexMap<String, String>,
+    variables: &IndexMap<String, String>,
+    shadowed: &HashSet<String>,
+) -> Node {
     match node {
         Node::List(items) => Node::List(items.iter().map(|item| renamed(item, calls, variables, shadowed)).collect()),
         Node::Map(map) => {
-            let mut out = Node::Map(map.entries().map(|(key, value)| (key.clone(), renamed(value, calls, variables, shadowed))).collect());
+            let mut out = Node::Map(
+                map.entries().map(|(key, value)| (key.clone(), renamed(value, calls, variables, shadowed))).collect(),
+            );
             let name = text(node, "name");
             if node.kind() == "call" {
                 if let Some(to) = calls.get(name) {
@@ -426,7 +442,11 @@ fn renamed(node: &Node, calls: &IndexMap<String, String>, variables: &IndexMap<S
 }
 
 fn own_names(function: &Node) -> HashSet<String> {
-    list(function, "params").iter().chain(list(function, "locals")).map(|declared| text(declared, "name").to_string()).collect()
+    list(function, "params")
+        .iter()
+        .chain(list(function, "locals"))
+        .map(|declared| text(declared, "name").to_string())
+        .collect()
 }
 
 /// A patch function ready to join the script: the patch's constants filled in, its renamed
@@ -513,7 +533,13 @@ struct Brought {
 
 /// The script program with one patch merged in. program has had its libraries included; patch and
 /// consts come from prepared.
-pub fn merged(program: &Node, done: &mut Done, patch: &Node, consts: &IndexMap<String, Node>, module: &str) -> Result<Node> {
+pub fn merged(
+    program: &Node,
+    done: &mut Done,
+    patch: &Node,
+    consts: &IndexMap<String, Node>,
+    module: &str,
+) -> Result<Node> {
     if truthy(&patch["natives"]) && truthy(&program["natives"]) && !patch["natives"].py_eq(&program["natives"]) {
         return Err(Error::invalid(format!(
             "the patch uses {} natives, but the script is an {} script",
@@ -522,9 +548,11 @@ pub fn merged(program: &Node, done: &mut Done, patch: &Node, consts: &IndexMap<S
         )));
     }
     let mut functions: Vec<Node> = list(program, "functions").to_vec();
-    let script_libraries: HashSet<&str> = functions.iter().filter_map(|function| function["library"].as_str()).collect();
+    let script_libraries: HashSet<&str> =
+        functions.iter().filter_map(|function| function["library"].as_str()).collect();
     let function_names: HashSet<String> = functions.iter().map(|function| text(function, "name").to_string()).collect();
-    let global_names: HashSet<String> = list(program, "globals").iter().map(|declared| text(declared, "name").to_string()).collect();
+    let global_names: HashSet<String> =
+        list(program, "globals").iter().map(|declared| text(declared, "name").to_string()).collect();
     let mut taken: HashSet<String> = function_names.union(&global_names).cloned().collect();
     let mut calls: IndexMap<String, String> = IndexMap::new();
     let mut variables: IndexMap<String, String> = IndexMap::new();
@@ -752,7 +780,8 @@ pub fn applied(
     for patch in patches {
         let step = prepared(patch, script, tree, headers, overlay, sdk_dir)
             .and_then(|(parsed, consts)| merged(&program, &mut done, &parsed, &consts, &patch.module));
-        program = step.map_err(|error| Error::invalid(format!("{} (mod {}): {}", patch.file_name(), patch.module, error)))?;
+        program =
+            step.map_err(|error| Error::invalid(format!("{} (mod {}): {}", patch.file_name(), patch.module, error)))?;
     }
     with_frame_calls(program, &done.every_frame)
 }
@@ -764,7 +793,8 @@ fn with_frame_calls(program: Node, hooks: &[String]) -> Result<Node> {
     if hooks.is_empty() {
         return Ok(program);
     }
-    let by_name: HashMap<&str, &Node> = list(&program, "functions").iter().map(|function| (text(function, "name"), function)).collect();
+    let by_name: HashMap<&str, &Node> =
+        list(&program, "functions").iter().map(|function| (text(function, "name"), function)).collect();
     let mut exempt: HashSet<String> = HashSet::new();
     let mut pending: Vec<String> = hooks.to_vec();
     while let Some(name) = pending.pop() {
@@ -774,14 +804,19 @@ fn with_frame_calls(program: Node, hooks: &[String]) -> Result<Node> {
         exempt.insert(name.clone());
         if function.kind() == "function" {
             if waits(&function["body"]) {
-                let what = if hooks.contains(&name) { "an every_frame function" } else { "an every_frame function's callee" };
-                return Err(Error::invalid(format!("{name} waits, so it cannot run every frame (it is {what} or called by one)")));
+                let what =
+                    if hooks.contains(&name) { "an every_frame function" } else { "an every_frame function's callee" };
+                return Err(Error::invalid(format!(
+                    "{name} waits, so it cannot run every frame (it is {what} or called by one)"
+                )));
             }
             pending.extend(names::callees(&function["body"]));
         }
     }
-    let calls: Vec<Node> =
-        hooks.iter().map(|hook| node!({"kind": "expr", "expr": {"kind": "call", "name": hook.as_str(), "args": []}})).collect();
+    let calls: Vec<Node> = hooks
+        .iter()
+        .map(|hook| node!({"kind": "expr", "expr": {"kind": "call", "name": hook.as_str(), "args": []}}))
+        .collect();
     let functions: Vec<Node> = list(&program, "functions")
         .iter()
         .map(|function| {
@@ -815,7 +850,9 @@ fn before_waits(node: &Node, calls: &[Node]) -> Node {
             }
             Node::List(out)
         }
-        Node::Map(map) => Node::Map(map.entries().map(|(key, value)| (key.clone(), before_waits(value, calls))).collect()),
+        Node::Map(map) => {
+            Node::Map(map.entries().map(|(key, value)| (key.clone(), before_waits(value, calls))).collect())
+        }
         other => other.clone(),
     }
 }
@@ -872,12 +909,18 @@ pub fn language_text(copies: &BTreeMap<i64, String>) -> String {
     if order.iter().map(|language| &copies[language]).collect::<HashSet<_>>().len() == 1 {
         return copies[&order[0]].clone();
     }
-    let split: HashMap<i64, Vec<&str>> =
-        order.iter().map(|language| (*language, copies[language].trim_end_matches('\n').split('\n').collect())).collect();
+    let split: HashMap<i64, Vec<&str>> = order
+        .iter()
+        .map(|language| (*language, copies[language].trim_end_matches('\n').split('\n').collect()))
+        .collect();
     let branches = |pieces: &HashMap<i64, Vec<&str>>| -> Vec<String> {
         let mut lines = Vec::new();
         for (number, language) in order[1..].iter().enumerate() {
-            lines.push(format!("#{} LANGUAGE == {}", if number == 0 { "if" } else { "elif" }, language_name(*language)));
+            lines.push(format!(
+                "#{} LANGUAGE == {}",
+                if number == 0 { "if" } else { "elif" },
+                language_name(*language)
+            ));
             lines.extend(pieces[language].iter().map(|line| line.to_string()));
         }
         lines.push("#else".into());
@@ -890,7 +933,8 @@ pub fn language_text(copies: &BTreeMap<i64, String>) -> String {
     }
     let mut out: Vec<String> = Vec::new();
     for (number, _) in split[&order[0]].iter().enumerate() {
-        let found: HashMap<i64, Vec<&str>> = order.iter().map(|language| (*language, vec![split[language][number]])).collect();
+        let found: HashMap<i64, Vec<&str>> =
+            order.iter().map(|language| (*language, vec![split[language][number]])).collect();
         if found.values().collect::<HashSet<_>>().len() == 1 {
             out.push(found[&order[0]][0].to_string());
         } else {
@@ -924,7 +968,8 @@ pub fn summary(patch: &Patch) -> String {
     let every_frame = regex(&EVERY_FRAME, r"#[ \t]*pragma[ \t]+every_frame\s+(?:\w+\s+)*?(\w+)\s*\(");
     let programs = regex(&PROGRAMS, r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*(\w+)\s*\);");
     let text = index::without_comments(&patch.text);
-    let first = |pattern: &Regex| -> Vec<String> { pattern.captures_iter(&text).map(|found| found[1].to_string()).collect() };
+    let first =
+        |pattern: &Regex| -> Vec<String> { pattern.captures_iter(&text).map(|found| found[1].to_string()).collect() };
     let (overridden, every, added) = (first(overrides), first(every_frame), first(programs));
     let count = patch.scripts.len();
     let mut parts = vec![format!("{} script{}", count, if count == 1 { "" } else { "s" })];

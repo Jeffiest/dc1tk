@@ -11,7 +11,10 @@ use c2_script::discfiles;
 #[test]
 fn disc_paths_name_files_and_pack_members() {
     assert_eq!(discfiles::location("snd2/sp/sp_000.snd"), ("snd2/sp/sp_000.snd".to_string(), vec![]));
-    assert_eq!(discfiles::location("chara/c01_base.chr.d/c01b.img"), ("chara/c01_base.chr".to_string(), strings(&["c01b.img"])));
+    assert_eq!(
+        discfiles::location("chara/c01_base.chr.d/c01b.img"),
+        ("chara/c01_base.chr".to_string(), strings(&["c01b.img"]))
+    );
     assert_eq!(discfiles::location("a/b.pac.d/c.chr.d/d.img"), ("a/b.pac".to_string(), strings(&["c.chr", "d.img"])));
 }
 
@@ -33,7 +36,10 @@ fn a_new_member_goes_at_the_end_of_its_pack() {
     let outer = pack(&[("model.chr", inner.clone())]);
     let added = discfiles::added_member(&outer, &strings(&["model.chr", "new_motion.mot"]), b"motion data").unwrap();
     let members = archive::parse_pack(rebuild::read_member(&added, &strings(&["model.chr"])).unwrap()).unwrap();
-    assert_eq!(members.iter().map(|member| member.name.as_str()).collect::<Vec<_>>(), ["tex.img", "info.cfg", "new_motion.mot"]);
+    assert_eq!(
+        members.iter().map(|member| member.name.as_str()).collect::<Vec<_>>(),
+        ["tex.img", "info.cfg", "new_motion.mot"]
+    );
     assert_eq!(rebuild::read_member(&added, &strings(&["model.chr", "new_motion.mot"])), Some(&b"motion data"[..]));
     assert_eq!(rebuild::read_member(&added, &strings(&["model.chr", "tex.img"])), Some(&b"texture"[..]));
     // the engine matches names ignoring case, so a name only differing in case is refused
@@ -48,7 +54,10 @@ fn new_files_get_index_records_before_the_terminator() {
     let (index, _) = archive_files(&[("edit.cfg", b"cfg".to_vec()), ("chara\\a.chr", b"model".to_vec())]);
     let grown = archive::with_entries(&index, &[("chara/mod/new.chr".to_string(), 5, 99)]).unwrap();
     let entries = archive::parse_index(&grown).unwrap();
-    assert_eq!(entries.iter().map(|entry| entry.path.as_str()).collect::<Vec<_>>(), ["edit.cfg", "chara/a.chr", "chara/mod/new.chr"]);
+    assert_eq!(
+        entries.iter().map(|entry| entry.path.as_str()).collect::<Vec<_>>(),
+        ["edit.cfg", "chara/a.chr", "chara/mod/new.chr"]
+    );
     assert!(entries[2].size == 5 && entries[2].sector == 99);
     assert_eq!(entries[1].sector, archive::parse_index(&index).unwrap()[1].sector);
     // stored with the game's separator
@@ -65,5 +74,8 @@ fn two_mods_replacing_one_game_file_clash() {
     }
     let (found, clashes) = discfiles::collect(&[folder.path().join("a"), folder.path().join("b")]).unwrap();
     assert_eq!(found["chara/x.chr.d/x.img"].0, "a");
-    assert_eq!(clashes.into_iter().collect::<Vec<_>>(), vec![("chara/x.chr.d/x.img".to_string(), strings(&["a", "b"]))]);
+    assert_eq!(
+        clashes.into_iter().collect::<Vec<_>>(),
+        vec![("chara/x.chr.d/x.img".to_string(), strings(&["a", "b"]))]
+    );
 }

@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use c2_script::build;
 use c2_script::compile::{self, Toolchain};
 use c2_script::disc::MonsterRow;
-use c2_script::pathnames::{self, Lookups};
 use c2_script::parse;
+use c2_script::pathnames::{self, Lookups};
 use common::{archive_files, iso_image, no_texts, pack, tables, write, TempDir, SECTOR};
 use indexmap::IndexMap;
 
@@ -144,18 +144,27 @@ fn xref_matches_named_folders_by_their_code() {
     let folder = TempDir::new();
     let tree = folder.path();
     for (path, text) in [
-        ("map/s/s51_raybrandt_castle/s51_1.c", "PROGRAM(510, end_fight);
-"),
-        ("dungeon/monster/b254a_griffon_soldier.c", "void on_death(void)
+        (
+            "map/s/s51_raybrandt_castle/s51_1.c",
+            "PROGRAM(510, end_fight);
+",
+        ),
+        (
+            "dungeon/monster/b254a_griffon_soldier.c",
+            "void on_death(void)
 {
     run_event_script(510);
 }
-"),
-        ("map/s/s51_raybrandt_castle/s51_2.c", "void f(void)
+",
+        ),
+        (
+            "map/s/s51_raybrandt_castle/s51_2.c",
+            "void f(void)
 {
     place_monster(523);
 }
-"),
+",
+        ),
     ] {
         std::fs::create_dir_all(tree.join(path).parent().unwrap()).unwrap();
         std::fs::write(tree.join(path), text).unwrap();

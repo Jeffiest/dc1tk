@@ -43,7 +43,8 @@ pub fn float_repr(value: f64) -> String {
     // Rust's shortest digits can end a tie the other way from CPython's (which takes the correctly
     // rounded digits whenever they round-trip)
     let shortest = format!("{:e}", value.abs());
-    let length = shortest.split_once('e').map_or(0, |(mantissa, _)| mantissa.chars().filter(char::is_ascii_digit).count());
+    let length =
+        shortest.split_once('e').map_or(0, |(mantissa, _)| mantissa.chars().filter(char::is_ascii_digit).count());
     let nearest = format!("{:.*e}", length.max(1) - 1, value.abs());
     let chosen = if nearest.parse::<f64>() == Ok(value.abs()) { nearest } else { shortest };
     let (digits, point) = digits(&chosen);

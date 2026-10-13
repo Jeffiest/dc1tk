@@ -40,7 +40,9 @@ pub fn parse_target(text: &str) -> Result<Target> {
     // Python's $ also matches before a final newline
     let pattern = CELL.get_or_init(|| Regex::new(r"^([A-Za-z0-9_]+)(?:/([A-Za-z0-9_]+))?:(-?\w+)\n?$").unwrap());
     let Some(found) = pattern.captures(text) else {
-        return Err(Error::invalid("--start-at takes MAP:PROGRAM or MAP/SCRIPT:PROGRAM, as in s51:story_50 or s06/s06b:500"));
+        return Err(Error::invalid(
+            "--start-at takes MAP:PROGRAM or MAP/SCRIPT:PROGRAM, as in s51:story_50 or s06/s06b:500",
+        ));
     };
     let map = found[1].to_string();
     Ok(Target {
@@ -102,7 +104,9 @@ pub fn overrides(tree: &Path, target: &Target, texts: &IndexMap<String, String>)
                 None => c2_py::read_text(&tree.join(&relative))?,
             };
             let Some(text) = patched(&text, target) else {
-                return Err(Error::invalid(format!("{relative} has no PROGRAM({START_PROGRAM}, ...) line to start from")));
+                return Err(Error::invalid(format!(
+                    "{relative} has no PROGRAM({START_PROGRAM}, ...) line to start from"
+                )));
             };
             found.insert(relative, text);
         }
@@ -124,7 +128,10 @@ pub fn warnings(tree: &Path, consts: &IndexMap<String, i64>, target: &Target) ->
     }
     let names = BTreeSet::from(["load_dungeon_map".to_string()]);
     let wanted = Some(Folded::Text(target.map.clone()));
-    let loads = index::calls(tree, &names)?.into_iter().filter(|call| !call.args.is_empty() && index::value(&call.args[0], consts) == wanted).count();
+    let loads = index::calls(tree, &names)?
+        .into_iter()
+        .filter(|call| !call.args.is_empty() && index::value(&call.args[0], consts) == wanted)
+        .count();
     if loads == 0 {
         lines.push(format!(
             "the game never loads {} with load_dungeon_map, so the warp may not work; xref map {} shows how it is entered",

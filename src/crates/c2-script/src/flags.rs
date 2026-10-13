@@ -190,8 +190,13 @@ pub fn summary(found: &Found) -> String {
     lines.push(format!("free: {}", range_text(&ranges)));
     if !found.computed.is_empty() {
         lines.push(String::new());
-        lines.push(format!("{} calls pass a flag number worked out at run time; check these by hand:", found.computed.len()));
-        lines.extend(found.computed.iter().map(|used| format!("  {}:{}  {}", used.call.path, used.call.line, used.call.text)));
+        lines.push(format!(
+            "{} calls pass a flag number worked out at run time; check these by hand:",
+            found.computed.len()
+        ));
+        lines.extend(
+            found.computed.iter().map(|used| format!("  {}:{}  {}", used.call.path, used.call.line, used.call.text)),
+        );
     }
     lines.join("\n")
 }
@@ -212,7 +217,12 @@ pub fn used_list(found: &Found, consts: &IndexMap<String, i64>) -> String {
         if let Some(what) = tool(number) {
             parts.push(what.to_string());
         }
-        lines.push(format!("{:>5}  {:<40} {}", number, names.get(&number).map(String::as_str).unwrap_or(""), parts.join("; ")));
+        lines.push(format!(
+            "{:>5}  {:<40} {}",
+            number,
+            names.get(&number).map(String::as_str).unwrap_or(""),
+            parts.join("; ")
+        ));
     }
     lines.join("\n")
 }

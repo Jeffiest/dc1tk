@@ -78,7 +78,9 @@ pub fn matches(addition: &Node, plain: &str) -> bool {
             return true;
         }
     }
-    addition["scripts"].as_array().is_some_and(|patterns| patterns.iter().filter_map(Node::as_str).any(|pattern| fnmatch(plain, pattern)))
+    addition["scripts"]
+        .as_array()
+        .is_some_and(|patterns| patterns.iter().filter_map(Node::as_str).any(|pattern| fnmatch(plain, pattern)))
 }
 
 /// A program number as the script writes it: its value when it folds, else the text.
@@ -124,7 +126,10 @@ fn existing(text: &str, consts: &IndexMap<String, i64>) -> HashMap<ProgramKey, (
     let mut found = HashMap::new();
     for capture in program_line().captures_iter(text) {
         let whole = capture.get(0).unwrap();
-        found.insert(number_of(&capture[1], consts), (capture[1].to_string(), capture[2].to_string(), whole.start(), whole.end()));
+        found.insert(
+            number_of(&capture[1], consts),
+            (capture[1].to_string(), capture[2].to_string(), whole.start(), whole.end()),
+        );
     }
     found
 }
@@ -164,7 +169,10 @@ pub fn applied(
             calls.extend(strings(&wrap["after"]).iter().map(|name| format!("    {name}();")));
             text = append_code(
                 &text,
-                &format!("// Added by mod {mod_name}: runs around program {program}.\nvoid {wrapper}(void)\n{{\n{}\n}}\n", calls.join("\n")),
+                &format!(
+                    "// Added by mod {mod_name}: runs around program {program}.\nvoid {wrapper}(void)\n{{\n{}\n}}\n",
+                    calls.join("\n")
+                ),
             );
             programs = existing(&text, consts);
         }
