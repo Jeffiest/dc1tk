@@ -259,6 +259,170 @@ def check_cp932(args):
     return problems
 
 
+# The asset converters by the common format's suffix: the game files each converts and its module.
+ASSET_KINDS = {"png": ".img", "wav": ".snd", "gltf": ".chr"}
+
+
+def asset_module(kind):
+    from c2s import models, sounds, textures
+    return {"png": textures, "wav": sounds, "gltf": models}[kind]
+
+
+def game_files(root, kind):
+    found = []
+    for folder, _, files in os.walk(root):
+        for name in files:
+            if name.lower().endswith(ASSET_KINDS[kind]):
+                found.append((Path(folder) / name).relative_to(root).as_posix())
+    return sorted(found)
+
+
+def write_lines(path, lines):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes("".join(line + "\n" for line in sorted(lines)).encode("utf-8"))
+
+
+def python_export(kind, root, out, files):
+    """What c2 asset-export does: each game file exported to out/<path>.<kind>/, the ones that
+    cannot be listed in out/failed.txt."""
+    module = asset_module(kind)
+    failed = []
+    for relative in files:
+        try:
+            exported = module.export((root / relative).read_bytes())
+        except Exception:
+            failed.append(relative)
+            continue
+        folder = out / (relative + "." + kind)
+        for name, content in exported.items():
+            (folder / name).parent.mkdir(parents=True, exist_ok=True)
+            (folder / name).write_bytes(content)
+    write_lines(out / "failed.txt", failed)
+    return failed
+
+
+def python_build(kind, root, folders, out, files):
+    """What c2 asset-build does: each game file folders has a <path>.<kind>/ for built from it into
+    out/<path>, failures (path, tab, message) in out/failed.txt."""
+    module = asset_module(kind)
+    failed = []
+    for relative in files:
+        folder = folders / (relative + "." + kind)
+        if not folder.is_dir():
+            continue
+        try:
+            built = module.build(folder, (root / relative).read_bytes())
+        except Exception as error:
+            failed.append("%s\t%s" % (relative, error))
+            continue
+        (out / relative).parent.mkdir(parents=True, exist_ok=True)
+        (out / relative).write_bytes(built)
+    write_lines(out / "failed.txt", failed)
+    return failed
+
+
+def compare_builds(py, rs):
+    """The built trees compared, failures by path only (the messages are printed, not compared)."""
+    def failures(folder):
+        lines = (folder / "failed.txt").read_text(encoding="utf-8").splitlines()
+        return {line.split("\t")[0]: line for line in lines}
+    left, right = failures(py), failures(rs)
+    problems = ["failed in %s only: %s" % (name, path) for name, a, b in (("python", left, right), ("rust", right, left))
+                for path in sorted(set(a) - set(b))]
+    for path in sorted(set(left) & set(right)):
+        if left[path] != right[path]:
+            print("both failed, other messages:\n  %s\n  %s" % (left[path], right[path]))
+    return problems + compare_trees(py, rs)
+
+
+def fresh(*folders):
+    for folder in folders:
+        if folder.exists():
+            raise SystemExit("%s exists; give an empty work folder" % folder)
+
+
+def check_asset_exports(kind, args, work):
+    """Every game file of a kind exported by both and compared; then c2 building each of the
+    Python's unedited exports, which must give the original bytes."""
+    root = Path(args.extracted)
+    py, rs = work / ("py_" + kind), work / ("rs_" + kind)
+    fresh(py, rs)
+    files = game_files(root, kind)
+    start = time.time()
+    failed = python_export(kind, root, py, files)
+    py_time = time.time() - start
+    out, rs_time = run([C2, "asset-export", kind, root, rs])
+    print("%d %s files, %d not exported; python %.1fs, rust %.1fs (%s)" % (len(files), ASSET_KINDS[kind], len(failed), py_time,
+                                                                      rs_time, out.strip()))
+    problems = compare_trees(py, rs)
+    out, rs_time = run([C2, "asset-build", kind, root, py, work / ("rs_" + kind + "_unedited"), "--check"])
+    print("rust built the unedited exports in %.1fs: %s" % (rs_time, out.strip().splitlines()[-1]))
+    problems += [line for line in out.splitlines() if line.startswith("differs")]
+    if args.python_builds:
+        start = time.time()
+        built = work / ("py_" + kind + "_unedited")
+        python_build(kind, root, py, built, files)
+        same = sum(1 for path in game_files(built, kind) if (built / path).read_bytes() == (root / path).read_bytes())
+        print("python built the unedited exports in %.1fs: %d give the original" % (time.time() - start, same))
+    return problems, files, py
+
+
+def check_asset_edits(kind, args, work, files, edited):
+    """Both build the edited folders; the built files compared."""
+    root = Path(args.extracted)
+    py, rs = work / ("py_" + kind + "_edited"), work / ("rs_" + kind + "_edited")
+    fresh(py, rs)
+    start = time.time()
+    python_build(kind, root, edited, py, files)
+    py_time = time.time() - start
+    out, rs_time = run([C2, "asset-build", kind, root, edited, rs])
+    print("edited: python %.1fs, rust %.1fs (%s)" % (py_time, rs_time, out.strip()))
+    return compare_builds(py, rs)
+
+
+def edited_pngs(exported, edited, every):
+    """Deterministic edits of every n-th texture file's PNGs: colours inverted (true colour, so a
+    paletted picture is matched or quantised), the palette's red and blue swapped, pixels moved to
+    other colours of the palette, and pictures halved in size."""
+    from c2s import im3
+    folders = sorted(path for path in exported.rglob("*.img.png") if path.is_dir())
+    count = 0
+    for number, folder in enumerate(folders[::every]):
+        target = edited / folder.relative_to(exported)
+        target.mkdir(parents=True)
+        for k, png in enumerate(sorted(folder.glob("*.png"))):
+            w, h, mode, data, palette = im3.read_png(png.read_bytes())
+            if mode == "P":
+                table = [bytes(c) for c in palette] + [b"\0\0\0\xff"] * (256 - len(palette))
+                rgba = b"".join(table[i] for i in data)
+            else:
+                rgba = data
+            how = (number + k) % 5
+            if how == 0 and w * h <= 128 * 128:
+                out = im3.write_png(w, h, "RGBA", bytes(255 - v if i % 4 != 3 else v for i, v in enumerate(rgba)))
+            elif how == 1 and mode == "P":
+                out = im3.write_png(w, h, "P", data, [(b, g, r, a) for r, g, b, a in palette])
+            elif how == 2 and mode == "P":
+                out = im3.write_png(w, h, "RGBA", b"".join(table[(v + 1) % len(palette)] for v in data))
+            elif how == 3 and w > 1 and h > 1:
+                half = b"".join(rgba[4 * (2 * y * w + 2 * x):4 * (2 * y * w + 2 * x) + 4] for y in range(h // 2) for x in range(w // 2))
+                out = im3.write_png(w // 2, h // 2, "RGBA", half)
+            else:
+                continue
+            (target / png.name).write_bytes(out)
+            count += 1
+    print("%d edited PNGs in %d texture files" % (count, len(folders[::every])))
+
+
+def check_textures(args):
+    work = Path(args.work)
+    problems, files, exported = check_asset_exports("png", args, work)
+    edited = work / "png_edits"
+    fresh(edited)
+    edited_pngs(exported, edited, args.every)
+    return problems + check_asset_edits("png", args, work, files, edited)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     checks = parser.add_subparsers(dest="check", required=True)
@@ -282,11 +446,18 @@ def main():
     command.add_argument("--source", action="store_true", help="compare the source text instead of the tree")
     command.add_argument("--named", action="store_true", help="with the definitions' names, script entries and "
                          "translations (without the SDK's names)")
+    for name, every in (("textures", 25),):
+        command = checks.add_parser(name)
+        command.add_argument("extracted")
+        command.add_argument("work")
+        command.add_argument("--every", type=int, default=every, help="edit every n-th file's export (default %d)" % every)
+        command.add_argument("--python-builds", action="store_true", help="also build every unedited export with the "
+                             "Python and count the ones giving the original")
     args = parser.parse_args()
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
     checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble,
-              "decompile": check_decompile}
+              "decompile": check_decompile, "textures": check_textures}
     problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)

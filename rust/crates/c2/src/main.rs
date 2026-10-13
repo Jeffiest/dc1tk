@@ -1,6 +1,7 @@
 //! c2: decompile, compile and mod Dark Chronicle. The Rust port of cli.py; commands print what
 //! cli.py's do.
 
+mod assets;
 mod files;
 
 #[global_allocator]
@@ -158,6 +159,8 @@ enum Command {
         #[arg(long)]
         natives: Option<PathBuf>,
     },
+    #[command(flatten)]
+    Assets(assets::Command),
 }
 
 fn run_extract(iso: &Path, out: &str) -> Result<ExitCode> {
@@ -354,6 +357,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::DecompileDump { root, out, source, named, common } => {
             run_decompile_dump(root, out, *source, *named, common)
         }
+        Command::Assets(command) => assets::run(command),
     }
 }
 

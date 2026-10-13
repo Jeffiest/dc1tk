@@ -10,9 +10,11 @@ license = "MIT"
 c2-disc = { path = "crates/c2-disc" }
 c2-script = { path = "crates/c2-script" }
 c2-py = { path = "crates/c2-py" }
+c2-assets = { path = "crates/c2-assets" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 encoding_rs = "0.8"
+flate2 = { version = "1", default-features = false, features = ["zlib"] }
 indexmap = "2"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false }
