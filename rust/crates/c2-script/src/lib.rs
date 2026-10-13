@@ -19,12 +19,14 @@ pub mod learn;
 pub mod library;
 pub mod maps;
 pub mod messages;
+pub mod migrate;
 pub mod mods;
 pub mod names;
 pub mod natives;
 pub mod notes;
 pub mod numbers;
 pub mod pathnames;
+pub mod replace;
 pub mod patches;
 pub mod sdk;
 pub mod slots;
@@ -53,6 +55,15 @@ pub enum Error {
 impl Error {
     pub fn invalid(message: impl Into<String>) -> Error {
         Error::Invalid(message.into())
+    }
+}
+
+impl From<c2_assets::Error> for Error {
+    fn from(error: c2_assets::Error) -> Error {
+        match error {
+            c2_assets::Error::Invalid(message) => Error::Invalid(message),
+            c2_assets::Error::Io(error) => Error::Io(error),
+        }
     }
 }
 

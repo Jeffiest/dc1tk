@@ -1,0 +1,463 @@
+//! Mods by name: mod.json's replace and add lines, found by asset id on a tiny disc, built into its
+//! files, refused when two mods clash, and mod migrate turning a disc/ folder into such lines.
+
+mod build_common;
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use build_common::{archive_files, iso_image, pack, TempDir, SECTOR};
+use c2_assets::ids::{self, Index};
+use c2_assets::im3::{self, Format, Image as Picture, PngMode};
+use c2_assets::mds::{self, Material, Mds, Mdt, Node, Prim, PRIM_TRIANGLES};
+use c2_assets::tree::{self, DiscFile, Kind, Place};
+use c2_disc::archive::Archive;
+use c2_disc::{rebuild, Image};
+use c2_script::replace::{self, Change, Line};
+use c2_script::{discfiles, migrate};
+use serde_json::{json, Value};
+
+fn picture(name: &str, colour: [u8; 4]) -> Picture {
+    let mut image = Picture::new(name, Format::Ct32, 8, 8);
+    image.pixels = Some(colour.repeat(64));
+    image
+}
+
+/// A character pack: one mesh using picture tex01, which the pack holds.
+fn character() -> Vec<u8> {
+    let mut model = Mds::new();
+    model.nodes.push(Node::new("root", -1));
+    let corners = [[0, 0, 0], [1, 0, 1], [2, 0, 2], [0, 0, 0], [2, 0, 2], [3, 0, 3]];
+    let mesh = Mdt {
+        vertices: vec![[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 1.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0]],
+        normals: vec![[0.0, 0.0, 1.0, 1.0]],
+        uvs: vec![[0.0, 0.0, 1.0, 0.0], [1.0, 0.0, 1.0, 0.0], [1.0, 1.0, 1.0, 0.0], [0.0, 1.0, 1.0, 0.0]],
+        materials: vec![Material::new("tex01")],
+        prims: vec![Prim { kind: PRIM_TRIANGLES, material: 0, verts: corners.iter().map(|c| c.to_vec()).collect() }],
+        ..Mdt::default()
+    };
+    model.nodes.push(Node { mdt: Some(mesh), ..Node::new("body", 0) });
+    let img = im3::write(&[picture("tex01", [10, 20, 30, 0x80])], None).unwrap();
+    pack(&[("info.cfg", b"v2;\nMODEL \"c.mds\";\n".to_vec()), ("c.mds", mds::build(&model).unwrap()), ("c.img", img)])
+}
+
+/// The disc's files: a character pack in two places, and a texture file in two packs.
+fn disc_files() -> Vec<(&'static str, Vec<u8>)> {
+    let shared = im3::write(&[picture("tex02", [1, 2, 3, 0x80]), picture("wall", [9, 9, 9, 0x80])], None).unwrap();
+    vec![
+        ("chara\\c01.chr", character()),
+        ("map\\a\\a01.ipk", pack(&[("a01.img", shared.clone()), ("c01.chr", character())])),
+        ("map\\b\\b02.ipk", pack(&[("x.img", shared)])),
+    ]
+}
+
+struct Disc {
+    _folder: TempDir,
+    iso: PathBuf,
+    mods: PathBuf,
+    index: Index,
+}
+
+fn disc(name: &str) -> Disc {
+    let folder = TempDir::new(name);
+    let (index_file, dat) = archive_files(&disc_files());
+    let iso = folder.path().join("disc.iso");
+    fs::write(&iso, iso_image(&[("DATA.HD4", index_file), ("DATA.DAT", dat), ("DMMY", vec![0; 4 * SECTOR])])).unwrap();
+    let image = Image::open(&iso).unwrap();
+    let archive = Archive::open(image.bytes()).unwrap();
+    let files: Vec<DiscFile> = archive
+        .entries
+        .iter()
+        .map(|entry| DiscFile { path: entry.path.clone(), data: archive.read(image.bytes(), entry) })
+        .collect();
+    let index = Index::from_disc(&files, &tree::sound_names(""));
+    let mods = folder.path().join("mods");
+    fs::create_dir_all(&mods).unwrap();
+    Disc { iso: iso.clone(), mods, index, _folder: folder }
+}
+
+fn write(path: &Path, data: &[u8]) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, data).unwrap();
+}
+
+fn mod_json(mod_dir: &Path, body: Value) {
+    write(&mod_dir.join("mod.json"), serde_json::to_string_pretty(&body).unwrap().as_bytes());
+}
+
+fn png(colour: [u8; 3]) -> Vec<u8> {
+    im3::write_png(8, 8, PngMode::Rgb, &colour.repeat(64), &[], &[]).unwrap()
+}
+
+/// The disc's bytes at a place, before or after a build's files.
+fn at(disc: &Disc, files: &discfiles::Files, path: &str, members: &[&str]) -> Vec<u8> {
+    let members: Vec<String> = members.iter().map(|member| member.to_string()).collect();
+    let top = match files.get(path) {
+        Some(data) => data.clone(),
+        None => {
+            let image = Image::open(&disc.iso).unwrap();
+            let archive = Archive::open(image.bytes()).unwrap();
+            let entry = archive.entries.iter().find(|entry| entry.path == path).unwrap();
+            archive.read(image.bytes(), entry).to_vec()
+        }
+    };
+    rebuild::read_member(&top, &members).unwrap().to_vec()
+}
+
+fn pixels(img: &[u8], name: &str) -> Vec<u8> {
+    im3::read(img).unwrap().into_iter().find(|image| image.name == name).unwrap().pixels.unwrap()
+}
+
+/// The id lines of the mods built into the disc's files.
+fn built(disc: &Disc, names: &[&str]) -> c2_script::Result<(discfiles::Files, Vec<replace::Changed>)> {
+    let mod_dirs: Vec<PathBuf> = names.iter().map(|name| disc.mods.join(name)).collect();
+    let resolved = replace::resolve(&replace::all_lines(&mod_dirs)?, &disc.index)?;
+    let (raw, _) = discfiles::collect(&mod_dirs)?;
+    let clashes = replace::clashes(&resolved, &raw);
+    if !clashes.is_empty() {
+        return Err(c2_script::Error::invalid(clashes.join("\n")));
+    }
+    replace::apply(&disc.iso, &resolved, &BTreeMap::new())
+}
+
+fn fails<T>(result: c2_script::Result<T>, words: &str) {
+    match result {
+        Ok(_) => panic!("did not fail: {words}"),
+        Err(error) => assert!(error.to_string().contains(words), "{error}"),
+    }
+}
+
+#[test]
+fn the_disc_gives_ids_with_every_place() {
+    let disc = disc("ids");
+    let ids: Vec<&str> = disc.index.assets.keys().map(String::as_str).collect();
+    assert_eq!(ids, ["model:c01", "texture:tex01", "texture:tex02", "texture:wall"]);
+    assert_eq!(disc.index.assets["texture:tex02"].places.len(), 2);
+    assert_eq!(
+        disc.index.assets["model:c01"].places[1].0,
+        Place { path: "map/a/a01.ipk".into(), members: vec!["c01.chr".into()] }
+    );
+}
+
+#[test]
+fn a_texture_is_replaced_at_every_place_or_only_some() {
+    let disc = disc("texture");
+    let mod_dir = disc.mods.join("blue");
+    write(&mod_dir.join("anywhere/deep/blue.png"), &png([0, 0, 255]));
+    mod_json(&mod_dir, json!({"replace": {"TEXTURE:tex02": "anywhere/deep/blue.png"}}));
+    let (files, changed) = built(&disc, &["blue"]).unwrap();
+    for (path, member) in [("map/a/a01.ipk", "a01.img"), ("map/b/b02.ipk", "x.img")] {
+        let img = at(&disc, &files, path, &[member]);
+        assert_eq!(pixels(&img, "tex02"), [0, 0, 255, 0x80].repeat(64));
+        assert_eq!(pixels(&img, "wall"), [9, 9, 9, 0x80].repeat(64));
+    }
+    assert_eq!(changed.len(), 2);
+    assert_eq!(changed[0].ids, ["texture:tex02"]);
+
+    mod_json(&mod_dir, json!({"replace": {"texture:tex02": {"file": "anywhere/deep/blue.png", "only": ["map/b"]}}}));
+    let (files, _) = built(&disc, &["blue"]).unwrap();
+    assert_eq!(pixels(&at(&disc, &files, "map/b/b02.ipk", &["x.img"]), "tex02"), [0, 0, 255, 0x80].repeat(64));
+    assert!(!files.contains_key("map/a/a01.ipk"));
+    mod_json(&mod_dir, json!({"replace": {"texture:tex02": {"file": "anywhere/deep/blue.png", "only": "chara"}}}));
+    fails(built(&disc, &["blue"]), "keeps none of the places");
+}
+
+/// The glTF and buffer the export gives for the disc's character pack, its buffer named as the
+/// glTF says.
+fn exported_gltf() -> (Vec<u8>, Vec<u8>, String) {
+    let exported = tree::exported_model(&character(), "c01").unwrap();
+    let get = |name: &str| exported.iter().find(|(path, _)| path == name).unwrap().1.clone();
+    (get("c.gltf"), get("c.bin"), "c.bin".to_string())
+}
+
+#[test]
+fn a_pattern_gives_one_gltf_to_every_model_it_matches() {
+    let disc = disc("model");
+    let mod_dir = disc.mods.join("shape");
+    let (gltf, bin, bin_name) = exported_gltf();
+    write(&mod_dir.join("m/monica.gltf"), &gltf);
+    write(&mod_dir.join("m").join(&bin_name), &bin);
+    mod_json(&mod_dir, json!({"replace": {"model:c0*": "m/monica.gltf"}}));
+    // unedited: the packs build back to the disc's own
+    let (files, changed) = built(&disc, &["shape"]).unwrap();
+    assert_eq!(changed.len(), 2);
+    assert_eq!(at(&disc, &files, "chara/c01.chr", &[]), character());
+    assert_eq!(at(&disc, &files, "map/a/a01.ipk", &["c01.chr"]), character());
+
+    // a vertex moved: both places get the new mesh
+    let json: Value = serde_json::from_slice(&gltf).unwrap();
+    let accessor =
+        &json["accessors"][json["meshes"][0]["primitives"][0]["attributes"]["POSITION"].as_u64().unwrap() as usize];
+    let view = &json["bufferViews"][accessor["bufferView"].as_u64().unwrap() as usize];
+    let offset = (view["byteOffset"].as_u64().unwrap_or(0) + accessor["byteOffset"].as_u64().unwrap_or(0)) as usize;
+    let mut edited = bin.clone();
+    edited[offset..offset + 4].copy_from_slice(&5.0f32.to_le_bytes());
+    write(&mod_dir.join("m").join(&bin_name), &edited);
+    let (files, _) = built(&disc, &["shape"]).unwrap();
+    let first = at(&disc, &files, "chara/c01.chr", &[]);
+    assert_ne!(first, character());
+    assert_eq!(at(&disc, &files, "map/a/a01.ipk", &["c01.chr"]), first);
+    // its pictures are kept
+    assert_eq!(
+        rebuild::read_member(&first, &["c.img".to_string()]),
+        rebuild::read_member(&character(), &["c.img".to_string()])
+    );
+}
+
+#[test]
+fn an_id_given_exactly_wins_over_a_pattern() {
+    let disc = disc("exact");
+    let mod_dir = disc.mods.join("walls");
+    write(&mod_dir.join("red.png"), &png([255, 0, 0]));
+    write(&mod_dir.join("green.png"), &png([0, 255, 0]));
+    mod_json(&mod_dir, json!({"replace": {"texture:*": "red.png", "texture:wall": "green.png"}}));
+    let (files, _) = built(&disc, &["walls"]).unwrap();
+    let img = at(&disc, &files, "map/b/b02.ipk", &["x.img"]);
+    assert_eq!(pixels(&img, "wall"), [0, 255, 0, 0x80].repeat(64));
+    assert_eq!(pixels(&img, "tex02"), [255, 0, 0, 0x80].repeat(64));
+    // a model and a texture inside its pack: the model first, the picture into it
+    assert_eq!(pixels(&at(&disc, &files, "chara/c01.chr", &["c.img"]), "tex01"), [255, 0, 0, 0x80].repeat(64));
+
+    mod_json(&mod_dir, json!({"replace": {"texture:t*": "red.png", "texture:tex*": "green.png"}}));
+    fails(built(&disc, &["walls"]), "is given by");
+}
+
+#[test]
+fn mod_asset_copies_assets_by_id_with_their_lines() {
+    let disc = disc("asset");
+    let mod_dir = disc.mods.join("copied");
+    let keys = ["model:c01".to_string(), "texture:wall".to_string()];
+    let written = replace::copy_out(&disc.iso, &mod_dir, &keys, &disc.index).unwrap();
+    let shown: Vec<(&str, &str, bool)> =
+        written.iter().map(|(id, file, fresh)| (id.as_str(), file.as_str(), *fresh)).collect();
+    assert_eq!(shown, [("model:c01", "models/c01", true), ("texture:wall", "textures/wall.png", true)]);
+    assert!(mod_dir.join("models/c01/c.gltf").is_file() && mod_dir.join("models/c01/textures/tex01.png").is_file());
+    let lines = replace::lines(&mod_dir).unwrap();
+    assert_eq!(lines.iter().map(|line| line.key.as_str()).collect::<Vec<_>>(), ["model:c01", "texture:wall"]);
+    // unedited, they build back to the disc's bytes
+    let (files, _) = built(&disc, &["copied"]).unwrap();
+    assert_eq!(at(&disc, &files, "chara/c01.chr", &[]), character());
+    assert_eq!(
+        at(&disc, &files, "map/b/b02.ipk", &["x.img"]),
+        at(&disc, &BTreeMap::new(), "map/b/b02.ipk", &["x.img"])
+    );
+    // the folder's edited texture goes into the pack
+    write(&mod_dir.join("models/c01/textures/tex01.png"), &png([7, 7, 7]));
+    let (files, _) = built(&disc, &["copied"]).unwrap();
+    assert_eq!(pixels(&at(&disc, &files, "map/a/a01.ipk", &["c01.chr", "c.img"]), "tex01"), [7, 7, 7, 0x80].repeat(64));
+    // a second copy leaves the mod's files and lines as they are
+    let again = replace::copy_out(&disc.iso, &mod_dir, &["model:c01".to_string()], &disc.index).unwrap();
+    assert!(!again[0].2);
+}
+
+#[test]
+fn two_mods_changing_one_asset_or_place_are_refused() {
+    let disc = disc("clash");
+    for name in ["a", "b"] {
+        write(&disc.mods.join(name).join("x.png"), &png([1, 1, 1]));
+        mod_json(&disc.mods.join(name), json!({"replace": {"texture:wall": "x.png"}}));
+    }
+    fails(built(&disc, &["a", "b"]), "texture:wall is replaced by more than one chosen mod: a, b");
+    assert_eq!(replace::key_clashes(&[disc.mods.join("a"), disc.mods.join("b")]).unwrap()["texture:wall"], ["a", "b"]);
+
+    // a whole game file in one mod and a picture inside it in another
+    write(&disc.mods.join("b").join("raw.img"), b"raw");
+    mod_json(&disc.mods.join("b"), json!({"replace": {"file:map/b/b02.ipk.d/x.img": "raw.img"}}));
+    fails(built(&disc, &["a", "b"]), "map/b/b02.ipk.d/x.img (mod b) and texture:wall (mod a) both change");
+
+    // a model in one mod and a picture of its pack in another go together
+    let (gltf, bin, bin_name) = exported_gltf();
+    write(&disc.mods.join("b").join("m.gltf"), &gltf);
+    write(&disc.mods.join("b").join(&bin_name), &bin);
+    mod_json(&disc.mods.join("b"), json!({"replace": {"model:c01": "m.gltf"}}));
+    mod_json(&disc.mods.join("a"), json!({"replace": {"texture:tex01": "x.png"}}));
+    let (files, _) = built(&disc, &["a", "b"]).unwrap();
+    assert_eq!(pixels(&at(&disc, &files, "chara/c01.chr", &["c.img"]), "tex01"), [1, 1, 1, 0x80].repeat(64));
+}
+
+#[test]
+fn a_file_line_converts_a_folder_by_the_game_file_it_stands_for() {
+    let disc = disc("file");
+    let mod_dir = disc.mods.join("raw");
+    write(&mod_dir.join("walls/wall.png"), &png([4, 4, 4]));
+    mod_json(&mod_dir, json!({"replace": {"file:map/b/b02.ipk.d/x.img": "walls"}}));
+    let (wanted, _) = discfiles::collect(std::slice::from_ref(&mod_dir)).unwrap();
+    let (files, report) = discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default()).unwrap();
+    assert_eq!(report[0].path, "map/b/b02.ipk.d/x.img");
+    assert_eq!(pixels(&at(&disc, &files, "map/b/b02.ipk", &["x.img"]), "wall"), [4, 4, 4, 0x80].repeat(64));
+    // a folder for a file with no common format is refused
+    mod_json(&mod_dir, json!({"replace": {"file:map/b/b02.ipk": "walls"}}));
+    let (wanted, _) = discfiles::collect(std::slice::from_ref(&mod_dir)).unwrap();
+    fails(discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default()), "stands only for");
+    // given in disc/ too
+    write(&mod_dir.join("disc/map/b/b02.ipk"), b"x");
+    fails(discfiles::collect(std::slice::from_ref(&mod_dir)), "is given twice");
+}
+
+#[test]
+fn lines_are_checked_as_mod_json_is_read() {
+    let folder = TempDir::new("lines");
+    let mod_dir = folder.path().join("m");
+    write(&mod_dir.join("a.png"), &png([0, 0, 0]));
+    write(&mod_dir.join("a.wav"), b"");
+    let case = |body: Value, words: &str| {
+        mod_json(&mod_dir, body);
+        fails(replace::lines(&mod_dir), words);
+    };
+    case(json!({"replace": {"c02a02": "a.png"}}), "a key is an asset id");
+    case(json!({"replace": {"texture:x": "b.png"}}), "not in the mod's folder");
+    case(json!({"replace": {"texture:x": "../a.png"}}), "not a path inside");
+    case(json!({"replace": {"texture:x": "a.wav"}}), "is not a PNG file");
+    case(json!({"replace": {"model:x": "a.png"}}), "is not a .gltf file");
+    case(json!({"replace": {"bank:x": "a.wav"}}), "is not a folder of WAVs");
+    case(json!({"replace": {"texture:x": {"file": "a.png", "volume": 3}}}), "unknown option \"volume\"");
+    case(json!({"replace": {"sound:x": {"file": "a.wav", "volume": 300}}}), "0 to 127");
+    case(json!({"add": {"sound:SE_NEW": "a.wav"}}), "say which bank");
+    case(json!({"add": {"sound:not a name": {"file": "a.wav", "bank": "SP_004"}}}), "named as a C constant");
+    case(json!({"add": {"texture:x": "a.png"}}), "add makes sound entries");
+    case(json!({"replace": ["texture:x"]}), "maps asset ids to files");
+    mod_json(
+        &mod_dir,
+        json!({"replace": {"sound:SE_X": {"file": "a.wav", "volume": 90}, "file:\\snd2\\x.snd": "a.wav"},
+                              "add": {"sound:SE_NEW": {"file": "a.wav", "bank": "SP_004"}}}),
+    );
+    let lines = replace::lines(&mod_dir).unwrap();
+    assert_eq!(lines[0].volume, Some(90));
+    assert_eq!(lines[1].disc_path(), "snd2/x.snd");
+    assert_eq!(lines[2].bank.as_deref(), Some("bank:SP_004"));
+    assert_eq!(replace::raw_files(&mod_dir).unwrap(), [("snd2/x.snd".to_string(), mod_dir.join("a.wav"))]);
+}
+
+/// An index of one bank of three entries, the second named SE_DOOR.
+fn bank_index() -> Index {
+    let place = Place { path: "snd2/sp/SP_004.snd".into(), members: vec![] };
+    let mut index = Index::default();
+    let mut add = |id: &str, kind: Kind, at: Option<usize>, bank: Option<&str>, entries: Option<usize>| {
+        let asset = ids::Asset {
+            id: id.into(),
+            kind,
+            name: String::new(),
+            places: vec![(place.clone(), at)],
+            bank: bank.map(str::to_string),
+            entries,
+        };
+        index.assets.insert(id.into(), asset);
+    };
+    add("bank:SP_004", Kind::Bank, None, None, Some(3));
+    add("sound:SP_004/0", Kind::Sound, Some(0), Some("bank:SP_004"), None);
+    add("sound:SE_DOOR", Kind::Sound, Some(1), Some("bank:SP_004"), None);
+    add("sound:SP_004/2", Kind::Sound, Some(2), Some("bank:SP_004"), None);
+    index.aliases.insert("sound:SP_004/1".into(), "sound:SE_DOOR".into());
+    index
+}
+
+fn line(module: &str, key: &str, file: &Path, add: bool) -> Line {
+    Line {
+        module: module.into(),
+        key: key.into(),
+        shown: String::new(),
+        file: file.to_path_buf(),
+        only: vec![],
+        volume: None,
+        bank: add.then(|| "bank:SP_004".to_string()),
+        add,
+    }
+}
+
+#[test]
+fn sounds_are_found_by_name_or_number_and_added_entries_numbered_on() {
+    let folder = TempDir::new("sounds");
+    let wav = folder.path().join("a.wav");
+    write(&wav, b"");
+    let bank = folder.path().join("bank");
+    write(&bank.join("002.wav"), b"");
+    let index = bank_index();
+    let found = replace::resolve(
+        &[
+            line("m", "sound:sp_004/1", &wav, false),
+            line("m", "sound:SE_BEEP", &wav, true),
+            line("n", "sound:SE_BEEP", &wav, true),
+            line("n", "bank:SP_004", &bank, false),
+        ],
+        &index,
+    )
+    .unwrap();
+    let entries: Vec<(&str, usize)> = found
+        .edits
+        .iter()
+        .map(|edit| match &edit.change {
+            Change::Entry(given) => (edit.id.as_str(), given.number),
+            _ => panic!("not an entry"),
+        })
+        .collect();
+    assert_eq!(entries, [("sound:SE_DOOR", 1), ("sound:SE_BEEP", 3), ("bank:SP_004", 2), ("sound:SE_BEEP", 4)]);
+    assert_eq!(found.added["m"]["SE_BEEP"], 3);
+    assert_eq!(found.added["n"]["SE_BEEP"], 4);
+    // two mods adding one name each have their own entry
+    assert!(replace::clashes(&found, &Default::default()).is_empty());
+
+    // one entry by two mods, by its bank's folder and by its id
+    let both =
+        replace::resolve(&[line("m", "sound:SP_004/2", &wav, false), line("n", "bank:SP_004", &bank, false)], &index)
+            .unwrap();
+    assert_eq!(
+        replace::clashes(&both, &Default::default()),
+        ["sound:SP_004/2 (mod m) and bank:SP_004 (mod n) both change snd2/sp/SP_004.snd entry 2"]
+    );
+    // and in one mod
+    fails(
+        replace::resolve(&[line("m", "sound:SP_004/2", &wav, false), line("m", "bank:SP_004", &bank, false)], &index),
+        "both give",
+    );
+    // a bank's folder adds no entries; an added name the disc has is replaced instead
+    write(&bank.join("003.wav"), b"");
+    fails(replace::resolve(&[line("m", "bank:SP_004", &bank, false)], &index), "add new entries with \"add\"");
+    fails(replace::resolve(&[line("m", "sound:SE_DOOR", &wav, true)], &index), "replace it instead");
+    fails(replace::resolve(&[line("m", "sound:SE_NOPE", &wav, false)], &index), "the disc has no asset");
+}
+
+#[test]
+fn a_migrated_mod_builds_the_same_files() {
+    let disc = disc("migrate");
+    let mod_dir = disc.mods.join("old");
+    let root = mod_dir.join(discfiles::DISC);
+    write(&root.join("chara/c01.chr.d/c.img.png/tex01.png"), &png([5, 5, 5]));
+    write(&root.join("map/b/b02.ipk.d/x.img.png/wall.png"), &png([6, 6, 6]));
+    write(&root.join("map/b/b02.ipk.d/x.img.png/notes.txt"), b"not a picture");
+    for (name, data) in tree::exported_model(&character(), "c01").unwrap() {
+        write(&root.join("chara/c01.chr.gltf").join(name), &data);
+    }
+    write(&root.join("map/a/a01.ipk.d/new.bin"), b"a new member");
+    mod_json(&mod_dir, json!({"start_at": "s51:500"}));
+    let old_files = |mod_dir: &Path| {
+        let (wanted, _) = discfiles::collect(&[mod_dir.to_path_buf()]).unwrap();
+        discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default()).unwrap().0
+    };
+    let before = old_files(&mod_dir);
+
+    let found = migrate::migrate(&mod_dir, &disc.iso, &disc.index).unwrap();
+    assert!(!root.exists());
+    let body: Value = serde_json::from_str(&fs::read_to_string(mod_dir.join("mod.json")).unwrap()).unwrap();
+    assert_eq!(body["start_at"], "s51:500");
+    assert_eq!(
+        body["replace"],
+        json!({
+            "texture:tex01": {"file": "textures/tex01.png", "only": ["chara/c01.chr.d/c.img"]},
+            "model:c01": {"file": "models/c01", "only": ["chara/c01.chr"]},
+            "file:map/a/a01.ipk.d/new.bin": "raw/map/a/a01.ipk.d/new.bin",
+            "texture:wall": {"file": "textures/wall.png", "only": ["map/b/b02.ipk.d/x.img"]},
+        })
+    );
+    assert_eq!(found.lines.len(), 4);
+    assert!(mod_dir.join("unused/map/b/b02.ipk.d/x.img.png/notes.txt").is_file());
+    assert!(found.notes.iter().any(|note| note.contains("notes.txt")));
+
+    let mut after = old_files(&mod_dir);
+    let lines = replace::lines(&mod_dir).unwrap();
+    let resolved = replace::resolve(&lines, &disc.index).unwrap();
+    after = replace::apply(&disc.iso, &resolved, &after).unwrap().0;
+    assert_eq!(before, after);
+    // nothing left to migrate
+    fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "no disc/ folder");
+}

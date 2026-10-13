@@ -11,9 +11,9 @@ use indexmap::IndexMap;
 
 use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
-use c2_script::{build, definitions, discfiles, index, mods, patches, sdk, startat, tree};
+use c2_script::{build, definitions, discfiles, index, migrate, mods, patches, replace, sdk, startat, tree};
 
-use crate::files;
+use crate::{asset_tree, files};
 use crate::Common;
 
 #[derive(Args)]
@@ -134,23 +134,28 @@ pub enum ModCommand {
         #[command(flatten)]
         common: Common,
     },
-    /// Copy game files off the disc (models, textures, sounds) into a mod, to replace them there.
+    /// Copy game assets off the disc (models, textures, sounds) into a mod, to replace them there.
     Asset {
         /// The disc image.
         iso: PathBuf,
         /// The mod's name.
         name: String,
-        /// Files as extract lays them out: snd2/sp/sp_000.snd, or a pack member as
-        /// chara/c01_base.chr.d/c01b.img.
+        /// Asset ids (texture:c02a02, model:c02fuku*, sound:SE_CURSOR_MOVE, bank:SP_003), each
+        /// copied in its common format with its line added to mod.json; or files as extract lays
+        /// them out (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied into disc/.
         #[arg(required = true)]
         paths: Vec<String>,
-        /// Export in a common format to edit there: png for textures.
+        /// Export files in a common format to edit there: png for textures.
         #[arg(long = "as")]
         form: Option<String>,
         #[arg(long, default_value = "mods")]
         mods: PathBuf,
+        /// Definition set naming the sound entries; the shipped PAL set when omitted.
+        #[arg(long)]
+        defs: Vec<PathBuf>,
     },
-    /// Compile what mods change, without a disc, and show their numbers.
+    /// Compile what mods change, without a disc, and show their numbers and the assets they
+    /// replace.
     Check {
         /// The decompiled source tree.
         source: PathBuf,
@@ -159,8 +164,24 @@ pub enum ModCommand {
         names: Vec<String>,
         #[arg(long, default_value = "mods")]
         mods: PathBuf,
+        /// The disc image (or extracted disc), to check every asset id resolves and no two mods
+        /// change one place.
+        #[arg(long)]
+        disc: Option<PathBuf>,
         #[command(flatten)]
         common: Common,
+    },
+    /// Turn a mod's disc/ folder into mod.json lines by asset id, moving its files out of disc/.
+    Migrate {
+        /// The disc image the mod's files replace.
+        iso: PathBuf,
+        /// The mod's name.
+        name: String,
+        #[arg(long, default_value = "mods")]
+        mods: PathBuf,
+        /// Definition set naming the sound entries; the shipped PAL set when omitted.
+        #[arg(long)]
+        defs: Vec<PathBuf>,
     },
 }
 
@@ -179,6 +200,55 @@ fn shown(path: &Path) -> String {
     path.display().to_string()
 }
 
+/// The places and changes of the chosen mods' asset ids, read from the disc's index of ids, which
+/// is only made when a mod names an id.
+fn resolved(mod_dirs: &[PathBuf], disc: &Path, defs: &[PathBuf]) -> Result<replace::Resolved> {
+    let lines = replace::all_lines(mod_dirs)?;
+    if !replace::needs_index(&lines) {
+        return Ok(replace::Resolved::default());
+    }
+    Ok(replace::resolve(&lines, &asset_tree::index_of(disc, defs)?)?)
+}
+
+/// The sound entries the mods add, as constants their patches see.
+fn with_added(plan: &mut patches::Plan, resolved: &replace::Resolved) {
+    for (module, added) in &resolved.added {
+        plan.numbers.entry(module.clone()).or_default().extend(added.iter().map(|(name, number)| (name.clone(), *number)));
+        for patch in plan.patches.iter_mut().filter(|patch| patch.module == *module) {
+            patch.numbers.extend(added.iter().map(|(name, number)| (name.clone(), *number)));
+        }
+    }
+}
+
+/// What a mod's id lines reach, one line each.
+fn reached_lines(resolved: &replace::Resolved, module: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (owner, key, ids) in &resolved.reached {
+        if owner != module {
+            continue;
+        }
+        let places = |id: &String| {
+            let mut places: Vec<String> = Vec::new();
+            for edit in resolved.edits.iter().filter(|edit| edit.module == module && edit.id == *id) {
+                if !places.contains(&edit.place.display()) {
+                    places.push(edit.place.display());
+                }
+            }
+            places.len()
+        };
+        if let Some(number) = resolved.added.get(module).and_then(|added| added.get(key.split_once(':').map_or("", |(_, name)| name))) {
+            out.push(format!("adds {key} to {} as entry {number}", ids.join(", ")));
+            continue;
+        }
+        for id in ids {
+            let count = places(id);
+            let via = if id.eq_ignore_ascii_case(key) { String::new() } else { format!(" (by {key})") };
+            out.push(format!("replaces {id}{via} at {count} place{}", if count == 1 { "" } else { "s" }));
+        }
+    }
+    out
+}
+
 pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     let common = &args.common;
     let defs = common.definitions()?;
@@ -193,8 +263,14 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     if !disc_clashes.is_empty() {
         bail!(discfiles::clash_text(&disc_clashes));
     }
+    let resolved = resolved(&mod_dirs, &args.iso, &common.def_sets())?;
+    let id_clashes = replace::clashes(&resolved, &disc_files);
+    if !id_clashes.is_empty() {
+        bail!("the chosen mods cannot be built together:\n  {}", id_clashes.join("\n  "));
+    }
     let consts = index::constants(index::tree_headers(&args.source, &defs, &sdk_dir)?.values());
-    let plan = mods::patch_plan(&mod_dirs, &args.source, &consts, true)?;
+    let mut plan = mods::patch_plan(&mod_dirs, &args.source, &consts, true)?;
+    with_added(&mut plan, &resolved);
     for mod_dir in &mod_dirs {
         let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
         let mine: Vec<&patches::Patch> = plan.patches.iter().filter(|patch| patch.module == name).collect();
@@ -203,10 +279,13 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             name,
             mine.len(),
             mods::contents(mod_dir, &args.source)?.len(),
-            discfiles::mod_files(mod_dir)?.len()
+            discfiles::game_files(mod_dir)?.len()
         );
         for patch in mine {
             println!("  patch {}", patches::summary(patch));
+        }
+        for line in reached_lines(&resolved, &name) {
+            println!("  {line}");
         }
         let given: BTreeMap<&String, &i64> = plan.numbers.get(&name).map(|found| found.iter().collect()).unwrap_or_default();
         for (constant, number) in given {
@@ -312,6 +391,24 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             );
         }
     }
+    let (files, changed) = replace::apply(&args.iso, &resolved, &files)?;
+    for item in &changed {
+        println!(
+            "replaced: {} ({}; mod {}, {} bytes, was {})",
+            item.place.display(),
+            item.ids.join(", "),
+            item.modules.join(", "),
+            item.data.len(),
+            item.old
+        );
+        if item.data.len() > item.old {
+            println!(
+                "warning: {} grew by {} bytes; if the game runs short of memory where it loads, keep it nearer the original's size",
+                item.place.display(),
+                item.data.len() - item.old
+            );
+        }
+    }
     let written = rebuild::write_disc(&args.iso, &args.output, &files)?;
     for item in &written.placed {
         let how = if item.added {
@@ -331,13 +428,14 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let mut wrong = build::check(&args.output, &found.scripts)?;
     wrong.extend(discfiles::check(&args.output, &replaced)?);
+    wrong.extend(replace::check(&args.output, &changed)?);
     for path in &wrong {
         println!("reads back wrong: {path}");
     }
     println!(
         "{} scripts changed, {} game files replaced or added, {} disc files rewritten, written to {}",
         found.scripts.len(),
-        replaced.len(),
+        replaced.len() + changed.len(),
         files.len(),
         shown(&args.output)
     );
@@ -386,13 +484,54 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             println!("{} files applied to {}", applied.len(), shown(source));
             Ok(ExitCode::SUCCESS)
         }
-        ModCommand::Check { source, names, mods: mods_dir, common } => {
+        ModCommand::Check { source, names, mods: mods_dir, disc, common } => {
             let defs = common.definitions()?;
             let sdk_dir = common.sdk_dir();
             let headers = sdk::header_texts(&defs, &sdk_dir)?;
             let tables = common.tables()?;
             let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
-            let result = mods::check(&mod_folders(mods_dir, names)?, source, &tools, &default_constants(source)?)?;
+            let mod_dirs = mod_folders(mods_dir, names)?;
+            let (raw, raw_clashes) = discfiles::collect(&mod_dirs)?;
+            if !raw_clashes.is_empty() {
+                bail!(discfiles::clash_text(&raw_clashes));
+            }
+            let lines = replace::all_lines(&mod_dirs)?;
+            let added = match disc {
+                Some(disc) => {
+                    let resolved = resolved(&mod_dirs, disc, &common.def_sets())?;
+                    let clashes = replace::clashes(&resolved, &raw);
+                    if !clashes.is_empty() {
+                        bail!("the chosen mods cannot be built together:\n  {}", clashes.join("\n  "));
+                    }
+                    for mod_dir in &mod_dirs {
+                        let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
+                        for line in reached_lines(&resolved, &name) {
+                            println!("{name}: {line}");
+                        }
+                    }
+                    resolved.added
+                }
+                None => {
+                    let clashes = replace::key_clashes(&mod_dirs)?;
+                    if !clashes.is_empty() {
+                        let shown: Vec<String> = clashes.iter().map(|(id, names)| format!("{id} ({})", names.join(", "))).collect();
+                        bail!("these assets are replaced by more than one of the chosen mods:\n  {}", shown.join("\n  "));
+                    }
+                    for line in &lines {
+                        println!("{}: {} {}: {}", line.module, if line.add { "adds" } else { "replaces" }, line.key, line.shown);
+                    }
+                    if replace::needs_index(&lines) {
+                        println!("asset ids not looked up: pass --disc with the disc image to check they resolve");
+                    }
+                    // an added entry's number needs the disc; its name compiles all the same
+                    let mut added: BTreeMap<String, IndexMap<String, i64>> = BTreeMap::new();
+                    for line in lines.iter().filter(|line| line.add && !line.is_file()) {
+                        added.entry(line.module.clone()).or_default().insert(line.key["sound:".len()..].to_string(), 0);
+                    }
+                    added
+                }
+            };
+            let result = mods::check_with(&mod_dirs, source, &tools, &default_constants(source)?, &added)?;
             for (name, found) in &result.numbers {
                 let sorted: BTreeMap<&String, &i64> = found.iter().collect();
                 for (constant, number) in sorted {
@@ -405,9 +544,33 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             println!("{} scripts compiled, {} failed", result.compiled, result.errors.len());
             Ok(if result.errors.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
         }
-        ModCommand::Asset { iso, name, paths, form, mods: mods_dir } => {
+        ModCommand::Migrate { iso, name, mods: mods_dir, defs } => {
             let mod_dir = mods::folder(mods_dir, name)?;
-            for path in discfiles::copy_out(iso, &mod_dir, paths, form.as_deref())? {
+            let found = migrate::migrate(&mod_dir, iso, &asset_tree::index_of(iso, defs)?)?;
+            for (key, value) in &found.lines {
+                println!("{key}: {}", c2_py::json::dumps(value, &c2_py::json::Options::plain().unicode()));
+            }
+            for note in &found.notes {
+                println!("note: {note}");
+            }
+            println!("{} lines written to {}", found.lines.len(), shown(&mod_dir.join(mods::INDEX)));
+            Ok(ExitCode::SUCCESS)
+        }
+        ModCommand::Asset { iso, name, paths, form, mods: mods_dir, defs } => {
+            let mod_dir = mods::folder(mods_dir, name)?;
+            let (keys, paths): (Vec<String>, Vec<String>) =
+                paths.iter().cloned().partition(|path| c2_assets::ids::kind_of(path).is_some());
+            if !keys.is_empty() {
+                for (id, file, written) in replace::copy_out(iso, &mod_dir, &keys, &asset_tree::index_of(iso, defs)?)? {
+                    let place = file.split('/').fold(mod_dir.clone(), |folder, part| folder.join(part));
+                    if written {
+                        println!("{}: {id}; edit it there, and build puts it at every place the disc has it", shown(&place));
+                    } else {
+                        println!("{}: {id} is in the mod already; left as it is", shown(&place));
+                    }
+                }
+            }
+            for path in discfiles::copy_out(iso, &mod_dir, &paths, form.as_deref())? {
                 let place = path.split('/').fold(mod_dir.join(discfiles::DISC), |folder, part| folder.join(part));
                 println!("{}: replace it there, and build puts it on the disc", shown(&place));
             }

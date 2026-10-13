@@ -16,8 +16,10 @@
 //! tree instead. "start_at" in mod.json gives the scene build --start-at uses when the mod is
 //! built.
 //!
-//! Game files the mod replaces (models, textures, sounds) are under disc/, laid out as extract lays
-//! the disc out (discfiles).
+//! Game assets the mod replaces (textures, models, sounds) are named by asset id in mod.json's
+//! "replace", with the files anywhere in the mod (replace). Mods made before that keep game files
+//! under disc/, laid out as extract lays the disc out (discfiles); mod migrate turns them into
+//! replace lines. "title" and "version" in mod.json are shown by mod list.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -221,11 +223,28 @@ pub struct Checked {
 /// Compiles every script the chosen mods change, as build would, without a disc: the scripts their
 /// files replace or reach through a library, and the scripts their patches change.
 pub fn check(mod_dirs: &[PathBuf], tree_dir: &Path, tools: &Toolchain, consts: &IndexMap<String, i64>) -> Result<Checked> {
+    check_with(mod_dirs, tree_dir, tools, consts, &BTreeMap::new())
+}
+
+/// check, with constants each mod's patches see besides their numbers ({mod: {name: value}}): the
+/// sound entries the mods add (replace).
+pub fn check_with(
+    mod_dirs: &[PathBuf],
+    tree_dir: &Path,
+    tools: &Toolchain,
+    consts: &IndexMap<String, i64>,
+    added: &BTreeMap<String, IndexMap<String, i64>>,
+) -> Result<Checked> {
     let (texts, clashes) = overlay(mod_dirs, tree_dir, consts)?;
     if !clashes.is_empty() {
         return Err(Error::invalid(clash_text(&clashes)));
     }
-    let found = patch_plan(mod_dirs, tree_dir, consts, true)?;
+    let mut found = patch_plan(mod_dirs, tree_dir, consts, true)?;
+    for patch in &mut found.patches {
+        if let Some(added) = added.get(&patch.module) {
+            patch.numbers.extend(added.iter().map(|(name, value)| (name.clone(), *value)));
+        }
+    }
     let mut scripts: BTreeSet<String> =
         texts.keys().filter(|path| path.ends_with(source::EXTENSION) && !index::is_library(path)).cloned().collect();
     scripts.extend(found.scripts.keys().cloned());
@@ -556,6 +575,10 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
             counted = format!("{} patch{}, {}", mine.len(), if mine.len() == 1 { "" } else { "es" }, counted);
         }
         lines.push(format!("{name}  ({counted})"));
+        let about: Vec<&str> = ["title", "version"].iter().filter_map(|key| found[*key].as_str()).collect();
+        if !about.is_empty() {
+            lines.push(format!("    {}", about.join(" ")));
+        }
         lines.extend(mine.iter().map(|patch| format!("    patch {}", patches::summary(patch))));
         for (kind, names) in numbers::requests(own.iter().map(|(_, text)| text)) {
             for asked in names {
@@ -568,6 +591,7 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         paths.sort();
         lines.extend(paths.iter().map(|path| format!("    {path}")));
         lines.extend(discfiles::mod_files(mod_dir)?.keys().map(|path| format!("    replaces {path}")));
+        lines.extend(crate::replace::described(mod_dir)?.into_iter().map(|line| format!("    {line}")));
         for addition in found["additions"].as_array().into_iter().flatten() {
             let where_ = match addition["map"].as_str().filter(|map| !map.is_empty()) {
                 Some(map) => map.to_string(),
@@ -587,6 +611,7 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
     let (_, mut clashes) = overlay(&mods, tree_dir, consts)?;
     let (_, disc_clashes) = discfiles::collect(&mods)?;
     clashes.extend(disc_clashes);
+    clashes.extend(crate::replace::key_clashes(&mods)?);
     if !clashes.is_empty() {
         lines.push(String::new());
         lines.push("mods that cannot be built together:".into());

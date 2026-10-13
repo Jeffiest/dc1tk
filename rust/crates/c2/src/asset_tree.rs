@@ -11,6 +11,7 @@ use clap::Subcommand;
 use rayon::prelude::*;
 use serde_json::Value;
 
+use c2_assets::ids::Index;
 use c2_assets::tree::{self, DiscFile, SoundNames};
 use c2_assets::tree_check;
 use c2_disc::archive::Archive;
@@ -119,7 +120,7 @@ impl Source {
 }
 
 /// The sound entry names of the definition sets' headers (include/*.h), later sets winning.
-fn sound_names(defs: &[PathBuf]) -> Result<SoundNames> {
+pub(crate) fn sound_names(defs: &[PathBuf]) -> Result<SoundNames> {
     let sets = if defs.is_empty() { vec![files::default_defs()] } else { defs.to_vec() };
     let mut names = SoundNames::new();
     for set in sets {
@@ -138,6 +139,14 @@ fn sound_names(defs: &[PathBuf]) -> Result<SoundNames> {
         }
     }
     Ok(names)
+}
+
+/// The asset ids of a disc image or extracted disc and every place of each, read straight from the
+/// disc (as `c2 assets` names them, without converting anything), the definition sets naming the
+/// sound entries.
+pub(crate) fn index_of(source: &Path, defs: &[PathBuf]) -> Result<Index> {
+    let disc = Source::open(source)?;
+    Ok(Index::from_disc(&disc.files()?, &sound_names(defs)?))
 }
 
 /// What a tree's folder holds that a new tree replaces.
