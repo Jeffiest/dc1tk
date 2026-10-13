@@ -317,9 +317,13 @@ character pack; packs inside packs work the same way).
   template: the skeleton keeps its frames, names and order, since motions
   and cloth find frames by name, and meshes are matched to frames by name
   (Blender's `.001` suffixes are ignored). Keep a mesh to 32 bones and 4
-  weights per vertex. Changed PNGs go into the pack's textures by picture
-  name; textures the model takes from other packs are changed in those.
-  Unedited exports build back to the disc's own bytes. Max's and Monica's
+  weights per vertex. Changed PNGs, in `textures/` or beside the glTF as
+  Blender writes them, go into the pack's textures by picture name;
+  textures the model takes from other packs are changed in those.
+  Unedited exports build back to the disc's own bytes. Blender writes every
+  mesh its own way, so after a round trip through it every mesh is rebuilt,
+  as triangle lists rather than the game's strips: the model grows a few
+  percent (Monica's pack by 4%). Max's and Monica's
   clothes are separate costume packs (`mainchr/c01fuku1.chr` and the like):
   their own packs hold the skeleton and motions. Importing from glTF is new
   and not yet tried in the game. See [the model formats](assets/models.md).

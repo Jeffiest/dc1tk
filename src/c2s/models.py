@@ -122,7 +122,7 @@ def build(folder, original):
         source.mkdir()
         files = unpacked(original, source)
         gltf = files["stem"] + ".gltf"
-        model_parts = [path for path in given if not path.startswith(TEXTURES + "/")]
+        model_parts = [path for path in given if not path.lower().endswith(".png")]
         if any(given.get(path) != exported.get(path) for path in model_parts):
             if gltf not in given:
                 raise ValueError("the folder has no %s, the model's glTF" % gltf)
@@ -152,15 +152,19 @@ def build(folder, original):
     return pack
 
 
-# The pack with the texture PNGs that differ from the export put into its texture files.
+# The pack with the texture PNGs that differ from the export put into its texture files. A PNG
+# counts wherever it is in the folder (Blender's glTF export writes them beside the .gltf), by its
+# picture name.
 def with_textures(pack, folder, given, exported):
     pictures = pack_pictures(pack)
     changed = {}
     for path, content in given.items():
-        if path.startswith(TEXTURES + "/") and content != exported.get(path):
+        if path.lower().endswith(".png") and content != exported.get("%s/%s" % (TEXTURES, Path(path).name)):
             name = Path(path).stem
             if name not in pictures:
                 raise ValueError("%s: the pack has no picture %s; textures from other packs are changed there" % (path, name))
+            if any(png.name == Path(path).name for pngs in changed.values() for png in pngs):
+                raise ValueError("%s: picture %s is given twice in the folder" % (path, name))
             changed.setdefault(pictures[name][0], []).append(Path(folder) / path)
     for member, pngs in sorted(changed.items()):
         with tempfile.TemporaryDirectory() as temp:
