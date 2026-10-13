@@ -21,7 +21,7 @@ c2 build extracted/scripts dc2.iso -o modded.iso --mod castle --mod other   buil
 c2 mod list extracted/scripts                    every mod, its patches, numbers and files
 c2 mod new extracted/scripts castle map/s/s51_raybrandt_castle/s51_1.c   copy whole files into a mod
 c2 mod test extracted/scripts calculator         run a mod's tests.c without the game
-c2 assets dc2.iso -o extracted/assets            every texture, model and sound, by asset id
+c2 assets dc2.iso --force                        write the asset tree again (setup writes it)
 c2 mod asset dc2.iso castle texture:e254a1       copy an asset into a mod to replace it
 c2 mod migrate dc2.iso castle                    turn a mod's disc/ folder into asset ids
 c2 play modded.iso                               boot an image in PCSX2 (or build ... --play)
@@ -97,11 +97,11 @@ only among the scripts decompiled together.
 does for scripts: it writes each distinct one once, in a format common
 tools open (PNG, glTF, WAV), with `manifest.json` giving each its id
 (`texture:e254a1`, `model:c02fuku*`, `sound:SE_CURSOR_MOVE`) and every place
-the disc has it. `setup` writes it into `extracted/assets/`; to write it
-again:
+the disc has it. `setup` writes it into `extracted/assets/` (`--no-assets`
+leaves it out); to write it again:
 
 ```
-c2 assets dc2.iso -o extracted/assets   (or c2 assets extracted/disc; --force replaces a tree already there)
+c2 assets dc2.iso --force      (or c2 assets extracted/disc; -o DIR writes it elsewhere)
 ```
 
 The ids are what a mod names the assets it replaces by (see

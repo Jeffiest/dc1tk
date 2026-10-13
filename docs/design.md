@@ -15,7 +15,7 @@ scripts into a tree of C. The asset tree does the same for everything else:
 format common tools open.
 
 ```
-c2 assets extracted/disc -o extracted/assets    (or c2 assets pal.iso; --force replaces a tree already there)
+c2 assets extracted/disc    (or c2 assets pal.iso; writes extracted/assets/; --force replaces a tree already there)
 ```
 
 ```
