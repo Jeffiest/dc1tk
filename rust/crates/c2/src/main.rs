@@ -141,6 +141,19 @@ enum Command {
         #[command(flatten)]
         common: Common,
     },
+    /// Save flags the scripts and engine use, and which are free.
+    Flags {
+        /// A decompiled source tree.
+        source: PathBuf,
+        /// List every used flag with its name and users.
+        #[arg(long)]
+        used: bool,
+        /// Show every use of this flag.
+        #[arg(long)]
+        flag: Option<i64>,
+        #[command(flatten)]
+        common: Common,
+    },
     /// Build a script from assembly text.
     Assemble {
         source: PathBuf,
@@ -409,6 +422,20 @@ fn run_compile_tree(tree: &Path, extracted: &Path, common: &Common) -> Result<Ex
     Ok(if wrong == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) })
 }
 
+fn run_flags(source: &Path, used: bool, flag: Option<i64>, common: &Common) -> Result<ExitCode> {
+    use c2_script::{flags, index};
+    let defs = common.definitions()?;
+    let consts = index::constants(index::tree_headers(source, &defs, &common.sdk_dir())?.values());
+    let found = flags::scan(source, &consts)?;
+    let text = match flag {
+        Some(number) => flags::who(&found, number, &consts),
+        None if used => flags::used_list(&found, &consts),
+        None => flags::summary(&found),
+    };
+    files::write_output(None, &format!("{text}\n"))?;
+    Ok(ExitCode::SUCCESS)
+}
+
 fn run_index_dump(tree: &Path, names: &[String], common: &Common) -> Result<ExitCode> {
     use c2_script::index;
     let defs = common.definitions()?;
@@ -565,6 +592,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Extract { iso, out } => run_extract(iso, out),
         Command::Disassemble { stb, output, table, common } => run_disassemble(stb, output.as_deref(), table, common),
         Command::Assemble { source, output, natives } => run_assemble(source, output, natives),
+        Command::Flags { source, used, flag, common } => run_flags(source, *used, *flag, common),
         Command::Compile { source, output, table, common } => run_compile(source, output.as_deref(), table, common),
         Command::CompileTree { tree, extracted, common } => run_compile_tree(tree, extracted, common),
         Command::Decompile { stb, output, force, table, common } => {

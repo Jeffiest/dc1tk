@@ -1,6 +1,7 @@
 //! Dark Chronicle's scripts: the .stb format, its text assembly, the native tables, and (to come)
 //! decompiling to C and compiling back.
 
+pub mod additions;
 pub mod asm;
 pub mod assets;
 pub mod compile;
@@ -9,6 +10,7 @@ pub mod decompiler;
 pub mod definitions;
 pub mod disc;
 pub mod fingerprint;
+pub mod flags;
 pub mod index;
 pub mod library;
 pub mod maps;
@@ -16,6 +18,7 @@ pub mod messages;
 pub mod names;
 pub mod natives;
 pub mod notes;
+pub mod numbers;
 pub mod pathnames;
 pub mod sdk;
 pub mod slots;

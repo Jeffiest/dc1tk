@@ -49,8 +49,8 @@ fn old_numbering() -> &'static Regex {
 
 /// Every integer constant the headers define: enum members (including program names such as
 /// story_50) and #defines.
-pub fn constants<'a>(texts: impl IntoIterator<Item = &'a String>) -> HashMap<String, i64> {
-    let mut found = HashMap::new();
+pub fn constants<'a>(texts: impl IntoIterator<Item = &'a String>) -> IndexMap<String, i64> {
+    let mut found = IndexMap::new();
     for text in texts {
         for capture in constant_pattern().captures_iter(text) {
             let name = capture.get(1).or_else(|| capture.get(2)).unwrap().as_str();
@@ -172,7 +172,7 @@ pub enum Folded {
 /// constants, + - * / % & | << >> and parentheses, or a string literal. None when it depends on a
 /// variable or anything else. (The Python tools read the expression as Python; this reads the
 /// part of Python's expression syntax that can fold to a value, which gives the same values.)
-pub fn value(expr: &str, consts: &HashMap<String, i64>) -> Option<Folded> {
+pub fn value(expr: &str, consts: &IndexMap<String, i64>) -> Option<Folded> {
     let tokens = pyexpr::tokens(c2_py::strip(expr))?;
     let mut parser = pyexpr::Parser { tokens, position: 0, consts };
     let found = parser.or_expr()?;
@@ -187,7 +187,7 @@ mod pyexpr {
     //! | then & then << >> then + - then * / % then unary - (the rest of Python's operators,
     //! which fold to nothing, are refused, as is anything else).
 
-    use std::collections::HashMap;
+    use indexmap::IndexMap;
 
     use super::Folded;
 
@@ -394,7 +394,7 @@ mod pyexpr {
     pub struct Parser<'a> {
         pub tokens: Vec<Token>,
         pub position: usize,
-        pub consts: &'a HashMap<String, i64>,
+        pub consts: &'a IndexMap<String, i64>,
     }
 
     /// An expression's value: None for one that parses but does not fold.
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn folds_like_python() {
-        let consts = HashMap::from([("STORY".to_string(), 50), ("FLAG".to_string(), 3)]);
+        let consts = IndexMap::from([("STORY".to_string(), 50), ("FLAG".to_string(), 3)]);
         let cases = [
             ("1 + 2 * 3", Some(Folded::Int(7))),
             ("(1 + 2) * 3", Some(Folded::Int(9))),
