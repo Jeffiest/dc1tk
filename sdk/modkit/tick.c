@@ -1,6 +1,6 @@
 // modkit tick: lets a map run code on a timer while the player plays, for monster scripts. Include
-// with #include "modkit/tick.c" in the AI of a monster the map places, and call modkit_tick before
-// the monster's frame waits (fork the library that holds them, as the castle Golem mod does).
+// with #include "modkit/tick.c" in a patch of the AI of a monster the map places, and call
+// modkit_tick from a #pragma every_frame function, which runs before each of the monster's waits.
 //
 // Event scripts cannot run beside play (the player waits while an event runs), but monster scripts
 // do, and a monster can ask the map for a program with run_event_script. A map program that never

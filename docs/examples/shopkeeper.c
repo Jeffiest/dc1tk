@@ -17,8 +17,9 @@
 #define SHOPKEEPER 8
 
 // Save data this script uses. A flag is one bit; a counter is a 16-bit number. Both survive saving
-// and loading. Pick numbers the game does not use: `python cli.py flags decompiled` lists the free
-// flags (825 to 2046), and the counter here stands in for one the mod reserves.
+// and loading. The flags are numbers the game does not use (825 to 2046); in a mod, write
+// NEW_FLAG(FLAG_BRIDGE_REPAIRED); and the like instead, and the build picks numbers no other mod
+// uses. The counter here stands in for one the mod reserves.
 #define FLAG_BRIDGE_REPAIRED 1205
 #define FLAG_GIFT_GIVEN 1210
 #define COUNTER_FRIENDSHIP 40

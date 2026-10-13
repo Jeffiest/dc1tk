@@ -21,7 +21,8 @@
 #define FRIEND 8
 
 // A save flag: one bit in the save data that stays set after saving and loading. Flags 825 to 2046
-// are not used by the game (`python cli.py flags decompiled` lists the free ones).
+// are not used by the game. In a mod, write NEW_FLAG(FLAG_REUNION_SEEN); instead and the build picks
+// a number no other mod uses.
 #define FLAG_REUNION_SEEN 1200
 
 PROGRAM(map_start, play_reunion);

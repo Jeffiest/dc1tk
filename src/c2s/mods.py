@@ -3,11 +3,16 @@ import re
 import shutil
 from pathlib import Path
 
-from c2s import additions, definitions, index, library, parse, pathnames, source, tree, vm
+from c2s import additions, definitions, index, library, numbers, parse, patches, pathnames, rebuild, source, tree, vm
 
-# Mods: folders of edited and added files, layered over a decompiled tree. A mod is a folder in the
-# mods folder (mods/castle-golems) holding FILES, laid out like the tree but with only the files the
-# mod changes or adds, and INDEX, what is known about each file: the hash of the decompiler's version
+# Mods: changes layered over a decompiled tree. A mod is a folder in the mods folder
+# (mods/castle-golems). Its patches, .c files that say which scripts they change with
+# #pragma target, hold only the functions, globals and programs they add or override, and are
+# merged into those scripts when they are built (patches.py); several mods can patch one script,
+# and the numbers they ask for with NEW_FLAG and the like are given by build (numbers.py).
+#
+# A mod can also hold whole files: FILES, laid out like the tree but with only the files the mod
+# replaces or adds, and INDEX, what is known about each file: the hash of the decompiler's version
 # it was made from and its path without readable names. Edit a mod's files where they are (the
 # folder has its own compile_flags.txt), or edit the tree and save the changes into a mod.
 #
@@ -37,7 +42,105 @@ def entries(mod_dir):
 
 
 def exists(mod_dir):
-    return (Path(mod_dir) / FILES).is_dir() or (Path(mod_dir) / INDEX).is_file()
+    return (Path(mod_dir) / FILES).is_dir() or (Path(mod_dir) / INDEX).is_file() or bool(sources(mod_dir))
+
+
+SOURCE_SUFFIXES = (".c", ".h")
+
+
+# The mod's own source files, outside files/: its patches (patches.py), the libraries and headers
+# they include, and tests.c. {path: text}.
+def sources(mod_dir):
+    root = Path(mod_dir)
+    if not root.is_dir():
+        return {}
+    found = {}
+    for path in sorted(root.rglob("*")):
+        parts = path.relative_to(root).parts
+        if (path.is_file() and path.suffix in SOURCE_SUFFIXES and parts[0] != FILES
+                and not any(part.startswith(".") for part in parts)):
+            found[path] = path.read_text(encoding="utf-8")
+    return found
+
+
+# The chosen mods' patches and numbers (patches.plan), with numbers kept in the mods folder's
+# numbers.json when lock is true. No mod is given a number any mod in the folder writes by hand,
+# chosen or not, so building them together later cannot clash.
+def patch_plan(mod_dirs, tree_dir, consts=None, lock=True):
+    mod_list = [{"name": Path(mod_dir).name, "texts": sources(mod_dir),
+                 "written": list(contents(mod_dir, tree_dir).values())} for mod_dir in mod_dirs]
+    folder = Path(mod_dirs[0]).parent if mod_dirs else None
+    others = [path for path in sorted(folder.iterdir()) if path.is_dir() and path not in map(Path, mod_dirs) and exists(path)] \
+        if folder is not None and folder.is_dir() else []
+    written = [text for other in others for text in list(sources(other).values()) + list(contents(other, tree_dir).values())]
+    held = folder / numbers.LOCK if lock and folder is not None else None
+    return patches.plan(mod_list, tree_dir, consts, held, written)
+
+
+# Starts or extends a patch of the mod: copies functions of the scripts --map/--script/... picks
+# (from the English one of a map's languages) into NAME.c in the mod, each after #pragma override.
+def override(tree_dir, mod_dir, kind, value, functions):
+    scripts = patches.Scripts(tree_dir)
+    chosen = sorted(scripts.picked({"kind": kind, "values": [value]}))
+    if not chosen:
+        raise SystemExit("--%s %s picks no script in %s" % (kind, value, tree_dir))
+    model = next((path for path in chosen if scripts.plain[path].endswith("_1" + source.EXTENSION)), chosen[0])
+    found = patches.function_texts(tree_dir, model, functions)
+    missing = [name for name in functions if name not in found]
+    if missing:
+        raise SystemExit("%s has no function %s" % (model, ", ".join(missing)))
+    # the model's other languages: where their copies differ (text, mostly), each keeps its own
+    variants = [path for path in chosen if path != model and index.variant_key(path) == index.variant_key(model)
+                and patches.language_of(scripts.plain[path]) > 0]
+    if variants:
+        copies = {path: patches.function_texts(tree_dir, path, functions) for path in variants}
+        for name in functions:
+            texts = {patches.language_of(scripts.plain[model]): found[name]}
+            texts.update({patches.language_of(scripts.plain[path]): copies[path][name]
+                          for path in variants if name in copies[path]})
+            found[name] = patches.language_text(texts)
+    path = Path(mod_dir) / (re.sub(r"[^A-Za-z0-9_.-]", "_", Path(value).stem) + source.EXTENSION)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = path.read_text(encoding="utf-8") if path.is_file() else patches.patch_header(
+        Path(mod_dir).name, kind, value, (Path(tree_dir) / model).read_text(encoding="utf-8"))
+    added = [name for name in functions if not re.search(r"^\w+\s+%s\s*\(" % re.escape(name), text, re.M)]
+    for name in added:
+        text = text.rstrip("\n") + "\n\n#pragma override\n" + found[name].rstrip("\n") + "\n"
+    path.write_text(text, encoding="utf-8")
+    return {"path": path, "added": added, "scripts": chosen}
+
+
+# compile_flags.txt in the mod's own folder, so an editor reads its patches with the SDK, the
+# mod's libraries and the tree's.
+def write_patch_flags(mod_dir, tree_dir, sdk_dir, definition_sets):
+    (Path(mod_dir) / source.EDITOR_FLAGS).write_text(source.editor_flags(sdk_dir, definition_sets, tree_dir), encoding="utf-8")
+
+
+# Compiles every script the chosen mods change, as build would, without a disc: the scripts their
+# files replace or reach through a library, and the scripts their patches change. Returns the
+# numbers the mods were given, how many scripts compiled, and [(script, error)].
+def check(mod_dirs, tree_dir, defs, tables, sdk_dir=None):
+    texts, clashes = overlay(mod_dirs, tree_dir)
+    if clashes:
+        raise SystemExit(clash_text(clashes))
+    found = patch_plan(mod_dirs, tree_dir)
+    scripts = {path for path in texts if path.endswith(source.EXTENSION) and not index.is_library(path)}
+    scripts |= set(found["scripts"])
+    changed_libraries = [path for path in texts if index.is_library(path)]
+    if changed_libraries:
+        users = index.includers(index.outlines(tree_dir))
+        for path in changed_libraries:
+            scripts |= set(users.get(path, []))
+    headers = definitions.header_texts(defs, sdk_dir or patches.sdk.SDK_DIR)
+    errors = []
+    for path in sorted(scripts):
+        patched = (tree_dir, path, found["scripts"][path]) if path in found["scripts"] else None
+        try:
+            rebuild.compiled(Path(tree_dir) / path, defs, headers, tables, texts.get(path), pathnames.unnamed(tree_dir, path),
+                             texts, sdk_dir, patched)
+        except ValueError as error:
+            errors.append((path, str(error)))
+    return {"compiled": len(scripts), "errors": errors, "numbers": found["numbers"]}
 
 
 def write_entries(mod_dir, found):
@@ -202,6 +305,8 @@ def apply(mod_dirs, tree_dir, force=False):
         target.write_text(text, encoding="utf-8")
     warnings = ["%s changed in the decompiler's output since %s was made; compare them" % (path, Path(mod_dir).name)
                 for mod_dir in mod_dirs for path in stale(mod_dir, tree_dir)]
+    warnings += ["%s's patch %s is merged in by build only, not written into the tree" % (Path(mod_dir).name, path.name)
+                 for mod_dir in mod_dirs for path, text in sources(mod_dir).items() if patches.is_patch(text)]
     return {"applied": sorted(texts), "warnings": warnings}
 
 
@@ -211,10 +316,21 @@ def listing(mods_dir, tree_dir):
     if not mods:
         return "no mods in %s" % mods_dir
     lines = []
+    held = numbers.read_lock(root / numbers.LOCK)
     for mod_dir in mods:
         texts = contents(mod_dir, tree_dir)
         found = entries(mod_dir)
-        lines.append("%s  (%d file%s)" % (mod_dir.name, len(texts), "" if len(texts) == 1 else "s"))
+        own = sources(mod_dir)
+        _, mine = patches.located([{"name": mod_dir.name, "texts": own}], tree_dir)
+        counted = "%d file%s" % (len(texts), "" if len(texts) == 1 else "s")
+        if mine:
+            counted = "%d patch%s, " % (len(mine), "" if len(mine) == 1 else "es") + counted
+        lines.append("%s  (%s)" % (mod_dir.name, counted))
+        lines += ["    patch " + patches.summary(patch) for patch in mine]
+        for kind, names in sorted(numbers.requests(own.values()).items()):
+            for name in sorted(names):
+                number = held[kind].get("%s/%s" % (mod_dir.name, name))
+                lines.append("    %s %s = %s" % (numbers.WORDS[kind], name, "given at its next build" if number is None else number))
         lines += ["    " + path for path in sorted(texts)]
         for addition in found.get("additions", []):
             where = addition.get("map") or ", ".join(addition.get("scripts", []))
@@ -237,19 +353,23 @@ TESTS = "tests.c"
 
 # Runs a mod's tests: the test_ functions of its tests.c (int, no parameters), compiled with the mod
 # layered over the tree and run in the script interpreter (vm.py), where natives do nothing and
-# controller input is whatever the test passes in. A test passes when it returns nonzero. Returns
-# (name, passed, printed lines, error) for each.
+# controller input is whatever the test passes in. A test passes when it returns nonzero. tests.c
+# can include the mod's own libraries and use its NEW_FLAG and kin names. Returns (name, passed,
+# printed lines, error) for each.
 def run_tests(mod_dir, tree_dir, defs, sdk_dir):
     path = Path(mod_dir) / TESTS
     if not path.is_file():
         raise SystemExit("%s has no %s; write int test_...(void) functions there" % (mod_dir, TESTS))
     texts, _ = overlay([mod_dir], tree_dir)
+    given = patch_plan([mod_dir], tree_dir)["numbers"].get(Path(mod_dir).name, {})
     program = parse.parse(path.read_text(encoding="utf-8"))
     names = [function["name"] for function in program["functions"] if function["kind"] == "function"]
     program["main"] = program["main"] or (names[0] if names else None)
     standing_in = Path(tree_dir) / TESTS
     headers = dict(definitions.header_texts(defs, sdk_dir), **definitions.source_headers(standing_in))
-    program = library.expand(program, library.read_includes(program, standing_in, texts, sdk_dir), headers)
+    program = library.expand(program, library.read_includes(program, standing_in, texts, sdk_dir, [mod_dir]), headers)
+    program["declarations"]["constants"] = program["declarations"]["constants"] + [
+        {"name": name, "value": {"kind": "int", "value": number}, "enum": None} for name, number in given.items()]
     table = vm.table_of(program)
     results = []
     for name in sorted(name for name in table if name.startswith("test_")):

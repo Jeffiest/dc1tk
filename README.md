@@ -48,19 +48,22 @@ editor.
 
 ### 3. Make a change
 
-Keep your changes in a **mod**: a folder in `mods/` that holds only the files
-you change. Copy in the files you want to edit:
+Keep your changes in a **mod**: a folder in `mods/` that holds only what you
+change. Pick the functions you want to change and copy them into the mod:
 
 ```
-python3 cli.py mod new decompiled my-first-mod map/s/s51_raybrandt_castle/s51_1.c
+python3 cli.py mod override decompiled my-first-mod --map s51 start_castle_battle
 ```
 
-and edit them in `mods/my-first-mod/files/`. The decompiled tree stays as it
-was, so several mods can be kept apart and built in any combination.
-Each map script comes in five languages: `s51_1.c` is English and `_2` to
-`_5` are French, German, Italian and Spanish. The game loads the one for the
-PS2's language setting, so change all five, or set the language to English
-while testing.
+and edit them in `mods/my-first-mod/s51.c`, a **patch**. When the mod is
+built, each function in it replaces the script's own in every language of
+map s51 (`original()` inside it runs the one it replaced), and anything else
+it defines is added. The decompiled tree stays as it was, and several mods
+can patch the same script, so mods can be kept apart and built in any
+combination. A mod that needs a save flag or a program number asks for one
+by name (`NEW_FLAG(MY_SCENE_SEEN);`) and the build gives it a free one, so
+mods never collide. See [mods](docs/usage.md#mods) for the rest: targeting
+a monster's AI, running code every frame, text in each language.
 (You can also edit `decompiled/` directly and save the edits into a mod
 later with `python3 cli.py mod save decompiled my-first-mod`.)
 
@@ -71,7 +74,7 @@ python3 cli.py maps decompiled            every map, and which ones you can play
 python3 cli.py map decompiled s51         one map: its programs, triggers, player positions
 python3 cli.py xref decompiled monster golem      a monster's AI and who places it
 python3 cli.py xref decompiled event 510 --map s51   what starts an event
-python3 cli.py flags decompiled           save flags in use, and free ones for a mod
+python3 cli.py flags decompiled           save flags in use
 ```
 
 [A first test](docs/usage.md#a-first-test) has two small edits to try, and
@@ -103,6 +106,9 @@ python3 cli.py play modded.iso
 
 ## Documentation
 
+- [Codebase guide](docs/codebase-guide.html): an onboarding tour of the
+  game's scripts (towns, dungeons, cutscenes, monsters, the player, effects)
+  with walkthroughs of common tasks (open it in a browser).
 - [Usage](docs/usage.md): every command, mods, and building.
 - [Modding guide](docs/modding.md): how the game runs scripts, as far as a
   mod needs to know; message text codes; patterns; editor setup.

@@ -4,7 +4,8 @@ import sys
 from pathlib import Path
 
 from c2s import (asm, assets, compile, coverage, decompile, definitions, disc, extract, flags, index, learn, library, messages, names,
-                 maps, mods, natives, notes, parse, pathnames, play, rebuild, sdk, slots, source, startat, stb, tree, verify, xref)
+                 maps, mods, natives, notes, parse, patches, pathnames, play, rebuild, sdk, slots, source, startat, stb, tree,
+                 verify, xref)
 
 
 def run_extract(args):
@@ -213,8 +214,15 @@ def run_build(args):
     overrides, clashes = mods.overlay(mod_dirs, args.source)
     if clashes:
         raise SystemExit(mods.clash_text(clashes))
+    consts = index.constants(index.tree_headers(args.source, defs, args.sdk))
+    plan = mods.patch_plan(mod_dirs, args.source, consts)
     for mod_dir in mod_dirs:
-        print("mod %s: %d files" % (mod_dir.name, len(mods.contents(mod_dir, args.source))))
+        mine = [patch for patch in plan["patches"] if patch["mod"] == mod_dir.name]
+        print("mod %s: %d patches, %d files" % (mod_dir.name, len(mine), len(mods.contents(mod_dir, args.source))))
+        for patch in mine:
+            print("  patch " + patches.summary(patch))
+        for name, number in sorted(plan["numbers"].get(mod_dir.name, {}).items()):
+            print("  %s = %d" % (name, number))
         for path in mods.stale(mod_dir, args.source):
             print("warning: %s changed in the decompiler's output since %s was made; compare them" % (path, mod_dir.name))
     start_at = args.start_at
@@ -228,7 +236,10 @@ def run_build(args):
             print("start at %s, from the chosen mod (--no-start-at for a normal New Game)" % start_at)
     if start_at:
         target = startat.parse_target(start_at)
-        consts = index.constants(index.tree_headers(args.source, defs, args.sdk))
+        given = {name: number for found in plan["numbers"].values() for name, number in found.items()}
+        if target["program"] in given:
+            # a mod's NEW_PROGRAM name
+            target["program"] = str(given[target["program"]])
         for warning in startat.warnings(args.source, consts, target):
             print("warning: " + warning)
         patched = startat.overrides(args.source, target, overrides)
@@ -243,7 +254,7 @@ def run_build(args):
         for note in tree.library_notes(args.source, status):
             print("note: " + note)
     found = rebuild.changes(args.source, args.iso, defs, definitions.header_texts(defs, args.sdk), natives.load(args.natives),
-                            overrides, args.full, args.sdk)
+                            overrides, args.full, args.sdk, plan["scripts"])
     if found["all_because"]:
         print("compiled all %d scripts: %s" % (found["compiled"], found["all_because"]))
     else:
@@ -350,7 +361,28 @@ def run_mod(args):
             print("warning: " + warning)
         print("%d files applied to %s" % (len(result["applied"]), args.source))
         return 0
+    if args.mod_command == "check":
+        defs = loaded_definitions(args)
+        result = mods.check([mods.folder(args.mods, name) for name in args.names], args.source, defs,
+                            natives.load(args.natives), args.sdk)
+        for name, found in sorted(result["numbers"].items()):
+            for constant, number in sorted(found.items()):
+                print("%s: %s = %d" % (name, constant, number))
+        for path, error in result["errors"]:
+            print("error: %s: %s" % (path, error))
+        print("%d scripts compiled, %d failed" % (result["compiled"], len(result["errors"])))
+        return 1 if result["errors"] else 0
     mod_dir = mods.folder(args.mods, args.name)
+    if args.mod_command == "override":
+        kinds = [(kind, getattr(args, kind)) for kind in parse.TARGET_KINDS if getattr(args, kind)]
+        if len(kinds) != 1:
+            raise SystemExit("give one of --map, --script, --monster and --library: the scripts to patch")
+        result = mods.override(args.source, mod_dir, kinds[0][0], kinds[0][1], args.functions)
+        print("%s: %s" % (result["path"], ", ".join(result["added"]) if result["added"] else "already overrides them"))
+        print("patches %d script%s; edit the functions there, and call original() to run the script's own"
+              % (len(result["scripts"]), "" if len(result["scripts"]) == 1 else "s"))
+        mods.write_patch_flags(mod_dir, args.source, args.sdk, loaded_definitions(args)["sets"])
+        return 0
     if args.mod_command == "new":
         copied = mods.new(args.source, mod_dir, args.files)
         print("%d files copied into %s; edit them there" % (len(copied), mod_dir / mods.FILES))
@@ -547,11 +579,26 @@ def parser():
     apply_command.add_argument("source", help="the source tree to apply them to")
     apply_command.add_argument("names", nargs="+", help="mods to apply, in order")
     apply_command.add_argument("--force", action="store_true", help="replace files edited in the tree too")
-    for mod_command in (new_command, save_command, list_command, apply_command, test_command):
+    override_command = mod_commands.add_parser(
+        "override", help="start a patch: copy functions of a script into the mod, marked to replace the script's")
+    override_command.add_argument("source", help="the decompiled source tree")
+    override_command.add_argument("name", help="the mod's name")
+    override_command.add_argument("functions", nargs="+", help="functions to override, as the script names them")
+    override_command.add_argument("--map", help="patch every language of a map's script (s51)")
+    override_command.add_argument("--script", help="patch scripts by path without readable names (dungeon/monster/e33a.c)")
+    override_command.add_argument("--monster", help="patch a monster kind's AI script (golem)")
+    override_command.add_argument("--library", help="patch every script that includes a library (lib/...)")
+    check_command = mod_commands.add_parser("check", help="compile what mods change, without a disc, and show their numbers")
+    check_command.add_argument("source", help="the decompiled source tree")
+    check_command.add_argument("names", nargs="+", help="mods to check together, in build order")
+    for mod_command in (new_command, save_command, list_command, apply_command, test_command, override_command,
+                        check_command):
         mod_command.add_argument("--mods", default="mods", help="the folder that holds the mods")
     common(new_command)
     common(save_command)
     common(test_command)
+    common(override_command)
+    common(check_command)
 
     command = commands.add_parser("fork", help="give scripts their own copy of a library, so edits to it reach only them")
     command.add_argument("source", help="a decompiled source tree")

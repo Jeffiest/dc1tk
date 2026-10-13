@@ -20,6 +20,10 @@ NATIVE_TYPES = ("int", "float", "string", "any")
 CONDITIONALS = ("if", "ifdef", "ifndef", "elif", "else", "endif")
 SIMPLE = ("wait", "end", "skip_end", "break", "continue")
 BUILTINS = ("sin", "cos")
+# What a mod patch's #pragma target can pick scripts by, and the numbers it can ask for (patches.py,
+# numbers.py).
+TARGET_KINDS = ("map", "script", "monster", "library")
+REQUESTS = {"NEW_FLAG": "flag", "NEW_PROGRAM": "program", "NEW_MONSTER_VAR": "monster_var"}
 COMPOUND = {"+=": "+", "-=": "-", "*=": "*", "/=": "/", "%=": "%", "&=": "&", "|=": "|", "^=": "^",
             "<<=": "<<", ">>=": ">>"}
 
@@ -198,11 +202,12 @@ def joined(lines):
     return text
 
 
-def tokenize(text):
+# defines, when given, are #defines in force before the first line (a mod patch's LANGUAGE).
+def tokenize(text, defines=None):
     tokens = []
     comments = []
     conditions = []
-    defines = {}
+    defines = dict(defines or {})
     position = 0
     line = 1
     while position < len(text):
@@ -841,6 +846,9 @@ def function_definition(state, pending, returns, name, doc=None):
                 "body": body_nodes, "unused_strings": pending.get("strings", []), "padding": pending.get("padding")}
     if doc:
         function["doc"] = doc
+    for key in ("override", "every_frame"):
+        if pending.get(key):
+            function[key] = True
     return function
 
 
@@ -1030,6 +1038,16 @@ def pragma(state, token, program, pending):
         program["padding_of"][rest[0]] = rest[1] if len(rest) > 1 else ""
     elif key == "string_pool":
         program["string_pool"] = True
+    elif key == "target":
+        # the scripts a mod patch changes: #pragma target map s51 (see patches.py)
+        values = [word["string"] if isinstance(word, dict) else word for word in rest[1:]]
+        if not rest or rest[0] not in TARGET_KINDS or not values:
+            fail(state, "#pragma target takes %s, then what to pick" % ", ".join(TARGET_KINDS))
+        program.setdefault("targets", []).append({"kind": rest[0], "values": values})
+    elif key in ("override", "every_frame"):
+        pending[key] = True
+    elif key == "once":
+        pass
     else:
         fail(state, "unknown pragma " + key)
 
@@ -1047,8 +1065,8 @@ def file_doc(text):
     return comment_block(comments, len(comments) + 1)
 
 
-def parse(text):
-    state = {"tokens": tokenize(text), "pos": 0}
+def parse(text, defines=None):
+    state = {"tokens": tokenize(text, defines), "pos": 0}
     if state["tokens"][0]["kind"] == "assembly":
         return {"kind": "program", "asm": state["tokens"][0]["text"]}
     program = {
@@ -1088,6 +1106,13 @@ def parse(text):
             enumeration(state, program)
         elif word == "PROGRAM":
             program_entry(state, program)
+        elif word in REQUESTS:
+            # NEW_FLAG(name): a number build gives the mod (numbers.py)
+            expect(state, "(")
+            name = expect_kind(state, "name")["text"]
+            expect(state, ")")
+            expect(state, ";")
+            program.setdefault("requests", []).append({"kind": REQUESTS[word], "name": name})
         elif word == "MAIN":
             expect(state, "(")
             program["main"] = expect_kind(state, "name")["text"]

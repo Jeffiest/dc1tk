@@ -52,7 +52,10 @@ static inline void start_turning_to_target(float *angle, float turn_speed)
   (a transparent union), `NATIVE`, `OPTIONAL`, `PROGRAM`, `MAIN`, `AT`,
   `DIRECT`, `wait`, `end`, `skip_end`, `print`, `sin` and `cos` so that
   `clang -m32 -fsyntax-only -x c -std=c2x -I sdk` reads a script. `-m32`
-  matches the PS2 and lets `any` hold a pointer.
+  matches the PS2 and lets `any` hold a pointer. For mod patches it also
+  gives `NEW_FLAG`, `NEW_PROGRAM` and `NEW_MONSTER_VAR` (as placeholder
+  constants), `original(...)` and the `LANGUAGE` names, which the compiler
+  knows itself (see [usage](usage.md#mods)).
 
 Signatures accept every call the retail scripts make, so the decompiled disc
 passes clang's type checks. Where a retail call disagrees with what the
@@ -232,5 +235,6 @@ is looked for in the script's folders and then in `sdk/`:
 Button masks are the `PAD_` constants of `<event.h>`, and frames are 50 a
 second on a PAL console. Text can hold the codes listed in
 [the modding guide](modding.md#message-text). `modkit_tick`, called from the
-AI of the monsters a map places, asks the map for a program on a timer while
-the player plays; the [modding guide](modding.md) explains the pattern.
+AI of the monsters a map places (from a patch's `#pragma every_frame`
+function), asks the map for a program on a timer while the player plays; the
+[modding guide](modding.md) explains the pattern.

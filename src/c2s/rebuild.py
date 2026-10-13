@@ -2,7 +2,7 @@ import shutil
 import struct
 from pathlib import Path
 
-from c2s import archive, compile, definitions, index, iso, library, natives, parse, pathnames, source, tree
+from c2s import archive, compile, definitions, index, iso, library, natives, parse, patches, pathnames, source, tree
 
 SCRIPT_SUFFIXES = (".stb", ".STB")
 VOLUME_SIZE = 80
@@ -11,11 +11,15 @@ FILLER = "DMMY"
 
 # Compiles a script of the tree; text, when given, stands in for the file's own (build --start-at,
 # build --mod), table_path, its path without readable names, picks the native table, and overlay
-# holds mod files that stand in for the tree's libraries.
-def compiled(source_path, defs, headers, tables, text=None, table_path=None, overlay=None, sdk_dir=None):
+# holds mod files that stand in for the tree's libraries. patched, when given, is (tree, the script's
+# tree path, the mod patches that change it), merged in once its libraries are (patches.py).
+def compiled(source_path, defs, headers, tables, text=None, table_path=None, overlay=None, sdk_dir=None, patched=None):
     program = parse.parse(Path(source_path).read_text(encoding="utf-8") if text is None else text)
     headers = dict(headers, **definitions.source_headers(source_path))
     program = library.expand(program, library.read_includes(program, str(source_path), overlay, sdk_dir), headers)
+    if patched:
+        tree_dir, relative, found = patched
+        program = patches.applied(program, found, relative, tree_dir, headers, overlay, sdk_dir)
     if "asm" not in program and program["natives"] is None:
         program["natives"] = natives.table_for(table_path or Path(source_path).resolve().as_posix(), defs["tables"])
     return compile.compile_program(program, tables)
@@ -111,10 +115,12 @@ def settled_scripts(source_dir, overrides, recorded):
 
 # The scripts whose compiled form differs from the disc. overrides holds whole-file texts that stand
 # in for tree files, mods' and build --start-at's, keyed by tree path; scripts only a mod has are
-# compiled too.
-def changes(source_dir, iso_path, defs, headers, tables, overrides=None, full=False, sdk_dir=None):
+# compiled too. patched holds the mod patches that change each script, keyed the same way.
+def changes(source_dir, iso_path, defs, headers, tables, overrides=None, full=False, sdk_dir=None, patched=None):
     overrides = overrides or {}
+    patched = patched or {}
     skip, why = (set(), "--full") if full else settled_and_why(source_dir, overrides, headers)
+    skip = skip - set(patched)
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
         index = {entry["path"]: entry for entry in disc["entries"]}
@@ -139,7 +145,7 @@ def changes(source_dir, iso_path, defs, headers, tables, overrides=None, full=Fa
                 continue
             try:
                 new = compiled(Path(source_dir) / relative, defs, headers, tables, overrides.get(relative), plain, overrides,
-                               sdk_dir)
+                               sdk_dir, (source_dir, relative, patched[relative]) if relative in patched else None)
             except ValueError as error:
                 raise ValueError("%s: %s" % (relative, error)) from None
             if new != original:

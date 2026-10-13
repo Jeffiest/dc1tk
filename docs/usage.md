@@ -10,9 +10,11 @@ python3 cli.py compile <script.c> [-o script.stb]
 python3 cli.py build decompiled dc2.iso -o modded.iso   new disc image with your changes
 python3 cli.py build decompiled dc2.iso -o test.iso --start-at s51:story_50
 python3 cli.py changes decompiled             what you edited since decompiling
-python3 cli.py mod new decompiled castle map/s/s51_raybrandt_castle/s51_1.c   start a mod
+python3 cli.py mod override decompiled castle --map s51 start_castle_battle   start a patch
+python3 cli.py mod check decompiled castle    compile what a mod changes, without a disc
 python3 cli.py build decompiled dc2.iso -o modded.iso --mod castle --mod other  build with mods
-python3 cli.py mod list decompiled            every mod, its files, and mods that clash
+python3 cli.py mod list decompiled            every mod, its patches, numbers and files
+python3 cli.py mod new decompiled castle map/s/s51_raybrandt_castle/s51_1.c   copy whole files into a mod
 python3 cli.py mod test decompiled calculator run a mod's tests.c without the game
 python3 cli.py play modded.iso            boot an image in PCSX2 (or build ... --play)
 python3 cli.py maps decompiled                every map: town or dungeon-style, playable or not
@@ -148,14 +150,92 @@ do; the source tree is not changed. It suits maps the game loads with
 
 ### Mods
 
-A mod is a folder in `mods/` holding only the files it changes or adds, laid
-out like the tree. Keep the decompiled tree as the decompiler wrote it and
-build any set of mods over it:
+A mod is a folder in `mods/`. Keep the decompiled tree as the decompiler
+wrote it and build any set of mods over it:
 
 ```
-python3 cli.py mod new decompiled castle map/s/s51_raybrandt_castle/s51_1.c dungeon/monster/e33a_golem.c
+python3 cli.py mod override decompiled castle --map s51 start_castle_battle
 python3 cli.py build decompiled dc2.iso -o modded.iso --mod castle --mod other
 ```
+
+A mod holds **patches**: C files that name the scripts they change and hold
+only the functions they replace or add. Several mods can patch the same
+script, and a patch keeps working when the decompiler's output around it
+changes.
+
+```c
+// mods/castle/s51.c
+#pragma target map s51          // s51_1.c to s51_5.c: every language
+
+#include <event.h>
+#include <disc.h>
+
+NEW_FLAG(FIGHT_ON);             // a save flag build picks, free of the game's and other mods'
+
+#pragma override                // replaces the script's start_castle_battle
+void start_castle_battle(void)
+{
+    original();                 // runs the script's own
+    set_flag(FIGHT_ON, 1);
+}
+```
+
+- **`#pragma target`** picks the scripts: `map s51` (the map's language
+  variants), `script dungeon/monster/e33a.c` (paths without readable names,
+  with `*` and `?`), `monster golem` (a monster kind's AI script, as
+  `MONSTER_GOLEM` in `disc.h` names it) or `library lib/...` (every script
+  that includes the library). A patch can have several. A `.c` file in the
+  mod without one is a library its patches include.
+- **`#pragma override`** before a function replaces the function of that
+  name in each target, for those scripts only, even when the script gets it
+  from a library: no fork needed. `original(...)` inside it calls the
+  function it replaced. Two mods can override the same function when the
+  later one calls `original()`; when neither does, `build` names both.
+- **`#pragma every_frame`** before a function without parameters calls it
+  before every `wait;` in the target, so it runs once a frame whatever the
+  script is waiting in: a monster keeping a timer, say. It must not wait.
+- **Other functions and globals** are added. A name the target already has
+  is refused, since the patch most likely meant to override it; a name
+  another mod adds too is renamed for one of them, so mods never need to
+  agree on names. A mod's libraries can declare globals of their own.
+- **`PROGRAM` lines** add programs. To change a program the script has,
+  override its function.
+- **`NEW_FLAG(name)`, `NEW_PROGRAM(name)` and `NEW_MONSTER_VAR(name)`**, in
+  any file of the mod (a shared `.h` is handy), ask `build` for a save flag
+  (from 1024), a program number (from 9000) or a shared monster variable (8
+  to 135) that the game, the engine and every mod in `mods/` leave alone,
+  hand-written numbers included. The numbers are kept in
+  `mods/numbers.json`, so a name keeps its number from build to build and
+  saves stay valid when mods are added; a mod left out of a build keeps its
+  numbers reserved. Use the name where the number would go:
+  `PROGRAM(SHOW_CAPTION, show_caption);` in the map and
+  `run_event_script(SHOW_CAPTION);` in the monster. `"start_at"` in
+  `mod.json` can name a mod's program too (`"s51:SHOW_CAPTION"`).
+- **`LANGUAGE`** is the language of the script a patch is merged into
+  (`LANGUAGE_ENGLISH` for `s51_1.c` to `LANGUAGE_SPANISH` for `s51_5.c`;
+  -1 for scripts that are not language variants), for `#if` and in code, so
+  one patch can carry every language's text.
+
+The commands:
+
+- `mod override SOURCE NAME --map s51 FUNCTION...` (or `--script`,
+  `--monster`, `--library`) starts a patch, or adds to one: it copies the
+  functions from the target (the English variant of a map) into
+  `mods/NAME/s51.c`, each after `#pragma override`, with the target line and
+  the script's headers, and writes the mod's `compile_flags.txt` for your
+  editor.
+- `mod check SOURCE NAME...` compiles every script the mods change, as
+  `build` would but without a disc, and prints the numbers they were given.
+- `build --mod NAME` (repeat it for several) merges each patch into its
+  targets after their libraries are included, and lists each mod's patches
+  and numbers. The tree is not changed.
+- `mod list SOURCE` lists every mod: its patches, what they override and
+  add, its numbers, and its whole files (below).
+- `mod test SOURCE NAME` runs the mod's tests (below).
+
+**Whole files.** A mod can also replace or add whole files, under
+`mods/NAME/files/`, laid out like the tree. Patches are better for changing
+the game's scripts; whole files suit scripts and libraries of the mod's own.
 
 - `mod new SOURCE NAME FILE...` copies tree files into `mods/NAME/files/`
   to edit there; files the mod already has are kept. The mod gets its own
@@ -163,21 +243,20 @@ python3 cli.py build decompiled dc2.iso -o modded.iso --mod castle --mod other
   tree's.
 - `mod save SOURCE NAME` copies every file edited or added in the tree into
   the mod instead, for edits made in the tree.
-- `build --mod NAME` (repeat it for several) compiles each mod file in place
-  of the tree's, libraries included, without changing the tree. Two chosen
-  mods may not change the same file; `build` names the file and the mods.
-- `mod list SOURCE` lists every mod and its files, the files whose
-  decompiler version changed since the mod was made ("stale": the mod
-  replaces the whole file, so compare them), and the mods that cannot be
-  built together.
-- `mod apply SOURCE NAME...` writes mods into the tree instead.
-- `mod test SOURCE NAME` runs the mod's tests (below).
+- `build` compiles each mod file in place of the tree's, libraries included.
+  Two chosen mods may not replace the same file; `build` names the file and
+  the mods. `mod list` marks the files whose decompiler version changed
+  since the mod was made ("stale": the mod replaces the whole file, so
+  compare them).
+- `mod apply SOURCE NAME...` writes mods' files into the tree instead;
+  patches are merged by `build` only.
 
 A mod made on a tree with readable names applies to one without, and the
 other way round: files and `#include` lines follow each tree's layout.
 
-**Additions.** A mod need not copy a script to add to it. Its `mod.json` can
-list additions, applied when it is built:
+**Additions.** The older way to add to a script without copying it, kept for
+mods that use it: its `mod.json` can list additions, applied when it is
+built:
 
 ```json
 {
@@ -231,17 +310,19 @@ Two edits that show within minutes of starting a new game:
   `show_narration_line` calls (messages 10010, 10020, 10030) and change
   `set_sprite_color(0, 0, 0, 0, 128)` to `set_sprite_color(0, 128, 0, 0,
   128)`. The letter is narrated last line first, over red instead of black.
-- **Monica's first fight.** In `map/s/s51_raybrandt_castle/s51_1.c` (and `_2` to `_5` for
-  the other languages), function `start_castle_battle`, replace the four
+- **Monica's first fight**, as a mod. `python3 cli.py mod override
+  decompiled first-fight --map s51 start_castle_battle` writes
+  `mods/first-fight/s51.c` with the function in it. There, replace the four
   `MONSTER_GRIFFON_SOLDIER_523` with other kinds from
   `decompiled/include/disc.h`, loading each first:
   `load_monster_data(MONSTER_SEWER_RAT, 1); load_monster_data(MONSTER_FROGGY, 0); ...`
   and `place_monster(MONSTER_SEWER_RAT, ...)` and so on. That soldier's own
   script ends the fight when the fourth one dies, which other monsters do
   not do, so also add
-  `PROGRAM(monsters_cleared, start_georama_with_starter_items);` beside
-  `PROGRAM(510, ...)`: the engine runs program 1500 once no monster is
-  left.
+  `PROGRAM(monsters_cleared, start_georama_with_starter_items);` to the
+  patch: the engine runs program 1500 once no monster is left. Build with
+  `--mod first-fight --start-at s51:500`; the patch reaches all five
+  languages of the map's script.
 
 ## Improving the definitions
 

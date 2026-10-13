@@ -78,6 +78,40 @@ definitions.
     never sets). The [examples](docs/examples/README.md) are commented
     scripts showing how to write each kind.
 
+15. **Mod patches.** A mod no longer copies whole files to change them. A
+    patch names its scripts (`#pragma target map s51`, `monster golem`,
+    `library ...`) and holds only what it changes: `#pragma override`
+    functions, which can call `original()` and chain across mods, added
+    functions, globals and programs, and `#pragma every_frame` functions
+    that run before every `wait;`. Mods ask for save flags, program numbers
+    and shared monster variables by name (`NEW_FLAG`), and `build` gives
+    numbers nothing else uses, kept in `mods/numbers.json` so saves stay
+    valid. `LANGUAGE` lets one patch carry every language's text, and
+    `mod override` copies a function out of a map's five languages with the
+    lines that differ under `#if LANGUAGE`. An unedited override compiles
+    back to the script's own bytes. `mod check` compiles a mod without a
+    disc.
+
+## Next: modding
+
+- **Overrides that survive renames.** A patch overrides a function by name,
+  and the definitions still rename functions. Record the fingerprint of
+  each function a patch overrides, so when a later decompile renames it,
+  `mod check` finds it by fingerprint and says the new name (or follows it).
+- **Wrapping natives.** `#pragma override place_monster` in a patch would
+  route every call the target makes to a native through the mod's function,
+  so swapping a fight's monsters would not mean copying the function that
+  places them.
+- **Editor support for patches.** clangd does not know a target's own
+  functions and globals in a patch. `mod override` could write a header of
+  their declarations beside the patch.
+- **Mods that need mods.** `requires` and `after` in `mod.json`, so a mod
+  can build on another's library or numbers and `build` orders them.
+- **Whole-file mods into patches.** A `mod slim` that compares each copied
+  file with the tree and writes overrides for the functions that changed.
+- **Save counters.** `NEW_COUNTER` once the number of 16-bit save counters is
+  known (scripts use 0 to 20).
+
 ## Next: names and docs
 
 1. **Review function names.** They were written from the code and its

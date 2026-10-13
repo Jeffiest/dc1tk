@@ -12,7 +12,7 @@ comes from. The commands are in [usage](usage.md).
 | What runs program 510 of map s51, and what asks for it? | `cli.py xref decompiled event 510 --map s51` |
 | How does the game get to map s51, and at which program? | `cli.py xref decompiled map s51` |
 | Which model and AI script does a monster kind use, and who places it? | `cli.py xref decompiled monster golem` |
-| Which save flags are free for a mod? Who uses flag 54? | `cli.py flags decompiled`, `cli.py flags decompiled --flag 54` |
+| Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `cli.py flags decompiled`, `cli.py flags decompiled --flag 54` |
 | Which maps can a scene start in, and where does the player play? | `cli.py maps decompiled` |
 | A map's programs, free program numbers, trigger points and player positions? | `cli.py map decompiled s17` |
 | What have I changed? | `cli.py changes decompiled` |
@@ -93,12 +93,17 @@ event and marks the AI scripts of monsters the map places.
   per floor, shared by every monster, so several monsters can agree on a
   shared clock. A floor's timed medal challenge reads it too (`dngfloor.cpp`).
 - **Monster variables** 0 to 7 belong to each monster; 8 to 135 are shared
-  by every monster on the floor (`set_monster_var`, `get_monster_var`).
+  by every monster on the floor (`set_monster_var`, `get_monster_var`). A
+  mod asks for a shared one with `NEW_MONSTER_VAR(name)`, and `build` picks
+  one no script uses.
 - **Save flags** are 2,048 bits in the save (`savedata.cpp`). Event scripts
   use `get_flag` and `set_flag`, monster scripts `get_dungeon_flag` and
   `set_dungeon_flag`; both reach the same bits. No script on the disc and
-  nothing in the engine uses a flag above 824, so a mod can take one from
-  825 to 2046 (`cli.py flags` checks); 2047 is taken by `build --start-at`.
+  nothing in the engine uses a flag above 824; 2047 is taken by
+  `build --start-at`. A mod asks for a flag with `NEW_FLAG(name)` rather
+  than picking a number, and `build` gives it one from 1024 up that no
+  script, the engine or another mod uses, and keeps it in
+  `mods/numbers.json` so saves stay valid (see [usage](usage.md#mods)).
   A flag is saved with the game, so clear one that only matters during a
   scene when the scene ends, and on game over.
 - **Script globals** keep their values between program runs for as long as
@@ -159,9 +164,16 @@ the player is alive and on the ground:
 ## Editing shared code
 
 Code that several scripts share lives in `lib/`, and an edit there reaches
-every script that includes it. `build` notes each edited library that reaches
-scripts you did not edit. To change a library for some scripts only, give
-them their own copy first:
+every script that includes it. A mod's patch changes a library function for
+the scripts it targets only: `#pragma target monster golem` with
+`#pragma override` before `wait_frames` changes the Golem's copy and leaves
+the 35 other monsters that include the same toolkit alone (see
+[usage](usage.md#mods)). `#pragma target library lib/...` patches every
+script that includes the library instead.
+
+Editing the tree itself still works: `build` notes each edited library that
+reaches scripts you did not edit, and `fork` gives some scripts their own
+copy of a library first:
 
 ```
 python3 cli.py fork decompiled lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
@@ -177,14 +189,27 @@ next caption and never waits, so it runs within a frame while the player keeps
 control. The monsters in the fight provide the clock, because event scripts
 cannot run beside play and monster scripts do.
 
-In the map script (every language variant, or a library they include):
+The mod's two patches share a header, so they agree on the numbers `build`
+gives them:
 
 ```c
+// captions.h
+NEW_FLAG(CAPTIONS_ON);          // set while the fight runs
+NEW_PROGRAM(SHOW_NEXT_CAPTION); // the map program the monsters ask for
+```
+
+The map's patch (`#pragma target map s51` reaches every language variant):
+
+```c
+#pragma target map s51
+#include <event.h>
+#include "captions.h"
+
 int caption;
 
-PROGRAM(900, show_next_caption);
+PROGRAM(SHOW_NEXT_CAPTION, show_next_caption);
 
-// Program 900: shows the next caption in window 0. It never waits, so it runs within one frame.
+// Shows the next caption in window 0. It never waits, so it runs within one frame.
 void show_next_caption(void)
 {
     caption = caption + 1;
@@ -207,10 +232,12 @@ void show_next_caption(void)
     }
 }
 
-// Called where the fight starts, after its monsters are placed.
-void start_captions(void)
+// Starts the captions once the fight's monsters are placed.
+#pragma override
+void start_castle_battle(void)
 {
-    set_flag(2040, 1);
+    original();
+    set_flag(CAPTIONS_ON, 1);
     reset_dungeon_timer();
     caption = 0;
     show_next_caption();
@@ -218,23 +245,28 @@ void start_captions(void)
 ```
 
 Clear the flag and close the window where the fight ends and in the
-`player_dead` program. In the AI of the monsters the fight places, after
-forking the library that holds their waits, call this before each `wait;`:
+`player_dead` program's function, overriding them the same way. The
+monsters' patch runs a function every frame, whatever wait their AI is in:
 
 ```c
-// While the fight's flag is set, asks the map for program 900 every 250 frames (5 seconds at
-// 50 Hz). The timer is shared, so with several monsters only the first to see it run out asks.
+#pragma target monster golem
+#include <monster.h>
+#include "captions.h"
+
+// While the fight's flag is set, asks the map for the next caption every 250 frames (5 seconds
+// at 50 Hz). The timer is shared, so with several monsters only the first to see it run out asks.
+#pragma every_frame
 void tick_captions(void)
 {
     int fight;
     int timer;
 
-    fight = get_dungeon_flag(2040);
+    fight = get_dungeon_flag(CAPTIONS_ON);
     if (fight) {
         timer = get_floor_timer();
         if (timer >= 250) {
             reset_floor_timer();
-            run_event_script(900);
+            run_event_script(SHOW_NEXT_CAPTION);
         }
     }
 }
@@ -244,11 +276,13 @@ The flag keeps the same monsters elsewhere in the game from asking.
 
 ## Trying a change quickly
 
-Three things keep the loop short: test a mod's logic without the game
-(`cli.py mod test`, see [usage](usage.md#mods)); build only what changed,
-which `build` does by itself; and start New Game at the scene you are
-working on, then boot it with `--play`. A mod can name its scene in
-`mod.json` (`"start_at": "s17:9000"`), so building it is enough.
+Four things keep the loop short: test a mod's logic without the game
+(`cli.py mod test`, see [usage](usage.md#mods)); compile what it changes
+without a disc (`cli.py mod check`); build only what changed, which `build`
+does by itself; and start New Game at the scene you are working on, then
+boot it with `--play`. A mod can name its scene in `mod.json`
+(`"start_at": "s17:9000"`, or one of its own programs:
+`"s51:SHOW_NEXT_CAPTION"`), so building it is enough.
 
 `build --start-at MAP:PROGRAM` writes a test image whose New Game goes
 straight to a scene, without changing the source tree:
@@ -280,12 +314,14 @@ recording what they wrote. From it:
   the mod `mods/castle`.
 
 Better still, keep the tree untouched and do the work in mods: `cli.py mod
-new source castle FILE...` copies the files you want to change into
-`mods/castle/files/`, and `cli.py build decompiled dc2.iso -o modded.iso --mod
-castle --mod another` layers the chosen mods over the tree. A fresh tree,
-decompiled after a tools update, takes the same mods; `mod list` marks a mod
-file whose decompiler version has changed since, to compare. See
-[usage](usage.md#mods).
+override decompiled castle --map s51 start_castle_battle` starts a patch
+holding just that function, and `cli.py build decompiled dc2.iso -o
+modded.iso --mod castle --mod another` merges the chosen mods into the
+scripts they target. A patch holds only what it changes, so a fresh tree,
+decompiled after a tools update, takes the same mods, and several mods can
+change one script. (`mod new` copies whole files into a mod instead; `mod
+list` marks a copied file whose decompiler version has changed since, to
+compare.) See [usage](usage.md#mods).
 
 ## Editor setup
 
@@ -299,4 +335,7 @@ checkout and decompile again (or edit the file).
 Scripts parse without errors. What clang still warns about are argument
 mismatches in the retail scripts themselves. Library files show errors for
 names their including scripts declare (a library can use the globals and
-functions of the scripts that include it), which is expected.
+functions of the scripts that include it), which is expected, and so do a
+mod's patches for the functions of the scripts they target.
+`mod override` writes a `compile_flags.txt` into the mod's folder, so its
+patches get the SDK, the tree's headers and the mod's own libraries.
