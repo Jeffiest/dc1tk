@@ -195,6 +195,30 @@ impl Node {
         self.get("kind").and_then(Node::as_str).unwrap_or("")
     }
 
+    /// Python's ==: objects equal whatever their key order, and numbers by value (1 == 1.0 ==
+    /// True).
+    pub fn py_eq(&self, other: &Node) -> bool {
+        let number = |node: &Node| match node {
+            Node::Bool(value) => Some(*value as i64 as f64),
+            Node::Int(value) => Some(*value as f64),
+            Node::Float(value) => Some(*value),
+            _ => None,
+        };
+        match (self, other) {
+            (Node::Int(a), Node::Int(b)) => a == b,
+            (Node::Null, Node::Null) => true,
+            (Node::Str(a), Node::Str(b)) => a == b,
+            (Node::List(a), Node::List(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.py_eq(y)),
+            (Node::Map(a), Node::Map(b)) => {
+                a.len() == b.len() && a.iter().all(|(key, value)| b.get(key).is_some_and(|found| value.py_eq(found)))
+            }
+            _ => match (number(self), number(other)) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            },
+        }
+    }
+
     /// Python's dict(node, key=value): the key keeps its place if the node has it, else goes last.
     pub fn with(mut self, key: impl Into<Key>, value: impl Into<Node>) -> Node {
         if let Node::Map(map) = &mut self {

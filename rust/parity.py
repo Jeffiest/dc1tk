@@ -230,7 +230,8 @@ def check_compile(args):
     from c2s import compile, definitions, natives, pathnames, rebuild, sdk
     work = Path(args.work)
     trees, py, rs = work / "py_programs", work / "py_out", work / "rs_out"
-    for folder in (trees, py, rs):
+    unresolved, rs_resolved = work / "py_unresolved", work / "rs_resolved"
+    for folder in (trees, py, rs, unresolved, rs_resolved):
         if folder.exists():
             raise SystemExit("%s exists; give an empty work folder" % folder)
     tree = Path(args.source)
@@ -245,7 +246,14 @@ def check_compile(args):
         captured.update(program=program, asm=text)
         return text
 
+    real_resolve = sdk.resolve
+
+    def capture_resolve(program, tables):
+        captured.update(unresolved=program)
+        return real_resolve(program, tables)
+
     compile.to_asm = capture
+    sdk.resolve = capture_resolve
     start = time.time()
     scripts = rebuild.source_scripts(tree)
     failed = []
@@ -259,18 +267,36 @@ def check_compile(args):
                 continue
             for folder, name, content in ((trees, relative + ".json",
                                            json.dumps(captured["program"], ensure_ascii=False, separators=(",", ":")).encode("utf-8")),
+                                          (unresolved, relative + ".json",
+                                           json.dumps(captured["unresolved"], ensure_ascii=False, separators=(",", ":")).encode("utf-8")),
                                           (py, relative + ".asm", captured["asm"].encode("utf-8")),
                                           (py, relative + ".stb", data)):
                 (folder / name).parent.mkdir(parents=True, exist_ok=True)
                 (folder / name).write_bytes(content)
     finally:
         compile.to_asm = real
+        sdk.resolve = real_resolve
     py_time = time.time() - start
     out, rs_time = run_status([C2, "to-asm-tree", trees, rs])
+    resolved_out, _ = run_status([C2, "resolve-tree", unresolved, rs_resolved])
+    print(resolved_out.strip().splitlines()[-1] if resolved_out.strip() else "")
     print("%d scripts (%d the Python could not compile); python %.1fs (parse and resolve included), rust %.1fs (to_asm "
           "and assemble only)" % (len(scripts), len(failed), py_time, rs_time))
     print(out.strip().splitlines()[-1] if out.strip() else "")
-    return [line for line in out.splitlines() if line.startswith("failed")] + compare_trees(py, rs)
+    problems = [line for line in (out + resolved_out).splitlines() if line.startswith("failed")]
+    return problems + compare_trees(py, rs) + compare_json_trees(trees, rs_resolved)
+
+
+def compare_json_trees(a, b):
+    """Two folders of JSON files with the same names hold the same values (key order aside)."""
+    problems = []
+    for path in sorted(a.rglob("*.json")):
+        other = b / path.relative_to(a)
+        if not other.is_file():
+            problems.append("missing: %s" % other)
+        elif json.loads(path.read_text(encoding="utf-8")) != json.loads(other.read_text(encoding="utf-8")):
+            problems.append("different: %s" % path.relative_to(a).as_posix())
+    return problems
 
 
 def run_status(command):

@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 use regex::Regex;
 
 use crate::node::Node;
+use crate::sdk::Context;
 use crate::source::{py_str, truthy};
 
 pub const MESSAGE_KINDS: [&str; 1] = ["message"];
@@ -182,19 +183,13 @@ pub fn calls_in(node: &Node) -> Option<(&'static str, &str, &[Node])> {
     None
 }
 
-/// The natives the SDK declares, by their original names, and its enums' members.
-pub struct Declared<'a> {
-    pub by_original: &'a HashMap<String, Node>,
-    pub enums: &'a IndexMap<String, BTreeSet<i64>>,
-}
-
 /// Each function's parameters that reach a parameter of the given kinds, by position.
 pub type ParamsByFunction = HashMap<String, BTreeSet<usize>>;
 
 fn callee_positions(
     kind: &str,
     name: &str,
-    found: &Declared,
+    found: &Context,
     params_by_function: &ParamsByFunction,
     kinds: &[&str],
 ) -> BTreeSet<usize> {
@@ -216,7 +211,7 @@ fn string_arg(args: &[Node], positions: &BTreeSet<usize>) -> Option<String> {
 }
 
 /// The message files the functions load, with the directory the calls before set.
-pub fn loaded_files(functions: &[Node], found: &Declared) -> Vec<String> {
+pub fn loaded_files(functions: &[Node], found: &Context) -> Vec<String> {
     let mut files: Vec<String> = Vec::new();
     for function in functions.iter().filter(|function| function.kind() == "function") {
         let mut directory = String::new();
@@ -332,7 +327,7 @@ fn looked_up<'a>(arg: &Node, table: &'a NameTable) -> Option<&'a String> {
     }
 }
 
-fn named_by_enum(arg: &Node, kinds: &[&str], found: &Declared) -> bool {
+fn named_by_enum(arg: &Node, kinds: &[&str], found: &Context) -> bool {
     if arg.kind() != "int" {
         return false;
     }
@@ -340,7 +335,7 @@ fn named_by_enum(arg: &Node, kinds: &[&str], found: &Declared) -> bool {
         return false;
     };
     found.enums.iter().any(|(name, members)| {
-        members.contains(&value) && kinds.iter().any(|kind| name == kind || name.starts_with(&format!("{kind}_")))
+        members.contains_key(&value) && kinds.iter().any(|kind| name == kind || name.starts_with(&format!("{kind}_")))
     })
 }
 
@@ -353,7 +348,7 @@ pub struct Lookup<'a> {
     pub quote: bool,
 }
 
-fn statement_notes(node: &Node, found: &Declared, lookups: &[Lookup]) -> String {
+fn statement_notes(node: &Node, found: &Context, lookups: &[Lookup]) -> String {
     let mut lines = Vec::new();
     if let Some((kind, name, args)) = calls_in(node) {
         for lookup in lookups {
@@ -372,7 +367,7 @@ fn statement_notes(node: &Node, found: &Declared, lookups: &[Lookup]) -> String 
     lines.join("; ")
 }
 
-fn annotated(nodes: &[Node], found: &Declared, lookups: &[Lookup]) -> Node {
+fn annotated(nodes: &[Node], found: &Context, lookups: &[Lookup]) -> Node {
     nodes
         .iter()
         .map(|node| match node.kind() {
@@ -414,7 +409,7 @@ fn declared_kinds(declared: &Node) -> IndexMap<usize, String> {
 }
 
 /// The kind each function's parameters carry to the natives (and functions) they reach.
-pub fn param_kinds(functions: &[Node], found: &Declared) -> HashMap<String, IndexMap<usize, String>> {
+pub fn param_kinds(functions: &[Node], found: &Context) -> HashMap<String, IndexMap<usize, String>> {
     let mut result: HashMap<String, IndexMap<usize, String>> = HashMap::new();
     let mut changed = true;
     while changed {
@@ -458,7 +453,7 @@ pub fn param_kinds(functions: &[Node], found: &Declared) -> HashMap<String, Inde
 
 /// The functions' parameters by the kind they carry: {kind (messages as "message"): {function:
 /// positions}}.
-pub fn kind_params(functions: &[Node], found: &Declared) -> HashMap<String, ParamsByFunction> {
+pub fn kind_params(functions: &[Node], found: &Context) -> HashMap<String, ParamsByFunction> {
     let mut params: HashMap<String, ParamsByFunction> = HashMap::new();
     for (name, positions) in param_kinds(functions, found) {
         for (position, kind) in positions {
@@ -496,7 +491,7 @@ pub fn lookups_for<'a>(
 /// The functions with message and name comments on the statements that pass them.
 pub fn annotate_functions(
     functions: Vec<Node>,
-    found: &Declared,
+    found: &Context,
     params_by_kind: &HashMap<String, ParamsByFunction>,
     texts: &IndexMap<i64, String>,
     names: &IndexMap<String, NameTable>,

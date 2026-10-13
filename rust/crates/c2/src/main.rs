@@ -151,6 +151,15 @@ enum Command {
         #[arg(long)]
         natives: Option<PathBuf>,
     },
+    /// Resolve every program tree under a folder (<path>.json, as the Python's sdk.resolve
+    /// receives them) and write the result to OUT/<path>.json.
+    #[command(hide = true)]
+    ResolveTree {
+        trees: PathBuf,
+        out: PathBuf,
+        #[arg(long)]
+        natives: Option<PathBuf>,
+    },
     /// Print the disc.h a decompile would write for an extracted disc.
     #[command(hide = true)]
     DiscHeader {
@@ -319,6 +328,30 @@ fn run_to_asm_tree(trees: &Path, out: &Path, natives_dir: &Option<PathBuf>) -> R
     Ok(if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
 }
 
+fn run_resolve_tree(trees: &Path, out: &Path, natives_dir: &Option<PathBuf>) -> Result<ExitCode> {
+    let tables = natives::load(&natives_dir.clone().unwrap_or_else(files::natives_dir))?;
+    let found = sdk::files_under(trees, "json");
+    let failed: Vec<String> = found
+        .par_iter()
+        .filter_map(|relative| {
+            let result = (|| -> Result<()> {
+                let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(trees.join(relative))?)?;
+                let resolved = sdk::resolve(&c2_script::node::Node::from(value), &tables)?;
+                let target = out.join(relative);
+                std::fs::create_dir_all(target.parent().unwrap())?;
+                std::fs::write(&target, resolved.to_string())?;
+                Ok(())
+            })();
+            result.err().map(|error| format!("{relative}: {error:#}"))
+        })
+        .collect();
+    for line in &failed {
+        println!("failed: {line}");
+    }
+    println!("{} programs resolved, {} failed", found.len(), failed.len());
+    Ok(if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
+}
+
 fn run_disc_header(root: &Path, common: &Common) -> Result<ExitCode> {
     let defs = common.definitions()?;
     let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
@@ -388,6 +421,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::DiscHeader { root, common } => run_disc_header(root, common),
         Command::IndexDump { tree, names, common } => run_index_dump(tree, names, common),
         Command::ToAsmTree { trees, out, natives } => run_to_asm_tree(trees, out, natives),
+        Command::ResolveTree { trees, out, natives } => run_resolve_tree(trees, out, natives),
         Command::DecompileDump { root, out, source, named, common } => {
             run_decompile_dump(root, out, *source, *named, common)
         }

@@ -24,6 +24,15 @@ pub struct Table {
     pub source: String,
     pub array: String,
     pub natives: Vec<Native>,
+    /// Groups of an older native table, by base: the base of the same group in this one.
+    #[serde(default)]
+    pub old_groups: indexmap::IndexMap<String, i64>,
+    /// Groups that are current groups too, read as old in scripts built for the older table.
+    #[serde(default)]
+    pub old_table_groups: indexmap::IndexMap<String, i64>,
+    /// Numbers of the older table called without a group, by the number they stand for now.
+    #[serde(default)]
+    pub old_direct: indexmap::IndexMap<String, i64>,
 }
 
 impl Table {

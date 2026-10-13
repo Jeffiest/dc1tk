@@ -13,7 +13,7 @@ c2-py = { path = "crates/c2-py" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 encoding_rs = "0.8"
-indexmap = "2"
+indexmap = { version = "2", features = ["serde"] }
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false }
 rayon = "1"

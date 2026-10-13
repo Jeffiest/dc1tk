@@ -2,6 +2,7 @@
 //! decompiling to C and compiling back.
 
 pub mod asm;
+pub mod assets;
 pub mod compile;
 pub mod decompile;
 pub mod definitions;
@@ -14,6 +15,8 @@ pub mod natives;
 pub mod notes;
 pub mod pathnames;
 pub mod sdk;
+pub mod slots;
+pub mod soundpass;
 pub mod source;
 #[macro_use]
 pub mod node;
