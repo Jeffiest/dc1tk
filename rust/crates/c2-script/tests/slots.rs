@@ -1,4 +1,4 @@
-//! src/tests/test_slots.py
+//! Carried over from the Python tool's test_slots.py
 
 use std::collections::BTreeMap;
 

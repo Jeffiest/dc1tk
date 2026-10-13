@@ -63,7 +63,7 @@ pub struct NativesArgs {
 pub fn run_natives(args: &NativesArgs) -> Result<ExitCode> {
     let out = args.out.clone().unwrap_or_else(|| files::natives_dir().to_string_lossy().into_owned());
     let tables = match natives::generate(&args.chronicletwo, Path::new(&out)) {
-        // the Python's ValueError, which cli.py prints as "error: ..."
+        // an error, printed as "error: ..."
         Err(c2_script::Error::Invalid(message)) => anyhow::bail!("error: {message}"),
         other => other?,
     };

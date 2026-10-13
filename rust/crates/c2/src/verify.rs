@@ -261,3 +261,64 @@ pub fn format_report(report: &Value, limit: usize) -> String {
     lines.push(if summary["ok"] == true { "OK" } else { "FAILED" }.into());
     lines.join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const UNREGISTERED: [&str; 22] = [
+        "action:6", "action:7", "action:13", "action:14", "action:44", "action:80", "effect:250", "event:492", "event:800",
+        "monster:17", "monster:18", "monster:20", "monster:67", "monster:68", "monster:69", "monster:141", "monster:142",
+        "monster:143", "monster:154", "monster:155", "monster:157", "monster:159",
+    ];
+
+    fn tables() -> BTreeMap<String, Table> {
+        natives::load(&files::natives_dir()).unwrap()
+    }
+
+    #[test]
+    fn reports_every_script() {
+        let root = std::env::temp_dir().join(format!("c2-verify-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("map")).unwrap();
+        std::fs::write(root.join("map/t01.stb"), c2_disc::samples::sample_script()).unwrap();
+        std::fs::write(root.join("map/T02.STB"), c2_disc::samples::sample_script()).unwrap();
+        std::fs::write(root.join("map/t01.cfg"), b"not a script").unwrap();
+        let report = verify(&root, &tables(), Definitions::empty(), indexmap::IndexMap::new());
+        std::fs::remove_dir_all(&root).unwrap();
+        let report = report.unwrap();
+        let summary = &report["summary"];
+        assert_eq!(summary["scripts"], 2);
+        for stage in STAGES {
+            assert_eq!(summary["stages"][stage]["pass"], 2, "{stage}");
+        }
+        assert_eq!(summary["fallbacks"], 0);
+        assert_eq!(summary["asm_functions"], 4);
+        assert_eq!(summary["native_calls"], 2);
+        assert_eq!(summary["unregistered"], json!({}));
+        assert_eq!(summary["ok"], true);
+        assert_eq!(summary["coverage"], 1.0);
+        assert!(format_report(&report, 5).contains("OK"));
+    }
+
+    /// The whole disc round-trips: set C2S_CORPUS to an extracted disc to run it (40 s).
+    #[test]
+    fn corpus_round_trip() {
+        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
+            return;
+        };
+        let defs = c2_script::definitions::load(&[files::default_defs()]).unwrap();
+        let headers = c2_script::sdk::header_texts(&defs, &files::root().join("sdk")).unwrap();
+        let report = verify(Path::new(&corpus), &tables(), defs, headers).unwrap();
+        let summary = &report["summary"];
+        let text = format_report(&report, 20);
+        assert!(summary["scripts"].as_u64().unwrap() > 0, "no .stb files under {corpus:?}");
+        assert_eq!(summary["ok"], true, "{text}");
+        assert_eq!(summary["coverage"], 1.0, "{text}");
+        let found: Vec<&String> = summary["unregistered"].as_object().unwrap().keys().collect();
+        let mut wanted: Vec<&str> = UNREGISTERED.to_vec();
+        wanted.sort();
+        assert_eq!(found, wanted, "{text}");
+        assert_eq!(summary["fallbacks"], 0, "{text}");
+        assert_eq!(summary["asm_functions"], 0, "{text}");
+    }
+}

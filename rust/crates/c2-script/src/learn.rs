@@ -596,7 +596,7 @@ void on_init(void)
 ";
 
     fn tables() -> BTreeMap<String, Table> {
-        natives::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/c2s/tables")).unwrap()
+        natives::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../natives")).unwrap()
     }
 
     fn typed_headers() -> IndexMap<String, String> {

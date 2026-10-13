@@ -290,8 +290,8 @@ fn sorted_keys(value: &Value) -> Value {
 }
 
 pub fn write_entries(mod_dir: &Path, found: &Value) -> Result<()> {
-    let note = "A mod: files edited or added in a decompiled tree, under files/. cli.py build --mod uses them in place \
-                of the tree's; cli.py mod apply copies them into a tree.";
+    let note = "A mod: files edited or added in a decompiled tree, under files/. c2 build --mod uses them in place \
+                of the tree's; c2 mod apply copies them into a tree.";
     let mut body = found.clone();
     body["note"] = note.into();
     let text = c2_py::json::dumps(&sorted_keys(&body), &c2_py::json::Options::indented(1)) + "\n";

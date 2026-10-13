@@ -1,5 +1,5 @@
-//! c2: decompile, compile and mod Dark Chronicle. The Rust port of cli.py; commands print what
-//! cli.py's do.
+//! c2: decompile, compile and mod Dark Chronicle. It began as the port of the Python tool cli.py,
+//! whose output it gives byte for byte.
 
 mod asset_tree;
 mod assets;

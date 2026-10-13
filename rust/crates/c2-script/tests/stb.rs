@@ -1,4 +1,4 @@
-//! src/tests/test_stb.py
+//! Carried over from the Python tool's test_stb.py
 
 mod common;
 

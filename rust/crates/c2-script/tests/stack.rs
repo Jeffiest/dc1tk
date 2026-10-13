@@ -1,4 +1,4 @@
-//! src/tests/test_stack.py
+//! Carried over from the Python tool's test_stack.py
 
 mod common;
 

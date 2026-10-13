@@ -1,4 +1,4 @@
-//! src/tests/test_mods.py: mods of whole files layered over a tree, saved from it and applied to
+//! Carried over from the Python tool's test_mods.py: mods of whole files layered over a tree, saved from it and applied to
 //! it, and build compiling only what can have changed.
 
 mod build_common;

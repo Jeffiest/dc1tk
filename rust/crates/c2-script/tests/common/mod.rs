@@ -1,5 +1,5 @@
 //! What the ported tests share: the repository's data folders, the native tables, the fixtures of
-//! src/tests/build.py, a temporary folder, and running C text in the test VM (src/c2s/vm.py's run).
+//! the Python tool's tests/build.py, a temporary folder, and running C text in the test VM (the Python tool's vm.run).
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
@@ -20,7 +20,7 @@ pub fn root() -> PathBuf {
 /// The native tables, as natives.load() reads them.
 pub fn tables() -> &'static BTreeMap<String, Table> {
     static TABLES: OnceLock<BTreeMap<String, Table>> = OnceLock::new();
-    TABLES.get_or_init(|| natives::load(&root().join("src").join("c2s").join("tables")).unwrap())
+    TABLES.get_or_init(|| natives::load(&root().join("natives")).unwrap())
 }
 
 /// sdk.SDK_DIR.
@@ -119,7 +119,7 @@ impl Random {
     }
 }
 
-// src/tests/build.py
+// the Python tool's tests/build.py
 
 pub const SECTOR: usize = 2048;
 const ROOT_SECTOR: usize = 18;
@@ -289,7 +289,7 @@ pub fn sample_script() -> Vec<u8> {
     out
 }
 
-// src/c2s/vm.py
+// the Python tool's vm.py
 
 /// vm.functions(text): the text with the SDK's headers, compiled to the VM's function table.
 pub fn functions(text: &str) -> c2_script::Result<vm::Functions> {

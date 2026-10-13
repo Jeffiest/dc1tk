@@ -1476,7 +1476,7 @@ pub fn to_png(image: &Image, indexed: bool) -> Result<Vec<u8>> {
     }
     let mode = alpha_mode(image);
     let text = [
-        ("Software", "im3.py"),
+        ("Software", "c2"),
         ("im3:name", image.name.as_str()),
         ("im3:format", image.format.name()),
         ("im3:alpha", mode.name()),

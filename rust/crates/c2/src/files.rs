@@ -22,9 +22,9 @@ pub fn root() -> PathBuf {
     PathBuf::from(".")
 }
 
-/// The native tables' folder cli.py uses by default.
+/// The native tables' folder c2 uses by default.
 pub fn natives_dir() -> PathBuf {
-    root().join("src").join("c2s").join("tables")
+    root().join("natives")
 }
 
 /// The shipped definition set.

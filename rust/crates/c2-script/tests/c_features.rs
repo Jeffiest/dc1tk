@@ -1,4 +1,4 @@
-//! src/tests/test_c_features.py
+//! Carried over from the Python tool's test_c_features.py
 
 mod common;
 
