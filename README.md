@@ -14,8 +14,7 @@ PCSX2/A future port. Unedited scripts compile back to exactly the bytes on the d
 > knowledge about the scripts (names, documentation), never decompiled code,
 > game text or assets. You need your own copy of the PAL disc as an ISO
 > image: the tools extract and decompile it on your machine, and the
-> results (`extracted/`, `decompiled/`, `mods/`, built images) stay out of
-> git.
+> results (`extracted/`, `mods/`, built images) stay out of git.
 
 ## How to use
 
@@ -33,30 +32,31 @@ PCSX2/A future port. Unedited scripts compile back to exactly the bytes on the d
 The tool is one program, `c2`. Build it:
 
 ```
-cd rust
 cargo build --release
 ```
 
-This writes `rust/target/release/c2` (`c2.exe` on Windows). Put
-`rust/target/release` on your PATH, so that `c2` runs it; the commands below
-are written that way. Leave the program where it is built: it finds `sdk/`,
-`definitions/` and `natives/` in the repository folder above it (or in the
-folder `$C2_ROOT` names). Run the commands from this folder (it is where
-`extracted/`, `decompiled/` and `mods/` go). `c2 help` lists the commands
-and `c2 help COMMAND` gives one command's options.
+in this folder. This writes `target/release/c2` (`c2.exe` on Windows). Put
+`target/release` on your PATH, so that `c2` runs it; the commands below are
+written that way. Leave the program where it is built: it finds `sdk/`,
+`definitions/` and `src/natives/` in the repository folder above it (or in
+the folder `$C2_ROOT` names). Run the commands from this folder (it is
+where `extracted/` and `mods/` go). `c2 help` lists the commands and
+`c2 help COMMAND` gives one command's options.
 
 ### 2. Decompile the game
 
 ```
-c2 setup dc2.iso decompiled
+c2 setup dc2.iso
 ```
 
-This takes a minute or two. It extracts the disc into `extracted/` and writes
-every script into `decompiled/` as C: one file per script, with code that
-several scripts share in `lib/`. Folders and files keep the game's own codes,
-with a readable name added: `map/s/s51_raybrandt_castle/` is Raybrandt Castle,
-`dungeon/monster/e33a_golem.c` is the Golem's AI. Open `decompiled/` in your
-editor.
+This takes a minute or two. Everything taken from the disc goes under
+`extracted/`: the disc's files in `extracted/disc/`, every script as C in
+`extracted/scripts/`, and the textures, models and sounds in
+`extracted/assets/`. The scripts are one file per script, with code that
+several scripts share in `lib/`. Folders and files keep the game's own
+codes, with a readable name added: `map/s/s51_raybrandt_castle/` is
+Raybrandt Castle, `dungeon/monster/e33a_golem.c` is the Golem's AI. Open
+`extracted/scripts/` in your editor.
 
 ### 3. Make a change
 
@@ -64,7 +64,7 @@ Keep your changes in a **mod**: a folder in `mods/` that holds only what you
 change. Pick the functions you want to change and copy them into the mod:
 
 ```
-c2 mod override decompiled my-first-mod --map s51 start_castle_battle
+c2 mod override extracted/scripts my-first-mod --map s51 start_castle_battle
 ```
 
 and edit them in `mods/my-first-mod/s51.c`, a **patch**. When the mod is
@@ -76,17 +76,17 @@ combination. A mod that needs a save flag or a program number asks for one
 by name (`NEW_FLAG(MY_SCENE_SEEN);`) and the build gives it a free one, so
 mods never collide. See [mods](docs/usage.md#mods) for the rest: targeting
 a monster's AI, running code every frame, text in each language.
-(You can also edit `decompiled/` directly and save the edits into a mod
-later with `c2 mod save decompiled my-first-mod`.)
+(You can also edit `extracted/scripts/` directly and save the edits into a
+mod later with `c2 mod save extracted/scripts my-first-mod`.)
 
 To find what to change:
 
 ```
-c2 maps decompiled                       every map, and which ones you can play in
-c2 map decompiled s51                    one map: its programs, triggers, player positions
-c2 xref decompiled monster golem         a monster's AI and who places it
-c2 xref decompiled event 510 --map s51   what starts an event
-c2 flags decompiled                      save flags in use
+c2 maps extracted/scripts                       every map, and which ones you can play in
+c2 map extracted/scripts s51                    one map: its programs, triggers, player positions
+c2 xref extracted/scripts monster golem         a monster's AI and who places it
+c2 xref extracted/scripts event 510 --map s51   what starts an event
+c2 flags extracted/scripts                      save flags in use
 ```
 
 [A first test](docs/usage.md#a-first-test) has two small edits to try, and
@@ -95,7 +95,7 @@ the [modding guide](docs/modding.md) explains how the game runs its scripts.
 ### 4. Rebuild the disc
 
 ```
-c2 build decompiled dc2.iso -o modded.iso --mod my-first-mod
+c2 build extracted/scripts dc2.iso -o modded.iso --mod my-first-mod
 ```
 
 `build` compiles the scripts your mod changes and writes `modded.iso`: your
@@ -138,9 +138,10 @@ c2 play modded.iso
 ## What is in this repository
 
 ```
-rust/            the tool, c2: disc, format, assembler, decompiler, compiler,
-                 mods, assets; tests (cargo test --release); see rust/README.md
-natives/         the engine's native function tables, generated by c2 natives
+Cargo.toml       the Cargo workspace (cargo build --release, cargo test --release)
+src/crates/      the tool, c2: disc, format, assembler, decompiler, compiler,
+                 mods, assets; see src/README.md
+src/natives/     the engine's native function tables, generated by c2 natives
 sdk/             C headers scripts include: every engine call declared and
                  documented, constants, helpers; sdk/modkit/ for mods
 definitions/pal/ what is known about the PAL scripts: names, docs,
@@ -152,10 +153,10 @@ PLAN.md          what is done and what comes next
 ## Status
 
 Every one of the 1,398 scripts on the PAL disc decompiles, with no function
-left as assembly, and compiles back byte for byte (`c2 verify extracted`
-checks this). All 1,081 engine calls are documented. Every
-function on the disc has a name, named parameters and locals and a doc
-comment; story flags print as named constants; and dialogue, item, map and
+left as assembly, and compiles back byte for byte
+(`c2 verify extracted/disc` checks this). All 1,081 engine calls are
+documented. Every function on the disc has a name, named parameters and
+locals and a doc comment; story flags print as named constants; and dialogue, item, map and
 character ids carry their English text from your disc. See
 [PLAN.md](PLAN.md) for what comes next.
 

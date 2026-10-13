@@ -14,7 +14,7 @@ plus the native table (see
 [how definitions find things](definitions.md#how-definitions-find-things)). No script calls a later function or
 itself, so fingerprints are well defined and the same in every file.
 
-`rust/crates/c2-script/src/library.rs` finds the libraries over the whole disc:
+`src/crates/c2-script/src/library.rs` finds the libraries over the whole disc:
 
 1. A function can join a library when it is the first copy of its body in
    the file and everything it calls can too.
@@ -67,7 +67,7 @@ globals.
 
 ## Decompiler
 
-`decompile.rs` (in `rust/crates/c2-script/src/`) turns a parsed script into a
+`decompile.rs` (in `src/crates/c2-script/src/`) turns a parsed script into a
 program tree (`Node`, `node.rs`: maps and lists that dump as JSON);
 `sdk.rs` presents it with the SDK's names and helpers, and `source.rs` prints
 it as C; `decompiler.rs` runs the three with the definitions.
@@ -109,8 +109,9 @@ read, and printed for a block neither rule gives.
 
 # Code style
 
-- Rust, one Cargo workspace in `rust/` (see [its README](../rust/README.md)),
-  formatted with `cargo fmt` (`rust/rustfmt.toml`), with few dependencies.
+- Rust, one Cargo workspace (`Cargo.toml` at the root, crates in `src/crates/`;
+  see [its README](../src/README.md)), formatted with `cargo fmt`
+  (`rustfmt.toml`), with few dependencies.
 - Functions and plain data: structs for fixed records (the `.stb` header,
   instructions, functions), and few traits or wrappers.
 - Each module starts with a doc comment saying what it is for; comments

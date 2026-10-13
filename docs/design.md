@@ -11,15 +11,15 @@ from has been removed. Section 3 is kept as the plan the port followed.
 
 `extract` already writes every file of the disc, and `decompile` turns the
 scripts into a tree of C. The asset tree does the same for everything else:
-`assets/` beside `decompiled/`, each asset once, in a format common tools
-open.
+`extracted/assets/` beside `extracted/scripts/`, each asset once, in a
+format common tools open.
 
 ```
-c2 assets extracted -o assets    (or c2 assets pal.iso; --force replaces a tree already there)
+c2 assets extracted/disc -o extracted/assets    (or c2 assets pal.iso; --force replaces a tree already there)
 ```
 
 ```
-assets/
+extracted/assets/
   manifest.json                 every asset: id, kind, hashes, every place the disc has it
   textures/<group>/<id>.png     one per distinct picture
   models/<group>/<id>/          one per distinct character pack
@@ -34,7 +34,7 @@ where the asset is first found: `chara`, `dungeon/monster`, `map/s/s51`);
 nothing depends on them. What identifies an asset is its **id**. The whole
 PAL disc takes 12-16 s (16 cores) and gives 750 MB in 15,646 files; the same
 disc always gives the same tree, byte for byte, whether read from the image
-or from `extracted/`.
+or from `extracted/disc/`.
 
 ### What is an asset
 
@@ -269,7 +269,7 @@ when a chosen mod names an id: the same walk and naming as `c2 assets`
 (the tree's `named` step, shared), without converting anything. On the
 PAL disc it takes 0.6 s and gives the asset tree's manifest exactly (all
 26,399 ids, 1,497 aliases and every place, compared). It does not read
-`assets/manifest.json`: a tree can be stale, made from another disc or
+`extracted/assets/manifest.json`: a tree can be stale, made from another disc or
 with other definitions, and a build should not need one. The definition
 sets (`--defs`) name the sound entries, as for `c2 assets`. (The index
 counts as models the packs whose cfg names a model; the tree, the ones its
@@ -315,7 +315,7 @@ two mods both name.
   the export writes it, `sounds/<bank>/<NNN_NAME>.wav`, `sounds/<bank>/`)
   and adds its `replace` line; an id the mod has a line for is left alone.
   Paths (`chara/c02a.chr.d/c02a.img --as png`) still copy into `disc/`.
-  It reads the disc, not `assets/`: the files are the same as the tree's,
+  It reads the disc, not `extracted/assets/`: the files are the same as the tree's,
   and a mod should not need a tree.
 - `mod check SOURCE NAME... --disc ISO` resolves every line, shows what
   each reaches and refuses clashes; without `--disc` it checks the lines
@@ -348,11 +348,12 @@ as built before. The old `disc/` layout keeps working, alone or beside
 
 One Rust tool, `c2`, doing everything the Python tool (`cli.py`) did, with
 the same command names and output, so the docs change little. Done: what
-was built is described in [rust/README.md](../rust/README.md).
+was built is described in [src/README.md](../src/README.md).
 
 ### Layout
 
-A Cargo workspace at `rust/`:
+A Cargo workspace at `rust/` (now `Cargo.toml` at the root and the crates in
+`src/crates/`):
 
 | crate | Python modules it takes over |
 |---|---|
@@ -366,7 +367,7 @@ As built, the mod modules went into `c2-script` rather than a crate of
 their own, and a `c2-py` crate does the number and text formatting the
 output depends on as CPython did.
 
-The definitions (`definitions/`), tables (now `natives/*.json`) and SDK
+The definitions (`definitions/`), tables (now `src/natives/*.json`) and SDK
 headers stay data files, read by both tools during the port.
 
 ### Speed

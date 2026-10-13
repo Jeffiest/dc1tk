@@ -14,7 +14,7 @@ Sources: engine `ps2/include/mg_texture.hpp` (structs, lines 54-174) and
 `PageConv32to8`/`Conv32To8` 1427-1580). Swizzle tables:
 `ps2/asm/pal/data/mg_texture.data.s` (`lut_1246`, `block_table8_1266`,
 `block_table32_1267`). The corpus is all 5,217 `*.img` files under
-`extracted/`; the counts below come from scripts run over all of them
+`extracted/disc/`; the counts below come from scripts run over all of them
 while the format was worked out. `im3.rs` (in `src/crates/c2-assets/src/`)
 implements it, and `textures.rs` turns it into the PNG folders mods use.
 

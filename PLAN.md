@@ -96,12 +96,12 @@ definitions.
 
 See [the design](docs/design.md). In order:
 
-1. **Port to Rust** (done: `rust/`, one `c2` tool with the old Python
+1. **Port to Rust** (done: `src/`, one `c2` tool with the old Python
    tool's commands), milestone by milestone, each ending when the Rust gave
    the Python's bytes (disc, scripts, mods, assets) and its tests ran under
    `cargo test`; then the Python was deleted. Work runs across all cores.
    Parity scripts compared the two while both existed;
-   [rust/README.md](rust/README.md) describes the crates.
+   [src/README.md](src/README.md) describes the crates.
    - Done: the disc (`c2 extract`, writing an image, cp932), the same bytes
      as the Python on the whole PAL disc.
    - Done: the script reader (`c2 disassemble`, `c2 assemble`), the same
@@ -114,7 +114,7 @@ See [the design](docs/design.md). In order:
    - Done: `verify`, and the Python's tests as `cargo test`.
    - Done: `xref`, `maps`, `defs`, `natives`, `setup`: every command is ported.
    - Done: the Python removed; `c2` is the only tool.
-2. **The asset tree** (done: `c2 assets`): `assets/` beside `decompiled/`, every distinct
+2. **The asset tree** (done: `c2 assets`): `extracted/assets/` beside `extracted/scripts/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.
 3. **Mods by name** (done: `replace`/`add` by id in mod.json, `c2 mod migrate`): `mod.json` maps asset ids (`texture:c02a02`,
@@ -279,7 +279,7 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
 - Old native tables. Seven monster scripts (`b02a2` to `b02a7`, `e236a`)
   and two action scripts (`c01win`, `f204a`) were built for older native
   tables. Lining their calls up with current twins pins down 41 monster and
-  27 action numbers (`old_direct` in `natives/`), which also says
+  27 action numbers (`old_direct` in `src/natives/`), which also says
   what most of their unregistered `_EXT_n` calls were meant to be. Still
   unknown: monster old 161 and 162 (only in the b02a2 to b02a7 init), and
   what the current-numbered `_EXT_20(1)` and `_EXT_20(5)` in `b02a1` did

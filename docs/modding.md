@@ -9,17 +9,17 @@ comes from. The commands are in [usage](usage.md).
 
 | Question | Command |
 | --- | --- |
-| What runs program 510 of map s51, and what asks for it? | `c2 xref decompiled event 510 --map s51` |
-| How does the game get to map s51, and at which program? | `c2 xref decompiled map s51` |
-| Which model and AI script does a monster kind use, and who places it? | `c2 xref decompiled monster golem` |
-| Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `c2 flags decompiled`, `c2 flags decompiled --flag 54` |
-| Which maps can a scene start in, and where does the player play? | `c2 maps decompiled` |
-| A map's programs, free program numbers, trigger points and player positions? | `c2 map decompiled s17` |
-| What have I changed? | `c2 changes decompiled` |
+| What runs program 510 of map s51, and what asks for it? | `c2 xref extracted/scripts event 510 --map s51` |
+| How does the game get to map s51, and at which program? | `c2 xref extracted/scripts map s51` |
+| Which model and AI script does a monster kind use, and who places it? | `c2 xref extracted/scripts monster golem` |
+| Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `c2 flags extracted/scripts`, `c2 flags extracted/scripts --flag 54` |
+| Which maps can a scene start in, and where does the player play? | `c2 maps extracted/scripts` |
+| A map's programs, free program numbers, trigger points and player positions? | `c2 map extracted/scripts s17` |
+| What have I changed? | `c2 changes extracted/scripts` |
 
 Files keep the game's codes with a readable name after them
 (`map/s/s51_raybrandt_castle/`, `dungeon/monster/e33a_golem.c`); commands
-take the codes. `decompiled/include/disc.h` also gives each monster kind's model
+take the codes. `extracted/scripts/include/disc.h` also gives each monster kind's model
 and AI script:
 `MONSTER_GOLEM = 168,  // model e33a, AI e33a`. Several kinds can share one
 AI script (all four kinds of `e33a`), and a story fight can use an event-only
@@ -176,7 +176,7 @@ reaches scripts you did not edit, and `fork` gives some scripts their own
 copy of a library first:
 
 ```
-c2 fork decompiled lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
+c2 fork extracted/scripts lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
 ```
 
 ## A pattern: a caption every five seconds during a fight
@@ -288,7 +288,7 @@ boot it with `--play`. A mod can name its scene in `mod.json`
 straight to a scene, without changing the source tree:
 
 ```
-c2 build decompiled dc2.iso -o test.iso --start-at s51:story_50
+c2 build extracted/scripts dc2.iso -o test.iso --start-at s51:story_50
 ```
 
 A new game starts in dungeon 1's script at `floor_start` (`title.cpp`,
@@ -307,16 +307,16 @@ only.
 `setup` and `decompile` write `original-hashes.json` at the root of the tree,
 recording what they wrote. From it:
 
-- `c2 changes decompiled` lists every file you edited, added or removed;
+- `c2 changes extracted/scripts` lists every file you edited, added or removed;
 - `setup` and `decompile` refuse to overwrite edited files (`--force`
   overrides);
-- `c2 mod save decompiled castle` copies your edited and added files into
+- `c2 mod save extracted/scripts castle` copies your edited and added files into
   the mod `mods/castle`.
 
 Better still, keep the tree untouched and do the work in mods:
-`c2 mod override decompiled castle --map s51 start_castle_battle` starts a
+`c2 mod override extracted/scripts castle --map s51 start_castle_battle` starts a
 patch holding just that function, and
-`c2 build decompiled dc2.iso -o modded.iso --mod castle --mod another`
+`c2 build extracted/scripts dc2.iso -o modded.iso --mod castle --mod another`
 merges the chosen mods into the scripts they target. A patch holds only what it changes, so a fresh tree,
 decompiled after a tools update, takes the same mods, and several mods can
 change one script. (`mod new` copies whole files into a mod instead; `mod

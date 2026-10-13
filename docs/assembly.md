@@ -1,6 +1,6 @@
 # Assembly
 
-`rust/crates/c2-script/src/asm.rs`. The disassembler prints a parsed script
+`src/crates/c2-script/src/asm.rs`. The disassembler prints a parsed script
 as text; the assembler parses the text back into the same regions
 `stb::read` returns and hands them to `stb::write`, so both directions share
 one writer.

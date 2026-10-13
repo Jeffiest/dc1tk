@@ -14,7 +14,7 @@ Evidence is of three kinds, marked where it matters:
   `src/scenesnd.cpp`, the asm of the not-yet-matched functions
   `LoadSeInfoTxt`, `LoadVolInfoTxt`, `GetLine`, `SearchSeq`, `sndLoadSound`,
   `sndSePlaySeID`, `sndCSeSeq::NoteOn`), and `re/docs/snd_mngr|snd_seseq`;
-- **data**: statistics over all 861 banks (`extracted/**/NAME.snd`, 20
+- **data**: statistics over all 861 banks (`extracted/disc/**/NAME.snd`, 20
   outside `snd2/`: menu and fishing packs hold copies);
 - **Sony**: the `.hd` is Sony's hardware-synth bank format, read on the IOP
   by Sony's `modhsyn` through the EZMIDI sample driver (the EE side,

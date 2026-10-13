@@ -40,7 +40,7 @@ its target by something that can be computed from the binary.
 | Library | fingerprint of its member list |
 | Line in a function | function fingerprint and instruction index |
 
-**Function fingerprints** (`rust/crates/c2-script/src/fingerprint.rs`) are the foundation, so
+**Function fingerprints** (`src/crates/c2-script/src/fingerprint.rs`) are the foundation, so
 their definition is fixed and versioned. The fingerprint is a SHA-1 over:
 the function's record (argument count, local count, argument types); its
 unused strings; its instructions, with jump targets made relative to the
@@ -198,7 +198,7 @@ from an older, smaller table (see [the SDK](sdk.md)). An entry also applies to t
 
 ### Strings
 
-`strings/<language>.json` maps string hashes (`rust/crates/c2-script/src/notes.rs`,
+`strings/<language>.json` maps string hashes (`src/crates/c2-script/src/notes.rs`,
 `string_key`) to translations, shown as comments beside the code that uses
 the string:
 
@@ -371,10 +371,10 @@ sound sets have enums in the PAL set's `pal.h` (see `notes/sounds.md`).
 
 The easiest way to write definitions is to edit decompiled code:
 
-1. `c2 setup dc2.iso decompiled` decompiles the disc with the shipped sets.
+1. `c2 setup dc2.iso` decompiles the disc with the shipped sets.
 2. Rename functions, parameters, locals and globals, and add doc comments
-   above functions and at the top of scripts, in `decompiled/`.
-3. `c2 defs learn decompiled definitions/pal` compiles the edited files,
+   above functions and at the top of scripts, in `extracted/scripts/`.
+3. `c2 defs learn extracted/scripts definitions/pal` compiles the edited files,
    fingerprints each function, and records every name, doc and global name
    that differs from the decompiler's defaults, and the file name, top
    comment and global names of each library file (into `libraries.json`). Because names do
@@ -385,13 +385,13 @@ The easiest way to write definitions is to edit decompiled code:
 
 To see where things stand:
 
-- `c2 defs disc extracted definitions/pal` records the disc the set is
+- `c2 defs disc extracted/disc definitions/pal` records the disc the set is
   for in `disc.json`; `decompile` then warns when it is given a different
   disc, and `defs check` says whether the disc matches.
-- `c2 defs check extracted` reports how much of the disc the set
+- `c2 defs check extracted/disc` reports how much of the disc the set
   names, per native table, by function and by distinct class, and entries
   that match nothing on the disc.
-- `c2 defs todo extracted` lists what is still unnamed, most called
+- `c2 defs todo extracted/disc` lists what is still unnamed, most called
   first, with a file and current name to look at.
 
 ## What people will want to do

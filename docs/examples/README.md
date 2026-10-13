@@ -3,7 +3,7 @@
 Made-up scripts written for these docs, to show how to write each kind of
 script with the SDK. No retail code appears here. Each compiles as it is
 (`c2 compile docs/examples/greeting.c -o greeting.stb`), and a test
-(`rust/crates/c2-script/tests/examples.rs`) checks that they all still do.
+(`src/crates/c2-script/tests/examples.rs`) checks that they all still do.
 
 The examples define English names for the few Japanese asset names they
 use (`#define MOTION_STAND "立ち"`). Inside a decompiled tree you do not
