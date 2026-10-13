@@ -40,13 +40,7 @@ fn parse_name(name: &str) -> Option<(usize, Option<String>)> {
         return None;
     }
     let middle = &name[digits..name.len() - 4];
-    let label = if middle.is_empty() {
-        None
-    } else if let Some(label) = middle.strip_prefix('_') {
-        Some(label.to_string())
-    } else {
-        return None;
-    };
+    let label = if middle.is_empty() { None } else { Some(middle.strip_prefix('_')?.to_string()) };
     Some((name[..digits].parse().ok()?, label))
 }
 

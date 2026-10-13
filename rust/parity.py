@@ -507,6 +507,58 @@ def check_sounds(args):
     return problems + check_asset_edits("wav", args, work, files, edited)
 
 
+def edited_models(exported, edited, every):
+    """Deterministic edits of every n-th character pack's export: the positions of every other mesh
+    scaled (rigid and skinned ones), one rigid mesh's node moved, and one texture recoloured."""
+    import shutil
+    import struct
+    from c2s import im3
+    folders = sorted(path for path in exported.rglob("*.chr.gltf") if path.is_dir())
+    count = 0
+    for number, folder in enumerate(folders[::every]):
+        target = edited / folder.relative_to(exported)
+        shutil.copytree(folder, target)
+        gltf_path = next(target.glob("*.gltf"))
+        gltf = json.loads(gltf_path.read_text(encoding="utf-8"))
+        bin_path = target / gltf["buffers"][0]["uri"]
+        buffer = bytearray(bin_path.read_bytes())
+        for m, mesh in enumerate(gltf.get("meshes", [])):
+            if (m + number) % 2:
+                continue
+            for primitive in mesh["primitives"]:
+                accessor = gltf["accessors"][primitive["attributes"]["POSITION"]]
+                base = gltf["bufferViews"][accessor["bufferView"]].get("byteOffset", 0) + accessor.get("byteOffset", 0)
+                for i in range(accessor["count"]):
+                    x, y, z = struct.unpack_from("<3f", buffer, base + 12 * i)
+                    struct.pack_into("<3f", buffer, base + 12 * i, x * 1.25, y * 0.75, z + 0.5)
+            count += 1
+        bin_path.write_bytes(bytes(buffer))
+        rigid = [node for node in gltf["nodes"] if "mesh" in node and "skin" not in node]
+        if rigid and number % 3 == 0:
+            rigid[0]["translation"] = [v + 0.25 for v in rigid[0].get("translation", [0.0, 0.0, 0.0])]
+            gltf_path.write_text(json.dumps(gltf, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            count += 1
+        pngs = sorted((target / "textures").glob("*.png")) if (target / "textures").is_dir() else []
+        if pngs:
+            png = pngs[number % len(pngs)]
+            w, h, mode, data, palette = im3.read_png(png.read_bytes())
+            if mode == "P":
+                table = [bytes(c) for c in palette] + [b"\0\0\0\xff"] * (256 - len(palette))
+                data = b"".join(table[i] for i in data)
+            png.write_bytes(im3.write_png(w, h, "RGBA", bytes(255 - v if i % 4 != 3 else v for i, v in enumerate(data))))
+            count += 1
+    print("%d edits in %d character packs" % (count, len(folders[::every])))
+
+
+def check_models(args):
+    work = Path(args.work)
+    problems, files, exported = check_asset_exports("gltf", args, work)
+    edited = work / "gltf_edits"
+    fresh(edited)
+    edited_models(exported, edited, args.every)
+    return problems + check_asset_edits("gltf", args, work, files, edited)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     checks = parser.add_subparsers(dest="check", required=True)
@@ -530,7 +582,7 @@ def main():
     command.add_argument("--source", action="store_true", help="compare the source text instead of the tree")
     command.add_argument("--named", action="store_true", help="with the definitions' names, script entries and "
                          "translations (without the SDK's names)")
-    for name, every in (("textures", 25), ("sounds", 20)):
+    for name, every in (("textures", 25), ("sounds", 20), ("models", 20)):
         command = checks.add_parser(name)
         command.add_argument("extracted")
         command.add_argument("work")
@@ -542,7 +594,7 @@ def main():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
     checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble,
               "decompile": check_decompile, "textures": check_textures,
-              "sounds": check_sounds}
+              "sounds": check_sounds, "models": check_models}
     problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)

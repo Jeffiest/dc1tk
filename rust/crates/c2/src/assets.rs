@@ -40,7 +40,7 @@ impl Kind {
         match self {
             Kind::Png => textures::export(data),
             Kind::Wav => c2_assets::sounds::export(data),
-            Kind::Gltf => todo!(),
+            Kind::Gltf => c2_assets::models::export(data),
         }
     }
 
@@ -48,7 +48,7 @@ impl Kind {
         match self {
             Kind::Png => textures::build(folder, original),
             Kind::Wav => c2_assets::sounds::build(folder, original),
-            Kind::Gltf => todo!(),
+            Kind::Gltf => c2_assets::models::build(folder, original),
         }
     }
 }

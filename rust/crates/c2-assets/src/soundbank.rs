@@ -849,14 +849,16 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
     let used = &pcm[..frames * align];
     let values: Vec<f64> = match (tag, bits) {
         (1, 8) => used.iter().map(|&b| (b as f64 - 128.0) * 256.0).collect(),
-        (1, 16) => used.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as f64).collect(),
+        (1, 16) => used.as_chunks::<2>().0.iter().map(|b| i16::from_le_bytes(*b) as f64).collect(),
         (1, 24) => used
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|b| (((b[2] as i8 as i32) << 16) | ((b[1] as i32) << 8) | b[0] as i32) as f64 / 256.0)
             .collect(),
-        (1, 32) => used.chunks_exact(4).map(|b| i32::from_le_bytes(b.try_into().unwrap()) as f64 / 65536.0).collect(),
-        (3, 32) => used.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap()) as f64 * 32768.0).collect(),
-        (3, 64) => used.chunks_exact(8).map(|b| f64::from_le_bytes(b.try_into().unwrap()) * 32768.0).collect(),
+        (1, 32) => used.as_chunks::<4>().0.iter().map(|b| i32::from_le_bytes(*b) as f64 / 65536.0).collect(),
+        (3, 32) => used.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b) as f64 * 32768.0).collect(),
+        (3, 64) => used.as_chunks::<8>().0.iter().map(|b| f64::from_le_bytes(*b) * 32768.0).collect(),
         _ => bail!("unsupported WAV format {tag} with {bits} bits"),
     };
     let values: Vec<f64> = if channels > 1 {
