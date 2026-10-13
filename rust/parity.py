@@ -390,6 +390,95 @@ def check_asset_edits(kind, args, work, files, edited):
     return compare_builds(py, rs)
 
 
+def encoded_png(w, h, rgba, variant):
+    """RGBA pixels as a PNG the way image editors write them, in one of 8 variants of colour type,
+    bit depth, transparency, row filters (all five, by row) and Adam7 interlacing."""
+    import struct
+    import zlib
+    pixels = [tuple(rgba[i:i + 4]) for i in range(0, len(rgba), 4)]
+    colours = sorted(set(pixels))
+    # (colour type, bit depth, interlaced)
+    ctype, depth, interlace = [(6, 8, 0), (2, 8, 1), (4, 8, 0), (0, 4, 0), (6, 16, 1), (3, 8, 0), (3, 4, 1), (0, 16, 0)][variant]
+    if ctype == 3 and len(colours) > (1 << depth):
+        ctype, depth = 6, 8
+    chunks = []
+    if ctype == 3:
+        index = {c: i for i, c in enumerate(colours)}
+        chunks.append((b"PLTE", b"".join(bytes(c[:3]) for c in colours)))
+        chunks.append((b"tRNS", bytes(c[3] for c in colours)))
+        samples = [[index[p]] for p in pixels]
+    elif ctype == 6:
+        samples = [list(p) for p in pixels]
+    elif ctype == 4:
+        samples = [[p[0], p[3]] for p in pixels]
+    elif ctype == 2:
+        samples = [list(p[:3]) for p in pixels]
+        key = pixels[0][:3]
+        chunks.append((b"tRNS", struct.pack(">HHH", *key)))
+    else:
+        top = (1 << min(depth, 8)) - 1
+        samples = [[p[0] * top // 255] for p in pixels]
+        chunks.append((b"tRNS", struct.pack(">H", samples[0][0])))
+    channels = len(samples[0]) if samples else 1
+    bits_pp = depth * channels
+    bpp = max(1, bits_pp // 8)
+
+    def row_bytes(row):
+        if depth == 16:
+            return b"".join(struct.pack(">H", v * 257) for s in row for v in s)
+        if depth == 8:
+            return bytes(v for s in row for v in s)
+        out, acc, bits = bytearray(), 0, 0
+        for s in row:
+            for v in s:
+                acc, bits = (acc << depth) | v, bits + depth
+                if bits == 8:
+                    out.append(acc)
+                    acc, bits = 0, 0
+        if bits:
+            out.append(acc << (8 - bits))
+        return bytes(out)
+
+    def filtered(rows):
+        out, prev = bytearray(), None
+        for y, line in enumerate(rows):
+            prev = prev or bytes(len(line))
+            kind = y % 5
+            enc = bytearray()
+            for i, x in enumerate(line):
+                a = line[i - bpp] if i >= bpp else 0
+                b = prev[i]
+                c = prev[i - bpp] if i >= bpp else 0
+                if kind == 1:
+                    x -= a
+                elif kind == 2:
+                    x -= b
+                elif kind == 3:
+                    x -= (a + b) >> 1
+                elif kind == 4:
+                    p = a + b - c
+                    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                    x -= a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                enc.append(x & 255)
+            out += bytes([kind]) + enc
+            prev = line
+        return bytes(out)
+
+    grid = [samples[y * w:(y + 1) * w] for y in range(h)]
+    if interlace:
+        raw = b""
+        for x0, y0, dx, dy in [(0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)]:
+            rows = [row_bytes(grid[y][x0::dx]) for y in range(y0, h, dy) if grid[y][x0::dx]]
+            raw += filtered(rows)
+    else:
+        raw = filtered([row_bytes(row) for row in grid])
+    out = b"\x89PNG\r\n\x1a\n"
+    for tag, body in [(b"IHDR", struct.pack(">IIBBBBB", w, h, depth, ctype, 0, 0, interlace))] + chunks + \
+            [(b"IDAT", zlib.compress(raw, 9)), (b"IEND", b"")]:
+        out += struct.pack(">I", len(body)) + tag + body + struct.pack(">I", zlib.crc32(tag + body))
+    return out
+
+
 def edited_pngs(root, exported, edited, every):
     """Deterministic edits of every n-th texture file's PNGs: colours inverted (true colour, so a
     paletted picture is matched or quantised), the palette's red and blue swapped, pixels moved to
@@ -417,6 +506,8 @@ def edited_pngs(root, exported, edited, every):
             elif how == 3 and w > 1 and h > 1:
                 half = b"".join(rgba[4 * (2 * y * w + 2 * x):4 * (2 * y * w + 2 * x) + 4] for y in range(h // 2) for x in range(w // 2))
                 out = im3.write_png(w // 2, h // 2, "RGBA", half)
+            elif how == 4 and w * h <= 256 * 256:
+                out = encoded_png(w, h, rgba, (number // 5 + k) % 8)
             else:
                 continue
             (target / png.name).write_bytes(out)
