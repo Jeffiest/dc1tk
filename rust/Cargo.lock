@@ -82,6 +82,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "c2-disc",
+ "c2-py",
  "c2-script",
  "clap",
  "mimalloc",

@@ -6,6 +6,7 @@ pub mod decompile;
 pub mod definitions;
 pub mod disc;
 pub mod fingerprint;
+pub mod index;
 pub mod messages;
 pub mod names;
 pub mod natives;

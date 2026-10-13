@@ -133,6 +133,15 @@ enum Command {
         #[command(flatten)]
         common: Common,
     },
+    /// Print what the source index reads from a tree, as JSON: outlines, includers, header
+    /// constants, and the calls to the named functions with each argument's folded value.
+    #[command(hide = true)]
+    IndexDump {
+        tree: PathBuf,
+        names: Vec<String>,
+        #[command(flatten)]
+        common: Common,
+    },
     /// Print the disc.h a decompile would write for an extracted disc.
     #[command(hide = true)]
     DiscHeader {
@@ -232,6 +241,48 @@ fn run_decompile_dump(root: &Path, out: &Path, as_source: bool, named: bool, com
     Ok(ExitCode::SUCCESS)
 }
 
+fn run_index_dump(tree: &Path, names: &[String], common: &Common) -> Result<ExitCode> {
+    use c2_script::index;
+    let defs = common.definitions()?;
+    let headers = index::tree_headers(tree, &defs, &common.sdk_dir())?;
+    let consts = index::constants(headers.values());
+    let outlines = index::outlines(tree)?;
+    let outline_json: serde_json::Map<String, serde_json::Value> = outlines
+        .iter()
+        .map(|(path, outline)| {
+            let programs: Vec<serde_json::Value> = outline
+                .programs
+                .iter()
+                .map(|(number, function)| serde_json::json!({"number": number, "function": function}))
+                .collect();
+            (path.clone(), serde_json::json!({"programs": programs, "includes": outline.includes}))
+        })
+        .collect();
+    let folded = |text: &str| match index::value(text, &consts) {
+        Some(index::Folded::Int(value)) => serde_json::json!(value as i64),
+        Some(index::Folded::Text(text)) => serde_json::json!(text),
+        None => serde_json::Value::Null,
+    };
+    let names: std::collections::BTreeSet<String> = names.iter().cloned().collect();
+    let calls: Vec<serde_json::Value> = index::calls(tree, &names)?
+        .into_iter()
+        .map(|call| {
+            let values: Vec<serde_json::Value> = call.args.iter().map(|arg| folded(arg)).collect();
+            serde_json::json!({"path": call.path, "line": call.line, "function": call.function, "name": call.name,
+                "args": call.args, "text": call.text, "meant": call.meant, "values": values})
+        })
+        .collect();
+    let consts: BTreeMap<&String, &i64> = consts.iter().collect();
+    let dump = serde_json::json!({
+        "outlines": outline_json,
+        "includers": index::includers(&outlines),
+        "constants": consts,
+        "calls": calls,
+    });
+    println!("{}", c2_py::json::dumps(&dump, &c2_py::json::Options::compact()));
+    Ok(ExitCode::SUCCESS)
+}
+
 fn run_disc_header(root: &Path, common: &Common) -> Result<ExitCode> {
     let defs = common.definitions()?;
     let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
@@ -299,6 +350,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::DisassembleTree { root, out, common } => run_disassemble_tree(root, out, common),
         Command::AssembleTree { root, asm, natives } => run_assemble_tree(root, asm, natives),
         Command::DiscHeader { root, common } => run_disc_header(root, common),
+        Command::IndexDump { tree, names, common } => run_index_dump(tree, names, common),
         Command::DecompileDump { root, out, source, named, common } => {
             run_decompile_dump(root, out, *source, *named, common)
         }
