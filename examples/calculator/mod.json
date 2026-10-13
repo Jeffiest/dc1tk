@@ -1,0 +1,39 @@
+{
+ "title": "Calculator",
+ "version": "2.0.0",
+ "start_at": "s17:CALC_START",
+ "add": {
+  "file:mods/calculator/calc_ui.img": {
+   "file": "ui",
+   "like": "texture:logo_d00"
+  },
+  "file:mods/calculator/calc.chr": {
+   "file": "model/calc.gltf",
+   "like": "model:uki"
+  },
+  "sound:SE_MOD_CALC_KEY": {
+   "file": "sounds/key.wav",
+   "bank": "SP_042"
+  },
+  "sound:SE_MOD_CALC_EQUALS": {
+   "file": "sounds/equals.wav",
+   "bank": "SP_042"
+  },
+  "sound:SE_MOD_CALC_ERROR": {
+   "file": "sounds/error.wav",
+   "bank": "SP_042"
+  },
+  "sound:SE_MOD_CALC_CLEAR": {
+   "file": "sounds/clear.wav",
+   "bank": "SP_042"
+  },
+  "sound:SE_MOD_CALC_OPEN": {
+   "file": "sounds/open.wav",
+   "bank": "SP_042"
+  },
+  "sound:SE_MOD_CALC_CLOSE": {
+   "file": "sounds/close.wav",
+   "bank": "SP_042"
+  }
+ }
+}
