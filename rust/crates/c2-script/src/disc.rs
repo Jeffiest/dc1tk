@@ -78,7 +78,8 @@ pub fn monster_table(elf: &[u8], layout: &Node) -> IndexMap<i64, MonsterRow> {
     rows
 }
 
-fn executable(root: &Path, defs: &Definitions) -> Option<Vec<u8>> {
+/// The game executable named by the definitions, read from the extracted disc.
+pub fn executable(root: &Path, defs: &Definitions) -> Option<Vec<u8>> {
     let name = defs.executable.get("name").and_then(Node::as_str)?;
     fs::read(root.join(name)).ok()
 }

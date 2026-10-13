@@ -5,6 +5,7 @@ mod assets;
 mod files;
 mod modding;
 mod tree_decompile;
+mod xref;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -191,6 +192,12 @@ enum Command {
         #[command(flatten)]
         common: Common,
     },
+    /// What starts an event, what enters a map, where a monster is used.
+    Xref(xref::XrefArgs),
+    /// Every map: how the game uses it and whether the player plays there.
+    Maps(xref::MapsArgs),
+    /// One map: programs and free numbers, trigger points, player positions, entries.
+    Map(xref::MapArgs),
     /// Build a script from assembly text.
     Assemble {
         source: PathBuf,
@@ -649,6 +656,9 @@ fn run(command: &Command) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Flags { source, used, flag, common } => run_flags(source, *used, *flag, common),
+        Command::Xref(args) => xref::run_xref(args),
+        Command::Maps(args) => xref::run_maps(args),
+        Command::Map(args) => xref::run_map(args),
         Command::Compile { source, output, table, common } => run_compile(source, output.as_deref(), table, common),
         Command::CompileTree { tree, extracted, common } => run_compile_tree(tree, extracted, common),
         Command::Decompile { stb, output, force, table, common } => {
