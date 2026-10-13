@@ -90,7 +90,7 @@ pub fn language_code(defs: &Definitions) -> Option<i64> {
 
 /// Where a monster kind's files are: its model pack and the AI script it runs, both under
 /// dungeon/monster/. Kinds can share an AI script, and an event-only kind can have its own.
-fn monster_note(row: &MonsterRow) -> String {
+pub fn monster_note(row: &MonsterRow) -> String {
     format!("model {}, AI {}", row.model, if row.script.is_empty() { &row.model } else { &row.script })
 }
 
@@ -133,7 +133,7 @@ pub fn identifier(text: &str, prefix: &str) -> Option<String> {
     Some(std::iter::once(prefix.to_string()).chain(words).collect::<Vec<_>>().join("_"))
 }
 
-fn enum_lines(
+pub fn enum_lines(
     name: &str,
     prefix: &str,
     values: &NameTable,
