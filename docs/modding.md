@@ -172,6 +172,43 @@ the player is alive and on the ground:
 | a monster's `run_event_script(n)` | program `n`, on the monster's request |
 | a trigger point's program | the player touches it, presses the action button at it or uses an item there, as `c2 map` lists |
 
+## Pictures and models of a mod's own
+
+Scripts load pictures and models by disc path: `load_image(stack,
+"mods/calculator/ui.img", 0, &block)` loads a texture file, whose pictures
+`set_image_texture(image, "calc_bg")` then asks for by name, and
+`load_chara(stack, "mods/calculator/calc.chr", "info.cfg", slot)` loads a
+character pack. A mod makes such files from PNGs and glTF with `file:`
+lines that say which of the disc's files to make them like:
+
+```json
+"add": {
+  "file:mods/calculator/ui.img": {"file": "ui", "like": "texture:logo_d00"},
+  "file:mods/calculator/calc.chr": {"file": "model/calc.gltf", "like": "model:uki"}
+}
+```
+
+- **A picture file** takes a folder of PNGs (or one PNG): one picture each,
+  named after its file (`ui/calc_bg.png` is `calc_bg`). `texture:logo_d00`,
+  the title logo, makes them as the game's 2D pictures are: 8-bit with a
+  palette of 256 colours with alpha, so a PNG of more colours is reduced
+  to 256, and see-through pixels stay see-through. Sides are up to 1024
+  texels, the width a multiple of 16. `texture:sphida_bar` and
+  `texture:e100_2d01` are the same format.
+- **A model pack** takes a glTF: its nodes and meshes as they are placed,
+  each material's base colour PNG as a picture of the pack (sides powers
+  of two), its texture named after the image. `model:uki`, the fishing
+  float, is a static prop's pack: its `info.cfg` names the new
+  `calc.img` and `calc.mds`, with no motion. Skinned meshes are refused;
+  parent the parts to nodes instead.
+- `build` lists them as new files; `c2 mod asset built.iso NAME
+  mods/calculator/ui.img --as png` (or `calc.chr --as gltf`) copies them
+  back out of a built image to check. The rules are in [the
+  design](design.md), "Mods by name".
+
+Keep them small: a picture file loads into the memory stack the script
+names, and the 256x128 and 32x32 pictures above make a 36 KB file.
+
 ## Editing shared code
 
 Code that several scripts share lives in `lib/`, and an edit there reaches

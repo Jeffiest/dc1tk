@@ -283,16 +283,103 @@ fn a_file_line_converts_a_folder_by_the_game_file_it_stands_for() {
     write(&mod_dir.join("walls/wall.png"), &png([4, 4, 4]));
     mod_json(&mod_dir, json!({"replace": {"file:map/b/b02.ipk.d/x.img": "walls"}}));
     let (wanted, _) = discfiles::collect(std::slice::from_ref(&mod_dir)).unwrap();
-    let (files, report) = discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default()).unwrap();
+    let (files, report) =
+        discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default(), &Default::default()).unwrap();
     assert_eq!(report[0].path, "map/b/b02.ipk.d/x.img");
     assert_eq!(pixels(&at(&disc, &files, "map/b/b02.ipk", &["x.img"]), "wall"), [4, 4, 4, 0x80].repeat(64));
     // a folder for a file with no common format is refused
     mod_json(&mod_dir, json!({"replace": {"file:map/b/b02.ipk": "walls"}}));
     let (wanted, _) = discfiles::collect(std::slice::from_ref(&mod_dir)).unwrap();
-    fails(discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default()), "stands only for");
+    fails(
+        discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default(), &Default::default()),
+        "stands only for",
+    );
     // given in disc/ too
     write(&mod_dir.join("disc/map/b/b02.ipk"), b"x");
     fails(discfiles::collect(std::slice::from_ref(&mod_dir)), "is given twice");
+}
+
+#[test]
+fn a_file_line_made_like_a_disc_file_is_a_new_texture_file_or_pack() {
+    let disc = disc("made");
+    let mod_dir = disc.mods.join("calc");
+    let colours = |seed: u8| -> Vec<u8> { (0..64u8).flat_map(|i| [seed, i * 4, 255 - i, 255]).collect() };
+    let rgba = |seed: u8| im3::write_png(8, 8, PngMode::Rgba, &colours(seed), &[], &[]).unwrap();
+    write(&mod_dir.join("ui/calc_bg.png"), &rgba(10));
+    write(&mod_dir.join("ui/calc_key.png"), &rgba(200));
+    for (name, data) in tree::exported_model(&character(), "c01").unwrap() {
+        write(&mod_dir.join("model").join(name), &data);
+    }
+    mod_json(
+        &mod_dir,
+        json!({"add": {
+            "file:mods/calc/ui.img": {"file": "ui", "like": "texture:tex02"},
+            "file:mods/calc/calc.chr": {"file": "model", "like": "model:c01"},
+            "file:map/b/b02.ipk.d/keys.img": {"file": "ui/calc_key.png", "like": "map/b/b02.ipk.d/x.img"},
+        }}),
+    );
+    let lines = replace::lines(&mod_dir).unwrap();
+    assert!(replace::needs_index(&lines));
+    assert_eq!(replace::described(&mod_dir).unwrap()[0], "adds file:mods/calc/ui.img: ui (like texture:tex02)");
+    fails(replace::templates(&lines, None), "the disc has no asset texture:tex02");
+    let templates = replace::templates(&lines, Some(&disc.index)).unwrap();
+    assert_eq!(templates["mods/calc/ui.img"].place.display(), "map/a/a01.ipk.d/a01.img");
+    assert_eq!(templates["mods/calc/calc.chr"].name, "c01");
+    let (wanted, _) = discfiles::collect(std::slice::from_ref(&mod_dir)).unwrap();
+    let (files, report) =
+        discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default(), &templates).unwrap();
+    let shown: Vec<(&str, Option<usize>, bool)> =
+        report.iter().map(|item| (item.path.as_str(), item.old, item.new_file)).collect();
+    assert_eq!(
+        shown,
+        [
+            ("map/b/b02.ipk.d/keys.img", None, false),
+            ("mods/calc/calc.chr", None, true),
+            ("mods/calc/ui.img", None, true)
+        ]
+    );
+
+    // the new texture file: a picture per PNG, named after it, in the template picture's format
+    let ui = im3::read(&files["mods/calc/ui.img"]).unwrap();
+    let names: Vec<(&str, Format)> = ui.iter().map(|image| (image.name.as_str(), image.format)).collect();
+    assert_eq!(names, [("calc_bg", Format::Ct32), ("calc_key", Format::Ct32)]);
+    for (name, png) in c2_assets::textures::export(&files["mods/calc/ui.img"]).unwrap() {
+        let seed = if name == "calc_bg.png" { 10 } else { 200 };
+        assert_eq!(im3::read_png(&png).unwrap().data, colours(seed), "{name}");
+    }
+    let keys = at(&disc, &files, "map/b/b02.ipk", &["keys.img"]);
+    assert_eq!(im3::read(&keys).unwrap()[0].name, "calc_key");
+
+    // the new pack: the glTF's mesh and texture under the pack's own name, the template's cfg
+    let pack = &files["mods/calc/calc.chr"];
+    let members: Vec<String> = c2_disc::archive::parse_pack(pack).unwrap().into_iter().map(|m| m.name).collect();
+    assert_eq!(members, ["calc.img", "calc.mds", "info.cfg"]);
+    let cfg = rebuild::read_member(pack, &["info.cfg".to_string()]).unwrap();
+    assert_eq!(cfg, b"v2;\nIMG 0, \"calc.img\";\nIMG_END;\n\nMODEL \"calc.mds\";\n");
+    let exported = c2_assets::models::export(pack).unwrap();
+    let paths: Vec<&str> = exported.iter().map(|(path, _)| path.as_str()).collect();
+    assert_eq!(paths, ["calc.bin", "calc.gltf", "textures/tex01.png"]);
+    let model = mds::parse(rebuild::read_member(pack, &["calc.mds".to_string()]).unwrap()).unwrap();
+    let meshes: Vec<&str> =
+        model.nodes.iter().filter(|node| node.mdt.is_some()).map(|node| node.name.as_str()).collect();
+    assert_eq!(meshes, ["body"]);
+    assert_eq!(model.nodes[1].mdt.as_ref().unwrap().vertices.len(), 4);
+
+    // written into an image, the new files read back as built
+    let out = disc._folder.path().join("made.iso");
+    rebuild::write_disc(&disc.iso, &out, &files).unwrap();
+    assert!(discfiles::check(&out, &report).unwrap().is_empty());
+
+    // a template of the wrong kind, or for a file that is neither, is refused as mod.json is read
+    let case = |body: Value, words: &str| {
+        mod_json(&mod_dir, body);
+        fails(replace::lines(&mod_dir), words);
+    };
+    case(json!({"add": {"file:a/b.img": {"file": "ui", "like": "model:c01"}}}), "names a texture");
+    case(json!({"add": {"file:a/b.chr": {"file": "ui/calc_bg.png", "like": "chara/c01.chr"}}}), "is not a .gltf file");
+    case(json!({"add": {"file:a/b.snd": {"file": "ui", "like": "texture:tex02"}}}), "makes texture files");
+    case(json!({"add": {"file:a/b.img": {"file": "ui", "like": "texture:tex*"}}}), "names one texture");
+    case(json!({"add": {"texture:x": {"file": "ui", "like": "texture:tex02"}}}), "unknown option \"like\"");
 }
 
 #[test]
@@ -362,6 +449,7 @@ fn line(module: &str, key: &str, file: &Path, add: bool) -> Line {
         volume: None,
         bank: add.then(|| "bank:SP_004".to_string()),
         add,
+        like: None,
     }
 }
 
@@ -432,7 +520,7 @@ fn a_migrated_mod_builds_the_same_files() {
     mod_json(&mod_dir, json!({"start_at": "s51:500"}));
     let old_files = |mod_dir: &Path| {
         let (wanted, _) = discfiles::collect(&[mod_dir.to_path_buf()]).unwrap();
-        discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default()).unwrap().0
+        discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default(), &Default::default()).unwrap().0
     };
     let before = old_files(&mod_dir);
 

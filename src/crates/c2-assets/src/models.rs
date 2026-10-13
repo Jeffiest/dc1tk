@@ -3,6 +3,7 @@
 //! model uses (the pack's own pictures where it has them). build rebuilds the mesh, weights and bind
 //! pose from the edited glTF with the disc's model as the template, and puts texture PNGs that
 //! differ from the export into the pack's texture files; parts left as exported change nothing.
+//! new_pack makes a pack of its own from a glTF alone, in a template pack's layout.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -321,6 +322,166 @@ fn with_textures(mut pack: Vec<u8>, given: &[(String, Vec<u8>)], exported: &[(St
     Ok(pack)
 }
 
+/// A pack of the members, in order: each in its 0x50-byte slot, padded to 16 bytes, and an empty
+/// slot at the end.
+pub fn write_pack(members: &[(String, Vec<u8>)]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    for (name, data) in members {
+        let Some(raw) = c2_disc::text::encode(name).filter(|raw| !raw.is_empty() && raw.len() < archive::PACK_NAME)
+        else {
+            bail!("{name} cannot be a member's name (1 to {} bytes of Shift-JIS)", archive::PACK_NAME - 1);
+        };
+        let pad = archive::padding(data.len());
+        let mut slot = vec![0u8; archive::PACK_SLOT];
+        slot[..raw.len()].copy_from_slice(&raw);
+        let size = i32::try_from(data.len()).map_err(|_| Error::invalid(format!("{name} is too big for a pack")))?;
+        slot[64..68].copy_from_slice(&(archive::PACK_SLOT as i32).to_le_bytes());
+        slot[68..72].copy_from_slice(&size.to_le_bytes());
+        slot[72..76].copy_from_slice(&((archive::PACK_SLOT + data.len() + pad) as i32).to_le_bytes());
+        out.extend(slot);
+        out.extend(data);
+        out.extend(std::iter::repeat_n(0, pad));
+    }
+    out.extend([0u8; archive::PACK_SLOT]);
+    Ok(out)
+}
+
+/// The statement tag a line of a cfg starts with (MODEL in `MODEL "a.mds";`).
+fn cfg_tag(line: &str) -> &str {
+    let line = line.trim_start();
+    let end = line.find(|c: char| c.is_whitespace() || c == ';' || c == '"' || c == ',').unwrap_or(line.len());
+    &line[..end]
+}
+
+/// A template's info.cfg for a new pack named `stem`: NAME, MODEL and the texture file name the new
+/// pack's members (<stem>.mds, <stem>.img, which IMG 0 loads; no IMG line without pictures), and
+/// what belonged to the template's model alone (motion sets, vertex and shape animation, shadow
+/// and LOD models) dropped. Every other line (outline, size, scale, comments) stays as it is.
+pub fn new_info_cfg(template: &[u8], stem: &str, pictures: bool) -> Result<Vec<u8>> {
+    let text = c2_disc::text::decode_lossy(template);
+    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let img = format!("IMG 0, \"{stem}.img\";");
+    let (mut out, mut in_motion, mut img_written, mut model_written) = (String::new(), false, false, false);
+    for line in text.split_inclusive('\n') {
+        let tag = cfg_tag(line);
+        let ending = if line.ends_with("\r\n") {
+            "\r\n"
+        } else if line.ends_with('\n') {
+            "\n"
+        } else {
+            ""
+        };
+        if in_motion {
+            in_motion = tag != "MOTION_END";
+            continue;
+        }
+        match tag {
+            "MOTION" => in_motion = true,
+            "SHADOW_MOTION" | "VERTEX_ANIME" | "SHAPE_ANIME" | "SHADOW_MODEL" | "LOD_MODEL" | "KEY_START" | "KEY"
+            | "KEY_END" | "MOTION_END" => {}
+            "NAME" => out.push_str(&format!("NAME \"{stem}\";{ending}")),
+            "IMG" => {
+                if pictures && !img_written {
+                    out.push_str(&format!("{img}{ending}"));
+                }
+                img_written = true;
+            }
+            "MODEL" => {
+                if pictures && !img_written {
+                    out.push_str(&format!("{img}{newline}IMG_END;{newline}{newline}"));
+                    img_written = true;
+                }
+                out.push_str(&format!("MODEL \"{stem}.mds\";{ending}"));
+                model_written = true;
+            }
+            _ => out.push_str(line),
+        }
+    }
+    if !model_written {
+        bail!("the template's cfg names no model");
+    }
+    c2_disc::text::encode(&out).ok_or_else(|| Error::invalid("the template's cfg is not Shift-JIS text"))
+}
+
+/// The glTF a mod gives for a new model: a .gltf (its buffers and images beside it), a .glb, or a
+/// folder holding one of them.
+fn gltf_file(source: &Path) -> Result<std::path::PathBuf> {
+    if !source.is_dir() {
+        return Ok(source.to_path_buf());
+    }
+    let mut found: Vec<std::path::PathBuf> = std::fs::read_dir(source)?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let name = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            path.is_file() && (name.ends_with(".gltf") || name.ends_with(".glb"))
+        })
+        .collect();
+    match found.len() {
+        1 => Ok(found.remove(0)),
+        0 => bail!("{} holds no .gltf or .glb file", source.display()),
+        _ => bail!("{} holds more than one .gltf or .glb file", source.display()),
+    }
+}
+
+/// A new character pack named `stem` (its members <stem>.mds, <stem>.img and info.cfg) built from a
+/// glTF, with a template pack (`template_name` is its model's name, for packs whose cfg is named
+/// after them) giving its cfg's other lines, the MDS version and the texture format. The model is
+/// the glTF's nodes and rigid meshes alone (from_gltf::new_model), and the texture file holds each
+/// material's base colour image as a picture of the name the material uses (PNG, sides powers of
+/// two, in the format of the template's first picture).
+pub fn new_pack(source: &Path, template: &[u8], template_name: &str, stem: &str) -> Result<Vec<u8>> {
+    let (pack, _) = crate::tree::model_pack(template, template_name);
+    let (folder, files) = unpacked(&pack)?;
+    let Some(model) = folder.get(&files.model) else {
+        bail!("the template has no {}, its model", files.model);
+    };
+    let version = crate::mds::parse(model)?.version;
+    let path = gltf_file(source)?;
+    let here = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let read = |uri: &str| -> Result<Vec<u8>> {
+        let file = here.join(crate::tree::uri_decoded(uri));
+        std::fs::read(&file).map_err(|error| Error::invalid(format!("{}: {error}", file.display())))
+    };
+    let mut gltf = from_gltf::load_gltf(&std::fs::read(&path)?, &read)?;
+    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let wrap = |error: Error| match error {
+        Error::Invalid(message) => Error::invalid(format!("{name}: {message}")),
+        other => other,
+    };
+    let mut pictures = Vec::new();
+    for (texture, image) in from_gltf::material_textures(&gltf).map_err(wrap)? {
+        let png = from_gltf::image_bytes(&gltf, &image, &read).map_err(wrap)?;
+        if !png.starts_with(b"\x89PNG") {
+            return Err(wrap(Error::invalid(format!("the image of texture {texture} is not a PNG"))));
+        }
+        pictures.push((texture, png));
+    }
+    let mds = from_gltf::new_model(&mut gltf, version, stem).map_err(wrap)?;
+    let mut members = Vec::new();
+    if !pictures.is_empty() {
+        let info = info_cfg::read(folder.get("info.cfg").unwrap_or_default());
+        let mut images: Vec<&str> = info.imgs.iter().filter_map(|(_, member)| member.as_str()).collect();
+        images.extend(
+            folder
+                .files()
+                .iter()
+                .map(|(member, _)| member.as_str())
+                .filter(|member| member.to_lowercase().ends_with(".img")),
+        );
+        let Some(img) = images.iter().find_map(|member| folder.get(member)) else {
+            bail!("the template has no texture file to take the pictures' format from");
+        };
+        let like = textures::template_picture(img, None)?;
+        let built = textures::new_file(&pictures, &like, true).map_err(wrap)?;
+        members.push((format!("{stem}.img"), built));
+    }
+    members.push((format!("{stem}.mds"), mds));
+    let cfg = new_info_cfg(folder.get("info.cfg").unwrap_or_default(), stem, !pictures.is_empty())?;
+    members.push(("info.cfg".to_string(), cfg));
+    write_pack(&members)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,5 +599,137 @@ mod tests {
         assert_eq!(im3::read(img).unwrap()[0].pixels.as_deref().unwrap(), [0, 0, 255, 0x80].repeat(64));
         let info = ["info.cfg".to_string()];
         assert_eq!(rebuild::read_member(&built, &info), rebuild::read_member(&pack, &info));
+    }
+
+    /// A prop pack as the game's are: a swizzled 8-bit picture, a model, a motion set.
+    fn prop_template() -> Vec<u8> {
+        let mut picture = im3::Image::new("prop01", im3::Format::T8, 64, 64);
+        picture.swizzled = true;
+        picture.palette = Some(vec![[90, 90, 90, 0x80]; 256]);
+        picture.indices = Some(vec![0; 64 * 64]);
+        let img = im3::write(&[picture], None).unwrap();
+        let cfg = "v2;\r\n\r\nNAME \"prop\";\r\n\r\nIMG 0, \"prop.img\";\r\nIMG_END;\r\n\r\nMATERIAL_ANIME 0;\r\nMODEL \"prop.mds\";\r\nBODY_SIZE 0.00, 0.00, 0.00;\r\n\r\nMOTION 0, \"prop.mot\", \"\", \"\";\r\nKEY_START;\r\n\tKEY \"loop\", 2, 15, 0.02;\r\nKEY_END;\r\nMOTION_END;\r\n";
+        let model = members(&sample_pack()).unwrap().into_iter().find(|(name, _)| name == "c.mds").unwrap().1;
+        pack(&[("prop.img", &img), ("prop.mds", &model), ("prop.mot", b"motion"), ("info.cfg", cfg.as_bytes())])
+    }
+
+    /// A glTF Separate of two meshes: "body" (textured, under a moved node "calc") and "key"
+    /// (untextured), with the texture's PNG in a folder beside it.
+    fn calc_gltf(folder: &Path) -> std::path::PathBuf {
+        let mut bin = Vec::new();
+        for v in [[0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+            for x in v {
+                bin.extend(x.to_le_bytes());
+            }
+        }
+        for v in [[0f32, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+            for x in v {
+                bin.extend(x.to_le_bytes());
+            }
+        }
+        for i in [0u16, 1, 2, 0] {
+            bin.extend(i.to_le_bytes());
+        }
+        let gltf = r#"{"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0, 2]}],
+ "nodes": [{"name": "calc", "translation": [0, 2, 0], "children": [1]},
+           {"name": "body", "mesh": 0, "rotation": [0, 0.7071068, 0, 0.7071068]},
+           {"mesh": 1, "scale": [2, 2, 2]}],
+ "meshes": [{"name": "body", "primitives": [{"attributes": {"POSITION": 0, "TEXCOORD_0": 1}, "indices": 2, "material": 0}]},
+            {"name": "key", "primitives": [{"attributes": {"POSITION": 0}, "indices": 2, "material": 1}]}],
+ "materials": [{"name": "Face", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}},
+               {"name": "Plastic", "pbrMetallicRoughness": {"baseColorFactor": [0.2, 0.2, 0.2, 1]}}],
+ "textures": [{"source": 0}], "images": [{"uri": "tex/calc_face.png"}],
+ "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+               {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2"},
+               {"bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR"}],
+ "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36}, {"buffer": 0, "byteOffset": 36, "byteLength": 24},
+                 {"buffer": 0, "byteOffset": 60, "byteLength": 6}],
+ "buffers": [{"uri": "calc.bin", "byteLength": 68}]}"#;
+        let _ = std::fs::remove_dir_all(folder);
+        std::fs::create_dir_all(folder.join("tex")).unwrap();
+        std::fs::write(folder.join("calc.bin"), bin).unwrap();
+        let face: Vec<u8> =
+            (0..32 * 16).flat_map(|i| if i % 5 == 0 { [255, 255, 255, 255] } else { [20, 40, 200, 255] }).collect();
+        std::fs::write(
+            folder.join("tex/calc_face.png"),
+            im3::write_png(32, 16, im3::PngMode::Rgba, &face, &[], &[]).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(folder.join("calc.gltf"), gltf).unwrap();
+        folder.join("calc.gltf")
+    }
+
+    #[test]
+    fn a_new_pack_holds_the_gltf_meshes_and_textures_in_the_templates_layout() {
+        let folder = std::env::temp_dir().join(format!("c2-assets-new-pack-{}", std::process::id()));
+        let gltf = calc_gltf(&folder);
+        let built = new_pack(&gltf, &prop_template(), "prop", "calc").unwrap();
+        let found = members(&built).unwrap();
+        let names: Vec<&str> = found.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["calc.img", "calc.mds", "info.cfg"]);
+        let cfg = String::from_utf8(found[2].1.clone()).unwrap();
+        assert_eq!(
+            cfg,
+            "v2;\r\n\r\nNAME \"calc\";\r\n\r\nIMG 0, \"calc.img\";\r\nIMG_END;\r\n\r\nMATERIAL_ANIME 0;\r\nMODEL \"calc.mds\";\r\nBODY_SIZE 0.00, 0.00, 0.00;\r\n\r\n"
+        );
+        // frames: the two roots under one named after the pack, the node "calc" renamed to keep
+        // names distinct, the unnamed mesh node by its mesh's name
+        let model = mds::parse(&found[1].1).unwrap();
+        let frames: Vec<(&str, i32, bool)> =
+            model.nodes.iter().map(|node| (node.name.as_str(), node.parent, node.mdt.is_some())).collect();
+        assert_eq!(frames, [("calc", -1, false), ("calc_1", 0, false), ("body", 1, true), ("key", 0, true)]);
+        assert_eq!(model.nodes[1].matrix[13], 2.0);
+        assert_eq!(model.nodes[3].matrix[0], 2.0);
+        let body = model.nodes[2].mdt.as_ref().unwrap();
+        assert_eq!(body.vertices.len(), 3);
+        assert_eq!(body.materials[0].texture, "calc_face");
+        assert_eq!(model.nodes[3].mdt.as_ref().unwrap().materials[0].texture, "");
+        let pictures = im3::read(&found[0].1).unwrap();
+        assert_eq!((pictures[0].name.as_str(), pictures[0].width, pictures[0].height), ("calc_face", 32, 16));
+        assert_eq!((pictures[0].format, pictures[0].swizzled), (im3::Format::T8, true));
+        // exported again: both meshes and the picture come back
+        let exported = export(&built).unwrap();
+        let paths: Vec<&str> = exported.iter().map(|(path, _)| path.as_str()).collect();
+        assert_eq!(paths, ["calc.bin", "calc.gltf", "textures/calc_face.png"]);
+        let png = im3::read_png(get(&exported, "textures/calc_face.png")).unwrap();
+        let given = im3::read_png(&std::fs::read(folder.join("tex/calc_face.png")).unwrap()).unwrap();
+        let rgba = |p: &im3::Png| -> Vec<u8> {
+            if p.paletted {
+                p.data.iter().flat_map(|&i| p.palette[i as usize]).collect()
+            } else {
+                p.data.clone()
+            }
+        };
+        assert_eq!(rgba(&png), rgba(&given));
+        let json = crate::json::loads(std::str::from_utf8(get(&exported, "calc.gltf")).unwrap()).unwrap();
+        let meshes: Vec<&str> = json
+            .get("meshes")
+            .unwrap()
+            .as_list()
+            .unwrap()
+            .iter()
+            .map(|m| m.get("name").unwrap().as_str().unwrap())
+            .collect();
+        assert_eq!(meshes, ["body", "key"]);
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_new_pack_refuses_skins_and_textures_the_game_cannot_wrap() {
+        let folder = std::env::temp_dir().join(format!("c2-assets-new-pack-refused-{}", std::process::id()));
+        let gltf = calc_gltf(&folder);
+        let face: Vec<u8> = [9u8, 9, 9, 255].repeat(48 * 16);
+        std::fs::write(
+            folder.join("tex/calc_face.png"),
+            im3::write_png(48, 16, im3::PngMode::Rgba, &face, &[], &[]).unwrap(),
+        )
+        .unwrap();
+        let error = new_pack(&gltf, &prop_template(), "prop", "calc").unwrap_err().to_string();
+        assert!(error.contains("powers of two"), "{error}");
+        let text = std::fs::read_to_string(&gltf).unwrap().replace("\"scene\": 0,", "\"skins\": [{\"joints\": [0]}],");
+        std::fs::write(&gltf, text).unwrap();
+        let error = new_pack(&gltf, &prop_template(), "prop", "calc").unwrap_err().to_string();
+        assert!(error.contains("skin"), "{error}");
+        std::fs::remove_dir_all(folder).unwrap();
     }
 }

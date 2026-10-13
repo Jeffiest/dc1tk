@@ -808,6 +808,171 @@ pub fn import_gltf(
     Ok(Imported { mds: mds::build(&model)?, wgt: mot::build(&wgt)?, bbp: mot::build_bbp(&bbp)? })
 }
 
+/// The name import_gltf gives the frame of glTF node `n`: its name, or for a mesh node without one
+/// its mesh's, Blender's ".001" and a skinned mesh's "_skin" dropped.
+fn frame_name(j: &Value, n: &Value) -> Result<String> {
+    let mut name = match (n.get("name").filter(|v| v.truthy()), n.get("mesh")) {
+        (Some(name), _) => clean(Some(name))?,
+        (None, Some(mesh)) => clean(index(item(j, "meshes")?, mesh)?.get("name"))?,
+        (None, None) => String::new(),
+    };
+    if n.has("mesh") {
+        if let Some(stem) = name.strip_suffix("_skin") {
+            name = stem.to_string();
+        }
+    }
+    Ok(name)
+}
+
+/// A new MDS from a glTF alone: a frame for every node, named and placed as the glTF has it (local
+/// translation, rotation and scale, under its parent; several roots go under one frame named
+/// `root`), and each mesh node's triangles as its frame's mesh, in the frame's own space. Mesh
+/// nodes keep their own names; names given twice, or none, are made distinct. version is the MDS
+/// version written. Materials take their texture names as import_gltf reads them, and one with no
+/// texture gets none. Skins are refused: a new model is rigid.
+pub fn new_model(gltf: &mut Gltf, version: u32, root: &str) -> Result<Vec<u8>> {
+    let empty = Vec::new();
+    let node_count = gltf.json.get("nodes").and_then(Value::as_list).map_or(0, Vec::len);
+    if gltf.json.get("skins").and_then(Value::as_list).is_some_and(|skins| !skins.is_empty()) {
+        bail!("the glTF has a skin; a new model is built from rigid meshes (parent them to nodes instead)");
+    }
+    // every node named, distinctly, as import_gltf will read the names
+    let mut names: Vec<String> = Vec::with_capacity(node_count);
+    for i in 0..node_count {
+        let n = index(item(&gltf.json, "nodes")?, &Value::Int(i as i64))?;
+        let mut name = frame_name(&gltf.json, n)?;
+        if name.is_empty() {
+            name = format!("node{i}");
+        }
+        let base = name.clone();
+        let mut k = 1;
+        while names.iter().any(|known| known.eq_ignore_ascii_case(&name)) || name.eq_ignore_ascii_case(root) {
+            name = format!("{base}_{k}");
+            k += 1;
+        }
+        names.push(name);
+    }
+    if let Some(Value::List(nodes)) = gltf.json.get_mut("nodes") {
+        for (node, name) in nodes.iter_mut().zip(&names) {
+            node.set("name", Value::Str(name.clone()));
+        }
+    }
+    // a material without a texture names none (import_gltf would take the material's name)
+    if let Some(Value::List(materials)) = gltf.json.get_mut("materials") {
+        for material in materials {
+            let textured = material.get("extras").is_some_and(|extras| extras.has("texture"))
+                || material.get("pbrMetallicRoughness").is_some_and(|pbr| pbr.has("baseColorTexture"));
+            if !textured {
+                match material.get_mut("extras") {
+                    Some(extras @ Value::Object(_)) => extras.set("texture", Value::Str(String::new())),
+                    _ => material.set("extras", crate::object! {"texture" => ""}),
+                }
+            }
+        }
+    }
+    let j = &gltf.json;
+    let node_list = item(j, "nodes")?.as_list().unwrap_or(&empty);
+    let mut parent: HashMap<usize, usize> = HashMap::new();
+    for (i, n) in node_list.iter().enumerate() {
+        for c in n.get("children").and_then(Value::as_list).unwrap_or(&empty) {
+            match c.as_int() {
+                Some(c) if (0..node_count as i64).contains(&c) => {
+                    parent.insert(c as usize, i);
+                }
+                _ => bail!("node {i} has a child that is not a node"),
+            }
+        }
+    }
+    let roots: Vec<usize> = (0..node_count).filter(|i| !parent.contains_key(i)).collect();
+    let mut frames: Vec<Node> = Vec::with_capacity(node_count + 1);
+    let shared_root = roots.len() > 1;
+    if shared_root {
+        frames.push(Node::new(root, -1));
+    }
+    // parents before children, as MDS frames are
+    let mut pending: Vec<(usize, i32)> = roots.iter().rev().map(|&r| (r, if shared_root { 0 } else { -1 })).collect();
+    let mut placed = vec![false; node_count];
+    while let Some((i, up)) = pending.pop() {
+        if std::mem::replace(&mut placed[i], true) {
+            bail!("node {i} is reached twice in the node hierarchy");
+        }
+        let n = &node_list[i];
+        let mut frame = Node::new(&names[i], up);
+        frame.matrix = floats(&node_matrix(n)?);
+        frames.push(frame);
+        let at = (frames.len() - 1) as i32;
+        let children = n.get("children").and_then(Value::as_list).unwrap_or(&empty);
+        for c in children.iter().rev() {
+            pending.push((c.as_int().unwrap_or(0) as usize, at));
+        }
+    }
+    if placed.iter().any(|placed| !placed) {
+        bail!("the glTF's node hierarchy has a cycle");
+    }
+    if !node_list.iter().any(|n| n.has("mesh")) {
+        bail!("the glTF has no mesh");
+    }
+    let skeleton = mds::build(&Mds { version, nodes: frames })?;
+    Ok(import_gltf(gltf, &skeleton, None, None, None)?.mds)
+}
+
+/// The image bytes of glTF image `i`: a data: uri, a file by uri (read through `read`, relative to
+/// the glTF), or a buffer view.
+pub fn image_bytes(gltf: &Gltf, i: &Value, read: &dyn Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
+    let image = index(item(&gltf.json, "images")?, i)?;
+    if let Some(uri) = image.get("uri").and_then(Value::as_str) {
+        if let Some((_, data)) = uri.strip_prefix("data:").and_then(|rest| rest.split_once(',')) {
+            return base64(data);
+        }
+        return read(uri);
+    }
+    let Some(view) = image.get("bufferView") else {
+        bail!("image {} has neither a uri nor a buffer view", i.as_int().unwrap_or(-1));
+    };
+    let view = index(item(&gltf.json, "bufferViews")?, view)?;
+    let buffer = view.get("buffer").and_then(Value::as_int).unwrap_or(0);
+    let Some(buffer) = usize::try_from(buffer).ok().and_then(|b| gltf.buffers.get(b)) else {
+        bail!("list index out of range");
+    };
+    let start = view.get("byteOffset").and_then(Value::as_int).unwrap_or(0).max(0) as usize;
+    let length = view.get("byteLength").and_then(Value::as_int).unwrap_or(0).max(0) as usize;
+    match buffer.get(start..start + length) {
+        Some(bytes) => Ok(bytes.to_vec()),
+        None => bail!("an image's buffer view runs past its buffer"),
+    }
+}
+
+/// (texture name, glTF image index) for every material's base colour texture: the name its MDT
+/// material gets, so the picture of that name is the one it shows.
+pub fn material_textures(gltf: &Gltf) -> Result<Vec<(String, Value)>> {
+    let j = &gltf.json;
+    let mut out: Vec<(String, Value)> = Vec::new();
+    let count = j.get("materials").and_then(Value::as_list).map_or(0, Vec::len);
+    for m in 0..count {
+        let number = Value::Int(m as i64);
+        let material = index(item(j, "materials")?, &number)?;
+        let Some(base) = material.get("pbrMetallicRoughness").and_then(|pbr| pbr.get("baseColorTexture")) else {
+            continue;
+        };
+        let texture = index(item(j, "textures")?, item(base, "index")?)?;
+        let Some(source) = texture.get("source") else {
+            continue;
+        };
+        let name = material_from_gltf(j, &number)?.texture;
+        if name.is_empty() {
+            continue;
+        }
+        match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(&name)) {
+            Some((_, other)) if other.as_int() != source.as_int() => {
+                bail!("two different images are named {name}; give each texture its own name")
+            }
+            Some(_) => {}
+            None => out.push((name, source.clone())),
+        }
+    }
+    Ok(out)
+}
+
 /// The glTF world matrix of node i (W in the Python), memoised.
 fn world_of(
     i: i64,

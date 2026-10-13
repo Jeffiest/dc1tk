@@ -203,7 +203,9 @@ in `c2-assets`' `ids`).
     "file:snd2/event/EV_000_130.snd": "raw/bank.snd"
   },
   "add": {
-    "sound:SE_MOD_BEEP": { "file": "sounds/beep.wav", "bank": "SP_004" }
+    "sound:SE_MOD_BEEP": { "file": "sounds/beep.wav", "bank": "SP_004" },
+    "file:mods/calculator/ui.img": { "file": "ui", "like": "texture:logo_d00" },
+    "file:mods/calculator/calc.chr": { "file": "model/calc.gltf", "like": "model:uki" }
   }
 }
 ```
@@ -214,7 +216,8 @@ in `c2-assets`' `ids`).
   nothing outside it), or an object with `file` and options: `only`
   (replace), `volume` (sounds, 0 to 127; set even when the WAV is the
   bank's own) and `bank` (add). An unknown option, a file the mod does not
-  have or of the wrong kind, is refused when `mod.json` is read.
+  have or of the wrong kind, is refused when `mod.json` is read. A
+  `file:` line also takes `like` (below).
 - **What each kind takes.** A texture: a PNG, built into the picture at
   each place with the disc's picture as the template (palette, mip levels),
   as a texture folder's PNG is. A model: a `.gltf` file with its buffer
@@ -253,8 +256,57 @@ in `c2-assets`' `ids`).
   are (`play_se(SE_MOD_BEEP)`); `build` prints the number. `mod check`
   without a disc compiles with 0 for it. Other new assets (a model or
   picture under a new name) need a script or model to ask for that name,
-  so they are `file:` lines (a new member) for now; the design's "mod's
-  generated header" is not needed while patches see the names.
+  so they are `file:` lines, by the path the script loads; the design's
+  "mod's generated header" is not needed while patches see the names.
+- **New files from common formats.** A `file:` line with `like` makes its
+  game file whole, from PNGs or a glTF, with the disc's file `like` names
+  as the template, so a mod can have a picture file or model pack of its
+  own (under `add`, for a path the disc lacks; on a path the disc has it
+  replaces the file whole). `like` is an asset id (`texture:logo_d00`, the
+  texture file holding that picture; `model:uki`, that model's pack, at
+  its first place) or a disc path (`dungeon/sphida/sphida_bar.img`,
+  `chara/uki.chr`, members as `a.chr.d/b.img`), of the same kind as the
+  path: a texture file for `.img`, a character pack for `.chr`.
+  - A **texture file** (`.img`) takes a PNG, or a folder of PNGs: one
+    picture each, named by its file name without `.png` (1 to 31 Latin-1
+    characters, distinct ignoring case), the name `set_image_texture` and
+    models' materials ask for. Each is written in the format of the
+    template's picture (the one the id names, or the file's first): its
+    pixel format, palette size, swizzling, mip levels and header fields,
+    with the PNG's own size. The game's 2D pictures, and prop textures,
+    are 8-bit indexed (PSMT8) with a 256-colour palette with alpha, stored
+    swizzled; a PNG with at most 256 colours keeps them exactly, any other
+    is quantised to 256 (median cut). Alpha is the PS2's: PNG 255 is 0x80,
+    opaque, in 129 steps. Sides are 1 to 1024 texels (TEX0's limit), a
+    multiple of 16 wide for swizzled 8-bit pictures; the game's own 2D
+    pictures are not all powers of two (`logo_d00` is 384x128), as event
+    images are drawn by texel rectangles. The file is an IM3, as every
+    texture file of the game's is, its pictures in file-name order.
+  - A **character pack** (`.chr`) takes a glTF (`.gltf` with its buffer
+    and images beside it, a `.glb`, or a folder holding one), and is named
+    after its path: `calc.chr` holds `calc.img`, `calc.mds` and `info.cfg`.
+    The model is the glTF alone: every node a frame, with its translation,
+    rotation and scale under its parent (several roots go under a frame
+    named after the pack), and each mesh node's triangles (positions,
+    normals, the first UVs and colours) its frame's mesh. A material's
+    base colour texture is a picture of the pack's texture file, named as
+    the image is (its `name`, else its file name), in the format of the
+    template's first picture, with sides that are powers of two (a model's
+    UVs wrap at the power of two above a picture's size); PNG only. A
+    material with no texture names none. The template gives the MDS
+    version and its `info.cfg` (or the cfg named after it, for monsters'
+    packs), which becomes the new pack's `info.cfg` (the name
+    `load_chara` asks for): `NAME`, `IMG` and `MODEL` name the new
+    members, and what
+    belonged to the template's model alone (motion sets with their keys,
+    `VERTEX_ANIME`, `SHAPE_ANIME`, shadow and LOD models) is dropped; the
+    rest (`MATERIAL_ANIME`, `OUTLINE`, `BODY_SIZE`, `SCALE`, comments)
+    stays. Skins are refused: a new model is rigid, its parts placed by
+    their nodes. A static prop's pack is the template to pick:
+    `model:uki` (`chara/uki.chr`, the fishing float: one picture, one
+    mesh, no motion), or `model:lure01` and `model:hari` like it.
+  - Exported again (`mod asset ISO NAME PATH --as png`, `--as gltf`), the
+    file gives back its pictures, and its meshes and pictures.
 - **Scripts** stay as they were: `.c` patches with `#pragma target`,
   anywhere in the folder; `additions` and `start_at` keep their meaning,
   and the `files`/`includes` index of whole-file mods is kept as is.

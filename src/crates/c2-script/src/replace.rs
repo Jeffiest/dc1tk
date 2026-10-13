@@ -13,7 +13,9 @@
 //!   "file:snd2/event/EV_000_130.snd": "raw/bank.snd"        a disc file or pack member by path
 //! },
 //! "add": {
-//!   "sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"}
+//!   "sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"},
+//!   "file:mods/calc/ui.img": {"file": "ui", "like": "texture:logo_d00"},     a new texture file of PNGs
+//!   "file:mods/calc/calc.chr": {"file": "calc/calc.gltf", "like": "model:uki"} a new pack from a glTF
 //! }
 //! ```
 //!
@@ -24,7 +26,10 @@
 //! ?) replaces every id it matches with one file; an id given exactly wins over a pattern. "file:"
 //! lines are game files by path, as the old disc/ layout gives them (discfiles), and a folder there
 //! converts by the game file's suffix. "add" appends a sound entry to every place of a bank; the
-//! mod's patches see its name as a constant holding the entry's number.
+//! mod's patches see its name as a constant holding the entry's number. A file: line with "like"
+//! makes its game file whole from a common format, with the asset or disc file "like" names as the
+//! template (a texture file of PNGs, or a character pack of a glTF): a new file the disc does not
+//! have, with pictures or meshes of its own.
 //!
 //! Each change is built with the disc's own file as the template, as discfiles does. Models are
 //! built first, then banks, then pictures, so a texture goes into a pack whose model another line
@@ -44,7 +49,7 @@ use c2_disc::{rebuild, Image};
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::discfiles::{self, Files, Wanted};
+use crate::discfiles::{self, Files, Template, Templates, Wanted};
 use crate::{mods, Error, Result};
 
 pub const REPLACE: &str = "replace";
@@ -64,6 +69,8 @@ pub struct Line {
     /// The bank an added sound goes into.
     pub bank: Option<String>,
     pub add: bool,
+    /// For a file: line made whole from a common format, the template: an asset id or disc path.
+    pub like: Option<String>,
 }
 
 impl Line {
@@ -129,6 +136,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         volume: None,
         bank: None,
         add,
+        like: None,
     };
     let kind = ids::kind_of(key);
     if kind.is_none() && !line.is_file() {
@@ -165,6 +173,10 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
             "bank" if add && kind == Some(Kind::Sound) => {
                 let bank = value.as_str().ok_or_else(|| line.fail("\"bank\" is a bank's id"))?;
                 line.bank = Some(if bank.starts_with("bank:") { bank.to_string() } else { Kind::Bank.id(bank) });
+            }
+            "like" if line.is_file() => {
+                let like = value.as_str().ok_or_else(|| line.fail("\"like\" is an asset id or a disc path"))?;
+                line.like = Some(like.replace('\\', "/").trim_matches('/').to_string());
             }
             _ => return Err(line.fail(format!("unknown option \"{option}\""))),
         }
@@ -214,7 +226,82 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     if ids::is_pattern(key) && (add || line.is_file()) {
         return Err(line.fail("patterns are for replacing ids"));
     }
+    if let Some(like) = &line.like {
+        check_like(&line, like)?;
+    }
     Ok(line)
+}
+
+/// What a file: line made from a common format makes: a texture file (.img, of PNGs, its template
+/// a texture) or a character pack (.chr, of a glTF, its template a model).
+fn made_kind(path: &str) -> Option<Kind> {
+    let path = path.to_lowercase();
+    if path.ends_with(".img") {
+        Some(Kind::Texture)
+    } else if path.ends_with(".chr") {
+        Some(Kind::Model)
+    } else {
+        None
+    }
+}
+
+fn check_like(line: &Line, like: &str) -> Result<()> {
+    let Some(made) = made_kind(&line.disc_path()) else {
+        return Err(line.fail("\"like\" makes texture files (.img) and character packs (.chr)"));
+    };
+    let template = match ids::kind_of(like) {
+        Some(kind) if ids::is_pattern(like) => return Err(line.fail(format!("\"like\" names one {}", kind.name()))),
+        Some(kind) => Some(kind),
+        None => made_kind(like),
+    };
+    if template != Some(made) {
+        let wanted = match made {
+            Kind::Texture => "a texture (texture:NAME) or a texture file's disc path (.img)",
+            _ => "a model (model:NAME) or a character pack's disc path (.chr)",
+        };
+        return Err(line.fail(format!("\"like\" names {wanted}")));
+    }
+    let fits = match made {
+        Kind::Texture => line.file.is_dir() || suffix_is(&line.file, ".png"),
+        _ => line.file.is_dir() || suffix_is(&line.file, ".gltf") || suffix_is(&line.file, ".glb"),
+    };
+    if !fits {
+        let wanted = match made {
+            Kind::Texture => "a PNG file or a folder of PNGs (one picture each, named by its file name)",
+            _ => "a .gltf file (its buffer and images beside it), a .glb, or a folder holding one",
+        };
+        return Err(line.fail(format!("{} is not {wanted}", line.shown)));
+    }
+    Ok(())
+}
+
+/// Each file: line's template, {disc path, lowercased: where the template is}, from the disc's
+/// index of ids for a "like" that names an id (index is None when no line does).
+pub fn templates(lines: &[Line], index: Option<&Index>) -> Result<Templates> {
+    let mut out = Templates::new();
+    for line in lines {
+        let Some(like) = &line.like else {
+            continue;
+        };
+        let template = match ids::kind_of(like) {
+            Some(_) => {
+                let Some(asset) = index.and_then(|index| index.get(like)) else {
+                    return Err(line.fail(format!("the disc has no asset {like}")));
+                };
+                let (place, picture) = asset.places[0].clone();
+                Template { place, picture, name: asset.name.clone() }
+            }
+            None => {
+                let (path, members) = discfiles::location(like);
+                let last = members.last().unwrap_or(&path);
+                let name = last.rsplit('/').next().unwrap_or(last);
+                let name = name.rsplit_once('.').map_or(name, |(stem, _)| stem).to_string();
+                Template { place: Place { path, members }, picture: None, name }
+            }
+        };
+        out.insert(line.disc_path().to_lowercase(), template);
+    }
+    Ok(out)
 }
 
 /// The chosen mods' lines, in build order.
@@ -233,7 +320,7 @@ pub fn raw_files(mod_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
 
 /// Whether any of the lines names an id, so that the build needs the disc's index.
 pub fn needs_index(lines: &[Line]) -> bool {
-    lines.iter().any(|line| !line.is_file())
+    lines.iter().any(|line| !line.is_file() || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some()))
 }
 
 /// What one line does at one place.
@@ -801,6 +888,9 @@ pub fn described(mod_dir: &Path) -> Result<Vec<String>> {
             let mut text = format!("{} {}: {}", if line.add { "adds" } else { "replaces" }, line.key, line.shown);
             if let Some(bank) = &line.bank {
                 text.push_str(&format!(" (into {bank})"));
+            }
+            if let Some(like) = &line.like {
+                text.push_str(&format!(" (like {like})"));
             }
             if !line.only.is_empty() {
                 text.push_str(&format!(" (only {})", line.only.join(", ")));

@@ -13,11 +13,14 @@
 //!
 //! mod.json's file: lines (replace) give game files the same way, by disc path, with the file
 //! anywhere in the mod; a folder there converts by the game file's suffix, whatever it is named.
+//! A line with "like" makes its game file whole, from PNGs (a texture file) or a glTF (a character
+//! pack), with the disc's file at another place as the template: new files of the mod's own.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use c2_assets::tree::Place;
 use c2_disc::archive::{self, Archive, Entry};
 use c2_disc::{rebuild, Image};
 use indexmap::IndexMap;
@@ -212,6 +215,31 @@ pub fn location(path: &str) -> (String, Vec<String>) {
 /// DATA.DAT files by path.
 pub type Files = BTreeMap<String, Vec<u8>>;
 
+/// The disc file a file: line's game file is made like: its place, the picture of a texture file
+/// to take the format from (None: its first), and its name (a model's, for packs whose cfg is named
+/// after them).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Template {
+    pub place: Place,
+    pub picture: Option<usize>,
+    pub name: String,
+}
+
+/// {disc path, lowercased: its template} for the file: lines made from a common format.
+pub type Templates = HashMap<String, Template>;
+
+/// A game file made whole from a mod's PNGs (a texture file) or glTF (a character pack) with the
+/// template's bytes: a pack is named after the file it becomes (calc for calc.chr).
+pub fn made(path: &str, source: &Path, template: &Template, data: &[u8]) -> Result<Vec<u8>> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let built = if lower(name).ends_with(".chr") {
+        c2_assets::models::new_pack(source, data, &template.name, &name[..name.len() - 4])
+    } else {
+        c2_assets::textures::build_new(source, data, template.picture)
+    };
+    built.map_err(|error| Error::invalid(format!("made like {}: {error}", template.place.display())))
+}
+
 /// {disc path: (mod name, file)} for the chosen mods, and the paths two of them replace.
 pub type Wanted = IndexMap<String, (String, PathBuf)>;
 
@@ -302,12 +330,14 @@ pub struct Replaced {
 
 /// Puts the mods' files into the disc files build writes. files holds the files the build already
 /// rewrote (scripts compiled into their packs), keyed by DATA.DAT path; a replacement goes on top
-/// of those. Returns the files, and each replacement.
+/// of those. A path with a template is made from its common format (made), whether the disc has it
+/// or not. Returns the files, and each replacement.
 pub fn replaced(
     iso_path: &Path,
     wanted: &Wanted,
     files: &BTreeMap<String, Vec<u8>>,
     script_tops: &HashSet<String>,
+    templates: &Templates,
 ) -> Result<(Files, Vec<Replaced>)> {
     let mut files = files.clone();
     let mut report = Vec::new();
@@ -318,12 +348,28 @@ pub fn replaced(
     for (path, (module, file)) in sorted {
         let (top, members) = location(path);
         let fail = |message: String| Error::invalid(format!("{path} (mod {module}): {message}"));
+        // a game file made from a common format, with the disc's own template file
+        let made = match templates.get(&lower(path)) {
+            None => None,
+            Some(template) => {
+                let data = index
+                    .get(&lower(&template.place.path))
+                    .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &template.place.members))
+                    .ok_or_else(|| fail(format!("{} is not on the disc", template.place.display())))?;
+                Some(self::made(path, file, template, data).map_err(|error| fail(error.to_string()))?)
+            }
+        };
         if !index.contains_key(&lower(&top)) && members.is_empty() {
             // a new file: build gives it a record in the game's file index (rebuild::write_disc)
-            if file.is_dir() {
-                return Err(fail("a new file is given as the game file itself".into()));
-            }
-            let new = fs::read(file)?;
+            let new = match made {
+                Some(new) => new,
+                None if file.is_dir() => {
+                    return Err(fail(
+                        "a new file is given as the game file itself, or made \"like\" one of the disc's".into(),
+                    ))
+                }
+                None => fs::read(file)?,
+            };
             files.insert(top, new.clone());
             report.push(Replaced { path: path.clone(), module: module.clone(), old: None, data: new, new_file: true });
             continue;
@@ -346,20 +392,27 @@ pub fn replaced(
             match &old {
                 None => {
                     // a member the pack does not have is added (a game file in a common format
-                    // needs one to convert from, so it is given as the game file itself)
-                    if file.is_dir() {
-                        return Err(Error::invalid(format!(
-                            "{} has no member {} to convert to; give the game file itself",
-                            top,
-                            members.join("/")
-                        )));
-                    }
-                    let new = fs::read(file)?;
+                    // needs one to convert from, so it is given as the game file itself or made
+                    // like another)
+                    let new = match &made {
+                        Some(new) => new.clone(),
+                        None if file.is_dir() => {
+                            return Err(Error::invalid(format!(
+                                "{} has no member {} to convert to; give the game file itself, or make it \"like\" one of the disc's",
+                                top,
+                                members.join("/")
+                            )));
+                        }
+                        None => fs::read(file)?,
+                    };
                     let packed = added_member(&data, &members, &new)?;
                     Ok((new, packed))
                 }
                 Some(old) => {
-                    let new = game_bytes_for(path, file, old)?;
+                    let new = match &made {
+                        Some(new) => new.clone(),
+                        None => game_bytes_for(path, file, old)?,
+                    };
                     let packed = rebuild::replaced_member(&data, &members, &new)?;
                     Ok((new, packed))
                 }
