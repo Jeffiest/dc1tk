@@ -289,8 +289,11 @@ pub fn plan(
     Ok(Plan { scripts, patches, numbers: given })
 }
 
+/// {script: indexes of the patches that change it}.
+pub type ByScript = BTreeMap<String, Vec<usize>>;
+
 /// The chosen mods' patches and the scripts each changes.
-pub fn located(mod_list: &[ModTexts], tree: &Path) -> Result<(BTreeMap<String, Vec<usize>>, Vec<Patch>)> {
+pub fn located(mod_list: &[ModTexts], tree: &Path) -> Result<(ByScript, Vec<Patch>)> {
     let mut scripts: Option<Scripts> = None;
     let mut by_script: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     let mut patches = Vec::new();
@@ -886,7 +889,7 @@ pub fn language_text(copies: &BTreeMap<i64, String>) -> String {
         return branches(&split).join("\n") + "\n";
     }
     let mut out: Vec<String> = Vec::new();
-    for number in 0..split[&order[0]].len() {
+    for (number, _) in split[&order[0]].iter().enumerate() {
         let found: HashMap<i64, Vec<&str>> = order.iter().map(|language| (*language, vec![split[language][number]])).collect();
         if found.values().collect::<HashSet<_>>().len() == 1 {
             out.push(found[&order[0]][0].to_string());

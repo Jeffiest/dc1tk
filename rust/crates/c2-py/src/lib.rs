@@ -40,7 +40,13 @@ pub fn float_repr(value: f64) -> String {
         return text;
     }
     let sign = if value.is_sign_negative() { "-" } else { "" };
-    let (digits, point) = digits(&format!("{:e}", value.abs()));
+    // Rust's shortest digits can end a tie the other way from CPython's (which takes the correctly
+    // rounded digits whenever they round-trip)
+    let shortest = format!("{:e}", value.abs());
+    let length = shortest.split_once('e').map_or(0, |(mantissa, _)| mantissa.chars().filter(char::is_ascii_digit).count());
+    let nearest = format!("{:.*e}", length.max(1) - 1, value.abs());
+    let chosen = if nearest.parse::<f64>() == Ok(value.abs()) { nearest } else { shortest };
+    let (digits, point) = digits(&chosen);
     let body = if point <= -4 || point > 16 {
         let mut mantissa = digits[..1].to_string();
         if digits.len() > 1 {
@@ -473,6 +479,7 @@ mod tests {
             (123.456, "123.456"),
             (-2.5, "-2.5"),
             (3.4028234663852886e38, "3.4028234663852886e+38"),
+            (-1.0728836059570312e-06, "-1.0728836059570312e-06"),
         ];
         for (value, text) in cases {
             assert_eq!(float_repr(value), text, "{value}");

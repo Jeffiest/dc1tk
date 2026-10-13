@@ -6,6 +6,7 @@ license.workspace = true
 description = "Dark Chronicle's scripts: the .stb format, its assembly, decompiling and compiling"
 
 [dependencies]
+c2-assets.workspace = true
 c2-disc.workspace = true
 c2-py.workspace = true
 indexmap.workspace = true

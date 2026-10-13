@@ -156,14 +156,17 @@ pub fn write_lock(path: &Path, lock: &Lock) -> Result<()> {
     Ok(())
 }
 
+/// {mod: {name: number}}: what each mod was given.
+pub type Given = BTreeMap<String, IndexMap<String, i64>>;
+
 /// {mod: {kind: {name}}}: what each mod asks for.
 pub type Wanted = BTreeMap<String, BTreeMap<String, BTreeSet<String>>>;
 
 /// Gives every (mod, kind, name) asked for a number: the one the lock holds, or the lowest free
 /// one, which is added to the lock. used holds the numbers nothing may be given. Returns ({mod:
 /// {name: number}}, whether the lock changed).
-pub fn assign(wanted: &Wanted, lock: &mut Lock, used: &Used) -> Result<(BTreeMap<String, IndexMap<String, i64>>, bool)> {
-    let mut result: BTreeMap<String, IndexMap<String, i64>> = BTreeMap::new();
+pub fn assign(wanted: &Wanted, lock: &mut Lock, used: &Used) -> Result<(Given, bool)> {
+    let mut result = Given::new();
     let mut changed = false;
     for (module, kinds) in wanted {
         for (kind, names) in kinds {

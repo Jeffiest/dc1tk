@@ -126,6 +126,7 @@ dependencies = [
 name = "c2-script"
 version = "0.1.0"
 dependencies = [
+ "c2-assets",
  "c2-disc",
  "c2-py",
  "indexmap",

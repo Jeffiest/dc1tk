@@ -3,6 +3,7 @@
 
 mod assets;
 mod files;
+mod modding;
 mod tree_decompile;
 
 #[global_allocator]
@@ -141,6 +142,41 @@ enum Command {
         extracted: PathBuf,
         #[command(flatten)]
         common: Common,
+    },
+    /// Compile a source tree and write a new disc image with the changed scripts.
+    Build(modding::BuildArgs),
+    /// Make, list and apply mods: folders of changed files layered over a tree.
+    Mod {
+        #[command(subcommand)]
+        command: modding::ModCommand,
+    },
+    /// List files edited, added or removed since the tree was decompiled.
+    Changes {
+        /// A decompiled source tree.
+        source: PathBuf,
+    },
+    /// Give scripts their own copy of a library, so edits to it reach only them.
+    Fork {
+        /// A decompiled source tree.
+        source: PathBuf,
+        /// The library, as scripts include it (lib/...).
+        library: String,
+        /// Path for the copy (lib/...).
+        copy: String,
+        /// Scripts to switch to the copy, relative to the tree.
+        #[arg(required = true)]
+        scripts: Vec<String>,
+    },
+    /// Boot a disc image in PCSX2.
+    Play {
+        /// The disc image.
+        image: PathBuf,
+        /// PCSX2's executable; else $PCSX2, the PATH or the usual install folder.
+        #[arg(long)]
+        pcsx2: Option<PathBuf>,
+        /// Show the PS2 boot screens instead of skipping them.
+        #[arg(long)]
+        full_boot: bool,
     },
     /// Save flags the scripts and engine use, and which are free.
     Flags {
@@ -595,6 +631,23 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Extract { iso, out } => run_extract(iso, out),
         Command::Disassemble { stb, output, table, common } => run_disassemble(stb, output.as_deref(), table, common),
         Command::Assemble { source, output, natives } => run_assemble(source, output, natives),
+        Command::Changes { source } => {
+            println!("{}", c2_script::tree::changes_text(source)?);
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Fork { source, library, copy, scripts } => {
+            let still = c2_script::tree::fork(source, library, copy, scripts)?;
+            println!("{} now includes {}", scripts.join(", "), copy);
+            println!("{} scripts still include {}", still.len(), library);
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Build(args) => modding::run_build(args),
+        Command::Mod { command } => modding::run_mod(command),
+        Command::Play { image, pcsx2, full_boot } => {
+            let found = modding::launch(image, pcsx2.as_deref(), !*full_boot)?;
+            println!("started {} with {}", image.display(), found.display());
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Flags { source, used, flag, common } => run_flags(source, *used, *flag, common),
         Command::Compile { source, output, table, common } => run_compile(source, output.as_deref(), table, common),
         Command::CompileTree { tree, extracted, common } => run_compile_tree(tree, extracted, common),

@@ -207,3 +207,93 @@ pub fn overwrites(tree: &Path, paths: &[String]) -> Result<Vec<String>> {
     let changed: BTreeSet<&String> = found.edited.iter().chain(&found.added).collect();
     Ok(existing.into_iter().filter(|path| changed.contains(path)).collect())
 }
+
+/// Notes for build on edited libraries: how many scripts include each, and how many of those were
+/// not edited themselves.
+pub fn library_notes(tree: &Path, found: &Status) -> Result<Vec<String>> {
+    let libraries: Vec<&String> = found.edited.iter().chain(&found.added).filter(|path| crate::index::is_library(path)).collect();
+    if libraries.is_empty() {
+        return Ok(Vec::new());
+    }
+    let users = crate::index::includers(&crate::index::outlines(tree)?);
+    let touched: BTreeSet<&String> = found.edited.iter().chain(&found.added).collect();
+    let mut lines = Vec::new();
+    for path in libraries {
+        let scripts = users.get(path).cloned().unwrap_or_default();
+        let others = scripts.iter().filter(|script| !touched.contains(script)).count();
+        lines.push(format!(
+            "edited library {} is included by {} script{}{}",
+            path,
+            scripts.len(),
+            if scripts.len() == 1 { "" } else { "s" },
+            if others > 0 { format!(", {others} of which you did not edit") } else { String::new() }
+        ));
+    }
+    Ok(lines)
+}
+
+/// What changed in the tree since it was decompiled, as changes prints it.
+pub fn changes_text(tree: &Path) -> Result<String> {
+    let Some(found) = status(tree)? else {
+        return Ok(format!("{} has no {}, so edits cannot be told apart from decompiler output", tree.display(), ORIGINALS));
+    };
+    let mut lines = Vec::new();
+    for (label, paths) in [("edited", &found.edited), ("added", &found.added), ("removed", &found.removed)] {
+        lines.extend(paths.iter().map(|path| format!("{label:<8} {path}")));
+    }
+    if lines.is_empty() {
+        return Ok("no changes since the tree was decompiled".into());
+    }
+    let notes = library_notes(tree, &found)?;
+    if !notes.is_empty() {
+        lines.push(String::new());
+        lines.extend(notes);
+    }
+    Ok(lines.join("\n"))
+}
+
+/// Gives some scripts their own copy of a library, so an edit to it reaches only them. Returns
+/// the scripts that still include the original.
+pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Result<Vec<String>> {
+    if !tree.join(library).is_file() {
+        return Err(Error::invalid(format!("no library {} in {}", library, tree.display())));
+    }
+    if tree.join(copy).exists() {
+        return Err(Error::invalid(format!("{copy} already exists")));
+    }
+    if !copy.starts_with("lib/") || !copy.ends_with(crate::source::EXTENSION) {
+        return Err(Error::invalid(format!("the copy must be a lib/...{} path", crate::source::EXTENSION)));
+    }
+    let includes_library = |line: &str| {
+        crate::index::include_pattern().captures(line).is_some_and(|found| found.get(0).unwrap().start() == 0 && &found[1] == library)
+    };
+    let mut missing = Vec::new();
+    for script in scripts {
+        if !c2_py::read_text(&tree.join(script))?.split('\n').any(includes_library) {
+            missing.push(script.as_str());
+        }
+    }
+    if !missing.is_empty() {
+        return Err(Error::invalid(format!("these scripts do not include {} directly:\n  {}", library, missing.join("\n  "))));
+    }
+    let text = c2_py::read_text(&tree.join(library))?;
+    let header =
+        format!("// Copy of {} for {}, made by cli.py fork. Other scripts still include the original.\n\n", library, scripts.join(", "));
+    fs::create_dir_all(tree.join(copy).parent().unwrap())?;
+    c2_py::write_text(&tree.join(copy), &(header + &text))?;
+    for script in scripts {
+        let path = tree.join(script);
+        let lines: Vec<String> = c2_py::read_text(&path)?
+            .split('\n')
+            .map(|line| {
+                if includes_library(line) {
+                    line.replacen(&format!("\"{library}\""), &format!("\"{copy}\""), 1)
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect();
+        c2_py::write_text(&path, &lines.join("\n"))?;
+    }
+    Ok(crate::index::includers(&crate::index::outlines(tree)?).get(library).cloned().unwrap_or_default())
+}
