@@ -1,16 +1,16 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = ["src/crates/*"]
 
 [workspace.package]
 edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-c2-disc = { path = "crates/c2-disc" }
-c2-script = { path = "crates/c2-script" }
-c2-py = { path = "crates/c2-py" }
-c2-assets = { path = "crates/c2-assets" }
+c2-disc = { path = "src/crates/c2-disc" }
+c2-script = { path = "src/crates/c2-script" }
+c2-py = { path = "src/crates/c2-py" }
+c2-assets = { path = "src/crates/c2-assets" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 encoding_rs = "0.8"

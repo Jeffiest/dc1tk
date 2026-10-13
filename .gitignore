@@ -1,20 +1,14 @@
-__pycache__/
-*.pyc
-
-# Retail game data and anything decompiled or built from it stays out of git.
+# Retail game data and anything extracted, decompiled or built from it stays out of git.
 *.iso
 /extracted/
 /out/
-/source/
-/decompiled/
 /mods/
+/backups/
 *.stb
 *.STB
 /*.asm
 /*.c
 /report.json
 
-# Rust build output
-/rust/target/
-/assets/
-/backups/
+# Build output
+/target/

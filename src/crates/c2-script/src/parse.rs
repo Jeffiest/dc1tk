@@ -40,7 +40,7 @@ type Parsed<T> = std::result::Result<T, Fault>;
 
 /// Python's default recursion limit: nesting deep enough that parse.py's functions would hold more
 /// frames fails here too, where Python raises RecursionError. Every function parse.py calls on the
-/// way down is counted; CALLER_FRAMES are the frames below parse.parse, as rust/parity.py calls it
+/// way down is counted; CALLER_FRAMES are the frames below parse.parse, as the old parity check called it
 /// (the point moves by one for each frame another caller has more or fewer).
 const PYTHON_FRAMES: usize = 1000;
 const CALLER_FRAMES: usize = 4;
