@@ -121,6 +121,24 @@ See [the design](docs/design.md). In order:
    a replacement reaches every copy on the disc. `mod migrate` converts the
    `disc/` layout.
 
+## Now: editing maps in Blender
+
+Goal: open any fixed map in Blender, move, add and delete pieces, placements,
+trigger points (doors, chests, spawn points, events), lights and collision,
+and build the result into a mod. The formats and the glTF conventions are in
+[maps](docs/assets/maps.md) (sections 7 and 8). Phases:
+
+1. `.map` reader and writer in Rust, byte-exact on all 210 files; `c2 map`
+   point labels fixed. Mesh side: whole node names, import matching by
+   `mds_index`, a collision mode, textures from a search path, blend flags.
+2. `c2 map export` (one map or all fixed scenes) to the glTF scene of
+   section 8, with real textures.
+3. Import: `"map:NAME"` lines in `mod.json`, built by `build` (changed
+   `.map`, changed and new meshes, textures), picked up by `mod make`.
+4. A Blender add-on: point panels, adding doors, chests and spawn points,
+   collision colours, one-click import and export through `c2`.
+5. An example mod that edits a map, checked in the game.
+
 ## Next: modding
 
 - **Overrides that survive renames.** A patch overrides a function by name,

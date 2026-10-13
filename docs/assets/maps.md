@@ -389,3 +389,55 @@ camera with literal coordinates (`place_chara(13, 68.04, 41.85, 1180.61, 3.14)`)
 - New textures go into an `.img` inside the `.ipk`, keeping its `#texanime`.
 - Limits: 320 placements (400 dungeons; the largest map has 245), names up to
   31 characters, `TIME_LIGHT_NUM` 8 or less. The memory budget is unmeasured.
+
+## 8. The glTF scene (conventions shared by the exporter, the importer and the Blender add-on)
+
+`c2 map export NAME` writes `extracted/maps/NAME/NAME.gltf` (with its `.bin`
+and `textures/`); `--all` exports every fixed scene. A mod carries an edited
+scene with a line `"map:NAME": "maps/NAME/NAME.gltf"` in `mod.json`; `build`
+compares it with the disc's map and writes only what changed, and `mod make`
+finds edited exports by the hashes the export records.
+
+**Axes and units.** glTF's Y up is the game's; Blender's importer turns it
+into Z up and its exporter back, so nothing else converts. One unit is one
+game unit (a dungeon cell is 320). The game's rotations are Euler XYZ in
+radians (T·Rz·Ry·Rx·S); glTF stores quaternions, so the importer keeps the
+original numbers of any node whose matrix did not change (within 1e-4) and
+writes new Euler angles only for nodes that moved.
+
+**Nodes.** Every node the export writes carries `extras.c2` with its role;
+names are prefixed so a tree is readable without the add-on:
+
+| node | name | `extras.c2` |
+|---|---|---|
+| the scene root | `map:s17` | `{"role": "map", "map": <the .map tree without templates, placements and points: images, packs, light sets, settings, cameras>}` |
+| one group per placement | `place:NAME` | `{"role": "placement", "template", "show", "group", "far_clip", "slot"}`; its transform is PARTS_POS/ROT/SCALE |
+| one per piece of the placement's template | `piece:NAME` | `{"role": "piece", "model": "x.mds", "kind": "model" or "collision" or "camera" or "chara", "show", "time", "col_type", "materials"}`; its transform is PIECE_POS/ROT/SCALE, its children the model's MDS nodes |
+| an MDS node | its full name (`grid54--f2appz0n1t-5_1`) | `{"role": "mds", "mds_index": n}` (meshes shared by every piece placing the same model) |
+| a trigger point | `point:NAME` | `{"role": "point", "kind": "pos" ... "anime", "enable", "flag", "data": {...}}`; transform FUNC_POS; under its placement when the template carries it, under `points` when it is the map's own |
+| group nodes | `placements`, `points`, `cameras` | `{"role": "group"}` |
+| a fixed camera | `camera:INDEX` | `{"role": "camera", ...}` with children for its positions and boxes |
+
+**Templates.** glTF has no instancing of node trees, so every placement holds
+its own copy of its template's pieces and points; meshes are shared, so editing
+a mesh in Blender edits every piece that places it, as in the game. On import,
+a piece or point changed the same way in every placement of a template changes
+the template; one changed in only some placements gives those placements a
+copy of the template of their own (a new template name; scripts never name
+templates). New placements are appended (slots are never reordered); a
+deleted placement is kept with its show flag 0, so later slots keep their
+numbers.
+
+**Collision.** Pieces of kind `collision` (floor and wall, `-a`) and `camera`
+(`-c`) hold triangles whose material names give their attributes
+(`col_ground0_foot2_area6_mask12`); the add-on hides them by default and
+colours them by area and foot sound.
+
+**Points.** Point lights also get a `KHR_lights_punctual` light whose colour
+and range the importer reads back; boxes (`invent` boxes, event sizes) are the
+node's scale or `data` fields, which the add-on draws. Every other value is in
+`extras.c2`, which Blender shows as custom properties.
+
+**What the importer refuses:** a template name over 31 characters, more than
+320 placements (400 in dungeons), meshes that break the collision rules of
+section 4.3, a point of an unknown kind.
