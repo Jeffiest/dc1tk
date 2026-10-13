@@ -17,6 +17,7 @@ pub mod sdk;
 pub mod source;
 #[macro_use]
 pub mod node;
+pub mod parse;
 pub mod stack;
 pub mod stb;
 pub mod tree;

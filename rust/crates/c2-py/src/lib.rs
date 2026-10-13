@@ -1,6 +1,11 @@
 //! The Python tools' output depends on how CPython formats and parses numbers and splits text.
 //! These do the same, so the port writes the same bytes: repr() of a float, "%.*g", int(text, 0),
-//! float(text) and str.split()/str.isspace().
+//! float(text) and str.split()/str.isspace(); and, for text, the Unicode-aware str methods,
+//! repr() of a str and int(text, base).
+
+mod unicode_tables;
+
+use unicode_tables::{ALPHA, DECIMAL, DECIMAL_ZEROS, DIGIT, NUMERIC, PRINTABLE};
 
 pub mod json;
 
@@ -258,6 +263,197 @@ pub fn write_text(path: &std::path::Path, text: &str) -> std::io::Result<()> {
     }
 }
 
+/// Whether c falls in one of a table's (first, last) pairs.
+fn in_table(table: &[u32], c: char) -> bool {
+    let c = c as u32;
+    let pairs = table.len() / 2;
+    let (mut low, mut high) = (0, pairs);
+    while low < high {
+        let middle = (low + high) / 2;
+        if c < table[2 * middle] {
+            high = middle;
+        } else if c > table[2 * middle + 1] {
+            low = middle + 1;
+        } else {
+            return true;
+        }
+    }
+    false
+}
+
+/// str.isalpha() for one character.
+pub fn is_alpha(c: char) -> bool {
+    in_table(&ALPHA, c)
+}
+
+/// str.isdecimal() for one character: what the re module's \d matches.
+pub fn is_decimal(c: char) -> bool {
+    in_table(&DECIMAL, c)
+}
+
+/// The value of a decimal digit (any script's), as unicodedata.decimal() gives it.
+pub fn decimal_value(c: char) -> Option<u32> {
+    if !is_decimal(c) {
+        return None;
+    }
+    let at = DECIMAL_ZEROS.partition_point(|&zero| zero <= c as u32);
+    Some(c as u32 - DECIMAL_ZEROS[at - 1])
+}
+
+/// str.isdigit() for one character.
+pub fn is_digit(c: char) -> bool {
+    in_table(&DIGIT, c)
+}
+
+/// str.isnumeric() for one character.
+pub fn is_numeric(c: char) -> bool {
+    in_table(&NUMERIC, c)
+}
+
+/// str.isalnum() for one character.
+pub fn is_alnum(c: char) -> bool {
+    is_alpha(c) || is_numeric(c)
+}
+
+/// What the re module's \w matches in a str pattern.
+pub fn is_word(c: char) -> bool {
+    c == '_' || is_alnum(c)
+}
+
+/// str.isprintable() for one character.
+pub fn is_printable(c: char) -> bool {
+    in_table(&PRINTABLE, c)
+}
+
+/// repr() of a str.
+pub fn repr(text: &str) -> String {
+    let quote = if text.contains('\'') && !text.contains('"') { '"' } else { '\'' };
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push(quote);
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if c < ' ' || c == '\x7f' => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c if c.is_ascii() || is_printable(c) => out.push(c),
+            c if (c as u32) <= 0xff => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c if (c as u32) <= 0xffff => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push_str(&format!("\\U{:08x}", c as u32)),
+        }
+    }
+    out.push(quote);
+    out
+}
+
+/// What int() and float() parse instead of a str: ASCII stays, other whitespace becomes a space and
+/// other decimal digits their ASCII digit; anything else ends the text with '?'.
+pub fn ascii_digits(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if (c as u32) < 127 {
+            out.push(c);
+        } else if is_space(c) {
+            out.push(' ');
+        } else if let Some(value) = decimal_value(c) {
+            out.push(char::from_digit(value, 10).unwrap());
+        } else {
+            out.push('?');
+            break;
+        }
+    }
+    out
+}
+
+/// Why int(text, base) fails: text that is not an integer, or one too large to hold here (Python's
+/// ints have no limit).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IntError {
+    Invalid,
+    TooLarge,
+}
+
+/// The whitespace CPython skips around a number: ASCII space, \t, \n, \v, \f, \r.
+fn is_c_space(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+}
+
+/// int(text, base) for base 0 or 2 to 36, with any script's decimal digits.
+pub fn int_base(text: &str, base: u32) -> Result<i128, IntError> {
+    let ascii = ascii_digits(text);
+    let bytes = ascii.as_bytes();
+    let at = |i: usize| bytes.get(i).copied().unwrap_or(0);
+    let mut i = 0;
+    while is_c_space(at(i)) {
+        i += 1;
+    }
+    let negative = at(i) == b'-';
+    if matches!(at(i), b'+' | b'-') {
+        i += 1;
+    }
+    let mut base = base;
+    let mut only_zero = false;
+    if base == 0 {
+        base = match (at(i), at(i + 1)) {
+            (b'0', b'x' | b'X') => 16,
+            (b'0', b'o' | b'O') => 8,
+            (b'0', b'b' | b'B') => 2,
+            (b'0', _) => {
+                only_zero = true;
+                10
+            }
+            _ => 10,
+        };
+    }
+    if at(i) == b'0' && matches!((base, at(i + 1)), (16, b'x' | b'X') | (8, b'o' | b'O') | (2, b'b' | b'B')) {
+        i += 2;
+        if at(i) == b'_' {
+            i += 1;
+        }
+    }
+    if at(i) == b'_' {
+        return Err(IntError::Invalid);
+    }
+    let mut value: Option<i128> = Some(0);
+    let mut digits = 0;
+    let mut previous = 0;
+    loop {
+        let byte = at(i);
+        let digit = (byte as char).to_digit(36).filter(|&digit| digit < base);
+        if byte == b'_' {
+            if previous == b'_' {
+                return Err(IntError::Invalid);
+            }
+        } else if let Some(digit) = digit {
+            digits += 1;
+            value = value.and_then(|value| value.checked_mul(base as i128)?.checked_add(digit as i128));
+        } else {
+            break;
+        }
+        previous = byte;
+        i += 1;
+    }
+    if previous == b'_' || digits == 0 {
+        return Err(IntError::Invalid);
+    }
+    while is_c_space(at(i)) {
+        i += 1;
+    }
+    if i != bytes.len() {
+        return Err(IntError::Invalid);
+    }
+    let value = value.ok_or(IntError::TooLarge)?;
+    if only_zero && value != 0 {
+        return Err(IntError::Invalid);
+    }
+    Ok(if negative { -value } else { value })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,5 +535,35 @@ mod tests {
     #[test]
     fn whitespace_like_python() {
         assert_eq!(split(" a\tb\x1cc  "), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn int_base_like_python() {
+        assert_eq!(int_base("010", 10), Ok(10));
+        assert_eq!(int_base("010", 0), Err(IntError::Invalid));
+        assert_eq!(int_base("00_0", 0), Ok(0));
+        assert_eq!(int_base("0x10", 10), Err(IntError::Invalid));
+        assert_eq!(int_base("0x_1f", 16), Ok(31));
+        assert_eq!(int_base("+f", 16), Ok(15));
+        assert_eq!(int_base(" -1\n", 16), Ok(-1));
+        assert_eq!(int_base("_1", 16), Err(IntError::Invalid));
+        assert_eq!(int_base("\u{661}\u{661}", 16), Ok(17));
+        assert_eq!(int_base("\u{ff11}", 10), Ok(1));
+        assert_eq!(int_base("1__0", 10), Err(IntError::Invalid));
+        assert_eq!(int_base("", 10), Err(IntError::Invalid));
+        assert_eq!(int_base(&"9".repeat(40), 10), Err(IntError::TooLarge));
+    }
+
+    #[test]
+    fn str_like_python() {
+        assert_eq!(repr("a'b"), "\"a'b\"");
+        assert_eq!(repr("a'\"b"), "'a\\'\"b'");
+        assert_eq!(
+            repr("\u{feff}\x7f\u{80}\u{200b}\u{e0001}\u{a0}\u{ad}\\\0\n\t\r"),
+            "'\\ufeff\\x7f\\x80\\u200b\\U000e0001\\xa0\\xad\\\\\\x00\\n\\t\\r'"
+        );
+        assert_eq!(repr("あ"), "'あ'");
+        assert!(!is_alpha('\u{3007}') && !is_alpha('\u{903}') && is_alpha('あ'));
+        assert!(is_digit('²') && !is_decimal('²') && decimal_value('\u{661}') == Some(1));
     }
 }
