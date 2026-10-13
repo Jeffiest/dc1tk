@@ -82,5 +82,5 @@ for the second writer are not a comparison.
 | `c2-assets` | textures (IM3/TIM2, PNG), sound banks (ADPCM, WAV), character packs (MDS, motions, glTF) | `im3.py`, `textures.py`, `soundbank.py`, `sounds.py`, `mds.py`, `mot.py`, `info_cfg.py`, `to_gltf.py`, `from_gltf.py`, `models.py` |
 | `c2` | the command line | `__main__.py`, `play.py` |
 
-Every command of `cli.py` is ported. Still to come: removing the Python (the parity scripts
-use it), and mods by name (design section 2).
+Every command of `cli.py` is ported. So are the asset tree and mods by name (design sections 1 and 2). Still to come:
+removing the Python (the parity scripts use it).

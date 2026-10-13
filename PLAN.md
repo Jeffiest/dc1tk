@@ -116,7 +116,7 @@ See [the design](docs/design.md). In order:
 2. **The asset tree** (done: `c2 assets`): `assets/` beside `decompiled/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.
-3. **Mods by name**: `mod.json` maps asset ids (`texture:c02a02`,
+3. **Mods by name** (done: `replace`/`add` by id in mod.json, `c2 mod migrate`): `mod.json` maps asset ids (`texture:c02a02`,
    `sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW`) to files anywhere in the mod;
    a replacement reaches every copy on the disc. `mod migrate` converts the
    `disc/` layout.
