@@ -1,4 +1,4 @@
-//! src/tests/test_asm.py
+//! Carried over from the Python tool's test_asm.py
 
 mod common;
 

@@ -1,4 +1,4 @@
-//! Shared helpers for the build and modding tests (ports of src/tests/build.py and the small
+//! Shared helpers for the build and modding tests (ports of the Python tool's tests/build.py and the small
 //! helpers the Python tests share): temporary folders, trees of source files, the toolchain the
 //! Python tests compile with (no definitions, the SDK and native tables of this repository) and
 //! tiny discs made of DATA.HD4, DATA.DAT and a filler.
@@ -47,9 +47,9 @@ pub fn sdk_dir() -> PathBuf {
     repo().join("sdk")
 }
 
-/// natives.load(): the native tables cli.py uses by default.
+/// The native tables c2 uses by default.
 pub fn tables() -> BTreeMap<String, Table> {
-    natives::load(&repo().join("src").join("c2s").join("tables")).unwrap()
+    natives::load(&repo().join("natives")).unwrap()
 }
 
 /// What the Python tests compile with: definitions.empty() (so no table rules), the headers
@@ -120,7 +120,7 @@ pub fn fails<T, E: Display>(result: Result<T, E>, words: &str) {
     }
 }
 
-// The rest ports src/tests/build.py.
+// The rest ports the Python tool's tests/build.py.
 
 pub const SECTOR: usize = 2048;
 const ROOT_SECTOR: usize = 18;

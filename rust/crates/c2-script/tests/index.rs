@@ -1,4 +1,4 @@
-//! src/tests/test_index.py
+//! Carried over from the Python tool's test_index.py
 
 mod common;
 

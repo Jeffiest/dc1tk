@@ -1,4 +1,4 @@
-//! src/tests/test_disc.py
+//! Carried over from the Python tool's test_disc.py
 
 use std::collections::HashSet;
 

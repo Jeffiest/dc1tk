@@ -113,7 +113,7 @@ fn with_messages(program: Node, found: Option<&Context>, setup: &Setup, path: &P
     program.with("functions", notes::annotate_siblings(functions, &siblings))
 }
 
-/// A script's readable source, as cli.py decompile writes it for one script.
+/// A script's readable source, as c2 decompile writes it for one script.
 pub fn script_source(setup: &Setup, path: &Path, table: &str) -> Result<String> {
     let program = decompile::decompile(&stb::read(&std::fs::read(path)?), table, &setup.tables);
     let found = setup.context(table);

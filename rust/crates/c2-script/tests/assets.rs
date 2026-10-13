@@ -1,4 +1,4 @@
-//! src/tests/test_assets.py
+//! Carried over from the Python tool's test_assets.py
 
 use std::collections::{BTreeSet, HashSet};
 

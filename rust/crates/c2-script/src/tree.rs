@@ -278,7 +278,7 @@ pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Resul
     }
     let text = c2_py::read_text(&tree.join(library))?;
     let header =
-        format!("// Copy of {} for {}, made by cli.py fork. Other scripts still include the original.\n\n", library, scripts.join(", "));
+        format!("// Copy of {} for {}, made by c2 fork. Other scripts still include the original.\n\n", library, scripts.join(", "));
     fs::create_dir_all(tree.join(copy).parent().unwrap())?;
     c2_py::write_text(&tree.join(copy), &(header + &text))?;
     for script in scripts {

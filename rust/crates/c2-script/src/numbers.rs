@@ -24,7 +24,7 @@ pub const KINDS: [&str; 3] = ["flag", "program", "monster_var"];
 
 /// Where each kind's numbers come from. Flags start above every flag the disc and the engine use
 /// (they stop at 824) with room to spare; 2047 is build --start-at's. Program numbers are the ones
-/// cli.py map offers mods. Monster variables 8 to 135 are shared by every monster on a floor.
+/// c2 map offers mods. Monster variables 8 to 135 are shared by every monster on a floor.
 pub fn pool(kind: &str) -> Range<i64> {
     match kind {
         "flag" => 1024..flags::FLAG_COUNT - 1,

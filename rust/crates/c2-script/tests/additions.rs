@@ -1,4 +1,4 @@
-//! src/tests/test_additions.py: programs, includes and wrappers a mod.json adds to scripts.
+//! Carried over from the Python tool's test_additions.py: programs, includes and wrappers a mod.json adds to scripts.
 
 mod build_common;
 

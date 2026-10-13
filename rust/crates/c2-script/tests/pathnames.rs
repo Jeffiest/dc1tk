@@ -1,4 +1,4 @@
-//! src/tests/test_pathnames.py
+//! Carried over from the Python tool's test_pathnames.py
 
 mod common;
 

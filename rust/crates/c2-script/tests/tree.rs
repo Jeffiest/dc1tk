@@ -1,4 +1,4 @@
-//! src/tests/test_tree.py: telling edits from the decompiler's output.
+//! Carried over from the Python tool's test_tree.py: telling edits from the decompiler's output.
 
 mod build_common;
 

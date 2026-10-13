@@ -834,7 +834,7 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
     }
     let asset = object! {
         "version" => "2.0",
-        "generator" => "ChronicleTwo-Script to_gltf.py",
+        "generator" => "ChronicleTwo-Script c2",
         "extras" => object! {
             "source" => object! {"base" => "pack"},
             "fps_assumed" => fps,

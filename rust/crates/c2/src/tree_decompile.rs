@@ -116,7 +116,7 @@ pub fn run(
     let blocked = if out.is_dir() { tree::overwrites(&out, &written)? } else { Vec::new() };
     if !blocked.is_empty() && !force {
         bail!(
-            "{} holds {} edited file{} this would overwrite, such as:\n  {}\nSave them first (cli.py mod save {} NAME), write somewhere else, or pass --force.",
+            "{} holds {} edited file{} this would overwrite, such as:\n  {}\nSave them first (c2 mod save {} NAME), write somewhere else, or pass --force.",
             out.display(),
             blocked.len(),
             if blocked.len() == 1 { "" } else { "s" },
