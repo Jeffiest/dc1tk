@@ -9,6 +9,8 @@ mod cp932_fixes;
 pub mod extract;
 pub mod iso;
 pub mod rebuild;
+#[doc(hidden)]
+pub mod samples;
 pub mod text;
 
 #[derive(Debug, thiserror::Error)]
