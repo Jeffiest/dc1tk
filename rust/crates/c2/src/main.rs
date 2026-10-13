@@ -2,6 +2,7 @@
 //! cli.py's do.
 
 mod assets;
+mod defs;
 mod files;
 mod modding;
 mod tree_decompile;
@@ -177,6 +178,11 @@ enum Command {
         /// Show the PS2 boot screens instead of skipping them.
         #[arg(long)]
         full_boot: bool,
+    },
+    /// Work on definition sets.
+    Defs {
+        #[command(subcommand)]
+        command: defs::DefsCommand,
     },
     /// Save flags the scripts and engine use, and which are free.
     Flags {
@@ -648,6 +654,7 @@ fn run(command: &Command) -> Result<ExitCode> {
             println!("started {} with {}", image.display(), found.display());
             Ok(ExitCode::SUCCESS)
         }
+        Command::Defs { command } => defs::run(command),
         Command::Flags { source, used, flag, common } => run_flags(source, *used, *flag, common),
         Command::Compile { source, output, table, common } => run_compile(source, output.as_deref(), table, common),
         Command::CompileTree { tree, extracted, common } => run_compile_tree(tree, extracted, common),
