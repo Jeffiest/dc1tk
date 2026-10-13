@@ -172,6 +172,21 @@ pub enum ModCommand {
         common: Common,
     },
     /// Turn a mod's disc/ folder into mod.json lines by asset id, moving its files out of disc/.
+    /// Make a mod of everything changed in the extracted folder since extracting: edited and added
+    /// scripts, changed assets (by id) and changed or added disc files. c2 diff lists them first.
+    Make {
+        /// The disc image the extracted folder came from.
+        iso: PathBuf,
+        /// The mod's name, a new folder in the mods folder.
+        name: String,
+        /// The extracted folder (disc/, scripts/, assets/).
+        #[arg(long, default_value = "extracted")]
+        extracted: PathBuf,
+        #[arg(long, default_value = "mods")]
+        mods: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
     Migrate {
         /// The disc image the mod's files replace.
         iso: PathBuf,
@@ -563,6 +578,31 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             }
             println!("{} scripts compiled, {} failed", result.compiled, result.errors.len());
             Ok(if result.errors.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
+        }
+        ModCommand::Make { iso, name, extracted, mods: mods_dir, common } => {
+            let mod_dir = mods::folder(mods_dir, name)?;
+            let found = c2_script::capture::changes(extracted, iso)?;
+            println!("{}", c2_script::capture::report(&found));
+            if found.is_empty() {
+                return Ok(ExitCode::from(1));
+            }
+            let made = c2_script::capture::make(extracted, &mod_dir, &found)?;
+            if !made.scripts.is_empty() {
+                let tree_dir = extracted.join(c2_script::capture::SCRIPTS);
+                mods::write_editor_flags(&mod_dir, &tree_dir, &common.sdk_dir(), &common.definitions()?.sets)?;
+            }
+            println!();
+            println!(
+                "mod {} made: {} script file{}, {} mod.json line{}, in {}",
+                name,
+                made.scripts.len(),
+                if made.scripts.len() == 1 { "" } else { "s" },
+                made.lines.len(),
+                if made.lines.len() == 1 { "" } else { "s" },
+                shown(&mod_dir)
+            );
+            println!("try it: c2 build {} {} -o {}.iso --mod {}", shown(&extracted.join("scripts")), iso.display(), name, name);
+            Ok(ExitCode::SUCCESS)
         }
         ModCommand::Migrate { iso, name, mods: mods_dir, defs } => {
             let mod_dir = mods::folder(mods_dir, name)?;

@@ -5,6 +5,7 @@ pub mod additions;
 pub mod asm;
 pub mod assets;
 pub mod build;
+pub mod capture;
 pub mod compile;
 pub mod coverage;
 pub mod decompile;

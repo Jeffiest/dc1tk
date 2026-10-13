@@ -15,7 +15,18 @@ comes from. The commands are in [usage](usage.md).
 | Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `c2 flags extracted/scripts`, `c2 flags extracted/scripts --flag 54` |
 | Which maps can a scene start in, and where does the player play? | `c2 maps extracted/scripts` |
 | A map's programs, free program numbers, trigger points and player positions? | `c2 map extracted/scripts s17` |
-| What have I changed? | `c2 changes extracted/scripts` |
+| What have I changed? | `c2 changes extracted/scripts` (scripts), `c2 diff dc2.iso` (scripts, assets and disc files) |
+| Turn my edits into a mod | `c2 mod make dc2.iso mymod` |
+
+The quickest way to a mod is to edit what `c2 setup` wrote and let `c2 mod make`
+collect it. Edit scripts in `extracted/scripts`, textures, models and sounds in
+`extracted/assets` (PNG, glTF, WAV), or any game file in `extracted/disc`, and
+add new files there. `c2 diff dc2.iso` lists what changed. `c2 mod make dc2.iso mymod` writes
+`mods/mymod`, with the scripts as whole files, each changed asset as a `replace`
+line by its id (so it changes every place the disc has it), and each changed or
+added disc file as a `file:` line. Then `c2 build extracted/scripts dc2.iso -o
+mymod.iso --mod mymod`. The disc's own files beside `DATA.DAT` (movies,
+`SOUND.DAT`) are listed but cannot go in a mod.
 
 Files keep the game's codes with a readable name after them
 (`map/s/s51_raybrandt_castle/`, `dungeon/monster/e33a_golem.c`); commands

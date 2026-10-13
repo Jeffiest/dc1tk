@@ -160,6 +160,14 @@ pub fn pack_name(raw: &[u8]) -> Option<String> {
 }
 
 /// The members of a pack, or None when the data is not one.
+/// A pack's members with their bytes, or None when the data is not a pack.
+pub fn parse_pack_with_data(data: &[u8]) -> Option<Vec<(String, &[u8])>> {
+    Some(parse_pack(data)?.into_iter().map(|member| {
+        let bytes = member.data(data);
+        (member.name, bytes)
+    }).collect())
+}
+
 pub fn parse_pack(data: &[u8]) -> Option<Vec<Member>> {
     let mut members = Vec::new();
     let mut offset = 0usize;

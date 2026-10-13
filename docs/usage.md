@@ -19,6 +19,8 @@ c2 compile <script.c> [-o script.stb]
 c2 build extracted/scripts dc2.iso -o modded.iso   new disc image with your changes
 c2 build extracted/scripts dc2.iso -o test.iso --start-at s51:story_50
 c2 changes extracted/scripts                     what you edited since decompiling
+c2 diff dc2.iso                                  everything changed in extracted/ since extracting
+c2 mod make dc2.iso mymod                        a mod of those changes, ready to build
 c2 mod override extracted/scripts castle --map s51 start_castle_battle   start a patch
 c2 mod check extracted/scripts castle            compile what a mod changes, without a disc
 c2 build extracted/scripts dc2.iso -o modded.iso --mod castle --mod other   build with mods
