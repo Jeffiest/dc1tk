@@ -38,6 +38,7 @@ pub mod stack;
 pub mod stb;
 pub mod tree;
 pub mod vm;
+pub mod xref;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

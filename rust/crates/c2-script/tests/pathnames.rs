@@ -140,5 +140,40 @@ fn build_finds_the_disc_script_of_a_named_file() {
 }
 
 #[test]
-#[ignore = "needs xref (xref.py: event_report, monster_report), not ported yet"]
-fn xref_matches_named_folders_by_their_code() {}
+fn xref_matches_named_folders_by_their_code() {
+    let folder = TempDir::new();
+    let tree = folder.path();
+    for (path, text) in [
+        ("map/s/s51_raybrandt_castle/s51_1.c", "PROGRAM(510, end_fight);
+"),
+        ("dungeon/monster/b254a_griffon_soldier.c", "void on_death(void)
+{
+    run_event_script(510);
+}
+"),
+        ("map/s/s51_raybrandt_castle/s51_2.c", "void f(void)
+{
+    place_monster(523);
+}
+"),
+    ] {
+        std::fs::create_dir_all(tree.join(path).parent().unwrap()).unwrap();
+        std::fs::write(tree.join(path), text).unwrap();
+    }
+    pathnames::record(
+        tree,
+        &renames(&[
+            ("map/s/s51/s51_1.c", "map/s/s51_raybrandt_castle/s51_1.c"),
+            ("map/s/s51/s51_2.c", "map/s/s51_raybrandt_castle/s51_2.c"),
+            ("dungeon/monster/b254a.c", "dungeon/monster/b254a_griffon_soldier.c"),
+        ]),
+    )
+    .unwrap();
+    let rows: IndexMap<i64, MonsterRow> = [(523, row("Griffon Soldier", "e254a", "b254a"))].into_iter().collect();
+    let consts = IndexMap::new();
+    let text = c2_script::xref::event_report(tree, &consts, 510, Some("s51"), &rows).unwrap();
+    assert!(text.contains("map/s/s51_raybrandt_castle/s51_1.c  PROGRAM(510, end_fight)"), "{text}");
+    assert!(text.contains("<- s51 places kind 523 Griffon Soldier"), "{text}");
+    let report = c2_script::xref::monster_report(tree, &consts, &rows, "523").unwrap();
+    assert!(report.contains("AI script: dungeon/monster/b254a_griffon_soldier.c"), "{report}");
+}

@@ -111,7 +111,8 @@ See [the design](docs/design.md). In order:
      images for every mod in `mods/`; and the asset converters
      (`c2-assets`: PNG, WAV, glTF), the same files both ways.
    - Done: `verify`, and the Python's tests as `cargo test`.
-   - Next: `xref`, `maps`, `defs`, `natives`, `setup`; then the Python goes.
+   - Done: `xref`, `maps`, `defs`, `natives`, `setup`: every command is ported.
+   - Next: remove the Python.
 2. **The asset tree** (done: `c2 assets`): `assets/` beside `decompiled/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.

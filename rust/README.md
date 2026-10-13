@@ -25,6 +25,10 @@ python rust/parity.py ...      checks c2 against cli.py (run from the repository
 | `c2 build` | `c2-script`, `c2-disc` | the same printout and the same image, byte for byte, for each mod in `mods/` (patches, additions, NEW_FLAG numbers, `start_at`, models and textures under `disc/`) and for no mods |
 | `c2 mod new/save/list/test/apply/override/asset/check` | `c2-script` | the same printout and the same files written (into scratch copies of the tree and mods folder) |
 | `c2 play`, `c2 changes`, `c2 fork` | `c2` | |
+| `c2 setup` | `c2` | the PAL disc set up both ways gives the same 46,314 extracted files and 2,499 tree files (Python 837 s, Rust 81 s) |
+| `c2 natives` | `c2-script` | no ChronicleTwo checkout in the layout it reads was at hand; made-up checkouts give the same tables and output (`rust/parity_natives.py` repeats the check on a real one) |
+| `c2 defs check/todo/disc/learn` | `c2-script` | check, todo and disc the same on the PAL disc; learn the same for edited single files (whole-tree learn not compared yet; `rust/parity_defs.py`) |
+| `c2 xref`, `c2 maps`, `c2 map` | `c2-script` | 2,718 inputs the same: every map, every program number and name, every monster kind (`rust/parity_xref.py`) |
 | `c2 verify` | `c2` | the same report and the same `--json` file for the whole PAL disc (every script through all four stages) |
 | `c2 assets` (new: the asset tree of design section 1) | `c2-assets` | no Python counterpart; every one of its 15,645 files builds back to the disc's bytes at every place the manifest lists (`c2 assets-check`), and runs give identical trees |
 | textures, sounds, models (`mod asset --as`, and building them back) | `c2-assets` | every `.img` (5,217), `.snd` (861) and `.chr` (2,997) exports to the same PNGs, WAVs and glTF; every unedited export builds back to the Python's bytes, and so do 3,000 edited files (recoloured, resized, re-encoded PNGs; resampled, 8/24-bit and float WAVs; moved, scaled and added meshes), failing where the Python fails |
@@ -78,6 +82,5 @@ for the second writer are not a comparison.
 | `c2-assets` | textures (IM3/TIM2, PNG), sound banks (ADPCM, WAV), character packs (MDS, motions, glTF) | `im3.py`, `textures.py`, `soundbank.py`, `sounds.py`, `mds.py`, `mot.py`, `info_cfg.py`, `to_gltf.py`, `from_gltf.py`, `models.py` |
 | `c2` | the command line | `__main__.py`, `play.py` |
 
-Still to come: `xref`, `maps`/`map`, `defs` (learn, check, todo,
-disc), `natives`, `setup`, coverage, and the Python's tests as `cargo test`;
-then the Python goes, and the asset tree and mods by name are built in Rust.
+Every command of `cli.py` is ported. Still to come: removing the Python (the parity scripts
+use it), and mods by name (design section 2).
