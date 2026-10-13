@@ -6,3 +6,5 @@ license.workspace = true
 description = "What the Python tools' output depends on, done as CPython does it: float repr, %g, int(text, 0)"
 
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true
