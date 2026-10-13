@@ -92,6 +92,24 @@ definitions.
     back to the script's own bytes. `mod check` compiles a mod without a
     disc.
 
+## Next: Rust, an asset tree, and mods by name
+
+See [the design](docs/design.md). In order:
+
+1. **Port to Rust** (`rust/`, one `c2` tool with `cli.py`'s commands),
+   milestone by milestone, each ending when the Rust gives the Python's
+   bytes (disc, scripts, mods, assets) and its tests run under `cargo test`;
+   then delete the Python. Work runs across all cores.
+2. **The asset tree**: `assets/` beside `decompiled/`, every distinct
+   texture, model and sound once, as PNG, glTF and WAV, with a manifest of
+   ids and every place the disc has each.
+3. **Mods by name**: `mod.json` maps asset ids (`texture:c02a02`,
+   `sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW`) to files anywhere in the mod;
+   a replacement reaches every copy on the disc. `mod migrate` converts the
+   `disc/` layout.
+
+The items below are written for the Python; they carry over to the port.
+
 ## Next: modding
 
 - **Overrides that survive renames.** A patch overrides a function by name,
