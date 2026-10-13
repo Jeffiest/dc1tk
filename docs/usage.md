@@ -292,6 +292,20 @@ character pack; packs inside packs work the same way).
   back to the disc's own bytes. See [the texture format](assets/textures.md)
   for the limits (a picture a `#texanime` script animates should keep its
   size).
+- **Sound effects as WAV.** A sound bank (`.snd`) holds the entries
+  `play_se` plays by number. `mod asset ISO NAME snd2/sp/sp_004.snd --as wav`
+  writes a folder `sp_004.snd.wav/` with one WAV per entry that plays a
+  single sound (`001.wav`). Replace the ones you want with any WAV (any
+  rate up to 48000 Hz, mixed to mono; a `smpl` loop makes it loop), and add
+  entries by numbering on from the last (`005_beep.wav`, the name after the
+  number goes into the bank's table). An entry that plays a sequence (a
+  short tune of the bank's instruments) is not exported; a WAV given for it
+  replaces the tune with that one sound. A changed entry overwrites its
+  samples when no other entry plays them, so the bank stays the same size
+  or shrinks, and otherwise gets samples of its own. Unedited WAVs build
+  back to the disc's own bytes. Keep a bank's sample data near its original
+  size: sound memory is shared between banks, and how much is free where a
+  bank loads is not yet known. See [the sound bank format](assets/sounds.md).
 
 **Additions.** The older way to add to a script without copying it, kept for
 mods that use it: its `mod.json` can list additions, applied when it is

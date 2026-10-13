@@ -1,7 +1,7 @@
 import struct
 from pathlib import Path
 
-from c2s import archive, rebuild, textures
+from c2s import archive, rebuild, sounds, textures
 
 # Game files a mod replaces: models, textures, sounds and anything else on the disc. A mod keeps
 # them under disc/, laid out as extract lays the disc out: a file at its path in DATA.DAT
@@ -12,7 +12,8 @@ from c2s import archive, rebuild, textures
 # A game file can also be given in a common format, named after the file it stands for plus the
 # format's suffix: build converts it, with the disc's own file as the template (palette size,
 # sample rate, layout), and mod asset --as exports to it. Textures are a folder of PNGs
-# (c02a.img.png/c02a01.png, textures.py).
+# (c02a.img.png/c02a01.png, textures.py) and sound banks a folder of WAVs by entry number
+# (sp_000.snd.wav/003.wav, sounds.py).
 
 DISC = "disc"
 PACK = ".d/"
@@ -23,6 +24,7 @@ PACK = ".d/"
 # file -> the common file's bytes, or {file name: bytes} for a folder.
 CONVERTERS = {
     ".png": {"game": ".img", "folder": True, "build": textures.build, "export": textures.export},
+    ".wav": {"game": ".snd", "folder": True, "build": sounds.build, "export": sounds.export},
 }
 
 
@@ -131,6 +133,11 @@ def added_member(data, names, new):
     return data[:end] + entry + new + bytes(-len(new) % archive.PACK_ALIGN) + data[end:]
 
 
+# The disc's files by path ignoring case, as the game finds them (SearchFile in dataread.cpp).
+def disc_index(disc):
+    return {entry["path"].lower(): entry for entry in disc["entries"]}
+
+
 # Puts the mods' files into the disc files build writes. files holds the files the build already
 # rewrote (scripts compiled into their packs), keyed by DATA.DAT path; a replacement goes on top of
 # those. Returns the files, and for each replacement its path, mod and old and new sizes.
@@ -139,27 +146,24 @@ def replaced(iso_path, wanted, files, script_tops=()):
     report = []
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
-        index = {entry["path"]: entry for entry in disc["entries"]}
-        lower = {name.lower(): name for name in index}
+        index = disc_index(disc)
         for path, (mod, file) in sorted(wanted.items()):
             top, members = location(path)
-            if top not in index and not members:
+            if top.lower() not in index and not members:
                 # a new file: build gives it a record in the game's file index (rebuild.write_disc)
-                if top.lower() in lower:
-                    raise ValueError("%s (mod %s): the disc has %s, in other case; the game would find that one"
-                                     % (path, mod, lower[top.lower()]))
                 if converter_of(file) is not None:
                     raise ValueError("%s (mod %s): a new file is given as the game file itself" % (path, mod))
                 new = Path(file).read_bytes()
                 files[top] = new
                 report.append({"path": path, "mod": mod, "old": None, "new": len(new), "data": new, "new_file": True})
                 continue
-            if top not in index:
+            if top.lower() not in index:
                 raise ValueError("%s (mod %s): %s is not a file on the disc" % (path, mod, top))
+            top = index[top.lower()]["path"]
             if not members and top in script_tops:
                 raise ValueError("%s (mod %s): the build also changes scripts inside %s; replace its members "
                                  "one by one instead" % (path, mod, top))
-            data = files[top] if top in files else archive.read_entry(f, disc, index[top])
+            data = files[top] if top in files else archive.read_entry(f, disc, index[top.lower()])
             old = rebuild.read_member(data, members)
             try:
                 if old is None:
@@ -185,13 +189,13 @@ def copy_out(iso_path, mod_dir, paths, form=None):
     written = []
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
-        index = {entry["path"]: entry for entry in disc["entries"]}
+        index = disc_index(disc)
         for path in paths:
             path = path.replace("\\", "/").strip("/")
             top, members = location(path)
-            if top not in index:
+            if top.lower() not in index:
                 raise ValueError("%s is not a file on the disc" % top)
-            data = rebuild.read_member(archive.read_entry(f, disc, index[top]), members)
+            data = rebuild.read_member(archive.read_entry(f, disc, index[top.lower()]), members)
             if data is None:
                 raise ValueError("%s has no member %s" % (top, "/".join(members)))
             target = Path(mod_dir) / DISC / path
@@ -220,9 +224,9 @@ def check(out_path, report):
     wrong = []
     with open(out_path, "rb") as f:
         disc = archive.open_archive(f)
-        index = {entry["path"]: entry for entry in disc["entries"]}
+        index = disc_index(disc)
         for item in report:
             top, members = location(item["path"])
-            if rebuild.read_member(archive.read_entry(f, disc, index[top]), members) != item["data"]:
+            if rebuild.read_member(archive.read_entry(f, disc, index[top.lower()]), members) != item["data"]:
                 wrong.append(item["path"])
     return wrong

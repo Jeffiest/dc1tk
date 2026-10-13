@@ -49,6 +49,10 @@ def member_named(members, name, last):
         if member["name"] == name or (last and member["name"].rsplit(".", 1)[0] == name
                                       and member["name"].endswith(SCRIPT_SUFFIXES)):
             return member
+    # the game finds members ignoring case (GetPackFile in dataread.cpp)
+    for member in members:
+        if member["name"].lower() == name.lower():
+            return member
     return None
 
 
