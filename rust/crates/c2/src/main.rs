@@ -1,6 +1,7 @@
 //! c2: decompile, compile and mod Dark Chronicle. The Rust port of cli.py; commands print what
 //! cli.py's do.
 
+mod asset_tree;
 mod assets;
 mod files;
 mod modding;
@@ -273,6 +274,8 @@ enum Command {
     },
     #[command(flatten)]
     Assets(assets::Command),
+    #[command(flatten)]
+    AssetTree(asset_tree::Command),
 }
 
 fn run_extract(iso: &Path, out: &str) -> Result<ExitCode> {
@@ -666,6 +669,7 @@ fn run(command: &Command) -> Result<ExitCode> {
             run_decompile_dump(root, out, *source, *named, common)
         }
         Command::Assets(command) => assets::run(command),
+        Command::AssetTree(command) => asset_tree::run(command),
     }
 }
 

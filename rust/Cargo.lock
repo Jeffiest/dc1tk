@@ -99,6 +99,10 @@ dependencies = [
  "c2-disc",
  "c2-py",
  "flate2",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2",
  "thiserror",
 ]
 
