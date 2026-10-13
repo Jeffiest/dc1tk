@@ -3,7 +3,7 @@ import re
 import shutil
 from pathlib import Path
 
-from c2s import additions, definitions, index, library, numbers, parse, patches, pathnames, rebuild, source, tree, vm
+from c2s import additions, definitions, discfiles, index, library, numbers, parse, patches, pathnames, rebuild, source, tree, vm
 
 # Mods: changes layered over a decompiled tree. A mod is a folder in the mods folder
 # (mods/castle-golems). Its patches, .c files that say which scripts they change with
@@ -21,6 +21,9 @@ from c2s import additions, definitions, index, library, numbers, parse, patches,
 # additions in its mod.json (programs, includes and wrappers added to scripts it does not copy; see
 # additions.py), which several mods can make to one script. mod apply writes them into the tree
 # instead. "start_at" in mod.json gives the scene build --start-at uses when the mod is built.
+#
+# Game files the mod replaces (models, textures, sounds) are under disc/, laid out as extract lays
+# the disc out (discfiles.py).
 
 INDEX = "mod.json"
 FILES = "files"
@@ -42,7 +45,8 @@ def entries(mod_dir):
 
 
 def exists(mod_dir):
-    return (Path(mod_dir) / FILES).is_dir() or (Path(mod_dir) / INDEX).is_file() or bool(sources(mod_dir))
+    return ((Path(mod_dir) / FILES).is_dir() or (Path(mod_dir) / discfiles.DISC).is_dir() or (Path(mod_dir) / INDEX).is_file()
+            or bool(sources(mod_dir)))
 
 
 SOURCE_SUFFIXES = (".c", ".h")
@@ -57,7 +61,7 @@ def sources(mod_dir):
     found = {}
     for path in sorted(root.rglob("*")):
         parts = path.relative_to(root).parts
-        if (path.is_file() and path.suffix in SOURCE_SUFFIXES and parts[0] != FILES
+        if (path.is_file() and path.suffix in SOURCE_SUFFIXES and parts[0] not in (FILES, discfiles.DISC)
                 and not any(part.startswith(".") for part in parts)):
             found[path] = path.read_text(encoding="utf-8")
     return found
@@ -332,6 +336,7 @@ def listing(mods_dir, tree_dir):
                 number = held[kind].get("%s/%s" % (mod_dir.name, name))
                 lines.append("    %s %s = %s" % (numbers.WORDS[kind], name, "given at its next build" if number is None else number))
         lines += ["    " + path for path in sorted(texts)]
+        lines += ["    replaces %s" % path for path in discfiles.mod_files(mod_dir)]
         for addition in found.get("additions", []):
             where = addition.get("map") or ", ".join(addition.get("scripts", []))
             parts = ["program %s" % program for program in addition.get("programs", {})]
@@ -342,6 +347,8 @@ def listing(mods_dir, tree_dir):
             lines.append("    starts at " + found["start_at"])
         lines += ["    stale: " + path for path in stale(mod_dir, tree_dir)]
     _, clashes = overlay(mods, tree_dir)
+    _, disc_clashes = discfiles.collect(mods)
+    clashes = dict(clashes, **disc_clashes)
     if clashes:
         lines += ["", "mods that cannot be built together:"] + ["  %s: %s" % (path, ", ".join(names))
                                                                 for path, names in sorted(clashes.items())]

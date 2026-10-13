@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from c2s import (asm, assets, compile, coverage, decompile, definitions, disc, extract, flags, index, learn, library, messages, names,
+from c2s import (asm, assets, compile, coverage, decompile, definitions, disc, discfiles, extract, flags, index, learn, library, messages, names,
                  maps, mods, natives, notes, parse, patches, pathnames, play, rebuild, sdk, slots, source, startat, stb, tree,
                  verify, xref)
 
@@ -214,11 +214,15 @@ def run_build(args):
     overrides, clashes = mods.overlay(mod_dirs, args.source)
     if clashes:
         raise SystemExit(mods.clash_text(clashes))
+    disc_files, disc_clashes = discfiles.collect(mod_dirs)
+    if disc_clashes:
+        raise SystemExit(discfiles.clash_text(disc_clashes))
     consts = index.constants(index.tree_headers(args.source, defs, args.sdk))
     plan = mods.patch_plan(mod_dirs, args.source, consts)
     for mod_dir in mod_dirs:
         mine = [patch for patch in plan["patches"] if patch["mod"] == mod_dir.name]
-        print("mod %s: %d patches, %d files" % (mod_dir.name, len(mine), len(mods.contents(mod_dir, args.source))))
+        print("mod %s: %d patches, %d files, %d game files" % (mod_dir.name, len(mine), len(mods.contents(mod_dir, args.source)),
+                                                             len(discfiles.mod_files(mod_dir))))
         for patch in mine:
             print("  patch " + patches.summary(patch))
         for name, number in sorted(plan["numbers"].get(mod_dir.name, {}).items()):
@@ -265,15 +269,26 @@ def run_build(args):
         print("changed: %s" % change["source"])
     if not found["scripts"]:
         print("no script differs from the disc")
-    result = rebuild.write_disc(args.iso, args.output, found["files"])
+    try:
+        files, replaced = discfiles.replaced(args.iso, disc_files, found["files"], {change["top"] for change in found["scripts"]})
+    except ValueError as error:
+        raise SystemExit(str(error))
+    for item in replaced:
+        print("replaced: %s (mod %s, %d bytes, was %d)" % (item["path"], item["mod"], item["new"], item["old"]))
+        if item["new"] > item["old"]:
+            # models, textures and sounds load into fixed memory the build cannot see
+            print("warning: %s grew by %d bytes; if the game runs short of memory where it loads, keep it nearer "
+                  "the original's size" % (item["path"], item["new"] - item["old"]))
+    result = rebuild.write_disc(args.iso, args.output, files)
     for item in result["placed"]:
         print("%s %s (%d bytes)" % ("moved" if item["moved"] else "in place", item["path"], item["size"]))
     if result["grown"]:
         print("the image grew by %d sectors" % result["grown"])
-    wrong = rebuild.check(args.output, found["scripts"])
+    wrong = rebuild.check(args.output, found["scripts"]) + discfiles.check(args.output, disc_files)
     for path in wrong:
         print("reads back wrong: %s" % path)
-    print("%d scripts changed, %d disc files rewritten, written to %s" % (len(found["scripts"]), len(found["files"]), args.output))
+    print("%d scripts changed, %d game files replaced, %d disc files rewritten, written to %s"
+          % (len(found["scripts"]), len(replaced), len(files), args.output))
     if wrong:
         return 1
     if args.play:
@@ -373,6 +388,14 @@ def run_mod(args):
         print("%d scripts compiled, %d failed" % (result["compiled"], len(result["errors"])))
         return 1 if result["errors"] else 0
     mod_dir = mods.folder(args.mods, args.name)
+    if args.mod_command == "asset":
+        try:
+            written = discfiles.copy_out(args.iso, mod_dir, args.paths)
+        except ValueError as error:
+            raise SystemExit(str(error))
+        for path in written:
+            print("%s: replace it there, and build puts it on the disc" % (mod_dir / discfiles.DISC / path))
+        return 0
     if args.mod_command == "override":
         kinds = [(kind, getattr(args, kind)) for kind in parse.TARGET_KINDS if getattr(args, kind)]
         if len(kinds) != 1:
@@ -588,11 +611,18 @@ def parser():
     override_command.add_argument("--script", help="patch scripts by path without readable names (dungeon/monster/e33a.c)")
     override_command.add_argument("--monster", help="patch a monster kind's AI script (golem)")
     override_command.add_argument("--library", help="patch every script that includes a library (lib/...)")
+    asset_command = mod_commands.add_parser(
+        "asset", help="copy game files off the disc (models, textures, sounds) into a mod, to replace them there")
+    asset_command.add_argument("iso", help="the disc image")
+    asset_command.add_argument("name", help="the mod's name")
+    asset_command.add_argument("paths", nargs="+",
+                               help="files as extract lays them out: snd2/sp/sp_000.snd, or a pack member "
+                                    "as chara/c01_base.chr.d/c01b.img")
     check_command = mod_commands.add_parser("check", help="compile what mods change, without a disc, and show their numbers")
     check_command.add_argument("source", help="the decompiled source tree")
     check_command.add_argument("names", nargs="+", help="mods to check together, in build order")
     for mod_command in (new_command, save_command, list_command, apply_command, test_command, override_command,
-                        check_command):
+                        check_command, asset_command):
         mod_command.add_argument("--mods", default="mods", help="the folder that holds the mods")
     common(new_command)
     common(save_command)

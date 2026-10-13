@@ -254,6 +254,22 @@ the game's scripts; whole files suit scripts and libraries of the mod's own.
 A mod made on a tree with readable names applies to one without, and the
 other way round: files and `#include` lines follow each tree's layout.
 
+**Game files.** A mod can replace models, textures, sounds and any other
+file on the disc. It keeps them under `mods/NAME/disc/`, laid out as
+`extract` lays the disc out: a file at its path in `DATA.DAT`
+(`disc/snd2/sp/sp_000.snd`), or a member of a pack under the pack's name
+plus `.d` (`disc/chara/c01_base.chr.d/c01b.img` is the texture in Max's
+character pack; packs inside packs work the same way).
+
+- `mod asset ISO NAME PATH...` copies files or pack members off the disc
+  image into the mod, to replace there.
+- `build` writes each over the disc's own, puts members back into their
+  packs, and reads them back from the new image to check. Two chosen mods
+  may not replace the same game file. It warns when a file grows, since
+  models, textures and sounds load into fixed memory the build cannot see.
+- A mod can only replace files the disc has for now; adding new ones is
+  planned (see [the plan](../PLAN.md)).
+
 **Additions.** The older way to add to a script without copying it, kept for
 mods that use it: its `mod.json` can list additions, applied when it is
 built:
