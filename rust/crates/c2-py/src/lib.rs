@@ -244,6 +244,20 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// Path.read_text(): UTF-8, with \r\n and \r read as \n.
+pub fn read_text(path: &std::path::Path) -> std::io::Result<String> {
+    Ok(std::fs::read_to_string(path)?.replace("\r\n", "\n").replace('\r', "\n"))
+}
+
+/// Path.write_text(): UTF-8, with \n written as this system's line ending.
+pub fn write_text(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    if cfg!(windows) {
+        std::fs::write(path, text.replace('\n', "\r\n"))
+    } else {
+        std::fs::write(path, text)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,19 +339,5 @@ mod tests {
     #[test]
     fn whitespace_like_python() {
         assert_eq!(split(" a\tb\x1cc  "), vec!["a", "b", "c"]);
-    }
-}
-
-/// Path.read_text(): UTF-8, with \r\n and \r read as \n.
-pub fn read_text(path: &std::path::Path) -> std::io::Result<String> {
-    Ok(std::fs::read_to_string(path)?.replace("\r\n", "\n").replace('\r', "\n"))
-}
-
-/// Path.write_text(): UTF-8, with \n written as this system's line ending.
-pub fn write_text(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    if cfg!(windows) {
-        std::fs::write(path, text.replace('\n', "\r\n"))
-    } else {
-        std::fs::write(path, text)
     }
 }
