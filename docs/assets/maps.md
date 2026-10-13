@@ -12,7 +12,15 @@ this repository). Map meshes are the MDS format of
 
 **Settled (engine code and whole-corpus checks):**
 - All 210 `.map` files parse into a typed tree and are written back byte for
-  byte (also with every number first rounded to float32).
+  byte, also through JSON: `c2-assets`' `mapfile.rs` (`mapfile::parse`,
+  `mapfile::write`; `cargo test --release corpus` with `C2S_CORPUS` set to the
+  extracted disc checks them all). The tree keeps each number as the file
+  types it (int, float, or an exponent the engine reads as 0) and every
+  optional line and argument count of section 2.3; the layout is computed.
+  New numbers are written as `%g` but never with an exponent.
+- `c2 map` lists trigger points from that tree: a template's points once for
+  every placement of it, under the placement's name and moved by its
+  transform; the map's own points as part `""`.
 - All 13,372 `.mds` files under `map/` (12,730 in `.pcp` packs, 501 in sky
   packs, 123 in character packs, 18 in `.skyb`) parse and build back byte for
   byte with `c2-assets`' `mds.rs`, and export with `to_gltf.rs` unchanged.

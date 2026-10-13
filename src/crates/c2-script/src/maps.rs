@@ -6,10 +6,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
+use c2_assets::mapfile::{self, MapFile, Num, Placement, PointData};
 use indexmap::IndexMap;
-use regex::Regex;
 
 use crate::definitions::Definitions;
 use crate::index::{self, Folded, Outline};
@@ -20,94 +19,130 @@ use crate::{additions, disc, messages, pathnames, Result};
 pub const TOWN_CALLS: [&str; 4] = ["jump_to_map", "go_to_interior", "go_to_outside", "enter_interior"];
 pub const MOD_PROGRAMS: std::ops::Range<i128> = 9000..10000;
 
-/// A trigger point of a .map file.
+/// A trigger point of a .map file, where the game has it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Point {
     pub kind: String,
+    /// The placement that carries it, which scripts name to reach it; "" for the map's own points
+    /// and for the points of templates the file does not place.
     pub part: String,
+    /// The template it comes from; "" for the map's own points.
+    pub template: String,
     pub name: String,
     pub program: Option<i64>,
     /// How an event point is set off: "on the action button", "on using an item" or "on touch".
     pub check: Option<String>,
+    /// In the world: the placement's transform applied to FUNC_POS's position.
     pub position: Option<Vec<f64>>,
+    /// FUNC_POS's scale.
     pub size: Option<Vec<f64>>,
-    /// FUNC_EVENT_DATA's fields: kind, event number, program, three arguments, target, flags.
+    /// FUNC_EVENT_DATA's fields as written: kind, event number, program, three arguments, target,
+    /// flags.
     pub event: Option<Vec<String>>,
     pub item: Option<i64>,
 }
 
-fn func_field() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r"^(FUNC_\w+|PARTS_NAME)\s*(.*?);?\s*$").unwrap())
+/// A number as the file writes it, read as a decimal (an exponent, which the engine reads as 0, as
+/// 0).
+fn decimal(value: Num) -> f64 {
+    match value {
+        Num::Exponent { .. } => 0.0,
+        _ => value.text().parse().unwrap_or(0.0),
+    }
 }
 
-/// The numbers in a text, as floats.
-pub fn numbers(text: &str) -> Vec<f64> {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    let pattern = CELL.get_or_init(|| Regex::new(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?").unwrap());
-    pattern.find_iter(text).filter_map(|found| found.as_str().parse().ok()).collect()
+/// A placement's transform applied to a point: scale, then rotations about X, Y and Z (radians,
+/// T·Rz·Ry·Rx·S as mgRotMatrixXYZ builds it), then translation.
+fn placed(placement: &Placement, local: [f64; 3]) -> [f64; 3] {
+    let [sx, sy, sz] = placement.scale.map(decimal);
+    let [rx, ry, rz] = placement.rot.map(decimal);
+    let [x, y, z] = [local[0] * sx, local[1] * sy, local[2] * sz];
+    let [x, y, z] = [x, y * rx.cos() - z * rx.sin(), y * rx.sin() + z * rx.cos()];
+    let [x, y, z] = [x * ry.cos() + z * ry.sin(), y, -x * ry.sin() + z * ry.cos()];
+    let [x, y, z] = [x * rz.cos() - y * rz.sin(), x * rz.sin() + y * rz.cos(), z];
+    let [tx, ty, tz] = placement.pos.map(decimal);
+    [x + tx, y + ty, z + tz]
 }
 
-fn unquoted(text: &str) -> String {
-    text.trim_matches('"').to_string()
-}
-
-/// The trigger points of a map file.
-pub fn trigger_points(path: &Path) -> Result<Vec<Point>> {
-    let text = c2_disc::text::decode_lossy(&std::fs::read(path)?);
-    let (mut found, mut part, mut point): (Vec<Point>, String, Option<Point>) = (Vec::new(), String::new(), None);
-    for line in text.split(['\r', '\n']) {
-        let line = c2_py::strip(line);
-        let Some(capture) = func_field().captures(line) else {
-            continue;
-        };
-        let (key, value) = (&capture[1], capture.get(2).map_or("", |value| value.as_str()));
-        if key == "PARTS_NAME" {
-            part = unquoted(value);
-        } else if key == "FUNC_DATA" {
-            point = Some(Point {
-                kind: unquoted(value.split(',').next().unwrap_or("")),
-                part: part.clone(),
-                ..Point::default()
-            });
-        } else if let Some(current) = point.as_mut() {
-            match key {
-                "FUNC_NAME" => current.name = unquoted(value),
-                "FUNC_EVENT_DATA" => {
-                    // kind, event number, program, three arguments, target, then flags for the action
-                    // button and for using an item (mapFUNC_EVENT_DATA in mapload.cpp); with neither,
-                    // touching it.
-                    let fields: Vec<String> = value.split(',').map(|field| c2_py::strip(field).to_string()).collect();
-                    if fields[0].trim_matches('"') == "event" && fields.len() > 2 {
-                        current.program =
-                            c2_py::int_base(&fields[2], 10).ok().and_then(|value| i64::try_from(value).ok());
-                        let action = fields.len() > 7 && !matches!(fields[7].as_str(), "0" | "");
-                        let item = fields.len() > 8 && !matches!(fields[8].as_str(), "0" | "");
-                        current.check = Some(
-                            if action {
-                                "on the action button"
-                            } else if item {
-                                "on using an item"
-                            } else {
-                                "on touch"
-                            }
-                            .to_string(),
-                        );
+/// One point of the file as the game has it: in a placement (part and transform), in a template
+/// nothing places, or the map's own.
+fn described(point: &mapfile::Point, template: &str, placement: Option<&Placement>) -> Point {
+    let local = point.pos.map(decimal);
+    let position = placement.map_or(local, |placement| placed(placement, local));
+    let mut found = Point {
+        kind: point.kind.name().to_string(),
+        part: placement.map(|placement| placement.name.clone()).unwrap_or_default(),
+        template: template.to_string(),
+        name: point.name.clone(),
+        position: Some(position.to_vec()),
+        size: Some(point.scale.map(decimal).to_vec()),
+        ..Point::default()
+    };
+    match &point.data {
+        PointData::Event(event) => {
+            // the action button and using an item set it off (mapFUNC_EVENT_DATA in mapload.cpp); with
+            // neither, touching it
+            if event.kind == "event" {
+                found.program = Some(i64::from(event.program.int()));
+                found.check = Some(
+                    if event.action_button.int() != 0 {
+                        "on the action button"
+                    } else if event.use_item.int() != 0 {
+                        "on using an item"
+                    } else {
+                        "on touch"
                     }
-                    current.event = Some(fields);
-                }
-                "FUNC_INVENT_DATA" => current.item = numbers(value).first().map(|value| *value as i64),
-                "FUNC_POS" => {
-                    let values = numbers(value);
-                    current.position = Some(values.iter().take(3).copied().collect());
-                    current.size = Some(values.iter().skip(6).take(3).copied().collect());
-                }
-                "FUNC_DATA_END" => found.push(point.take().unwrap()),
-                _ => {}
+                    .to_string(),
+                );
+            }
+            let quoted = |text: &str| format!("\"{text}\"");
+            let mut fields = vec![quoted(&event.kind), event.event_no.text(), event.program.text()];
+            fields.extend(event.args.map(Num::text));
+            fields.push(quoted(&event.target));
+            fields.extend([event.action_button, event.use_item, event.flag_100].map(Num::text));
+            found.event = Some(fields);
+        }
+        PointData::Invent(invent) => found.item = Some(i64::from(invent.id.int())),
+        _ => {}
+    }
+    found
+}
+
+/// The trigger points of a map, as the game has them: each template's points once for every
+/// placement of it (the engine places the first template of a name), the points of templates the
+/// file does not place (placed at run time, as dungeon floors are), then the map's own points.
+pub fn map_points(map: &MapFile) -> Vec<Point> {
+    let mut first: HashMap<&str, &mapfile::Template> = HashMap::new();
+    for template in &map.templates {
+        first.entry(template.name.as_str()).or_insert(template);
+    }
+    let mut found = Vec::new();
+    let mut placed_names = HashSet::new();
+    for placement in &map.placements {
+        if let Some(template) = first.get(placement.template.as_str()) {
+            placed_names.insert(template.name.as_str());
+            for point in template.points.iter().flatten() {
+                found.push(described(point, &template.name, Some(placement)));
             }
         }
     }
-    Ok(found)
+    for template in &map.templates {
+        let unplaced = !placed_names.contains(template.name.as_str());
+        if unplaced && std::ptr::eq(first[template.name.as_str()], template) {
+            for point in template.points.iter().flatten() {
+                found.push(described(point, &template.name, None));
+            }
+        }
+    }
+    for point in map.points.iter().flatten() {
+        found.push(described(point, "", None));
+    }
+    found
+}
+
+/// The trigger points of a map file (`map_points`).
+pub fn trigger_points(path: &Path) -> Result<Vec<Point>> {
+    Ok(map_points(&mapfile::parse(&std::fs::read(path)?)?))
 }
 
 /// The programs a trigger point starts, with a note saying what it is. An event point starts its
@@ -164,7 +199,11 @@ pub fn folder_triggers(extracted: &Path) -> Result<BTreeMap<String, IndexMap<i64
             Some(at) => relative[..at].to_string(),
             None => ".".to_string(),
         };
-        for point in trigger_points(&extracted.join(&relative))? {
+        // a map file that does not read gives no notes rather than stopping the decompile
+        let Ok(points) = trigger_points(&extracted.join(&relative)) else {
+            continue;
+        };
+        for point in points {
             for (program, note) in point_programs(&point) {
                 let notes = found.entry(folder.clone()).or_default().entry(program).or_default();
                 if !notes.contains(&note) {
@@ -381,14 +420,19 @@ pub fn detail(code: &str, found: &Catalog, tree: &Path, extracted: &Path, progra
     let file_name = path.as_ref().and_then(|path| path.file_name()).map(|name| name.to_string_lossy().into_owned());
     lines
         .extend([String::new(), format!("trigger points ({}):", file_name.as_deref().unwrap_or("no .map file found"))]);
-    let points = match &path {
-        Some(path) => trigger_points(path)?,
+    let points = match path.as_deref().map(trigger_points) {
+        Some(Ok(points)) => points,
+        Some(Err(error)) => {
+            lines.push(format!("  (the .map file could not be read: {error})"));
+            Vec::new()
+        }
         None => Vec::new(),
     };
     for point in &points {
         let place = match &point.position {
             Some(position) if !position.is_empty() => {
-                let values: Vec<String> = position.iter().map(|value| c2_py::format_g(*value, 6)).collect();
+                // + 0.0 writes -0 as 0
+                let values: Vec<String> = position.iter().map(|value| c2_py::format_g(value + 0.0, 6)).collect();
                 format!("at {}", values.join(", "))
             }
             _ => String::new(),
@@ -405,7 +449,13 @@ pub fn detail(code: &str, found: &Catalog, tree: &Path, extracted: &Path, progra
             point.kind.clone()
         };
         let name = if point.name.is_empty() { "(unnamed)" } else { &point.name };
-        let part = if point.part.is_empty() { String::new() } else { format!("part {}", point.part) };
+        let part = if !point.part.is_empty() {
+            format!("part {}", point.part)
+        } else if !point.template.is_empty() {
+            format!("template {} (not placed here)", point.template)
+        } else {
+            "map's own".to_string()
+        };
         lines.push(format!("  {name:<18} {part:<20} {what} {place}"));
     }
     lines.push("  (switch one off with set_func_point_enabled(part, name, 0); \"\" for the map's own points)".into());
@@ -437,39 +487,104 @@ mod tests {
     use super::*;
     use crate::xref::tests::tree;
 
-    const MAP_FILE: &str = "PARTS_NAME \"p01_s99\";
-FUNC_POINT 2;
-FUNC_DATA \"event\",1;
-FUNC_NAME \"talk\";
-FUNC_FLAG 0, 0, 0,0;
-FUNC_EVENT_DATA \"event\",0,500,0,0,0,\"\",1,0,0;
-FUNC_POS 68.04,41.85,1180.61, 0,0,0, 30,30,30;
-FUNC_DATA_END;
-FUNC_DATA \"event\",0;
-FUNC_NAME \"step\";
-FUNC_EVENT_DATA \"event\",1,520,0,0,0,\"\",0,0,0;
-FUNC_POS -259.7,0,792.4, 0,0,0, 20,20,20;
-FUNC_DATA_END;
+    /// A template with a point placed twice (once turned a quarter about Y and moved), a template
+    /// nothing places, and the map's own point.
+    const MAP_FILE: &str = "PCP \"s99_0.pcp\";
+PARTS \"p01_s99\";
+\tLIGHT_FLAG 0,0;
+\tMOVE_FLAG 1,1,1,1;
+\tFUNC_POINT 1;
+\t\tFUNC_DATA \"event\",0;
+\t\t\tFUNC_NAME \"step\";
+\t\t\tFUNC_FLAG 0, 0, 0,0;
+\t\t\tFUNC_EVENT_DATA \"event\",1,520,0,0,0,\"\",0,0,0;
+\t\t\tFUNC_POS -259.7,0,792.4, 0,0,0, 20,20,20;
+\t\tFUNC_DATA_END;
+\tFUNC_POINT_END;
+PARTS_END;
+PARTS \"door99\";
+\tLIGHT_FLAG 0,0;
+\tMOVE_FLAG 0,0,0,0;
+\tFUNC_POINT 1;
+\t\tFUNC_DATA \"event\",1;
+\t\t\tFUNC_NAME \"door\";
+\t\t\tFUNC_FLAG 0, 0, 0,0;
+\t\t\tFUNC_EVENT_DATA \"door\",0,200,0,3,210,\"i01h01\",1,0,1;
+\t\t\tFUNC_POS 0,0,0, 0,0,0, 15,15,15;
+\t\tFUNC_DATA_END;
+\tFUNC_POINT_END;
+PARTS_END;
+
+
+ACTIVE_LIGHT_SET 0;
+FLOOR -10000;
+CHARA_POS 0,0,0;
+DEF_FOOT 0;
+TIME_FLAG 0,0;
+TIME_LIGHT_NUM 4;
+SKY_INFO 0,0,0;
+
+MAP_PARTS \"p01_s99\",1;
+\tPARTS_NAME \"p01_s99\";
+\tPARTS_GROUP \"\";
+\tPARTS_POS 0,0,0;
+\tPARTS_ROT 0,0,0;
+\tPARTS_SCALE 1,1,1;
+MAP_PARTS_END;
+MAP_PARTS \"p01_s99-1\",1;
+\tPARTS_NAME \"p01_s99\";
+\tPARTS_GROUP \"\";
+\tPARTS_POS 100,0,0;
+\tPARTS_ROT 0,1.5708,0;
+\tPARTS_SCALE 1,1,1;
+MAP_PARTS_END;
+
+
+
+
+FUNC_POINT 1;
+\tFUNC_DATA \"event\",1;
+\t\tFUNC_NAME \"talk\";
+\t\tFUNC_FLAG 0, 0, 0,0;
+\t\tFUNC_EVENT_DATA \"event\",0,500,0,0,0,\"\",1,0,0;
+\t\tFUNC_POS 68.04,41.85,1180.61, 0,0,0, 30,30,30;
+\tFUNC_DATA_END;
 FUNC_POINT_END;
+
+
+
 ";
 
     #[test]
-    fn trigger_points_give_their_program_and_how_they_start() {
+    fn trigger_points_belong_to_their_placements_or_the_map() {
         let folder = tree("maps-points", &[("s99.map", MAP_FILE)]);
         let points = trigger_points(&folder.join("s99.map")).unwrap();
-        let summary: Vec<(&str, &str, Option<i64>, Option<&str>)> = points
+        let summary: Vec<String> = points
             .iter()
-            .map(|point| (point.name.as_str(), point.part.as_str(), point.program, point.check.as_deref()))
+            .map(|point| {
+                let check = point.check.as_deref().unwrap_or("-");
+                format!("{} {:?} {:?} {:?} {check}", point.name, point.part, point.template, point.program)
+            })
             .collect();
         assert_eq!(
             summary,
             [
-                ("talk", "p01_s99", Some(500), Some("on the action button")),
-                ("step", "p01_s99", Some(520), Some("on touch"))
+                "step \"p01_s99\" \"p01_s99\" Some(520) on touch",
+                "step \"p01_s99-1\" \"p01_s99\" Some(520) on touch",
+                "door \"\" \"door99\" None -",
+                "talk \"\" \"\" Some(500) on the action button",
             ]
         );
-        assert_eq!(points[0].position, Some(vec![68.04, 41.85, 1180.61]));
+        assert_eq!(points[0].position, Some(vec![-259.7, 0.0, 792.4]));
+        // turned a quarter about Y: x' = z, z' = -x; then moved
+        let turned = points[1].position.as_ref().unwrap();
+        assert!((turned[0] - 892.4).abs() < 0.01 && turned[1] == 0.0 && (turned[2] - 259.7).abs() < 0.01, "{turned:?}");
         assert_eq!(points[1].size, Some(vec![20.0, 20.0, 20.0]));
+        assert_eq!(
+            point_programs(&points[2]),
+            [(200, "door to i01h01".to_string()), (210, "door to i01h01".to_string())]
+        );
+        assert_eq!(points[3].position, Some(vec![68.04, 41.85, 1180.61]));
     }
 
     #[test]
