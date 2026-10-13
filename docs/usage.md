@@ -299,9 +299,16 @@ each at every place the disc has it:
   "sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW": {"file": "sounds/boom.wav", "volume": 90},
   "file:snd2/sp/sp_000.snd": "raw/sp_000.snd"
 },
-"add": {"sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"}}
+"add": {
+  "sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"},
+  "file:mods/calculator/ui.img": {"file": "ui", "like": "texture:logo_d00"},
+  "file:mods/calculator/calc.chr": {"file": "model/calc.gltf", "like": "model:uki"}
+}
 ```
 
+A `file:` line with `like` makes a new picture file from PNGs, or a new
+model pack from a glTF, in the format of the disc's file `like` names (see
+[the modding guide](modding.md#pictures-and-models-of-a-mods-own)).
 `mod asset ISO NAME ID...` copies assets out by id and adds their lines,
 `mod check SOURCE NAME... --disc ISO` checks every line resolves, and
 `mod migrate ISO NAME` turns a mod's `disc/` folder (below) into such

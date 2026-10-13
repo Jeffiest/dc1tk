@@ -215,14 +215,16 @@ fn shown(path: &Path) -> String {
     path.display().to_string()
 }
 
-/// The places and changes of the chosen mods' asset ids, read from the disc's index of ids, which
-/// is only made when a mod names an id.
-fn resolved(mod_dirs: &[PathBuf], disc: &Path, defs: &[PathBuf]) -> Result<replace::Resolved> {
+/// The places and changes of the chosen mods' asset ids, and the templates of the game files they
+/// make from common formats, read from the disc's index of ids, which is only made when a mod
+/// names an id.
+fn resolved(mod_dirs: &[PathBuf], disc: &Path, defs: &[PathBuf]) -> Result<(replace::Resolved, discfiles::Templates)> {
     let lines = replace::all_lines(mod_dirs)?;
     if !replace::needs_index(&lines) {
-        return Ok(replace::Resolved::default());
+        return Ok((replace::Resolved::default(), replace::templates(&lines, None)?));
     }
-    Ok(replace::resolve(&lines, &asset_tree::index_of(disc, defs)?)?)
+    let index = asset_tree::index_of(disc, defs)?;
+    Ok((replace::resolve(&lines, &index)?, replace::templates(&lines, Some(&index))?))
 }
 
 /// The sound entries the mods add, as constants their patches see.
@@ -283,7 +285,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     if !disc_clashes.is_empty() {
         bail!(discfiles::clash_text(&disc_clashes));
     }
-    let resolved = resolved(&mod_dirs, &args.iso, &common.def_sets())?;
+    let (resolved, templates) = resolved(&mod_dirs, &args.iso, &common.def_sets())?;
     let id_clashes = replace::clashes(&resolved, &disc_files);
     if !id_clashes.is_empty() {
         bail!("the chosen mods cannot be built together:\n  {}", id_clashes.join("\n  "));
@@ -390,7 +392,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         println!("no script differs from the disc");
     }
     let tops: HashSet<String> = found.scripts.iter().map(|change| change.top.clone()).collect();
-    let (files, replaced) = discfiles::replaced(&args.iso, &disc_files, &found.files, &tops)?;
+    let (files, replaced) = discfiles::replaced(&args.iso, &disc_files, &found.files, &tops, &templates)?;
     for item in &replaced {
         let Some(old) = item.old else {
             println!(
@@ -523,7 +525,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             let lines = replace::all_lines(&mod_dirs)?;
             let added = match disc {
                 Some(disc) => {
-                    let resolved = resolved(&mod_dirs, disc, &common.def_sets())?;
+                    let (resolved, _) = resolved(&mod_dirs, disc, &common.def_sets())?;
                     let clashes = replace::clashes(&resolved, &raw);
                     if !clashes.is_empty() {
                         bail!("the chosen mods cannot be built together:\n  {}", clashes.join("\n  "));

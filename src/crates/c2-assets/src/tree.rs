@@ -984,7 +984,7 @@ pub fn gltf_buffer(path: &std::path::Path, gltf: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// A uri's path with its %XX escapes decoded.
-fn uri_decoded(uri: &str) -> String {
+pub(crate) fn uri_decoded(uri: &str) -> String {
     let bytes = uri.as_bytes();
     let mut out = Vec::new();
     let mut at = 0;
