@@ -16,3 +16,5 @@ __pycache__/
 
 # Rust build output
 /rust/target/
+/assets/
+/backups/
