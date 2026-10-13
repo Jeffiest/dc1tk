@@ -133,6 +133,8 @@ c2 play modded.iso
   the shared library for mods.
 - [Definitions](docs/definitions.md): how names and documentation are shared
   without sharing the scripts.
+- [Example mods](examples/README.md): mods that ship with the project, such as
+  a calculator with its own model, screen and sounds.
 - [Examples](docs/examples/README.md): made-up scripts showing how to write
   a scene, a cutscene, a monster AI and a town talk handler.
 - [The script format](docs/format.md), [assembly](docs/assembly.md) and
