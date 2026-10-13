@@ -13,6 +13,10 @@ same input in a work folder and compares; exit status 1 when anything differs.
   python rust/parity.py decompile extracted WORK      every script's program tree (before names), as JSON
   python rust/parity.py decompile extracted WORK --source   the same written as C
   python rust/parity.py compile decompiled WORK       every script's resolved program compiled by both
+  python rust/parity.py parse WORK [--data FOLDER]    every source file (decompiled/, mods/ under
+                                                      FOLDER; sdk/ and the definitions' headers),
+                                                      cut short and with a line gone, and probes of
+                                                      #if and the error paths, parsed by both
 
 Run from the repository folder, after cargo build --release in rust/. Images are 4.7 GB each; the
 work folder needs room for two.
@@ -299,6 +303,177 @@ def compare_json_trees(a, b):
     return problems
 
 
+# #if conditions, each probed in a file of its own.
+CONDITIONS = [
+    "", "1", "0", "LANGUAGE", "LANGUAGE == 2", "LANGUAGE != LANGUAGE_FRENCH", "defined(LANGUAGE)", "defined LANGUAGE",
+    "!defined(X)", "defined ( X ) || 1", "undefined(X)", "1 && 0", "1 || 0", "!0", "!1 == 0", "1 != 2", "!!1", "~0",
+    "-1", "+1", "- -1", "1 + 2 * 3 == 7", "(1 + 2) * 3 == 9", "7 / 2 == 3", "-7 / 2 == -3", "7 % -3", "-7 % 3 == 2",
+    "4 / 0", "4 % 0", "0 && 1 / 0", "1 << 2", "1 >> 1", "2 ** 3", "1 < 2 < 3", "1 <= 1", "2 >= 3", "1 > 0", "3 & 1",
+    "2 | 1", "3 ^ 1", "1 & 1 == 1", "0x10 == 16", "0X1f", "10u", "10UL", "0x10L == 16", "1.5", "1e3", "1.", ".5", "'a'",
+    "\"s\"", "1 ? 2 : 3", "1 // 2", "07", "00", "0_1", "1_000", "1__0", "0o17", "0b101", "0b12", "1and 0", "1or 0",
+    "0x1for 1", "1andx", "1 # comment", "1 // comment", "(", ")", "(1", "1)", "()", "(1, 2)", "1 2", "", "  ", "\t1",
+    "1\x0c+1", "1\x0b+1", "1 \\", "True", "UNDEFINED_NAME", "\u00e91", "1 \u3000", "\uff11", "\u0661", "1 $ 2",
+    "!=", "1 ! = 2", "1 !== 1", "1 &&& 1", "1 ||| 1", "1 = 1", "A + A", "SELF", "LOOP_A", "EMPTY", "PAREN",
+    "BIG > 1", "99999999999999999999 > 1", "(" * 200 + "1" + ")" * 200, "(" * 201 + "1" + ")" * 201,
+    "!" * 300 + "1", "-" * 300 + "1", "&&".join(["1"] * 400), "+".join(["1"] * 300),
+    "9007199254740993 / 3 > 0", "LANGUAGE >= LANGUAGE_ENGLISH && LANGUAGE <= LANGUAGE_SPANISH",
+]
+
+# Snippets that take the tokenizer and parser down their less trodden paths.
+SNIPPETS = [
+    "\ufeffint x;", "int x = 1;", "void f() { x = \"a\\x41b\"; }", "void f() { x = \"\\xzz\"; }",
+    "void f() { x = \"\\x-1\"; }", "void f() { x = \"\\q\"; }", "void f() { x = \"abc", "void f() { x = \"ab\ncd\"; }",
+    "void f() { x = 'a'; y = '\\n'; z = '\\x'; }", "void f() { x = 'ab'; }", "void f() { x = ''; }",
+    "void f() { x = '''; }", "void f() { x = \u0661\u0662 + \u0661.\u0665; }", "void f() { x = \u00b2; }",
+    "void f() { x = 1.5f + 2f + 3e2 + 0x1fu + 4L; }", "void f() { x = 1e; }", "#pragma assembly\n.code\n",
+    "int x;\n#pragma assembly\n", "#pragma magic 0x53423200\n", "#pragma magic 0x5342\n", "#pragma magic 0x53g\n",
+    "#pragma magic SB3\n", "#pragma magic S\u00e9\u00e8\n", "#pragma magic \"x\"\n", "#pragma magic\n",
+    "#pragma unk_14 0x10\n#pragma globals 3\n", "#pragma unk_14 010\n", "#pragma globals x\n", "#pragma\n",
+    "#pragma strings \"a\" \"b\\n\"\nvoid f() {}\n", "#pragma strings a\n", "#pragma padding\nvoid f() {}\n",
+    "#pragma padding_of g 00\n#pragma padding_of f\nvoid f() {}\n", "#pragma padding_of \"f\"\n",
+    "#pragma target map s51 \"x y\"\n#pragma target script a\n", "#pragma target map\n", "#pragma target nope a\n",
+    "#pragma \"name\"\n", "#pragma bogus\n", "#pragma once\n#pragma string_pool\n#pragma natives event\n",
+    "#pragma natives \"q\\\"x\"\n", "#pragma natives \"abc\n", "#pragma natives \"a\\zb\"\n", "#pragma natives \"a\\x4\"\n",
+    "#pragma override\n#pragma every_frame\nvoid f() {}\nvoid g() {}\n", "#include \"a.h\"\n#include <b.h>\n",
+    "#include a.h\n", "#include \"a\" \"b\"\n", "#include \"unterminated\n", "#define\n#define A\n#define B 2 // two\n",
+    "#define F(x) x\n", "#define N 4\nvoid f() { int a[N]; int b[M]; int c[] = {1, 2}; }\n", "#define M -1\nvoid f() { int a[M] = {1}; }\n",
+    "#define S \"str\"\n#define F 1.5\n#define E (1 + 2)\n#define Q #define\n", "#define X \"abc\n",
+    "#define Y asm\n", "#undef X\n#undef\n", "#if 1\nint a;\n#else\nint b;\n#endif\n", "#if 0\n  #endif\nint a;\n#endif\n",
+    "#ifdef A\nint a;\n#elif 1\nint b;\n#elif 1/0\n#else\n#endif\n", "#ifndef A\n#define A\n#endif\n#ifdef A\nint a;\n#endif\n",
+    "#endif\n", "#else\n", "#elif 1\n", "#if 1\n", "#iffy\n", "# define X 1\n", "#if 0\n#if 1/0\n#endif\n#elif 1/0\n#endif\n",
+    "asm f arg 2 {\n  push 1\n  ret\n}\nasm g arg x {\n}\n", "asm f {\n}\n", "asm f arg 1\n", "asm f arg 1 {\n  ret\n",
+    "asm f arg 1 { ret }\n} \nint x;", "asm h arg \u0661 {\n}\n", "/* a\nb */ int x;", "/* open", "int x; @",
+    "enum e { A, B = 5, C, D = -2, E };\nenum program { P1 = 3, P2 };\n", "enum e { A = x };", "enum e { A, }",
+    "PROGRAM(1, main_f);\nPROGRAM(NAME, g);\nMAIN(main_f);\n", "PROGRAM(\"x\", f);", "NEW_FLAG(a);\nNEW_PROGRAM(b);\nNEW_MONSTER_VAR(c);\n",
+    "typedef int bgm;\nextern void play(bgm b, enum e x, int *out, OPTIONAL(float f, ...)) NATIVE(5);\n",
+    "extern int get(int a) NATIVE(3, 4);\nextern string name(void) NATIVE(1);\nextern any thing(...) NATIVE(0x10);\n",
+    "extern int f() NATIVE(x);", "extern void f(void) NATIVE(1)", "extern bogus f() NATIVE(1);",
+    "static inline void h(int a, float b) { a = b; }\n", "static inline int h() {}\n", "static int h;",
+    "int a, b;\nfloat c;\nstring s;\n", "int a[3];", "int *p;", "int a = 1;", "void v;", "void _f() {}",
+    "// doc for f\n// more-\n// over\n//\n// second\nint f(int a, float *b, int c[]) { return a; }\n",
+    "// file doc\n// second line\n\nint x;\n", "//only\n", "void f() {\n  // note: kept\n  x = 1;\n  // NOTE: upper\n  // note: last wins\n  y = 2;\n}\n",
+    "void f() { int a; float a; }", "void f(int a) { int a; }", "void f() { int a; { int a; } int *b; int *b; }",
+    "void f() { if (a) b = 1; else if (c) d = 2; else { e = 3; } }",
+    "void f() { while (1) { if (x) continue; break; } }",
+    "void f() { for (i = 0, j = 1; i < 10; i++, j--) { if (i) continue; switch (i) { case 1: continue; default: break; } } }",
+    "void f() { for (int i = 0; ; ) {} for (;;) ; }", "void f() { do { x++; if (y) continue; } while (x < 3); }",
+    "void f() { switch (x) { case 1: case 2: y = 1; break; default: y = 2; } }", "void f() { switch (x) { y = 1; } }",
+    "void f() { switch (x) { default: default: } }", "void f() { switch (x) { case A ? 1 : 2: } }",
+    "void f() { x = a ? b : c ? d : e; x += 1; x -= 1; x *= 2; x /= 2; x %= 2; x &= 1; x |= 1; x ^= 1; x <<= 1; x >>= 1; }",
+    "void f() { x = -a + !b - ~c * &d / *e % (int)f + (float)g; ++x; --x[1]; *p = 1; }",
+    "void f() { ++1; }", "void f() { &1; }", "void f() { 1 = 2; }", "void f() { x = sin(1) + cos(y) + g(1, 2,) + h(); }",
+    "void f() { x = a[i++]++; y--; print(\"a\", 1); wait; end; skip_end; return; }", "int f() { return 1 + 2; }",
+    "void f() { AT(0x10) x = 1; DIRECT { y = 2; z = 3; } AT(1) AT(2) w = 4; }", "void f() { AT(x) y = 1; }",
+    "void f() { bgm_file track; bgm_file t2 = 3, t3; enum se_bank b; }", "void f() { void x; }", "void f() { any x; }",
+    "void f() { x = 1 }", "void f() { x = ; }", "void f() { #define Z 1\n }", "void f() { x = #include <a>\n; }",
+    "void f() { if x; }", "void f() {", "void f(", "void f(int)", "void f(void) {}\nvoid g(void x) {}",
+    "int f() { int a[2] = {1, 2, 3}; }", "int f() { int a[] = 1; }", "int f() { int a[x]; int b[3] = {1}; }",
+    "void f() { x = 9223372036854775807 + 0x7fffffffffffffff; }",
+    "void f() { x = " + "(" * 150 + "1" + ")" * 150 + "; }", "void f() { x = " + "!" * 900 + "1; }",
+    "void f() { " + "{" * 300 + "}" * 300 + " }", "void f() { x = " + "(" * 250 + "1" + ")" * 250 + "; }",
+    "void f() { x = 1e40; y = 1e400; }", "float x; x;", "int ;", "; int x;", "1;", "\"s\";",
+]
+# Nesting either side of where Python's recursion limit stops parse.py, called as parse_one calls it.
+for depth in (196, 197):
+    SNIPPETS.append("void f() { x = " + "(" * depth + "1" + ")" * depth + "; }")
+for depth in (983, 984):
+    SNIPPETS.append("void f() { x = " + "!" * depth + "1; }")
+for depth in (330, 331):
+    SNIPPETS.append("void f() { " + "{" * depth + "}" * depth + " }")
+for depth in (245, 246):
+    SNIPPETS.append("void f() { " + "if (1) " * depth + "x = 1; }")
+for depth in (991, 992):
+    SNIPPETS.append("#if " + "!" * depth + "1\n#endif\n")
+for depth in (990, 991):
+    SNIPPETS.append("#define X #if " + "!" * depth + "1\n")
+
+
+def parse_one(text, defines):
+    from c2s import parse
+    try:
+        return json.dumps(parse.parse(text, defines), ensure_ascii=False, separators=(",", ":"))
+    except ValueError as error:
+        return json.dumps({"error": str(error)}, ensure_ascii=False, separators=(",", ":"))
+    except Exception as error:
+        return json.dumps({"crash": type(error).__name__}, separators=(",", ":"))
+
+
+def check_parse(args):
+    """Every source file parsed by parse.parse and by c2-script's parse_dump, compared as JSON:
+    the files as they are (headers and mods also with each LANGUAGE a patch is parsed with), the
+    first 300 cut at a third and two thirds and with their middle line gone, and probes of #if
+    conditions and the error paths."""
+    import warnings
+    from c2s import patches
+    warnings.simplefilter("ignore")
+    data = Path(args.data)
+    work = Path(args.work)
+    folder = work / "parse_inputs"
+    rs = work / "rs_parse"
+    for path in (folder, rs):
+        if path.exists():
+            raise SystemExit("%s exists; give an empty work folder" % path)
+    folder.mkdir(parents=True)
+    files = set()
+    for root in (data / "decompiled", REPO / "sdk", REPO / "definitions" / "pal" / "include", data / "mods"):
+        files.update(path for path in root.rglob("*") if path.suffix in (".c", ".h") and path.is_file())
+    files = sorted(files)
+    languages = [patches.NO_LANGUAGE] + sorted(patches.LANGUAGES.values())
+    with_defines = [path for path in files if data / "mods" in path.parents or path.suffix == ".h" and data / "decompiled" not in path.parents]
+    cases = [(path, None) for path in files]
+    for path in with_defines:
+        for language in languages:
+            cases.append((path, dict({name: str(value) for name, value in patches.LANGUAGES.items()}, LANGUAGE=str(language))))
+
+    def add(name, text, defines=None):
+        path = folder / name
+        path.write_bytes(text.encode("utf-8"))
+        cases.append((path, defines))
+
+    for number, path in enumerate(files[:300]):
+        text = path.read_text(encoding="utf-8")
+        add("%d_third.c" % number, text[:len(text) // 3])
+        add("%d_two_thirds.c" % number, text[:2 * len(text) // 3])
+        lines = text.split("\n")
+        add("%d_line_gone.c" % number, "\n".join(lines[:len(lines) // 2] + lines[len(lines) // 2 + 1:]))
+    probe_defines = {"LANGUAGE": "2", "LANGUAGE_FRENCH": "2", "LANGUAGE_ENGLISH": "1", "LANGUAGE_SPANISH": "5", "A": "1",
+                     "SELF": "SELF", "LOOP_A": "LOOP_B", "LOOP_B": "LOOP_A", "EMPTY": "", "PAREN": "(1", "BIG": "0x7fffffffffffffffffffffff",
+                     "X": "1 // c"}
+    for number, condition in enumerate(CONDITIONS):
+        add("if_%d.c" % number, "#if %s\nint a;\n#elif 1\nint b;\n#endif\n" % condition, probe_defines)
+    for number, snippet in enumerate(SNIPPETS):
+        add("snippet_%d.c" % number, snippet)
+
+    listing = work / "parse_list.txt"
+    listing.write_text("".join("%s%s\n" % (path, "" if defines is None else "\t" + json.dumps(defines)) for path, defines in cases),
+                       encoding="utf-8")
+    texts = [(path.read_text(encoding="utf-8"), defines) for path, defines in cases]
+    start = time.time()
+    expected = [parse_one(text, defines) for text, defines in texts]
+    py_time = time.time() - start
+    run(["cargo", "build", "--release", "-q", "-p", "c2-script", "--example", "parse_dump"], cwd=REPO / "rust")
+    example = REPO / "rust" / "target" / "release" / "examples" / ("parse_dump.exe" if os.name == "nt" else "parse_dump")
+    start = time.time()
+    result = subprocess.run([str(example), str(listing), str(rs)], capture_output=True, text=True, encoding="utf-8")
+    rs_time = time.time() - start
+    if result.returncode != 0:
+        raise SystemExit("parse_dump failed:\n%s%s" % (result.stdout, result.stderr))
+    problems = []
+    crashes = 0
+    for number, ((path, defines), want) in enumerate(zip(cases, expected)):
+        got = (rs / ("%d.json" % number)).read_text(encoding="utf-8")
+        if want.startswith('{"crash":'):
+            crashes += 1
+            if not got.startswith('{"error":'):
+                problems.append("%s%s: python raised %s, rust gave a program" % (path, " %r" % defines if defines else "", want))
+        elif got != want:
+            problems.append("%s%s differs:\n  python %s\n  rust   %s" % (path, " %r" % defines if defines else "", want[:300], got[:300]))
+    errors = sum(want.startswith('{"error":') for want in expected)
+    print("%d files parsed (%d programs, %d errors, %d where python raises something other than ValueError and rust gives an error); "
+          "python %.1fs, rust %.1fs (%s)" % (len(cases), len(cases) - errors - crashes, errors, crashes, py_time, rs_time, result.stderr.strip()))
+    return problems
+
+
 def run_status(command):
     start = time.time()
     result = subprocess.run([str(part) for part in command], capture_output=True, text=True, encoding="utf-8")
@@ -362,11 +537,14 @@ def main():
     command.add_argument("--source", action="store_true", help="compare the source text instead of the tree")
     command.add_argument("--named", action="store_true", help="with the definitions' names, script entries and "
                          "translations (without the SDK's names)")
+    command = checks.add_parser("parse")
+    command.add_argument("work")
+    command.add_argument("--data", default=str(REPO), help="the folder holding decompiled/ and mods/")
     args = parser.parse_args()
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
     checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble,
-              "decompile": check_decompile, "compile": check_compile}
+              "decompile": check_decompile, "compile": check_compile, "parse": check_parse}
     problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)
