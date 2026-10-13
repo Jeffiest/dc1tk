@@ -274,6 +274,9 @@ def run_build(args):
     except ValueError as error:
         raise SystemExit(str(error))
     for item in replaced:
+        if item["old"] is None:
+            print("added: %s (mod %s, %d bytes)" % (item["path"], item["mod"], item["new"]))
+            continue
         print("replaced: %s (mod %s, %d bytes, was %d)" % (item["path"], item["mod"], item["new"], item["old"]))
         if item["new"] > item["old"]:
             # models, textures and sounds load into fixed memory the build cannot see

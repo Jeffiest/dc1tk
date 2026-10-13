@@ -1,3 +1,4 @@
+import struct
 from pathlib import Path
 
 from c2s import archive, rebuild
@@ -77,6 +78,36 @@ def clash_text(clashes):
                      for path, names in sorted(clashes.items()))
 
 
+MAX_MEMBER_NAME = archive.PACK_NAME - 1
+
+
+# The pack with a new member added at the end of its chain (or of the chain of a pack inside it),
+# so the members it had keep their positions: the engine finds members by name, ignoring case
+# (GetPackFile in dataread.cpp), but some loaders walk a pack by position or take every member with
+# an extension.
+def added_member(data, names, new):
+    members = archive.parse_pack(data)
+    if members is None:
+        raise ValueError("not a pack")
+    if len(names) > 1:
+        member = rebuild.member_named(members, names[0], False)
+        if member is None:
+            raise ValueError("no pack %s to add %s to" % (names[0], "/".join(names[1:])))
+        return rebuild.replaced_member(data, [names[0]], added_member(data[member["offset"]:member["offset"] + member["size"]],
+                                                                      names[1:], new))
+    name = names[0]
+    if any(member["name"].lower() == name.lower() for member in members):
+        raise ValueError("the pack has a member %s already, in other case; the game would find that one" % name)
+    raw = name.encode("cp932")
+    if len(raw) > MAX_MEMBER_NAME:
+        raise ValueError("member names are at most %d bytes" % MAX_MEMBER_NAME)
+    end = members[-1]["offset"] + members[-1]["size"] + (-members[-1]["size"] % archive.PACK_ALIGN)
+    entry = raw.ljust(archive.PACK_NAME, b"\x00")
+    entry += struct.pack("<iii", archive.PACK_SLOT, len(new), archive.PACK_SLOT + len(new) + (-len(new) % archive.PACK_ALIGN))
+    entry = entry.ljust(archive.PACK_SLOT, b"\x00")
+    return data[:end] + entry + new + bytes(-len(new) % archive.PACK_ALIGN) + data[end:]
+
+
 # Puts the mods' files into the disc files build writes. files holds the files the build already
 # rewrote (scripts compiled into their packs), keyed by DATA.DAT path; a replacement goes on top of
 # those. Returns the files, and for each replacement its path, mod and old and new sizes.
@@ -95,14 +126,21 @@ def replaced(iso_path, wanted, files, script_tops=()):
                                  "one by one instead" % (path, mod, top))
             data = files[top] if top in files else archive.read_entry(f, disc, index[top])
             old = rebuild.read_member(data, members)
-            if old is None:
-                raise ValueError("%s (mod %s): %s has no member %s" % (path, mod, top, "/".join(members)))
             try:
-                new = game_bytes(file, old)
+                if old is None:
+                    # a member the pack does not have is added (a game file in a common format needs one
+                    # to convert from, so it is given as the game file itself)
+                    if converter_for(Path(file).as_posix())[1] is not None:
+                        raise ValueError("%s has no member %s to convert to; give the game file itself"
+                                         % (top, "/".join(members)))
+                    new = Path(file).read_bytes()
+                    files[top] = added_member(data, members, new)
+                else:
+                    new = game_bytes(file, old)
+                    files[top] = rebuild.replaced_member(data, members, new)
             except ValueError as error:
-                raise ValueError("%s (mod %s): %s" % (Path(file).name, mod, error)) from None
-            files[top] = rebuild.replaced_member(data, members, new)
-            report.append({"path": path, "mod": mod, "old": len(old), "new": len(new), "data": new})
+                raise ValueError("%s (mod %s): %s" % (path, mod, error)) from None
+            report.append({"path": path, "mod": mod, "old": None if old is None else len(old), "new": len(new), "data": new})
     return files, report
 
 

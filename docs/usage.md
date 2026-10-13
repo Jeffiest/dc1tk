@@ -267,8 +267,14 @@ character pack; packs inside packs work the same way).
   packs, and reads them back from the new image to check. Two chosen mods
   may not replace the same game file. It warns when a file grows, since
   models, textures and sounds load into fixed memory the build cannot see.
-- A mod can only replace files the disc has for now; adding new ones is
-  planned (see [the plan](../PLAN.md)).
+- A member a pack does not have is added at the end of the pack, so the
+  members it had keep their places (the game finds members by name,
+  ignoring case; a name that differs from one the pack has only in case is
+  refused). New files outside packs are planned (see [the plan](../PLAN.md)).
+- A game file can also be given in a common format, named after the file it
+  stands for plus the format's suffix (`c01b.img.png`): `build` converts it,
+  with the disc's own file as the template. `mod asset --as png` exports to
+  it.
 
 **Additions.** The older way to add to a script without copying it, kept for
 mods that use it: its `mod.json` can list additions, applied when it is

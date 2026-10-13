@@ -22,6 +22,23 @@ def test_a_member_is_replaced_inside_its_pack_and_the_rest_kept():
     assert archive.parse_pack(replaced) is not None
 
 
+def test_a_new_member_goes_at_the_end_of_its_pack():
+    inner = build.pack([("tex.img", b"texture"), ("info.cfg", b"cfg")])
+    outer = build.pack([("model.chr", inner)])
+    added = discfiles.added_member(outer, ["model.chr", "new_motion.mot"], b"motion data")
+    members = archive.parse_pack(rebuild.read_member(added, ["model.chr"]))
+    assert [member["name"] for member in members] == ["tex.img", "info.cfg", "new_motion.mot"]
+    assert rebuild.read_member(added, ["model.chr", "new_motion.mot"]) == b"motion data"
+    assert rebuild.read_member(added, ["model.chr", "tex.img"]) == b"texture"
+    # the engine matches names ignoring case, so a name only differing in case is refused
+    try:
+        discfiles.added_member(inner, ["TEX.IMG"], b"x")
+    except ValueError as error:
+        assert "other case" in str(error)
+    else:
+        raise AssertionError("added a member shadowed by another")
+
+
 def test_two_mods_replacing_one_game_file_clash():
     with tempfile.TemporaryDirectory() as folder:
         for name in ("a", "b"):
