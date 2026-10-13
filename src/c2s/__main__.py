@@ -284,7 +284,7 @@ def run_build(args):
         print("%s %s (%d bytes)" % ("moved" if item["moved"] else "in place", item["path"], item["size"]))
     if result["grown"]:
         print("the image grew by %d sectors" % result["grown"])
-    wrong = rebuild.check(args.output, found["scripts"]) + discfiles.check(args.output, disc_files)
+    wrong = rebuild.check(args.output, found["scripts"]) + discfiles.check(args.output, replaced)
     for path in wrong:
         print("reads back wrong: %s" % path)
     print("%d scripts changed, %d game files replaced, %d disc files rewritten, written to %s"
@@ -390,7 +390,7 @@ def run_mod(args):
     mod_dir = mods.folder(args.mods, args.name)
     if args.mod_command == "asset":
         try:
-            written = discfiles.copy_out(args.iso, mod_dir, args.paths)
+            written = discfiles.copy_out(args.iso, mod_dir, args.paths, args.form)
         except ValueError as error:
             raise SystemExit(str(error))
         for path in written:
@@ -618,6 +618,7 @@ def parser():
     asset_command.add_argument("paths", nargs="+",
                                help="files as extract lays them out: snd2/sp/sp_000.snd, or a pack member "
                                     "as chara/c01_base.chr.d/c01b.img")
+    asset_command.add_argument("--as", dest="form", help="export in a common format to edit there: png for textures")
     check_command = mod_commands.add_parser("check", help="compile what mods change, without a disc, and show their numbers")
     check_command.add_argument("source", help="the decompiled source tree")
     check_command.add_argument("names", nargs="+", help="mods to check together, in build order")

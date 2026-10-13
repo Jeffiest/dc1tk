@@ -8,15 +8,49 @@ from c2s import archive, rebuild
 # (chara/c01_base.chr.d/c01b.img for the texture inside Max's character pack). build writes each
 # over the disc's own; members of packs inside packs work the same way (a.pac.d/b.chr.d/c.img).
 
+#
+# A game file can also be given in a common format, named after the file it stands for plus the
+# format's suffix (c01b.img.png): build converts it, with the disc's own file as the template
+# (palette size, sample rate, layout), and mod asset --as exports to it.
+
 DISC = "disc"
 PACK = ".d/"
 
+# Converters between game formats and common ones, by the common format's suffix: "game", the
+# suffixes of game files it converts; "build", (common file's bytes, the disc's own file) -> game
+# file; "export", the disc's own file -> common file's bytes.
+CONVERTERS = {}
 
+
+def converter_for(path):
+    for suffix, converter in CONVERTERS.items():
+        stem = path[:-len(suffix)]
+        if path.lower().endswith(suffix) and stem.lower().endswith(converter["game"]):
+            return stem, converter
+    return path, None
+
+
+# {disc path: file} for the game files a mod holds; a file in a common format is keyed by the game
+# file it stands for.
 def mod_files(mod_dir):
     root = Path(mod_dir) / DISC
     if not root.is_dir():
         return {}
-    return {path.relative_to(root).as_posix(): path for path in sorted(root.rglob("*")) if path.is_file()}
+    found = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            target, _ = converter_for(path.relative_to(root).as_posix())
+            if target in found:
+                raise ValueError("%s: %s is given twice, as %s and %s" % (Path(mod_dir).name, target, found[target].name, path.name))
+            found[target] = path
+    return found
+
+
+# The game file's bytes for a mod file: the file itself, or converted from its common format.
+def game_bytes(file, original):
+    _, converter = converter_for(Path(file).as_posix())
+    data = Path(file).read_bytes()
+    return converter["build"](data, original) if converter else data
 
 
 # The file of DATA.DAT a disc path is in, and the members down to it: chara/c01_base.chr.d/c01b.img
@@ -63,15 +97,18 @@ def replaced(iso_path, wanted, files, script_tops=()):
             old = rebuild.read_member(data, members)
             if old is None:
                 raise ValueError("%s (mod %s): %s has no member %s" % (path, mod, top, "/".join(members)))
-            new = Path(file).read_bytes()
+            try:
+                new = game_bytes(file, old)
+            except ValueError as error:
+                raise ValueError("%s (mod %s): %s" % (Path(file).name, mod, error)) from None
             files[top] = rebuild.replaced_member(data, members, new)
-            report.append({"path": path, "mod": mod, "old": len(old), "new": len(new)})
+            report.append({"path": path, "mod": mod, "old": len(old), "new": len(new), "data": new})
     return files, report
 
 
-# Copies files and pack members off the disc into a mod's disc/ folder, to edit or replace there.
-# Returns the paths written.
-def copy_out(iso_path, mod_dir, paths):
+# Copies files and pack members off the disc into a mod's disc/ folder, to edit or replace there,
+# in a common format when form names one (png). Returns the paths written.
+def copy_out(iso_path, mod_dir, paths, form=None):
     written = []
     with open(iso_path, "rb") as f:
         disc = archive.open_archive(f)
@@ -84,6 +121,12 @@ def copy_out(iso_path, mod_dir, paths):
             data = rebuild.read_member(archive.read_entry(f, disc, index[top]), members)
             if data is None:
                 raise ValueError("%s has no member %s" % (top, "/".join(members)))
+            if form:
+                suffix = "." + form.lower().lstrip(".")
+                converter = CONVERTERS.get(suffix)
+                if converter is None or not path.lower().endswith(converter["game"]):
+                    raise ValueError("%s cannot be exported as %s" % (path, form))
+                data, path = converter["export"](data), path + suffix
             target = Path(mod_dir) / DISC / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
@@ -91,14 +134,14 @@ def copy_out(iso_path, mod_dir, paths):
     return written
 
 
-# The replaced files read back out of a built image differently from what the mods hold.
-def check(out_path, wanted):
+# The replaced files (replaced's report) that read back out of a built image differently.
+def check(out_path, report):
     wrong = []
     with open(out_path, "rb") as f:
         disc = archive.open_archive(f)
         index = {entry["path"]: entry for entry in disc["entries"]}
-        for path, (mod, file) in sorted(wanted.items()):
-            top, members = location(path)
-            if rebuild.read_member(archive.read_entry(f, disc, index[top]), members) != Path(file).read_bytes():
-                wrong.append(path)
+        for item in report:
+            top, members = location(item["path"])
+            if rebuild.read_member(archive.read_entry(f, disc, index[top]), members) != item["data"]:
+                wrong.append(item["path"])
     return wrong
