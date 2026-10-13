@@ -1,0 +1,500 @@
+"""End-to-end test of the c2_maps add-on, headless:
+
+    blender --background --factory-startup --python src/blender/tests/test_addon.py
+
+Enables the add-on from src/blender, writes the synthetic map of make_test_map.py, imports it
+(through a stand-in c2 on Windows, which copies the map as `c2 map export` would, otherwise
+from the file), edits fields, adds points, duplicates a placement, paints collision, validates,
+exports into a mod and checks the written glTF: every node and extras.c2 of the source is kept
+(edited values changed as expected), transforms are unchanged, the new nodes carry valid extras,
+mod.json has its line. Exits with status 1 on a failure."""
+
+import json
+import math
+import os
+import shutil
+import sys
+import tempfile
+import traceback
+
+import bpy
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ADDON_PARENT = os.path.dirname(HERE)
+sys.path.insert(0, ADDON_PARENT)
+sys.path.insert(0, HERE)
+
+import make_test_map  # noqa: E402
+
+failures = []
+checks = 0
+
+
+def check(condition, message):
+    global checks
+    checks += 1
+    if not condition:
+        failures.append(message)
+        print("FAIL:", message)
+
+
+# glTF helpers (no Blender).
+
+
+def same(a, b, tolerance=1e-4):
+    if isinstance(a, bool) or isinstance(b, bool):
+        return bool(a) == bool(b) and type(a) in (bool, int) and type(b) in (bool, int)
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return abs(a - b) <= tolerance * max(1.0, abs(a))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(same(a[k], b[k], tolerance) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(same(x, y, tolerance) for x, y in zip(a, b))
+    return a == b
+
+
+def mat_mul(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
+
+
+def local_matrix(node):
+    if "matrix" in node:
+        m = node["matrix"]
+        return [[m[c * 4 + r] for c in range(4)] for r in range(4)]
+    tx, ty, tz = node.get("translation", [0, 0, 0])
+    x, y, z, w = node.get("rotation", [0, 0, 0, 1])
+    sx, sy, sz = node.get("scale", [1, 1, 1])
+    r = [
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ]
+    return [
+        [r[0][0] * sx, r[0][1] * sy, r[0][2] * sz, tx],
+        [r[1][0] * sx, r[1][1] * sy, r[1][2] * sz, ty],
+        [r[2][0] * sx, r[2][1] * sy, r[2][2] * sz, tz],
+        [0, 0, 0, 1],
+    ]
+
+
+def walk(gltf):
+    """{(name path with occurrence numbers): (node, world matrix)}."""
+    nodes = gltf["nodes"]
+    found = {}
+    identity = [[1 if i == j else 0 for j in range(4)] for i in range(4)]
+
+    def visit(indices, parent_key, parent_matrix):
+        seen = {}
+        for index in indices:
+            node = nodes[index]
+            name = node.get("name", "")
+            seen[name] = seen.get(name, 0) + 1
+            key = parent_key + ((name, seen[name]),)
+            world = mat_mul(parent_matrix, local_matrix(node))
+            found[key] = (node, world)
+            visit(node.get("children", []), key, world)
+
+    scene = gltf["scenes"][gltf.get("scene", 0)]
+    visit(scene["nodes"], (), identity)
+    return found
+
+
+def key_name(key):
+    return "/".join(name for name, _ in key)
+
+
+# The test.
+
+
+def enable_addon():
+    import addon_utils
+
+    try:
+        module = addon_utils.enable("c2_maps", default_set=True, persistent=False, handle_error=None)
+    except Exception:  # noqa: BLE001
+        module = None
+    if module is None or "c2_maps" not in bpy.context.preferences.addons:
+        import c2_maps
+
+        c2_maps.register()
+        return c2_maps, False
+    return module, True
+
+
+def write_fake_c2(folder, source_dir):
+    """A stand-in for c2 on Windows: `map export NAME -o DIR` copies the test map into DIR,
+    anything else echoes its arguments."""
+    path = os.path.join(folder, "fake_c2.bat")
+    with open(path, "w", newline="\r\n") as handle:
+        handle.write(
+            "@echo off\n"
+            'if "%~1"=="map" (\n'
+            '  xcopy /E /I /Y /Q "' + source_dir + '" "%~5" >nul\n'
+            "  echo exported %~3 to %~5\n"
+            "  exit /b 0\n"
+            ")\n"
+            "echo c2 %*\n"
+            "exit /b 0\n"
+        )
+    return path
+
+
+def main():
+    work = tempfile.mkdtemp(prefix="c2_maps_test_")
+    print("Working in", work)
+    source_dir = os.path.join(work, "source")
+    source_path = make_test_map.write(source_dir)
+    with open(source_path, encoding="utf-8") as handle:
+        source = json.load(handle)
+
+    c2_maps, through_prefs = enable_addon()
+    from c2_maps import c2data, edit, export_mod, prefs, schema, validate  # noqa: F401
+
+    print("Blender", bpy.app.version_string, "- add-on enabled through preferences:", through_prefs)
+    settings_prefs = prefs.get()
+    context = bpy.context
+    wm = context.window_manager
+    settings = wm.c2_maps
+
+    # Start empty.
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj)
+
+    # 1. Import.
+    if sys.platform.startswith("win"):
+        settings_prefs.c2_path = write_fake_c2(work, source_dir)
+        settings_prefs.maps_dir = os.path.join(work, "maps")
+        result = bpy.ops.c2.import_map(map_name="t01")
+        check(result == {"FINISHED"}, "import through c2 finished: %s" % result)
+        check(os.path.isfile(os.path.join(work, "maps", "t01", "t01.gltf")), "c2 wrote maps/t01/t01.gltf")
+    else:
+        result = bpy.ops.c2.import_map_gltf(filepath=source_path)
+        check(result == {"FINISHED"}, "import finished: %s" % result)
+
+    root = bpy.data.objects.get("map:t01")
+    check(root is not None, "map:t01 imported")
+    if root is None:
+        return work
+    check(c2data.role(root) == "map", "root role is map")
+    as_text = sorted(obj.name for obj in bpy.data.objects if c2data.is_stringified(obj))
+    check(as_text == ["point:rawdoor"], "only the mixed-list point is kept as text: %s" % as_text)
+    raw_door = bpy.data.objects["point:rawdoor"]
+    check(c2data.lookup(raw_door, ("data",))[0] == "door", "text extras read back")
+    check(raw_door.empty_display_type == "CUBE" and abs(raw_door.empty_display_size - 15.0) < 1e-6, "raw door size 15")
+    raw_light = bpy.data.objects["point:rawlight"]
+    check(raw_light.type == "LIGHT", "a plight without a KHR light becomes a light")
+    check(abs(raw_light.data.color[1] - 128 / 255) < 1e-4, "its colour from the raw data")
+
+    collision = [obj for obj in c2data.collision_meshes(root)]
+    check(len(collision) == 4, "4 collision meshes (2 placements x collision and camera): %d" % len(collision))
+    for obj in collision:
+        collections = [c.name for c in obj.users_collection]
+        check(
+            any(name.startswith("t01 collision") or name.startswith("t01 camera collision") for name in collections),
+            "%s is in a collision collection (%s)" % (obj.name, collections),
+        )
+        check(not obj.visible_get(), "%s is hidden" % obj.name)
+    floor = next(obj for obj in collision if schema.strip_suffix(obj.name) == "floor")
+    names = sorted(slot.material.name for slot in floor.material_slots)
+    check(
+        names == ["col_ground0_foot2_area6_mask0", "col_ground0_foot5_area1_mask12"],
+        "collision material names kept: %s" % names,
+    )
+    water = bpy.data.materials["col_ground0_foot5_area1_mask12"]
+    check(tuple(round(c, 2) for c in water.diffuse_color[:3]) == (0.15, 0.35, 0.95), "water area coloured blue")
+
+    door = bpy.data.objects["point:exit"]
+    check(door.type == "EMPTY" and door.empty_display_type == "CUBE", "door is a cube empty")
+    check(abs(door.empty_display_size - 15.0) < 1e-6, "door size 15: %s" % door.empty_display_size)
+    photo = bpy.data.objects["point:photo1"]
+    check(photo.empty_display_type == "CUBE" and abs(photo.empty_display_size - 40.0) < 1e-6, "invent box size 40")
+    lamp = bpy.data.objects["point:lamp0"]
+    check(lamp.type == "LIGHT" and lamp.data.type == "POINT", "plight is a point light")
+    check(lamp.data.use_custom_distance and abs(lamp.data.cutoff_distance - 300.0) < 1e-4, "light range 300 read back")
+    check(abs(lamp.data.energy - 120.0) < 1e-4, "light energy 120 (RAW): %s" % lamp.data.energy)
+
+    # 2. Panel fields write extras.c2.
+    expected = {}  # name path -> expected extras.c2 of edited nodes
+
+    def edited(key, change):
+        node = walk(source)[key][0]
+        value = json.loads(json.dumps(expected.get(key, node["extras"]["c2"])))
+        change(value)
+        expected[key] = value
+
+    def activate(obj):
+        context.view_layer.objects.active = obj
+
+    activate(door)
+    settings.d_event_program = 777
+    settings.point_hours = (6, 18)
+    settings.d_event_target = "s18"
+    bpy.ops.c2.set_event_kind(kind="t_box")
+    check(c2data.lookup(door, ("data", "program")) == 777, "event program set")
+    check(list(c2data.lookup(door, ("flag",))) == [0, 0, 6, 18], "hours set")
+    check(abs(door.empty_display_size - 20.0) < 1e-6, "chest size 20 after the kind changed")
+    door_key = (("map:t01", 1), ("points", 1), ("point:exit", 1))
+
+    def change_door(c2):
+        c2["data"].update(program=777, target="s18", kind="t_box")
+        c2["flag"] = [0, 0, 6, 18]
+
+    edited(door_key, change_door)
+
+    activate(lamp)
+    settings.d_plight_color = (128, 128, 255)
+    check(abs(lamp.data.color[2] - 1.0) < 1e-6 and abs(lamp.data.color[0] - 128 / 255) < 1e-4, "light colour follows data")
+    lamp_key = (("map:t01", 1), ("points", 1), ("point:lamp0", 1))
+    edited(lamp_key, lambda c2: c2["data"].update(color=[128, 128, 255]))
+
+    activate(raw_light)
+    check(abs(settings.d_plight_power - 80.0) < 1e-6, "power read by position")
+    check(tuple(settings.d_plight_color) == (255, 128, 64), "colour read by position")
+    settings.d_plight_power = 90.0
+    check(abs(c2data.lookup(raw_light, ("data",))[0] - 90.0) < 1e-6, "power written by position")
+    raw_light_key = (("map:t01", 1), ("points", 1), ("point:rawlight", 1))
+    edited(raw_light_key, lambda c2: c2["data"].__setitem__(0, 90.0))
+
+    from c2_maps import overlay
+    from mathutils import Vector
+
+    lines = overlay.box_lines(photo)
+    # The corner (20, 40, 20) of photo1's box in game space: T + Ry(45) * corner, then Y up to Z up.
+    angle = math.radians(45)
+    gx = 50 + math.cos(angle) * 20 + math.sin(angle) * 20
+    gy = 40.0
+    gz = -50 - math.sin(angle) * 20 + math.cos(angle) * 20
+    want = Vector((gx, -gz, gy))
+    check(any((Vector(p) - want).length < 1e-3 for p in lines), "invent box corner in the right place")
+
+    house02 = bpy.data.objects["place:house02"]
+    activate(house02)
+    settings.place_group = "outside"
+    settings.place_far_distance = 2500.0
+    house02_key = (("map:t01", 1), ("placements", 1), ("place:house02", 1))
+
+    def change_house(c2):
+        c2["group"] = "outside"
+        c2["far_clip"][0] = 2500.0
+
+    edited(house02_key, change_house)
+
+    bpy.ops.c2.edit_value(object_name=root.name, path=json.dumps(["map", "light_sets", 0, "fog_enable"]), value="0")
+    bpy.ops.c2.edit_value(object_name=root.name, path=json.dumps(["map", "light_sets", 0, "bgcolor"]), value="1, 2, 3")
+    root_key = (("map:t01", 1),)
+
+    def change_root(c2):
+        c2["map"]["light_sets"][0]["fog_enable"] = 0
+        c2["map"]["light_sets"][0]["bgcolor"] = [1, 2, 3]
+
+    edited(root_key, change_root)
+    check(c2data.lookup(root, ("map", "light_sets", 0, "fog_enable")) == 0, "map setting edited")
+
+    # 3. Add points, duplicate a placement.
+    context.scene.cursor.location = (10.0, 20.0, 30.0)
+    activate(root)
+    for preset in schema.POINT_PRESETS:
+        result = bpy.ops.c2.add_point(preset=preset[0], in_placement=False)
+        check(result == {"FINISHED"}, "add point %s" % preset[0])
+    activate(bpy.data.objects["place:house01"])
+    result = bpy.ops.c2.add_point(preset="EVENT", name="talk")
+    check(result == {"FINISHED"}, "add point in a placement")
+    talk = bpy.data.objects.get("point:talk")
+    check(talk is not None and talk.parent and talk.parent.name == "place:house01", "talk is in place:house01")
+    added_light = bpy.data.objects.get("point:plight")
+    check(added_light is not None and added_light.type == "LIGHT", "the added point light is a light")
+    added_door = bpy.data.objects.get("point:door")
+    check(added_door is not None and added_door.parent.name == "points", "the door went under points")
+    if added_door is not None:
+        check((added_door.matrix_world.translation - context.scene.cursor.location).length < 1e-4, "added at the cursor")
+
+    activate(bpy.data.objects["place:house01"])
+    result = bpy.ops.c2.duplicate_placement()
+    check(result == {"FINISHED"}, "duplicate placement")
+    copy = bpy.data.objects.get("place:house01_2")
+    check(copy is not None, "place:house01_2 made")
+    if copy is not None:
+        check(c2data.lookup(copy, ("slot",)) is None, "the copy has no slot (appended)")
+        check(len(c2data.descendants(copy)) == len(c2data.descendants(bpy.data.objects["place:house01"])), "copy has every node")
+
+    # 4. Paint collision: one face in Edit Mode.
+    bpy.ops.c2.toggle_collision(kind="collision")
+    check(floor.visible_get(), "collision shown by the toggle")
+    for obj in context.selected_objects:
+        obj.select_set(False)
+    floor.select_set(True)
+    activate(floor)
+    bpy.ops.object.mode_set(mode="EDIT")
+    import bmesh
+
+    mesh = bmesh.from_edit_mesh(floor.data)
+    for face in mesh.faces:
+        face.select_set(face.index == 0)
+    bmesh.update_edit_mesh(floor.data)
+    result = bpy.ops.c2.paint_collision(ground=1, foot=3, area=7, mask=4)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    check(result == {"FINISHED"}, "paint collision")
+    painted = floor.material_slots[floor.data.polygons[0].material_index].material
+    check(painted is not None and painted.name == "col_ground1_foot3_area7_mask4", "face 0 painted: %s" % (painted and painted.name))
+    bpy.ops.c2.toggle_collision(kind="collision")
+    check(not floor.visible_get(), "collision hidden again")
+
+    # 5. Validate: clean, then a broken name.
+    activate(root)
+    bpy.ops.c2.validate()
+    errors = [r for r in validate.results if r[0] == validate.ERROR]
+    check(not errors, "no validation errors: %s" % errors)
+    long_name = bpy.data.objects["point:river"]
+    long_name.name = "point:" + "x" * 32
+    quad_check = validate.check(root)
+    check(any("bytes" in r[2] for r in quad_check if r[0] == validate.ERROR), "a 32-byte name is an error")
+    long_name.name = "point:river"
+    bad = bpy.data.objects.new("point:bad", None)
+    context.collection.objects.link(bad)
+    bad.parent = c2data.group_node(root, "points")
+    bad["c2"] = {"role": "point", "kind": "teleport", "enable": 1, "flag": [0, 0, 0, 0], "data": {}}
+    bare = bpy.data.objects.new("Empty", None)
+    context.collection.objects.link(bare)
+    bare.parent = root
+    results = validate.check(root)
+    check(any("Unknown point kind" in r[2] for r in results), "unknown kind reported")
+    check(any(r[1] == "Empty" and "No extras.c2" in r[2] for r in results), "missing extras reported")
+    bpy.data.objects.remove(bad)
+    bpy.data.objects.remove(bare)
+
+    # 6. Panels draw (with a stand-in layout that checks every icon, property and operator).
+    import ui_check
+
+    activate(door)
+    for obj in (
+        root,
+        door,
+        lamp,
+        photo,
+        raw_door,
+        raw_light,
+        house02,
+        bpy.data.objects["piece:house_m"],
+        floor,
+        bpy.data.objects["camera:0"],
+    ):
+        activate(obj)
+        settings.show_raw = True
+        problems = ui_check.draw_all(context)
+        check(not problems, "panels draw for %s: %s" % (obj.name, problems))
+    settings.show_raw = False
+
+    # 7. Export into a mod.
+    mod_dir = os.path.join(work, "mods", "testmod")
+    os.makedirs(mod_dir)
+    with open(os.path.join(mod_dir, "mod.json"), "w") as handle:
+        json.dump({"name": "testmod", "replace": {"texture:abc": "a.png"}, "add": {"x": 1}}, handle)
+    settings_prefs.mod_dir = mod_dir
+    activate(root)
+    result = bpy.ops.c2.export_mod()
+    check(result == {"FINISHED"}, "export to mod: %s" % result)
+    out_path = os.path.join(mod_dir, "maps", "t01", "t01.gltf")
+    check(os.path.isfile(out_path), "maps/t01/t01.gltf written")
+    with open(os.path.join(mod_dir, "mod.json")) as handle:
+        mod = json.load(handle)
+    check(mod.get("name") == "testmod" and mod.get("add") == {"x": 1}, "mod.json keeps its other keys")
+    check(mod["replace"] == {"texture:abc": "a.png", "map:t01": "maps/t01/t01.gltf"}, "mod.json line: %s" % mod["replace"])
+    check(not floor.visible_get(), "collision still hidden after the export")
+
+    with open(out_path, encoding="utf-8") as handle:
+        out = json.load(handle)
+    before = walk(source)
+    after = walk(out)
+    for key, (node, world) in before.items():
+        if key not in after:
+            check(False, "node kept: %s" % key_name(key))
+            continue
+        new_node, new_world = after[key]
+        want = expected.get(key, node.get("extras", {}).get("c2"))
+        got = new_node.get("extras", {}).get("c2")
+        check(same(want, got), "extras.c2 of %s: %s != %s" % (key_name(key), want, got))
+        moved = max(abs(world[i][j] - new_world[i][j]) for i in range(4) for j in range(4))
+        check(moved < 1e-3, "%s did not move (%g)" % (key_name(key), moved))
+        if "mesh" in node:
+            check("mesh" in new_node, "%s keeps its mesh" % key_name(key))
+    for node in out["nodes"]:
+        name = node.get("name", "")
+        check(schema.strip_suffix(name) == name, "no Blender suffix on %s" % name)
+        c2 = node.get("extras", {}).get("c2")
+        check(isinstance(c2, dict) and c2.get("role") in schema.ROLES, "%s has extras.c2 with a role" % name)
+    new_keys = [key for key in after if key not in before]
+    new_names = sorted(key_name(key) for key in new_keys)
+    print("New nodes:", len(new_names))
+    check(len(out["nodes"]) == len(source["nodes"]) + len(new_keys), "no nodes besides the source's and the additions")
+    for key in new_keys:
+        node = after[key][0]
+        c2 = node["extras"]["c2"]
+        if c2["role"] == "point":
+            check(c2["kind"] in schema.POINT_KINDS, "%s kind" % key_name(key))
+            check(isinstance(c2.get("data"), dict) and isinstance(c2.get("flag"), list), "%s data and flag" % key_name(key))
+            check(node["name"].startswith("point:"), "%s prefix" % key_name(key))
+            if key[1][0] == "points":
+                world = after[key][1]
+                # The cursor (10, 20, 30) in Blender is (10, 30, -20) in the game's Y-up space.
+                at = [world[0][3], world[1][3], world[2][3]]
+                check(same(at, [10.0, 30.0, -20.0]), "%s at the cursor: %s" % (key_name(key), at))
+                rotation = node.get("rotation", [0.0, 0.0, 0.0, 1.0])
+                check(same(rotation, [0.0, 0.0, 0.0, 1.0]), "%s not turned: %s" % (key_name(key), rotation))
+    check(any(key_name(k) == "map:t01/placements/place:house01_2" for k in new_keys), "the duplicated placement is exported")
+    copy_c2 = next((after[k][0]["extras"]["c2"] for k in new_keys if key_name(k).endswith("place:house01_2")), {})
+    check("slot" not in copy_c2 and copy_c2.get("template") == "house", "the copy places the same template, no slot")
+    check(any(key_name(k) == "map:t01/placements/place:house01/point:talk" for k in new_keys), "the talk point is in house01")
+
+    materials = [m["name"] for m in out.get("materials", [])]
+    check("col_ground1_foot3_area7_mask4" in materials, "the painted material is exported: %s" % materials)
+    for name in ("col_ground0_foot5_area1_mask12", "col_ground0_foot0_area0_mask0"):
+        check(name in materials, "%s exported" % name)
+    # The repainted face was the only one of this material (the floor mesh is shared by both
+    # placements, as in the game), so it is no longer used.
+    check("col_ground0_foot2_area6_mask0" not in materials, "the repainted material is gone")
+    check(out["scenes"][0].get("name") == "t01", "the scene is named after the map")
+    check(
+        any(key_name(k) == "map:t01/points/point:point" for k in new_keys),
+        "the spawn point is named point in the map's points (names are unique per parent)",
+    )
+    lights = out.get("extensions", {}).get("KHR_lights_punctual", {}).get("lights", [])
+    lamp_node = after[lamp_key][0]
+    light = lights[lamp_node["extensions"]["KHR_lights_punctual"]["light"]] if "extensions" in lamp_node else None
+    check(light is not None and abs(light.get("range", 0) - 300.0) < 1e-3, "lamp0 keeps its KHR light and range: %s" % light)
+    check(light is not None and abs(light.get("intensity", 0) - 120.0) < 1e-3, "lamp0 intensity 120 (RAW)")
+    house_key = (("map:t01", 1), ("placements", 1), ("place:house01", 1), ("piece:house_m", 1), ("house_body--a40aof-", 1))
+    mesh = out["meshes"][after[house_key][0]["mesh"]]
+    check("COLOR_0" in mesh["primitives"][0]["attributes"], "vertex colours exported")
+    check(out["asset"].get("generator", "").startswith("Khronos glTF Blender"), "written by Blender's exporter")
+
+    # 8. c2 build (with the stand-in c2, which echoes its arguments).
+    if sys.platform.startswith("win"):
+        iso = os.path.join(work, "dc2.iso")
+        open(iso, "wb").close()
+        settings_prefs.iso_path = iso
+        settings_prefs.output_iso = os.path.join(work, "out.iso")
+        settings_prefs.source_dir = source_dir
+        result = bpy.ops.c2.build()
+        check(result == {"FINISHED"}, "c2 build ran: %s" % result)
+        from c2_maps import runner
+
+        text = "\n".join(runner.current.take()) if runner.current else ""
+        check("build" in text and "--mod testmod" in text and "--mods" in text, "build arguments: %s" % text)
+        check(bpy.data.texts.get(runner.TEXT_NAME) is not None, "output in the text block")
+    return work
+
+
+if __name__ == "__main__":
+    work = None
+    try:
+        work = main()
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+        failures.append("exception")
+    print("%d checks, %d failures" % (checks, len(failures)))
+    if work and not failures and "--keep" not in sys.argv:
+        shutil.rmtree(work, ignore_errors=True)
+    sys.stdout.flush()
+    if failures:
+        os._exit(1)
+    os._exit(0)
