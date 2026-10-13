@@ -10,6 +10,7 @@ name = "c2"
 path = "src/main.rs"
 
 [dependencies]
+c2-assets.workspace = true
 c2-disc.workspace = true
 c2-script.workspace = true
 c2-py.workspace = true

@@ -18,6 +18,16 @@ same input in a work folder and compares; exit status 1 when anything differs.
                                                       FOLDER; sdk/ and the definitions' headers),
                                                       cut short and with a line gone, and probes of
                                                       #if and the error paths, parsed by both
+  python rust/parity.py textures extracted WORK       every .img exported to PNGs by both; c2 building
+                                                      each unedited export back to the original; both
+                                                      building a set of edited PNGs (--every N)
+  python rust/parity.py sounds extracted WORK         the same for every .snd bank as WAVs, with
+                                                      synthetic WAVs replacing and adding entries
+  python rust/parity.py models extracted WORK         the same for every .chr pack as glTF, with
+                                                      meshes moved, scaled and added, bind poses and
+                                                      textures changed
+                                                      (each with --python-builds: the Python builds
+                                                      every unedited export too)
 
 Run from the repository folder, after cargo build --release in rust/. Images are 4.7 GB each; the
 work folder needs room for two.
@@ -556,6 +566,436 @@ def check_cp932(args):
     return problems
 
 
+# The asset converters by the common format's suffix: the game files each converts and its module.
+ASSET_KINDS = {"png": ".img", "wav": ".snd", "gltf": ".chr"}
+
+
+def asset_module(kind):
+    from c2s import models, sounds, textures
+    return {"png": textures, "wav": sounds, "gltf": models}[kind]
+
+
+def game_files(root, kind):
+    found = []
+    for folder, _, files in os.walk(root):
+        for name in files:
+            if name.lower().endswith(ASSET_KINDS[kind]):
+                found.append((Path(folder) / name).relative_to(root).as_posix())
+    return sorted(found)
+
+
+def write_lines(path, lines):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes("".join(line + "\n" for line in sorted(lines)).encode("utf-8"))
+
+
+def python_export(kind, root, out, files):
+    """What c2 asset-export does: each game file exported to out/<path>.<kind>/, the ones that
+    cannot be listed in out/failed.txt."""
+    module = asset_module(kind)
+    failed = []
+    for relative in files:
+        try:
+            exported = module.export((root / relative).read_bytes())
+        except Exception:
+            failed.append(relative)
+            continue
+        folder = out / (relative + "." + kind)
+        for name, content in exported.items():
+            (folder / name).parent.mkdir(parents=True, exist_ok=True)
+            (folder / name).write_bytes(content)
+    write_lines(out / "failed.txt", failed)
+    return failed
+
+
+def python_build(kind, root, folders, out, files):
+    """What c2 asset-build does: each game file folders has a <path>.<kind>/ for built from it into
+    out/<path>, failures (path, tab, message) in out/failed.txt."""
+    module = asset_module(kind)
+    failed = []
+    for relative in files:
+        folder = folders / (relative + "." + kind)
+        if not folder.is_dir():
+            continue
+        try:
+            built = module.build(folder, (root / relative).read_bytes())
+        except Exception as error:
+            failed.append("%s\t%s" % (relative, error))
+            continue
+        (out / relative).parent.mkdir(parents=True, exist_ok=True)
+        (out / relative).write_bytes(built)
+    write_lines(out / "failed.txt", failed)
+    return failed
+
+
+def compare_builds(py, rs):
+    """The built trees compared, failures by path only (the messages are printed, not compared)."""
+    def failures(folder):
+        lines = (folder / "failed.txt").read_text(encoding="utf-8").splitlines()
+        return {line.split("\t")[0]: line for line in lines}
+    left, right = failures(py), failures(rs)
+    problems = ["failed in %s only: %s" % (name, path) for name, a, b in (("python", left, right), ("rust", right, left))
+                for path in sorted(set(a) - set(b))]
+    for path in sorted(set(left) & set(right)):
+        if left[path] != right[path]:
+            print("both failed, other messages:\n  %s\n  %s" % (left[path], right[path]))
+    return problems + compare_trees(py, rs)
+
+
+def fresh(*folders):
+    for folder in folders:
+        if folder.exists():
+            raise SystemExit("%s exists; give an empty work folder" % folder)
+
+
+def check_asset_exports(kind, args, work):
+    """Every game file of a kind exported by both and compared; then c2 building each of the
+    Python's unedited exports, which must give the original bytes."""
+    root = Path(args.extracted)
+    py, rs = work / ("py_" + kind), work / ("rs_" + kind)
+    fresh(py, rs)
+    files = game_files(root, kind)
+    start = time.time()
+    failed = python_export(kind, root, py, files)
+    py_time = time.time() - start
+    out, rs_time = run([C2, "asset-export", kind, root, rs])
+    print("%d %s files, %d not exported; python %.1fs, rust %.1fs (%s)" % (len(files), ASSET_KINDS[kind], len(failed), py_time,
+                                                                      rs_time, out.strip()))
+    problems = compare_trees(py, rs)
+    out, rs_time = run([C2, "asset-build", kind, root, py, work / ("rs_" + kind + "_unedited"), "--check"])
+    print("rust built the unedited exports in %.1fs: %s" % (rs_time, out.strip().splitlines()[-1]))
+    problems += [line for line in out.splitlines() if line.startswith("differs")]
+    if args.python_builds:
+        start = time.time()
+        built = work / ("py_" + kind + "_unedited")
+        python_build(kind, root, py, built, files)
+        same = sum(1 for path in game_files(built, kind) if (built / path).read_bytes() == (root / path).read_bytes())
+        print("python built the unedited exports in %.1fs: %d give the original" % (time.time() - start, same))
+    return problems, files, py
+
+
+def check_asset_edits(kind, args, work, files, edited):
+    """Both build the edited folders; the built files compared."""
+    root = Path(args.extracted)
+    py, rs = work / ("py_" + kind + "_edited"), work / ("rs_" + kind + "_edited")
+    fresh(py, rs)
+    start = time.time()
+    python_build(kind, root, edited, py, files)
+    py_time = time.time() - start
+    out, rs_time = run([C2, "asset-build", kind, root, edited, rs])
+    print("edited: python %.1fs, rust %.1fs (%s)" % (py_time, rs_time, out.strip()))
+    return compare_builds(py, rs)
+
+
+def encoded_png(w, h, rgba, variant):
+    """RGBA pixels as a PNG the way image editors write them, in one of 8 variants of colour type,
+    bit depth, transparency, row filters (all five, by row) and Adam7 interlacing."""
+    import struct
+    import zlib
+    pixels = [tuple(rgba[i:i + 4]) for i in range(0, len(rgba), 4)]
+    colours = sorted(set(pixels))
+    # (colour type, bit depth, interlaced)
+    ctype, depth, interlace = [(6, 8, 0), (2, 8, 1), (4, 8, 0), (0, 4, 0), (6, 16, 1), (3, 8, 0), (3, 4, 1), (0, 16, 0)][variant]
+    if ctype == 3 and len(colours) > (1 << depth):
+        ctype, depth = 6, 8
+    chunks = []
+    if ctype == 3:
+        index = {c: i for i, c in enumerate(colours)}
+        chunks.append((b"PLTE", b"".join(bytes(c[:3]) for c in colours)))
+        chunks.append((b"tRNS", bytes(c[3] for c in colours)))
+        samples = [[index[p]] for p in pixels]
+    elif ctype == 6:
+        samples = [list(p) for p in pixels]
+    elif ctype == 4:
+        samples = [[p[0], p[3]] for p in pixels]
+    elif ctype == 2:
+        samples = [list(p[:3]) for p in pixels]
+        key = pixels[0][:3]
+        chunks.append((b"tRNS", struct.pack(">HHH", *key)))
+    else:
+        top = (1 << min(depth, 8)) - 1
+        samples = [[p[0] * top // 255] for p in pixels]
+        chunks.append((b"tRNS", struct.pack(">H", samples[0][0])))
+    channels = len(samples[0]) if samples else 1
+    bits_pp = depth * channels
+    bpp = max(1, bits_pp // 8)
+
+    def row_bytes(row):
+        if depth == 16:
+            return b"".join(struct.pack(">H", v * 257) for s in row for v in s)
+        if depth == 8:
+            return bytes(v for s in row for v in s)
+        out, acc, bits = bytearray(), 0, 0
+        for s in row:
+            for v in s:
+                acc, bits = (acc << depth) | v, bits + depth
+                if bits == 8:
+                    out.append(acc)
+                    acc, bits = 0, 0
+        if bits:
+            out.append(acc << (8 - bits))
+        return bytes(out)
+
+    def filtered(rows):
+        out, prev = bytearray(), None
+        for y, line in enumerate(rows):
+            prev = prev or bytes(len(line))
+            kind = y % 5
+            enc = bytearray()
+            for i, x in enumerate(line):
+                a = line[i - bpp] if i >= bpp else 0
+                b = prev[i]
+                c = prev[i - bpp] if i >= bpp else 0
+                if kind == 1:
+                    x -= a
+                elif kind == 2:
+                    x -= b
+                elif kind == 3:
+                    x -= (a + b) >> 1
+                elif kind == 4:
+                    p = a + b - c
+                    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                    x -= a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                enc.append(x & 255)
+            out += bytes([kind]) + enc
+            prev = line
+        return bytes(out)
+
+    grid = [samples[y * w:(y + 1) * w] for y in range(h)]
+    if interlace:
+        raw = b""
+        for x0, y0, dx, dy in [(0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)]:
+            rows = [row_bytes(grid[y][x0::dx]) for y in range(y0, h, dy) if grid[y][x0::dx]]
+            raw += filtered(rows)
+    else:
+        raw = filtered([row_bytes(row) for row in grid])
+    out = b"\x89PNG\r\n\x1a\n"
+    for tag, body in [(b"IHDR", struct.pack(">IIBBBBB", w, h, depth, ctype, 0, 0, interlace))] + chunks + \
+            [(b"IDAT", zlib.compress(raw, 9)), (b"IEND", b"")]:
+        out += struct.pack(">I", len(body)) + tag + body + struct.pack(">I", zlib.crc32(tag + body))
+    return out
+
+
+def edited_pngs(root, exported, edited, every):
+    """Deterministic edits of every n-th texture file's PNGs: colours inverted (true colour, so a
+    paletted picture is matched or quantised), the palette's red and blue swapped, pixels moved to
+    other colours of the palette, and pictures halved in size."""
+    from c2s import im3
+    folders = sorted(path for path in exported.rglob("*.img.png") if path.is_dir())
+    count = 0
+    for number, folder in enumerate(folders[::every]):
+        target = edited / folder.relative_to(exported)
+        target.mkdir(parents=True)
+        for k, png in enumerate(sorted(folder.glob("*.png"))):
+            w, h, mode, data, palette = im3.read_png(png.read_bytes())
+            if mode == "P":
+                table = [bytes(c) for c in palette] + [b"\0\0\0\xff"] * (256 - len(palette))
+                rgba = b"".join(table[i] for i in data)
+            else:
+                rgba = data
+            how = (number + k) % 5
+            if how == 0 and w * h <= 128 * 128:
+                out = im3.write_png(w, h, "RGBA", bytes(255 - v if i % 4 != 3 else v for i, v in enumerate(rgba)))
+            elif how == 1 and mode == "P":
+                out = im3.write_png(w, h, "P", data, [(b, g, r, a) for r, g, b, a in palette])
+            elif how == 2 and mode == "P":
+                out = im3.write_png(w, h, "RGBA", b"".join(table[(v + 1) % len(palette)] for v in data))
+            elif how == 3 and w > 1 and h > 1:
+                half = b"".join(rgba[4 * (2 * y * w + 2 * x):4 * (2 * y * w + 2 * x) + 4] for y in range(h // 2) for x in range(w // 2))
+                out = im3.write_png(w // 2, h // 2, "RGBA", half)
+            elif how == 4 and w * h <= 256 * 256:
+                out = encoded_png(w, h, rgba, (number // 5 + k) % 8)
+            else:
+                continue
+            (target / png.name).write_bytes(out)
+            count += 1
+    # sizes and names a build refuses: a swizzled 8-bit picture (IM2) made 8 pixels narrower, so
+    # not a multiple of 16 wide, and a PNG naming no picture
+    im2 = [folder for folder in folders if (root / folder.relative_to(exported).as_posix()[:-len(".png")]).read_bytes()[:3] == b"IM2"]
+    for number, folder in enumerate(im2[:12]):
+        target = edited / folder.relative_to(exported)
+        target.mkdir(parents=True, exist_ok=True)
+        png = sorted(folder.glob("*.png"))[0]
+        w, h, mode, data, palette = im3.read_png(png.read_bytes())
+        if mode == "P" and w > 8:
+            narrow = b"".join(data[y * w:y * w + w - 8] for y in range(h))
+            (target / png.name).write_bytes(im3.write_png(w - 8, h, "P", narrow, palette))
+            count += 1
+        if number % 4 == 0:
+            (target / "zz_no_such_picture.png").write_bytes(im3.write_png(4, 4, "RGB", bytes(48)))
+            count += 1
+    print("%d edited PNGs in %d texture files" % (count, len(folders[::every]) + len(im2[:12])))
+
+
+def check_textures(args):
+    work = Path(args.work)
+    problems, files, exported = check_asset_exports("png", args, work)
+    edited = work / "png_edits"
+    fresh(edited)
+    edited_pngs(Path(args.extracted), exported, edited, args.every)
+    return problems + check_asset_edits("png", args, work, files, edited)
+
+
+def wav_file(rate, channels, bits, values, loop=None, floating=False):
+    """A WAV of interleaved sample values (-1.0..1.0), PCM of the bits or float, with a 'smpl' loop
+    (start, end) when given."""
+    import struct
+    if floating:
+        body = struct.pack("<%d%s" % (len(values), "f" if bits == 32 else "d"), *values)
+    elif bits == 8:
+        body = bytes(max(0, min(255, int(128 + v * 127))) for v in values)
+    elif bits == 24:
+        body = b"".join(int(v * 8388607).to_bytes(3, "little", signed=True) for v in values)
+    else:
+        body = struct.pack("<%d%s" % (len(values), "h" if bits == 16 else "i"),
+                           *(int(v * (32767 if bits == 16 else 2147483647)) for v in values))
+    align = channels * bits // 8
+    chunks = b"fmt " + struct.pack("<IHHIIHH", 16, 3 if floating else 1, channels, rate, rate * align, align, bits)
+    chunks += b"data" + struct.pack("<I", len(body)) + body + (b"\0" if len(body) % 2 else b"")
+    if loop:
+        smpl = struct.pack("<9I", 0, 0, 0, 60, 0, 0, 0, 1, 0) + struct.pack("<6I", 0, 0, loop[0], loop[1], 0, 0)
+        chunks += b"smpl" + struct.pack("<I", len(smpl)) + smpl
+    return b"RIFF" + struct.pack("<I", 4 + len(chunks)) + b"WAVE" + chunks
+
+
+def synthetic_sounds(seed):
+    """WAVs to put into a bank: a tone, stereo noise at 96 kHz (resampled to 48 kHz), a looped
+    sweep whose loop needs stretching, and 8-bit, 24-bit and float ones at other rates."""
+    import math
+    state = [seed * 7919 + 1]
+
+    def noise():
+        state[0] = (state[0] * 1103515245 + 12345) % (1 << 31)
+        return state[0] / (1 << 30) - 1.0
+    tone = [0.6 * math.sin(2 * math.pi * 440 * i / 22050) for i in range(6000 + 37 * seed)]
+    stereo = [0.3 * noise() for _ in range(2 * 4000)]
+    sweep = [0.5 * math.sin(i * i / 9000.0) for i in range(5000)]
+    return [
+        wav_file(22050, 1, 16, tone),
+        wav_file(96000, 2, 16, stereo),
+        wav_file(32000, 1, 16, sweep, loop=(1234 + seed, 4999)),
+        wav_file(11025, 1, 8, tone[:3000]),
+        wav_file(44100, 2, 24, [v * 0.5 for v in tone[:4000] for _ in range(2)]),
+        wav_file(16000, 1, 32, tone[:2500], floating=True),
+    ]
+
+
+def edited_wavs(root, exported, edited, every):
+    """Deterministic WAV sets for every n-th bank: exported entries replaced by synthetic sounds
+    (in place or detached, as the bank's sharing decides), one left as exported, a sequence entry
+    replaced, and a new entry added."""
+    from c2s import soundbank
+    folders = sorted(path for path in exported.rglob("*.snd.wav") if path.is_dir())
+    count = 0
+    for number, folder in enumerate(folders[::every]):
+        relative = folder.relative_to(exported).as_posix()[:-len(".wav")]
+        bank = soundbank.Bank.from_bytes((root / relative).read_bytes())
+        entries = bank.entries()
+        target = edited / folder.relative_to(exported)
+        target.mkdir(parents=True)
+        sounds = synthetic_sounds(number)
+        wavs = sorted(folder.glob("*.wav"))
+        for k, wav in enumerate(wavs[:5]):
+            if k == 1:
+                (target / wav.name).write_bytes(wav.read_bytes())
+            else:
+                (target / wav.name).write_bytes(sounds[(number + k) % len(sounds)])
+            count += 1
+        exported_numbers = {int(wav.name[:3]) for wav in wavs}
+        others = [entry.index for entry in entries if entry.index not in exported_numbers]
+        if others:
+            (target / ("%03d_sequence.wav" % others[number % len(others)])).write_bytes(sounds[number % len(sounds)])
+            count += 1
+        (target / ("%03d_new_tone.wav" % len(entries))).write_bytes(sounds[(number + 2) % len(sounds)])
+        count += 1
+        # ones a build refuses: an entry number past the next one, a WAV format it does not read
+        if number % 10 == 3:
+            (target / ("%03d.wav" % (len(entries) + 3))).write_bytes(sounds[0])
+            count += 1
+        if number % 10 == 7 and len(wavs) > 2:
+            (target / wavs[2].name).write_bytes(sounds[0][:20] + b"\x02" + sounds[0][21:])
+            count += 1
+    print("%d edited WAVs in %d banks" % (count, len(folders[::every])))
+
+
+def check_sounds(args):
+    work = Path(args.work)
+    problems, files, exported = check_asset_exports("wav", args, work)
+    edited = work / "wav_edits"
+    fresh(edited)
+    edited_wavs(Path(args.extracted), exported, edited, args.every)
+    return problems + check_asset_edits("wav", args, work, files, edited)
+
+
+def edited_models(exported, edited, every):
+    """Deterministic edits of every n-th character pack's export: the positions of every other mesh
+    scaled (rigid and skinned ones), one rigid mesh's node moved, and one texture recoloured."""
+    import shutil
+    import struct
+    from c2s import im3
+    folders = sorted(path for path in exported.rglob("*.chr.gltf") if path.is_dir())
+    count = 0
+    for number, folder in enumerate(folders[::every]):
+        target = edited / folder.relative_to(exported)
+        shutil.copytree(folder, target)
+        gltf_path = next(target.glob("*.gltf"))
+        gltf = json.loads(gltf_path.read_text(encoding="utf-8"))
+        bin_path = target / gltf["buffers"][0]["uri"]
+        buffer = bytearray(bin_path.read_bytes())
+        for m, mesh in enumerate(gltf.get("meshes", [])):
+            if (m + number) % 2:
+                continue
+            for primitive in mesh["primitives"]:
+                accessor = gltf["accessors"][primitive["attributes"]["POSITION"]]
+                base = gltf["bufferViews"][accessor["bufferView"]].get("byteOffset", 0) + accessor.get("byteOffset", 0)
+                for i in range(accessor["count"]):
+                    x, y, z = struct.unpack_from("<3f", buffer, base + 12 * i)
+                    struct.pack_into("<3f", buffer, base + 12 * i, x * 1.25, y * 0.75, z + 0.5)
+            count += 1
+        rigid = [node for node in gltf["nodes"] if "mesh" in node and "skin" not in node]
+        changed = False
+        if rigid and number % 3 == 0:
+            rigid[0]["translation"] = [v + 0.25 for v in rigid[0].get("translation", [0.0, 0.0, 0.0])]
+            changed = True
+        if rigid and number % 5 == 2:
+            # a mesh for a frame the model does not have: a new node under the first frame
+            gltf["nodes"].append({"name": "mod_added", "mesh": rigid[-1]["mesh"], "translation": [0.0, 1.0, 0.0]})
+            gltf["nodes"][0].setdefault("children", []).append(len(gltf["nodes"]) - 1)
+            changed = True
+        if gltf.get("skins") and number % 4 == 1:
+            # a joint's bind pose moved: its inverse bind matrix's translation changed
+            accessor = gltf["accessors"][gltf["skins"][0]["inverseBindMatrices"]]
+            base = gltf["bufferViews"][accessor["bufferView"]].get("byteOffset", 0) + accessor.get("byteOffset", 0)
+            joint = min(1, accessor["count"] - 1)
+            for k in (12, 13, 14):
+                (value,) = struct.unpack_from("<f", buffer, base + 64 * joint + 4 * k)
+                struct.pack_into("<f", buffer, base + 64 * joint + 4 * k, value + 0.5)
+            count += 1
+        bin_path.write_bytes(bytes(buffer))
+        if changed:
+            gltf_path.write_text(json.dumps(gltf, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            count += 1
+        pngs = sorted((target / "textures").glob("*.png")) if (target / "textures").is_dir() else []
+        if pngs:
+            png = pngs[number % len(pngs)]
+            w, h, mode, data, palette = im3.read_png(png.read_bytes())
+            if mode == "P":
+                table = [bytes(c) for c in palette] + [b"\0\0\0\xff"] * (256 - len(palette))
+                data = b"".join(table[i] for i in data)
+            png.write_bytes(im3.write_png(w, h, "RGBA", bytes(255 - v if i % 4 != 3 else v for i, v in enumerate(data))))
+            count += 1
+    print("%d edits in %d character packs" % (count, len(folders[::every])))
+
+
+def check_models(args):
+    work = Path(args.work)
+    problems, files, exported = check_asset_exports("gltf", args, work)
+    edited = work / "gltf_edits"
+    fresh(edited)
+    edited_models(exported, edited, args.every)
+    return problems + check_asset_edits("gltf", args, work, files, edited)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     checks = parser.add_subparsers(dest="check", required=True)
@@ -588,12 +1028,20 @@ def main():
     command = checks.add_parser("parse")
     command.add_argument("work")
     command.add_argument("--data", default=str(REPO), help="the folder holding decompiled/ and mods/")
+    for name, every in (("textures", 25), ("sounds", 20), ("models", 20)):
+        command = checks.add_parser(name)
+        command.add_argument("extracted")
+        command.add_argument("work")
+        command.add_argument("--every", type=int, default=every, help="edit every n-th file's export (default %d)" % every)
+        command.add_argument("--python-builds", action="store_true", help="also build every unedited export with the "
+                             "Python and count the ones giving the original")
     args = parser.parse_args()
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
     checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble,
               "decompile": check_decompile, "compile": check_compile,
-              "sources": check_sources, "parse": check_parse}
+              "sources": check_sources, "parse": check_parse, "textures": check_textures,
+              "sounds": check_sounds, "models": check_models}
     problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)
