@@ -1,0 +1,3 @@
+# Build output goes to build/ (build/release/c2.exe); c2.bat and c2 at the root run it.
+[build]
+target-dir = "build"

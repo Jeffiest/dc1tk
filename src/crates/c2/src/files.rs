@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 /// The repository folder: $C2_ROOT, or the nearest folder above the executable that has
-/// definitions/ (c2 runs from target/release).
+/// definitions/ (c2 runs from build/release).
 pub fn root() -> PathBuf {
     if let Some(root) = std::env::var_os("C2_ROOT") {
         return PathBuf::from(root);

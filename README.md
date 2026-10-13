@@ -35,12 +35,15 @@ The tool is one program, `c2`. Build it:
 cargo build --release
 ```
 
-in this folder. This writes `target/release/c2` (`c2.exe` on Windows). Put
-`target/release` on your PATH, so that `c2` runs it; the commands below are
-written that way. Leave the program where it is built: it finds `sdk/`,
+in this folder. This writes `build/release/c2` (`c2.exe` on Windows). Run it
+from this folder with `c2.bat` (Command Prompt and PowerShell: `c2 ...` in
+Command Prompt, `.\c2 ...` in PowerShell) or `./c2` in a Unix shell such as
+Git Bash; each builds the program first if it is missing. The commands below
+are written as `c2 ...`. To run it from anywhere, put this folder (or
+`build/release`) on your PATH instead. The program finds `sdk/`,
 `definitions/` and `src/natives/` in the repository folder above it (or in
-the folder `$C2_ROOT` names). Run the commands from this folder (it is
-where `extracted/` and `mods/` go). `c2 help` lists the commands and
+the folder `$C2_ROOT` names). Run the commands from this folder (it is where
+`extracted/` and `mods/` go). `c2 help` lists the commands and
 `c2 help COMMAND` gives one command's options.
 
 ### 2. Decompile the game

@@ -8,7 +8,8 @@ decompiler and compiler work is in [internals](../docs/internals.md).
 The workspace's `Cargo.toml` is at the repository root, so run Cargo there:
 
 ```
-cargo build --release          builds target/release/c2 (c2.exe on Windows)
+cargo build --release          builds build/release/c2 (c2.exe on Windows; .cargo/config.toml
+                               puts Cargo's output in build/), which c2.bat and ./c2 run
 cargo test --release           the tests
 cargo fmt                      formatting (rustfmt.toml: 120 columns)
 ```

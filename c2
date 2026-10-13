@@ -1,0 +1,10 @@
+#!/bin/sh
+# Runs c2 from the repository folder: build/release/c2 (c2.exe on Windows), built first when missing.
+here=$(cd "$(dirname "$0")" && pwd)
+exe="$here/build/release/c2"
+[ -f "$exe.exe" ] && exe="$exe.exe"
+if [ ! -f "$exe" ]; then
+    cargo build --release --manifest-path "$here/Cargo.toml" || exit 1
+    [ -f "$exe.exe" ] && exe="$exe.exe"
+fi
+exec "$exe" "$@"
