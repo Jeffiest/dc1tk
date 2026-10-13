@@ -5,7 +5,9 @@ pub mod asm;
 pub mod decompile;
 pub mod definitions;
 pub mod fingerprint;
+pub mod names;
 pub mod natives;
+pub mod notes;
 pub mod source;
 #[macro_use]
 pub mod node;

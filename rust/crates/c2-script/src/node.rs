@@ -321,6 +321,25 @@ impl<T: Into<Node>> FromIterator<T> for Node {
     }
 }
 
+impl From<serde_json::Value> for Node {
+    /// JSON as read from a file, objects in their order there.
+    fn from(value: serde_json::Value) -> Node {
+        match value {
+            serde_json::Value::Null => Node::Null,
+            serde_json::Value::Bool(value) => Node::Bool(value),
+            serde_json::Value::Number(number) => match number.as_i64() {
+                Some(value) => Node::Int(value),
+                None => Node::Float(number.as_f64().unwrap_or(f64::NAN)),
+            },
+            serde_json::Value::String(text) => Node::Str(text),
+            serde_json::Value::Array(items) => Node::List(items.into_iter().map(Node::from).collect()),
+            serde_json::Value::Object(object) => {
+                Node::Map(object.into_iter().map(|(key, value)| (key, Node::from(value))).collect())
+            }
+        }
+    }
+}
+
 impl PartialEq<str> for Node {
     fn eq(&self, other: &str) -> bool {
         self.as_str() == Some(other)

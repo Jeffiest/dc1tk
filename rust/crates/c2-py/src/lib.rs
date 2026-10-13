@@ -224,10 +224,10 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
                 break;
             }
         }
-        if chunks.last().is_some_and(|next| next.len() > width) {
-            let space_left = if width < 1 { 1 } else { width - length };
-            if space_left > 0 {
-                let chunk = chunks.pop().unwrap();
+        // a word longer than a line: as much of it as fits
+        let space_left = if width < 1 { 1 } else { width - length };
+        if space_left > 0 {
+            if let Some(chunk) = chunks.pop_if(|next| next.len() > width) {
                 line.push(chunk[..space_left].to_vec());
                 chunks.push(chunk[space_left..].to_vec());
             }

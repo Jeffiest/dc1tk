@@ -6,7 +6,7 @@ mod files;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
@@ -16,7 +16,7 @@ use clap::{Args, Parser, Subcommand};
 use rayon::prelude::*;
 
 use c2_disc::{extract, rebuild, Image};
-use c2_script::{asm, decompile, definitions, natives, source, stb};
+use c2_script::{asm, decompile, definitions, names, natives, notes, source, stb};
 
 #[derive(Parser)]
 #[command(name = "c2", about = "Decompile, compile and mod Dark Chronicle (Dark Cloud 2)")]
@@ -65,6 +65,14 @@ impl Common {
 
     fn table_rules(&self) -> Result<Vec<(String, String)>> {
         Ok(definitions::table_rules(&self.def_sets())?)
+    }
+
+    fn definitions(&self) -> Result<definitions::Definitions> {
+        let sets = self.def_sets();
+        if sets.is_empty() {
+            return Ok(definitions::Definitions::empty());
+        }
+        Ok(definitions::load(&sets)?)
     }
 }
 
@@ -115,6 +123,9 @@ enum Command {
         /// Write the program as source text (OUT/<path>.c) instead of JSON.
         #[arg(long)]
         source: bool,
+        /// Apply the definitions' names, script entries and translations.
+        #[arg(long)]
+        named: bool,
         #[command(flatten)]
         common: Common,
     },
@@ -178,14 +189,25 @@ fn run_disassemble_tree(root: &Path, out: &Path, common: &Common) -> Result<Exit
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_decompile_dump(root: &Path, out: &Path, as_source: bool, common: &Common) -> Result<ExitCode> {
-    let rules = common.table_rules()?;
+fn run_decompile_dump(root: &Path, out: &Path, as_source: bool, named: bool, common: &Common) -> Result<ExitCode> {
+    let defs = common.definitions()?;
+    let rules = &defs.tables;
     let tables = common.tables()?;
+    let known = names::Known::new(names::merged(&defs.names));
+    let nothing = (HashSet::new(), HashMap::new(), HashMap::new());
     let scripts = files::find_scripts(root)?;
     scripts.par_iter().try_for_each(|relative| -> Result<()> {
         let path = root.join(relative);
         let script = stb::read(&std::fs::read(&path)?);
-        let program = decompile::decompile(&script, &chosen_table(&None, &path, &rules), &tables);
+        let mut program = decompile::decompile(&script, &chosen_table(&None, &path, rules), &tables);
+        if named {
+            // names, the script's entry and translated strings, without the SDK's names yet
+            let lookup = known.with_loose(&names::loose_map(&program));
+            program = names::apply(program, &lookup, &nothing.0, &nothing.1).with_context(|| relative.clone())?;
+            let entry = definitions::script_entry(&defs, &path.to_string_lossy()).cloned().unwrap_or_default();
+            program = names::with_script(program, &entry, &nothing.0, &nothing.2);
+            program = notes::annotate(program, &defs.strings);
+        }
         let (target, text) = if as_source {
             (out.join(format!("{relative}.c")), source::text(&program).with_context(|| relative.clone())?)
         } else {
@@ -257,7 +279,9 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::WriteDisc { iso, out, files } => run_write_disc(iso, out, files),
         Command::DisassembleTree { root, out, common } => run_disassemble_tree(root, out, common),
         Command::AssembleTree { root, asm, natives } => run_assemble_tree(root, asm, natives),
-        Command::DecompileDump { root, out, source, common } => run_decompile_dump(root, out, *source, common),
+        Command::DecompileDump { root, out, source, named, common } => {
+            run_decompile_dump(root, out, *source, *named, common)
+        }
     }
 }
 

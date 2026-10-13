@@ -1,15 +1,22 @@
 //! Definition sets (definitions/pal): what the tools know about one disc's scripts. A set's
-//! definitions.json can extend other sets, which load first. So far this reads the rules for
-//! which native table a script calls; the names, docs and libraries come with the decompiler.
+//! definitions.json can extend other sets, which load first; a later set's entries win.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::{Error, Result};
+use crate::names::{self, Entries};
+use crate::node::{Map, Node};
+use crate::{notes, Error, Result};
 
 pub const MANIFEST: &str = "definitions.json";
+/// The scripts of the disc a set was made from, by path and hash.
+pub const DISC: &str = "disc.json";
+/// The event sound bank of each sound set (column 15 of snd2/MAP_index.txt), which load_sound(n)
+/// loads: {"2237": "EV_283_000"}.
+pub const SOUNDS: &str = "sounds.json";
 
 #[derive(Debug, Default, Deserialize)]
 struct Manifest {
@@ -17,6 +24,13 @@ struct Manifest {
     extends: Vec<String>,
     #[serde(default)]
     tables: Vec<TableRule>,
+    language: Option<String>,
+    #[serde(default)]
+    include: Vec<String>,
+    #[serde(default)]
+    executable: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    text: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,13 +39,17 @@ struct TableRule {
     table: String,
 }
 
+fn read_json(path: &Path) -> Result<serde_json::Value> {
+    serde_json::from_str(&fs::read_to_string(path)?)
+        .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))
+}
+
 fn manifest(directory: &Path) -> Result<Manifest> {
     let path = directory.join(MANIFEST);
     if !path.is_file() {
         return Ok(Manifest::default());
     }
-    serde_json::from_str(&fs::read_to_string(&path)?)
-        .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))
+    serde_json::from_value(read_json(&path)?).map_err(|error| Error::invalid(format!("{}: {error}", path.display())))
 }
 
 /// A path made absolute with symlinks and "..", resolved as Python's Path.resolve() does, written
@@ -78,4 +96,198 @@ pub fn table_rules(directories: &[PathBuf]) -> Result<Vec<(String, String)>> {
         rules = found;
     }
     Ok(rules)
+}
+
+/// Everything the loaded sets know.
+#[derive(Clone, Debug, Default)]
+pub struct Definitions {
+    pub sets: Vec<PathBuf>,
+    /// Each native table's names, by fingerprint.
+    pub names: IndexMap<String, Entries>,
+    /// Translations of the disc's strings, by string_key.
+    pub strings: IndexMap<String, String>,
+    pub tables: Vec<(String, String)>,
+    pub language: String,
+    pub include: Vec<String>,
+    /// Script entries (globals, doc), by disc path.
+    pub scripts: IndexMap<String, Node>,
+    pub executable: Map,
+    pub text: Map,
+    pub libraries: IndexMap<String, Node>,
+    pub paths: IndexMap<String, Node>,
+    pub disc: IndexMap<String, String>,
+    pub sound_set_banks: IndexMap<String, String>,
+}
+
+impl Definitions {
+    /// No definitions (--defs none).
+    pub fn empty() -> Definitions {
+        Definitions { language: "en".into(), ..Definitions::default() }
+    }
+}
+
+/// Python's dict(old, **new) for two objects.
+fn updated(old: Option<&Node>, new: Node) -> Node {
+    match (old.and_then(Node::as_object), new) {
+        (Some(old), Node::Map(new)) => {
+            let mut out = old.clone();
+            for (key, value) in new {
+                out.insert(key, value);
+            }
+            Node::Map(out)
+        }
+        (_, new) => new,
+    }
+}
+
+fn object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    match value {
+        serde_json::Value::Object(object) => object,
+        _ => serde_json::Map::new(),
+    }
+}
+
+/// Every .json under a folder, sorted as Windows paths sort in Python (by lowercased parts).
+fn json_files(directory: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut folders = vec![directory.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        let Ok(listing) = fs::read_dir(&folder) else {
+            continue;
+        };
+        for entry in listing.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                folders.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "json") {
+                found.push(path);
+            }
+        }
+    }
+    let key = |path: &PathBuf| -> Vec<String> {
+        let text = path.to_string_lossy().replace('/', "\\");
+        if cfg!(windows) {
+            text.to_lowercase().split('\\').map(str::to_string).collect()
+        } else {
+            text.split('\\').map(str::to_string).collect()
+        }
+    };
+    found.sort_by_key(key);
+    found
+}
+
+/// A set's script entries, by disc path (scripts/map/s/s51/s51_1.json is map/s/s51/s51_1.stb).
+fn load_scripts(directory: &Path) -> Result<Vec<(String, Node)>> {
+    if !directory.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut found = Vec::new();
+    for path in json_files(directory) {
+        let relative = path.strip_prefix(directory).unwrap().with_extension("stb");
+        found.push((relative.to_string_lossy().replace('\\', "/"), Node::from(read_json(&path)?)));
+    }
+    Ok(found)
+}
+
+/// The sets, merged.
+pub fn load(directories: &[PathBuf]) -> Result<Definitions> {
+    let mut found = Definitions::empty();
+    let order = sets(directories)?;
+    for directory in &order {
+        let settings = manifest(directory)?;
+        found.sets.push(directory.clone());
+        if let Some(language) = settings.language {
+            found.language = language;
+        }
+        for (key, value) in settings.executable {
+            found.executable.insert(key, Node::from(value));
+        }
+        for (key, value) in settings.text {
+            let value = Node::from(value);
+            let merged = if value.as_object().is_some() { updated(found.text.get(&key), value) } else { value };
+            found.text.insert(key, merged);
+        }
+        let mut rules: Vec<(String, String)> =
+            settings.tables.into_iter().map(|rule| (rule.prefix, rule.table)).collect();
+        rules.append(&mut found.tables);
+        found.tables = rules;
+        for name in settings.include {
+            if !found.include.contains(&name) {
+                found.include.push(name);
+            }
+        }
+        for (table, entries) in names::load(&directory.join("names"))? {
+            let into = found.names.entry(table).or_default();
+            for (print, entry) in entries {
+                into.insert(print, entry);
+            }
+        }
+        let paths = directory.join("paths.json");
+        if paths.is_file() {
+            for (path, name) in object(read_json(&paths)?["names"].take()) {
+                found.paths.insert(path, Node::from(name));
+            }
+        }
+        let libraries = directory.join("libraries.json");
+        if libraries.is_file() {
+            for (key, entry) in object(read_json(&libraries)?["libraries"].take()) {
+                let merged = updated(found.libraries.get(&key), Node::from(entry));
+                found.libraries.insert(key, merged);
+            }
+        }
+        for (path, entry) in load_scripts(&directory.join("scripts"))? {
+            let merged = updated(found.scripts.get(&path), entry);
+            found.scripts.insert(path, merged);
+        }
+        let sounds = directory.join(SOUNDS);
+        if sounds.is_file() {
+            for (set, bank) in object(read_json(&sounds)?["sound_set_event_banks"].take()) {
+                found.sound_set_banks.insert(set, bank.as_str().unwrap_or_default().to_string());
+            }
+        }
+        let disc = directory.join(DISC);
+        if disc.is_file() {
+            for (path, hash) in object(read_json(&disc)?["scripts"].take()) {
+                found.disc.insert(path, hash.as_str().unwrap_or_default().to_string());
+            }
+        }
+    }
+    for directory in &order {
+        found.strings.extend(notes::load(&directory.join("strings"), &found.language)?);
+    }
+    Ok(found)
+}
+
+/// "x_1.stb" → "x.stb": a map script's language variants share a base.
+pub fn variant_base(path: &str) -> String {
+    let bytes = path.as_bytes();
+    if path.ends_with(".stb")
+        && bytes.len() >= 6
+        && bytes[bytes.len() - 6] == b'_'
+        && bytes[bytes.len() - 5].is_ascii_digit()
+    {
+        format!("{}.stb", &path[..path.len() - 6])
+    } else {
+        path.to_string()
+    }
+}
+
+/// The script entry for a script or its source file: by its disc path, else a language variant's.
+pub fn script_entry<'a>(defs: &'a Definitions, path: &str) -> Option<&'a Node> {
+    let mut text = path.replace('\\', "/");
+    if let Some(stem) = text.strip_suffix(crate::source::EXTENSION) {
+        text = format!("{stem}.stb");
+    }
+    let mut sibling = None;
+    let mine = variant_base(&text);
+    for (disc_path, entry) in &defs.scripts {
+        if text == *disc_path || text.ends_with(&format!("/{disc_path}")) {
+            return Some(entry);
+        }
+        let base = variant_base(disc_path);
+        if sibling.is_none() && (mine == base || mine.ends_with(&format!("/{base}"))) {
+            sibling = Some(entry);
+        }
+    }
+    sibling
 }

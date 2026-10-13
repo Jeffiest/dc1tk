@@ -190,7 +190,7 @@ def check_disassemble(args):
 def check_decompile(args):
     """Every script's program tree from decompile.decompile, before names and docs, compared as
     JSON."""
-    from c2s import decompile, definitions, natives, source, stb, verify
+    from c2s import decompile, definitions, names, natives, notes, source, stb, verify
     work = Path(args.work)
     py, rs = work / "py_tree", work / "rs_tree"
     for folder in (py, rs):
@@ -205,6 +205,11 @@ def check_decompile(args):
         path = root / relative
         table = natives.table_for(path.resolve().as_posix(), defs["tables"])
         program = decompile.decompile(stb.read(path.read_bytes()), table, tables)
+        if args.named:
+            entries = names.with_loose(names.merged(defs["names"]), names.loose_map(program))
+            program = names.apply(program, entries, set(), {})
+            program = names.with_script(program, definitions.script_entry(defs, str(path)))
+            program = notes.annotate(program, defs["strings"])
         if args.source:
             target, text = py / (relative + ".c"), source.text(program)
         else:
@@ -212,7 +217,7 @@ def check_decompile(args):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(text.encode("utf-8"))
     py_time = time.time() - start
-    _, rs_time = run([C2, "decompile-dump", root, rs] + (["--source"] if args.source else []))
+    _, rs_time = run([C2, "decompile-dump", root, rs] + (["--source"] if args.source else []) + (["--named"] if args.named else []))
     print("%d scripts; python %.1fs, rust %.1fs" % (len(scripts), py_time, rs_time))
     return compare_trees(py, rs)
 
@@ -275,6 +280,8 @@ def main():
     command.add_argument("extracted")
     command.add_argument("work")
     command.add_argument("--source", action="store_true", help="compare the source text instead of the tree")
+    command.add_argument("--named", action="store_true", help="with the definitions' names, script entries and "
+                         "translations (without the SDK's names)")
     args = parser.parse_args()
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
