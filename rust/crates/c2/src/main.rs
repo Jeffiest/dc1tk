@@ -16,7 +16,7 @@ use clap::{Args, Parser, Subcommand};
 use rayon::prelude::*;
 
 use c2_disc::{extract, rebuild, Image};
-use c2_script::{asm, decompile, definitions, names, natives, notes, source, stb};
+use c2_script::{asm, decompile, definitions, disc, names, natives, notes, sdk, source, stb};
 
 #[derive(Parser)]
 #[command(name = "c2", about = "Decompile, compile and mod Dark Chronicle (Dark Cloud 2)")]
@@ -65,6 +65,10 @@ impl Common {
 
     fn table_rules(&self) -> Result<Vec<(String, String)>> {
         Ok(definitions::table_rules(&self.def_sets())?)
+    }
+
+    fn sdk_dir(&self) -> PathBuf {
+        self.sdk.clone().unwrap_or_else(|| files::root().join("sdk"))
     }
 
     fn definitions(&self) -> Result<definitions::Definitions> {
@@ -126,6 +130,13 @@ enum Command {
         /// Apply the definitions' names, script entries and translations.
         #[arg(long)]
         named: bool,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// Print the disc.h a decompile would write for an extracted disc.
+    #[command(hide = true)]
+    DiscHeader {
+        root: PathBuf,
         #[command(flatten)]
         common: Common,
     },
@@ -221,6 +232,14 @@ fn run_decompile_dump(root: &Path, out: &Path, as_source: bool, named: bool, com
     Ok(ExitCode::SUCCESS)
 }
 
+fn run_disc_header(root: &Path, common: &Common) -> Result<ExitCode> {
+    let defs = common.definitions()?;
+    let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
+    let (_, _, text) = disc::with_header(root, defs, headers);
+    print!("{}", text.unwrap_or_default());
+    Ok(ExitCode::SUCCESS)
+}
+
 fn run_assemble_tree(root: &Path, asm_dir: &Path, natives_dir: &Option<PathBuf>) -> Result<ExitCode> {
     let tables = natives::load(&natives_dir.clone().unwrap_or_else(files::natives_dir))?;
     let scripts = files::find_scripts(root)?;
@@ -279,6 +298,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::WriteDisc { iso, out, files } => run_write_disc(iso, out, files),
         Command::DisassembleTree { root, out, common } => run_disassemble_tree(root, out, common),
         Command::AssembleTree { root, asm, natives } => run_assemble_tree(root, asm, natives),
+        Command::DiscHeader { root, common } => run_disc_header(root, common),
         Command::DecompileDump { root, out, source, named, common } => {
             run_decompile_dump(root, out, *source, *named, common)
         }

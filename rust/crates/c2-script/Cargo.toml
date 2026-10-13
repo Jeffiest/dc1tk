@@ -14,3 +14,4 @@ regex.workspace = true
 serde_json.workspace = true
 sha1_smol.workspace = true
 thiserror.workspace = true
+unicode-normalization.workspace = true

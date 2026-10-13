@@ -22,6 +22,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha1_smol = { version = "1", features = ["std"] }
 thiserror = "1"
+unicode-normalization = "0.1"
 
 [profile.release]
 debug = 1
