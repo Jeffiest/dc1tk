@@ -142,6 +142,15 @@ enum Command {
         #[command(flatten)]
         common: Common,
     },
+    /// Compile every resolved program tree under a folder (<path>.json, as the Python's
+    /// compile.to_asm receives them) to OUT/<path>.asm and OUT/<path>.stb.
+    #[command(hide = true)]
+    ToAsmTree {
+        trees: PathBuf,
+        out: PathBuf,
+        #[arg(long)]
+        natives: Option<PathBuf>,
+    },
     /// Print the disc.h a decompile would write for an extracted disc.
     #[command(hide = true)]
     DiscHeader {
@@ -283,6 +292,33 @@ fn run_index_dump(tree: &Path, names: &[String], common: &Common) -> Result<Exit
     Ok(ExitCode::SUCCESS)
 }
 
+fn run_to_asm_tree(trees: &Path, out: &Path, natives_dir: &Option<PathBuf>) -> Result<ExitCode> {
+    let tables = natives::load(&natives_dir.clone().unwrap_or_else(files::natives_dir))?;
+    let found = sdk::files_under(trees, "json");
+    let failed: Vec<String> = found
+        .par_iter()
+        .filter_map(|relative| {
+            let result = (|| -> Result<()> {
+                let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(trees.join(relative))?)?;
+                let program = c2_script::node::Node::from(value);
+                let text = c2_script::compile::to_asm(&program, &tables, None)?;
+                let stem = relative.strip_suffix(".json").unwrap_or(relative);
+                let target = out.join(format!("{stem}.asm"));
+                std::fs::create_dir_all(target.parent().unwrap())?;
+                std::fs::write(&target, &text)?;
+                std::fs::write(out.join(format!("{stem}.stb")), asm::assemble(&text, &tables)?)?;
+                Ok(())
+            })();
+            result.err().map(|error| format!("{relative}: {error:#}"))
+        })
+        .collect();
+    for line in &failed {
+        println!("failed: {line}");
+    }
+    println!("{} programs compiled, {} failed", found.len(), failed.len());
+    Ok(if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
+}
+
 fn run_disc_header(root: &Path, common: &Common) -> Result<ExitCode> {
     let defs = common.definitions()?;
     let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
@@ -351,6 +387,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::AssembleTree { root, asm, natives } => run_assemble_tree(root, asm, natives),
         Command::DiscHeader { root, common } => run_disc_header(root, common),
         Command::IndexDump { tree, names, common } => run_index_dump(tree, names, common),
+        Command::ToAsmTree { trees, out, natives } => run_to_asm_tree(trees, out, natives),
         Command::DecompileDump { root, out, source, named, common } => {
             run_decompile_dump(root, out, *source, *named, common)
         }

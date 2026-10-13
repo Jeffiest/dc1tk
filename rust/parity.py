@@ -12,6 +12,7 @@ same input in a work folder and compares; exit status 1 when anything differs.
                                                       assembling each listing back to the script
   python rust/parity.py decompile extracted WORK      every script's program tree (before names), as JSON
   python rust/parity.py decompile extracted WORK --source   the same written as C
+  python rust/parity.py compile decompiled WORK       every script's resolved program compiled by both
 
 Run from the repository folder, after cargo build --release in rust/. Images are 4.7 GB each; the
 work folder needs room for two.
@@ -222,6 +223,56 @@ def check_decompile(args):
     return compare_trees(py, rs)
 
 
+def check_compile(args):
+    """Every script of a decompiled tree compiled by the Python, with the resolved program its
+    compile.to_asm receives saved; c2 compiles the same programs, and the assembly and the script
+    bytes are compared (and with the disc's, for the scripts the tree has not changed)."""
+    from c2s import compile, definitions, natives, pathnames, rebuild, sdk
+    work = Path(args.work)
+    trees, py, rs = work / "py_programs", work / "py_out", work / "rs_out"
+    for folder in (trees, py, rs):
+        if folder.exists():
+            raise SystemExit("%s exists; give an empty work folder" % folder)
+    tree = Path(args.source)
+    defs = definitions.load([definitions.DEFAULT_SET])
+    headers = definitions.header_texts(defs, sdk.SDK_DIR)
+    tables = natives.load()
+    captured = {}
+    real = compile.to_asm
+
+    def capture(program, tables, notes=None):
+        text = real(program, tables, notes)
+        captured.update(program=program, asm=text)
+        return text
+
+    compile.to_asm = capture
+    start = time.time()
+    scripts = rebuild.source_scripts(tree)
+    failed = []
+    try:
+        for relative in scripts:
+            captured.clear()
+            try:
+                data = rebuild.compiled(tree / relative, defs, headers, tables, table_path=pathnames.unnamed(tree, relative))
+            except ValueError as error:
+                failed.append("%s: %s" % (relative, error))
+                continue
+            for folder, name, content in ((trees, relative + ".json",
+                                           json.dumps(captured["program"], ensure_ascii=False, separators=(",", ":")).encode("utf-8")),
+                                          (py, relative + ".asm", captured["asm"].encode("utf-8")),
+                                          (py, relative + ".stb", data)):
+                (folder / name).parent.mkdir(parents=True, exist_ok=True)
+                (folder / name).write_bytes(content)
+    finally:
+        compile.to_asm = real
+    py_time = time.time() - start
+    out, rs_time = run_status([C2, "to-asm-tree", trees, rs])
+    print("%d scripts (%d the Python could not compile); python %.1fs (parse and resolve included), rust %.1fs (to_asm "
+          "and assemble only)" % (len(scripts), len(failed), py_time, rs_time))
+    print(out.strip().splitlines()[-1] if out.strip() else "")
+    return [line for line in out.splitlines() if line.startswith("failed")] + compare_trees(py, rs)
+
+
 def run_status(command):
     start = time.time()
     result = subprocess.run([str(part) for part in command], capture_output=True, text=True, encoding="utf-8")
@@ -276,6 +327,9 @@ def main():
     command = checks.add_parser("disassemble")
     command.add_argument("extracted")
     command.add_argument("work")
+    command = checks.add_parser("compile")
+    command.add_argument("source", help="a decompiled tree")
+    command.add_argument("work")
     command = checks.add_parser("decompile")
     command.add_argument("extracted")
     command.add_argument("work")
@@ -286,7 +340,7 @@ def main():
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
     checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble,
-              "decompile": check_decompile}
+              "decompile": check_decompile, "compile": check_compile}
     problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)

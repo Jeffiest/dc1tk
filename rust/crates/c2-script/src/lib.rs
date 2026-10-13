@@ -2,6 +2,7 @@
 //! decompiling to C and compiling back.
 
 pub mod asm;
+pub mod compile;
 pub mod decompile;
 pub mod definitions;
 pub mod disc;
