@@ -1,4 +1,5 @@
-//! c2 setup ISO TREE: extract the retail disc (or reuse an extraction) and decompile every script;
+//! c2 setup ISO: extract the retail disc (or reuse an extraction), decompile every script and
+//! write the asset tree, all under extracted/;
 //! and c2 natives CHRONICLETWO: the native tables from a ChronicleTwo checkout.
 
 use std::path::{Path, PathBuf};
@@ -17,10 +18,17 @@ pub struct SetupArgs {
     /// The retail disc image.
     iso: PathBuf,
     /// Directory for the decompiled source tree.
+    #[arg(default_value = "extracted/scripts")]
     output: PathBuf,
     /// Where to extract the disc (reused when already there).
-    #[arg(long, default_value = "extracted")]
+    #[arg(long, default_value = "extracted/disc")]
     extracted: String,
+    /// Where to write the asset tree (replaced when already there).
+    #[arg(long, default_value = "extracted/assets")]
+    assets: PathBuf,
+    /// Leave the asset tree out.
+    #[arg(long)]
+    no_assets: bool,
     /// Overwrite files edited since the last decompile.
     #[arg(long)]
     force: bool,
@@ -48,6 +56,9 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
         common.tables()?,
         &common.sdk_dir(),
     )?;
+    if !args.no_assets {
+        return crate::asset_tree::run_assets(&args.iso, &args.assets, true, &common.def_sets());
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -139,6 +150,8 @@ mod tests {
             iso,
             output: folder.join("source"),
             extracted: extracted.to_string_lossy().into_owned(),
+            assets: folder.join("assets"),
+            no_assets: true,
             force: false,
             common: no_definitions(),
         };

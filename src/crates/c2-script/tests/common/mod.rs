@@ -12,7 +12,7 @@ use c2_script::vm::{self, Value};
 use c2_script::{compile, library, parse, sdk};
 use indexmap::IndexMap;
 
-/// The repository folder (this crate is rust/crates/c2-script).
+/// The repository folder (this crate is src/crates/c2-script).
 pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
@@ -20,7 +20,7 @@ pub fn root() -> PathBuf {
 /// The native tables, as natives.load() reads them.
 pub fn tables() -> &'static BTreeMap<String, Table> {
     static TABLES: OnceLock<BTreeMap<String, Table>> = OnceLock::new();
-    TABLES.get_or_init(|| natives::load(&root().join("natives")).unwrap())
+    TABLES.get_or_init(|| natives::load(&root().join("src").join("natives")).unwrap())
 }
 
 /// sdk.SDK_DIR.

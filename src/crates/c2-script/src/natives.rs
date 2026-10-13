@@ -453,7 +453,7 @@ static RS_EXTFUNC_INFO ext_func_info[3] = {
 
     #[test]
     fn generated_tables_are_present() {
-        let tables = load(&repository().join("natives")).unwrap();
+        let tables = load(&repository().join("src").join("natives")).unwrap();
         let counts: Vec<(&str, usize)> =
             TABLES.iter().map(|name| (*name, tables.get(*name).map_or(0, |table| table.natives.len()))).collect();
         assert_eq!(counts, [("event", 696), ("monster", 173), ("action", 82), ("effect", 128), ("arg", 2)]);

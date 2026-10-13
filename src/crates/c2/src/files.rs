@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 /// The repository folder: $C2_ROOT, or the nearest folder above the executable that has
-/// definitions/ (c2 runs from rust/target/release).
+/// definitions/ (c2 runs from target/release).
 pub fn root() -> PathBuf {
     if let Some(root) = std::env::var_os("C2_ROOT") {
         return PathBuf::from(root);
@@ -24,7 +24,7 @@ pub fn root() -> PathBuf {
 
 /// The native tables' folder c2 uses by default.
 pub fn natives_dir() -> PathBuf {
-    root().join("natives")
+    root().join("src").join("natives")
 }
 
 /// The shipped definition set.

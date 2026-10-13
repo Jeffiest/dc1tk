@@ -38,7 +38,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The repository folder (this crate is rust/crates/c2-script).
+/// The repository folder (this crate is src/crates/c2-script).
 pub fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
@@ -49,7 +49,7 @@ pub fn sdk_dir() -> PathBuf {
 
 /// The native tables c2 uses by default.
 pub fn tables() -> BTreeMap<String, Table> {
-    natives::load(&repo().join("natives")).unwrap()
+    natives::load(&repo().join("src").join("natives")).unwrap()
 }
 
 /// What the Python tests compile with: definitions.empty() (so no table rules), the headers

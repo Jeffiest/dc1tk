@@ -31,7 +31,7 @@ pub struct XrefArgs {
     #[arg(long)]
     map: Option<String>,
     /// The extracted disc, for monster models and AI scripts.
-    #[arg(long, default_value = "extracted")]
+    #[arg(long, default_value = "extracted/disc")]
     extracted: PathBuf,
     #[command(flatten)]
     common: Common,
@@ -42,7 +42,7 @@ pub struct MapsArgs {
     /// A decompiled source tree.
     source: PathBuf,
     /// The extracted disc, for map names.
-    #[arg(long, default_value = "extracted")]
+    #[arg(long, default_value = "extracted/disc")]
     extracted: PathBuf,
     #[command(flatten)]
     common: Common,
@@ -55,7 +55,7 @@ pub struct MapArgs {
     /// The map's code, as in s17.
     name: String,
     /// The extracted disc, for names and .map files.
-    #[arg(long, default_value = "extracted")]
+    #[arg(long, default_value = "extracted/disc")]
     extracted: PathBuf,
     #[command(flatten)]
     common: Common,

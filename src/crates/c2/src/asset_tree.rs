@@ -27,7 +27,7 @@ pub enum Command {
         /// An extracted disc directory, or the disc image.
         source: PathBuf,
         /// Directory to write.
-        #[arg(short, long, default_value = "assets")]
+        #[arg(short, long, default_value = "extracted/assets")]
         output: PathBuf,
         /// Replace the asset tree already in the directory.
         #[arg(long)]
@@ -152,7 +152,7 @@ pub(crate) fn index_of(source: &Path, defs: &[PathBuf]) -> Result<Index> {
 /// What a tree's folder holds that a new tree replaces.
 const TREE_PARTS: [&str; 4] = [tree::MANIFEST, tree::TEXTURES, tree::MODELS, tree::SOUNDS];
 
-fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -> Result<ExitCode> {
+pub fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -> Result<ExitCode> {
     let names = sound_names(defs)?;
     let has_files = std::fs::read_dir(output).map(|mut entries| entries.next().is_some()).unwrap_or(false);
     if has_files {
