@@ -4,6 +4,7 @@
 mod assets;
 mod files;
 mod modding;
+mod setup;
 mod tree_decompile;
 
 #[global_allocator]
@@ -85,6 +86,10 @@ impl Common {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Extract the retail disc and decompile every script with the definitions.
+    Setup(setup::SetupArgs),
+    /// Generate native function tables from a ChronicleTwo checkout.
+    Natives(setup::NativesArgs),
     /// Write every file in the disc's DATA.DAT.
     Extract { iso: PathBuf, out: String },
     /// Write a script as assembly text.
@@ -628,6 +633,8 @@ fn run_write_disc(iso: &Path, out: &Path, folder: &Path) -> Result<ExitCode> {
 
 fn run(command: &Command) -> Result<ExitCode> {
     match command {
+        Command::Setup(args) => setup::run_setup(args),
+        Command::Natives(args) => setup::run_natives(args),
         Command::Extract { iso, out } => run_extract(iso, out),
         Command::Disassemble { stb, output, table, common } => run_disassemble(stb, output.as_deref(), table, common),
         Command::Assemble { source, output, natives } => run_assemble(source, output, natives),

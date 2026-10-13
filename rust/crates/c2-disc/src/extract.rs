@@ -178,6 +178,54 @@ pub fn python_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::samples;
+
+    /// A fresh folder for a test, emptied first.
+    fn scratch(name: &str) -> PathBuf {
+        let folder = std::env::temp_dir().join(format!("c2-disc-extract-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        folder
+    }
+
+    // tests/test_extract.py
+
+    #[test]
+    fn extracts_archive_and_packs() {
+        let out = scratch("packs");
+        let manifest = extract(&samples::sample_disc(), &out).unwrap();
+        assert_eq!(fs::read(out.join("map/t01.stb")).unwrap(), samples::sample_script());
+        assert_eq!(fs::read(out.join("chara/c01.chr.d/c01.stb")).unwrap(), samples::sample_script());
+        assert_eq!(fs::read(out.join("chara/c01.chr.d/info.cfg")).unwrap(), b"MODEL c01;");
+        assert_eq!(fs::read(out.join("readme.txt")).unwrap(), b"hello");
+        assert_eq!(manifest.scripts, ["map/t01.stb", "chara/c01.chr.d/c01.stb"]);
+        let written: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(out.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(written, serde_json::to_value(&manifest).unwrap());
+        assert!(!out.join("manifest.json.partial").exists());
+        fs::remove_dir_all(&out).unwrap();
+    }
+
+    #[test]
+    fn manifest_records_sizes_and_packing() {
+        let out = scratch("sizes");
+        let manifest = extract(&samples::sample_disc(), &out).unwrap();
+        let sizes: HashMap<&str, (usize, bool)> =
+            manifest.files.iter().map(|item| (item.path.as_str(), (item.size, item.packed))).collect();
+        assert_eq!(sizes["readme.txt"], (5, false));
+        assert_eq!(sizes["chara/c01.chr.d/info.cfg"], (10, true));
+        fs::remove_dir_all(&out).unwrap();
+    }
+
+    #[test]
+    fn a_disc_without_system_cnf_has_no_boot_file() {
+        let out = scratch("boot");
+        assert_eq!(extract_boot(&samples::sample_disc(), &out).unwrap(), None);
+        let cnf = b"BOOT2 = cdrom0:\\SCES_511.90;1\r\nVER = 1.00\r\n";
+        let image = samples::iso_image(&[("SYSTEM.CNF", cnf), ("SCES_511.90", b"elf")]);
+        assert_eq!(extract_boot(&image, &out).unwrap().as_deref(), Some("SCES_511.90"));
+        assert_eq!(fs::read(out.join("SCES_511.90")).unwrap(), b"elf");
+        fs::remove_dir_all(&out).unwrap();
+    }
 
     #[test]
     fn splits_lines_as_python() {
