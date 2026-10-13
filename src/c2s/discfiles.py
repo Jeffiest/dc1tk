@@ -1,57 +1,80 @@
 import struct
 from pathlib import Path
 
-from c2s import archive, rebuild
+from c2s import archive, rebuild, textures
 
 # Game files a mod replaces: models, textures, sounds and anything else on the disc. A mod keeps
 # them under disc/, laid out as extract lays the disc out: a file at its path in DATA.DAT
 # (snd2/sp/sp_000.snd), or a member of a pack under the pack's name plus ".d"
 # (chara/c01_base.chr.d/c01b.img for the texture inside Max's character pack). build writes each
 # over the disc's own; members of packs inside packs work the same way (a.pac.d/b.chr.d/c.img).
-
 #
 # A game file can also be given in a common format, named after the file it stands for plus the
-# format's suffix (c01b.img.png): build converts it, with the disc's own file as the template
-# (palette size, sample rate, layout), and mod asset --as exports to it.
+# format's suffix: build converts it, with the disc's own file as the template (palette size,
+# sample rate, layout), and mod asset --as exports to it. Textures are a folder of PNGs
+# (c02a.img.png/c02a01.png, textures.py).
 
 DISC = "disc"
 PACK = ".d/"
 
 # Converters between game formats and common ones, by the common format's suffix: "game", the
-# suffixes of game files it converts; "build", (common file's bytes, the disc's own file) -> game
-# file; "export", the disc's own file -> common file's bytes.
-CONVERTERS = {}
+# suffix of the game files it converts; "folder", whether the common form is a folder of files;
+# "build", (the common file or folder, the disc's own file) -> game file; "export", the disc's own
+# file -> the common file's bytes, or {file name: bytes} for a folder.
+CONVERTERS = {
+    ".png": {"game": ".img", "folder": True, "build": textures.build, "export": textures.export},
+}
 
 
-def converter_for(path):
+def converter_for(path, folder=False):
     for suffix, converter in CONVERTERS.items():
         stem = path[:-len(suffix)]
-        if path.lower().endswith(suffix) and stem.lower().endswith(converter["game"]):
+        if path.lower().endswith(suffix) and stem.lower().endswith(converter["game"]) and converter["folder"] == folder:
             return stem, converter
     return path, None
 
 
-# {disc path: file} for the game files a mod holds; a file in a common format is keyed by the game
-# file it stands for.
+# The folder in a common format a mod file is inside (c02a.img.png/ for c02a.img.png/c02a01.png).
+def converter_folder(relative):
+    parts = relative.split("/")
+    for end in range(1, len(parts)):
+        folder = "/".join(parts[:end])
+        if converter_for(folder, True)[1] is not None:
+            return folder
+    return None
+
+
+# {disc path: file or folder} for the game files a mod holds; a file or folder in a common format is
+# keyed by the game file it stands for.
 def mod_files(mod_dir):
     root = Path(mod_dir) / DISC
     if not root.is_dir():
         return {}
     found = {}
     for path in sorted(root.rglob("*")):
-        if path.is_file():
-            target, _ = converter_for(path.relative_to(root).as_posix())
-            if target in found:
-                raise ValueError("%s: %s is given twice, as %s and %s" % (Path(mod_dir).name, target, found[target].name, path.name))
-            found[target] = path
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        folder = converter_folder(relative)
+        source = root / folder if folder else path
+        target, _ = converter_for(folder, True) if folder else converter_for(relative)
+        if target in found and found[target] != source:
+            raise ValueError("%s: %s is given twice, as %s and %s" % (Path(mod_dir).name, target, found[target].name, source.name))
+        found[target] = source
     return found
 
 
+def converter_of(source):
+    source = Path(source)
+    return converter_for(source.as_posix(), source.is_dir())[1]
+
+
 # The game file's bytes for a mod file: the file itself, or converted from its common format.
-def game_bytes(file, original):
-    _, converter = converter_for(Path(file).as_posix())
-    data = Path(file).read_bytes()
-    return converter["build"](data, original) if converter else data
+def game_bytes(source, original):
+    converter = converter_of(source)
+    if converter is None:
+        return Path(source).read_bytes()
+    return converter["build"](source if converter["folder"] else Path(source).read_bytes(), original)
 
 
 # The file of DATA.DAT a disc path is in, and the members down to it: chara/c01_base.chr.d/c01b.img
@@ -125,7 +148,7 @@ def replaced(iso_path, wanted, files, script_tops=()):
                 if top.lower() in lower:
                     raise ValueError("%s (mod %s): the disc has %s, in other case; the game would find that one"
                                      % (path, mod, lower[top.lower()]))
-                if converter_for(Path(file).as_posix())[1] is not None:
+                if converter_of(file) is not None:
                     raise ValueError("%s (mod %s): a new file is given as the game file itself" % (path, mod))
                 new = Path(file).read_bytes()
                 files[top] = new
@@ -142,7 +165,7 @@ def replaced(iso_path, wanted, files, script_tops=()):
                 if old is None:
                     # a member the pack does not have is added (a game file in a common format needs one
                     # to convert from, so it is given as the game file itself)
-                    if converter_for(Path(file).as_posix())[1] is not None:
+                    if converter_of(file) is not None:
                         raise ValueError("%s has no member %s to convert to; give the game file itself"
                                          % (top, "/".join(members)))
                     new = Path(file).read_bytes()
@@ -171,13 +194,21 @@ def copy_out(iso_path, mod_dir, paths, form=None):
             data = rebuild.read_member(archive.read_entry(f, disc, index[top]), members)
             if data is None:
                 raise ValueError("%s has no member %s" % (top, "/".join(members)))
+            target = Path(mod_dir) / DISC / path
             if form:
                 suffix = "." + form.lower().lstrip(".")
                 converter = CONVERTERS.get(suffix)
                 if converter is None or not path.lower().endswith(converter["game"]):
                     raise ValueError("%s cannot be exported as %s" % (path, form))
-                data, path = converter["export"](data), path + suffix
-            target = Path(mod_dir) / DISC / path
+                exported = converter["export"](data)
+                target = target.with_name(target.name + suffix)
+                if converter["folder"]:
+                    target.mkdir(parents=True, exist_ok=True)
+                    for name, content in exported.items():
+                        (target / name).write_bytes(content)
+                        written.append("%s%s/%s" % (path, suffix, name))
+                    continue
+                data, path = exported, path + suffix
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
             written.append(path)

@@ -279,9 +279,19 @@ character pack; packs inside packs work the same way).
   says how much is left after each build. Put new models, textures and
   sounds into packs where you can: a new member costs nothing there.
 - A game file can also be given in a common format, named after the file it
-  stands for plus the format's suffix (`c01b.img.png`): `build` converts it,
-  with the disc's own file as the template. `mod asset --as png` exports to
-  it.
+  stands for plus the format's suffix: `build` converts it, with the disc's
+  own file as the template, and `mod asset --as FORMAT` exports to it.
+- **Textures as PNG.** A texture file (`.img`) holds many named pictures,
+  and models find theirs by name. `mod asset ISO NAME
+  chara/c02a.chr.d/c02a.img --as png` writes a folder
+  `c02a.img.png/` with one PNG per picture (`c02a01.png`). Edit them in any
+  image editor and keep only the ones you change; the rest stay as they
+  are. `build` matches colours to the picture's palette when it can and
+  otherwise reduces the picture to its palette size (16 or 256 colours),
+  makes its mip levels again, and accepts a new size. Unedited PNGs build
+  back to the disc's own bytes. See [the texture format](assets/textures.md)
+  for the limits (a picture a `#texanime` script animates should keep its
+  size).
 
 **Additions.** The older way to add to a script without copying it, kept for
 mods that use it: its `mod.json` can list additions, applied when it is
