@@ -3,6 +3,7 @@
 
 pub mod additions;
 pub mod asm;
+pub mod build;
 pub mod assets;
 pub mod compile;
 pub mod decompile;
@@ -20,9 +21,11 @@ pub mod natives;
 pub mod notes;
 pub mod numbers;
 pub mod pathnames;
+pub mod patches;
 pub mod sdk;
 pub mod slots;
 pub mod soundpass;
+pub mod startat;
 pub mod source;
 #[macro_use]
 pub mod node;
@@ -30,6 +33,7 @@ pub mod parse;
 pub mod stack;
 pub mod stb;
 pub mod tree;
+pub mod vm;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

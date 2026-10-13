@@ -59,7 +59,7 @@ const CONDITIONALS: [&str; 6] = ["if", "ifdef", "ifndef", "elif", "else", "endif
 const SIMPLE: [&str; 5] = ["wait", "end", "skip_end", "break", "continue"];
 const BUILTINS: [&str; 2] = ["sin", "cos"];
 /// What a mod patch's #pragma target can pick scripts by.
-const TARGET_KINDS: [&str; 4] = ["map", "script", "monster", "library"];
+pub const TARGET_KINDS: [&str; 4] = ["map", "script", "monster", "library"];
 const LONG_OPERATORS: [&str; 3] = ["...", "<<=", ">>="];
 const OPERATORS: [&str; 18] =
     ["==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "++", "--", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="];

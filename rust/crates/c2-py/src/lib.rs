@@ -7,6 +7,7 @@ mod unicode_tables;
 
 use unicode_tables::{ALPHA, DECIMAL, DECIMAL_ZEROS, DIGIT, NUMERIC, PRINTABLE};
 
+pub mod difflib;
 pub mod json;
 
 /// Decimal digits and the exponent of a finite, non-negative value: value = 0.DIGITS × 10^point.
