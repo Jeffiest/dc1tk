@@ -7,8 +7,5 @@
 *.stb
 *.STB
 /*.asm
-/*.c
 /report.json
-
-# Build output
 /build/

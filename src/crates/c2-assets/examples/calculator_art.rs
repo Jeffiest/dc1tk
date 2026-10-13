@@ -3,7 +3,7 @@
 //! game's files.
 //!
 //! ```text
-//! cargo run --release -p c2-assets --example calculator_art -- examples/calculator
+//! cargo run --release -p c2-assets --example calculator_art -- docs/examples/calculator
 //! ```
 //!
 //! writes, under the folder given:
@@ -32,7 +32,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
     let Some(out) = std::env::args().nth(1) else {
-        return Err("usage: calculator_art <output folder>, e.g. examples/calculator".into());
+        return Err("usage: calculator_art <output folder>, e.g. docs/examples/calculator".into());
     };
     let out = Path::new(&out);
     for sub in ["ui", "model", "sounds"] {
