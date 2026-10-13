@@ -105,8 +105,14 @@ See [the design](docs/design.md). In order:
      as the Python on the whole PAL disc.
    - Done: the script reader (`c2 disassemble`, `c2 assemble`), the same
      text for all 1,398 scripts, 16 times faster.
-   - Next: the decompiler.
-2. **The asset tree**: `assets/` beside `decompiled/`, every distinct
+   - Done: the decompiler (`c2 decompile`, a whole disc in 21 s against
+     8 min 38 s) and the compiler (`c2 compile`), the same trees and bytes.
+   - Done: build and mods (`c2 build`, `c2 mod ...`, `c2 flags`), the same
+     images for every mod in `mods/`; and the asset converters
+     (`c2-assets`: PNG, WAV, glTF), the same files both ways.
+   - Done: `verify`, and the Python's tests as `cargo test`.
+   - Next: `xref`, `maps`, `defs`, `natives`, `setup`; then the Python goes.
+2. **The asset tree** (done: `c2 assets`): `assets/` beside `decompiled/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.
 3. **Mods by name**: `mod.json` maps asset ids (`texture:c02a02`,

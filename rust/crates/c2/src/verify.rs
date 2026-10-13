@@ -51,7 +51,7 @@ fn check_natives(path: &str, script: &stb::Script, tables: &BTreeMap<String, Tab
     };
     let calls = stack::native_calls(script);
     let known = found.numbered();
-    let mut unregistered: BTreeMap<String, i64> = BTreeMap::new();
+    let mut unregistered: indexmap::IndexMap<String, i64> = indexmap::IndexMap::new();
     for call in &calls {
         let Some(number) = call.no else {
             return fail(format!("no native number for EXT {} in function at 0x{:x}", call.index, call.function));
@@ -224,9 +224,14 @@ pub fn format_report(report: &Value, limit: usize) -> String {
     lines.push(format!("{:<10} {:>8} {:>8} {:>8} {:>8}", "stage", "pass", "fail", "error", "pending"));
     for stage in STAGES {
         let counts = &summary["stages"][stage];
+        let count = |status: &str| counts[status].as_u64().unwrap_or(0);
         lines.push(format!(
             "{:<10} {:>8} {:>8} {:>8} {:>8}",
-            stage, counts["pass"], counts["fail"], counts["error"], counts["pending"]
+            stage,
+            count("pass"),
+            count("fail"),
+            count("error"),
+            count("pending")
         ));
     }
     lines.push(String::new());
