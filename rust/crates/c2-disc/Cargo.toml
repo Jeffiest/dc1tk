@@ -1,0 +1,14 @@
+[package]
+name = "c2-disc"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Dark Chronicle's disc: the ISO 9660 image, DATA.HD4/DATA.DAT and the game's packs"
+
+[dependencies]
+encoding_rs.workspace = true
+memmap2.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

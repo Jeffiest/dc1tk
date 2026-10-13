@@ -99,7 +99,11 @@ See [the design](docs/design.md). In order:
 1. **Port to Rust** (`rust/`, one `c2` tool with `cli.py`'s commands),
    milestone by milestone, each ending when the Rust gives the Python's
    bytes (disc, scripts, mods, assets) and its tests run under `cargo test`;
-   then delete the Python. Work runs across all cores.
+   then delete the Python. Work runs across all cores. `rust/parity.py`
+   compares the two; [rust/README.md](rust/README.md) has what is ported.
+   - Done: the disc (`c2 extract`, writing an image, cp932), the same bytes
+     as the Python on the whole PAL disc.
+   - Next: the script reader (stb, vm, disassembly, definitions, names).
 2. **The asset tree**: `assets/` beside `decompiled/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.

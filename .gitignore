@@ -13,3 +13,6 @@ __pycache__/
 /*.asm
 /*.c
 /report.json
+
+# Rust build output
+/rust/target/
