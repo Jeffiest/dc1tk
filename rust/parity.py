@@ -10,6 +10,7 @@ same input in a work folder and compares; exit status 1 when anything differs.
   python rust/parity.py cp932 WORK                    every code and character through both codecs
   python rust/parity.py disassemble extracted WORK    every script disassembled by both, and c2
                                                       assembling each listing back to the script
+  python rust/parity.py decompile extracted WORK      every script's program tree (before names), as JSON
 
 Run from the repository folder, after cargo build --release in rust/. Images are 4.7 GB each; the
 work folder needs room for two.
@@ -185,6 +186,33 @@ def check_disassemble(args):
     return problems
 
 
+def check_decompile(args):
+    """Every script's program tree from decompile.decompile, before names and docs, compared as
+    JSON."""
+    from c2s import decompile, definitions, natives, stb, verify
+    work = Path(args.work)
+    py, rs = work / "py_tree", work / "rs_tree"
+    for folder in (py, rs):
+        if folder.exists():
+            raise SystemExit("%s exists; give an empty work folder" % folder)
+    root = Path(args.extracted)
+    defs = definitions.load([definitions.DEFAULT_SET])
+    tables = natives.load()
+    start = time.time()
+    scripts = verify.find_scripts(root)
+    for relative in scripts:
+        path = root / relative
+        table = natives.table_for(path.resolve().as_posix(), defs["tables"])
+        program = decompile.decompile(stb.read(path.read_bytes()), table, tables)
+        target = py / (relative + ".json")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(json.dumps(program, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    py_time = time.time() - start
+    _, rs_time = run([C2, "decompile-dump", root, rs])
+    print("%d scripts; python %.1fs, rust %.1fs" % (len(scripts), py_time, rs_time))
+    return compare_trees(py, rs)
+
+
 def run_status(command):
     start = time.time()
     result = subprocess.run([str(part) for part in command], capture_output=True, text=True, encoding="utf-8")
@@ -239,10 +267,14 @@ def main():
     command = checks.add_parser("disassemble")
     command.add_argument("extracted")
     command.add_argument("work")
+    command = checks.add_parser("decompile")
+    command.add_argument("extracted")
+    command.add_argument("work")
     args = parser.parse_args()
     if not C2.is_file():
         raise SystemExit("%s is missing; run cargo build --release in rust/" % C2)
-    checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble}
+    checks = {"extract": check_extract, "write-disc": check_write_disc, "cp932": check_cp932, "disassemble": check_disassemble,
+              "decompile": check_decompile}
     problems = checks[args.check](args)
     for problem in problems[:40]:
         print(problem)

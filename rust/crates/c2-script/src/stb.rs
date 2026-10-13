@@ -393,3 +393,69 @@ pub fn coverage(script: &Script) -> f64 {
 pub fn tail_padding(end: usize, code: usize) -> usize {
     (16 - (end - code) % 16) % 16
 }
+
+fn round16(size: usize) -> usize {
+    size.next_multiple_of(16)
+}
+
+fn encoded_strings(strings: &[String]) -> Result<Vec<u8>> {
+    let mut raw = Vec::new();
+    for text in strings {
+        raw.extend(encode_string(text)?);
+    }
+    Ok(raw)
+}
+
+// The original compiler kept one string buffer per file, zero-filled at the start. A function wrote
+// its pushed strings into it, rounded the write offset up to 16 and wrote the buffer up to there
+// after FUNC_END. Most files reset the offset for each function (block_padding: the strings, then
+// whatever the buffer held up to the next 16); some never reset it, so every function writes the
+// whole pool of the file's strings so far with its own after them (pool_block). After the last
+// function the code section is zero-filled to a multiple of 16 (tail_padding).
+
+/// The padding after a function's strings, and the buffer after writing them.
+pub fn block_padding(previous: &[u8], strings: &[String]) -> Result<(Vec<u8>, Vec<u8>)> {
+    let raw = encoded_strings(strings)?;
+    if raw.is_empty() {
+        return Ok((Vec::new(), previous.to_vec()));
+    }
+    let end = round16(raw.len());
+    let mut buffer = raw.clone();
+    if previous.len() > raw.len() {
+        buffer.extend_from_slice(&previous[raw.len()..]);
+    }
+    if buffer.len() < end {
+        buffer.resize(end, 0);
+    }
+    Ok((buffer[raw.len()..end].to_vec(), buffer))
+}
+
+/// A file's strings split at their zero ends.
+pub fn split_strings(data: &[u8]) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    let mut position = 0;
+    while position < data.len() {
+        let terminator =
+            find_zero(data, position, data.len()).ok_or_else(|| Error::invalid("a string is not ended"))?;
+        let raw = &data[position..terminator];
+        out.push(text::decode_strict(raw).ok_or_else(|| Error::invalid("a string is not cp932"))?);
+        position = terminator + 1;
+    }
+    Ok(out)
+}
+
+/// A function's block in a file whose string pool is never reset: the pool's strings, which come
+/// before its own in the block; the padding after them; the pool after the function. A function
+/// that pushes nothing writes the pool as padding, as the reader splits a block.
+pub fn pool_block(pool: &[u8], strings: &[String]) -> Result<(Vec<String>, Vec<u8>, Vec<u8>)> {
+    let raw = encoded_strings(strings)?;
+    if raw.is_empty() {
+        return Ok((Vec::new(), pool.to_vec(), pool.to_vec()));
+    }
+    let mut block = pool.to_vec();
+    block.extend(raw);
+    let fill = round16(block.len()) - block.len();
+    let prefix = split_strings(pool)?;
+    block.resize(block.len() + fill, 0);
+    Ok((prefix, vec![0; fill], block))
+}

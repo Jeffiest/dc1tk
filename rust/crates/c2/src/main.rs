@@ -3,6 +3,9 @@
 
 mod files;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -13,7 +16,7 @@ use clap::{Args, Parser, Subcommand};
 use rayon::prelude::*;
 
 use c2_disc::{extract, rebuild, Image};
-use c2_script::{asm, definitions, natives, stb};
+use c2_script::{asm, decompile, definitions, natives, stb};
 
 #[derive(Parser)]
 #[command(name = "c2", about = "Decompile, compile and mod Dark Chronicle (Dark Cloud 2)")]
@@ -103,6 +106,15 @@ enum Command {
         #[command(flatten)]
         common: Common,
     },
+    /// Decompile every script under a folder into OUT/<path>.json: the program tree before names
+    /// and docs, as compact JSON.
+    #[command(hide = true)]
+    DecompileDump {
+        root: PathBuf,
+        out: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
     /// Assemble every OUT/<path>.asm a disassemble-tree wrote and compare with the script it came
     /// from; prints the ones that differ.
     #[command(hide = true)]
@@ -160,6 +172,23 @@ fn run_disassemble_tree(root: &Path, out: &Path, common: &Common) -> Result<Exit
         Ok(())
     })?;
     println!("{} scripts disassembled into {}", scripts.len(), out.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+fn run_decompile_dump(root: &Path, out: &Path, common: &Common) -> Result<ExitCode> {
+    let rules = common.table_rules()?;
+    let tables = common.tables()?;
+    let scripts = files::find_scripts(root)?;
+    scripts.par_iter().try_for_each(|relative| -> Result<()> {
+        let path = root.join(relative);
+        let script = stb::read(&std::fs::read(&path)?);
+        let program = decompile::decompile(&script, &chosen_table(&None, &path, &rules), &tables);
+        let target = out.join(format!("{relative}.json"));
+        std::fs::create_dir_all(target.parent().unwrap())?;
+        std::fs::write(target, serde_json::to_string(&program)?)?;
+        Ok(())
+    })?;
+    println!("{} scripts decompiled into {}", scripts.len(), out.display());
     Ok(ExitCode::SUCCESS)
 }
 
@@ -221,6 +250,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::WriteDisc { iso, out, files } => run_write_disc(iso, out, files),
         Command::DisassembleTree { root, out, common } => run_disassemble_tree(root, out, common),
         Command::AssembleTree { root, asm, natives } => run_assemble_tree(root, asm, natives),
+        Command::DecompileDump { root, out, common } => run_decompile_dump(root, out, common),
     }
 }
 

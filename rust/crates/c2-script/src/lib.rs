@@ -2,8 +2,12 @@
 //! decompiling to C and compiling back.
 
 pub mod asm;
+pub mod decompile;
 pub mod definitions;
+pub mod fingerprint;
 pub mod natives;
+#[macro_use]
+pub mod node;
 pub mod stack;
 pub mod stb;
 

@@ -99,6 +99,9 @@ fn fixed(c: char) -> Option<Option<Vec<u8>>> {
 
 /// Encodes text as cp932, or None when it has a character cp932 lacks (Python's errors="strict").
 pub fn encode(text: &str) -> Option<Vec<u8>> {
+    if text.is_ascii() {
+        return Some(text.as_bytes().to_vec());
+    }
     let mut out = Vec::new();
     let mut run = String::new();
     for c in text.chars() {

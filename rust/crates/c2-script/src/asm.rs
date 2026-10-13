@@ -258,7 +258,7 @@ fn instruction_text(item: &Instruction, context: &mut Context) -> String {
     }
 }
 
-fn function_text(
+pub fn function_text(
     function: &Function,
     code: i64,
     functions: &HashSet<i64>,
