@@ -81,6 +81,21 @@ def build(folder, original):
         # becomes the one sound (its tune would otherwise play the new sound at each note)
         vags = {voice.vag for voice in voices}
         shared = any(set(bank.users_of_vag(vag)) - {number} for vag in vags)
+        old = {voice.vag for voice in bank.voices(entries[number])}
         bank.replace_entry(number, sound, mode="inplace" if voices and not shared else "detach")
+        free_unused(bank, old)
         changed = True
     return bank.build() if changed else original
+
+
+# Cuts the samples an entry played before it got samples of its own down to a silent stub when no
+# entry plays them any more, so the bank does not keep sound memory nothing uses. Not in a bank
+# with .sq sequences: which samples those play is not decoded.
+def free_unused(bank, vags):
+    if bank.pack.find("sq"):
+        return
+    stub = soundbank.encode_adpcm([0] * 28)
+    for vag in sorted(vags):
+        if len(bank.vag_data[vag]) > len(stub) and not bank.users_of_vag(vag):
+            bank.vag_data[vag] = stub
+            bank.hd.vags[vag].attribute = 0
