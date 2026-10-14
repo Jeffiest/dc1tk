@@ -460,12 +460,15 @@ struct MaterialKey {
     diffuse: Vec<f64>,
     ambient: Vec<f64>,
     origin: (usize, usize),
+    /// The frame's blend flags, when they become material settings.
+    flags: String,
 }
 
 impl MaterialKey {
     fn same(&self, other: &MaterialKey) -> bool {
         // the same Material object's colours compare equal even holding a NaN
         self.texture == other.texture
+            && self.flags == other.flags
             && (self.origin == other.origin || (self.diffuse == other.diffuse && self.ambient == other.ambient))
     }
 }
@@ -486,8 +489,356 @@ fn py_str(value: &Arg) -> String {
 /// textures in textures/.
 pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result<()> {
     let character = load_char(folder)?;
-    let (info, model) = (&character.info, &character.model);
+    export_parts(&character, &character.model, out, base, fps, &Options::default())?;
+    Ok(())
+}
+
+/// Exports one model (a map piece's .mds: no skin, no motion) to `<base>.gltf` and `<base>.bin` in
+/// `out`, with its textures in textures/, as the options say.
+pub fn export_model(model: &Mds, out: &mut Folder, base: &str, options: &Options) -> Result<Exported> {
+    let character = Character { info: CharInfo::default(), model: Mds::new(), bbp: None, wgt: None, motion: None };
+    export_parts(&character, model, out, base, 30.0, options)
+}
+
+/// How a model is exported. The default is the character export's: nodes and meshes named by
+/// their frames' base names, placeholder textures, materials from the MDT fields alone.
+#[derive(Clone, Copy, Default)]
+pub struct Options<'a> {
+    /// Name glTF nodes and meshes by the frames' whole names, `--` flags included (map meshes tell
+    /// frames apart by them: `grid54--f2appz0n1t-5_1` and `grid54--f2appz0n1t-6_1`).
+    pub full_names: bool,
+    /// Take each material's picture from these texture files (by picture name, the first file
+    /// holding it), with its GS CLAMP as the sampler's wrap; names none of them hold get a
+    /// placeholder.
+    pub textures: Option<&'a TextureSearch>,
+    /// Turn the frames' name flags (blend, alpha test, lighting) into glTF material settings, the
+    /// flags kept in the material's extras.
+    pub blend_flags: bool,
+    /// The model is collision (`-a` floor and wall, `-c` camera): materials are named for the
+    /// per-triangle attributes their diffuse colour encodes (`col_ground0_foot2_area6_mask12`) and
+    /// coloured by them, untextured.
+    pub collision: bool,
+}
+
+impl Options<'_> {
+    /// The options for a map's drawn mesh (`-m`): whole names, its textures, its blend flags.
+    pub fn map(textures: Option<&TextureSearch>) -> Options<'_> {
+        Options { full_names: true, textures, blend_flags: true, collision: false }
+    }
+
+    /// The options for a map's collision mesh (`-a`, `-c`): whole names, attribute materials.
+    pub fn collision() -> Options<'static> {
+        Options { full_names: true, textures: None, blend_flags: false, collision: true }
+    }
+}
+
+/// Whether a map model's file name is a collision mesh's (`-a` floor and wall, `-c` camera).
+pub fn is_collision_file(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with("-a.mds") || lower.ends_with("-c.mds")
+}
+
+/// What an export found, of the textures it gave placeholders: the names no texture file holds,
+/// and those registered without pixels (no_image pictures a texture animation fills at run time).
+#[derive(Clone, Debug, Default)]
+pub struct Exported {
+    pub missing_textures: Vec<String>,
+    pub no_image_textures: Vec<String>,
+}
+
+/// Pictures by name across a list of texture files (.img), the first file holding a name winning:
+/// the search path a map's materials find their pictures in (its own .img files, then shared ones).
+pub struct TextureSearch {
+    pictures: Vec<(String, im3::Image)>,
+    by_name: std::collections::HashMap<String, usize>,
+    pngs: std::sync::Mutex<std::collections::HashMap<usize, Vec<u8>>>,
+}
+
+impl TextureSearch {
+    /// The pictures of the texture files (file name, contents), searched in this order.
+    pub fn new(files: &[(String, Vec<u8>)]) -> Result<TextureSearch> {
+        let mut search = TextureSearch { pictures: Vec::new(), by_name: Default::default(), pngs: Default::default() };
+        for (name, data) in files {
+            search.add(name, data)?;
+        }
+        Ok(search)
+    }
+
+    /// Adds a texture file's pictures at the end of the search path.
+    pub fn add(&mut self, file: &str, data: &[u8]) -> Result<()> {
+        for image in im3::read(data)? {
+            if !self.by_name.contains_key(&image.name) {
+                self.by_name.insert(image.name.clone(), self.pictures.len());
+            }
+            self.pictures.push((file.to_string(), image));
+        }
+        Ok(())
+    }
+
+    /// The texture file holding a picture of this name first, and the picture (case-sensitive, as
+    /// the engine's texture manager compares names).
+    pub fn find(&self, name: &str) -> Option<(&str, &im3::Image)> {
+        self.by_name.get(name).map(|&i| (self.pictures[i].0.as_str(), &self.pictures[i].1))
+    }
+
+    /// The PNG of a picture of this name, None when no file holds it or it has no pixels.
+    pub fn png(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        let Some(&i) = self.by_name.get(name) else {
+            return Ok(None);
+        };
+        let image = &self.pictures[i].1;
+        if image.no_image {
+            return Ok(None);
+        }
+        if let Some(png) = self.pngs.lock().unwrap().get(&i) {
+            return Ok(Some(png.clone()));
+        }
+        let png = im3::to_png(image, true)?;
+        self.pngs.lock().unwrap().insert(i, png.clone());
+        Ok(Some(png))
+    }
+}
+
+const REPEAT: i64 = 10497;
+const CLAMP_TO_EDGE: i64 = 33071;
+
+/// The glTF wrap modes (s, t) of a GS CLAMP register value: WMS in bits 0-1, WMT in bits 2-3
+/// (0 repeat, 1 clamp, 2 region clamp, 3 region repeat). IM2 pictures have no CLAMP: repeat.
+pub fn wrap_of(clamp: Option<u64>) -> (i64, i64) {
+    let mode = |bits: u64| if bits == 1 || bits == 2 { CLAMP_TO_EDGE } else { REPEAT };
+    match clamp {
+        Some(c) => (mode(c & 3), mode((c >> 2) & 3)),
+        None => (REPEAT, REPEAT),
+    }
+}
+
+/// A frame's blend mode from its name flags (`aPP`, `aNN`, `aOF`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Blend {
+    Add,
+    Subtract,
+    Opaque,
+}
+
+/// The draw settings a frame's name flags give it, as mgSetFrameAttr reads them, those of its
+/// ancestors' flags marked with a '.' first. None where no flag sets one.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FrameFlags {
+    pub blend: Option<Blend>,
+    /// The alpha test reference (`aXX`, hex; 0x80 is opaque).
+    pub alpha_ref: Option<i64>,
+    /// `c0` draws without lighting, `c1` with it.
+    pub lit: Option<bool>,
+    /// `z0` writes no depth.
+    pub z_write: Option<bool>,
+    /// `fN`.
+    pub fog: Option<i64>,
+}
+
+impl FrameFlags {
+    /// The flags after the name's `--` applied over these; with `dotted` only those marked with a
+    /// '.' (the ones the engine pushes down to the frame's subtree).
+    fn apply(&mut self, name: &str, dotted: bool) {
+        let Some((_, flags)) = name.split_once("--") else {
+            return;
+        };
+        let mut text: Vec<u8> = flags.bytes().collect();
+        text.extend([0, 0, 0]);
+        let digit = |c: u8| c as i64 - b'0' as i64;
+        let (mut i, mut apply) = (0, false);
+        while i <= flags.len() {
+            let before = self.clone();
+            let mut set = true;
+            match text[i].to_ascii_lowercase() {
+                b'a' => {
+                    let code = [text[i + 1].to_ascii_uppercase(), text[i + 2].to_ascii_uppercase()];
+                    i += 2;
+                    match &code {
+                        b"PP" => self.blend = Some(Blend::Add),
+                        b"NN" => self.blend = Some(Blend::Subtract),
+                        b"OF" => self.blend = Some(Blend::Opaque),
+                        _ => {
+                            let hex = |c: u8| (c as char).to_digit(16).unwrap_or(0) as i64;
+                            // htoi of the two characters, stopping at a NUL
+                            self.alpha_ref =
+                                Some(if code[1] == 0 { hex(code[0]) } else { hex(code[0]) * 16 + hex(code[1]) });
+                        }
+                    }
+                }
+                b'c' => {
+                    i += 1;
+                    self.lit = Some(digit(text[i]) != 0);
+                }
+                b'z' => {
+                    i += 1;
+                    if text[i].eq_ignore_ascii_case(&b'p') {
+                        i += 1;
+                    } else {
+                        self.z_write = Some(digit(text[i]) != 0);
+                    }
+                }
+                b'f' => {
+                    i += 1;
+                    self.fog = Some(digit(text[i]));
+                }
+                b'v' | b'm' | b's' | b'n' | b'o' | b'b' => {
+                    i += 1;
+                    if text[i - 1].eq_ignore_ascii_case(&b'v') && text[i].eq_ignore_ascii_case(&b'c') {
+                        i += 1;
+                    }
+                    set = false;
+                }
+                _ => set = false,
+            }
+            if dotted && !(apply && set) {
+                *self = before;
+            }
+            apply = text.get(i) == Some(&b'.');
+            i += 1;
+        }
+    }
+
+    /// Every frame's flags, its ancestors' '.' flags first (parents come before their children).
+    pub fn of_model(model: &Mds) -> Vec<FrameFlags> {
+        let mut inherited: Vec<FrameFlags> = Vec::with_capacity(model.nodes.len());
+        let mut out = Vec::with_capacity(model.nodes.len());
+        for node in &model.nodes {
+            let parent = usize::try_from(node.parent).ok().filter(|&p| p < inherited.len());
+            let base = parent.map(|p| inherited[p].clone()).unwrap_or_default();
+            let mut own = base.clone();
+            own.apply(&node.name, false);
+            let mut down = base;
+            down.apply(&node.name, true);
+            inherited.push(down);
+            out.push(own);
+        }
+        out
+    }
+
+    /// The glTF alpha mode (and cutoff) these settings come closest to: additive and subtractive
+    /// blending are BLEND, an alpha test MASK, `aOF` OPAQUE; otherwise BLEND when the material's
+    /// diffuse alpha is below 1.
+    pub fn alpha_mode(&self, diffuse_alpha: f64) -> Option<(&'static str, Option<f64>)> {
+        match (self.blend, self.alpha_ref) {
+            (Some(Blend::Add | Blend::Subtract), _) => Some(("BLEND", None)),
+            (_, Some(r)) if r > 0 => Some(("MASK", Some(py::min(1.0, r as f64 / 128.0)))),
+            (Some(Blend::Opaque), _) => None,
+            _ if diffuse_alpha < 1.0 => Some(("BLEND", None)),
+            _ => None,
+        }
+    }
+
+    fn extras(&self, own: &str, inherited: &str) -> Value {
+        let mut out = object! {"mds_flags" => own};
+        if !inherited.is_empty() {
+            out.set("inherited_flags", Value::from(inherited));
+        }
+        if let Some(blend) = self.blend {
+            let name = match blend {
+                Blend::Add => "add",
+                Blend::Subtract => "subtract",
+                Blend::Opaque => "opaque",
+            };
+            out.set("blend", Value::from(name));
+        }
+        if let Some(r) = self.alpha_ref {
+            out.set("alpha_ref", Value::from(r));
+        }
+        if let Some(lit) = self.lit {
+            out.set("lit", Value::Bool(lit));
+        }
+        if let Some(z) = self.z_write {
+            out.set("z_write", Value::Bool(z));
+        }
+        if let Some(fog) = self.fog {
+            out.set("fog", Value::from(fog));
+        }
+        out
+    }
+}
+
+/// The per-triangle attributes a collision material's diffuse colour encodes (LoadCollisionFile):
+/// ground = (int)(r*0.7+0.01), foot sound = (int)(g*0.7+0.01), area = (int)(b*0.7+0.01), ignore
+/// mask = (int)(1-a), in the engine's float32 arithmetic.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct CollisionAttributes {
+    pub ground: i64,
+    pub foot: i64,
+    pub area: i64,
+    pub mask: i64,
+}
+
+impl CollisionAttributes {
+    pub fn decode(diffuse: &[f64]) -> CollisionAttributes {
+        let d = |i: usize| diffuse.get(i).copied().unwrap_or(1.0) as f32;
+        let k = |x: f32| (x * 0.7f32 + 0.01f32) as i64;
+        CollisionAttributes { ground: k(d(0)), foot: k(d(1)), area: k(d(2)), mask: (1.0f32 - d(3)) as i64 }
+    }
+
+    /// The diffuse colour that encodes these attributes: k/0.7 as float32, alpha 1-mask.
+    pub fn encode(&self) -> Vec<f64> {
+        let k = |v: i64| (v as f64 / 0.7) as f32 as f64;
+        vec![k(self.ground), k(self.foot), k(self.area), (1.0 - self.mask as f64) as f32 as f64]
+    }
+
+    /// The material name: `col_ground0_foot2_area6_mask12`.
+    pub fn name(&self) -> String {
+        format!("col_ground{}_foot{}_area{}_mask{}", self.ground, self.foot, self.area, self.mask)
+    }
+
+    /// The attributes a material name gives (Blender's ".001" suffix allowed), or None.
+    pub fn parse(name: &str) -> Option<CollisionAttributes> {
+        let name = match name.rsplit_once('.') {
+            Some((stem, digits)) if !digits.is_empty() && digits.bytes().all(|c| c.is_ascii_digit()) => stem,
+            _ => name,
+        };
+        let rest = name.strip_prefix("col_")?;
+        let mut values = [None; 4];
+        for part in rest.split('_') {
+            let (slot, digits) = [("ground", 0), ("foot", 1), ("area", 2), ("mask", 3)]
+                .iter()
+                .find_map(|(label, slot)| part.strip_prefix(label).map(|digits| (*slot, digits)))?;
+            if values[slot].is_some() {
+                return None;
+            }
+            values[slot] = Some(digits.parse::<i64>().ok()?);
+        }
+        Some(CollisionAttributes {
+            ground: values[0].unwrap_or(0),
+            foot: values[1].unwrap_or(0),
+            area: values[2].unwrap_or(0),
+            mask: values[3].unwrap_or(0),
+        })
+    }
+
+    /// A colour to show the attributes by (water areas 1 and 7 blue; others by foot sound and area).
+    fn display_colour(&self) -> Vec<f64> {
+        if self.area == 1 || self.area == 7 {
+            return vec![0.2, 0.4, 0.9, 1.0];
+        }
+        let mut hasher = flate2::Crc::new();
+        hasher.update(format!("{} {} {} {}", self.ground, self.foot, self.area, self.mask).as_bytes());
+        let h = hasher.sum();
+        let c = |shift: u32| 0.25 + ((h >> shift) & 0xFF) as f64 / 255.0 * 0.6;
+        vec![c(0), c(8), c(16), 1.0]
+    }
+}
+
+/// export with the character's parts (info, weights, pose, motion) and the model to write.
+fn export_parts(
+    character: &Character,
+    model: &Mds,
+    out: &mut Folder,
+    base: &str,
+    fps: f64,
+    options: &Options,
+) -> Result<Exported> {
+    let info = &character.info;
     let deform: Vec<&str> = info.vertex_anime.iter().map(String::as_str).collect();
+    let mut missing_textures: Vec<String> = Vec::new();
+    let mut no_image_textures: Vec<String> = Vec::new();
+    let mut extensions_used: Vec<&str> = Vec::new();
+    let flags_of = if options.blend_flags { FrameFlags::of_model(model) } else { Vec::new() };
     let mut g = Gltf {
         bin: Vec::new(),
         scene_nodes: Vec::new(),
@@ -505,9 +856,18 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
     let world = model.world_matrices()?;
     let nodes = &model.nodes;
 
+    let full_names = options.full_names;
+    fn name_of(node: &mds::Node, full: bool) -> &str {
+        if full {
+            node.name.as_str()
+        } else {
+            node.base_name()
+        }
+    }
+    let name_of = |node| name_of(node, full_names);
     for (i, node) in nodes.iter().enumerate() {
         let (t, r, s) = decompose(&node.matrix)?;
-        let name = if node.base_name().is_empty() { format!("node{i}") } else { node.base_name().to_string() };
+        let name = if name_of(node).is_empty() { format!("node{i}") } else { name_of(node).to_string() };
         let mut gn = object! {"name" => name};
         if t.iter().any(|x| x.abs() > 0.0) {
             gn.set("translation", Value::floats(&t));
@@ -546,6 +906,23 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
 
     let mut texture_index: Vec<(String, usize)> = Vec::new();
     let mut material_index: Vec<(MaterialKey, usize)> = Vec::new();
+    // per frame: its own flag text, and its ancestors' flag texts that push flags down ('.')
+    let flag_text = |node: &mds::Node| node.name.split_once("--").map_or("", |(_, flags)| flags).to_string();
+    let mut inherited_text: Vec<String> = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let up = usize::try_from(node.parent).ok().filter(|&p| p < inherited_text.len());
+        let mut text = up.map(|p| inherited_text[p].clone()).unwrap_or_default();
+        if let Some(p) = up {
+            let parent_flags = flag_text(&nodes[p]);
+            if parent_flags.contains('.') {
+                if !text.is_empty() {
+                    text.push(' ');
+                }
+                text.push_str(&parent_flags);
+            }
+        }
+        inherited_text.push(text);
+    }
     // a texture name the file system cannot hold fails the export, as writing its file does
     let mut failed: Option<String> = None;
     let mut material = |g: &mut Gltf,
@@ -553,15 +930,49 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
                         m: &Material,
                         origin: (usize, usize),
                         textured: bool|
-     -> usize {
+     -> Result<usize> {
+        let flags = flags_of.get(origin.0);
+        let flag_key = match flags {
+            Some(_) => format!("{}|{}", flag_text(&nodes[origin.0]), inherited_text[origin.0]),
+            None => String::new(),
+        };
         let key = MaterialKey {
             texture: if textured { m.texture.clone() } else { String::new() },
             diffuse: m.diffuse.clone(),
             ambient: m.ambient.clone(),
             origin,
+            flags: flag_key,
         };
         if let Some((_, index)) = material_index.iter().find(|(k, _)| k.same(&key)) {
-            return *index;
+            return Ok(*index);
+        }
+        let mut extras = object! {
+            "mdt_diffuse" => Value::floats(&m.diffuse),
+            "mdt_ambient" => Value::floats(&m.ambient),
+            "mdt_specular" => Value::floats(&m.specular),
+            "mdt_power" => m.power,
+            "texture" => m.texture.as_str(),
+        };
+        if options.collision {
+            // untextured, named and coloured for the attributes the diffuse colour encodes
+            let attributes = CollisionAttributes::decode(&m.diffuse);
+            extras.set(
+                "collision",
+                object! {
+                    "ground" => attributes.ground,
+                    "foot" => attributes.foot,
+                    "area" => attributes.area,
+                    "mask" => attributes.mask,
+                },
+            );
+            let pbr = object! {
+                "baseColorFactor" => Value::floats(&attributes.display_colour()),
+                "metallicFactor" => 0.0,
+                "roughnessFactor" => 1.0,
+            };
+            g.materials.push(object! {"name" => attributes.name(), "pbrMetallicRoughness" => pbr, "extras" => extras});
+            material_index.push((key, g.materials.len() - 1));
+            return Ok(g.materials.len() - 1);
         }
         let factor: Vec<f64> = m.diffuse.iter().map(|&x| py::max(0.0, py::min(1.0, x))).collect();
         let mut pbr =
@@ -574,14 +985,72 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
                         failed = Some(format!("cannot write a texture named {}", im3::str_repr(&m.texture)));
                     }
                     let file = format!("{}.png", m.texture);
-                    out.write(&format!("textures/{file}"), placeholder_png(&m.texture));
-                    if g.samplers.is_empty() {
-                        g.samplers.push(object! {"magFilter" => 9729i64, "minFilter" => 9729i64});
-                    }
+                    let mut texture_extras = None;
+                    let sampler = match options.textures {
+                        None => {
+                            out.write(&format!("textures/{file}"), placeholder_png(&m.texture));
+                            None
+                        }
+                        Some(search) => match (search.png(&m.texture)?, search.find(&m.texture)) {
+                            (png, Some((img, image))) => {
+                                let mut e = object! {"img" => img};
+                                if let Some(clamp) = image.clamp {
+                                    e.set("gs_clamp", Value::Int(clamp as i64));
+                                }
+                                match png {
+                                    Some(png) => out.write(&format!("textures/{file}"), png),
+                                    None => {
+                                        // registered without pixels: a texture animation fills it
+                                        out.write(&format!("textures/{file}"), placeholder_png(&m.texture));
+                                        e.set("no_image", Value::Bool(true));
+                                        if !no_image_textures.contains(&m.texture) {
+                                            no_image_textures.push(m.texture.clone());
+                                        }
+                                    }
+                                }
+                                texture_extras = Some(e);
+                                Some(wrap_of(image.clamp))
+                            }
+                            (_, None) => {
+                                out.write(&format!("textures/{file}"), placeholder_png(&m.texture));
+                                if !missing_textures.contains(&m.texture) {
+                                    missing_textures.push(m.texture.clone());
+                                }
+                                texture_extras = Some(object! {"missing" => true});
+                                Some((REPEAT, REPEAT))
+                            }
+                        },
+                    };
+                    let sampler_index = match sampler {
+                        None => {
+                            if g.samplers.is_empty() {
+                                g.samplers.push(object! {"magFilter" => 9729i64, "minFilter" => 9729i64});
+                            }
+                            0
+                        }
+                        Some((s, t)) => {
+                            let wanted =
+                                object! {"magFilter" => 9729i64, "minFilter" => 9729i64, "wrapS" => s, "wrapT" => t};
+                            let text = wanted.sorted_text();
+                            match g.samplers.iter().position(|known| known.sorted_text() == text) {
+                                Some(at) => at,
+                                None => {
+                                    g.samplers.push(wanted);
+                                    g.samplers.len() - 1
+                                }
+                            }
+                        }
+                    };
                     g.images.push(object! {"uri" => format!("textures/{file}"), "name" => m.texture.as_str()});
-                    g.textures.push(
-                        object! {"source" => g.images.len() - 1, "sampler" => 0i64, "name" => m.texture.as_str()},
-                    );
+                    let mut texture = object! {
+                        "source" => g.images.len() - 1,
+                        "sampler" => sampler_index,
+                        "name" => m.texture.as_str(),
+                    };
+                    if let Some(e) = texture_extras {
+                        texture.set("extras", e);
+                    }
+                    g.textures.push(texture);
                     texture_index.push((m.texture.clone(), g.textures.len() - 1));
                     g.textures.len() - 1
                 }
@@ -593,23 +1062,30 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
             if m.texture.is_empty() { "untextured" } else { &m.texture },
             if textured { "" } else { "_notex" }
         );
-        let mut gm = object! {
-            "name" => name,
-            "pbrMetallicRoughness" => pbr,
-            "extras" => object! {
-                "mdt_diffuse" => Value::floats(&m.diffuse),
-                "mdt_ambient" => Value::floats(&m.ambient),
-                "mdt_specular" => Value::floats(&m.specular),
-                "mdt_power" => m.power,
-                "texture" => m.texture.as_str(),
-            },
+        let alpha = m.diffuse.get(3).copied().unwrap_or(1.0);
+        let mode = match flags {
+            Some(flags) => {
+                extras.set("frame_flags", flags.extras(&flag_text(&nodes[origin.0]), &inherited_text[origin.0]));
+                flags.alpha_mode(alpha)
+            }
+            None => (alpha < 1.0).then_some(("BLEND", None)),
         };
-        if m.diffuse.get(3).is_some_and(|&a| a < 1.0) {
-            gm.set("alphaMode", Value::from("BLEND"));
+        let mut gm = object! {"name" => name, "pbrMetallicRoughness" => pbr, "extras" => extras};
+        if let Some((mode, cutoff)) = mode {
+            gm.set("alphaMode", Value::from(mode));
+            if let Some(cutoff) = cutoff {
+                gm.set("alphaCutoff", Value::Float(cutoff));
+            }
+        }
+        if flags.is_some_and(|f| f.lit == Some(false)) {
+            gm.set("extensions", object! {"KHR_materials_unlit" => Value::object()});
+            if !extensions_used.contains(&"KHR_materials_unlit") {
+                extensions_used.push("KHR_materials_unlit");
+            }
         }
         g.materials.push(gm);
         material_index.push((key, g.materials.len() - 1));
-        g.materials.len() - 1
+        Ok(g.materials.len() - 1)
     };
 
     let mut any_skinned = false;
@@ -712,7 +1188,7 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
             if (*mat as usize) < t.materials.len() {
                 gp.set(
                     "material",
-                    Value::from(material(&mut g, out, &t.materials[*mat as usize], (i, *mat as usize), *hu)),
+                    Value::from(material(&mut g, out, &t.materials[*mat as usize], (i, *mat as usize), *hu)?),
                 );
             }
             prims.push(gp);
@@ -720,16 +1196,20 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
         if prims.is_empty() {
             continue;
         }
+        let mut mesh_extras = object! {"mdt_style" => t.style.to_string()};
+        if options.full_names {
+            mesh_extras.set("mds_index", Value::from(i));
+        }
         g.meshes.push(object! {
-            "name" => node.base_name(),
+            "name" => name_of(node),
             "primitives" => Value::List(prims),
-            "extras" => object! {"mdt_style" => t.style.to_string()},
+            "extras" => mesh_extras,
         });
         let mesh = g.meshes.len() - 1;
         if skinned {
             any_skinned = true;
             g.nodes.push(object! {
-                "name" => format!("{}_skin", node.base_name()),
+                "name" => format!("{}_skin", name_of(node)),
                 "mesh" => mesh,
                 "skin" => 0i64,
                 "extras" => object! {"mds_index" => i, "skinned_mesh_of" => node.name.as_str()},
@@ -832,17 +1312,102 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
             });
         }
     }
-    let asset = object! {
-        "version" => "2.0",
-        "generator" => "ChronicleTwo-Script c2",
-        "extras" => object! {
+    let character_export =
+        !(options.full_names || options.textures.is_some() || options.blend_flags || options.collision);
+    let extras = if character_export {
+        object! {
             "source" => object! {"base" => "pack"},
             "fps_assumed" => fps,
             "note" => "textures are placeholders; MDS node i = glTF node i",
-        },
+        }
+    } else {
+        let mut extras = object! {
+            "source" => object! {"base" => "mds"},
+            "note" => "MDS node i = glTF node i (extras.mds_index); names are the MDS names whole",
+        };
+        if options.collision {
+            extras.set("collision", Value::Bool(true));
+        }
+        extras
     };
-    let (json, bin) = g.json(asset, base);
+    let asset = object! {"version" => "2.0", "generator" => "ChronicleTwo-Script c2", "extras" => extras};
+    let (mut json, bin) = g.json(asset, base);
+    if !extensions_used.is_empty() {
+        if let Value::Object(items) = &mut json {
+            let used = Value::List(extensions_used.iter().map(|&e| Value::from(e)).collect());
+            items.insert(1, ("extensionsUsed".to_string(), used));
+        }
+    }
     out.write(&format!("{base}.bin"), bin);
     out.write(&format!("{base}.gltf"), crate::json::dumps_compact(&json).into_bytes());
-    Ok(())
+    Ok(Exported { missing_textures, no_image_textures })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flags(names: &[(&str, i32)]) -> Vec<FrameFlags> {
+        let mut model = Mds::new();
+        for (name, parent) in names {
+            model.nodes.push(mds::Node::new(name, *parent));
+        }
+        FrameFlags::of_model(&model)
+    }
+
+    #[test]
+    fn name_flags_read_as_the_engine_reads_them() {
+        let found = flags(&[("glow--n1z0c0f2app-", -1), ("leaf--a40aof-", -1), ("plain", -1), ("x--aNN", -1)]);
+        assert_eq!(
+            found[0],
+            FrameFlags {
+                blend: Some(Blend::Add),
+                alpha_ref: None,
+                lit: Some(false),
+                z_write: Some(false),
+                fog: Some(2)
+            }
+        );
+        assert_eq!(found[1], FrameFlags { blend: Some(Blend::Opaque), alpha_ref: Some(0x40), ..FrameFlags::default() });
+        assert_eq!(found[2], FrameFlags::default());
+        assert_eq!(found[3].blend, Some(Blend::Subtract));
+        assert_eq!(found[0].alpha_mode(1.0), Some(("BLEND", None)));
+        assert_eq!(found[1].alpha_mode(1.0), Some(("MASK", Some(0.5))));
+        assert_eq!(found[2].alpha_mode(0.5), Some(("BLEND", None)));
+        assert_eq!(found[2].alpha_mode(1.0), None);
+        // a '.' pushes the flag down the subtree; a child's own flag wins for itself only
+        let tree = flags(&[("top--.c0z0", -1), ("mid--c1", 0), ("leaf", 1)]);
+        assert_eq!((tree[0].lit, tree[0].z_write), (Some(false), Some(false)));
+        assert_eq!((tree[1].lit, tree[1].z_write), (Some(true), None));
+        assert_eq!((tree[2].lit, tree[2].z_write), (Some(false), None));
+    }
+
+    #[test]
+    fn collision_attributes_encode_and_decode_in_float32() {
+        for k in 0..=255 {
+            let a = CollisionAttributes { ground: k, foot: k, area: k, mask: k };
+            assert_eq!(CollisionAttributes::decode(&a.encode()), a);
+            assert_eq!(CollisionAttributes::parse(&a.name()), Some(a));
+        }
+        // as the disc stores them: zero as 1.0, foot sound 2 as 2.8571, area 6, mask 12
+        let disc = CollisionAttributes::decode(&[1.0, 2.8571, 8.5714, -11.0]);
+        assert_eq!(disc, CollisionAttributes { ground: 0, foot: 2, area: 6, mask: 12 });
+        assert_eq!(disc.name(), "col_ground0_foot2_area6_mask12");
+        assert_eq!(CollisionAttributes::parse("col_ground0_foot2_area6_mask12.004"), Some(disc));
+        assert_eq!(
+            CollisionAttributes::parse("col_foot3"),
+            Some(CollisionAttributes { foot: 3, ..Default::default() })
+        );
+        for bad in ["wall", "col_foot", "col_feet2", "col_foot2_foot3"] {
+            assert_eq!(CollisionAttributes::parse(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn gs_clamp_gives_the_wrap() {
+        assert_eq!(wrap_of(Some(5)), (CLAMP_TO_EDGE, CLAMP_TO_EDGE));
+        assert_eq!(wrap_of(Some(0)), (REPEAT, REPEAT));
+        assert_eq!(wrap_of(Some(1)), (CLAMP_TO_EDGE, REPEAT));
+        assert_eq!(wrap_of(None), (REPEAT, REPEAT));
+    }
 }

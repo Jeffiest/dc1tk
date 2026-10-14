@@ -14,9 +14,9 @@ The code, in `src/crates/c2-assets/src/`:
 | `mds.rs` | MDS parse/edit/write |
 | `mot.rs` | .mot/.wgt key-list files and .bbp tables |
 | `info_cfg.rs` | info.cfg reader (same tokenising rules as `CScriptInterpreter`) |
-| `to_gltf.rs` | character pack -> glTF 2.0 (.gltf + .bin + textures) |
+| `to_gltf.rs` | character pack or map model -> glTF 2.0 (.gltf + .bin + textures; map options in 6.1) |
 | `from_gltf.rs` | glTF -> MDS + .wgt + .bbp, with the original MDS as a template (section 7) |
-| `models.rs` | the glTF folders mods use (`mod asset --as gltf`, `build`) |
+| `models.rs` | the glTF folders mods use (`mod asset --as gltf`, `build`); map models (`export_map_model`, `build_map_model`) |
 
 Mods use these through `models.rs`: textures come from the pack's own
 `.img` files (not placeholders), only meshes that differ from the export are
@@ -355,6 +355,39 @@ which puts the pack's own textures in place of the placeholders.
   rest pose differs from the bbp, so the rest pose shows deformed skin parts, as the engine would
   before a motion runs.
 
+### 6.1 Options for map models (`to_gltf::Options`, `export_model`)
+
+`to_gltf::export_model(model, out, base, options)` exports one MDS on its own (no info.cfg, skin or
+motion), the way a map piece is; `models::export_map_model(data, stem, options)` does it for a
+file's bytes. `Options::default()` is the character export above (its output is unchanged, byte
+for byte, on all 1,950 packs). The options, all off by default:
+
+- `full_names`: glTF nodes and meshes are named by the frames' whole names, `--` flags included
+  (`grid54--f2appz0n1t-5_1`), since map meshes are told apart by them ([maps.md](maps.md) 4.1);
+  meshes also get `extras.mds_index`. Nodes always carry `extras.mds_index` and `extras.mds_name`.
+- `textures`: a `to_gltf::TextureSearch`, the pictures of a list of `.img` files searched by
+  picture name (case-sensitive, the first file holding a name wins). Each material's picture is
+  written as its PNG (`im3::to_png`) instead of a placeholder, and its sampler's wrap comes from
+  the picture's GS CLAMP (`wrap_of`: WMS bits 0-1 and WMT bits 2-3; 0 repeat and 3 region repeat
+  give REPEAT, 1 clamp and 2 region clamp CLAMP_TO_EDGE; IM2 pictures have no CLAMP and repeat).
+  The texture's `extras` give the `.img` (`img`), the raw `gs_clamp`, and `no_image` for a picture
+  registered without pixels (a `#texanime` fills it; it gets a placeholder), or `missing` when no
+  file holds the name. `Exported` lists both kinds.
+- `blend_flags`: the frame's name flags (1.5, read as `mgSetFrameAttr` reads them, with the
+  `.`-marked flags of its ancestors first; `to_gltf::FrameFlags`) become material settings: `aPP`
+  and `aNN` give `alphaMode` BLEND (glTF has no additive or subtractive blending), an alpha
+  reference `aXX` above 0 gives MASK with `alphaCutoff` XX/0x80, `aOF` OPAQUE, and `c0`
+  `KHR_materials_unlit`; otherwise BLEND when diffuse alpha is below 1, as before. The material's
+  `extras.frame_flags` keep the flag text (`mds_flags`, `inherited_flags`) and what it decodes to
+  (`blend`, `alpha_ref`, `lit`, `z_write`, `fog`). Materials are kept apart per flag set.
+- `collision`: for `-a`/`-c` files ([maps.md](maps.md) 4.3). Each material is named for the
+  per-triangle attributes its diffuse colour encodes (`col_ground0_foot2_area6_mask12`,
+  `to_gltf::CollisionAttributes`), coloured by them (water areas 1 and 7 blue), untextured, with
+  the attributes and the raw MDT fields in `extras`.
+
+`Options::map(textures)` (whole names, textures, blend flags) and `Options::collision()` are the
+two sets a map uses; `is_collision_file` tells them apart by file name.
+
 ### Sample: Max
 An export made while the format was worked out: `c01_base_max.gltf` = `chara/c01_base.chr.d`
 (skeleton, 23 clips from c01b.mot) with the meshes of `mainchr/c01fuku1.chr.d` (green default outfit, c01f.mds/.wgt/.bbp). 127 nodes,
@@ -368,8 +401,12 @@ c01_base on its own would only give placeholder triangles.
 
 `from_gltf::import_gltf` takes a glTF, the template .mds and optionally the template .bbp and .wgt,
 and gives the new .mds, .wgt and .bbp; `build` runs it, through `models.rs`, for a mod's glTF
-folder, with only the meshes that differ from the export. It keeps the template's nodes and replaces MDT blocks by mesh name (`X` or `X_skin`; Blender
-`.001` suffixes are dropped). Steps:
+folder, with only the meshes that differ from the export. It keeps the template's nodes and
+replaces the MDT block of the frame each glTF mesh node stands for (`from_gltf::frames_of`): the
+node's `extras.mds_index` when it has one within the template, otherwise its name (Blender `.001`
+and a skinned node's `_skin` dropped) as a frame's whole name, then as a frame's name without
+flags, the k-th node of a repeated name taking the k-th frame of it. Joints are found the same way.
+Steps:
 - rigid meshes are brought into frame space through the glTF hierarchy;
 - skinned meshes are brought from model space into mesh space with inv(bbp[mesh]);
 - joints are matched to template nodes by name, and the bbp of every joint is taken from the IBMs;
@@ -380,7 +417,25 @@ folder, with only the meshes that differ from the export. It keeps the template'
   template .wgt blocks for meshes that were not replaced are kept;
 - materials come from the glTF material `extras` (raw MDT fields) or from the texture image name.
 An unknown mesh name becomes a new node, appended under the root. Its name must then be added to
-`VERTEX_ANIME` if it is skinned.
+`VERTEX_ANIME` if it is skinned. `new_model` drops `extras.mds_index` from the glTF it builds a
+model of, since those indices name another model's frames.
+
+**Which meshes changed** (`from_gltf::changed_meshes(exported, given, template)`): every mesh
+node's transform, skin, accessor values and materials are compared with a fresh export's, mesh by
+`from_gltf::MeshId` (the template frame it stands for, or a new name), and only those that differ
+are passed to the import. So meshes whose frames share a base name (1,488 map files) are told
+apart, and an unedited mesh keeps its bytes.
+
+**Map models** (`models::build_map_model(given, original, options)`): the same, against an export
+with the same `to_gltf::Options`. With `options.collision` the import runs in collision mode
+(`from_gltf::ImportOptions { collision }`, `import_with`): only positions are read (Blender's
+normals, uvs and colours are dropped) and every prim is a type 0x213 triangle list of stride 1;
+each material's attributes come from its name (`col_ground0_foot5_area9_mask4`, `.001` allowed;
+missing parts are 0), written as k/0.7 and 1-mask as float32 (which decode back exactly for every
+k from 0 to 255), unless its `extras` still encode those attributes, in which case its exported
+fields are kept. Nodes stay as the glTF has them (one MDS frame per mesh node), so collision stays
+in several compact frames. `from_gltf::collision_problems` lists what breaks the engine's rules
+(another prim type, partial triangles, bad indices).
 
 Round trip (the `roundtrip_gltf` evidence script: export -> import -> export, then compare every
 triangle's corner positions, normals, uvs and weights to 1e-3 and the winding):

@@ -11,7 +11,7 @@ use std::path::Path;
 use c2_disc::{archive, rebuild};
 
 use crate::folder::Folder;
-use crate::from_gltf::{self, Gltf};
+use crate::from_gltf::{self, Gltf, MeshId};
 use crate::info_cfg;
 use crate::json::Value as Arg;
 use crate::{bail, im3, textures, to_gltf, Error, Result};
@@ -134,61 +134,6 @@ fn folder_files(folder: &Path) -> Result<Vec<(String, Vec<u8>)>> {
         .collect()
 }
 
-/// {mesh name: what the mesh holds}: its node's transform and skin, and its primitives' vertex data
-/// and materials by value, so a tool that writes the same mesh another way still matches.
-fn mesh_contents(gltf: &Gltf) -> Result<BTreeMap<String, String>> {
-    let mut out = BTreeMap::new();
-    let empty = Vec::new();
-    let nodes = match gltf.json.get("nodes") {
-        Some(nodes) => nodes.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?,
-        None => &empty,
-    };
-    for node in nodes {
-        let Some(mesh_index) = node.get("mesh") else {
-            continue;
-        };
-        let mesh = from_gltf::index(from_gltf::item(&gltf.json, "meshes")?, mesh_index)?;
-        let name_value = node.get("name").filter(|v| v.truthy()).or_else(|| mesh.get("name"));
-        let mut name = from_gltf::clean(name_value)?;
-        if let Some(stem) = name.strip_suffix("_skin") {
-            name = stem.to_string();
-        }
-        let transform = crate::json::Value::Object(
-            ["translation", "rotation", "scale", "matrix", "skin"]
-                .iter()
-                .map(|key| (key.to_string(), node.get(key).cloned().unwrap_or(crate::json::Value::Null)))
-                .collect(),
-        );
-        let mut parts = vec![transform.sorted_text()];
-        let Some(primitives) = from_gltf::item(mesh, "primitives")?.as_list() else {
-            bail!("'primitives' is not a list");
-        };
-        for primitive in primitives {
-            let crate::json::Value::Object(attributes) = from_gltf::item(primitive, "attributes")? else {
-                bail!("'attributes' is not an object");
-            };
-            let mut sorted: Vec<&(String, crate::json::Value)> = attributes.iter().collect();
-            sorted.sort_by(|a, b| a.0.cmp(&b.0));
-            let mut indices: Vec<&crate::json::Value> = sorted.iter().map(|(_, index)| index).collect();
-            if let Some(index) = primitive.get("indices") {
-                indices.push(index);
-            }
-            for index in indices {
-                if !matches!(index, crate::json::Value::Null) {
-                    parts.push(from_gltf::accessor(gltf, index)?.repr());
-                }
-            }
-            let material = match primitive.get("material") {
-                Some(number) => from_gltf::index(from_gltf::item(&gltf.json, "materials")?, number)?.clone(),
-                None => crate::json::Value::Null,
-            };
-            parts.push(material.sorted_text());
-        }
-        out.insert(name, parts.join("\n"));
-    }
-    Ok(out)
-}
-
 /// A glTF read from a folder on disk.
 fn load_from_disk(path: &Path) -> Result<Gltf> {
     let folder = path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -209,11 +154,10 @@ fn load_from_folder(files: &Folder, name: &str) -> Result<Gltf> {
 }
 
 /// The meshes of the given glTF that differ from the export's, or that the export does not have.
-fn changed_meshes(given: &Path, exported: &Folder) -> Result<BTreeSet<String>> {
+fn changed_meshes(given: &Path, exported: &Folder, template: &[u8]) -> Result<BTreeSet<MeshId>> {
     let name = given.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    let before = mesh_contents(&load_from_folder(exported, &name)?)?;
-    let after = mesh_contents(&load_from_disk(given)?)?;
-    Ok(after.into_iter().filter(|(name, content)| before.get(name) != Some(content)).map(|(name, _)| name).collect())
+    let model = crate::mds::parse(template)?;
+    from_gltf::changed_meshes(&load_from_folder(exported, &name)?, &load_from_disk(given)?, &model)
 }
 
 /// The pack with the model and textures a folder gives in place of the original's.
@@ -245,10 +189,10 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
             Error::Invalid(message) => Error::invalid(format!("{gltf}: {message}")),
             other => other,
         };
-        let meshes = changed_meshes(&gltf_path, &exported_folder).map_err(wrap)?;
         let Some(template) = source.get(&files.model) else {
             bail!("[Errno 2] No such file or directory: {}", im3::str_repr(&files.model));
         };
+        let meshes = changed_meshes(&gltf_path, &exported_folder, template).map_err(wrap)?;
         let built = load_from_disk(&gltf_path)
             .and_then(|loaded| from_gltf::import_gltf(&loaded, template, pose, weights, Some(&meshes)))
             .map_err(wrap)?;
@@ -277,6 +221,34 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
         }
     }
     with_textures(pack, &given, &exported)
+}
+
+/// Files by relative path.
+pub type Files = Vec<(String, Vec<u8>)>;
+
+/// A map model (one .mds of a map's model pack) as glTF: `<stem>.gltf`, `<stem>.bin` and a PNG
+/// per texture in textures/, by relative path, and what the export found. Map options
+/// (`to_gltf::Options::map`, `::collision`) name nodes and meshes by the frames' whole names.
+pub fn export_map_model(data: &[u8], stem: &str, options: &to_gltf::Options) -> Result<(Files, to_gltf::Exported)> {
+    let model = crate::mds::parse(data)?;
+    let mut out = Folder::new();
+    let found = to_gltf::export_model(&model, &mut out, stem, options)?;
+    Ok((out.sorted(), found))
+}
+
+/// The map model rebuilt from its edited glTF: only the meshes that differ from an export with
+/// the same options (or that it does not have) are rebuilt, each glTF mesh node replacing the mesh
+/// of the frame its `extras.mds_index` (or else its name) gives, so the frames left as exported
+/// keep their bytes and an unedited glTF gives the original file. With `options.collision` the
+/// rebuilt meshes are collision (from_gltf::ImportOptions).
+pub fn build_map_model(given: &Gltf, original: &[u8], options: &to_gltf::Options) -> Result<Vec<u8>> {
+    let model = crate::mds::parse(original)?;
+    let mut exported = Folder::new();
+    to_gltf::export_model(&model, &mut exported, "model", options)?;
+    let before = load_from_folder(&exported, "model.gltf")?;
+    let meshes = from_gltf::changed_meshes(&before, given, &model)?;
+    let import = from_gltf::ImportOptions { collision: options.collision };
+    Ok(from_gltf::import_with(given, original, None, None, Some(&meshes), &import)?.mds)
 }
 
 /// Path(path).name.
@@ -731,5 +703,236 @@ mod tests {
         let error = new_pack(&gltf, &prop_template(), "prop", "calc").unwrap_err().to_string();
         assert!(error.contains("skin"), "{error}");
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    /// A quad of two triangles at x offset `x`, as a strip, textured with material 0.
+    fn quad(x: f64, texture: &str) -> Mdt {
+        Mdt {
+            vertices: vec![[x, 0.0, 0.0, 1.0], [x + 1.0, 0.0, 0.0, 1.0], [x, 1.0, 0.0, 1.0], [x + 1.0, 1.0, 0.0, 1.0]],
+            normals: vec![[0.0, 0.0, 1.0, 1.0]],
+            uvs: vec![[0.0, 0.0, 1.0, 0.0], [2.0, 0.0, 1.0, 0.0], [0.0, 2.0, 1.0, 0.0], [2.0, 2.0, 1.0, 0.0]],
+            materials: vec![Material::new(texture)],
+            prims: vec![Prim { kind: mds::PRIM_STRIP, material: 0, verts: (0..4).map(|i| vec![i, 0, i]).collect() }],
+            ..Mdt::default()
+        }
+    }
+
+    /// A map piece whose two meshes share the base name `grid54` and differ in their flags, and the
+    /// texture file their pictures are in (one repeating, one clamped).
+    fn map_piece() -> (Vec<u8>, Vec<u8>) {
+        let mut model = Mds::new();
+        model.nodes.push(Node::new("piece", -1));
+        model.nodes.push(Node { mdt: Some(quad(0.0, "wall01")), ..Node::new("grid54--f2appz0n1t-5_1", 0) });
+        model.nodes.push(Node { mdt: Some(quad(2.0, "leaf01")), ..Node::new("grid54--a40aof-6_1", 0) });
+        model.nodes.push(Node { mdt: Some(quad(4.0, "wall01")), ..Node::new("lamp--n1z0c0f2app-", 0) });
+        let mut wall = im3::Image::new("wall01", im3::Format::Ct32, 8, 8);
+        wall.pixels = Some([10, 200, 30, 0x80].repeat(64));
+        wall.clamp = Some(0);
+        let mut leaf = im3::Image::new("leaf01", im3::Format::Ct32, 8, 8);
+        leaf.pixels = Some([0, 90, 0, 0x40].repeat(64));
+        (mds::build(&model).unwrap(), im3::write(&[wall, leaf], None).unwrap())
+    }
+
+    fn folder_of(files: &[(String, Vec<u8>)]) -> Folder {
+        let mut folder = Folder::new();
+        for (path, content) in files {
+            folder.write(path, content.clone());
+        }
+        folder
+    }
+
+    /// The glTF of an export's files, with its buffer's positions of node `node` moved 1 along x.
+    fn moved(files: &[(String, Vec<u8>)], node: usize) -> Gltf {
+        let folder = folder_of(files);
+        let gltf = load_from_folder(&folder, "piece.gltf").unwrap();
+        let j = &gltf.json;
+        let at = |list: &str, i: &crate::json::Value| from_gltf::index(j.get(list).unwrap(), i).unwrap().clone();
+        let mesh = at(
+            "meshes",
+            from_gltf::index(j.get("nodes").unwrap(), &(node as i64).into()).unwrap().get("mesh").unwrap(),
+        );
+        let mut bin = folder.get("piece.bin").unwrap().to_vec();
+        for primitive in mesh.get("primitives").unwrap().as_list().unwrap() {
+            let accessor = at("accessors", primitive.get("attributes").unwrap().get("POSITION").unwrap());
+            let view = at("bufferViews", accessor.get("bufferView").unwrap());
+            let base = view.get("byteOffset").and_then(|v| v.as_int()).unwrap_or(0) as usize;
+            for k in 0..accessor.get("count").unwrap().as_int().unwrap() as usize {
+                let x = f32::from_le_bytes(bin[base + 12 * k..base + 12 * k + 4].try_into().unwrap());
+                bin[base + 12 * k..base + 12 * k + 4].copy_from_slice(&(x + 1.0).to_le_bytes());
+            }
+        }
+        Gltf { json: gltf.json.clone(), buffers: vec![bin] }
+    }
+
+    #[test]
+    fn a_map_piece_exports_whole_names_real_textures_and_blend_flags() {
+        let (piece, img) = map_piece();
+        let search = to_gltf::TextureSearch::new(&[("piece.img".to_string(), img.clone())]).unwrap();
+        let (files, found) = export_map_model(&piece, "piece", &to_gltf::Options::map(Some(&search))).unwrap();
+        assert!(found.missing_textures.is_empty());
+        let paths: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
+        assert_eq!(paths, ["piece.bin", "piece.gltf", "textures/leaf01.png", "textures/wall01.png"]);
+        let pictures = im3::read(&img).unwrap();
+        assert_eq!(get(&files, "textures/wall01.png"), im3::to_png(&pictures[0], true).unwrap());
+        let json = crate::json::loads(std::str::from_utf8(get(&files, "piece.gltf")).unwrap()).unwrap();
+        let list = |key: &str| json.get(key).unwrap().as_list().unwrap().clone();
+        let names: Vec<String> =
+            list("nodes").iter().map(|n| n.get("name").unwrap().as_str().unwrap().to_string()).collect();
+        assert_eq!(names, ["piece", "grid54--f2appz0n1t-5_1", "grid54--a40aof-6_1", "lamp--n1z0c0f2app-"]);
+        for (i, node) in list("nodes").iter().enumerate() {
+            assert_eq!(node.get("extras").unwrap().get("mds_index").unwrap().as_int(), Some(i as i64));
+        }
+        let meshes: Vec<String> =
+            list("meshes").iter().map(|n| n.get("name").unwrap().as_str().unwrap().to_string()).collect();
+        assert_eq!(meshes, names[1..]);
+        // wall01 repeats (CLAMP 0), leaf01 clamps (CLAMP 5)
+        let wrap = |texture: &str| {
+            let t = list("textures").into_iter().find(|t| t.get("name").unwrap().as_str() == Some(texture)).unwrap();
+            let s = &list("samplers")[t.get("sampler").unwrap().as_int().unwrap() as usize];
+            (s.get("wrapS").unwrap().as_int().unwrap(), s.get("wrapT").unwrap().as_int().unwrap())
+        };
+        assert_eq!(wrap("wall01"), (10497, 10497));
+        assert_eq!(wrap("leaf01"), (33071, 33071));
+        // blend flags: additive -> BLEND, alpha test 0x40 with aOF -> MASK 0.5, c0 -> unlit
+        let material_of = |node: usize| {
+            let mesh = &list("meshes")[list("nodes")[node].get("mesh").unwrap().as_int().unwrap() as usize];
+            let number =
+                mesh.get("primitives").unwrap().as_list().unwrap()[0].get("material").unwrap().as_int().unwrap();
+            list("materials")[number as usize].clone()
+        };
+        let mode = |m: &crate::json::Value| m.get("alphaMode").and_then(|v| v.as_str()).map(str::to_string);
+        assert_eq!(mode(&material_of(1)).as_deref(), Some("BLEND"));
+        assert_eq!(mode(&material_of(2)).as_deref(), Some("MASK"));
+        assert_eq!(material_of(2).get("alphaCutoff").unwrap().as_f64(), Some(0.5));
+        assert!(material_of(3).get("extensions").unwrap().has("KHR_materials_unlit"));
+        assert!(!material_of(1).has("extensions"));
+        let flags = material_of(3).get("extras").unwrap().get("frame_flags").unwrap().clone();
+        assert_eq!(flags.get("mds_flags").unwrap().as_str(), Some("n1z0c0f2app-"));
+        assert_eq!(flags.get("z_write").unwrap().as_int(), Some(0));
+        assert_eq!(list("extensionsUsed")[0].as_str(), Some("KHR_materials_unlit"));
+    }
+
+    #[test]
+    fn a_map_piece_edit_reaches_only_its_frame_though_base_names_repeat() {
+        let (piece, img) = map_piece();
+        let search = to_gltf::TextureSearch::new(&[("piece.img".to_string(), img)]).unwrap();
+        let options = to_gltf::Options::map(Some(&search));
+        let (files, _) = export_map_model(&piece, "piece", &options).unwrap();
+        // unedited: the same bytes
+        let unedited = load_from_folder(&folder_of(&files), "piece.gltf").unwrap();
+        assert_eq!(build_map_model(&unedited, &piece, &options).unwrap(), piece);
+        let original = mds::parse(&piece).unwrap();
+        let check = |edited: &Gltf| {
+            let built = mds::parse(&build_map_model(edited, &piece, &options).unwrap()).unwrap();
+            assert_eq!(built.nodes.len(), 4);
+            for i in [0, 1, 3] {
+                assert_eq!(built.nodes[i], original.nodes[i], "frame {i}");
+            }
+            let mesh = built.nodes[2].mdt.as_ref().unwrap();
+            assert_eq!(built.nodes[2].name, "grid54--a40aof-6_1");
+            let xs: BTreeSet<i64> = mesh.vertices.iter().map(|v| v[0] as i64).collect();
+            assert_eq!(xs, BTreeSet::from([3, 4]));
+            assert_eq!(mesh.materials[0].texture, "leaf01");
+        };
+        // by extras.mds_index
+        let edited = moved(&files, 2);
+        check(&edited);
+        // and by the whole names when the extras are lost (a tool that drops custom properties)
+        let mut bare = edited;
+        if let Some(crate::json::Value::List(nodes)) = bare.json.get_mut("nodes") {
+            for node in nodes {
+                if let crate::json::Value::Object(items) = node {
+                    items.retain(|(key, _)| key != "extras");
+                }
+            }
+        }
+        check(&bare);
+    }
+
+    /// A floor collision piece: two frames, materials encoding attributes the way the disc's do
+    /// (zero as 1.0 or 0.0; foot sound 2 as 2.857143).
+    fn collision_piece() -> Vec<u8> {
+        let mut model = Mds::new();
+        model.nodes.push(Node::new("col", -1));
+        for (k, name) in ["floor01", "floor02"].iter().enumerate() {
+            let x = 2.0 * k as f64;
+            let mut floor = Material::new("");
+            floor.diffuse = vec![1.0, 2.857143, 8.571428, -11.0];
+            let mut water = Material::new("");
+            water.diffuse = vec![0.0, 0.0, 1.4285715, 1.0];
+            let mesh = Mdt {
+                vertices: vec![
+                    [x, 0.0, 0.0, 1.0],
+                    [x + 1.0, 0.0, 0.0, 1.0],
+                    [x, 0.0, 1.0, 1.0],
+                    [x + 1.0, 0.0, 1.0, 1.0],
+                ],
+                normals: vec![[0.0, 1.0, 0.0, 1.0]],
+                uvs: vec![[0.0, 0.0, 1.0, 0.0]],
+                materials: vec![floor, water],
+                prims: vec![
+                    Prim { kind: from_gltf::COLLISION_PRIM, material: 0, verts: vec![vec![0], vec![2], vec![1]] },
+                    Prim { kind: from_gltf::COLLISION_PRIM, material: 1, verts: vec![vec![1], vec![2], vec![3]] },
+                ],
+                ..Mdt::default()
+            };
+            model.nodes.push(Node { mdt: Some(mesh), ..Node::new(name, 0) });
+        }
+        mds::build(&model).unwrap()
+    }
+
+    #[test]
+    fn collision_exports_its_attributes_and_builds_back_by_the_engines_rules() {
+        let piece = collision_piece();
+        let options = to_gltf::Options::collision();
+        let (files, _) = export_map_model(&piece, "piece", &options).unwrap();
+        let json = crate::json::loads(std::str::from_utf8(get(&files, "piece.gltf")).unwrap()).unwrap();
+        let names: Vec<&str> = json
+            .get("materials")
+            .unwrap()
+            .as_list()
+            .unwrap()
+            .iter()
+            .map(|m| m.get("name").unwrap().as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["col_ground0_foot2_area6_mask12", "col_ground0_foot0_area1_mask0"]);
+        assert!(!files.iter().any(|(path, _)| path.starts_with("textures/")));
+        let mut gltf = load_from_folder(&folder_of(&files), "piece.gltf").unwrap();
+        assert_eq!(build_map_model(&gltf, &piece, &options).unwrap(), piece);
+        // renamed as Blender keeps duplicates apart: the floor becomes foot sound 5, area 9; and the
+        // mesh gains normals and uvs, as Blender writes them
+        if let Some(crate::json::Value::List(materials)) = gltf.json.get_mut("materials") {
+            materials[0].set("name", "col_ground0_foot5_area9_mask4.001".into());
+        }
+        if let Some(crate::json::Value::List(meshes)) = gltf.json.get_mut("meshes") {
+            if let Some(crate::json::Value::List(primitives)) = meshes[0].get_mut("primitives") {
+                for p in primitives {
+                    let position = p.get("attributes").unwrap().get("POSITION").unwrap().clone();
+                    if let Some(attributes) = p.get_mut("attributes") {
+                        attributes.set("NORMAL", position.clone());
+                        attributes.set("TEXCOORD_0", position);
+                    }
+                }
+            }
+        }
+        let built = mds::parse(&build_map_model(&gltf, &piece, &options).unwrap()).unwrap();
+        let original = mds::parse(&piece).unwrap();
+        assert!(from_gltf::collision_problems(&built).is_empty());
+        // the material is shared by both frames' floor triangles: both rebuilt, as 0x213 only
+        for frame in [1, 2] {
+            let mesh = built.nodes[frame].mdt.as_ref().unwrap();
+            assert!(mesh.prims.iter().all(|p| p.kind == 0x213 && p.verts.iter().all(|v| v.len() == 1)));
+            let attributes: BTreeSet<to_gltf::CollisionAttributes> =
+                mesh.materials.iter().map(|m| to_gltf::CollisionAttributes::decode(&m.diffuse)).collect();
+            let wanted = [(0, 5, 9, 4), (0, 0, 1, 0)].map(|(ground, foot, area, mask)| to_gltf::CollisionAttributes {
+                ground,
+                foot,
+                area,
+                mask,
+            });
+            assert_eq!(attributes, BTreeSet::from(wanted));
+            assert_eq!(mesh.prims.iter().map(|p| p.verts.len()).sum::<usize>(), 6);
+        }
+        assert_eq!(built.nodes[0], original.nodes[0]);
     }
 }
