@@ -213,15 +213,13 @@ code keeps compiling to its own bytes. What the compiler lacks today
 
 Done: mods that need mods (`requires`, `after`), editor headers for patches
 (`mod header`), and overrides that follow a renamed function by its
-fingerprint (`mods/NAME/fingerprints.json`, `mod check --rename`); see
-[modding](docs/modding.md).
+fingerprint (`mods/NAME/fingerprints.json`, `mod check --rename`),
+wrapping natives (`#pragma override place_monster` routes the target
+scripts' calls through the mod's function; `original()` calls the native),
+and `mod slim`, which turns copied files into patches that compile to the
+same bytes; see [modding](docs/modding.md). Not yet tried in the game:
+a native wrapper (e.g. swapping a fight's monsters).
 
-- **Wrapping natives.** `#pragma override place_monster` in a patch would
-  route every call the target makes to a native through the mod's function,
-  so swapping a fight's monsters would not mean copying the function that
-  places them.
-- **Whole-file mods into patches.** A `mod slim` that compares each copied
-  file with the tree and writes overrides for the functions that changed.
 - **Save counters.** `NEW_COUNTER` once the number of 16-bit save counters is
   known (scripts use 0 to 20).
 
