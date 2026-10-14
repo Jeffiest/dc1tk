@@ -4,6 +4,14 @@
 // cast, a typedef), unless the file declares the name as something else.
 #include <stddef.h>
 
+size_t length(const wchar_t *);
+ptrdiff_t gap(size_t, size_t);
+
+ptrdiff_t gap(size_t a, size_t b)
+{
+    return (ptrdiff_t)a - (ptrdiff_t)b;
+}
+
 size_t length(const wchar_t *s)
 {
     size_t n = 0;
@@ -26,7 +34,7 @@ int test(void)
     struct buffer b;
     count c = (count)3;
     size_t *p = &b.used;
-    ptrdiff_t d = (ptrdiff_t)-2;
+    ptrdiff_t d = gap(1, 3);
 
     b.text[0] = 'a';
     b.text[1] = 'b';

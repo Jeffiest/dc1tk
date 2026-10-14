@@ -1722,6 +1722,11 @@ fn specifiers(state: &mut State, header_kinds: bool) -> Parsed<Spec> {
                 || (header_kinds
                     && (state.token(1).kind == Kind::Name
                         || (state.token(1).kind == Kind::Op && state.token(1).text() == "*")))
+                // an unnamed parameter of a header's type: int f(size_t, size_t);
+                || (header_kinds
+                    && state.header_kinds.contains_key(&text)
+                    && state.token(1).kind == Kind::Op
+                    && [",", "["].contains(&state.token(1).text()))
             {
                 base = Some(text);
             } else {
