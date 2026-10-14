@@ -10,6 +10,7 @@ pub mod dungeon_layout;
 pub mod exe_tables;
 pub mod fishing_data;
 pub mod folder;
+pub mod font;
 pub mod georama_data;
 pub mod from_gltf;
 pub mod game_data;

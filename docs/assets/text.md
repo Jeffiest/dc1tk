@@ -140,14 +140,53 @@ A glyph is a number into the language's font texture: 32 glyphs of 16 by
 |---|---|---|
 | all | 0-93 | printable ASCII from the space, **without the backslash** (`!` is 1, `[` 0x3B, `]` 0x3C, `a` 0x40) |
 | English | 94-287 | the English font table `meswin/fonttbl_1.bin` from entry 94 (full-width punctuation, symbols, digits and letters, kana): 288 glyphs is what `FontTex_1_0.tm2` (9 rows) holds |
-| French, German, Italian, Spanish | 0x5E-0x9C, 0x9D-0xB4 | the accented letters and the full-width symbols below, which the text writes with their own codes instead |
-| Japanese, Korean | 94 on | a numbering no table on the disc gives (Japanese up to 1941 glyphs) |
+| English, added | 288-319 | `¡¿ÀÁÄÇÈÉÑÖÜßàáâäçèéêëíîïñóôöùúûü`, drawn into the texture by `build` (below) |
+| French, German, Italian, Spanish | 0x5E-0x9C, 0x9D-0xB4 | the accented letters and the full-width symbols below, which the text mostly writes with their own codes instead |
+| Japanese | 94-1943 | the full-width space, punctuation, symbols, digits and letters, kana, ─ ━ Ⅱ Ⅲ Ⅳ, then 1,564 kanji from glyph 380: in Shift-JIS order to glyph 1921 (腕, the last JIS level 1 kanji), then 22 added later in Unicode order (儚 剝 哺 ... 騙) |
+| Korean | 94-967 | the Korean font table `meswin/fonttbl_6.bin` from entry 94: 12 symbols in Shift-JIS (‘ ’ “ ” 〔 〕 ° ♪ Ⅱ Ⅲ Ⅳ 象, drawn as empty boxes) and 862 Hangul syllables as their Unicode code, big-endian |
 
 `fonttbl_1.bin` is the table event text is drawn by in English
 (`LoadFontTblBin`): 4 words (94 half-width glyphs, kanji from 385, 985
 codes), then each glyph's big-endian Shift-JIS code in order, ASCII as the
 character and a space. The menus' glyph numbers follow it, as the English
-texture shows.
+texture shows. `fonttbl_6.bin` is laid out the same way (no kanji, 968
+codes) and the Korean pages `FontTex_6_0.tm2`/`_6_1` (each in five weights,
+`_b`, `_l`, `_m`, `_ms`) draw it: glyph 106 is 가 (U+AC00). The PAL game
+never loads either (`LoadFontTexture` picks `FontTex_2_0.tm2` for any
+language past English, `LoadFontTblBin` `fonttbl_2.bin`).
+
+**Japanese.** The disc has no table of the Japanese glyphs: `fonttbl.bin` holds
+the 94 ASCII codes only, and the PAL game loads only page 0
+(`FontTex_0.tm2`) of the four the Japanese game drew from (`FontTex_%d.tm2`,
+pages of 0x260 glyphs, `GetRectFontTex`): `FontTex_0` to `FontTex_3` are
+those pages, with ink in glyphs 95 to 1943. The numbering was read off the
+pages: every glyph matched against a system font's drawing of the Shift-JIS
+characters, aligned in code order (the engine's `GetFontNo` looks codes up by
+binary search, so its table was sorted), the text the disc's event scripts
+and data files write in Shift-JIS used to settle close calls, and then every
+glyph checked by eye; the last 22 are not in code order (characters added
+after the table was made) and were read one by one. Every glyph the game's
+Japanese message files use has its character (shop names read
+`ミレーネの武器屋`, `ポリーズベーカリー`), and the pages have ink in exactly
+those cells (the corpus test checks both). The numbering is
+`c2_assets::font::JAPANESE`, a list of characters: the pictures stay on the
+disc. `geomenu.mes` follows this numbering in every language.
+
+**The English font gains accented letters.** `FontTex_1_0.tm2` is 512 by
+192 pixels: 9 rows of glyphs (0 to 287) and the top 12 pixels of a 10th
+that the table's next entries (kana) would use, cut off. The game copies it
+into `font_buff`, 0xD000 bytes (mainloop.cpp), so it can grow by one row and
+no more: 200 pixels, 51,328 bytes. When an English text (a `text:en/...`
+line) uses one of the 32 letters above, `build` writes that row: each letter
+the French font's own picture (glyph 0x5E on), its shades mapped to the
+English palette and centred in its cell, since the engine advances the pen a
+whole cell for every English glyph past 93 (`CheckHalfFont`; the European
+fonts' letters are half-width there only because the code says so for
+languages past English). English event text never reaches these glyphs:
+its table's entries 288 to 319 are kana. A text built by path
+(`shopname.mes.txt` in `disc/`) cannot use them, as nothing then adds the
+texture. A debug menu's leftover Japanese in English `allmenu.mes` uses
+glyph numbers in this range and so reads as accented letters.
 
 `geomenu.mes` is the same file in every language, untranslated: its
 glyphs follow the Japanese numbering, so in the other languages they draw
@@ -198,7 +237,7 @@ part of the message. Each code reads as:
 | `{wait N}`, `{colour N}`, `{gap N}`, `{move N}`, `{justify N}`, `{red N}`, `{green N}`, `{blue N}`, `{alpha N}` | FExx, FCxx, F8xx, F9xx, F7xx, F5xx, F4xx, F3xx, F2xx with xx = N (0 to 255) |
 | `{voice 0}`, `{voice 1}`, `{voice 2}` | FF05, FF04, FF06 |
 | `{XXXX}`, four hex digits | that code as it is: a glyph with no character, or a code with no name |
-| `{c}`, one character | the character itself: `{{}` for a brace, `{[}` for a bracket that would start a tag, `{@}` for an `@` starting a line |
+| `{c}`, one character | the character itself: `{{}` for a brace, `{[}` for a bracket that would start a tag, `{@}` for an `@` starting a line; in the European languages, a letter or symbol written with its glyph number instead of its FFxx or FDEx code (`{é}` is glyph 0x88, `é` code FFE9) |
 
 So a made-up shop list reads:
 
@@ -213,10 +252,14 @@ Press (O) to buy[Item1]
 ```
 
 Every message of every file reads back to its codes; the decoder escapes
-what would read otherwise. Over the PAL disc the English text has 286
-`{XXXX}`, all in `geomenu`; each European language about 1,000, in
-`geomenu` and the old `meswin/eu` files; the Japanese and Korean text is
-mostly `{XXXX}`.
+what would read otherwise. Over the PAL disc's 310 files, the `{XXXX}` left:
+
+| language | before the Japanese and Korean fonts | now | where |
+|---|---|---|---|
+| Japanese | 529,668 | 152 | the old `meswin/sysmes0`-`3`, data after their messages read as text |
+| Korean | 15,149 | 0 | |
+| English | 267 | 267 | `geomenu` (249, Japanese numbering) and a debug menu's leftovers in `allmenu` (18) |
+| French, German, Italian, Spanish | 952 to 1,035 | 708 each | `geomenu` alone; the rest were glyph-numbered letters, now `{é}` |
 
 Building a text into a message file takes the disc's file as the template
 and a **reference**, the file the text was exported from. Each message whose
@@ -257,7 +300,18 @@ gives 120 ids from 310 files.
   and the dungeon file into the dungeon's heap; how much is free there is
   not known, so `build` warns when a file grows.
 - A menu draws only as many lines as its window has room for, and an item
-  name as wide as its column: keep new text near the old one's length.
+  name as wide as its column. How wide a line is follows
+  `ClsMes::MakeMesWinTbl` (and `GetMesWidth_system`), with a cell of 15
+  pixels (`font_w`; CFont's clearance and the window presets): ASCII and
+  the European letters (glyphs 0x5E-0x9C and the FFxx codes)
+  `font_w × 0.55` cut to 8, the space `font_w / 2` = 7 (or `{gap N}`), any
+  other glyph and the FDEx symbols a cell, an icon its own width (22 for
+  `(O)`, `GaijiDataTbl`), `{move N}` N; slots count nothing. The windows'
+  own widths are set by each menu's code (not traced for every menu), so
+  `build` warns by the disc's text: of a line wider than any line of the
+  file on the disc, and, in menus (all but `sysmes`, `npcmsg` and `help`,
+  whose windows grow with their text), of a line more than a cell wider
+  than that message's own widest line.
 - Glyphs past what the font's texture holds draw nothing; the English text
-  has only the 288 glyphs above, and the European languages the ASCII,
-  accented letters and symbols.
+  has only the 288 glyphs above and the 32 letters `build` adds, and the
+  European languages the ASCII, accented letters and symbols.

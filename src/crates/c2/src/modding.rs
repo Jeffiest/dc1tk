@@ -585,6 +585,9 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             item.data.len(),
             item.old
         );
+        for warning in &item.warnings {
+            println!("{warning}");
+        }
     }
     let (files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files)?;
     for item in &map_changes {
