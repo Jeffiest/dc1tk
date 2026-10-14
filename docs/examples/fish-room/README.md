@@ -34,9 +34,9 @@ Everything in it is made here; nothing of the game's is in this folder:
   as programs 100 to 103, so no tune of the game's changes.
 - `fishroom.c` is the room's script: on arrival it plays `BG_200`
   (`load_bgm`, `play_bgm`), stands the player just inside the door facing
-  the fish, and says so; the door goes back to Palm Brinks.
+  the fish; the door goes back to Palm Brinks. No text pops up.
 - `m01.c` patches Palm Brinks: the door into the room, the way back, and
-  on the first arrival the player stands at the door with a hint.
+  on the first arrival the player stands facing the door.
 
 ```bash
 c2 map-export m01
@@ -45,7 +45,7 @@ blender --background --python docs/examples/fish-room/make_mod.py
 c2 build extracted/scripts dc2.iso -o fish-room.iso --mod fish-room
 ```
 
-In the game: a new game starts in Palm Brinks, at a house door with a hint.
+In the game: a new game starts in Palm Brinks, facing a house door.
 Press (X) at the door: it opens, the screen fades, and the room loads, dark,
 the fish turning over the middle of it, the tune playing. Turn round and
 press (X) at the door to go back.

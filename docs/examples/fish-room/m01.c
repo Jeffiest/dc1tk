@@ -4,7 +4,6 @@
 #pragma target map m01
 
 #include <event.h>
-#include "modkit/text.c"
 #include "fishroom.h"
 
 NEW_FLAG(FISH_ROOM_HINT_SHOWN);
@@ -39,8 +38,7 @@ void stand_at_fish_door(int facing)
     set_camera_pos(TOWN_DOOR_X, TOWN_DOOR_Y + 60.0, TOWN_DOOR_Z - 180.0);
 }
 
-// The town's arrival (map_start), then, the first time, the player stands at the new door and is
-// told about it.
+// The town's arrival (map_start), then, the first time, the player stands facing the new door.
 #pragma override
 int play_map_start_arrival(void)
 {
@@ -50,8 +48,6 @@ int play_map_start_arrival(void)
     if (get_flag(FISH_ROOM_HINT_SHOWN) == 0) {
         set_flag(FISH_ROOM_HINT_SHOWN, 1);
         stand_at_fish_door(1);
-        modkit_wait(30);
-        modkit_say("Something is going round and round\nbehind this door.\nWalk up to it and press (X).");
     }
     return result;
 }
@@ -62,6 +58,4 @@ void arrive_from_fish_room(void)
 {
     play_map_start_arrival();
     stand_at_fish_door(0);
-    modkit_wait(30);
-    modkit_say("Back in Palm Brinks.\nThe fish is still spinning in there.");
 }

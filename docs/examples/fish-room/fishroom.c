@@ -4,7 +4,6 @@
 
 #include <event.h>
 #include <disc.h>
-#include "modkit/text.c"
 #include "fishroom.h"
 
 PROGRAM(map_start, arrive_in_room);
@@ -16,7 +15,7 @@ void do_nothing(void)
 }
 
 // The map's start event, which every way in runs: the room's own tune, and the player stands just
-// inside the door, facing the fish.
+// inside the door, facing the fish. No text: the room speaks for itself.
 void arrive_in_room(void)
 {
     init_event();
@@ -29,12 +28,6 @@ void arrive_in_room(void)
     reset_chara_cloth(CHARA_PLAYER);
     reset_camera(CAMERA_RESET_BEHIND, 0.0, 10.0);
     fade_in(30);
-    modkit_wait(60);
-#if LANGUAGE == LANGUAGE_FRENCH
-    modkit_say("Un poisson geant tourne sur lui-meme.\nIl n'a pas l'air de s'en rendre compte.");
-#else
-    modkit_say("A giant fish is spinning in the dark.\nIt does not seem to have noticed.");
-#endif
 }
 
 // The room's door (point door_out, given this program by mod.json's "programs"): back to Palm
