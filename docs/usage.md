@@ -327,8 +327,24 @@ character pack; packs inside packs work the same way).
   image into the mod, to replace there.
 - `build` writes each over the disc's own, puts members back into their
   packs, and reads them back from the new image to check. Two chosen mods
-  may not replace the same game file. It warns when a file grows, since
-  models, textures and sounds load into fixed memory the build cannot see.
+  may not replace the same game file.
+- Maps, models, textures, scripts and sound banks load into fixed memory,
+  so `build` checks each load a changed file is part of against
+  [the memory budgets](assets/memory.md) and says what it uses
+  (`memory:` lines): a map's files against the 3,200,000-byte read buffer,
+  its placements against its table (320, 400 in dungeons), its pictures
+  against its texture blocks; a map script against the 312,816 bytes it
+  may have; a character pack against the read buffer, its skinned meshes'
+  limits (3,198 vertices, 32 bones) and, for Max's and Monica's packs, the
+  memory stack it loads into; a sound bank against its region of sound
+  memory and every sound set that loads it. Where a budget is certain and
+  exceeded it prints `error:`, writes the image anyway and fails; where the
+  use is estimated (a model's or a map's built size) or the disc shows no
+  room to spare, it prints `warning:`. Nearly every budget is close to full
+  on the disc: Max's model packs, the swords, hats and shoes come within a
+  few percent of their stacks, the largest map script within 3,152 bytes,
+  and the field sound banks a script loads together leave 5,792 bytes at
+  most.
 - A member a pack does not have is added at the end of the pack, so the
   members it had keep their places (the game finds members by name,
   ignoring case; a name that differs from one the pack has only in case is
@@ -366,8 +382,10 @@ character pack; packs inside packs work the same way).
   samples when no other entry plays them, so the bank stays the same size
   or shrinks, and otherwise gets samples of its own. Unedited WAVs build
   back to the disc's own bytes. Keep a bank's sample data near its original
-  size: sound memory is shared between banks, and how much is free where a
-  bank loads is not yet known. See [the sound bank format](assets/sounds.md).
+  size: field, event and monster banks share one region of sound memory with
+  almost nothing to spare, and a bank that outgrows it overwrites the system
+  sounds (`build` warns; see [the memory budgets](assets/memory.md#6-sound-memory-spu2)
+  and [the sound bank format](assets/sounds.md)).
 - **Maps in Blender.** `c2 map-export s17` writes the map as one glTF scene
   (`extracted/maps/s17/`): placements, pieces with their meshes, trigger
   points, lights, cameras, collision and textures. The

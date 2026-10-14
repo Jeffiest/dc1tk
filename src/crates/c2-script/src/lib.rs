@@ -20,6 +20,7 @@ pub mod learn;
 pub mod library;
 pub mod mapedit;
 pub mod maps;
+pub mod memory;
 pub mod messages;
 pub mod migrate;
 pub mod mods;

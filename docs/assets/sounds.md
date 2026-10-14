@@ -473,15 +473,11 @@ against the mono mix. Replacing one entry and adding one grew the `.bd` by
 3. **Decoder rounding.** `(h1*c1 + h2*c2 + 32) >> 6` follows the PS1/PS2
    SPU descriptions; the hardware's exact rounding (1 LSB) and shifts
    13-15 (never on this disc) are not verified.
-4. **SPU memory accounting is incomplete.** Region bases are certain
-   (`CSound::Init`), but summing the banks a sound-set row of
-   `MAP_index.txt` names (base, battle, ambient, objects, event) exceeds
-   the field region for some rows (row 1837: 0x114000 bytes against
-   0x10DC10), so which banks are resident together (kept `*` banks, when
-   object banks load) is not understood, nor how the core 0 reverb work
-   area (ending at 0x1FFFFF) and the character region at 0x1E0000 share
-   RAM, nor what game port 10 holds. Growing a `.bd` is therefore not known
-   to be safe; same-size or smaller is.
+4. **SPU memory accounting** is now in [the memory budgets](memory.md#6-sound-memory-spu2):
+   a set's event column is never loaded with its field banks (a script's
+   `load_sound(set)` loads it alone, over the set already loaded), which
+   explains row 1837; the regions' ends, the reverb work areas and the
+   fullest sets the scripts make are there. Port 10 is never loaded.
 5. **EE read buffer.** The buffer a `.snd` is read into before
    `sndLoadSound` was not sized; where monster banks' tables are allocated
    was not checked.
