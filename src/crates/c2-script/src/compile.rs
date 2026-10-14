@@ -156,6 +156,8 @@ struct State<'a> {
     next_slot: i64,
     loops: Vec<Loop>,
     notes: Option<IndexMap<String, Node>>,
+    /// The labels of goto, by name, numbered as the compiler's own when first met.
+    labels: HashMap<String, i64>,
 }
 
 impl State<'_> {
@@ -175,6 +177,16 @@ impl State<'_> {
 
     fn emit(&mut self, line: impl AsRef<str>) {
         self.lines.push(format!("    {}", line.as_ref()));
+    }
+
+    /// The number of a goto label.
+    fn user_label(&mut self, name: &str) -> i64 {
+        if let Some(&number) = self.labels.get(name) {
+            return number;
+        }
+        let number = self.new_label();
+        self.labels.insert(name.to_string(), number);
+        number
     }
 
     fn place_label(&mut self, number: i64) {
@@ -276,11 +288,18 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
                 _ => return fail(format!("unknown operator {op}")),
             }
         }
+        "comma" => {
+            expression(state, &node["left"])?;
+            state.emit("pop");
+            expression(state, &node["right"])?;
+        }
         "unary" => {
             expression(state, &node["operand"])?;
             match text(node, "op") {
                 "-" => state.emit("neg"),
                 "!" => state.emit("not"),
+                // C's unary + only promotes, which the VM's values need not
+                "+" => {}
                 op => return fail(format!("unknown operator {op}")),
             }
         }
@@ -290,7 +309,9 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
                 "float" => state.emit("itof"),
                 "int" => state.emit("ftoi"),
                 // a pointer cast, or an address cast to an enum, passes the address unchanged
-                "int *" | "float *" => {}
+                other if other.ends_with(" *") => {}
+                // the value is worked out and dropped
+                "void" => {}
                 other if other.starts_with("enum ") && node["operand"].kind() == "addr" => {}
                 other => return fail(format!("unknown cast to {other}")),
             }
@@ -504,6 +525,15 @@ fn statement_code(state: &mut State, node: &Node) -> Result<()> {
             state.emit(format!("print {}", args.len()));
         }
         "wait" | "end" | "skip_end" => state.emit(kind),
+        "label" => {
+            let number = state.user_label(text(node, "name"));
+            state.place_label(number);
+        }
+        "goto" => {
+            let number = state.user_label(text(node, "name"));
+            let name = state.label_name(number);
+            state.emit(format!("jmp {name}"));
+        }
         "if" => conditional(state, node)?,
         "while" => while_loop(state, node)?,
         "switch" => switch(state, node)?,
@@ -645,6 +675,7 @@ fn function_lines(function: &Node, context: &mut Context) -> Result<Vec<String>>
         next_slot: size,
         loops: Vec::new(),
         notes: context.notes.is_some().then(IndexMap::new),
+        labels: HashMap::new(),
     };
     block(&mut state, list(function, "body"))?;
     if let (Some(notes), Some(all)) = (state.notes.take(), context.notes.as_deref_mut()) {

@@ -692,17 +692,22 @@ fn sized_locals(function: &Node, found: &Context) -> Result<Vec<Node>> {
 
 const BASE_TYPES: [&str; 3] = ["int", "float", "string"];
 
+/// A type a variable can have as it is: int, float, string, or one of C's other integer types.
+fn is_base_type(kind: &str) -> bool {
+    BASE_TYPES.contains(&kind) || crate::parse::INTEGER_TYPES.contains(&kind)
+}
+
 /// A variable declared with a value kind (bgm_file) or an enum (enum se_bank) has the kind's base
 /// type, int for an enum; the kind stays on it, for the decompiler's types.
 fn typed(variable: &Node, kinds: &Map) -> Result<Node> {
     let kind = text(variable, "type");
     // void *p: a pointer parameter the function never reads through
-    if BASE_TYPES.contains(&kind) || (kind == "void" && truthy(&variable["array"])) {
+    if is_base_type(kind) || (kind == "void" && truthy(&variable["array"])) {
         return Ok(variable.clone());
     }
     let base = if kind.starts_with("enum ") { Some("int") } else { kinds.get(kind).and_then(Node::as_str) };
     match base {
-        Some(base) if BASE_TYPES.contains(&base) => Ok(variable.clone().with("type", base).with("kind", kind)),
+        Some(base) if is_base_type(base) => Ok(variable.clone().with("type", base).with("kind", kind)),
         _ => Err(Error::invalid(format!("{}: unknown type {}", text(variable, "name"), kind))),
     }
 }
@@ -714,6 +719,7 @@ pub fn resolve(program: &Node, tables: &BTreeMap<String, Table>) -> Result<Node>
     }
     let declarations = program.get("declarations").map(Declarations::of).unwrap_or_default();
     let found = context(&declarations, text(program, "natives"), tables)?;
+    let program = &crate::lower::initialised_globals(program, &found)?;
     let global_names: HashSet<String> =
         list(program, "globals").iter().map(|declared| text(declared, "name").to_string()).collect();
     let mut functions = Vec::new();

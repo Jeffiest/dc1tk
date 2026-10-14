@@ -41,7 +41,7 @@ fn int(value: i128) -> Value {
 fn initializers_and_declarations_anywhere() {
     same(
         "void f(void)\n{\n    int a = 1;\n    wait;\n    float b = 2.0;\n    int c[3] = {4, 5};\n}\n",
-        "void f(void)\n{\n    int a;\n    float b;\n    int c[3];\n\n    a = 1;\n    wait;\n    b = 2.0;\n    c[0] = 4;\n    c[1] = 5;\n}\n",
+        "void f(void)\n{\n    int a;\n    float b;\n    int c[3];\n\n    a = 1;\n    wait;\n    b = 2.0;\n    c[0] = 4;\n    c[1] = 5;\n    c[2] = 0;\n}\n",
         HEAD,
     );
     same(
@@ -171,10 +171,13 @@ fn string_variables_hold_strings() {
 fn errors_name_the_line() {
     fails("void f(void)\n{\n    wait;\n    nope = 1;\n}\n", "line 9: unknown variable nope");
     fails("int g[2];\n", "global arrays are not supported");
-    fails("int g = 1;\n", "globals start at 0");
-    fails("#define TWICE(x) ((x) * 2)\n", "macros with parameters");
+    fails("int h;\nint g = h;\nvoid f(void)\n{\n}\n", "the value of global g must be a constant expression, not h");
+    fails(
+        "#define TWICE(x) ((x) * 2)\nvoid f(void)\n{\n    TWICE(1, 2);\n}\n",
+        "line 9: macro TWICE takes 1 argument, given 2",
+    );
     fails("void f(void)\n{\n#if 1\n}\n", "#if without #endif");
-    fails("void f(void)\n{\n    int a;\n    float a;\n}\n", "declared again with another type");
+    fails("void f(void)\n{\n    int a;\n    float a;\n}\n", "a is declared twice in one block");
     fails("void f(void)\n{\n    break;\n}\n", "break outside a loop or switch");
 }
 
