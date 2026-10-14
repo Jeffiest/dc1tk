@@ -5,6 +5,7 @@
 
 pub mod cfg_text;
 pub mod data_table;
+pub mod dungeon_data;
 pub mod folder;
 pub mod georama_data;
 pub mod from_gltf;
