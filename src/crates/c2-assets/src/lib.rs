@@ -10,6 +10,7 @@ pub mod from_gltf;
 pub mod ids;
 pub mod im3;
 pub mod info_cfg;
+pub mod invention_data;
 pub mod item_data;
 pub mod json;
 pub mod map_edit;
