@@ -285,7 +285,8 @@ do:
    back into `.mot` keys and `info.cfg` `KEY`s: unedited exports and Blender
    round trips change nothing, an edited motion is written in place (or
    moved to the timeline's end when its length or shared frames change), and
-   a new action becomes a new `KEY`. Checked in the game (Max's idle). Set Blender to 30 fps before importing.
+   a new action becomes a new `KEY`. Checked in the game (Max's idle). Set
+   Blender to 30 fps before importing.
    Left: vertex, material alpha/colour and visibility lists go out to glTF
    only as carried data (morph targets, `KHR_animation_pointer`,
    `KHR_node_visibility` would expose them), motion sets 1-7 and motion-only
