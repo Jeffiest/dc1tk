@@ -30,7 +30,7 @@ c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
 - `make_mod.py` builds the Fish Room with the fish-room example's
   `make_mod.py`, then adds: a second fish, awake, its pupils grown huge,
   three Invent boxes round the fish, one enabled at a time, so photos of it
-  give the new ideas "Rotation", "More Rotation" and "Endless Rotation" (251
+  give the new ideas "Turning", "More Turning" and "Endless Turning" (251
   to 253) in turn, and a checkerboard of touch triggers on the floor whose
   programs move the fish on to its next idea after a photo (they never wait,
   and each colour disarms itself, so walking never stops); black fog, and a red light
@@ -76,11 +76,11 @@ when the town's people are out, and enters again).
    and seems to speak, but you hear nothing. You receive a Camera, a
    notebook, a photo album and a Scrap of Metal.
 2. Put the Camera in one of Max's active item slots (Items menu) and
-   photograph the fish: the idea "Rotation". Walk a few steps (the floor's
+   photograph the fish: the idea "Turning". Walk a few steps (the floor's
    hidden triggers move the fish on to its next idea once you hold a photo of
-   this one), photograph it again: "More Rotation"; and once more: "Endless
-   Rotation".
-3. Invent: Rotation, More Rotation and Endless Rotation make the gŷros
+   this one), photograph it again: "More Turning"; and once more: "Endless
+   Turning".
+3. Invent: Turning, More Turning and Endless Turning make the gŷros
    (Invention menu); make it from the Scrap of Metal. Show it to Gill.
 4. Talk to Parn, Sheriff Blinkhorn, Giles, Aegira and Fournet with the gŷros.
    Each one turns. After the third, the town goes dark.

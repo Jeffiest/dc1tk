@@ -11,7 +11,7 @@ mods/spinning-cult with this folder's mod.json, scripts and Brother Gill's model
 The Fish Room is built by the fish-room example's make_mod.py (the room, the fish turning, the
 door), and then, as one would in Blender with the c2_maps add-on:
 - three Invent boxes round the fish, one enabled at a time: the first photo gives the idea
-  "Rotation" (251), the next "More Rotation" (252), the last "Endless Rotation" (253);
+  "Turning" (251), the next "More Turning" (252), the last "Endless Turning" (253);
 - a checkerboard of touch triggers over the floor, which run the script that moves the fish on
   to its next idea after a photo;
 - a second light set, red, for the ending.
@@ -37,7 +37,7 @@ MOD = os.path.join(REPO, "mods", "spinning-cult")
 OWN_FILES = ("mod.json", "cult.h", "speech.h", "m01.c", "fishroom.c")
 DATA_FILES = ("items.json", "inventions.json")
 
-IDEAS = (251, 252, 253)  # Rotation, More Rotation, Endless Rotation
+IDEAS = (251, 252, 253)  # Turning, More Turning, Endless Turning
 CELL = 450.0  # the touch triggers' spacing on the floor: a board of 4 by 4
 TOWN_DARK_LIGHT = 8
 

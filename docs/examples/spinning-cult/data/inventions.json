@@ -20,32 +20,32 @@
  "ideas": [
   {
    "idea": 251,
-   "name": "Rotation",
+   "name": "Turning",
    "names": {
-    "fr": "Rotation",
-    "de": "Drehung",
+    "fr": "Tournoiement",
+    "de": "Drehen",
     "it": "Rotazione",
-    "es": "Rotación"
+    "es": "Giro"
    }
   },
   {
    "idea": 252,
-   "name": "More Rotation",
+   "name": "More Turning",
    "names": {
-    "fr": "Plus de rotation",
-    "de": "Mehr Drehung",
+    "fr": "Encore tourner",
+    "de": "Mehr Drehen",
     "it": "Più rotazione",
-    "es": "Más rotación"
+    "es": "Más giro"
    }
   },
   {
    "idea": 253,
-   "name": "Endless Rotation",
+   "name": "Endless Turning",
    "names": {
-    "fr": "Rotation sans fin",
-    "de": "Endlose Drehung",
+    "fr": "Tourner sans fin",
+    "de": "Endloses Drehen",
     "it": "Rotazione infinita",
-    "es": "Rotación sin fin"
+    "es": "Giro sin fin"
    }
   }
  ]
