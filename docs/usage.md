@@ -563,7 +563,15 @@ character pack; packs inside packs work the same way).
   `"map:m05x": {"file": "maps/m05x/m05.gltf", "like": "m05", "title": "Park"}`
   writes its files under the new name, appends its row to every language's
   map table, and `--start-at m05x` goes there ([maps](assets/maps.md)
-  section 9).
+  section 9). `"script": "m05x.c"` gives it an event script of the mod's
+  (a whole script, compiled in every language and added where the engine
+  loads a map's script, with the mod's `NEW_PROGRAM` numbers), and
+  `"programs": {"door_park": "ENTER_PARK"}` on any map: line gives event
+  points programs by name: a door added in an existing map runs a program
+  of a patch of that map's script, which calls `jump_to_map(-1, "m05x",
+  map_start)`. Every mod's scripts see a new map's number as `MAP_M05X`.
+  The example [new-map-door](examples/new-map-door/README.md) adds a map
+  with a script, a door into it in Palm Brinks and a way back.
 - **Game data as JSON.** `mod asset ISO NAME data:items data:shops
   data:monsters` writes `data/items.json` (every item's common data, with
   its weapon, usable effect, attachment, ridepod part or fish stats nested:
@@ -581,7 +589,10 @@ character pack; packs inside packs work the same way).
   `data:fishing` (spots, race opponents, prizes, fish species and race
   kinds), `data:layouts` (the room layouts dungeon floors are built from:
   each room's rows of parts, as text, how often it is chosen; rooms may be
-  added, see [dungeons](assets/dungeons.md)) and `data:characters`
+  added, see [dungeons](assets/dungeons.md)), `data:parts` (the parts those
+  layouts name, and the mini maps' tiles: a part renamed in place is a new
+  kind of part), `data:chests` (what each dungeon floor's chests hold: groups
+  of items by rank, and each floor's groups) and `data:characters`
   (starting HP and equipment, WHP gained at a
   weapon level-up, Monica's monster forms, badge growth). Keep only the
   records and fields you change, each record with the keys that name it

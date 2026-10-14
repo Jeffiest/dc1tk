@@ -137,7 +137,8 @@ c2 play modded.iso
   own model, screen and sounds (`c2 build extracted/scripts dc2.iso -o
   calculator.iso --mod calculator --mods docs/examples`), and
   [a character of its own](docs/examples/new-character/README.md), rigged
-  and animated in Blender.
+  and animated in Blender, and
+  [a new map with a door into it](docs/examples/new-map-door/README.md).
 - [The script format](docs/format.md), [assembly](docs/assembly.md) and
   [how the tools work](docs/internals.md).
 

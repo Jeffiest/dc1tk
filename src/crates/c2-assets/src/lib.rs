@@ -4,6 +4,7 @@
 //! mds.py, mot.py, info_cfg.py, to_gltf.py, from_gltf.py, models.py) do.
 
 pub mod cfg_text;
+pub mod chest_data;
 pub mod data_table;
 pub mod dungeon_data;
 pub mod dungeon_layout;

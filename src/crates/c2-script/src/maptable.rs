@@ -161,6 +161,15 @@ pub fn new_maps(lines: &[replace::Line]) -> Result<Vec<NewMap>> {
     Ok(out.into_iter().map(|(map, _)| map).collect())
 }
 
+/// The rows of the PAL disc's map tables (MAP_NAME_NUM 189).
+pub const DISC_ROWS: i64 = 189;
+
+/// The new maps' numbers on a PAL disc, without reading it: after its 189 rows, in order (what
+/// mod check uses without --disc).
+pub fn assumed_numbers(maps: &[NewMap]) -> IndexMap<String, i64> {
+    maps.iter().enumerate().map(|(at, map)| (map.name.clone(), DISC_ROWS + at as i64)).collect()
+}
+
 /// startat::disc_map_numbers with the new maps after the disc's own.
 pub fn disc_numbers_with(iso: &Path, language: Option<i64>, maps: &[NewMap]) -> Result<IndexMap<String, i64>> {
     if maps.is_empty() {

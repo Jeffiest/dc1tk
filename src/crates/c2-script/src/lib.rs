@@ -25,6 +25,7 @@ pub mod library;
 pub mod loads;
 pub mod lower;
 pub mod mapedit;
+pub mod mapscript;
 pub mod maps;
 pub mod maptable;
 pub mod memory;
