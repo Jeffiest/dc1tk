@@ -481,10 +481,21 @@ pub fn from_midi(midi: &[u8], template: &Sequence, has_program: &dyn Fn(u8) -> b
     let earliest = merged.events.iter().find(|(_, message)| matches!(message, Message::NoteOn { .. }));
     let lead = if whole || earliest.is_some_and(|(tick, _)| *tick < FIRST_NOTE) { LEAD } else { 0 };
     for (tick, message) in &mut merged.events {
-        if *tick > 0 || !matches!(message, Message::Meta { kind: META_TEMPO, .. }) {
-            *tick += lead;
-        }
+        let setup = !matches!(
+            message,
+            Message::NoteOn { .. }
+                | Message::NoteOff { .. }
+                | Message::Meta { .. }
+                | Message::Control { controller: NRPN_MSB | DATA_ENTRY | DATA_ENTRY_LSB, .. }
+        );
+        *tick = match (*tick, message) {
+            // a tempo at the start stays there, the channels' set-up there goes before the notes
+            (0, Message::Meta { kind: META_TEMPO, .. }) => 0,
+            (0, _) if setup && lead > 0 => 10,
+            _ => *tick + lead,
+        };
     }
+    merged.events.sort_by_key(|(tick, _)| *tick);
     merged.markers = (merged.markers.0.map(|tick| tick + lead), merged.markers.1.map(|tick| tick + lead));
     merged.end += lead;
     let mut end = merged.end;
@@ -707,18 +718,19 @@ mod tests {
             built.ticks().into_iter().zip(built.events.iter().map(|e| e.message.clone())).collect();
         let control = |controller, value| Message::Control { channel: 0, controller, value };
         let three = |controller, value| Message::Control { channel: 3, controller, value };
-        // moved on by LEAD, as its first note came at 0, with the set-up it lacked before it
+        // moved on by LEAD, as its first note came at 0, but for its set-up at 0, now at 10, and
+        // given the set-up it lacked
         assert_eq!(
             messages,
             [
                 (0, Message::tempo(600_000)),
+                (10, Message::Program { channel: 3, program: 1 }),
                 (20, three(7, 100)),
                 (30, three(11, 127)),
                 (40, three(10, 64)),
                 (50, Message::PitchBend { channel: 3, value: 0x2000 }),
                 (110, control(NRPN_MSB, LOOP_START)),
                 (120, control(DATA_ENTRY, 0)),
-                (120, Message::Program { channel: 3, program: 1 }),
                 (120, Message::NoteOn { channel: 3, key: 64, velocity: 100 }),
                 (600, Message::NoteOff { channel: 3, key: 64 }),
                 (1060, control(NRPN_MSB, LOOP_END)),

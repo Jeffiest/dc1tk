@@ -208,8 +208,10 @@ replaces as the template:
 - **Laid out as the disc's sequences** (section 2): channel 0's messages move
   to a channel the file does not use when channel 0 plays notes (refused when
   all 16 are used); when a note comes before tick 50, or the tune loops whole,
-  everything but a tempo at the start moves 120 ticks on (so a tune looped
-  whole loops from tick 120, after its set-up); every note channel is given
+  the notes and everything after the start move 120 ticks on, the channels'
+  set-up at the start (program changes, controllers, bends) goes to tick 10
+  and a tempo there stays (so a tune looped whole loops from tick 120, after
+  its set-up); every note channel is given
   what it lacks before its first note of volume 100 (MIDI's), expression 127,
   pan centre and pitch bend centre, at ticks 20 to 50.
 - **Refused**: a program the bank lacks (unless the disc's sequence names it
