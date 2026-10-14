@@ -35,6 +35,7 @@ pub mod pathnames;
 pub mod renames;
 pub mod replace;
 pub mod sdk;
+pub mod slim;
 pub mod slots;
 pub mod soundpass;
 pub mod source;
