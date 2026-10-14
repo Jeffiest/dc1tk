@@ -538,6 +538,17 @@ def main():
         mod = json.load(handle)
     check(mod.get("name") == "testmod" and mod.get("add") == {"x": 1}, "mod.json keeps its other keys")
     check(mod["replace"] == {"texture:abc": "a.png", "map:t01": "maps/t01/t01.gltf"}, "mod.json line: %s" % mod["replace"])
+    # a new map made from this one names the scene under "add": the disc's map is left alone
+    new_map_dir = os.path.join(work, "mods", "newmap")
+    os.makedirs(new_map_dir)
+    added = {"map:t01x": {"file": "maps/t01/t01.gltf", "like": "t01"}}
+    with open(os.path.join(new_map_dir, "mod.json"), "w") as handle:
+        json.dump({"add": added}, handle)
+    result = bpy.ops.c2.export_mod(mod_dir=new_map_dir)
+    check(result == {"FINISHED"}, "export to a new map's mod: %s" % result)
+    with open(os.path.join(new_map_dir, "mod.json")) as handle:
+        mod = json.load(handle)
+    check(mod == {"add": added}, "a new map's export adds no replace line: %s" % mod)
     check(not floor.visible_get(), "collision still hidden after the export")
     if wall is not None:
         surface = look._output(wall.node_tree).inputs["Surface"]

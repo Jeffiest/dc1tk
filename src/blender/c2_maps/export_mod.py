@@ -190,8 +190,22 @@ def mod_json_value(name):
     return "maps/%s/%s.gltf" % (name, name)
 
 
+def adds_file(data, value):
+    """The key of an entry of mod.json's "add" whose "file" is `value` (a new map made from the
+    exported one), or None."""
+    added = data.get("add")
+    if not isinstance(added, dict):
+        return None
+    for key, entry in added.items():
+        if isinstance(entry, dict) and str(entry.get("file", "")).replace("\\", "/") == value:
+            return key
+    return None
+
+
 def update_mod_json(mod_dir, name):
-    """Add or update "map:NAME": "maps/NAME/NAME.gltf" under replace, keeping everything else."""
+    """Add or update "map:NAME": "maps/NAME/NAME.gltf" under replace, keeping everything else.
+    When "add" already has a new map whose file is that scene, the export is that map's and the
+    disc's map is left alone."""
     path = os.path.join(mod_dir, "mod.json")
     data = OrderedDict()
     if os.path.isfile(path):
@@ -201,6 +215,8 @@ def update_mod_json(mod_dir, name):
             data = json.loads(text, object_pairs_hook=OrderedDict)
         if not isinstance(data, dict):
             raise ValueError("%s is not a JSON object" % path)
+    if adds_file(data, mod_json_value(name)) is not None:
+        return path
     replace = data.get("replace")
     if replace is None:
         replace = OrderedDict()
