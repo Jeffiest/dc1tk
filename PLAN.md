@@ -133,10 +133,16 @@ Blender unchanged. The formats and conventions are in
 [maps](docs/assets/maps.md); the example [map-edit](docs/examples/map-edit/)
 was checked in the game. Left over:
 
-- **New maps.** A wholly new map needs a map number, the engine's map tables
-  and a way in; only the maps on the disc can be edited.
-- **Dungeon floors.** Random floors are built from parts at run time; their
-  layouts and parts are not editable yet.
+- **New maps** (done, being tried). `"add": {"map:m05x": {"file": ...,
+  "like": "m05"}}` builds a new map from an existing one's edited scene,
+  with a row in every language's map table, so `--start-at m05x` reaches it
+  ([maps](docs/assets/maps.md) section 9). Left: a new map's own script,
+  and a door into it from the game's maps.
+- **Dungeon floors** (done, being tried). The floor layouts
+  (`dungeon/cfg_file/*.cfg`) are `data:layouts`; the parts they place edit
+  in Blender (`c2 map-export d01f01` shows each template once)
+  ([dungeons](docs/assets/dungeons.md)). Left: new part kinds (fixed in the
+  executable), which ways on a floor gets, the chest-item scripts.
 
 ## Now: the rest of the game
 
