@@ -54,7 +54,9 @@ def check(root):
         elif role == "point":
             check_point(found, obj, data)
         elif role == "mds" and "mds_index" not in data:
-            if c2data.piece_of(obj) is not None:
+            piece = c2data.piece_of(obj)
+            # a part added to a model of the disc's (a model made here has none with an index)
+            if piece is not None and any("mds_index" in (c2data.get(o) or {}) for o in c2data.descendants(piece)):
                 found.append((WARNING, obj.name, "An MDS node without mds_index (a new node)"))
 
     # Placement names: unique, and the slot limit.
@@ -85,7 +87,52 @@ def check(root):
 
     for obj in c2data.collision_meshes(root):
         check_collision(found, obj)
+    check_pictures(found, root)
     return found
+
+
+def picture_name(image):
+    """The game picture an image stands for, as the export names it: without Blender's .001 and
+    without a file suffix."""
+    name = schema.strip_suffix(image.name)
+    stem, dot, suffix = name.rpartition(".")
+    return stem if dot and suffix.lower() in ("png", "jpg", "jpeg", "tga", "bmp") else name
+
+
+def is_exported_picture(image):
+    """An image loaded from the textures/ folder of an exported map (a picture of the disc)."""
+    path = bpy.path.abspath(image.filepath or "").replace("\\", "/").lower()
+    return "/textures/" in path and path.endswith(".png") and not image.is_dirty
+
+
+def check_pictures(found, root):
+    """The pictures the map's materials show: names the game can hold, and new pictures (ones
+    not exported from the disc) of a size a texture file takes."""
+    seen = set()
+    for obj in c2data.descendants(root):
+        if obj.type != "MESH" or c2data.is_collision_mesh(obj):
+            continue
+        for slot in obj.material_slots:
+            material = slot.material
+            if material is None or material.node_tree is None:
+                continue
+            for node in material.node_tree.nodes:
+                image = getattr(node, "image", None) if node.type == "TEX_IMAGE" else None
+                if image is None or image.name in seen:
+                    continue
+                seen.add(image.name)
+                name = picture_name(image)
+                latin1 = all(ord(c) < 0x100 for c in name)
+                if not name or not latin1 or len(name) > schema.NAME_LIMIT:
+                    found.append((ERROR, obj.name, "Picture \"%s\": a picture's name is 1 to 31 Latin-1 characters" % name))
+                if is_exported_picture(image):
+                    continue
+                w, h = image.size[:]
+                power = lambda n: n > 0 and n & (n - 1) == 0
+                if not (power(w) and power(h)) or max(w, h) > 1024:
+                    found.append(
+                        (ERROR, obj.name, "Picture \"%s\" is %dx%d: sides must be powers of two up to 1024" % (name, w, h))
+                    )
 
 
 def check_point(found, obj, data):

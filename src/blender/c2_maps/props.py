@@ -65,6 +65,12 @@ def path_bool(path, label, description=""):
         obj = _active()
         if obj is not None:
             c2data.assign(obj, path, _keep_type(c2data.lookup(obj, path), 1 if value else 0))
+            if tuple(path) == ("show",):
+                # the view shows what the game does (it stays active, to be shown again)
+                from . import look
+
+                settings = bpy.context.window_manager.c2_maps
+                look.show_hour(bpy.context, settings.hour, settings.by_hour)
 
     return BoolProperty(name=label, description=description, get=get, set=set)
 
@@ -312,7 +318,8 @@ class C2Settings(bpy.types.PropertyGroup):
     )
     by_hour: BoolProperty(
         name="By hour",
-        description="Show only the pieces the game draws at the hour; off shows every piece",
+        description="Show only the pieces the game draws at the hour and at the start (not those "
+        "it hides until a script shows them, nor deleted placements); off shows every piece",
         default=True,
         update=_show_hour,
     )

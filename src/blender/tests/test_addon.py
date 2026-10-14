@@ -227,6 +227,13 @@ def main():
     check(all(obj.hide_render for obj in c2data.descendants(some_piece)), "its nodes hidden from renders")
     c2data.assign(some_piece, ("time",), [0, 0])
     check(look.show_hour(context, 12) == 0, "and shown again")
+    some_place = c2data.placement_of(some_piece)
+    c2data.assign(some_place, ("show",), 0)
+    hidden_now = look.show_hour(context, 12)
+    check(hidden_now == len([o for o in some_place.children if c2data.role(o) == "piece"]), "a placement the game hides hides its pieces")
+    check(look.show_hour(context, 12, enabled=False) == 0, "every piece shows with the filter off")
+    c2data.assign(some_place, ("show",), 1)
+    look.show_hour(context, 12)
     for obj in c2data.descendants(some_piece):
         if c2data.is_collision_mesh(obj):
             obj.hide_set(True)
@@ -402,6 +409,21 @@ def main():
     quad_check = validate.check(root)
     check(any("bytes" in r[2] for r in quad_check if r[0] == validate.ERROR), "a 32-byte name is an error")
     long_name.name = "point:river"
+    # a new picture on the crate made a model: a size a texture file cannot take, then one it can
+    crate_obj = bpy.data.objects.get("crate")
+    if crate_obj is not None:
+        picture = bpy.data.images.new("crate_wood", 100, 64)
+        material = bpy.data.materials.new("crate_wood")
+        if bpy.app.version < (5, 0, 0):
+            material.use_nodes = True
+        material.node_tree.nodes.new("ShaderNodeTexImage").image = picture
+        crate_obj.data.materials.append(material)
+        found = validate.check(root)
+        check(any("crate_wood" in r[2] and "powers of two" in r[2] for r in found if r[0] == validate.ERROR), "a 100x64 picture is an error")
+        picture.scale(128, 64)
+        found = validate.check(root)
+        check(not any("crate_wood" in r[2] for r in found), "a 128x64 picture is fine")
+        check(not any("mds_index" in r[2] and r[1] == crate_obj.name for r in found), "no new-node warning on a new model")
     bad = bpy.data.objects.new("point:bad", None)
     context.collection.objects.link(bad)
     bad.parent = c2data.group_node(root, "points")

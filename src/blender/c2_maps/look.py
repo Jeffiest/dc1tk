@@ -201,16 +201,32 @@ def shown_at(time, hour):
     return hour >= start or hour < end
 
 
+def shown(obj):
+    """Whether the game shows a placement or piece at the start (its show flag is not 0)."""
+    value = c2data.to_py(c2data.lookup(obj, ("show",)))
+    try:
+        return value is None or int(value) != 0
+    except (TypeError, ValueError):
+        return True
+
+
 def show_hour(context, hour, enabled=True, roots=None):
     """Show the pieces the game draws at `hour` (all of them when not `enabled`), in the
-    viewport and in renders. Returns how many pieces are hidden."""
+    viewport and in renders: not those whose hours leave it out, nor those it hides at the start
+    (show 0, theirs or their placement's: deleted placements, pieces scripts show later).
+    Returns how many pieces are hidden."""
     hidden = 0
     layer_objects = context.view_layer.objects
     for root in roots if roots is not None else c2data.scene_map_roots(context.scene):
         for piece in c2data.descendants(root):
             if c2data.role(piece) != "piece":
                 continue
-            visible = not enabled or shown_at(c2data.to_py(c2data.lookup(piece, ("time",))), hour)
+            placement = c2data.placement_of(piece)
+            visible = not enabled or (
+                shown_at(c2data.to_py(c2data.lookup(piece, ("time",))), hour)
+                and shown(piece)
+                and (placement is None or shown(placement))
+            )
             hidden += not visible
             for obj in c2data.descendants(piece):
                 if obj.name in layer_objects:

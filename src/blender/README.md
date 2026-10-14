@@ -79,7 +79,10 @@ the node tree, then:
   selected;
 - shows the pieces the game draws at the hour in the Map panel (noon to
   start): towns hold day and night versions of pieces (`PIECE_TIME`), and
-  showing both at once covers the town. Untick the clock for every piece.
+  showing both at once covers the town. Pieces and placements the game hides
+  at the start (show 0: pieces scripts show later, and placements deleted in
+  an earlier edit, which keep their slot) are hidden too, also when you untick
+  Shown. Untick the clock for every piece.
   Hidden collision is left out of renders too.
 
 **Edit.** Select something; the Selected panel shows what it is and its
@@ -133,12 +136,17 @@ select faces, set ground, foot sound, area and mask in the Add panel's
 Collision box, and press "Set selected faces": the faces get the material
 `col_groundG_footF_areaA_maskM`, made when missing.
 
+**Delete.** Delete a placement with its pieces and points as usual: since
+scripts address placements by slot, the build keeps its slot and hides it
+(show 0) rather than removing it.
+
 **Check.** Validate Map lists errors and warnings (select an entry's object
 with its button; the whole list is in the text "c2 validation"): names over
 31 bytes (cp932), event targets over 15, repeated placement names, more than
 320 placements (400 for dungeons), unknown point kinds, collision faces that
 are not triangles or whose material is not a `col_` name, more than 8
-`TIME_LIGHT_NUM`, and nodes without `extras.c2`.
+`TIME_LIGHT_NUM`, nodes without `extras.c2`, picture names over 31 Latin-1
+characters, and new pictures whose sides are not powers of two up to 1024.
 
 **Export.** Choose the mod folder (`mods/NAME`) and press Export Map to Mod.
 After a validation without errors, the map under its `map:` root, and
