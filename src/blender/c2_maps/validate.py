@@ -88,6 +88,24 @@ def check(root):
     for obj in c2data.collision_meshes(root):
         check_collision(found, obj)
     check_pictures(found, root)
+    found.extend(left_out(root))
+    return found
+
+
+def left_out(root):
+    """What the export would leave out without a word, as warnings: meshes outside every map
+    (modelled but never made a model), and the map in the scene twice (only `root` is exported)."""
+    found = []
+    scene = bpy.context.scene
+    name = c2data.map_name(root)
+    twins = [other for other in c2data.scene_map_roots(scene) if other != root and c2data.map_name(other) == name]
+    if twins:
+        found.append((WARNING, twins[0].name, "The scene holds map %s %d times; only %s is exported" % (name, len(twins) + 1, root.name)))
+    for obj in scene.objects:
+        if obj.type == "MESH" and c2data.map_root(obj) is None:
+            found.append(
+                (WARNING, obj.name, "Not part of any map, so not exported: select it and press New Model from Selection")
+            )
     return found
 
 

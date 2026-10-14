@@ -150,7 +150,9 @@ characters, and new pictures whose sides are not powers of two up to 1024.
 
 **Export.** Choose the mod folder (`mods/NAME`) and press Export Map to Mod.
 After a validation without errors, the map under its `map:` root, and
-nothing else in the file, is written as glTF Separate, +Y up, with custom
+nothing else in the file, is written (meshes outside the map, and a second
+copy of the map in the scene, are named in a warning, since they are left
+out) as glTF Separate, +Y up, with custom
 properties, to `maps/NAME/NAME.gltf` in the mod (textures in `textures/`),
 and `mod.json` gets `"map:NAME": "maps/NAME/NAME.gltf"` under `replace`
 (made when missing; other keys kept). Blender's `.001` suffixes are taken

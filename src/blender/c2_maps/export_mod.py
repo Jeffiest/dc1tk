@@ -266,6 +266,9 @@ class C2_OT_export_mod(bpy.types.Operator):
                     self.report({"ERROR"}, "%s: %s" % (name, message))
                 self.report({"ERROR"}, "%d validation errors: not exported" % len(errors))
                 return {"CANCELLED"}
+        # what the export leaves out is said, though it does not stop it
+        for level, name, message in validate.left_out(root)[:10]:
+            self.report({"WARNING"}, "%s: %s" % (name, message))
         try:
             path, mod_json, fixed = export_map(context, root, mod_dir)
         except (OSError, ValueError, RuntimeError) as error:
