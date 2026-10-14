@@ -18,6 +18,7 @@ import tempfile
 import traceback
 
 import bpy
+from mathutils import Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ADDON_PARENT = os.path.dirname(HERE)
@@ -316,6 +317,31 @@ def main():
     if copy is not None:
         check(c2data.lookup(copy, ("slot",)) is None, "the copy has no slot (appended)")
         check(len(c2data.descendants(copy)) == len(c2data.descendants(bpy.data.objects["place:house01"])), "copy has every node")
+
+    # A mesh modelled in Blender made a model: a placement, its piece, and a collision copy.
+    for obj in context.selected_objects:
+        obj.select_set(False)
+    activate(root)
+    check(not bpy.ops.c2.new_model.poll(), "new model needs a loose mesh selected")
+    bpy.ops.mesh.primitive_cube_add(size=4.0, location=(50.0, 60.0, 5.0))
+    crate = context.active_object
+    crate.name = "crate"
+    result = bpy.ops.c2.new_model()
+    check(result == {"FINISHED"}, "new model")
+    made = bpy.data.objects.get("place:t01_crate")
+    check(made is not None, "place:t01_crate made")
+    if made is not None:
+        check(c2data.lookup(made, ("template",)) == "t01_crate", "its own template")
+        check((made.matrix_world.translation - crate.matrix_world.translation).length < 1e-4, "placed where the mesh is")
+        pieces = {c2data.lookup(p, ("model",)): c2data.lookup(p, ("kind",)) for p in made.children}
+        check(pieces == {"t01_crate-m.mds": "model", "t01_crate-a.mds": "collision"}, "its pieces: %s" % pieces)
+        check(crate.parent is not None and crate.parent.name == "piece:t01_crate-m", "the mesh is under the drawn piece")
+        check((crate.matrix_world.translation - Vector((50.0, 60.0, 5.0))).length < 1e-4, "the mesh stayed put")
+        walls = [obj for obj in c2data.descendants(made) if obj.type == "MESH" and c2data.is_collision_mesh(obj)]
+        check(len(walls) == 1 and all(len(p.vertices) == 3 for p in walls[0].data.polygons), "a triangulated collision copy")
+        check(walls and walls[0].data.materials[0].name == "col_ground0_foot0_area6_mask0", "collision area 6")
+    crate.select_set(True)
+    check(not bpy.ops.c2.new_model.poll(), "the mesh is a model now, not loose")
 
     # 4. Paint collision: one face in Edit Mode.
     bpy.ops.c2.toggle_collision(kind="collision")

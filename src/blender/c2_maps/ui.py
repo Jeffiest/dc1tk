@@ -267,6 +267,9 @@ class C2_PT_add(_Panel, bpy.types.Panel):
         placement = c2data.placement_of(context.active_object)
         col.label(text="Into %s" % (placement.name if placement else "the map's points"), icon="INFO")
         layout.operator(edit.C2_OT_duplicate_placement.bl_idname, icon="DUPLICATE")
+        layout.operator(edit.C2_OT_new_model.bl_idname, icon="MESH_CUBE")
+        if not edit.loose_meshes(context):
+            layout.label(text="Model a mesh, select it, then make it a model", icon="INFO")
 
         box = layout.box()
         box.label(text="Collision", icon="MOD_PHYSICS")

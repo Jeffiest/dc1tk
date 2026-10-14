@@ -252,6 +252,21 @@ pub fn build_map_model(given: &Gltf, original: &[u8], options: &to_gltf::Options
     Ok(from_gltf::import_with(given, original, None, None, Some(&meshes), &import)?.mds)
 }
 
+/// A new map model from meshes made in another tool: every mesh of the glTF becomes a frame under
+/// a root frame named `stem`, its vertices where the object was put (relative to the glTF's root).
+/// With `options.collision` the meshes are collision (from_gltf::ImportOptions).
+pub fn new_map_model(given: &Gltf, stem: &str, options: &to_gltf::Options) -> Result<Vec<u8>> {
+    let mut model = crate::mds::Mds::new();
+    model.nodes.push(crate::mds::Node::new(stem, -1));
+    let template = crate::mds::build(&model)?;
+    let import = from_gltf::ImportOptions { collision: options.collision };
+    let built = from_gltf::import_with(given, &template, None, None, None, &import)?.mds;
+    if crate::mds::parse(&built)?.nodes.iter().all(|node| node.mdt.is_none()) {
+        bail!("no mesh to make the model of");
+    }
+    Ok(built)
+}
+
 /// Path(path).name.
 fn file_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)

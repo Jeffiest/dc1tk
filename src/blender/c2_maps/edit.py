@@ -160,6 +160,131 @@ class C2_OT_duplicate_placement(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def loose_meshes(context):
+    """Selected mesh objects that are not yet part of the map (under no piece)."""
+    return [obj for obj in context.selected_objects if obj.type == "MESH" and c2data.piece_of(obj) is None]
+
+
+class C2_OT_new_model(bpy.types.Operator):
+    """Make the selected meshes (ones you modelled, under no piece) a new model of the map: a new
+    placement holding a piece with them, and a collision copy so the player cannot walk through.
+    Building the mod adds the models to the map's model pack"""
+
+    bl_idname = "c2.new_model"
+    bl_label = "New Model from Selection"
+    bl_options = {"REGISTER", "UNDO"}
+
+    name: StringProperty(
+        name="Name",
+        description="The placement's and the models' base name; empty for one made from the map and "
+        "the active object",
+    )
+    collision: BoolProperty(
+        name="Collision",
+        description="Add a floor and wall collision copy of the meshes (area 6, as most of the game's)",
+        default=True,
+    )
+    camera: BoolProperty(
+        name="Camera collision",
+        description="Add a camera collision copy too, which keeps the camera out of the model",
+        default=False,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return c2data.current_map_root(context) is not None and bool(loose_meshes(context))
+
+    def execute(self, context):
+        root = c2data.current_map_root(context)
+        meshes = loose_meshes(context)
+        placements = c2data.placements(root)
+        taken = {schema.game_name(obj.name, "placement") for obj in placements}
+        taken |= {str(c2data.lookup(obj, ("template",), "")) for obj in placements}
+        models = {
+            str(c2data.lookup(obj, ("model",), "")).lower()
+            for obj in c2data.descendants(root)
+            if c2data.role(obj) == "piece"
+        }
+        active = context.active_object if context.active_object in meshes else meshes[0]
+        wanted = self.name or "%s_%s" % (c2data.map_name(root), schema.strip_suffix(active.name))
+        wanted = "".join(c if c.isascii() and (c.isalnum() or c in "_-") else "_" for c in wanted)
+        # the name leaves room for a model's "-m.mds"
+        base = wanted[: schema.NAME_LIMIT - 6]
+        number = 1
+        name = base
+        while name in taken or any("%s-%s.mds" % (name.lower(), kind) in models for kind in "mac"):
+            number += 1
+            tail = "_%d" % number
+            name = base[: schema.NAME_LIMIT - 6 - len(tail)] + tail
+        group = ensure_group(root, "placements", context)
+        placement = bpy.data.objects.new(schema.PREFIX["placement"] + name, None)
+        placement[c2data.KEY] = {"role": "placement", "name": name, "template": name, "show": 1, "group": ""}
+        placement.empty_display_size = 10.0
+        link_like(placement, group, context)
+        centre = sum((obj.matrix_world.translation for obj in meshes), meshes[0].matrix_world.translation * 0)
+        centre = centre / len(meshes)
+        place_at(placement, group, Matrix.Translation(centre))
+
+        def new_piece(kind, letter, order):
+            piece = bpy.data.objects.new(schema.PREFIX["piece"] + "%s-%s" % (name, letter), None)
+            piece[c2data.KEY] = {
+                "role": "piece", "name": "%s-%s" % (name, letter), "order": order,
+                "model": "%s-%s.mds" % (name, letter), "kind": kind, "show": 1,
+            }
+            piece.empty_display_size = 2.0
+            link_like(piece, placement, context)
+            place_at(piece, placement, placement.matrix_world.copy())
+            return piece
+
+        drawn = new_piece("model", "m", 0)
+        for obj in meshes:
+            obj[c2data.KEY] = {"role": "mds"}
+            world = obj.matrix_world.copy()
+            obj.parent = drawn
+            obj.matrix_parent_inverse = Matrix.Identity(4)
+            obj.matrix_world = world
+        made = [drawn]
+        copies = []
+        for kind, letter, wanted_kind in (("collision", "a", self.collision), ("camera", "c", self.camera)):
+            if not wanted_kind:
+                continue
+            piece = new_piece(kind, letter, len(made))
+            made.append(piece)
+            material = collision_material(0, 0, 6, 0, context.window_manager.c2_maps.collision_colour)
+            for obj in meshes:
+                copy = obj.copy()
+                copy.data = obj.data.copy()
+                copy.data.materials.clear()
+                copy.data.materials.append(material)
+                # collision is triangles, all with the one attribute
+                shape = bmesh.new()
+                shape.from_mesh(copy.data)
+                bmesh.ops.triangulate(shape, faces=shape.faces[:])
+                for face in shape.faces:
+                    face.material_index = 0
+                shape.to_mesh(copy.data)
+                shape.free()
+                link_like(copy, obj, context)
+                copy.parent = piece
+                copy.matrix_parent_inverse = Matrix.Identity(4)
+                copy.matrix_world = obj.matrix_world.copy()
+                copy.name = "%s-%s" % (schema.strip_suffix(obj.name), letter)
+                copies.append((kind, copy))
+        if copies:
+            collections = import_map.collision_collections(context, root)
+            for kind, copy in copies:
+                import_map.move_to(copy, collections[kind])
+        for other in context.selected_objects:
+            other.select_set(False)
+        placement.select_set(True)
+        context.view_layer.objects.active = placement
+        self.report(
+            {"INFO"},
+            "Added placement %s with %s" % (placement.name, ", ".join(c2data.lookup(p, ("model",)) for p in made)),
+        )
+        return {"FINISHED"}
+
+
 def collision_material(ground, foot, area, mask, mode="AREA"):
     name = schema.col_name(ground, foot, area, mask)
     material = bpy.data.materials.get(name)
@@ -474,6 +599,7 @@ class C2_OT_add_c2(bpy.types.Operator):
 classes = (
     C2_OT_add_point,
     C2_OT_duplicate_placement,
+    C2_OT_new_model,
     C2_OT_paint_collision,
     C2_OT_recolour_collision,
     C2_OT_toggle_collision,

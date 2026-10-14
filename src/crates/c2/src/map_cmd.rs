@@ -265,7 +265,7 @@ pub fn apply_maps(
             changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: found.map.clone(), old: original.len(), new: text.len() });
             out.insert(found.map.clone(), text);
         }
-        if !imported.models.is_empty() {
+        if !imported.models.is_empty() || !imported.new_models.is_empty() {
             let Some((mpk_path, mut mpk_data)) = mpk else {
                 bail!("{} (mod {}): the map has no model pack to rebuild models in", line.key, line.module);
             };
@@ -284,9 +284,81 @@ pub fn apply_maps(
                 mpk_data = c2_disc::rebuild::replaced_member(&mpk_data, &[pack.name.clone(), member.clone()], data)?;
                 println!("  {} (map {}): rebuilt {} in {}", line.module, name, member, pack.name);
             }
+            if !imported.new_models.is_empty() {
+                mpk_data = with_new_models(mpk_data, &name, &imported.new_models)
+                    .with_context(|| format!("{} (mod {})", line.key, line.module))?;
+                for model in &imported.new_models {
+                    println!("  {} (map {}): added {} ({})", line.module, name, model.file, map_export::kind_name(model.kind));
+                }
+            }
             changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: mpk_path.clone(), old: old_size, new: mpk_data.len() });
             out.insert(mpk_path, mpk_data);
         }
     }
     Ok((out, changes))
+}
+
+/// The most models and characters a model pack holds (CMdsList::LoadPCPFile).
+const PACK_MODELS: usize = 0x1FF;
+
+/// The map's model packs with the new models added to its first (`NAME_0.pcp` when it has one),
+/// each with an info.cfg entry giving its TYPE.
+fn with_new_models(mpk: Vec<u8>, map: &str, models: &[c2_assets::map_import::NewModel]) -> Result<Vec<u8>> {
+    let pcps: Vec<(String, Vec<u8>)> = members(&mpk);
+    let first = format!("{map}_0.pcp");
+    let Some((pcp, pcp_data)) = pcps.iter().find(|(name, _)| name.eq_ignore_ascii_case(&first)).or(pcps.first()) else {
+        bail!("the map's model pack holds no .pcp");
+    };
+    let inside = members(pcp_data);
+    let count = inside.iter().filter(|(name, _)| [".mds", ".chr"].iter().any(|end| name.to_lowercase().ends_with(end))).count();
+    if count + models.len() > PACK_MODELS {
+        bail!("{pcp} holds {count} models; {} more would pass the game's {PACK_MODELS}", models.len());
+    }
+    let Some((cfg_name, cfg)) = inside.iter().find(|(name, _)| name.eq_ignore_ascii_case("info.cfg")) else {
+        bail!("{pcp} has no info.cfg");
+    };
+    let mut out = mpk;
+    let names = vec![pcp.clone()];
+    for model in models {
+        out = c2_disc::rebuild::added_member(&out, &names, &model.file, &model.data)?;
+    }
+    let entries: Vec<(&str, i64)> = models.iter().map(|model| (model.file.as_str(), model.kind)).collect();
+    let text = info_cfg_with(&c2_disc::text::decode_lossy(cfg), &entries);
+    let cfg_bytes = c2_disc::text::encode(&text).with_context(|| format!("{pcp}: info.cfg is not Shift-JIS"))?;
+    Ok(c2_disc::rebuild::replaced_member(&out, &[pcp.clone(), cfg_name.clone()], &cfg_bytes)?)
+}
+
+/// A model pack's info.cfg with an entry (`MDS "file","file"; TYPE t; MDS_END;`) added after its
+/// last for each model, in its own line endings.
+fn info_cfg_with(cfg: &str, models: &[(&str, i64)]) -> String {
+    let newline = if cfg.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut text = cfg.trim_end().to_string();
+    let ending = &cfg[text.len()..];
+    for (file, kind) in models {
+        if !text.is_empty() {
+            text.push_str(newline);
+        }
+        text.push_str(&format!("MDS \"{file}\",\"{file}\";{newline}\tTYPE {kind};{newline}MDS_END;"));
+    }
+    // the line ends and blank lines the file ended with
+    text.push_str(if ending.is_empty() { newline } else { ending });
+    text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn info_cfg_gets_an_entry_per_new_model() {
+        let cfg = "PCP_NAME \"s17\";\nMDS \"s17_01-m.mds\",\"Y:\\s17_01-m.mds\";\n\tTYPE 0;\nMDS_END;\n\n\n";
+        let with = info_cfg_with(cfg, &[("s17_box-m.mds", 0), ("s17_box-a.mds", 1)]);
+        assert_eq!(
+            with,
+            "PCP_NAME \"s17\";\nMDS \"s17_01-m.mds\",\"Y:\\s17_01-m.mds\";\n\tTYPE 0;\nMDS_END;\n\
+             MDS \"s17_box-m.mds\",\"s17_box-m.mds\";\n\tTYPE 0;\nMDS_END;\n\
+             MDS \"s17_box-a.mds\",\"s17_box-a.mds\";\n\tTYPE 1;\nMDS_END;\n\n\n"
+        );
+        assert_eq!(info_cfg_with("A;\r\n", &[("b.mds", 2)]), "A;\r\nMDS \"b.mds\",\"b.mds\";\r\n\tTYPE 2;\r\nMDS_END;\r\n");
+    }
 }

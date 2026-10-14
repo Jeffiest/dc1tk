@@ -1110,12 +1110,16 @@ pub fn import_with(
                     frame_world = Some(world_of(g2 as i64, nodes, &parent, &mut world, 0)?);
                 }
             }
+            let mesh_world = floats(&world_of(gi as i64, nodes, &parent, &mut world, 0)?);
             to_local = match frame_world {
-                Some(fw) => {
-                    let mesh_world = floats(&world_of(gi as i64, nodes, &parent, &mut world, 0)?);
-                    mat_mul(&mat_inv(&floats(&fw)).unwrap_or(IDENT), &mesh_world)
+                Some(fw) => mat_mul(&mat_inv(&floats(&fw)).unwrap_or(IDENT), &mesh_world),
+                // a mesh no frame stands for (one made in Blender): into the space of the frame
+                // it was added under, keeping where the object was put
+                None => {
+                    let under = model.nodes[target].parent;
+                    let frame = if under >= 0 { bbp[under as usize] } else { IDENT };
+                    mat_mul(&mat_inv(&frame).unwrap_or(IDENT), &mesh_world)
                 }
-                None => IDENT,
             };
         }
         // Blender writes some meshes' colours without alpha: the fades come from the mesh it

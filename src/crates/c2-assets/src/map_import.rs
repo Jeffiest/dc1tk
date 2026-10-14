@@ -23,7 +23,40 @@ pub struct Imported {
     pub map: Option<Vec<u8>>,
     /// Rebuilt models that differ from the original: (model file name, bytes).
     pub models: Vec<(String, Vec<u8>)>,
+    /// Models made in the scene, which no pack has: to add to the map's first model pack.
+    pub new_models: Vec<NewModel>,
     pub notes: Vec<String>,
+}
+
+/// A model made in the scene (pieces naming a model no pack has, with meshes under them).
+#[derive(Debug)]
+pub struct NewModel {
+    /// The file name pieces give (`s17_well-m.mds`).
+    pub file: String,
+    /// The info.cfg TYPE: 0 drawn, 1 floor and wall collision, 2 camera collision.
+    pub kind: i64,
+    pub data: Vec<u8>,
+}
+
+/// A new model's pack type: from its pieces' kind, or else from its name (`-a` collision, `-c`
+/// camera), as the disc names them.
+fn new_model_kind(kind: &str, file: &str) -> i64 {
+    match kind {
+        "collision" => 1,
+        "camera" => 2,
+        "model" => 0,
+        _ => {
+            let stem = file.to_lowercase();
+            let stem = stem.strip_suffix(".mds").unwrap_or(&stem);
+            if stem.ends_with("-a") {
+                1
+            } else if stem.ends_with("-c") {
+                2
+            } else {
+                0
+            }
+        }
+    }
 }
 
 fn floats(value: &Value) -> Option<Vec<f64>> {
@@ -356,27 +389,32 @@ pub fn import_map(
     };
     for piece in piece_nodes {
         let c2 = &doc["nodes"][piece]["extras"]["c2"];
-        let model = match c2["model"].as_str() {
-            Some(model) => model.to_string(),
-            None => match c2.as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
-                Some(parsed) => parsed["model"].as_str().unwrap_or("").to_string(),
-                None => continue,
-            },
+        let c2 = match c2.as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
+            Some(parsed) => parsed,
+            None => c2.clone(),
+        };
+        let Some(model) = c2["model"].as_str().map(str::to_string) else {
+            continue;
         };
         let model_roots_here = &model_roots[&piece];
         if model.is_empty() || model_roots_here.is_empty() || !done.insert(model.to_lowercase()) {
             continue;
         }
+        let sub = subtree(&doc, model_roots_here);
+        let text = serde_json::to_string(&sub).map_err(|error| Error::invalid(error.to_string()))?;
+        let given = from_gltf::load_gltf(text.as_bytes(), &|path| read_cached(path).map_err(|error| Error::invalid(error.to_string())))?;
         let Some((kind, data)) = find_model(packs, &model) else {
-            out.notes.push(format!("{model}: in none of the map's model packs; its meshes are left out"));
+            // made in the scene: a new model of every mesh under its first piece
+            let kind = new_model_kind(c2["kind"].as_str().unwrap_or(""), &model);
+            let stem = model.rsplit_once('.').map_or(model.as_str(), |(stem, _)| stem);
+            let data = models::new_map_model(&given, stem, &options_for(kind, textures))
+                .map_err(|error| Error::invalid(format!("{model}: {error}")))?;
+            out.new_models.push(NewModel { file: model, kind, data });
             continue;
         };
         if kind >= 3 {
             continue;
         }
-        let sub = subtree(&doc, model_roots_here);
-        let text = serde_json::to_string(&sub).map_err(|error| Error::invalid(error.to_string()))?;
-        let given = from_gltf::load_gltf(text.as_bytes(), &|path| read_cached(path).map_err(|error| Error::invalid(error.to_string())))?;
         let rebuilt = models::build_map_model(&given, data, &options_for(kind, textures))
             .map_err(|error| Error::invalid(format!("{model}: {error}")))?;
         if rebuilt != data {
