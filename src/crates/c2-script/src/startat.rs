@@ -187,13 +187,21 @@ pub fn function_text(target: &Target, original: &str) -> String {
     .join("\n")
 }
 
+/// The town a warp says the player came from: Palm Brinks (10), or its station (11) when Palm
+/// Brinks is where the warp goes. Towns' arrival programs place the player by the map they came
+/// from, and a new game's is the dungeon it runs in, which made m01 place the player at another
+/// entrance, off the ground of the town as it is at the start. From another town they take their
+/// default arrival (m01 does, from the station, unless a train arrival is pending). The previous
+/// map is only recorded when the current one changes, so it cannot be the town itself.
+pub fn came_from(number: i64) -> i64 {
+    if number == 10 { 11 } else { 10 }
+}
+
 /// The warp into a town map, as the game's dungeon scripts leave for one (d01's
 /// start_dungeon_floor, d07's floor start, s06's way back to Palm Brinks): Max made the player
-/// (a new game starts as Monica; s06 does the same before going to Palm Brinks), the previous map
-/// set to the town itself, then go_to_edit_mode. Towns' arrival programs place the player by the
-/// map they came from: with none, m01 placed no one, and coming from a dungeon (d01's 55) it
-/// placed the player at another entrance, off the ground of the town as it is at the start; from
-/// itself it takes the plain default arrival.
+/// (a new game starts as Monica; s06 does the same before going to Palm Brinks), the current map
+/// set to another town (came_from) so the town's arrival places the player at its default spot,
+/// then go_to_edit_mode.
 pub fn town_function_text(target: &Target, number: i64, original: &str) -> String {
     [
         format!(
@@ -213,7 +221,7 @@ pub fn town_function_text(target: &Target, number: i64, original: &str) -> Strin
         "        wait;".into(),
         "        change_player_chara(USER_CHARA_MAX);".into(),
         "        set_active_chara(0);".into(),
-        format!("        set_current_map({number});  // the town itself: its arrival takes the default spot"),
+        format!("        set_current_map({});  // came from another town: the arrival takes its default spot", came_from(number)),
         format!("        go_to_edit_mode({number}, {});", target.program),
         "        wait;".into(),
         "        return;".into(),
@@ -379,7 +387,7 @@ MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n MAP_NAME \
                 "wait;",
                 "change_player_chara(USER_CHARA_MAX);",
                 "set_active_chara(0);",
-                "set_current_map(14);  // the town itself: its arrival takes the default spot",
+                "set_current_map(10);  // came from another town: the arrival takes its default spot",
                 "go_to_edit_mode(14, map_start);",
                 "wait;",
                 "return;",
@@ -410,5 +418,11 @@ MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n MAP_NAME \
         for language in [0, 2, 3, 4, 5, 6] {
             assert_eq!(read(language), english, "map{language}.cfg numbers the maps differently");
         }
+    }
+
+    #[test]
+    fn a_town_warp_never_comes_from_the_town_itself() {
+        assert_eq!(came_from(14), 10);
+        assert_eq!(came_from(10), 11);
     }
 }
