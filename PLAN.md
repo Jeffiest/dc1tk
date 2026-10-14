@@ -142,7 +142,8 @@ and build the result into a mod. The formats and the glTF conventions are in
 Phases 1 to 4 are done, with mesh, texture and new-model edits, the game's
 look in Blender (blend flags, vertex alpha, light sets, hours) and unedited
 round trips through Blender changing nothing on the maps tried. The example
-is [map-edit](docs/examples/map-edit/); it is waiting to be tried in the game.
+is [map-edit](docs/examples/map-edit/), checked in the game: the new crate stands
+with its own picture and blocks the player, and the repainted grass shows.
 
 ## Next: modding
 

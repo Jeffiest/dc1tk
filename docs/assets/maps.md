@@ -39,10 +39,13 @@ this repository). Map meshes are the MDS format of
   new model, a texture tinted and a new picture) build and read back as
   made.
 
-**Not yet:** tried in the game (an example mod is in
-`docs/examples/map-edit`); `FUNC_ANIME_DATA` is only partly decoded; the map
-memory budget is unmeasured; how the VU program combines vertex colour with
-lighting is untraced.
+- Checked in the game with the example mod `docs/examples/map-edit`: a model
+  made in Blender stands where it was put with a picture of its own, its
+  collision copy blocks the player, and a repainted map picture shows.
+
+**Not yet:** `FUNC_ANIME_DATA` is only partly decoded; the map memory budget
+is unmeasured; how the VU program combines vertex colour with lighting is
+untraced.
 
 ## 1. Files of a map
 

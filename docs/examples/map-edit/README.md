@@ -1,7 +1,7 @@
 # map-edit: a map edited in Blender
 
 Barga's Valley (`s17`) edited with the [c2_maps add-on](../../../src/blender/README.md),
-built into a disc:
+built into a disc (checked in the game):
 
 - the valley's grass and cliff picture (`s17_02`) turned to autumn colours;
 - a crate modelled in Blender, with a picture drawn for it, made a new model
