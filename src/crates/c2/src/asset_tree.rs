@@ -151,7 +151,7 @@ pub(crate) fn index_of(source: &Path, defs: &[PathBuf]) -> Result<Index> {
 }
 
 /// What a tree's folder holds that a new tree replaces.
-const TREE_PARTS: [&str; 4] = [tree::MANIFEST, tree::TEXTURES, tree::MODELS, tree::SOUNDS];
+const TREE_PARTS: [&str; 5] = [tree::MANIFEST, tree::TEXTURES, tree::MODELS, tree::SOUNDS, tree::MUSIC];
 
 pub fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -> Result<ExitCode> {
     let names = sound_names(defs)?;
@@ -198,6 +198,7 @@ pub fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -
         summary.banks, summary.bank_places, summary.sounds, summary.sounds_exported, summary.sounds_named
     );
     println!("{} texts from {} message files", summary.texts, summary.message_places);
+    println!("{} sequences (music and ambient loops) from {} places, as MIDI", summary.music, summary.music_places);
     if !summary.failed.is_empty() {
         let mut reasons: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
         for (_, reason) in &summary.failed {
@@ -224,8 +225,8 @@ fn run_check(source: &Path, assets: &Path) -> Result<ExitCode> {
     let report = tree_check::check(&disc.files()?, assets, &temp)?;
     println!("{} files have the manifest's hashes", report.files);
     println!(
-        "built back: {} picture places, {} character pack places, {} bank places, {} message file places",
-        report.picture_places, report.pack_places, report.bank_places, report.message_places
+        "built back: {} picture places, {} character pack places, {} bank places, {} message file places, {} sequence places",
+        report.picture_places, report.pack_places, report.bank_places, report.message_places, report.music_places
     );
     for (kind, count) in &report.on_disc {
         println!("{kind}: {count} on the disc, {} in the manifest", report.listed.get(kind).copied().unwrap_or(0));

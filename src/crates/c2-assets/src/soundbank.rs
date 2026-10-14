@@ -1479,14 +1479,20 @@ impl Bank {
         voices
     }
 
-    /// Voices an entry plays: KeyOn resolves (prog, key, 127); a .mid every note-on; a .sq none.
+    /// Voices an entry plays: KeyOn resolves (prog, key, 127); a .mid or .sq every note-on.
     pub fn voices(&self, entry: &Entry) -> Result<Vec<Voice>> {
         match entry.kind {
             EntryKind::KeyOn => Ok(self.resolve(entry.prog, entry.key, 127)),
-            EntryKind::SeSeq => {
-                let member = self.pack.find("mid")[entry.seq_index.unwrap()];
+            EntryKind::SeSeq | EntryKind::Sq => {
+                let notes = if entry.kind == EntryKind::Sq {
+                    let member = self.pack.find("sq")[entry.seq_index.unwrap()];
+                    crate::sequence::Sequence::read(&self.pack.members[member].data)?.notes()
+                } else {
+                    let member = self.pack.find("mid")[entry.seq_index.unwrap()];
+                    midi_notes(&self.pack.members[member].data)?.into_iter().map(|(_, p, k, v)| (p, k, v)).collect()
+                };
                 let mut seen = Vec::new();
-                for (_, prog, key, velocity) in midi_notes(&self.pack.members[member].data)? {
+                for (prog, key, velocity) in notes {
                     for v in self.resolve(prog, key as i64, velocity as i64) {
                         if !seen.contains(&v) {
                             seen.push(v);
@@ -1499,7 +1505,7 @@ impl Bank {
         }
     }
 
-    /// Programs named by KeyOn rows and .mid program changes.
+    /// Programs named by KeyOn rows, .mid program changes and .sq program changes.
     pub fn referenced_programs(&self) -> Result<BTreeSet<i64>> {
         let mut used = BTreeSet::new();
         for e in self.entries()? {
@@ -1511,6 +1517,10 @@ impl Bank {
             for (_, prog, _, _) in midi_notes(&self.pack.members[m].data)? {
                 used.insert(prog & 0x7F);
             }
+        }
+        for m in self.pack.find("sq") {
+            let sequence = crate::sequence::Sequence::read(&self.pack.members[m].data)?;
+            used.extend(sequence.programs().into_iter().map(i64::from));
         }
         Ok(used)
     }
@@ -1742,6 +1752,41 @@ impl Bank {
         self.set_volume(index, volume);
         Ok(index)
     }
+}
+
+/// A small bank for tests: a placeholder entry 0 that plays a silent sample, then one entry for
+/// each rate (a short saw wave played at it), entry 1 at the given volume.
+#[cfg(test)]
+pub(crate) fn test_bank(rates: &[i64], volume: i64) -> Vec<u8> {
+    let vag = encode_adpcm(&[0; 28], None, true).unwrap();
+    let mut hd = Hd {
+        version: vec![0, 0, 2, 0],
+        se_timbre_addr: u32::MAX,
+        head_reserved: vec![0xFF; 24],
+        body_size: vag.len() as u32,
+        vags: vec![Record::new(
+            LayoutKind::VagInfo,
+            &[("offset", 0), ("rate", 22050), ("attribute", 0), ("reserved", 0xFF)],
+        )],
+        samples: vec![Some(Record::new(LayoutKind::Sample, DEFAULT_SAMPLE))],
+        sample_sets: vec![Some(SampleSet { samples: vec![0], vel_curve: 0, vel_limit_low: 1, vel_limit_high: 127 })],
+        programs: vec![Some(Program {
+            record: Record::new(LayoutKind::Program, DEFAULT_PROGRAM),
+            splits: vec![Record::new(LayoutKind::Split, DEFAULT_SPLIT)],
+        })],
+    };
+    let members = [
+        ("x.hd".to_string(), hd.build(vag.len()).unwrap()),
+        ("x.bd".to_string(), vag),
+        ("x.cfg".to_string(), b"SP\tx\t0\t0\r\n0\t-\t-\t0\tKeyOn\t0\t60\t\r\nEND\r\n".to_vec()),
+        ("x.vol".to_string(), b"END\n".to_vec()),
+    ];
+    let mut bank = Bank::from_bytes(&crate::models::write_pack(&members).unwrap()).unwrap();
+    for (at, &rate) in rates.iter().enumerate() {
+        let sound = Sound { rate, samples: (0..280).map(|n| (n % 40) * 500 - 10000).collect(), loop_start: None };
+        bank.add_entry(&sound, "A", "B", if at == 0 { volume } else { 100 }, 60).unwrap();
+    }
+    bank.build().unwrap()
 }
 
 #[cfg(test)]

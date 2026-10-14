@@ -17,6 +17,7 @@ comes from. The commands are in [usage](usage.md).
 | A map's programs, free program numbers, trigger points and player positions? | `c2 map extracted/scripts s17` |
 | What have I changed? | `c2 changes extracted/scripts` (scripts), `c2 diff dc2.iso` (scripts, assets and disc files) |
 | Turn my edits into a mod | `c2 mod make dc2.iso mymod` |
+| Make its whole scripts patches of what changed | `c2 mod slim extracted/scripts mymod` |
 
 The quickest way to a mod is to edit what `c2 setup` wrote and let `c2 mod make`
 collect it. Edit scripts in `extracted/scripts`, textures, models and sounds in
@@ -231,6 +232,30 @@ copy of a library first:
 c2 fork extracted/scripts lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
 ```
 
+## Changing what scripts ask the engine for
+
+Much of what a scene does is in its native calls: which monsters
+`place_monster` places, which sound `play_se` plays, which item `add_item`
+gives. A patch can wrap a native for the scripts it targets, so every call
+they make goes through a function of the mod, which calls the native with
+`original(...)`, changed or not:
+
+```
+c2 mod override extracted/scripts rats --map s51 place_monster load_monster_data
+```
+
+writes a wrapper of each that passes every call on unchanged, with the
+native's doc comment. Edit them to swap the castle fight's soldiers for
+rats, wherever s51's scripts and libraries load or place them, without
+copying `start_castle_battle`. Calls that leave a native's optional
+arguments out still do (the wrapper sees them as 0, and `original()` passes
+on only what the call gave), so `place_monster(-1)`, which places a floor's
+own monsters at random, goes through the wrapper too and keeps its meaning.
+Only the calls change, so the rest of the script compiles to the same bytes,
+and another mod can wrap the same native: the later mod's wrapper runs first
+(see [usage](usage.md#mods)). Swapped monsters may not end a fight the
+original ones end (see [monsters can start map events](#monsters-can-start-map-events)).
+
 ## Mods that build on mods
 
 A mod can keep code, flags and program numbers for others to use: a
@@ -401,7 +426,9 @@ overrides; the mod keeps the function's fingerprint, so `build` still finds
 it and says its new name, and `c2 mod check extracted/scripts castle
 --rename` puts the new name in the patch. (`mod new` copies whole files into a mod instead; `mod
 list` marks a copied file whose decompiler version has changed since, to
-compare.) See [usage](usage.md#mods).
+compare. `c2 mod slim extracted/scripts castle` turns such copies into
+patches of the functions they change, where the mod then builds to the same
+bytes.) See [usage](usage.md#mods).
 
 ## Editor setup
 

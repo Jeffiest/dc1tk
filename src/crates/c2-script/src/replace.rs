@@ -11,6 +11,7 @@
 //!   "bank:SP_003": "sounds/SP_003",                         a folder of WAVs by entry number
 //!   "texture:a01ia_01": {"file": "art/floor.png", "only": ["map/a"]},
 //!   "text:en/shopname": "text/en/shopname.txt",             a message file's text, by message
+//!   "music:BG_000_000": "music/BG_000_000.mid",             a sequence (music, an ambient loop) as MIDI
 //!   "file:snd2/event/EV_000_130.snd": "raw/bank.snd"        a disc file or pack member by path
 //! },
 //! "add": {
@@ -49,9 +50,11 @@ use std::path::{Path, PathBuf};
 
 use c2_assets::ids::{self, Index};
 use c2_assets::im3;
+use c2_assets::soundbank::Bank;
 use c2_assets::sounds::{self, Given};
 use c2_assets::text;
 use c2_assets::tree::{self, Kind, Place};
+use c2_assets::{music, soundfont};
 use c2_disc::archive::Archive;
 use c2_disc::{rebuild, Image};
 use indexmap::IndexMap;
@@ -71,6 +74,8 @@ pub const MAP: &str = "map:";
 pub const MAP_NAME_MOST: usize = 12;
 /// A table of game data edited as JSON (docs/assets/data.md): `"data:items": "data/items.json"`.
 pub const DATA: &str = "data:";
+/// What a music: line's MIDI file may be called.
+const MIDI_SUFFIXES: [&str; 3] = [".mid", ".midi", ".rmi"];
 /// The tables a data: line can name.
 pub const DATA_TABLES: [&str; 10] =
     ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters", "layouts"];
@@ -182,7 +187,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     let kind = ids::kind_of(key);
     if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
         return Err(line.fail(
-            "a key is an asset id (texture:, model:, sound:, bank:, text:), file: and a disc path, map: and a map's name, \
+            "a key is an asset id (texture:, model:, sound:, bank:, text:, music:), file: and a disc path, map: and a map's name, \
              or data: and a table (data:items, data:monsters, ...)",
         ));
     }
@@ -309,6 +314,9 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         Some(Kind::Text) if !(line.file.is_file() && suffix_is(&line.file, ".txt")) => {
             Some("a .txt file of messages (mod asset text:ID writes one)")
         }
+        Some(Kind::Music) if !(line.file.is_file() && MIDI_SUFFIXES.iter().any(|end| suffix_is(&line.file, end))) => {
+            Some("a MIDI file (.mid)")
+        }
         _ => None,
     };
     if let Some(wanted) = wanted {
@@ -425,6 +433,8 @@ pub enum Change {
     Entry(Given),
     /// The messages of a text file, with the place its text was exported from (the id's first).
     Text(PathBuf, Place),
+    /// A sequence (.sq member of a bank) built from a MIDI file.
+    Sequence(PathBuf),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -441,7 +451,7 @@ pub struct Edit {
 impl Edit {
     fn slot(&self) -> (String, Option<usize>) {
         let at = match &self.change {
-            Change::Model(_) | Change::Text(..) => None,
+            Change::Model(_) | Change::Text(..) | Change::Sequence(_) => None,
             Change::Picture(entry, _) => Some(*entry),
             Change::Entry(given) => Some(given.number),
         };
@@ -480,6 +490,7 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
         }
     }
     let mut added_to: HashMap<String, usize> = HashMap::new();
+    let at = index.at();
     for module in modules {
         let mine: Vec<&Line> =
             lines.iter().filter(|line| line.module == module && !line.is_file() && !line.is_map() && !line.is_data()).collect();
@@ -551,6 +562,11 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                         resolved.edits.push(edit(place, Change::Text(line.file.clone(), reference.clone())));
                     }
                 }
+                Kind::Music => {
+                    for (place, _) in places {
+                        resolved.edits.push(edit(place, Change::Sequence(line.file.clone())));
+                    }
+                }
                 Kind::Sound => {
                     for (place, at) in places {
                         let given =
@@ -568,10 +584,29 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                             count as i64 - 1
                         )));
                     }
+                    // each entry at every place its sound has: copies of the bank in other packs
+                    // whose entry plays alike are the same sound (tree::bank_sounds)
+                    let mut done: Vec<(String, usize)> = Vec::new();
                     for (place, _) in places {
                         for (number, _, path) in &wavs {
-                            let given = Given { number: *number, name: None, path: path.clone(), volume: None };
-                            resolved.edits.push(edit(place, Change::Entry(given)));
+                            let key = (Kind::Sound, place.display().to_lowercase(), Some(*number));
+                            let reached: Vec<Place> = match at.get(&key).and_then(|id| index.assets.get(id)) {
+                                Some(sound) => sound
+                                    .places
+                                    .iter()
+                                    .filter(|(_, entry)| *entry == Some(*number))
+                                    .map(|(place, _)| place.clone())
+                                    .collect(),
+                                None => vec![place.clone()],
+                            };
+                            for place in reached {
+                                if done.contains(&(place.display().to_lowercase(), *number)) {
+                                    continue;
+                                }
+                                done.push((place.display().to_lowercase(), *number));
+                                let given = Given { number: *number, name: None, path: path.clone(), volume: None };
+                                resolved.edits.push(edit(&place, Change::Entry(given)));
+                            }
                         }
                     }
                 }
@@ -742,12 +777,14 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
     let disc = Archive::open(image.bytes())?;
     let index = discfiles::disc_index(&disc);
     let mut files = files.clone();
-    // models, then banks, then pictures, then texts; outer places first
+    // models, then banks, then pictures, then texts, then the sequences inside banks; outer places
+    // first
     let stage = |edit: &Edit| match edit.change {
         Change::Model(_) => 0,
         Change::Entry(_) => 1,
         Change::Picture(..) => 2,
         Change::Text(..) => 3,
+        Change::Sequence(_) => 4,
     };
     let fonts = discfiles::disc_fonts(&disc, &image, &index);
     let mut groups: BTreeMap<(usize, usize, String), Vec<&Edit>> = BTreeMap::new();
@@ -796,6 +833,13 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
                     .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
                     .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
                 text::build(&written, &old, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?
+            }
+            4 => {
+                let Change::Sequence(source) = &first.change else { unreachable!() };
+                // the bank holding the sequence, for its programs
+                let bank = place.members.split_last().and_then(|(_, bank)| rebuild::read_member(&data, bank));
+                let bank = bank.map(Bank::from_bytes).transpose().map_err(|error| fail(error.into()))?;
+                music::build(&fs::read(source)?, &old, bank.as_ref()).map_err(|error| fail(error.into()))?
             }
             1 => {
                 let mut given: Vec<Given> = edits
@@ -972,6 +1016,23 @@ pub fn copy_out(
                     let target = format!("sounds/{}/{}", bank_stem(bank), tree::wav_name(number, named, bank_name));
                     (target.clone(), vec![(target, wav.1)])
                 }
+                Kind::Music => {
+                    // the MIDI file, and its bank's programs as a SoundFont beside it to hear it with
+                    let target = format!("music/{stem}{}", music::SUFFIX);
+                    let mut files = vec![(target.clone(), music::export(data, &asset.name)?)];
+                    if let Some((_, members)) = place.members.split_last() {
+                        let top = disc_index.get(&place.path.to_lowercase());
+                        let bank = top.and_then(|top| rebuild::read_member(disc.read(image.bytes(), top), members));
+                        let file = members.last().unwrap_or(&place.path);
+                        let file = file.rsplit('/').next().unwrap_or(file);
+                        let name = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+                        if let Some(bank) = bank {
+                            let font = soundfont::write(&Bank::from_bytes(bank)?, name)?;
+                            files.push((format!("music/{}{}", tree::file_stem(name), soundfont::SUFFIX), font));
+                        }
+                    }
+                    (target, files)
+                }
             };
             if known.contains(&asset.id.to_lowercase()) || new_lines.iter().any(|(id, _)| id == &asset.id) {
                 out.push((asset.id.clone(), target, false));
@@ -1032,4 +1093,82 @@ pub fn key_clashes(mod_dirs: &[PathBuf]) -> Result<BTreeMap<String, Vec<String>>
         }
     }
     Ok(owners.into_iter().filter(|(_, modules)| modules.len() > 1).collect())
+}
+
+/// The constant a sound entry a mod's WAV gives is known by: SE_, the bank's name and the name
+/// after the WAV's number, in capitals, as the game's sounds are named (`005_beep.wav` in bank
+/// sp_004: SE_SP_004_BEEP). None for a WAV without a name (005.wav) or a name of no letters or
+/// digits.
+pub fn wav_constant(bank: &str, label: &str) -> Option<String> {
+    crate::disc::identifier(label, &format!("SE_{}", bank.to_uppercase()))
+}
+
+/// The constants a mod's folders of WAVs give its patches: each WAV named after its number and a
+/// name, in a bank's folder under disc/ or of a file: line (the folders that can add entries),
+/// {name: entry number}. Two WAVs giving one name two numbers are refused.
+pub fn wav_constants(mod_dir: &Path) -> Result<IndexMap<String, i64>> {
+    let mut found: IndexMap<String, i64> = IndexMap::new();
+    for (target, source) in discfiles::game_files(mod_dir)? {
+        if !source.is_dir() || !target.to_lowercase().ends_with(".snd") {
+            continue;
+        }
+        let file = target.rsplit('/').next().unwrap_or(&target);
+        let bank = &file[..file.len() - 4];
+        for (number, label, path) in sounds::numbered(&source)? {
+            let Some(name) = label.as_deref().and_then(|label| wav_constant(bank, label)) else {
+                continue;
+            };
+            match found.get(&name) {
+                Some(&known) if known != number as i64 => {
+                    return Err(Error::invalid(format!(
+                        "{}: {} names entry {number} {name}, which another WAV gives entry {known}",
+                        name_of(mod_dir),
+                        name_of(&path)
+                    )));
+                }
+                _ => {
+                    found.insert(name, number as i64);
+                }
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// The sound constants each chosen mod's patches see, {mod: {name: entry number}}: the entries
+/// its add lines make (added, from resolve) and the names of its WAVs (wav_constants). A name the
+/// game's headers (consts) give another value is refused; one they give the same value is left to
+/// them.
+pub fn sound_constants(
+    mod_dirs: &[PathBuf],
+    consts: &IndexMap<String, i64>,
+    added: &BTreeMap<String, IndexMap<String, i64>>,
+) -> Result<BTreeMap<String, IndexMap<String, i64>>> {
+    let mut out = added.clone();
+    for mod_dir in mod_dirs {
+        let module = name_of(mod_dir);
+        for (name, number) in wav_constants(mod_dir)? {
+            match consts.get(&name) {
+                Some(&known) if known == number => continue,
+                Some(&known) => {
+                    return Err(Error::invalid(format!(
+                        "{module}: a WAV names entry {number} {name}, which the game's headers give {known}; name it otherwise"
+                    )));
+                }
+                None => {}
+            }
+            let mine = out.entry(module.clone()).or_default();
+            match mine.get(&name) {
+                Some(&known) if known != number => {
+                    return Err(Error::invalid(format!(
+                        "{module}: {name} is entry {number} by a WAV's name and {known} by an add line"
+                    )));
+                }
+                _ => {
+                    mine.insert(name, number);
+                }
+            }
+        }
+    }
+    Ok(out)
 }

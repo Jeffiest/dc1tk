@@ -11,7 +11,7 @@ use c2_script::node::Node;
 use c2_script::patches::{self, Plan, Scripts, Target};
 use c2_script::renames::{self, Followed};
 use c2_script::vm::{self, Machine, Value};
-use c2_script::{build, definitions, editor, library, mods, numbers, parse, pathnames, sdk, Result};
+use c2_script::{build, definitions, editor, library, mods, numbers, parse, pathnames, sdk, slim, Result};
 use indexmap::IndexMap;
 
 // A map in two languages and a monster, sharing a library, as the decompiler lays them out.
@@ -329,12 +329,15 @@ fn build_compiles_patched_scripts_and_override_starts_a_patch() {
     let mods_dir = folder.path().join("mods");
     let module = mods_dir.join("quiet");
     let helper = strings(&["helper"]);
-    let result = mods::override_functions(&root, &module, "script", "map/m/t01.c", &helper).unwrap();
+    let result = mods::override_functions(&root, &module, "script", "map/m/t01.c", &helper, &IndexMap::new()).unwrap();
     assert!(result.added == helper && result.scripts == strings(&["map/m/t01.c"]));
     let text = read(&result.path);
     assert!(text.contains("#pragma target script map/m/t01.c"), "{text}");
     assert!(text.contains("#pragma override\nvoid helper(void)\n{\n    wait;\n}"), "{text}");
-    assert!(mods::override_functions(&root, &module, "script", "map/m/t01.c", &helper).unwrap().added.is_empty());
+    assert!(mods::override_functions(&root, &module, "script", "map/m/t01.c", &helper, &IndexMap::new())
+        .unwrap()
+        .added
+        .is_empty());
     c2_py::write_text(&result.path, &text.replace("    wait;\n", "    wait;\n    wait;\n")).unwrap();
     let modules = [module];
     let plan = plan_of(&modules, &root).unwrap();
@@ -502,4 +505,264 @@ fn a_mod_uses_the_library_numbers_and_overrides_of_the_mods_it_requires() {
         run(&program_of(&root, &plan, "map/s/s17_valley/s17_1.c").unwrap(), "start"),
         strings(&["top 1024 1025 1025", "base", "hello"])
     );
+}
+
+// A fight that places monsters with a native, one call giving more of its optional arguments than
+// the other.
+const FIGHT: &str = "#include <event.h>\n\nPROGRAM(500, fight);\nMAIN(fight);\n\nvoid fight(void)\n{\n\
+                     \x20   load_monster_data(5, 1);\n    place_monster(5, 1.0, 2.0, 3.0, 0.0, 0.5, 0.0);\n\
+                     \x20   wait;\n    place_monster(-1);\n    print(\"placed\");\n}\n";
+const WRAPPER: &str = "#pragma target map s17\n#include <event.h>\n\n#pragma override\n\
+                       void place_monster(monster_kind monster, float x, float y, float z, float rot_x, float rot_y, \
+                       float rot_z, int talk_param)\n{\n    print(\"NAME\", monster, x, talk_param);\n\
+                       \x20   original(monster + 1, x, y, z, rot_x, rot_y, rot_z, talk_param);\n}\n";
+
+fn fight_setup(folder: &Path, mod_files: &ModFiles) -> (PathBuf, Vec<PathBuf>, Tools) {
+    let (root, dirs) = setup(folder, mod_files);
+    for path in ["map/s/s17_valley/s17_1.c", "map/s/s17_valley/s17_2.c", "map/s/s18/s18_1.c"] {
+        write(&root, path, FIGHT);
+    }
+    (root, dirs, Tools::with_headers(sdk::header_texts(&definitions::Definitions::empty(), &sdk_dir()).unwrap()))
+}
+
+/// The script as build compiles it, with the plan's patches, as assembly.
+fn assembly(root: &Path, plan: Option<&Plan>, script: &str, tools: &Tools) -> Result<String> {
+    let path = root.join(script);
+    let program = parse::parse(&read(&path))?;
+    let includes = library::read_includes(&program, &path, None, &sdk_dir(), &[])?;
+    let mut program = library::expand(program, &includes, &tools.headers)?;
+    if let Some(found) = plan.and_then(|plan| plan.for_script(script)) {
+        program = patches::applied(program, &found, script, root, &tools.headers, None, &sdk_dir())?;
+    }
+    c2_script::compile::to_asm(&sdk::resolve(&program, &tools.tables)?, &tools.tables, None)
+}
+
+fn fight_run(root: &Path, plan: &Plan, script: &str, tools: &Tools, function: &str) -> Vec<String> {
+    let table = vm::lines_table(&assembly(root, Some(plan), script, tools).unwrap()).unwrap();
+    let mut machine = Machine::new(&table, Vec::new());
+    machine.run(function, Vec::new()).unwrap();
+    machine.printed
+}
+
+#[test]
+fn a_native_override_wraps_every_call_the_target_makes() {
+    let folder = TempDir::new("patches-native");
+    let patch = WRAPPER.replace("NAME", "swap");
+    let (root, dirs, tools) = fight_setup(folder.path(), &[("swap", &[("p.c", &patch)])]);
+    let plan = plan_of(&dirs, &root).unwrap();
+    let script = "map/s/s17_valley/s17_1.c";
+    // the wrapper runs for each call; the parameters a call leaves out are 0
+    assert_eq!(fight_run(&root, &plan, script, &tools, "fight"), strings(&["swap 5 1.0 0", "swap -1 0.0 0", "placed"]));
+    // only the calls change: the script's own code is as it was, and the wrappers follow it, one per
+    // number of arguments the calls give, each passing as many on to the native
+    let before = assembly(&root, None, script, &tools).unwrap();
+    let after = assembly(&root, Some(&plan), script, &tools).unwrap();
+    // (a native call pushes its number first and ends in ext; a call of a function ends in call, pop)
+    let without = |text: &str, first: &dyn Fn(&str) -> bool, last: &dyn Fn(&str) -> bool| -> Vec<String> {
+        let (mut lines, mut open) = (Vec::new(), false);
+        for line in text.lines().filter(|line| *line != ".tail") {
+            if first(line) {
+                open = true;
+            } else if open && last(line) {
+                open = false;
+            } else {
+                lines.push(line.to_string());
+            }
+        }
+        lines
+    };
+    let old = without(&before, &|line| line == "    push 67", &|line| line.starts_with("    ext "));
+    let new = without(&after, &|line| line.starts_with("    call place_monster_swap"), &|line| line == "    pop");
+    assert_eq!(old, new[..old.len()]);
+    let calls: Vec<&str> = after.lines().filter(|line| line.starts_with("    call ")).collect();
+    assert_eq!(calls, ["    call place_monster_swap_7", "    call place_monster_swap_1"]);
+    let added = new[old.len()..].join("\n");
+    assert!(
+        added.starts_with("\n.function place_monster_swap_7 ") && added.contains(".function place_monster_swap_1 ")
+    );
+    assert!(added.contains("ext 8") && added.contains("ext 2"), "{added}");
+    // other scripts are left alone
+    let other = "map/s/s18/s18_1.c";
+    assert_eq!(assembly(&root, Some(&plan), other, &tools).unwrap(), assembly(&root, None, other, &tools).unwrap());
+    assert_eq!(patches::overridden(&patch), strings(&["place_monster"]));
+}
+
+#[test]
+fn native_wrappers_chain_across_mods_and_can_have_names_of_their_own() {
+    let folder = TempDir::new("patches-native-chain");
+    let first = WRAPPER.replace("NAME", "a");
+    let second = WRAPPER
+        .replace("NAME", "b")
+        .replace("#pragma override\nvoid place_monster(", "#pragma override place_monster\nvoid place_with_b(")
+        .replace("monster + 1", "monster * 10")
+        + "\nvoid all_at_once(void)\n{\n    place_with_b(1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 7);\n}\n";
+    let (root, dirs, tools) = fight_setup(folder.path(), &[("a", &[("p.c", &first)]), ("b", &[("p.c", &second)])]);
+    let plan = plan_of(&dirs, &root).unwrap();
+    let script = "map/s/s17_valley/s17_1.c";
+    // the later mod's wrapper runs first; its original() runs the earlier one's, which runs the native
+    assert_eq!(
+        fight_run(&root, &plan, script, &tools, "fight"),
+        strings(&["b 5 1.0 0", "a 50 1.0 0", "b -1 0.0 0", "a -10 0.0 0", "placed"])
+    );
+    assert_eq!(fight_run(&root, &plan, script, &tools, "all_at_once"), strings(&["b 1 0.0 7", "a 10 0.0 7"]));
+    // a later wrapper that never calls original() would hide the earlier one
+    let hiding = first.replace("    original(", "    // original(");
+    let (root, dirs, tools) =
+        fight_setup(&folder.path().join("hidden"), &[("a", &[("p.c", &first)]), ("b", &[("p.c", &hiding)])]);
+    let plan = plan_of(&dirs, &root).unwrap();
+    fails(assembly(&root, Some(&plan), script, &tools), "which mod a wraps too");
+}
+
+#[test]
+fn native_wrappers_are_checked_against_the_native() {
+    let folder = TempDir::new("patches-native-checked");
+    let short = "#pragma target map s17\n#include <event.h>\n\n#pragma override\n\
+                 void place_monster(monster_kind monster)\n{\n    original(monster);\n}\n";
+    for (patch, words) in [
+        (
+            WRAPPER.replace("void place_monster(", "int place_monster("),
+            "returns nothing, so its wrapper place_monster is void",
+        ),
+        (WRAPPER.replace(", int talk_param)", ", int talk_param, int more)"), "which takes 1 to 8 arguments"),
+        (short.to_string(), "calls place_monster with 7 arguments, but mod m's wrapper of it takes 1"),
+        (
+            WRAPPER.replace("#pragma override\nvoid place_monster(", "#pragma override place_monsters\nvoid mine("),
+            "knows no native place_monsters",
+        ),
+    ] {
+        let (root, dirs, tools) =
+            fight_setup(&folder.path().join(words.len().to_string()), &[("m", &[("p.c", &patch)])]);
+        let plan = plan_of(&dirs, &root).unwrap();
+        fails(assembly(&root, Some(&plan), "map/s/s17_valley/s17_1.c", &tools), words);
+    }
+}
+
+#[test]
+fn override_starts_a_wrapper_of_a_native_with_its_parameters() {
+    let headers = sdk::header_texts(&definitions::Definitions::empty(), &sdk_dir()).unwrap();
+    let event = strings(&["event.h"]);
+    let wrapper = patches::native_wrapper(&headers, &event, "place_monster").unwrap();
+    assert!(
+        wrapper.contains(
+            "// Original name: _AUTO_SET_MONSTER.\n#pragma override place_monster\nvoid place_monster_wrapper(monster_kind \
+             monster, float x, float y, float z, float rot_x, float rot_y, float rot_z, int talk_param)\n{\n    \
+             original(monster, x, y, z, rot_x, rot_y, rot_z, talk_param);\n}\n"
+        ),
+        "{wrapper}"
+    );
+    let flag = patches::native_wrapper(&headers, &event, "get_flag").unwrap();
+    assert!(flag.contains("int get_flag_wrapper(flag flag)\n{\n    return original(flag);\n}\n"), "{flag}");
+    assert!(patches::native_wrapper(&headers, &strings(&["monster.h"]), "place_monster").is_none());
+    // as written, it builds and passes every call on unchanged
+    let patch = format!("#pragma target map s17\n#include <event.h>\n\n{wrapper}");
+    let folder = TempDir::new("patches-native-stub");
+    let (root, dirs, tools) = fight_setup(folder.path(), &[("m", &[("p.c", &patch)])]);
+    let plan = plan_of(&dirs, &root).unwrap();
+    let after = assembly(&root, Some(&plan), "map/s/s17_valley/s17_1.c", &tools).unwrap();
+    assert!(after.contains("call place_monster_wrapper_m_7") && after.contains("call place_monster_wrapper_m_1"));
+}
+
+#[test]
+fn a_patch_that_adds_no_global_keeps_the_scripts_count() {
+    let patch = "#pragma target monster golem\n\n#pragma override\nvoid start(void)\n{\n    print(\"roar\");\n}\n";
+    let folder = TempDir::new("patches-global-count");
+    let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch)])]);
+    // some act scripts count no globals at all: the compiler's 0xCCCCCCCC fill
+    let script = "dungeon/monster/e33a_golem.c";
+    write(&root, script, &MONSTER.replace("PROGRAM(0", "#pragma globals -858993460\n\nPROGRAM(0"));
+    let tools = Tools::new();
+    let unpatched = build::compiled(&root.join(script), &tools.toolchain(), None, None, None, None).unwrap();
+    assert_eq!(compiled_with(&root, &plan_of(&dirs, &root).unwrap(), script, &tools), unpatched);
+}
+
+/// What each script compiles to with the mods as the folder holds them now.
+fn mod_bytes(dirs: &[PathBuf], root: &Path, tools: &Tools, scripts: &[&str]) -> Vec<Vec<u8>> {
+    let (texts, _) = mods::overlay(dirs, root, &IndexMap::new()).unwrap();
+    let plan = plan_of(dirs, root).unwrap();
+    scripts
+        .iter()
+        .map(|script| {
+            let patched =
+                plan.for_script(script).map(|found| build::Patched { tree: root, relative: script, patches: found });
+            let path = root.join(script);
+            let text = texts.get(*script).map(String::as_str);
+            build::compiled(&path, &tools.toolchain(), text, None, Some(&texts), patched.as_ref()).unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn slim_turns_whole_files_into_patches_that_build_the_same() {
+    let folder = TempDir::new("patches-slim");
+    let (root, _) = setup(folder.path(), &[]);
+    let mods_dir = folder.path().join("mods");
+    let module = mods_dir.join("fat");
+    let copied = ["map/s/s17_valley/s17_1.c", "map/s/s17_valley/s17_2.c", "map/s/s18/s18_1.c", "lib/map/s/s17/greet.c"];
+    mods::new(&root, &module, &strings(&copied)).unwrap();
+    let edit = |path: &str, from: &str, to: &str| {
+        let place = module.join("files").join(path);
+        let text = read(&place);
+        assert!(text.contains(from), "{from}");
+        write(&module.join("files"), path, &text.replacen(from, to, 1));
+    };
+    // a changed function, and a global, a function and a program added at the end
+    edit(copied[0], "print(\"talked\");", "print(\"talked a lot\");");
+    edit(copied[0], "MAIN(start);", "PROGRAM(9000, extra);\nMAIN(start);");
+    edit(copied[0], "int visits;\n", "int visits;\nint times;\n");
+    write(
+        &module.join("files"),
+        copied[0],
+        &(read(&module.join("files").join(copied[0])) + "\n// More.\nvoid extra(void)\n{\n    times = times + 1;\n}\n"),
+    );
+    // a function added before the script's own, which a patch would put at the end
+    edit(copied[1], "void start(void)", "void early(void)\n{\n}\n\nvoid start(void)");
+    // a library's function changed, for every script that includes it
+    edit(copied[3], "hello", "hi");
+    let tools = Tools::new();
+    let scripts =
+        ["map/s/s17_valley/s17_1.c", "map/s/s17_valley/s17_2.c", "map/s/s18/s18_1.c", "map/s/s17_valley/s17.c"];
+    let dirs = [module.clone()];
+    let before = mod_bytes(&dirs, &root, &tools, &scripts);
+    let outcome = slim::slim(&mods_dir, "fat", &root, &tools.toolchain(), &IndexMap::new()).unwrap();
+    assert_eq!(mod_bytes(&dirs, &root, &tools, &scripts), before);
+    let slimmed: Vec<(&str, Option<String>)> = outcome
+        .slimmed
+        .iter()
+        .map(|done| {
+            (
+                done.file.as_str(),
+                done.patch.as_ref().map(|path| path.file_name().unwrap().to_string_lossy().into_owned()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        slimmed,
+        [
+            ("lib/map/s/s17/greet.c", Some("greet.c".to_string())),
+            ("map/s/s17_valley/s17_1.c", Some("s17_1.c".to_string())),
+            ("map/s/s18/s18_1.c", None)
+        ]
+    );
+    assert_eq!(outcome.kept.len(), 1);
+    assert_eq!(outcome.kept[0].0, copied[1]);
+    assert!(outcome.kept[0].1.contains("adds functions or libraries before the file's own end"), "{:?}", outcome.kept);
+    let patch = read(&module.join("s17_1.c"));
+    for line in [
+        "#pragma target script map/s/s17/s17_1.c\n",
+        "\nint times;\n\nPROGRAM(9000, extra);\n",
+        "#pragma override\nvoid talk(void)\n",
+        "\n// More.\nvoid extra(void)\n",
+    ] {
+        assert!(patch.contains(line), "{line}\n{patch}");
+    }
+    assert!(!patch.contains("void start(void)"), "{patch}");
+    assert!(read(&module.join("greet.c")).contains("#pragma target library lib/map/s/s17/greet.c\n"));
+    assert_eq!(mods::mod_files(&module), [copied[1]]);
+    let listed: serde_json::Value = serde_json::from_str(&read(&module.join("mod.json"))).unwrap();
+    assert_eq!(listed["files"].as_object().unwrap().keys().collect::<Vec<_>>(), [copied[1]]);
+    // what a patch cannot say keeps the copy
+    edit(copied[1], "void early(void)\n{\n}\n\n", "");
+    edit(copied[1], "PROGRAM(500, talk);\n", "");
+    let outcome = slim::slim(&mods_dir, "fat", &root, &tools.toolchain(), &IndexMap::new()).unwrap();
+    assert!(outcome.kept[0].1.contains("removes PROGRAM(500, talk)"), "{:?}", outcome.kept);
 }

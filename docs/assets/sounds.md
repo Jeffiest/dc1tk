@@ -54,10 +54,41 @@ and `.mid` members.
 | `vol` | 1, required | default volumes, reverb |
 | `hd` | 1 (optional to the engine; all banks have it) | instrument header, IOP heap |
 | `bd` | 1 (same) | ADPCM sample body, DMA'd to SPU2 RAM |
-| `sq` | 0..; loaded only for game ports 0, 2, 4, 11; at most 32 names kept; the driver holds 10 sequences per port (`MIDI_PORT_SEQ_MAX`) and only warns at 16, so keep to 10; the disc has at most 2 per bank | Sony sequences, by index |
+| `sq` | 0..; loaded only for game ports 0, 2, 4, 11; at most 32 names kept; the driver holds 10 sequences per port (`MIDI_PORT_SEQ_MAX`) and only warns at 16, so keep to 10; the disc has up to 8 per bank (six `SR_*` banks) | Sony sequences, by index ([music](music.md)) |
 | `mid` | 0..48 | SMF sound-effect sequences, converted on load |
 
 All 861 banks have exactly one hd/bd/cfg/vol; 447 `.sq` and 2,146 `.mid`.
+
+### Which copy the game reads
+
+Engine, read statically (`_SND_LOAD_SOUND`, `GetDefEventSeFile`, `GetLoadBGBuff`,
+`LoadFile2`, `CDRead`, `InitCDFile`, `MainLoop`):
+
+- A script's `load_sound(set, &id)` makes the path `snd2/event/EV_<a>_<b>.snd` from the set's
+  event column (`GetDefEventSeFile`, format at `at_1132__4`) and passes it to `GetLoadBGBuff`,
+  which takes the file from, in order: a background read of the same path
+  (`start_background_load`; a read of the same disc file), the pack `load_pack_file` loaded
+  (only `d01b01` uses one, and it is not on the disc), or `LoadFile2`. A string path goes the
+  same way. `LoadFile2` looks the path, after the current directory, up in `DATA.HD4`
+  (`SearchFile`, the first record whose name matches ignoring case; no path is listed twice
+  but `wep_t/ws050_item.chr`) and reads `DATA.DAT` at its sector. Its file cache holds only
+  villagers' models (`scenevillager.cpp`) and the hard disk paths are stubs on the PAL disc, so
+  nothing else stands between a script and the file `build` rewrites.
+- The system bank is `snd2/SY_000.snd`, read once at boot (`MainLoop`, `at_1212`) into port
+  6. `snd2/system/SY_000.snd`, a different version, is never loaded.
+- Field banks come from `snd2/bs/BS_*.snd`, `snd2/fg/FG_*.snd`, `snd2/env/SR_*.snd` and
+  `snd2/ob/OB_*.snd` (`GetSe*File`); menu banks from the copies inside the menu packs
+  (`menu/0/inv0_bg.pac/SP_001.snd`, ...) as well as `snd2/sp/`.
+- `SOUND.DAT`/`SOUND.HD3` hold the streamed voices and music (`.wav` names), and `DATA.HD3`
+  is an older index nothing reads; neither holds a bank.
+
+So every bank has one place per copy on the disc, and the asset tree lists them all. Where
+copies of a bank's name differ (the menu packs' `SP_001`, `SP_002`, `SP_003`, whose `.vol` or
+`.hd` differ from `snd2/sp/`'s; the two `SY_000`; `BG_193` in the fishing packs), each is a
+bank of its own (`bank:SP_001@inv0_bg`), but an entry that plays the same sound in several of
+them (the same sequence and the same samples, rate, loop, key and base note) is one sound with
+all their places, so a mod replacing `sound:SP_001/0` or a bank's folder reaches every copy
+(`tree::bank_sounds`); the other versions' numbers (`sound:SP_001@inv0_bg/0`) are aliases.
 
 ## 2. From `play_se(bank, n)` to voices
 
@@ -103,7 +134,9 @@ with no split covering the key, 11 only samples without a VAG. 4,262
 playable entries start one voice, 1,661 start 2 or more (multi-split
 programs, sequences, velocity layers). 1,531 VAGs are reached from more
 than one entry; 2,487 of the 7,397 VAGs are reached by no cfg row (music
-and ambient sequences use them, or nothing does).
+and ambient sequences use them, or nothing does: over the 841 banks of
+`snd2/`, counting a sequence entry's notes, 2,009 VAGs are played only by
+sequences and 310 by nothing).
 
 ## 3. `.cfg` (sound-effect table)
 
@@ -328,13 +361,10 @@ history, as the SPU does) and keeps the least squared error.
 
 ## 7. `.sq` and `.mid`
 
-`.sq` (Sony sequence): `Vers` (0x10, version 1.0), `Sequ` (0x20: file
-size, then song / MIDI / SE-sequence / SE-song chunk offsets, only MIDI
-present), `Midi` (max index 0, one offset to a data block: u32 offset of
-the event data = 6, u16 division (480), then a compressed MIDI stream).
-Kept as bytes. In SE banks (`snd2/env`, 7 in `snd2/event`) they are
-ambient loops played through `SQ_Play`; their programs refer to the same
-bank's `Prog` table.
+`.sq` (Sony sequence): the music of the `BG_*` banks and the ambient loops
+of `snd2/env` (and 7 in `snd2/event`), played through `SQ_Play` with the same
+bank's `Prog` table. Decoded completely, edited as MIDI: see [music and
+ambient loops](music.md).
 
 `.mid`: standard MIDI file, format 0, one track, division 480 (all 2,146).
 `sndCSeSeqData::LoadSMF` converts it to 6-byte events: note on/off,
@@ -426,7 +456,13 @@ fs::write("SY_000.snd", bank.build()?)?;
   line; banks whose `.vol` already lists the index (the extra entry from
   the header line) get that line updated.
 - The script compiler names entries from `pal.h` enums `se_<bank>_pal`;
-  a new entry's number is what `add_entry` returns.
+  a new entry's number is what `add_entry` returns. A mod's new entries
+  get names the same way: an `add` line names its entry
+  (`sound:SE_MOD_BEEP`), and a WAV named after its number and a name in a
+  bank's folder under `disc/` or of a `file:` line (`005_beep.wav` in
+  `sp_004.snd.wav/`) gives `SE_SP_004_BEEP = 5` (`replace::wav_constants`),
+  which the mod's patches compile with and `mod check` prints. A name
+  `pal.h` gives another number is refused.
 
 ## 10. Verification
 
@@ -457,13 +493,10 @@ against the mono mix. Replacing one entry and adding one grew the `.bd` by
 
 ## 11. Open problems
 
-1. **`.sq` event streams are not decoded.** Their headers are, but the
-   compressed MIDI data (a running-status stream whose data bytes carry a
-   flag bit) was only partly understood: a trial parser reached the end
-   marker in 164 of 447 files. So voices of `.sq` entries are unknown, and
-   `free_program` cannot avoid program numbers that only a sequence uses
-   (a new program could then sound inside an ambient loop if the sequence
-   names a program the bank lacks).
+1. **`.sq` sequences are decoded** (see [music](music.md)): `voices()`
+   resolves a sequence entry's notes to the samples they play, and
+   `free_program` avoids the programs sequences name. `free_unused` still
+   leaves banks with sequences alone.
 2. **Field meanings from Sony's names, not measured.** Layout and sizes
    are certain; the semantics of cross-fades, bend ranges (u16, 256 =
    1 semitone?), velocity curves, LFO fields, the SPU-attribute bits and
@@ -488,6 +521,18 @@ against the mono mix. Replacing one entry and adding one grew the `.bd` by
 7. **Velocity selection** ignores cross-fades; a KeyOn always plays
    velocity 127, so sets with velocity layers only sound in full from
    sequences.
-8. Two VAGs of the 7,397 are not reproduced bit-exactly by re-encoding
+8. **Not yet heard in the game.** A first test in event 50 (s51) replaced
+   entries 4 and 13 of `EV_000_130` and heard the old sounds. The engine
+   reads the one copy `build` rewrites (section 1, "Which copy the game
+   reads"), and that bank's rows 4 and 13 were KeyOn rows of new programs
+   with samples of their own. What was heard is most likely the test
+   sounds: entry 4's was a 40-140 Hz boom at the entry's default volume, 44
+   of 127; entry 6, played a second later as a soldier lands from the
+   window, still plays the original glass sample (VAG 14, which the `.mid`
+   rows 4, 6, 10 and 11 share); entry 13 plays just before the fade out,
+   after which the scene stops every entry. `sound-test.iso` (system
+   entries 0 and 1, event 50's entries 4, 6 and 13 as loud test tones at
+   volume 127) is to be tried.
+9. Two VAGs of the 7,397 are not reproduced bit-exactly by re-encoding
    (equal-error ties between filter/shift choices that lead to different
    later history); harmless, noted for completeness.

@@ -389,6 +389,17 @@ pub fn make(extracted: &Path, mod_dir: &Path, changes: &Changes) -> Result<Made>
                 }
                 gltf.ok_or_else(|| Error::invalid(format!("{id} has no glTF in the asset tree")))?
             }
+            "music" => {
+                // the MIDI file; the SoundFont beside it is only for listening
+                let Some(file) = files.iter().find(|file| file.to_lowercase().ends_with(c2_assets::music::SUFFIX))
+                else {
+                    continue;
+                };
+                let name = file.rsplit('/').next().unwrap_or(file);
+                let target = format!("music/{name}");
+                copy(&assets_dir.join(file), &mod_dir.join(&target))?;
+                target
+            }
             _ => {
                 let file = &files[0];
                 let name = file.rsplit('/').next().unwrap_or(file);

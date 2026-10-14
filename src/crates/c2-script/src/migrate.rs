@@ -131,6 +131,26 @@ fn by_id(
                 ));
             }
         }
+        ".mid" => {
+            // each MIDI file a sequence of the bank (BG_000_000.mid for its BG_000_000.sq); the
+            // SoundFont beside them is only for listening
+            for name in discfiles::files_in(source) {
+                let lower = name.to_lowercase();
+                if name.contains('/') || !lower.ends_with(c2_assets::music::SUFFIX) {
+                    continue;
+                }
+                let member =
+                    format!("{place}{}{}.sq", discfiles::PACK, &lower[..lower.len() - c2_assets::music::SUFFIX.len()]);
+                let Some(id) = at.get(&(Kind::Music, member, None)) else {
+                    return Ok(None);
+                };
+                out.push((
+                    id.clone(),
+                    format!("music/{}{}", stem(id), c2_assets::music::SUFFIX),
+                    joined(source, &name),
+                ));
+            }
+        }
         ".txt" => {
             let Some(id) = at.get(&(Kind::Text, place, None)) else {
                 return Ok(None);
