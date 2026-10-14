@@ -117,9 +117,29 @@ What the 527,181 events are:
 | pitch bend | 7,629 |
 | tempo, end of track | 473, 447 |
 
-No poly or channel pressure, no bank select, no other controller. A sequence
-uses 1 to 14 channels; every channel gets a program change before its first
-note. Sizes run from 128 bytes to 44,128 (`BG_118_000`).
+No poly or channel pressure, no bank select, no other controller. Sizes run
+from 128 bytes to 44,128 (`BG_118_000`).
+
+**How a sequence is laid out** (data, the 435 sequences of `snd2/`, 2,024
+channels that play notes):
+
+- channel 0 never plays a note: it carries the loop's NRPNs (or nothing),
+  and no sequence plays notes on its loop's channel;
+- every note channel is set up before its first note, spread over ticks 10
+  to 50: program change, expression (controller 11; 127 in 1,974), pan (10)
+  in all 2,024; volume (7) in 2,005; pitch bend centre in 2,019. Only 58 put
+  any of it at the first note's tick;
+- the first note comes at tick 50 or later (120 in 298 sequences, 60 in 72,
+  never 0); the loop starts after the set-up in 328 of 422, often just after
+  the first note (10 ticks after it in 283).
+
+Which of these the IOP's sequencer needs is not known (`MODMIDI.IRX`,
+`MODHSYN.IRX` and the game's `EZMIDI.IRX` server are not decompiled; their
+strings show loop tables, "not found loop start", running status and tempo
+handling, nothing on channel defaults). A tune with notes on channel 0, no
+expression and its first notes and set-up at tick 0 with the loop's start
+played silent in Palm Brinks, so a MIDI file is built to this layout
+(section 3).
 
 ### Loops
 
@@ -185,6 +205,13 @@ replaces as the template:
   channel 0, and the end of track one beat after its end.
 - **Tempo**: a file with no tempo at its start plays at 120 quarter notes a
   minute, as MIDI says, so a tempo event of 500,000 is put there.
+- **Laid out as the disc's sequences** (section 2): channel 0's messages move
+  to a channel the file does not use when channel 0 plays notes (refused when
+  all 16 are used); when a note comes before tick 50, or the tune loops whole,
+  everything but a tempo at the start moves 120 ticks on (so a tune looped
+  whole loops from tick 120, after its set-up); every note channel is given
+  what it lacks before its first note of volume 100 (MIDI's), expression 127,
+  pan centre and pitch bend centre, at ticks 20 to 50.
 - **Refused**: a program the bank lacks (unless the disc's sequence names it
   too), a note on a channel that has had no program change, one loop marker
   without the other, an end before the start, format 2, SMPTE time.
@@ -219,14 +246,17 @@ replaces as the template:
 
 Unit tests cover the compression rule, a foreign MIDI file (format 1, 96
 ticks a quarter note, bank select, an RPN, markers), refused programs and
-channels, a tune looped whole, and markers moved in an editor.
+channels, a tune looped whole, markers moved in an editor, and channel 0
+freed or refused; every disc sequence taken as a new tune comes out laid out
+as the disc's are.
 
 ## 6. Open problems
 
 1. **The driver is not decompiled.** That the loop points are the data entry
    after NRPN 0 and the LSB after NRPN 1, that a sequence without a tempo
-   plays at 120, and how notes held over the loop's end behave are read from
-   the data, not from Sony's IOP modules.
+   plays at 120, how notes held over the loop's end behave, and which part of
+   the layout above a sequence needs to sound are read from the data, not from
+   Sony's IOP modules.
 2. **Voices.** How many SPU2 voices the music may use while effects play was
    not established; a dense tune may lose notes.
 3. **New instruments.** A tune plays the bank's own programs. Adding samples

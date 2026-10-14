@@ -9,7 +9,9 @@
 //! division) is merged into one track at 480 ticks a quarter note and keeps what the game's
 //! driver plays: notes, controllers, program changes, pitch bends and tempo. It loops at the
 //! `loopStart` and `loopEnd` markers (or the disc's controllers for them); without either, where
-//! the disc's sequence loops, the whole tune loops.
+//! the disc's sequence loops, the whole tune loops. It comes out shaped as the disc's sequences
+//! are: channel 0 keeps the loop and no notes, every note channel is given volume, expression, pan
+//! and pitch bend before its first note, and the first notes come after that set-up.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -378,6 +380,78 @@ fn add_loop(events: &mut Vec<(u64, Message)>, start: u64, end: u64) {
     insert(events, end, control(DATA_ENTRY_LSB, 0), false);
 }
 
+/// How far a MIDI file's events move to leave room for the set-up before its first notes, when a
+/// note comes before FIRST_NOTE or the tune loops whole: the disc's sequences set their channels
+/// up at ticks 10 to 50 and start their first notes at 50 or later, at 120 in most.
+pub const LEAD: u64 = 120;
+pub const FIRST_NOTE: u64 = 50;
+
+/// What every channel that plays notes is given before its first note, as every one of the disc's
+/// 2,024 note channels is (volume in all but 19): volume 100 (MIDI's), expression 127, pan centre,
+/// pitch bend centre. A channel left without them may not sound (the driver's defaults are not
+/// known).
+fn setup(channel: u8) -> [Message; 4] {
+    [
+        Message::Control { channel, controller: 7, value: 100 },
+        Message::Control { channel, controller: 11, value: 127 },
+        Message::Control { channel, controller: 10, value: 64 },
+        Message::PitchBend { channel, value: 0x2000 },
+    ]
+}
+
+/// Gives each channel that plays notes the set-up it lacks before its first note (setup), at ticks
+/// 20, 30, ... as the disc's sequences place theirs.
+fn add_setup(events: &mut Vec<(u64, Message)>) {
+    for channel in 0..16u8 {
+        let Some(first) = events
+            .iter()
+            .position(|(_, message)| matches!(message, Message::NoteOn { channel: on, .. } if *on == channel))
+        else {
+            continue;
+        };
+        let note = events[first].0;
+        let before: Vec<Message> =
+            events[..first].iter().filter(|(_, m)| m.channel() == Some(channel)).map(|(_, m)| m.clone()).collect();
+        let given = |wanted: &Message| {
+            before.iter().any(|message| match (message, wanted) {
+                (Message::Control { controller: a, .. }, Message::Control { controller: b, .. }) => a == b,
+                (Message::PitchBend { .. }, Message::PitchBend { .. }) => true,
+                _ => false,
+            })
+        };
+        let missing: Vec<Message> = setup(channel).into_iter().filter(|message| !given(message)).collect();
+        for (k, message) in missing.into_iter().enumerate() {
+            insert(events, (20 + 10 * k as u64).min(note), message, false);
+        }
+    }
+}
+
+/// The message on another channel.
+fn on_channel(message: &Message, channel: u8) -> Message {
+    let (status, data) = message.bytes();
+    Message::from_bytes(status & 0xF0 | channel, &data)
+}
+
+/// Moves channel 0's messages to a channel the file does not use when channel 0 plays notes: the
+/// disc's sequences never do, and keep it for the loop's controllers. Refused when all 16 are used.
+fn move_off_channel_0(events: &mut [(u64, Message)]) -> Result<()> {
+    if !events.iter().any(|(_, message)| matches!(message, Message::NoteOn { channel: 0, .. })) {
+        return Ok(());
+    }
+    let used: BTreeSet<u8> = events.iter().filter_map(|(_, message)| message.channel()).collect();
+    let Some(free) = (1..16u8).find(|channel| !used.contains(channel)) else {
+        bail!("channel 1 plays notes and all 16 channels are used; the game keeps channel 1 for the loop, so free one");
+    };
+    for (_, message) in events.iter_mut() {
+        let loop_control =
+            matches!(message, Message::Control { controller: NRPN_MSB | DATA_ENTRY | DATA_ENTRY_LSB, .. });
+        if message.channel() == Some(0) && !loop_control {
+            *message = on_channel(message, free);
+        }
+    }
+    Ok(())
+}
+
 /// The sequence a MIDI file gives, with the disc's sequence it replaces as the template (see the
 /// module's doc). `has_program` says whether the bank has a program; a program the bank lacks
 /// (and the template does not name) is refused, as is a channel that plays a note before it is
@@ -399,12 +473,25 @@ pub fn from_midi(midi: &[u8], template: &Sequence, has_program: &dyn Fn(u8) -> b
         return Ok(plain);
     }
     let (template_start, template_end) = loop_events(template.events.iter().map(|event| &event.message));
+    let looped = template_start.is_some() && template_end.is_some();
+    // shaped as the disc's sequences are: channel 0 carries the loop and no notes, and the first
+    // notes come a little after the start, so a tune looped whole has its set-up before the loop
+    move_off_channel_0(&mut merged.events)?;
+    let whole = !merged.nrpn_loop && merged.markers == (None, None) && looped;
+    let earliest = merged.events.iter().find(|(_, message)| matches!(message, Message::NoteOn { .. }));
+    let lead = if whole || earliest.is_some_and(|(tick, _)| *tick < FIRST_NOTE) { LEAD } else { 0 };
+    for (tick, message) in &mut merged.events {
+        if *tick > 0 || !matches!(message, Message::Meta { kind: META_TEMPO, .. }) {
+            *tick += lead;
+        }
+    }
+    merged.markers = (merged.markers.0.map(|tick| tick + lead), merged.markers.1.map(|tick| tick + lead));
+    merged.end += lead;
     let mut end = merged.end;
     if !merged.nrpn_loop {
-        let looped = template_start.is_some() && template_end.is_some();
         let (start, stop) = match merged.markers {
             (Some(start), Some(stop)) => (start, stop),
-            (None, None) if looped => (0, merged.end),
+            (None, None) if looped => (lead, merged.end),
             (Some(_), None) | (None, Some(_)) => bail!("give both markers {MARKER_START} and {MARKER_END}, or neither"),
             _ => (0, 0),
         };
@@ -425,6 +512,7 @@ pub fn from_midi(midi: &[u8], template: &Sequence, has_program: &dyn Fn(u8) -> b
     if !tempo_at_start {
         insert(&mut merged.events, 0, Message::tempo(DEFAULT_TEMPO), true);
     }
+    add_setup(&mut merged.events);
     let sequence = sequence_of(&merged.events, end);
     check_programs(&sequence, template, has_program)?;
     Ok(sequence)
@@ -552,7 +640,7 @@ mod tests {
                 Event::new(10, Message::Program { channel: 2, program: 1 }),
                 control(0, NRPN_MSB, LOOP_START),
                 control(10, DATA_ENTRY, 0),
-                note(0, 60, true),
+                note(40, 60, true),
                 note(480, 60, false),
                 note(0, 62, true),
                 Event::new(0, Message::PitchBend { channel: 2, value: 0x2100 }),
@@ -576,7 +664,7 @@ mod tests {
             .iter()
             .filter_map(|(tick, m)| loop_marker(m).map(|start| (*tick, Some(start))))
             .collect();
-        assert_eq!(markers, [(20, Some(true)), (1000, Some(false))]);
+        assert_eq!(markers, [(20, Some(true)), (1040, Some(false))]);
         assert_eq!(build(&midi, &original, None).unwrap(), original);
     }
 
@@ -618,19 +706,25 @@ mod tests {
         let messages: Vec<(u64, Message)> =
             built.ticks().into_iter().zip(built.events.iter().map(|e| e.message.clone())).collect();
         let control = |controller, value| Message::Control { channel: 0, controller, value };
+        let three = |controller, value| Message::Control { channel: 3, controller, value };
+        // moved on by LEAD, as its first note came at 0, with the set-up it lacked before it
         assert_eq!(
             messages,
             [
-                (0, control(NRPN_MSB, LOOP_START)),
-                (0, control(DATA_ENTRY, 0)),
                 (0, Message::tempo(600_000)),
-                (0, Message::Program { channel: 3, program: 1 }),
-                (0, Message::NoteOn { channel: 3, key: 64, velocity: 100 }),
-                (480, Message::NoteOff { channel: 3, key: 64 }),
-                (940, control(NRPN_MSB, LOOP_END)),
-                (950, control(DATA_ENTRY, 0)),
-                (960, control(DATA_ENTRY_LSB, 0)),
-                (1440, Message::end()),
+                (20, three(7, 100)),
+                (30, three(11, 127)),
+                (40, three(10, 64)),
+                (50, Message::PitchBend { channel: 3, value: 0x2000 }),
+                (110, control(NRPN_MSB, LOOP_START)),
+                (120, control(DATA_ENTRY, 0)),
+                (120, Message::Program { channel: 3, program: 1 }),
+                (120, Message::NoteOn { channel: 3, key: 64, velocity: 100 }),
+                (600, Message::NoteOff { channel: 3, key: 64 }),
+                (1060, control(NRPN_MSB, LOOP_END)),
+                (1070, control(DATA_ENTRY, 0)),
+                (1080, control(DATA_ENTRY_LSB, 0)),
+                (1560, Message::end()),
             ]
         );
         assert_eq!(Sequence::read(&built.write().unwrap()).unwrap(), built);
@@ -650,7 +744,7 @@ mod tests {
             tracks: vec![Track { events: vec![(0, Message::NoteOn { channel: 0, key: 60, velocity: 1 })], end: 480 }],
         };
         let error = from_midi(&smf.write(), &template, &|_| true).unwrap_err();
-        assert!(error.to_string().contains("channel 1 plays a note"), "{error}");
+        assert!(error.to_string().contains("channel 2 plays a note"), "{error}");
     }
 
     #[test]
@@ -668,11 +762,57 @@ mod tests {
             }],
         };
         let built = from_midi(&smf.write(), &tune(), &|_| true).unwrap();
-        assert_eq!(loop_ticks(&built), (Some(0), Some(1920)));
+        assert_eq!(loop_ticks(&built), (Some(LEAD), Some(1920 + LEAD)));
+        // channel 0's notes moved to a free channel; the set-up comes before the loop
+        assert!(shaped_as_the_disc_s(&built), "{built:?}");
+        assert!(built.events.iter().any(|e| matches!(e.message, Message::NoteOn { channel: 1, .. })));
         assert!(built.events.iter().any(|e| e.message == Message::tempo(DEFAULT_TEMPO)));
         let one_shot = Sequence { division: DIVISION, events: vec![Event::new(0, Message::end())] };
         let built = from_midi(&smf.write(), &one_shot, &|_| true).unwrap();
         assert_eq!(loop_ticks(&built), (None, None));
+    }
+
+    /// Whether a sequence is laid out as every one of the disc's is: no notes on channel 0, every
+    /// note channel given program, volume, expression, pan and bend before its first note, and no
+    /// note before tick FIRST_NOTE.
+    fn shaped_as_the_disc_s(sequence: &Sequence) -> bool {
+        let ticks = sequence.ticks();
+        let mut seen: [BTreeSet<&str>; 16] = Default::default();
+        let mut started = [false; 16];
+        for (event, tick) in sequence.events.iter().zip(ticks) {
+            match event.message {
+                Message::NoteOn { channel: 0, .. } => return false,
+                Message::NoteOn { channel, .. } if !started[channel as usize] => {
+                    started[channel as usize] = true;
+                    let wanted = ["program", "7", "11", "10", "bend"];
+                    if tick < FIRST_NOTE || !wanted.iter().all(|kind| seen[channel as usize].contains(kind)) {
+                        return false;
+                    }
+                }
+                Message::Program { channel, .. } => _ = seen[channel as usize].insert("program"),
+                Message::PitchBend { channel, .. } => _ = seen[channel as usize].insert("bend"),
+                Message::Control { channel, controller: 7, .. } => _ = seen[channel as usize].insert("7"),
+                Message::Control { channel, controller: 11, .. } => _ = seen[channel as usize].insert("11"),
+                Message::Control { channel, controller: 10, .. } => _ = seen[channel as usize].insert("10"),
+                _ => {}
+            }
+        }
+        true
+    }
+
+    #[test]
+    fn channel_0_is_freed_or_refused() {
+        let note = |channel| (0, Message::NoteOn { channel, key: 60, velocity: 90 });
+        let program = |channel| (0, Message::Program { channel, program: 0 });
+        let mut events: Vec<(u64, Message)> = (0..16).flat_map(|channel| [program(channel), note(channel)]).collect();
+        let full = Smf { format: 0, division: 480, tracks: vec![Track { events: events.clone(), end: 480 }] };
+        let error = from_midi(&full.write(), &tune(), &|_| true).unwrap_err();
+        assert!(error.to_string().contains("all 16 channels are used"), "{error}");
+        events.retain(|(_, message)| message.channel() != Some(9));
+        let some = Smf { format: 0, division: 480, tracks: vec![Track { events, end: 480 }] };
+        let built = from_midi(&some.write(), &tune(), &|_| true).unwrap();
+        assert!(shaped_as_the_disc_s(&built));
+        assert!(built.events.iter().any(|e| matches!(e.message, Message::NoteOn { channel: 9, .. })));
     }
 
     fn loop_ticks(sequence: &Sequence) -> (Option<u64>, Option<u64>) {
@@ -695,7 +835,10 @@ mod tests {
         smf.tracks[0].events.sort_by_key(|(tick, _)| *tick);
         let built = Sequence::read(&build(&smf.write(), &original, None).unwrap()).unwrap();
         assert_eq!(loop_ticks(&built), (Some(480), Some(960)));
-        let controls = built.events.iter().filter(|e| matches!(e.message, Message::Control { .. })).count();
+        let loop_control = |e: &&Event| {
+            matches!(e.message, Message::Control { controller: NRPN_MSB | DATA_ENTRY | DATA_ENTRY_LSB, .. })
+        };
+        let controls = built.events.iter().filter(loop_control).count();
         assert_eq!(controls, 5);
     }
 
@@ -721,6 +864,10 @@ mod tests {
                 let built = build(&midi, &member.data, Some(&bank)).unwrap();
                 assert_eq!(built, member.data, "{} {}", path.display(), member.name);
                 let sequence = Sequence::read(&member.data).unwrap();
+                // taken as a new tune (another template), it comes out shaped as the disc's are
+                let one_shot = Sequence { division: DIVISION, events: vec![Event::new(0, Message::end())] };
+                let anew = from_midi(&midi, &one_shot, &|_| true).unwrap();
+                assert!(shaped_as_the_disc_s(&anew), "{} {}", path.display(), member.name);
                 for program in sequence.programs() {
                     if !bank.hd.programs.get(program as usize).is_some_and(Option::is_some) {
                         missing.push(format!("{} {} program {program}", path.display(), member.name));
