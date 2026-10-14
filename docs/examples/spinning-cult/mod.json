@@ -5,7 +5,8 @@
  "replace": {
   "map:m01": {"file": "maps/m01/m01.gltf", "programs": {"door_fish": "ENTER_FISH_ROOM"}},
   "data:items": "data/items.json",
-  "data:inventions": "data/inventions.json"
+  "data:inventions": "data/inventions.json",
+  "texture:itemicon": "textures/itemicon.png"
  },
  "add": {
   "map:fishroom": {
@@ -26,6 +27,8 @@
     "104": {"file": "music/whisper.wav", "root": 60}
    }
   },
-  "file:mods/gill/gill.chr": {"file": "model/gill.gltf", "like": "model:p01_01a"}
+  "file:mods/gill/gill.chr": {"file": "model/gill.gltf", "like": "model:p01_01a"},
+  "file:mods/gyros/gyros.chr": {"file": "model/gyros.gltf", "like": "model:p01_01a"},
+  "file:item/gyros.chr": {"file": "model/gyros_item.gltf", "like": "model:takaraky"}
  }
 }

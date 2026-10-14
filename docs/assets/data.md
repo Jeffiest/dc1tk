@@ -101,7 +101,8 @@ arguments the script reader takes (`SPI_STACK_SIZE`; `PushStack` drops the
 rest). Not added: monster kinds (the executable's table has no room),
 executable table rows (gifts, clubs, breeding, Donny's goods: fixed sizes
 in `.data`), floor medals, race fish, prizes and conditions (whether a
-condition is met is code); a new item takes an existing icon and model.
+condition is met is code); a new item takes an existing icon and model, or
+one the mod draws or builds (section 2.8).
 
 The kinds after the first three share `c2-assets`' `data_table.rs`: each
 section is a list of records named by their keys (`{"dungeon": 0, "floor":
@@ -223,7 +224,7 @@ or `fish`.
 | `icon_sheet` | u8 | the menu icon texture (`GetMenuItemIconTexInfo`) |
 | `icon` | s16 | the icon on it |
 | `message` | s16 | base of the item's message numbers |
-| `model` | char[16] | model file base name (`item/`, `main/chr/` or `dungeon/robo/`) |
+| `model` | char[16] | model file base name (`item/`, `mainchr/` or `dungeon/robo/`) |
 | `attribute` | u32 | 0x1 can be thrown away (`IsTrush`), 0x2 can be spectrumised |
 
 ### 2.2 Weapons: `WEP`, `WEP_ST`, `WEP_ST_L`, `WEP_ST2`, `WEP_ST2_L`, `WEP_SPE`, `WEP_BUILD`
@@ -316,6 +317,26 @@ reads `etcitem_spectol_table[item - 1]` unchecked, and the table has 425.
 The icon is `icon_sheet` (0 `wepicon`, 1 `itemicon` of `img/allitem.img`)
 and `icon` (192 a sheet, 8 by 24 of 32 pixels); the model is a file the disc
 has. Selling it needs a `PRICE` (section 3).
+
+An icon and a model of the item's own: no item points at cells 52 and 191 of
+`itemicon` (191 is the game's 予約, "reserved", placeholder) nor at 52, 56,
+110, 150 and 191 of `wepicon` (56 is Lamb's Sword's at night,
+`GetMenuItemIconTexGetXY` adding 1 for item 56 in time band 2; 110 and 150
+hold numerals and marks). The sheets are `texture:itemicon` and
+`texture:wepicon` (`img/allitem.img` and its copies in the menu packs; the
+`@mb2`, `@pack01` and `@trushsel` variants are in packs the PAL game does
+not load), each 256 colours for all 192 cells, so a mod drawing into a cell
+keeps the PNG paletted with the sheet's palette and only that cell changes
+(`im3::from_png` takes such a PNG as it is). The model file is `item/` +
+`model` + `.chr` for every type but weapons and clothes (`mainchr/`) and
+ridepod parts (`dungeon/robo/`) (`GetItemFilePath`). A pack of the mod's own
+is a `file:item/NAME.chr` line `like` an item's model (`model:takaraky`):
+build writes `NAME.img`, `NAME.mds` and `info.cfg` as the game's item packs
+have them. Give it no animation: the menus that show an item's model
+(`MenuItemChrLoadEndCheck`, `CMenuInvent::LoadCharaCheck`) load the pack and
+set no motion, and none of the disc's 168 item packs has one. The
+[spinning-cult example](../examples/spinning-cult/README.md) does both for
+its item 429 (built and read back; not yet seen in the game).
 
 ## 3. Shops: `menu/shopusa<chapter>.cfg`
 
