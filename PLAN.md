@@ -153,8 +153,9 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    `go_to_edit_mode(number, program)`, the number from the disc's
    `map/map<language>.cfg`. `--start-at m05` (or `"start_at": "m05"`) starts
    a new game in a town, scripts of its own or not, as Max, coming from
-   another town so the town's arrival takes its default spot. Checked in the
-   game (m05, m01).
+   another town so the town's arrival takes its default spot, with New
+   Game's skip-the-music flag cleared (`allow_bgm_load`) so the town's music
+   plays. Checked in the game (m05, m01).
 2. **Menu and system text** (done). All 302 `.mes` files (and 8 `fconv`
    files laid out the same way) build back byte for byte and export as UTF-8
    text with the game's codes as tags ([text](docs/assets/text.md));
@@ -299,7 +300,7 @@ do:
    motions as `KEY`s, pictures, `info.cfg`), with a template pack for the
    formats; cloth is left out, motion set 0 only, no shadow model. Example:
    [new-character](docs/examples/new-character/).
-6. **Music** (done, being tried). All background music and ambient loops
+6. **Music** (done, checked in the game: a scale in place of Palm Brinks' theme). All background music and ambient loops
    are `.sq` sequences played with their bank's instruments
    ([music](docs/assets/music.md)); `SOUND.DAT` is streamed voices. All 447
    round-trip byte for byte and through MIDI; `music:BG_000_000` in
