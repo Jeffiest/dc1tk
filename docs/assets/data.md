@@ -31,7 +31,9 @@ run time). Addresses below are the symbols of `config/pal/main.symbols.txt`.
   `value`) and **Donny's shop** (in `data:shops`, `donny`: `row`, `item`,
   `level`), executable tables (section 9). `exe_tables.rs`.
 - **Inventions** (`data:inventions`, section 5): `recipes` (all 19 copies of
-  `inv6.lst` in step) and `scoops` (executable). `invention_data.rs`.
+  `inv6.lst` in step), `scoops` (executable) and `ideas` (names and notebook
+  order in the 7 copies of `neta2.lst`, by language). `invention_data.rs`,
+  `idea_data.rs`.
 - **Georama** (`data:georama`, section 6): `parts` of every town, in every
   language's `.gpi`; `fixed_parts` and `starting_parts`. `georama_data.rs`.
 - **Floor medals** (`data:medals`, section 8) and **monster placement**
@@ -86,6 +88,7 @@ past (from the engine; each in its section):
 | items (`data:items`) | `comdat.cfg`, the family's table, every `comdatmes`, `system_N.mes`, `allmenu.mes` | 432 items, numbers 1 to 511; 116 weapons, 162 usable items, 38 attachments, 68 ridepod parts, 20 fish, 40 clothes | `local_com_itemdata`, `local_itemdatano_converttable`, the `local_*` family tables |
 | prices and shops (`data:shops`) | all 16 shop lists | items 1 to 511; 63 goods a shop | `CShop::price[512]`; `SHOP_ITEM_MAX` and 64 arguments a statement |
 | recipes (`data:inventions`) | all 19 copies of `inv6.lst` | 234 | the menu's `InventTeigiStack`: 0x210 units of 16 bytes, 0x24 a recipe |
+| ideas (`data:inventions`) | all 7 `neta2.lst` | ids 1 to 999; 0x247 16-byte units of table and names a language (French: 11 short names more); 388 ideas and scoops; a name 24 bytes (or the language's longest) | `pic_name_text_buff_1660` (0x248 units); `UpdataNetaMemoStr`'s `sort_keys[0x184]`; `MenuInventNetaMemoDraw`'s `text[0x20]` |
 | Georama parts (`data:georama`) | the town's 7 `.gpi` | 384 a town; IDs 0 to 127; names 47 bytes; g01's files 0x77D0 bytes | `GEORAMA_PARTS_LIST_MAX`; the stock list's IDs; `name[0x30]`; `MakeDownLoadAnaunce`'s buffer |
 | fixed and starting parts (`data:georama`) | the town's `gNN.cfg` | 256 placed | `CEditMap::CreateTable` |
 | fishing spots, a spot's fish (`data:fishing`) | `fishing.cfg` | 8 fish a spot | `kFishPlaceMaxFish` |
@@ -135,7 +138,7 @@ up to the 234, a Georama part in every language, a spot and fish, a request
 in its town's block, a townsperson), reading each back.
 
 **Not yet:** tried in the game (a test image adds a weapon sold in Palm
-Brinks). Idea names stay text (`neta2.lst`).
+Brinks). Scoop names stay text (`neta2.lst`, `scoop.cfg`).
 
 ## 1. Where each kind of data lives
 
@@ -159,7 +162,7 @@ Brinks). Idea names stay text (`neta2.lst`).
 | chest items by floor | `dungeon/cfg_file/tbox_d0*.cfg` | cfg `GROUP`/`ITEM`/`FLOOR` | 8 dungeons | `data:chests` ([dungeons](dungeons.md)) |
 | dungeon parts (name, kind, sides) and mini map tiles | ELF `PartsInfoData` 0x33D440, `MiniMapInfoData` 0x33EE40 | 0x18 × 277, 0x290 × 18 | 277 parts, 18 maps | `data:parts` ([dungeons](dungeons.md)) |
 | invention recipes | `menu/inv6.lst` and its copies in the menu packs | cfg `DATASET` | 136 | `data:inventions` |
-| idea and scoop names | `menu/<lang>/neta2.lst` | cfg `PIC_NAME` | 294 | no (text) |
+| idea and scoop names | `menu/<lang>/neta2.lst` | cfg `PIC_NAME` | 294 | `data:inventions` (`ideas`; scoops' names are text) |
 | scoops | ELF `scoop_table` 0x352DE0 and `menu/<lang>/scoop.pac` `scoop.cfg` | `SCOOP_DATA` 0x14 × 53; cfg `STR` | 53 | `data:inventions` (flag, slot; the text is text) |
 | Georama parts (materials, culture points) | `map/g/gNN/gNN<lang>.gpi` | cfg `EDIT_PARTS` blocks | 13-56 per town | `data:georama` |
 | Georama fixed and starting parts, rivers, water | `map/g/gNN/gNN.cfg` | cfg `FIX_EPARTS`, `INIT_EPARTS`, `RIVER_PARTS_NAME`, `WATER_*` | per town | `data:georama` |
@@ -456,6 +459,62 @@ at most 234: the menu gives `InventTeigiStack` 0x210 units of 16 bytes
 cards made (`CInventUserData::created_item[0x100]`) are by item. `scoops`, named by `scoop` (the id), with `flag` (the
 menu flag that makes the scoop known, `KnowScoop`) and `info` (its slot in
 `CScoopDataManager::info`, the saved state).
+
+### 5.1 Ideas: `menu/<lang>/neta2.lst`
+
+`PIC_INFO n;` then `PIC_NAME id, "name", sort;` per idea and scoop (241
+ideas, ids 1 to 250, then 53 scoops). `LoadFilePictureName` reads
+`menu/<LanguageCode>/neta2.lst` (`LoadFileMenu`: 0 Japanese, 1 English, 2
+French, 3 German, 4 Italian, 5 Spanish; Korean, 6, reads `1/`; `menu/neta2.lst`
+is a copy of the Japanese nothing reads) into a 0x5000-byte buffer. The
+table and the names share one heap, `pic_name_text_buff_1660`, of 0x248
+16-byte units: `_PIC_INFO` takes ceil(n × 8 / 16) + 2 for the 8-byte
+`PIC_NAME_INFO` (s16 id, s16 sort, name pointer) and `_PIC_NAME` ceil((length
++ 1) / 16) a name, its length as stored: `ConvertFontCode` turns each
+`[UNIxxxx]` code into one byte only when LanguageCode is 5 or more (the asm
+at 0x200FCC), so French, German and Italian keep the 9-byte codes.
+`mgCMemory::Alloc` refuses the allocation that reaches the end (the name is
+then NULL). On the PAL disc the copies take 491 (ja), 508 (en), 566 (fr), 533
+(de), 539 (it) and 536 (es) units. `_PIC_NAME` drops an entry of id 30000; a
+map invent point of 30001 photographs townsperson 260 (`dng_main.cpp`), so
+neither is an idea. Ideas are below 1000 (`[bulb2]` in the notebook), scoops
+from 1000.
+
+The notebook (`CMenuInvent::UpdataNetaMemoStr`) lists the known ids
+(`CInventUserData::neta_id[0x200]`) in file order, keeping their sort keys in
+`sort_keys[0x184]` (388), sorts the first ones, as many as the known ideas,
+by the key, and the scoops after them by their own order: the ideas come
+first in the file. `MenuInventNetaMemoDraw` prints `[bulb2]` and the name
+into `text[0x20]` (24 bytes of name; the game's own French, German and
+Spanish names run past it, up to 33 bytes for an idea). The sort key is the
+place of the name's first letter × 100 + its place among that letter's
+names: A is 0 in English, French, German and Italian (accents, `Œ` and `Æ`
+folded), 1 in Spanish (0 for a name opening with `¡`); in Japanese the kana
+row of the reading (あ 0, い 1 ... か 5 ... や 35, ゆ 36, よ 37, ら 40 ... わ 45,
+Latin letters 50).
+
+In `data:inventions`, `ideas` lists `{"idea": 1, "name": "Trashcan", "sort":
+1911}` (the English name and key). A mod renames an idea with `name`
+(English) or `names` (`{"fr": ..., "ja": ...}`, the languages ja, en, fr, de,
+it, es), and sets keys with `sort` (English) and `sorts` (by language). An id
+the game lacks (1 to 999) is a new idea, `name` in every language and `names`
+over it (no `like`: there is nothing to copy): `{"idea": 251, "name":
+"Endless Turning", "names": {"fr": "Rotation sans fin"}}`. Build writes its
+`PIC_NAME` after the last idea of each copy and raises `PIC_INFO`. A name
+given without its language's key is put in its place: it takes the key of
+the first name of its letter that sorts after it (the folded text compared),
+those from there on move up one (in English "Endless Turning" takes Energy
+Pipe's 411, which becomes 412); a rename moves the idea so too. A Japanese
+name opening with a kanji goes with the Latin ones (50) unless `sorts` gives
+its key. Refused: ids 0, from 1000, 30000 and 30001; a copy past 0x247 units
+(the French copy has 17 left: 11 more ideas of names under 16 bytes); more
+than 388 ideas and scoops (the units run out first); a name longer than 24
+bytes or than the longest idea name the game has in that language
+(`MenuInventNetaMemoDraw`), empty, with a control character or backslash, or
+with characters the language's text lacks; a file past the 0x5000-byte
+buffer; one value given two ways by two mods. Photographing a new idea needs
+a map invent point giving its id (`FUNC_INVENT_DATA`, the Blender add-on's
+invent box), and inventing with it a recipe naming it.
 
 ## 6. Georama
 

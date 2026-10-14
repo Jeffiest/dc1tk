@@ -616,7 +616,8 @@ character pack; packs inside packs work the same way).
   money, drops, element and attack-kind rates, model and AI script), with
   their `"data:..."` lines. Items also carry what each one adds when
   spectrumised (`spectrumise`), shops Donny's goods (`donny`). The rest:
-  `data:inventions` (recipes: ideas, materials; scoops), `data:georama`
+  `data:inventions` (recipes: ideas, materials; scoops; ideas: names and
+  notebook order, new ideas), `data:georama`
   (each town's parts: materials, culture points, counts; fixed and starting
   parts), `data:medals` (each floor's fastest time, fishing record, seal,
   Spheda prizes, practice medal), `data:floors` (each floor's monsters),
