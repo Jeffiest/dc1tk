@@ -542,6 +542,8 @@ fn line(module: &str, key: &str, file: &Path, add: bool) -> Line {
         add,
         like: None,
         title: None,
+        script: None,
+        programs: vec![],
     }
 }
 

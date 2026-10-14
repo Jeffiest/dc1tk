@@ -76,9 +76,12 @@ pub const MAP_NAME_MOST: usize = 12;
 pub const DATA: &str = "data:";
 /// What a music: line's MIDI file may be called.
 const MIDI_SUFFIXES: [&str; 3] = [".mid", ".midi", ".rmi"];
-/// The tables a data: line can name.
-pub const DATA_TABLES: [&str; 10] =
-    ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters", "layouts"];
+/// The tables a data: line can name, in the order build applies them (parts before layouts, whose
+/// cells name the parts).
+pub const DATA_TABLES: [&str; 12] = [
+    "items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters", "parts",
+    "layouts", "chests",
+];
 
 /// One line of a mod's replace or add.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -98,6 +101,12 @@ pub struct Line {
     pub like: Option<String>,
     /// A new map's title in the map table (every language's), instead of the like map's.
     pub title: Option<String>,
+    /// A new map's own event script: a C source of the mod, compiled into the map's script files
+    /// (mapscript).
+    pub script: Option<PathBuf>,
+    /// A map: line's event points given programs: (point, program), the program a number, a
+    /// program's name or a NEW_PROGRAM name of the mod (docs/assets/maps.md section 9).
+    pub programs: Vec<(String, Value)>,
 }
 
 impl Line {
@@ -183,6 +192,8 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         add,
         like: None,
         title: None,
+        script: None,
+        programs: Vec::new(),
     };
     let kind = ids::kind_of(key);
     if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
@@ -237,6 +248,30 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
                     .filter(|title| title.chars().all(|c| (' '..='~').contains(&c)) && !title.contains('"'));
                 let title = title.ok_or_else(|| line.fail("\"title\" is text of printable ASCII without quotes"))?;
                 line.title = Some(title.to_string());
+            }
+            "script" if line.is_map() && add => {
+                let script = value.as_str().filter(|script| script.to_lowercase().ends_with(".c"));
+                let script =
+                    script.ok_or_else(|| line.fail("\"script\" is a C file of the mod: the new map's event script"))?;
+                let inside = Path::new(script)
+                    .components()
+                    .all(|part| matches!(part, std::path::Component::Normal(_) | std::path::Component::CurDir));
+                let path = script.split(['/', '\\']).fold(mod_dir.to_path_buf(), |path, part| path.join(part));
+                if !inside || !path.is_file() {
+                    return Err(line.fail(format!("{script} is not a file in the mod's folder")));
+                }
+                line.script = Some(path);
+            }
+            "programs" if line.is_map() => {
+                let listed = value
+                    .as_object()
+                    .ok_or_else(|| line.fail("\"programs\" gives event points programs: {\"door_park\": \"ENTER_PARK\"}"))?;
+                for (point, program) in listed {
+                    if program.as_i64().is_none() && !program.as_str().is_some_and(is_identifier) {
+                        return Err(line.fail(format!("\"programs\": {point}'s program is a number or a program's name")));
+                    }
+                    line.programs.push((point.clone(), program.clone()));
+                }
             }
             _ => return Err(line.fail(format!("unknown option \"{option}\""))),
         }

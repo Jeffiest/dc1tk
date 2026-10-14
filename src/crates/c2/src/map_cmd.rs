@@ -242,6 +242,7 @@ pub fn apply_maps(
     iso: &Path,
     mod_dirs: &[PathBuf],
     files: &c2_script::discfiles::Files,
+    program_of: &dyn Fn(&c2_script::replace::Line, &serde_json::Value) -> Result<i64>,
 ) -> Result<(c2_script::discfiles::Files, Vec<MapChange>)> {
     let lines: Vec<c2_script::replace::Line> =
         c2_script::replace::all_lines(mod_dirs)?.into_iter().filter(|line| line.is_map()).collect();
@@ -286,7 +287,16 @@ pub fn apply_maps(
             let path = relative.split('/').fold(folder.clone(), |path, part| path.join(part));
             fs::read(&path).map_err(|error| c2_assets::Error::invalid(format!("{}: {error}", path.display())))
         };
-        let gltf = fs::read(&line.file).with_context(|| line.file.display().to_string())?;
+        let mut gltf = fs::read(&line.file).with_context(|| line.file.display().to_string())?;
+        if !line.programs.is_empty() {
+            let mut given = Vec::new();
+            for (point, program) in &line.programs {
+                let number = program_of(line, program).with_context(|| format!("{} (mod {}): \"programs\"", line.key, line.module))?;
+                println!("  {} (map {}): point {point} runs program {number}", line.module, name);
+                given.push((point.clone(), number));
+            }
+            gltf = with_programs(&gltf, &given).with_context(|| format!("{} (mod {})", line.key, line.module))?;
+        }
         let imported = c2_assets::map_import::import_map(&gltf, &read, &original, &packs, &search)
             .with_context(|| format!("{} (mod {})", line.key, line.module))?;
         for note in &imported.notes {
@@ -402,6 +412,54 @@ pub fn apply_maps(
         }
     }
     Ok((out, changes))
+}
+
+/// The scene with event points given programs (a map: line's "programs"): each named event point's
+/// FUNC_EVENT_DATA program (`data.program`: the program a door runs when its door is open, an event
+/// point when it is reached), by the point's name.
+fn with_programs(gltf: &[u8], programs: &[(String, i64)]) -> Result<Vec<u8>> {
+    use serde_json::Value;
+    let mut doc: Value = serde_json::from_slice(gltf).context("the scene's glTF")?;
+    let nodes = doc["nodes"].as_array_mut().context("the scene's glTF has no nodes")?;
+    for (point, number) in programs {
+        let mut found = 0;
+        for node in nodes.iter_mut() {
+            // the add-on keeps extras.c2 as an object; a scene through other tools may hold it as text
+            let as_text = node["extras"]["c2"].as_str().map(str::to_string);
+            let mut c2 = match &as_text {
+                Some(text) => serde_json::from_str::<Value>(text).unwrap_or(Value::Null),
+                None => node["extras"]["c2"].clone(),
+            };
+            let named = match c2["name"].as_str() {
+                Some(name) => name.to_string(),
+                None => {
+                    let shown = node["name"].as_str().unwrap_or_default();
+                    let shown = shown.strip_prefix("point:").unwrap_or(shown);
+                    // Blender's .001 suffixes
+                    match shown.rsplit_once('.') {
+                        Some((stem, digits)) if digits.len() >= 3 && digits.bytes().all(|byte| byte.is_ascii_digit()) => stem.to_string(),
+                        _ => shown.to_string(),
+                    }
+                }
+            };
+            if c2["role"] != "point" || c2["kind"] != "event" || named != *point {
+                continue;
+            }
+            if !c2["data"].is_object() {
+                bail!("event point {point} has no data to give a program");
+            }
+            c2["data"]["program"] = Value::from(*number);
+            node["extras"]["c2"] = match as_text {
+                Some(_) => Value::String(c2.to_string()),
+                None => c2,
+            };
+            found += 1;
+        }
+        if found == 0 {
+            bail!("\"programs\" names {point}, but the scene has no event point of that name");
+        }
+    }
+    Ok(serde_json::to_vec(&doc)?)
 }
 
 /// Pictures as (file name or picture name, PNG).
@@ -556,6 +614,22 @@ mod tests {
         };
         assert_eq!(new_map_path(&like.map, &like, "m05x"), "map/m/m05/m05x.map");
         assert_eq!(new_map_path("map/m/m05/m05.MPK", &like, "park2b"), "map/p/par/k2b/park2b.mpk");
+    }
+
+    #[test]
+    fn programs_are_given_to_event_points_by_name() {
+        let scene = serde_json::json!({"nodes": [
+            {"name": "point:door_park", "extras": {"c2": {"role": "point", "kind": "event", "data": {"kind": "door", "program": 0}}}},
+            {"name": "point:dun07.001", "extras": {"c2": "{\"role\": \"point\", \"kind\": \"event\", \"data\": {\"program\": 290}}"}},
+            {"name": "point:door_park2", "extras": {"c2": {"role": "point", "kind": "pos", "data": {}}}}
+        ]});
+        let written = with_programs(scene.to_string().as_bytes(), &[("door_park".into(), 9001), ("dun07".into(), 9002)]).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        assert_eq!(doc["nodes"][0]["extras"]["c2"]["data"]["program"], 9001);
+        let text: serde_json::Value = serde_json::from_str(doc["nodes"][1]["extras"]["c2"].as_str().unwrap()).unwrap();
+        assert_eq!(text["data"]["program"], 9002);
+        let missing = with_programs(scene.to_string().as_bytes(), &[("door_park2".into(), 1)]).unwrap_err();
+        assert!(missing.to_string().contains("no event point"));
     }
 
     #[test]

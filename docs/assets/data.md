@@ -43,7 +43,9 @@ run time). Addresses below are the symbols of `config/pal/main.symbols.txt`.
 - **Dungeon floor layouts** (`data:layouts`): the room layouts random and
   preset floors are built from, `dungeon/cfg_file/d0*.cfg` and `mstage*.cfg`;
   rooms are written whole and may be added. `dungeon_layout.rs`, documented
-  in [dungeons](dungeons.md).
+  in [dungeons](dungeons.md). The parts they name and the mini map's tiles
+  (`data:parts`, executable tables) and what the floors' chests hold
+  (`data:chests`, `tbox_d0*.cfg`, `chest_data.rs`) are there too.
 - **Characters** (`data:characters`, section 9): `characters` (starting HP
   and equipment), `weapon_level_up`, `monster_forms`, `badges`, all executable
   tables. `exe_tables.rs`.
@@ -107,7 +109,8 @@ Georama requests (`geo*.cfg`, mostly code), townspeople (`npc*.cfg`),
 | monster names, per language | `dungeon/cfg_file/mosdata0..6.cfg` | cfg `NAME` | 343 | no (text) |
 | which monsters each floor has | `dungeon/cfg_file/mos_place0..6.cfg` | cfg `FLS`/`FL`/`FLE` | 6-31 floors per dungeon | `data:floors` |
 | floor layouts (rooms of parts) | `dungeon/cfg_file/d0*.cfg`, `mstage0..8.cfg` | cfg `ROOM_ID`..`ROOM_END` | 291 layouts in 23 files | `data:layouts` ([dungeons](dungeons.md)) |
-| chest items by floor | `dungeon/cfg_file/tbox_d0*.cfg` | cfg `GROUP`/`ITEM`/`FLOOR` | 8 dungeons | no |
+| chest items by floor | `dungeon/cfg_file/tbox_d0*.cfg` | cfg `GROUP`/`ITEM`/`FLOOR` | 8 dungeons | `data:chests` ([dungeons](dungeons.md)) |
+| dungeon parts (name, kind, sides) and mini map tiles | ELF `PartsInfoData` 0x33D440, `MiniMapInfoData` 0x33EE40 | 0x18 × 277, 0x290 × 18 | 277 parts, 18 maps | `data:parts` ([dungeons](dungeons.md)) |
 | invention recipes | `menu/inv6.lst` and its copies in the menu packs | cfg `DATASET` | 136 | `data:inventions` |
 | idea and scoop names | `menu/<lang>/neta2.lst` | cfg `PIC_NAME` | 294 | no (text) |
 | scoops | ELF `scoop_table` 0x352DE0 and `menu/<lang>/scoop.pac` `scoop.cfg` | `SCOOP_DATA` 0x14 × 53; cfg `STR` | 53 | `data:inventions` (flag, slot; the text is text) |

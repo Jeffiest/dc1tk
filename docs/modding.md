@@ -219,6 +219,23 @@ lines that say which of the disc's files to make them like:
 Keep them small: a picture file loads into the memory stack the script
 names, and the 256x128 and 32x32 pictures above make a 36 KB file.
 
+## A map of a mod's own, and a door into it
+
+A new map is a copy of one of the disc's, edited as a scene (`"add":
+{"map:m05x": {"file": ..., "like": "m05"}}`), and it can have a script of
+its own: `"script": "m05x.c"` on that line, a whole map script (`PROGRAM`
+lines, `MAIN`, its functions) that `build` compiles in every language. Its
+`map_start` runs when the map loads, and places the player and fades in. A
+way in from the game's maps is a door: a `door` point added to an existing
+map's scene, whose program (given by name, `"programs": {"door_park":
+"ENTER_PARK"}` on that map's line) a patch of the map's script adds:
+`jump_to_map(-1, "m05x", map_start)`. The way back is the same from the new
+map: a program naming the town's own arrival program, or one of the mod's
+that runs it and places the player at the door. The mod's scripts share
+the program numbers by `NEW_PROGRAM` in a header both include, and see the
+new map's number as `MAP_M05X`. See [maps](assets/maps.md) section 9 and the
+[new-map-door example](examples/new-map-door/README.md).
+
 ## Editing shared code
 
 Code that several scripts share lives in `lib/`, and an edit there reaches
