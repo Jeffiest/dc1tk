@@ -966,6 +966,10 @@ struct Scope {
     gotos: Vec<(String, usize)>,
     /// typedefs declared in the function
     typedefs: Vec<String>,
+    /// The struct and union tags each open block declares, beside blocks: a tag declared in a
+    /// block names a struct of its own there (another tag, tag#key_n), hiding one outside it until
+    /// the block ends, as C scopes tags.
+    tags: Vec<HashMap<String, String>>,
 }
 
 impl Scope {
@@ -980,6 +984,7 @@ impl Scope {
             labels: Vec::new(),
             gotos: Vec::new(),
             typedefs: Vec::new(),
+            tags: vec![HashMap::new()],
         }
     }
 }
@@ -1093,13 +1098,40 @@ impl State {
     fn open_block(&mut self) {
         if let Some(scope) = &mut self.scope {
             scope.blocks.push(HashMap::new());
+            scope.tags.push(HashMap::new());
         }
     }
 
     fn close_block(&mut self) {
         if let Some(scope) = &mut self.scope {
             scope.blocks.pop();
+            scope.tags.pop();
         }
+    }
+
+    /// The struct a tag names where the parser is: the innermost block's that declares it, or the
+    /// file's.
+    fn tag(&self, name: &str) -> String {
+        let blocks = self.scope.as_ref().map_or(&[][..], |scope| scope.tags.as_slice());
+        blocks.iter().rev().find_map(|block| block.get(name)).cloned().unwrap_or_else(|| name.to_string())
+    }
+
+    /// A tag the innermost block declares (struct T { ... } or struct T;): a struct of its own,
+    /// unless the block declared the tag already. At file scope, the tag itself.
+    fn declared_tag(&mut self, name: &str) -> String {
+        let key = self.file_key.clone();
+        let Some(scope) = self.scope.as_mut() else {
+            return name.to_string();
+        };
+        let blocks = scope.tags.len();
+        let innermost = scope.tags.last_mut().expect("a function has a block");
+        if let Some(known) = innermost.get(name) {
+            return known.clone();
+        }
+        self.anonymous += 1;
+        let tag = format!("{name}#{key}_{}_{blocks}", self.anonymous);
+        innermost.insert(name.to_string(), tag.clone());
+        tag
     }
 
     /// A call of a parse.py helper that holds frames more frames at its deepest.
@@ -1368,9 +1400,12 @@ fn offsetof(state: &mut State) -> Parsed<Node> {
         let Ty::Struct(tag) = &ty else {
             return state.fail(format!("offsetof needs a struct or union, not {}", ty.shown()));
         };
-        let Some((_, offset, member)) = ctype::member(&state.structs, tag, &name) else {
+        let Some((_, offset, member, bits)) = ctype::member_bits(&state.structs, tag, &name) else {
             return state.fail(format!("{} has no member {name}", ty.shown()));
         };
+        if bits.is_some() {
+            return state.fail(format!("offsetof of bit-field {name}, which has no byte of its own"));
+        }
         bytes += offset;
         ty = member;
         while state.at("[", 0) {
@@ -1564,10 +1599,31 @@ const INTEGER_WORDS: [&str; 6] = ["char", "short", "int", "long", "signed", "uns
 /// The integer types besides int, as declarations name them (char is signed; long is int).
 pub const INTEGER_TYPES: [&str; 5] = ["unsigned int", "short", "unsigned short", "char", "unsigned char"];
 
-/// Whether the token offset ahead starts a type: a keyword of one, or a typedef of this file.
+/// Whether the token offset ahead starts a type: a keyword of one, a typedef of this file, or a
+/// header's typedef followed by what only a declaration or a cast has there.
 fn starts_type(state: &State, offset: usize) -> bool {
     let token = state.token(offset);
-    token.kind == Kind::Name && type_word(state, token.text())
+    token.kind == Kind::Name && (type_word(state, token.text()) || header_type_ahead(state, offset))
+}
+
+/// A typedef of an included header (size_t, a value kind) used as a type word: one the file has
+/// not declared as anything else (a variable, an enumerator or a constant hides it, as in C). The
+/// SDK's value kinds have names scripts use for variables too, so the name counts as a type only
+/// where it is followed by a name or * (a declaration) or ) (a cast, sizeof).
+fn header_type_ahead(state: &State, offset: usize) -> bool {
+    header_type(state, state.token(offset).text(), state.token(offset + 1))
+}
+
+/// header_type_ahead of a name and the token after it.
+fn header_type(state: &State, text: &str, next: &Token) -> bool {
+    if !state.header_kinds.contains_key(text)
+        || state.variable(&state.storage_name(text)).is_some()
+        || state.enumerators.contains_key(text)
+        || state.constants.contains_key(text)
+    {
+        return false;
+    }
+    next.kind == Kind::Name || (next.kind == Kind::Op && ["*", ")"].contains(&next.text()))
 }
 
 fn type_word(state: &State, text: &str) -> bool {
@@ -1662,9 +1718,10 @@ fn specifiers(state: &mut State, header_kinds: bool) -> Parsed<Spec> {
                 base = Some(name.map_or("int".to_string(), |name| format!("enum {name}")));
                 any = true;
                 continue;
-            } else if header_kinds
-                && (state.token(1).kind == Kind::Name
-                    || (state.token(1).kind == Kind::Op && state.token(1).text() == "*"))
+            } else if header_type_ahead(state, 0)
+                || (header_kinds
+                    && (state.token(1).kind == Kind::Name
+                        || (state.token(1).kind == Kind::Op && state.token(1).text() == "*")))
             {
                 base = Some(text);
             } else {
@@ -1694,7 +1751,13 @@ fn specifiers(state: &mut State, header_kinds: bool) -> Parsed<Spec> {
 fn struct_specifier(state: &mut State, union: bool) -> Parsed<String> {
     let word = if union { "union" } else { "struct" };
     let tag = if state.peek(0).kind == Kind::Name {
-        state.name()?
+        let name = state.name()?;
+        if state.at("{", 0) || state.at(";", 0) {
+            // defined or declared alone here: in a block, a struct of the block's
+            state.declared_tag(&name)
+        } else {
+            state.tag(&name)
+        }
     } else if state.at("{", 0) {
         state.anonymous += 1;
         format!("__anonymous_{}_{}", state.file_key, state.anonymous)
@@ -1702,36 +1765,79 @@ fn struct_specifier(state: &mut State, union: bool) -> Parsed<String> {
         let found = state.shown(state.peek(0))?;
         return state.fail(format!("expected the name of a {word}, found {found}"));
     };
+    let shown = ctype::tag_shown(&tag);
     let other = if union { "struct" } else { "union" };
     if state.structs.get(&tag).is_some_and(|known| known.union != union) {
-        return state.fail(format!("{tag} is a {other}, not a {word}"));
+        return state.fail(format!("{shown} is a {other}, not a {word}"));
     }
     if !state.at("{", 0) {
         // declared here, defined (or not) elsewhere: an incomplete type until then
-        state.structs.entry(tag.clone()).or_insert(Composite { union, members: Vec::new() });
+        state.structs.entry(tag.clone()).or_insert(Composite::new(union, Vec::new()));
         return Ok(tag);
     }
     state.take();
     let mut members: Vec<(String, Ty)> = Vec::new();
+    let mut bits: Vec<Option<ctype::Bits>> = Vec::new();
+    // the bits the slot bit-fields are filling has used, while one is
+    let mut used: Option<i64> = None;
     while !state.at("}", 0) {
         let spec = specifiers(state, true)?;
         if spec.storage.is_some() {
-            return state.fail(format!("a member of {word} {tag} has no storage class"));
+            return state.fail(format!("a member of {word} {shown} has no storage class"));
         }
         let base = base_ty(state, &spec)?;
         loop {
             let (name, ty) = declarator(state, base.clone())?;
-            if name.is_empty() {
-                return state.fail(format!("a member of {word} {tag} needs a name"));
+            if !name.is_empty() && members.iter().any(|(known, _)| *known == name) {
+                return state.fail(format!("{word} {shown} has two members named {name}"));
             }
             if state.at(":", 0) {
-                return state.fail("bit-fields are not supported: every member takes a slot of its own");
+                state.take();
+                let width = constant_expression(state)?;
+                let kind = match &ty {
+                    Ty::Scalar(kind) => state.base_kind(kind),
+                    _ => String::new(),
+                };
+                if kind != "int" && kind != "unsigned int" {
+                    return state.fail(format!(
+                        "bit-field {name} is of {}: a bit-field is an int or an unsigned int",
+                        ty.shown()
+                    ));
+                }
+                if !(0..=32).contains(&width) {
+                    return state.fail(format!("bit-field {name} has {width} bits; an int has 32"));
+                }
+                match width {
+                    0 if !name.is_empty() => {
+                        return state.fail(format!("bit-field {name} has 0 bits; only an unnamed one may"))
+                    }
+                    // :0 ends the slot: the next bit-field starts another
+                    0 => used = None,
+                    32 => {
+                        // the whole slot, an int of its own
+                        members.push((name, ty));
+                        bits.push(None);
+                        used = None;
+                    }
+                    _ => {
+                        let offset = match used {
+                            Some(taken) if !union && taken + width <= 32 => taken,
+                            _ => 0,
+                        };
+                        members.push((name, ty));
+                        bits.push(Some(ctype::Bits { offset, width }));
+                        used = Some(offset + width);
+                    }
+                }
+            } else {
+                if name.is_empty() {
+                    return state.fail(format!("a member of {word} {shown} needs a name"));
+                }
+                complete(state, &name, &ty)?;
+                members.push((name, ty));
+                bits.push(None);
+                used = None;
             }
-            if members.iter().any(|(known, _)| *known == name) {
-                return state.fail(format!("{word} {tag} has two members named {name}"));
-            }
-            complete(state, &name, &ty)?;
-            members.push((name, ty));
             if !state.at(",", 0) {
                 break;
             }
@@ -1741,11 +1847,12 @@ fn struct_specifier(state: &mut State, union: bool) -> Parsed<String> {
     }
     state.expect("}")?;
     if members.is_empty() {
-        return state.fail(format!("{word} {tag} needs a member"));
+        return state.fail(format!("{word} {shown} needs a member"));
     }
-    let composite = Composite { union, members };
+    let bits = if bits.iter().any(Option::is_some) { bits } else { Vec::new() };
+    let composite = Composite { union, members, bits };
     if state.structs.get(&tag).is_some_and(|known| !known.members.is_empty() && *known != composite) {
-        return state.fail(format!("{word} {tag} is defined twice"));
+        return state.fail(format!("{word} {shown} is defined twice"));
     }
     state.structs.insert(tag.clone(), composite);
     Ok(tag)
@@ -1988,15 +2095,7 @@ fn static_type(state: &State, node: &Node) -> Option<Ty> {
                 .or_else(|| state.variable(field(&node["array"], "name")).map(|entry| entry_type(state, &entry)))?;
             array.target().cloned()
         }
-        "member" => {
-            let object = static_type(state, &node["object"])
-                .or_else(|| state.variable(field(&node["object"], "name")).map(|entry| entry_type(state, &entry)))?;
-            let object = if node["arrow"] == Node::Bool(true) { object.target()?.clone() } else { object };
-            let Ty::Struct(tag) = object else {
-                return None;
-            };
-            ctype::member(&state.structs, &tag, field(node, "name")).map(|(_, _, ty)| ty)
-        }
+        "member" => member_of(state, node).map(|(ty, _)| ty),
         "addr" => static_type(state, &node["target"]).map(ctype::pointer),
         "wide" => {
             let count = node["codes"].as_array().map_or(1, Vec::len) as i64;
@@ -2007,8 +2106,22 @@ fn static_type(state: &State, node: &Node) -> Option<Ty> {
     }
 }
 
+/// A member expression's type, and its bits when it is a bit-field.
+fn member_of(state: &State, node: &Node) -> Option<(Ty, Option<ctype::Bits>)> {
+    let object = static_type(state, &node["object"])
+        .or_else(|| state.variable(field(&node["object"], "name")).map(|entry| entry_type(state, &entry)))?;
+    let object = if node["arrow"] == Node::Bool(true) { object.target()?.clone() } else { object };
+    let Ty::Struct(tag) = object else {
+        return None;
+    };
+    ctype::member_bits(&state.structs, &tag, field(node, "name")).map(|(_, _, ty, bits)| (ty, bits))
+}
+
 /// What sizeof gives for an expression, which it does not evaluate.
 fn size_of(state: &State, node: &Node) -> Parsed<i64> {
+    if node.kind() == "member" && member_of(state, node).is_some_and(|(_, bits)| bits.is_some()) {
+        return state.fail(format!("sizeof of bit-field {}, which has no size of its own", field(node, "name")));
+    }
     if let Some(ty) = static_type(state, node) {
         return Ok(ty.bytes(&state.structs));
     }
@@ -2904,6 +3017,11 @@ fn declaration(state: &mut State) -> Parsed<Vec<Node>> {
         if spec.storage.as_deref() == Some("typedef") {
             return local_typedef(state, &spec);
         }
+        if state.at(";", 0) && (matches!(spec.ty, Some(Ty::Struct(_))) || spec.kind.starts_with("enum ")) {
+            // struct T { ... }; or struct T;: declares the tag, in this block
+            state.take();
+            return Ok(Vec::new());
+        }
         // a typedef of this function's stands for its type
         let kind = state.kinds.get(&spec.kind).filter(|_| local_kind(state, &spec.kind)).cloned().unwrap_or(spec.kind.clone());
         if kind == "any" || (kind == "void" && !complex_ahead(state, &spec)) {
@@ -3043,13 +3161,13 @@ fn fill_typed(
             },
         }
     };
-    // what one element (or member) of ty is, and where it starts
-    let parts: Vec<(Ty, i64)> = match ty {
+    // what one element (or member) of ty is, where it starts, and its bits for a bit-field
+    let parts: Vec<(Ty, i64, Option<ctype::Bits>)> = match ty {
         Ty::Array(of, size) => {
             let step = of.slots(structs);
             // an open size takes at most an element per value
             let count = if *size < 0 { items.len() as i64 } else { *size };
-            (0..count).map(|index| ((**of).clone(), base + index * step)).collect()
+            (0..count).map(|index| ((**of).clone(), base + index * step, None)).collect()
         }
         Ty::Struct(tag) => {
             let Some(found) = structs.get(tag) else {
@@ -3057,13 +3175,19 @@ fn fill_typed(
             };
             let mut offset = base;
             let mut parts = Vec::new();
-            for (_, member) in &found.members {
-                parts.push((member.clone(), offset));
-                if found.union {
-                    // a union's initializer sets its first member
-                    break;
+            for (at, (name, member)) in found.members.iter().enumerate() {
+                let bits = found.bits_of(at);
+                // a bit-field that shares a slot is in the one the last started
+                let start = if bits.is_some_and(|bits| bits.offset > 0) { offset - 1 } else { offset };
+                if !name.is_empty() {
+                    // an unnamed bit-field takes no value
+                    parts.push((member.clone(), start, bits));
+                    if found.union {
+                        // a union's initializer sets its first member
+                        break;
+                    }
                 }
-                offset += member.slots(structs);
+                offset += found.takes(at, structs).0;
             }
             parts
         }
@@ -3079,9 +3203,21 @@ fn fill_typed(
     let characters =
         |of: &Ty| matches!(of, Ty::Scalar(kind) if kind.contains("char") || kind.contains("short") || kind == "int");
     let mut filled = 0;
-    for (part, offset) in parts {
+    for (part, offset, bits) in parts {
         if *at >= items.len() {
             break;
+        }
+        if let Some(bits) = bits {
+            // the fields that share a slot are put together in its one value
+            let packed = bits.packed(one(&items[*at])?);
+            let value = match out.remove(&offset) {
+                Some(known) => ctype::Bits::joined(known, packed),
+                None => packed,
+            };
+            out.insert(offset, value);
+            *at += 1;
+            filled += 1;
+            continue;
         }
         match (&part, &items[*at]) {
             // a string or wide string for an array of characters
@@ -3334,7 +3470,8 @@ fn local_typedef(state: &mut State, spec: &Spec) -> Parsed<Vec<Node>> {
 
 /// The type a typedef stands for: int, float, string, an integer type, or another typedef's.
 fn base_type(state: &State, kind: &str) -> Parsed<String> {
-    let base = state.kinds.get(kind).cloned().unwrap_or_else(|| kind.to_string());
+    let base =
+        state.kinds.get(kind).or_else(|| state.header_kinds.get(kind)).cloned().unwrap_or_else(|| kind.to_string());
     let base = if base.starts_with("enum ") { "int".to_string() } else { base };
     if TYPES.contains(&base.as_str()) || INTEGER_TYPES.contains(&base.as_str()) || base == "any" {
         return Ok(base);
@@ -4429,7 +4566,7 @@ fn parse_state(
                 let inline = state.framed(inline_definition)?;
                 declarations(&mut program, "inlines").push(inline);
             }
-            _ if token.kind == Kind::Name && type_word(&state, word) => {
+            _ if token.kind == Kind::Name && (type_word(&state, word) || header_type(&state, word, state.token(0))) => {
                 let doc = token.doc.clone();
                 state.pos -= 1;
                 if top_declaration(&mut state, &mut program, &pending, doc.as_deref())? {
