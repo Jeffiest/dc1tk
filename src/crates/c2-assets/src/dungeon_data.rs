@@ -9,7 +9,9 @@
 //! practice_type, practice_param;` (_ROOM_FLOOR_INFO2: s8, s32). LoadMonsterFile (dng_event.cpp)
 //! runs `mos_place` over `FLS floor, count;` (the count is read and dropped), `FL monster, param,
 //! ...;` (pairs appended to CMonsterLocateInfo's 32 slots, unchecked) and `FLE;`, for the floor
-//! being entered; a later block for one floor starts it again.
+//! being entered; a later block for one floor starts it again. The param becomes the placed
+//! monster's `locate_param`, the talk number (-1: it cannot be talked to; CheckMonsterTolk), shown
+//! as `talk`.
 
 use serde_json::Value;
 

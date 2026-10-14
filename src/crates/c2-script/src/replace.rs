@@ -19,7 +19,7 @@
 //! }
 //! ```
 //!
-//! `"data:items": "data/items.json"` (also data:shops, data:monsters) edits a table of game data
+//! `"data:items": "data/items.json"` (also data:shops, data:monsters, data:inventions, ...) edits a table of game data
 //! as JSON (docs/assets/data.md); c2's data_cmd builds those, merging several mods' tables.
 //!
 //! A replacement reaches every place the disc has the asset (ids::Index lists them); "only" keeps
@@ -63,7 +63,8 @@ pub const MAP: &str = "map:";
 /// A table of game data edited as JSON (docs/assets/data.md): `"data:items": "data/items.json"`.
 pub const DATA: &str = "data:";
 /// The tables a data: line can name.
-pub const DATA_TABLES: [&str; 3] = ["items", "shops", "monsters"];
+pub const DATA_TABLES: [&str; 9] =
+    ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters"];
 
 /// One line of a mod's replace or add.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -169,7 +170,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
         return Err(line.fail(
             "a key is an asset id (texture:, model:, sound:, bank:), file: and a disc path, map: and a map's name, \
-             or data: and a table (data:items, data:shops, data:monsters)",
+             or data: and a table (data:items, data:monsters, ...)",
         ));
     }
     let options = match value {

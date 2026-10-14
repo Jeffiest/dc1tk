@@ -159,7 +159,8 @@ pub enum ModCommand {
         name: String,
         /// Asset ids (texture:c02a02, model:c02fuku*, sound:SE_CURSOR_MOVE, bank:SP_003), each
         /// copied in its common format with its line added to mod.json; data tables (data:items,
-        /// data:shops, data:monsters) as JSON; or files as extract lays them out
+        /// data:shops, data:monsters, data:inventions, data:georama, data:medals, data:floors,
+        /// data:fishing, data:characters) as JSON; or files as extract lays them out
         /// (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied into disc/.
         #[arg(required = true)]
         paths: Vec<String>,
@@ -527,7 +528,8 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let written = rebuild::write_disc(&args.iso, &args.output, &files)?;
     if let Some(executable) = &executable {
-        // the monster table: the boot executable patched in place, its size kept
+        // the executable tables (monsters, spectrumising, ...): the boot executable patched in
+        // place, its size kept
         rebuild::overwrite_iso_file(&args.output, c2_assets::monster_data::EXECUTABLE, executable)?;
     }
     for item in &written.placed {

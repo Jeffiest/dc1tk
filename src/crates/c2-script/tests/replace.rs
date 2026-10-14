@@ -426,7 +426,7 @@ fn data_lines_name_a_table_and_merge_across_mods() {
         mod_json(&mod_dir, body);
         fails(replace::lines(&mod_dir), words);
     };
-    case(json!({"replace": {"data:weapons": "items.json"}}), "data:items, data:shops, data:monsters");
+    case(json!({"replace": {"data:weapons": "items.json"}}), "data:items, data:shops, data:monsters, data:inventions");
     case(json!({"add": {"data:items": "items.json"}}), "replaces one of the tables");
     case(json!({"replace": {"data:items": "a.png"}}), "is not a .json file");
     case(json!({"replace": {"data:items": {"file": "items.json", "only": "menu"}}}), "unknown option \"only\"");
