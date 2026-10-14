@@ -3,11 +3,13 @@
 //! Python tools (im3.py, textures.py, soundbank.py, sounds.py, mds.py, mot.py, info_cfg.py,
 //! to_gltf.py, from_gltf.py, models.py) do.
 
+pub mod cfg_text;
 pub mod folder;
 pub mod from_gltf;
 pub mod ids;
 pub mod im3;
 pub mod info_cfg;
+pub mod item_data;
 pub mod json;
 pub mod map_edit;
 pub mod map_export;
@@ -17,8 +19,10 @@ pub mod map_transform;
 pub mod mapfile;
 pub mod mds;
 pub mod models;
+pub mod monster_data;
 pub mod mot;
 pub mod py;
+pub mod shop_data;
 pub mod soundbank;
 pub mod sounds;
 pub mod textures;

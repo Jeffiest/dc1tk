@@ -416,6 +416,31 @@ fn lines_are_checked_as_mod_json_is_read() {
     assert_eq!(replace::raw_files(&mod_dir).unwrap(), [("snd2/x.snd".to_string(), mod_dir.join("a.wav"))]);
 }
 
+#[test]
+fn data_lines_name_a_table_and_merge_across_mods() {
+    let folder = TempDir::new("data-lines");
+    let mod_dir = folder.path().join("m");
+    write(&mod_dir.join("items.json"), b"{\"items\": []}");
+    write(&mod_dir.join("a.png"), &png([0, 0, 0]));
+    let case = |body: Value, words: &str| {
+        mod_json(&mod_dir, body);
+        fails(replace::lines(&mod_dir), words);
+    };
+    case(json!({"replace": {"data:weapons": "items.json"}}), "data:items, data:shops, data:monsters");
+    case(json!({"add": {"data:items": "items.json"}}), "replaces one of the tables");
+    case(json!({"replace": {"data:items": "a.png"}}), "is not a .json file");
+    case(json!({"replace": {"data:items": {"file": "items.json", "only": "menu"}}}), "unknown option \"only\"");
+    mod_json(&mod_dir, json!({"replace": {"DATA:Items": "items.json"}}));
+    let lines = replace::lines(&mod_dir).unwrap();
+    assert!(lines[0].is_data() && !replace::needs_index(&lines));
+    assert_eq!(lines[0].data_table(), "items");
+    // two mods may both give a table: build merges them field by field
+    let other = folder.path().join("n");
+    write(&other.join("items.json"), b"{\"items\": []}");
+    mod_json(&other, json!({"replace": {"data:items": "items.json"}}));
+    assert!(replace::key_clashes(&[mod_dir, other]).unwrap().is_empty());
+}
+
 /// An index of one bank of three entries, the second named SE_DOOR.
 fn bank_index() -> Index {
     let place = Place { path: "snd2/sp/SP_004.snd".into(), members: vec![] };

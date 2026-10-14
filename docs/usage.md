@@ -380,6 +380,23 @@ character pack; packs inside packs work the same way).
   Unedited scenes change nothing. An example is
   [map-edit](examples/map-edit/); the formats are in
   [maps](assets/maps.md).
+- **Game data as JSON.** `mod asset ISO NAME data:items data:shops
+  data:monsters` writes `data/items.json` (every item's common data, with
+  its weapon, usable effect, attachment, ridepod part or fish stats nested:
+  attack, WHP, elements and limits, synthesis points, build-ups, ...),
+  `data/shops.json` (each item's buy and sell price and each shop's goods,
+  one value or a list of eight for chapters 1 to 8) and
+  `data/monsters.json` (each monster kind's HP, attack, defence, ABS,
+  money, drops, element and attack-kind rates, model and AI script), with
+  their `"data:..."` lines. Keep only the records and fields you change,
+  each record with its `item`, `shop` or `id`:
+  `{"items": [{"item": 1, "weapon": {"attack": 50}}]}`. `build` writes only
+  the values that change: items into `menu/cfg7`, shops into all sixteen
+  shop lists, monsters into the boot executable `SCES_511.90`, patched in
+  place. Several mods' tables merge; two giving one value different numbers
+  are refused, as are values the game's field cannot hold. Names are labels
+  (they are text). What each field means is in
+  [game data](assets/data.md).
 - **Character models as glTF.** A character pack (`.chr`) holds a model,
   its skin weights, bind pose, motions and textures. `mod asset ISO NAME
   chara/c02a.chr --as gltf` writes a folder `c02a.chr.gltf/` with

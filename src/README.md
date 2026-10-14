@@ -21,7 +21,8 @@ names.
 The tests use small discs and scripts built in memory
 (`c2_disc::samples`), the SDK and the definitions; no game files. With `C2S_CORPUS` set to the absolute path of an extracted disc
 (`extracted/disc`), `cargo test --release corpus` also round-trips every
-script on it (about 40 s) and every `.map` scene file (a few seconds).
+script on it (about 40 s), every `.map` scene file (a few seconds) and the item,
+shop and monster tables.
 
 ## Crates
 
@@ -29,9 +30,9 @@ script on it (about 40 s) and every `.map` scene file (a few seconds).
 |---|---|
 | `c2-disc` | the disc: ISO 9660, `DATA.HD4` and `DATA.DAT`, the packs inside its files, extracting them all, writing a new image with files replaced or added, cp932 names |
 | `c2-script` | the scripts: the `.stb` format, its assembly, the native tables, definition sets, the C parser, the decompiler, names, notes and messages, libraries, the SDK, the compiler, a VM interpreter for `mod test`, the source index (flags, xref, maps), learning definitions, and build and mods (patches, additions, numbers, `start_at`, assets by id) |
-| `c2-assets` | textures (IM3/TIM2 to and from PNG), sound banks (SPU2 ADPCM to and from WAV), character packs (MDS, motions, skin weights to and from glTF), map scene files (`.map` as a typed tree), the asset tree and its ids |
+| `c2-assets` | textures (IM3/TIM2 to and from PNG), sound banks (SPU2 ADPCM to and from WAV), character packs (MDS, motions, skin weights to and from glTF), map scene files (`.map` as a typed tree), game data tables (items, shops, monsters) as JSON, the asset tree and its ids |
 | `c2-py` | number and text formatting as CPython does it (float repr, `%g`, `int(x, 0)`, `json.dumps`, `textwrap`, `difflib`, Unicode `str` methods): `c2` was ported from a Python tool and writes the same bytes it did, so trees and mods made with that tool still match |
-| `c2` | the command line: one module per group of commands (`setup.rs`, `tree_decompile.rs`, `modding.rs`, `verify.rs`, `defs.rs`, `xref.rs`, `asset_tree.rs`) |
+| `c2` | the command line: one module per group of commands (`setup.rs`, `tree_decompile.rs`, `modding.rs`, `verify.rs`, `defs.rs`, `xref.rs`, `asset_tree.rs`, `data_cmd.rs`) |
 
 Each module starts with a doc comment saying what it is for. The program
 tree the decompiler and compiler pass around is `c2_script::node::Node`:

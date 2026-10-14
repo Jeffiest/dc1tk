@@ -248,6 +248,27 @@ fn write_copy(iso_path: &Path, out_path: &Path) -> Result<File> {
     Ok(OpenOptions::new().read(true).write(true).open(out_path)?)
 }
 
+/// Overwrites a file of the image's own directory tree (outside DATA.DAT, such as the boot
+/// executable) with bytes of the same size, in place: a plain patch, nothing moves.
+pub fn overwrite_iso_file(image_path: &Path, path: &str, data: &[u8]) -> Result<()> {
+    let record = {
+        let image = crate::Image::open(image_path)?;
+        iso::find(image.bytes(), path)?.ok_or_else(|| Error::invalid(format!("the disc has no {path}")))?
+    };
+    if record.size as usize != data.len() {
+        return Err(Error::invalid(format!(
+            "{path} is {} bytes; a patch keeps its size, not {}",
+            record.size,
+            data.len()
+        )));
+    }
+    let mut file = OpenOptions::new().write(true).open(image_path)?;
+    file.seek(SeekFrom::Start(record.extent as u64 * iso::SECTOR))?;
+    file.write_all(data)?;
+    file.flush()?;
+    Ok(())
+}
+
 /// The bytes a disc file, or a member inside it, reads back as from an image.
 pub fn read_back(image: &[u8], archive: &Archive, top: &str, members: &[String]) -> Option<Vec<u8>> {
     let entry = archive.entry(top)?;
@@ -305,5 +326,20 @@ mod tests {
         );
         assert!(added_member(&outer, &names, "A-M.mds", b"twice").is_err());
         assert_eq!(added_member(&inner, &[], "b", b"1").unwrap(), pack(&[("info.cfg", b"cfg"), ("a-m.mds", b"model"), ("b", b"1")]));
+    }
+
+    #[test]
+    fn overwrites_a_root_file_in_place() {
+        let folder = std::env::temp_dir().join(format!("c2-overwrite-{}", std::process::id()));
+        fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("disc.iso");
+        fs::write(&path, crate::samples::iso_image(&[("SCES_511.90", b"executable"), ("OTHER", b"kept")])).unwrap();
+        overwrite_iso_file(&path, "SCES_511.90", b"EXECUTABLE").unwrap();
+        assert!(overwrite_iso_file(&path, "SCES_511.90", b"longer than it was").is_err());
+        let image = crate::Image::open(&path).unwrap();
+        let read = |name: &str| iso::read_file(image.bytes(), &iso::find(image.bytes(), name).unwrap().unwrap()).to_vec();
+        assert_eq!((read("SCES_511.90"), read("OTHER")), (b"EXECUTABLE".to_vec(), b"kept".to_vec()));
+        drop(image);
+        fs::remove_dir_all(&folder).unwrap();
     }
 }

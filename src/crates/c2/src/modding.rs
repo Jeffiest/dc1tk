@@ -134,15 +134,17 @@ pub enum ModCommand {
         #[command(flatten)]
         common: Common,
     },
-    /// Copy game assets off the disc (models, textures, sounds) into a mod, to replace them there.
+    /// Copy game assets off the disc (models, textures, sounds, data tables) into a mod, to replace
+    /// them there.
     Asset {
         /// The disc image.
         iso: PathBuf,
         /// The mod's name.
         name: String,
         /// Asset ids (texture:c02a02, model:c02fuku*, sound:SE_CURSOR_MOVE, bank:SP_003), each
-        /// copied in its common format with its line added to mod.json; or files as extract lays
-        /// them out (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied into disc/.
+        /// copied in its common format with its line added to mod.json; data tables (data:items,
+        /// data:shops, data:monsters) as JSON; or files as extract lays them out
+        /// (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied into disc/.
         #[arg(required = true)]
         paths: Vec<String>,
         /// Export files in a common format to edit there: png for textures.
@@ -436,7 +438,20 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     for item in &map_changes {
         println!("replaced: {} (map:{}; mod {}, {} bytes, was {})", item.path, item.map, item.module, item.new, item.old);
     }
+    let (files, executable, data_changes) = crate::data_cmd::apply_data(&args.iso, &mod_dirs, &files)?;
+    for change in &data_changes {
+        for line in crate::data_cmd::described(change) {
+            println!("  {line}");
+        }
+        for (path, new, old) in &change.files {
+            println!("replaced: {path} (data:{}; {new} bytes, was {old})", change.table);
+        }
+    }
     let written = rebuild::write_disc(&args.iso, &args.output, &files)?;
+    if let Some(executable) = &executable {
+        // the monster table: the boot executable patched in place, its size kept
+        rebuild::overwrite_iso_file(&args.output, c2_assets::monster_data::EXECUTABLE, executable)?;
+    }
     for item in &written.placed {
         let how = if item.added {
             "new"
@@ -459,13 +474,14 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     let mut wrong = build::check(&args.output, &found.scripts)?;
     wrong.extend(discfiles::check(&args.output, &replaced)?);
     wrong.extend(replace::check(&args.output, &changed)?);
+    wrong.extend(crate::data_cmd::check(&args.output, &data_changes, &files, executable.as_deref())?);
     for path in &wrong {
         println!("reads back wrong: {path}");
     }
     println!(
         "{} scripts changed, {} game files replaced or added, {} disc files rewritten, written to {}",
         found.scripts.len(),
-        replaced.len() + changed.len() + map_changes.len(),
+        replaced.len() + changed.len() + map_changes.len() + data_changes.iter().map(|change| change.files.len()).sum::<usize>(),
         files.len(),
         shown(&args.output)
     );
@@ -538,6 +554,12 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                         let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
                         for line in reached_lines(&resolved, &name) {
                             println!("{name}: {line}");
+                        }
+                    }
+                    let (_, _, data_changes) = crate::data_cmd::apply_data(disc, &mod_dirs, &Default::default())?;
+                    for change in &data_changes {
+                        for line in crate::data_cmd::described(change) {
+                            println!("{line}");
                         }
                     }
                     resolved.added
@@ -630,6 +652,15 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
         }
         ModCommand::Asset { iso, name, paths, form, mods: mods_dir, defs } => {
             let mod_dir = mods::folder(mods_dir, name)?;
+            let (tables, paths): (Vec<String>, Vec<String>) =
+                paths.iter().cloned().partition(|path| path.to_lowercase().starts_with(replace::DATA));
+            for (id, file, written) in crate::data_cmd::copy_out(iso, &mod_dir, &tables)? {
+                if written {
+                    println!("{}: {id}; edit it there and keep only what you change, and build writes it", shown(&file));
+                } else {
+                    println!("{}: {id} is in the mod already; left as it is", shown(&file));
+                }
+            }
             let (keys, paths): (Vec<String>, Vec<String>) =
                 paths.iter().cloned().partition(|path| c2_assets::ids::kind_of(path).is_some());
             if !keys.is_empty() {
