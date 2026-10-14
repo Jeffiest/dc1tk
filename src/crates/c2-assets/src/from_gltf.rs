@@ -391,6 +391,51 @@ fn key_of(values: &[f64]) -> Vec<KeyFloat> {
 }
 
 /// An MDT from triangles (corners in threes); returns it and each vertex's skin.
+/// Vertices (position, alpha) by the cell of one unit they are in.
+type Cells = HashMap<(i64, i64, i64), Vec<([f64; 3], f64)>>;
+
+/// A mesh's vertex alphas by position, as glTF colours give them.
+struct Alphas {
+    cells: Cells,
+}
+
+fn original_alphas(mdt: Option<&Mdt>) -> Alphas {
+    let mut cells = Cells::new();
+    for prim in mdt.map(|t| t.prims.as_slice()).unwrap_or_default() {
+        let (Some(v), Some(c)) = (prim.slot(mds::Slot::Vertex), prim.slot(mds::Slot::Colour)) else {
+            continue;
+        };
+        for corner in &prim.verts {
+            let mdt = mdt.unwrap();
+            let (Some(p), Some(colour)) = (mdt.vertices.get(corner[v] as usize), mdt.colours.get(corner[c] as usize)) else {
+                continue;
+            };
+            let position = [p[0], p[1], p[2]];
+            cells.entry(Alphas::cell(&position)).or_default().push((position, colour[3].clamp(0.0, 1.0)));
+        }
+    }
+    Alphas { cells }
+}
+
+impl Alphas {
+    fn cell(p: &[f64]) -> (i64, i64, i64) {
+        (p[0].floor() as i64, p[1].floor() as i64, p[2].floor() as i64)
+    }
+
+    /// The alpha of the nearest vertex: in the cells around first, then anywhere; 1 for none.
+    fn near(&self, p: &[f64]) -> f64 {
+        let distance = |q: &[f64; 3]| (0..3).map(|i| (q[i] - p[i]).powi(2)).sum::<f64>();
+        let nearest = |found: &mut dyn Iterator<Item = &([f64; 3], f64)>| {
+            found.min_by(|a, b| distance(&a.0).total_cmp(&distance(&b.0))).map(|(_, alpha)| *alpha)
+        };
+        let (x, y, z) = Alphas::cell(p);
+        let around = (-1..=1).flat_map(|dx| (-1..=1).flat_map(move |dy| (-1..=1).map(move |dz| (x + dx, y + dy, z + dz))));
+        nearest(&mut around.filter_map(|key| self.cells.get(&key)).flatten())
+            .or_else(|| nearest(&mut self.cells.values().flatten()))
+            .unwrap_or(1.0)
+    }
+}
+
 fn build_mdt(prims: &[Primitive], materials: Vec<Material>) -> (Mdt, Vec<Skin>) {
     let mut t = Mdt::default();
     let mut vertex_of: HashMap<(Vec<KeyFloat>, Skin), usize> = HashMap::new();
@@ -1073,6 +1118,9 @@ pub fn import_with(
                 None => IDENT,
             };
         }
+        // Blender writes some meshes' colours without alpha: the fades come from the mesh it
+        // replaces, each corner taking the alpha of the nearest vertex there
+        let alphas = original_alphas(model.nodes[target].mdt.as_ref());
         let mut materials: Vec<Material> = Vec::new();
         let mut material_of: Vec<(Value, usize)> = Vec::new();
         let mut prims = Vec::new();
@@ -1151,7 +1199,7 @@ pub fn import_with(
                 let colour = match col.as_ref().filter(|v| !v.is_empty()) {
                     Some(col) => {
                         let mut v: Vec<f64> = col.at(c)?.iter().map(|v| v.f()).collect();
-                        v.push(1.0);
+                        v.push(if col.n == 3 { alphas.near(&position) } else { 1.0 });
                         v.truncate(4);
                         if v.len() < 4 {
                             bail!("tuple index out of range");
@@ -1406,3 +1454,29 @@ fn world_of(
     Ok(m)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_alpha_comes_from_the_nearest_original_vertex() {
+        let mdt = Mdt {
+            vertices: vec![[0.0, 0.0, 0.0, 1.0], [10.0, 0.0, 0.0, 1.0], [0.5, 0.2, 0.0, 1.0]],
+            colours: vec![[1.0, 1.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 0.25]],
+            // vertex and colour indices, no normals or UVs
+            prims: vec![Prim {
+                kind: mds::F_COLOUR | mds::F_NO_NORMAL | mds::F_NO_UV,
+                material: 0,
+                verts: vec![vec![0, 0], vec![1, 1], vec![2, 2]],
+            }],
+            ..Mdt::default()
+        };
+        let alphas = original_alphas(Some(&mdt));
+        assert_eq!(alphas.near(&[0.01, 0.0, 0.0]), 0.0);
+        assert_eq!(alphas.near(&[0.5, 0.21, 0.0]), 0.25);
+        // moved far from every vertex: the nearest anywhere
+        assert_eq!(alphas.near(&[40.0, 3.0, 0.0]), 1.0);
+        assert_eq!(original_alphas(None).near(&[0.0, 0.0, 0.0]), 1.0);
+    }
+}
