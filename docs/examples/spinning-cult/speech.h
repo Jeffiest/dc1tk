@@ -1,28 +1,11 @@
-// Mod spinning-cult: a speech bubble from a character, as the game's townspeople talk, and a quiet
-// pause. Uses modkit's input helpers.
+// Mod spinning-cult: the Fish Room's speech and camera helpers. Lines show in the window at the top
+// of the screen (modkit's, the slot the game uses for hints), which shows in any map and is never
+// cut off by the screen's edge, as a bubble from a character at the edge of the picture is.
 
-// Shows text in a bubble from speaker towards listener until the player presses (X) or (O).
-static void say_from(int speaker, int listener, string text)
-{
-    set_message_window_mode(0, MES_WIN_FUKIDASHI);
-    set_message_tail(0, 1);
-    set_message_speed(0, 1);
-    set_message_prompt(0, 1);
-    wait;
-    wait;
-    set_message_slot(0, 0);
-    show_message(0, text);
-    place_message_bubble(0, speaker, listener);
-    modkit_wait(10);
-    modkit_wait_for_confirm();
-    set_message_cursor(0, -1);
-    close_message(0);
-    set_message_slot(0, 0);
-}
-
+// Shows a line until the player presses (X) or (O). Who speaks is for the reader: the line says so.
 static void say(int speaker, string text)
 {
-    say_from(speaker, CHARA_PLAYER, text);
+    modkit_say(text);
 }
 
 // Stands chara facing the point (x, z).

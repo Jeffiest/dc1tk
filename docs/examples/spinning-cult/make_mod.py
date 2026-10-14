@@ -10,9 +10,6 @@ mods/spinning-cult with this folder's mod.json, scripts and Brother Gill's model
 
 The Fish Room is built by the fish-room example's make_mod.py (the room, the fish turning, the
 door), and then, as one would in Blender with the c2_maps add-on:
-- a second fish, awake: the same fish with its pupils grown huge and black, a new model of its own
-  (New Model from Selection), hidden (its placement's show 0) until the ending shows it, with a
-  Piece animation point in "look at the player" mode, so once shown it turns to follow you;
 - an Invent box round the fish: photographing it gives the idea "Endless Turning" (251);
 - a second light set, red, for the ending.
 
@@ -38,7 +35,6 @@ OWN_FILES = ("mod.json", "cult.h", "speech.h", "m01.c", "fishroom.c")
 DATA_FILES = ("items.json", "inventions.json")
 
 IDEA_ENDLESS_TURNING = 251
-AWAKE_PUPIL = 22.0  # the awake fish's pupils (the turning fish's are 4.5)
 TOWN_DARK_LIGHT = 8
 
 
@@ -58,22 +54,6 @@ def extend_room(fish_room):
         from c2_maps import c2data
 
         centre = fish_room.game(0, fish_room.FISH_HEIGHT, 0)
-        # the awake fish: hidden until the ending shows it, always turned to the player
-        awake = fish_room.new_model(
-            [fish_room.make_fish(centre, name="fish_awake", pupil=AWAKE_PUPIL)], "fr_fish_awake", collision=False
-        )
-        data = c2data.get(awake)
-        data["show"] = 0
-        c2data.put(awake, data)
-        piece = next(child for child in awake.children if c2data.role(child) == "piece")
-        fish_room.select_only([piece])
-        look = fish_room.add_point("ANIME", "fish_look", centre, in_placement=True)
-        data = c2data.get(look)
-        data["data"]["mode"] = 6  # look at the player
-        data["data"]["start"] = [-25.0, -360.0, 0.0]
-        data["data"]["step"] = [0.0, 0.0, 0.0]
-        data["data"]["end"] = [25.0, 360.0, 0.0]
-        c2data.put(look, data)
         # the photo: a box round the fish, seen from anywhere in the room. The camera looks only at
         # the invent points of placements that are drawn (CMap::InScreenFunc walks the
         # placements), so the box goes in the turning fish's placement, not the map's own points.

@@ -13,8 +13,7 @@ NEW_COUNTER(CULT_COUNTER);
 // What happened so far (stage).
 #define STAGE_NONE 0      // nobody has met Brother Gill
 #define STAGE_MET 1       // Gill gave Max the camera and the scrap
-#define STAGE_WHIRLIGIG 2 // Max has made the Whirligig; Gill told him to show it
-#define STAGE_ENDED 3     // the fish has looked at Max
+#define STAGE_GYROS 2     // Max has made the gŷros; Gill told him to show it
 
 struct cult_bits {
     unsigned int turned : 5;      // one bit a convert, as CONVERTS below
@@ -57,7 +56,7 @@ static void write_cult(union cult_state state)
 #define CONVERT_COUNT 5
 
 // The new item the invention makes (mod.json's data:items and data:inventions).
-#define ITEM_WHIRLIGIG 429
+#define ITEM_GYROS 429
 // The new idea the fish gives when photographed (mod.json's ideas; the Fish Room's invent box).
 #define IDEA_ENDLESS_TURNING 251
 
@@ -77,5 +76,5 @@ static void write_cult(union cult_state state)
 
 // Palm Brinks' extra light set (make_mod.py adds it to m01's scene): dark, a dried-blood fog.
 #define TOWN_DARK_LIGHT 8
-// The Fish Room's light sets: 0 the dark room, 1 red, for the ending.
+// The Fish Room's light sets: 0 the dark room, 1 red, for the end.
 #define ROOM_RED_LIGHT 1

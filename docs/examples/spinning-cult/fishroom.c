@@ -1,8 +1,9 @@
 // Mod spinning-cult: the Fish Room's script (the new map fishroom; mod.json gives it as the map's
 // "script"). Brother Gill waits under the fish, turning with it; he gives Max the camera and a
 // scrap of metal, asks him to take the fish's likeness and make a shape the town can hold (the
-// Whirligig, an invention), and to show it to them. When all five have turned, the fish stops,
-// and looks.
+// gŷros, an invention), and to show it to them. When all five have turned they are here, turning
+// round the fish, and when Max speaks to Gill he turns with them, and the fish turns faster, for
+// good.
 
 #include <event.h>
 #include <disc.h>
@@ -25,30 +26,47 @@ void do_nothing(void)
 {
 }
 
-// The five, as the ending stands them in a ring round the fish, 250 from the middle, the side
-// towards the door left open: their packs, and where they stand.
+static void murmur_parn(void)
+{
+    modkit_say("The colours go round.");
+}
+
+static void murmur_blinkhorn(void)
+{
+    modkit_say("Move along. Move along.\nMove along.");
+}
+
+static void murmur_giles(void)
+{
+    modkit_say("Can you hear it?\nIt's getting faster.");
+}
+
+static void murmur_aegira(void)
+{
+    modkit_say("He's waiting for you.");
+}
+
+static void murmur_fournet(void)
+{
+    modkit_say("...");
+}
+
+// The five, when all have turned: in a ring round the fish, 250 from the middle, the side towards
+// the door left open; their packs, where they stand, and what they murmur if Max speaks to them.
 struct ring_place {
     string pack;
     float x;
     float z;
+    void (*murmur)(void);
 };
 
 struct ring_place ring[CONVERT_COUNT] = {
-    {"chara/p01_10a.chr", 216.5, 125.0},
-    {"chara/p01_05a.chr", 191.5, -160.7},
-    {"chara/p01_19a.chr", 0.0, -250.0},
-    {"chara/p01_20a.chr", -191.5, -160.7},
-    {"chara/p01_22a.chr", -216.5, 125.0},
+    {"chara/p01_10a.chr", 216.5, 125.0, murmur_parn},
+    {"chara/p01_05a.chr", 191.5, -160.7, murmur_blinkhorn},
+    {"chara/p01_19a.chr", 0.0, -250.0, murmur_giles},
+    {"chara/p01_20a.chr", -191.5, -160.7, murmur_aegira},
+    {"chara/p01_22a.chr", -216.5, 125.0, murmur_fournet},
 };
-
-// Shows the fish as it is now: turning, or (after the ending) awake and watching.
-static void show_fish(int awake)
-{
-    bind_handle_map_part(1, "fr_fish");
-    set_handle_visible(1, awake == 0);
-    bind_handle_map_part(2, "fr_fish_awake");
-    set_handle_visible(2, awake != 0);
-}
 
 static void place_player_at_door(void)
 {
@@ -68,17 +86,20 @@ static void load_gill(void)
     set_chara_motion(GILL, "spin");
 }
 
-static void play_room_music(void)
+// The five in their ring, turning.
+static void load_ring(void)
 {
-    stop_bgm(0);
-    allow_bgm_load();
-    load_bgm(MUSIC_TURNING);
-    play_bgm(0);
+    int which;
+
+    for (which = 0; which < CONVERT_COUNT; which++) {
+        load_chara(MEMORY_STACK_EVENT, ring[which].pack, "info.cfg", FIRST_CONVERT + which);
+        set_chara_active(FIRST_CONVERT + which);
+        place_chara(FIRST_CONVERT + which, ring[which].x, 0.0, ring[which].z, 0.0);
+        set_chara_motion(FIRST_CONVERT + which, "spin");
+    }
 }
 
-static void play_ending(void);
-
-// Arriving: the room as the cult has it.
+// Arriving: the room as the cult has it. Once all five have turned they are here too.
 void arrive_in_room(void)
 {
     union cult_state state;
@@ -87,21 +108,14 @@ void arrive_in_room(void)
     init_event();
     reset_memory_stack(MEMORY_STACK_EVENT);
     place_player_at_door();
-    if (state.bits.stage == STAGE_ENDED) {
-        // it is awake now, and it follows you; nothing plays
-        stop_bgm(0);
-        show_fish(1);
-        fade_in(60);
-        finish_event();
-        return;
-    }
-    show_fish(0);
-    play_room_music();
-    if (state.bits.turned == ALL_TURNED) {
-        play_ending();
-        return;
-    }
+    stop_bgm(0);
+    allow_bgm_load();
+    load_bgm(MUSIC_TURNING);
+    play_bgm(0);
     load_gill();
+    if (state.bits.turned == ALL_TURNED) {
+        load_ring();
+    }
     fade_in(60);
     finish_event();
 }
@@ -151,7 +165,7 @@ static void meet_gill(void)
     write_cult(state);
 }
 
-// What Gill says while Max has no Whirligig: the likeness, then the shape.
+// What Gill says while Max has no gŷros: the likeness, then the shape.
 static void gill_hints(void)
 {
     int photos = 0;
@@ -184,141 +198,102 @@ static void gill_counts(int count)
         say(GILL, "The lights have gone out\nup there. Good.");
         break;
     default:
-        say(GILL, "One more.\nThen it will look.");
+        say(GILL, "One more.\nThen bring them to me.");
         break;
     }
 }
 
-// Talking in the room: only Gill answers.
+// --- the end -----------------------------------------------------------------------------------
+
+// Max turns with them. The camera leaves him turning and rises to the fish, which turns faster and
+// faster, and stays there. It does not end.
+static void turn_with_us(void)
+{
+    float yaw = 3.14;
+    float max_speed = 0.0;
+    float fish_speed = 0.026;  // radians a frame: the 1.5 degrees its point turned it
+    float x;
+    float y;
+    float z;
+    float px;
+    float py;
+    float pz;
+    int frame;
+
+    gill_turns_round();
+    say(GILL, "They are all here now.");
+    say(GILL, "All but one.");
+    set_chara_motion(GILL, "beckon", CHARA_MOTION_HOLD);
+    say(GILL, "Turn with us.");
+    set_chara_motion(GILL, "raise", CHARA_MOTION_HOLD);
+    get_chara_pos(CHARA_PLAYER, &px, &py, &pz);
+    // the fish: its turning point off, turned from here on by this script
+    set_func_point_enabled("fr_fish", "fish_spin", 0);
+    bind_handle_map_part(0, "fr_fish", "fr_fish-m");
+    get_handle_rot(0, &x, &y, &z);
+    set_camera_pos(px + 45.0, py + 26.0, pz - 50.0);
+    set_camera_target(px, py + 18.0, pz);
+    start_screen_wave(1.0, 0.03, 6.0, 600);
+    for (frame = 0; ; frame++) {
+        // Max, slowly at first
+        if (max_speed < 0.22) {
+            max_speed = max_speed + 0.0009;
+        }
+        yaw = yaw + max_speed;
+        set_chara_rot(CHARA_PLAYER, 0.0, yaw, 0.0);
+        // the fish, faster and faster
+        if (fish_speed < 0.52) {
+            fish_speed = fish_speed * 1.006;
+        }
+        y = y + fish_speed;
+        if (y > 6.2832) {
+            y = y - 6.2832;
+        }
+        set_handle_rot(0, x, y, z);
+        if (frame == 240) {
+            // the light goes red; the camera leaves him and rises to the fish
+            set_map_light(ROOM_RED_LIGHT);
+            move_camera_to(0.0, 40.0, 430.0, 0.0, FISH_HEIGHT, 0.0, 360);
+        }
+        wait;
+    }
+}
+
+// Talking in the room: Gill, or one of the five once they are here.
 void talk_in_room(void)
 {
     int slot;
     union cult_state state;
 
     get_event_data(EVENT_DATA_CHARA_SLOT, &slot);
-    if (slot != GILL) {
+    state = read_cult();
+    init_event();
+    if (slot >= FIRST_CONVERT && slot < FIRST_CONVERT + CONVERT_COUNT) {
+        ring[slot - FIRST_CONVERT].murmur();
+        finish_event();
         return;
     }
-    init_event();
-    state = read_cult();
-    if (state.bits.stage == STAGE_NONE) {
+    if (slot != GILL) {
+        finish_event();
+        return;
+    }
+    if (state.bits.turned == ALL_TURNED) {
+        turn_with_us();
+    } else if (state.bits.stage == STAGE_NONE) {
         meet_gill();
-    } else if (get_item_count(ITEM_WHIRLIGIG) == 0) {
+    } else if (get_item_count(ITEM_GYROS) == 0) {
         gill_hints();
     } else if (state.bits.stage == STAGE_MET) {
         gill_turns_round();
         say(GILL, "Yes.\nThat is its shape.");
         say(GILL, "Show it to them.\nThey will know what to do.");
-        state.bits.stage = STAGE_WHIRLIGIG;
+        state.bits.stage = STAGE_GYROS;
         write_cult(state);
     } else {
         gill_counts(state.bits.count);
     }
     gill_turns_back();
     finish_event();
-}
-
-// --- the ending --------------------------------------------------------------------------------
-
-// The fish slows to a stop: its turning point off, the script turns it, less each frame.
-static void slow_the_fish(void)
-{
-    float x;
-    float y;
-    float z;
-    float speed = 1.5;
-    int frame;
-    int which;
-
-    set_func_point_enabled("fr_fish", "fish_spin", 0);
-    bind_handle_map_part(0, "fr_fish", "fr_fish-m");
-    get_handle_rot(0, &x, &y, &z);
-    for (frame = 0; frame < 240; frame++) {
-        y = y + speed;
-        speed = speed * 0.982;
-        set_handle_rot(0, x, y, z);
-        // one by one, they stop
-        which = frame / 40;
-        if (frame % 40 == 0 && which < CONVERT_COUNT) {
-            set_chara_motion(FIRST_CONVERT + which, "stare");
-        }
-        wait;
-    }
-}
-
-static void play_ending(void)
-{
-    int which;
-    float z;
-    union cult_state state;
-
-    // the five in a ring round the fish, turning; Gill in the middle, arms raised
-    for (which = 0; which < CONVERT_COUNT; which++) {
-        load_chara(MEMORY_STACK_EVENT, ring[which].pack, "info.cfg", FIRST_CONVERT + which);
-        set_chara_active(FIRST_CONVERT + which);
-        place_chara(FIRST_CONVERT + which, ring[which].x, 0.0, ring[which].z, 0.0);
-        set_chara_motion(FIRST_CONVERT + which, "spin");
-    }
-    load_gill();
-    set_chara_rot(GILL, 0.0, 0.0, 0.0);
-    set_chara_motion(GILL, "raise", CHARA_MOTION_HOLD);
-    add_chara_motions(CHARA_PLAYER, "event/e700/e728/e728_mints.chr");
-    set_camera_pos(0.0, 320.0, 980.0);
-    set_camera_target(0.0, 120.0, 0.0);
-    fade_in(90);
-    modkit_wait(60);
-    // Max walks in, not quite of his own accord
-    set_chara_motion(CHARA_PLAYER, MOTION_WALK);
-    for (z = ROOM_ARRIVE_Z; z > 380.0; z = z - 1.6) {
-        set_chara_pos(CHARA_PLAYER, 0.0, 0.0, z);
-        wait;
-    }
-    set_chara_motion(CHARA_PLAYER, MOTION_STAND_2);
-    close_on(GILL, CHARA_PLAYER, 120.0, 34.0);
-    say(GILL, "Kneel.");
-    set_camera_pos(60.0, 40.0, 470.0);
-    set_camera_target(0.0, 20.0, 380.0);
-    set_chara_motion(CHARA_PLAYER, MOTION_CROUCH_2);
-    modkit_wait(40);
-    set_chara_motion(CHARA_PLAYER, MOTION_CROUCH_LOOP_2);
-    modkit_wait(30);
-    set_camera_pos(0.0, 60.0, 520.0);
-    set_camera_target(0.0, 200.0, 0.0);
-    say_from(GILL, CHARA_PLAYER, "It is going to look at you now.");
-    // the fish stops; the music with it; nothing, for a while
-    fade_out_bgm(200);
-    slow_the_fish();
-    stop_bgm(0);
-    modkit_wait(120);
-    // and then it is looking at you
-    fade_out(3, 255.0, 255.0, 255.0);
-    modkit_wait(3);
-    show_fish(1);
-    set_map_light(ROOM_RED_LIGHT);
-    for (which = 0; which < CONVERT_COUNT; which++) {
-        face_chara(FIRST_CONVERT + which, CHARA_PLAYER);
-    }
-    set_camera_pos(0.0, 30.0, 420.0);
-    set_camera_target(0.0, FISH_HEIGHT, 0.0);
-    fade_in(3, 255.0, 255.0, 255.0);
-    shake_camera(3.0, 3.0, 3.0, 40);
-    modkit_wait(150);
-    close_on(GILL, CHARA_PLAYER, 110.0, 34.0);
-    say(GILL, "It sees you.");
-    set_chara_motion(GILL, "vanish", CHARA_MOTION_HOLD);
-    modkit_wait(70);
-    set_chara_visible(GILL, 0);
-    set_camera_pos(0.0, 30.0, 420.0);
-    set_camera_target(0.0, FISH_HEIGHT, 0.0);
-    modkit_wait(180);
-    state = read_cult();
-    state.bits.stage = STAGE_ENDED;
-    write_cult(state);
-    fade_out(120, 0.0, 0.0, 0.0);
-    modkit_wait(140);
-    delete_chara_ext_motion(CHARA_PLAYER);
-    jump_to_map(-1, "m01", BACK_FROM_FISH_ROOM);
-    wait;
 }
 
 // The room's door (point door_out, given this program by mod.json's "programs").

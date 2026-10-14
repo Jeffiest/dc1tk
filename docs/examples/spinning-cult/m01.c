@@ -1,5 +1,5 @@
 // Mod spinning-cult: Palm Brinks' side. The door into the Fish Room (make_mod.py adds the point
-// door_fish; mod.json's "programs" gives it ENTER_FISH_ROOM), the five townspeople the Whirligig
+// door_fish; mod.json's "programs" gives it ENTER_FISH_ROOM), the five townspeople the gŷros
 // turns, the town going dark once three have turned, and the way they stand after the ending.
 //
 // Palm Brinks' script is near the most a map's script may be (a map's script shares a 320,000-byte
@@ -18,11 +18,14 @@ PROGRAM(BACK_FROM_FISH_ROOM, arrive_from_fish_room);
 // The five who can be turned, in bit order.
 int convert_npcs[CONVERT_COUNT] = {NPC_PARN, NPC_SHERIFF_BLINKHORN, NPC_GILES, NPC_AEGIRA, NPC_FOURNET};
 
-// A line from a townsperson in a speech bubble, as the game's own talks show them.
-static void line(int slot, string text)
+// A line from a townsperson, in the window at the top of the screen (the slot the game's hints
+// use), which a bubble from someone at the edge of the picture would run off.
+static void line(string text)
 {
+    apply_message_preset(0, MES_PRESET_WINDOW);
+    set_message_window_mode(0, MES_WIN_VERSATILE_1);
     show_message(0, text);
-    show_message_auto(0, -1, slot, CHARA_PLAYER, 0);
+    show_message_at(0, -1, 8, 0, 0);
 }
 
 static void frames(int count)
@@ -40,35 +43,21 @@ static void hold(int slot, string motion)
     set_chara_motion(slot, motion);
 }
 
-// The town as the cult has left it: the turned turning (after the ending, staring at the Fish
-// Room's door), and the dark once three have turned.
+// The town as the cult has left it: the turned turning, and the dark once three have turned.
 static void apply_town_state(void)
 {
     int cult;
     int which;
     int slot;
-    float x;
-    float y;
-    float z;
 
     cult = get_counter(CULT_COUNTER);
     for (which = 0; which < CONVERT_COUNT; which++) {
         slot = find_villager_slot(convert_npcs[which]);
-        if ((cult & (1 << which)) == 0 || slot <= 0) {
-            continue;
-        }
-        if (CULT_STAGE(cult) == STAGE_ENDED) {
-            get_chara_pos(slot, &x, &y, &z);
-            set_chara_yaw(slot, get_look_yaw(TOWN_DOOR_X - x, TOWN_DOOR_Z - z));
-            hold(slot, "stare");
-        } else {
+        if ((cult & (1 << which)) && slot > 0) {
             hold(slot, "spin");
         }
     }
-    if (CULT_STAGE(cult) == STAGE_ENDED) {
-        // nothing plays in Palm Brinks any more
-        stop_bgm(0);
-    } else if (cult & CULT_DARK_BIT) {
+    if (cult & CULT_DARK_BIT) {
         set_time_flow(0);
         set_map_light(TOWN_DARK_LIGHT);
         stop_bgm(0);
@@ -114,55 +103,55 @@ void arrive_from_fish_room(void)
 }
 
 // What they say before it takes them.
-static void before(int which, int slot)
+static void before(int which)
 {
     switch (which) {
     case 0:
-        line(slot, "Is that for me? Let me see it.\nIt's like a painting\nthat never stops.");
+        line("Is that for me? Let me see it.\nIt's like a painting\nthat never stops.");
         break;
     case 1:
-        line(slot, "Hand that over, son.\nThat's evidence.");
+        line("Hand that over, son.\nThat's evidence.");
         break;
     case 2:
-        line(slot, "Huh? What's that thing?");
+        line("Huh? What's that thing?");
         break;
     case 3:
-        line(slot, "A toy! My little brother\nhad one just like it.");
+        line("A toy! My little brother\nhad one just like it.");
         break;
     default:
-        line(slot, "Keep that away from me.\nI said keep it away--");
+        line("Keep that away from me.\nI said keep it away--");
         break;
     }
 }
 
 // What they say once it has (and every time after).
-static void after(int which, int slot)
+static void after(int which)
 {
     switch (which) {
     case 0:
-        line(slot, "I should paint it.\nI should paint it.\nI should paint it.");
+        line("I should paint it.\nI should paint it.\nI should paint it.");
         break;
     case 1:
-        line(slot, "...Round.\nAnd round.\nCase closed.");
+        line("...Round.\nAnd round.\nCase closed.");
         break;
     case 2:
-        line(slot, "Can you hear it?\nUnder the street.");
+        line("Can you hear it?\nUnder the street.");
         break;
     case 3:
-        line(slot, "...I don't have\na little brother.");
+        line("...I don't have\na little brother.");
         break;
     default:
-        line(slot, "...");
+        line("...");
         break;
     }
 }
 
-// Max shows a townsperson the Whirligig. The music drains away, the picture wavers, a red flash,
+// Max shows a townsperson the gŷros. The music drains away, the picture wavers, a red flash,
 // and they turn. The third to turn takes the town's light with them.
 static void turn_one(int which, int slot, int cult)
 {
     start_npc_talk(slot, 1, 0);
-    before(which, slot);
+    before(which);
     fade_out_bgm(90);
     start_screen_wave(2.0, 0.05, 8.0, 120);
     frames(90);
@@ -172,7 +161,7 @@ static void turn_one(int which, int slot, int cult)
     fade_in(40, 120.0, 0.0, 0.0);
     frames(60);
     stop_screen_wave(2.0, 0.05, 8.0, 60);
-    after(which, slot);
+    after(which);
     cult = (cult | (1 << which)) + CULT_ONE_MORE;
     if (CULT_COUNT(cult) >= 3 && (cult & CULT_DARK_BIT) == 0) {
         cult = cult | CULT_DARK_BIT;
@@ -186,7 +175,7 @@ static void turn_one(int which, int slot, int cult)
     set_counter(CULT_COUNTER, cult);
 }
 
-// Talking to someone: the five, when Max has the Whirligig or they have turned; anyone else as
+// Talking to someone: the five, when Max has the gŷros or they have turned; anyone else as
 // the game has them.
 #pragma override
 int talk_to_villager(void)
@@ -205,20 +194,16 @@ int talk_to_villager(void)
         return original();
     }
     if (cult & (1 << which)) {
-        // turned: they keep turning (or, after the ending, staring) and do not look round
+        // turned: they keep turning and do not look round
         init_event();
         set_villager_ai(0, slot);
-        if (CULT_STAGE(cult) == STAGE_ENDED) {
-            line(slot, "...");
-        } else {
-            after(which, slot);
-        }
+        after(which);
         apply_town_state();
         reset_camera(CAMERA_RESET_BEHIND, 0.0, 10.0);
         finish_event();
         return 0;
     }
-    if (get_item_count(ITEM_WHIRLIGIG) == 0 || CULT_STAGE(cult) == STAGE_ENDED) {
+    if (get_item_count(ITEM_GYROS) == 0) {
         return original();
     }
     init_event();
