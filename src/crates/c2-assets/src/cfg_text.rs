@@ -320,46 +320,75 @@ pub enum To {
     /// The new texts of the arguments from `arg` on, written without spaces; the statement keeps
     /// the spaces before its `;`.
     Rest(Vec<Vec<u8>>),
+    /// The new texts of the arguments from `arg` up to the last this many (a list inside a
+    /// statement: DATASET's materials), written without spaces; the arguments after keep theirs.
+    Span(Vec<Vec<u8>>, usize),
 }
 
 /// The scripts with the edits made. Edits that agree are made once; two that give one argument
-/// (or one statement's list) different texts are refused, naming both mods.
+/// (or one statement's list) different texts are refused, naming both mods. Single arguments are
+/// changed first, by their places in the disc's statements, then lists, which may change how many
+/// arguments a statement has.
 pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
     let mut scripts = scripts.to_vec();
     let mut done: std::collections::BTreeMap<(usize, usize, usize), &Edit> = std::collections::BTreeMap::new();
+    let mut lists = Vec::new();
     for edit in edits {
         let slot = match edit.to {
             To::Arg(_) => edit.arg,
-            To::Rest(_) => usize::MAX,
+            To::Rest(_) | To::Span(..) => usize::MAX,
         };
         if let Some(other) = done.get(&(edit.file, edit.statement, slot)) {
-            if other.to != edit.to {
+            if other.to != edit.to || other.arg != edit.arg {
                 bail!("{} is given two values, by mod {} and mod {}", edit.what, other.module, edit.module);
             }
             continue;
         }
         done.insert((edit.file, edit.statement, slot), edit);
-        let statement = &mut scripts[edit.file].statements[edit.statement];
         match &edit.to {
             To::Arg(text) => {
-                let piece = &mut statement.pieces[edit.arg];
+                let piece = &mut scripts[edit.file].statements[edit.statement].pieces[edit.arg];
                 *piece = piece.with_text(text.clone());
             }
+            _ => lists.push(edit),
+        }
+    }
+    let pieces = |texts: &[Vec<u8>]| -> Vec<Piece> {
+        texts.iter().map(|text| Piece { before: Vec::new(), text: text.clone(), after: Vec::new() }).collect()
+    };
+    for edit in lists {
+        let statement = &mut scripts[edit.file].statements[edit.statement];
+        let counted = statement.args().len();
+        match &edit.to {
             To::Rest(texts) => {
                 let end = statement.pieces.last().map(|last| last.after.clone()).unwrap_or_default();
-                let counted = statement.args().len();
                 // an empty last piece holds only the spaces before the ';'
                 let trailing = statement.pieces.len() > counted;
+                // the spaces between the tag and its first argument stay
+                let before =
+                    statement.pieces.get(edit.arg).filter(|_| edit.arg < counted).map(|piece| piece.before.clone());
                 statement.pieces.truncate(edit.arg.min(counted));
-                for text in texts {
-                    statement.pieces.push(Piece { before: Vec::new(), text: text.clone(), after: Vec::new() });
+                let mut new = pieces(texts);
+                if let (Some(first), Some(before)) = (new.first_mut(), before) {
+                    first.before = before;
                 }
+                statement.pieces.extend(new);
                 if trailing || statement.pieces.is_empty() {
                     statement.pieces.push(Piece { before: Vec::new(), text: Vec::new(), after: end });
                 } else if let Some(last) = statement.pieces.last_mut() {
                     last.after = end;
                 }
             }
+            To::Span(texts, tail) => {
+                let Some(end) = counted.checked_sub(*tail).filter(|&end| end >= edit.arg) else {
+                    bail!("{}: the statement has only {counted} arguments", edit.what);
+                };
+                let kept = statement.pieces.split_off(end);
+                statement.pieces.truncate(edit.arg);
+                statement.pieces.extend(pieces(texts));
+                statement.pieces.extend(kept);
+            }
+            To::Arg(_) => unreachable!(),
         }
     }
     Ok(scripts.iter().map(Script::write).collect())
@@ -448,5 +477,16 @@ mod tests {
                 .unwrap_err()
                 .to_string();
         assert!(error.contains("mod a and mod b"), "{error}");
+    }
+
+    #[test]
+    fn a_span_replaces_a_list_inside_a_statement() {
+        let script = Script::parse(b"DATASET 309,4,11,12,210,5,216,4,0,0.99,-10.4,0.72,0;\r\n").unwrap();
+        let edit =
+            |to: To, arg: usize| Edit { file: 0, statement: 0, arg, to, what: "recipe".into(), module: "m".into() };
+        let span = To::Span(vec![b"1".to_vec(), b"2".to_vec()], 5);
+        let edits = [edit(span, 4), edit(To::Arg(b"7".to_vec()), 9)];
+        let written = apply_edits(std::slice::from_ref(&script), &edits).unwrap();
+        assert_eq!(written[0], b"DATASET 309,4,11,12,1,2,0,7,-10.4,0.72,0;\r\n");
     }
 }

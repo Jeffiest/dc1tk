@@ -4,6 +4,7 @@
 //! to_gltf.py, from_gltf.py, models.py) do.
 
 pub mod cfg_text;
+pub mod data_table;
 pub mod folder;
 pub mod from_gltf;
 pub mod ids;
