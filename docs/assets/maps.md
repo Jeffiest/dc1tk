@@ -449,3 +449,52 @@ node's scale or `data` fields, which the add-on draws. Every other value is in
 **What the importer refuses:** a template name over 31 characters, more than
 320 placements (400 in dungeons), meshes that break the collision rules of
 section 4.3, a point of an unknown kind.
+
+### 8.1 Settled details (from building the add-on against Blender 5.1)
+
+Blender renames, reorders and retypes what it imports, so the scene carries
+what the importer needs and the importer allows for the rest:
+
+- **Names.** Blender gives repeated names `.001` suffixes (pieces and points
+  repeat in every placement, model nodes in every piece) and cuts names at 63
+  bytes. Every node's `extras.c2.name` holds its exact name; the importer
+  uses it, and for a node without one (added in Blender) the node's name
+  without its prefix and `.NNN` suffix.
+- **Order.** Blender writes children in name order. Pieces and points carry
+  `extras.c2.order` (their index in the template, or in the map's own points);
+  the importer sorts by it and appends new ones (no `order`) in name order.
+  Placements carry `slot`.
+- **Numbers.** Blender turns ints into floats in lists that mix them, and
+  matrices pick up noise near 1e-5. The importer compares every number with
+  the original's and keeps the original (its int or float form and text) when
+  they agree within 1e-5 of the larger of 1 and the value.
+- **Point data** is an object of named fields (Blender cannot store lists
+  mixing text and numbers). The names (`src/blender/c2_maps/schema.py`):
+  - `invent`: `id`, `min[3]`, `max[3]`, `unknown_int`, `unknown_float`, `angle`
+  - `event`: `kind`, `event_no`, `program`, `args[3]`, `target`, `flags[3]` (action button, use item, 0x100)
+  - `fire`, `flare`: `color[3]`, `draw`, `extra[2]` (when the line has it)
+  - `plight`: `power`, `color[3]` (0-511), `mode`, `args[4]`, `flicker`, `depth`, `period`
+  - `effect`: `effect`
+  - `sound`: `number`, `near`, `far`, `unknown_int`, `shape`, `start[3]`, `end[3]`
+  - `anime`: `placement`, `piece`, `frame`, `kind`, `unknown_int`, `v0[3]`, `v1[3]`, `v2[3]`, `extra[2]` (when present)
+  - `pos`: none
+- **Other fields:** a point's `flag` is `[a, b, start_hour, end_hour]`; a
+  piece's `time` `[start, end]`; `far_clip` `[distance, fade]` or null;
+  `col_type` an int, `[type, param]` when the line has two arguments, or
+  null when it has none; `show` and `enable` ints.
+- **Point lights:** `data` is what the game gets; the `KHR_lights_punctual`
+  light is for display (the add-on keeps it in step), and Blender turns light
+  nodes 90° about X on import and back on export.
+- **Event boxes:** a door, chest or ladder whose scale is within 0.01 of 1
+  gets the engine's default size (doors 15, ladders 25, chests 20) as a
+  half-extent; `invent` boxes are `min`/`max` in the point's own space.
+- **Cameras:** the fixed cameras are in the root's `map` tree; each also gets
+  a `camera:INDEX` empty at its `FIX_CAMERA_POS`, whose position the importer
+  reads back.
+- **The root's `map` tree** is the `.map` file's own JSON (`mapfile.rs` field
+  names) without templates, placements and points: `images`, `packs`,
+  `header_order`, `settings`, `cameras`. The add-on's settings editor shows
+  any structure.
+- **Exporting:** `c2 map-export NAME [-o DIR]` writes `DIR/NAME.gltf` (by
+  default `extracted/maps/NAME/`); `--all` every fixed scene. The glTF scene
+  is named after the map.
