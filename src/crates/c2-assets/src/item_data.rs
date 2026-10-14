@@ -547,8 +547,21 @@ const TEXT_KEYS: [&str; 4] = ["name", "names", "description", "descriptions"];
 
 /// An item name as a `comdatmes` string of a language: the engine's own characters (Shift-JIS),
 /// and in French, German, Italian and Spanish the Latin-1 letters as the `[UNI00xx]` codes
-/// ConvertFontCode turns into one byte.
+/// ConvertFontCode turns into one byte. In English a letter Shift-JIS lacks that the build draws
+/// into the English font for the menus' names (font::drawable: é, ŷ) is its plain spelling
+/// (font::folded: e, y), as nothing turns codes into those glyphs there.
 pub fn name_bytes(text: &str, language: usize) -> Option<Vec<u8>> {
+    if language == 1 {
+        let mut out = Vec::new();
+        for c in text.chars() {
+            match c2_disc::text::encode(c.encode_utf8(&mut [0; 4])) {
+                Some(bytes) => out.extend(bytes),
+                None if crate::font::drawable(c) => out.extend(crate::font::folded(c)?.bytes()),
+                None => return None,
+            }
+        }
+        return Some(out);
+    }
     if !(2..=5).contains(&language) {
         return c2_disc::text::encode(text);
     }

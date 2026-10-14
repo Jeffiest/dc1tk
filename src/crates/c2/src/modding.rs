@@ -607,7 +607,11 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         };
         println!("replaced: {} (mod {}, {} bytes, was {})", item.path, item.module, item.data.len(), old);
     }
-    let (files, changed) = replace::apply(&args.iso, &resolved, &files)?;
+    // the letters the English font gains, for every changed English text: the text: lines' and
+    // the items' names and descriptions
+    let item_letters = crate::data_cmd::english_item_letters(&args.iso, &mod_dirs)?;
+    let english = replace::english_letters(&args.iso, &resolved, item_letters)?;
+    let (files, changed) = replace::apply_with(&args.iso, &resolved, &files, &english)?;
     for item in &changed {
         println!(
             "replaced: {} ({}; mod {}, {} bytes, was {})",
@@ -659,7 +663,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             item.path, item.map, item.module, item.new, item.old
         );
     }
-    let (files, executable, data_changes) = crate::data_cmd::apply_data(&args.iso, &mod_dirs, &files)?;
+    let (files, executable, data_changes) = crate::data_cmd::apply_data(&args.iso, &mod_dirs, &files, &english.slots)?;
     for change in &data_changes {
         for line in crate::data_cmd::described(change) {
             println!("  {line}");
@@ -809,7 +813,10 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                             }
                         }
                     }
-                    let (_, _, data_changes) = crate::data_cmd::apply_data(disc, &mod_dirs, &Default::default())?;
+                    let item_letters = crate::data_cmd::english_item_letters(disc, &mod_dirs)?;
+                    let english = replace::english_letters(disc, &resolved, item_letters)?;
+                    let (_, _, data_changes) =
+                        crate::data_cmd::apply_data(disc, &mod_dirs, &Default::default(), &english.slots)?;
                     for change in &data_changes {
                         for line in crate::data_cmd::described(change) {
                             println!("{line}");

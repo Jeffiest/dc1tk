@@ -49,7 +49,7 @@
 //! rebuilt. Two chosen mods may not replace one id, one picture or sound entry, or one model, nor
 //! change a game file another's file: line or disc/ file covers.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -973,9 +973,104 @@ pub fn built_model(source: &Path, pack: &[u8], name: &str, temp: &Path) -> Resul
     Ok(tree::build_model_from(&gltf, &bin, pack, name, temp)?)
 }
 
+/// The letters a build draws as the English font's glyphs 288 to 319 (font::english_slots), and
+/// the English text past the font's own table that uses them: (id, mod, letters), the text: lines'
+/// and others' (data:items' names and descriptions).
+#[derive(Clone, Debug, Default)]
+pub struct EnglishLetters {
+    pub slots: Vec<char>,
+    pub users: Vec<(String, String, BTreeSet<char>)>,
+}
+
+impl EnglishLetters {
+    /// The glyphs for the letters the users use, all of them together; refused past 32.
+    pub fn new(users: Vec<(String, String, BTreeSet<char>)>) -> Result<EnglishLetters> {
+        let users: Vec<(String, String, BTreeSet<char>)> =
+            users.into_iter().filter(|(_, _, letters)| !letters.is_empty()).collect();
+        let slots = font::english_slots(&EnglishLetters::union(&users)).map_err(|error| {
+            let mut who: Vec<String> = Vec::new();
+            for (id, module, _) in &users {
+                let one = format!("{id} (mod {module})");
+                if !who.contains(&one) {
+                    who.push(one);
+                }
+            }
+            Error::invalid(format!("{error}; used by {}", who.join(", ")))
+        })?;
+        Ok(EnglishLetters { slots, users })
+    }
+
+    fn union(users: &[(String, String, BTreeSet<char>)]) -> BTreeSet<char> {
+        users.iter().flat_map(|(_, _, letters)| letters.iter().copied()).collect()
+    }
+
+    /// The letters used past the English font's own table.
+    pub fn used(&self) -> BTreeSet<char> {
+        EnglishLetters::union(&self.users)
+    }
+}
+
+/// The letters past the English font's own table that the chosen mods' text: lines use in the
+/// messages they change, with `more` (other English text: data:items' names and descriptions),
+/// and the glyphs the build gives them.
+pub fn english_letters(
+    iso_path: &Path,
+    resolved: &Resolved,
+    more: Vec<(String, String, BTreeSet<char>)>,
+) -> Result<EnglishLetters> {
+    let mut users = Vec::new();
+    let texts: Vec<&Edit> = resolved
+        .edits
+        .iter()
+        .filter(|edit| matches!(edit.change, Change::Text(..)))
+        .filter(|edit| {
+            text::locate(&edit.place.display()).is_some_and(|found| found.language == text::Language::English)
+        })
+        .collect();
+    if !texts.is_empty() {
+        let image = Image::open(iso_path)?;
+        let disc = Archive::open(image.bytes())?;
+        let index = discfiles::disc_index(&disc);
+        let fonts = discfiles::disc_fonts(&disc, &image, &index);
+        let mut seen = HashSet::new();
+        for edit in texts {
+            let Change::Text(source, reference) = &edit.change else { unreachable!() };
+            // an id's places share its text and reference
+            if !seen.insert((source.clone(), reference.display())) {
+                continue;
+            }
+            let fail = |error: String| {
+                Error::invalid(format!("{} (mod {}) at {}: {error}", edit.key, edit.module, edit.place.display()))
+            };
+            let written = c2_py::read_text(source)?;
+            let original = index
+                .get(&reference.path.to_lowercase())
+                .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
+                .ok_or_else(|| fail(format!("{} is not on the disc", reference.display())))?;
+            let letters = text::changed_letters(&written, original, &edit.place.display(), &fonts)
+                .map_err(|error| fail(error.to_string()))?;
+            users.push((edit.id.clone(), edit.module.clone(), letters));
+        }
+    }
+    users.extend(more);
+    EnglishLetters::new(users)
+}
+
 /// Puts the id lines' changes into the disc files build writes, on top of files (the scripts and
 /// whole game files already put in). Returns the files and every place changed.
 pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Files, Vec<Changed>)> {
+    apply_with(iso_path, resolved, files, &english_letters(iso_path, resolved, Vec::new())?)
+}
+
+/// apply, with the letters the English font gains (english_letters, which may count other English
+/// text than the text: lines'): the text: lines are written with them, and the English font
+/// texture drawn with them when any text uses one.
+pub fn apply_with(
+    iso_path: &Path,
+    resolved: &Resolved,
+    files: &Files,
+    english: &EnglishLetters,
+) -> Result<(Files, Vec<Changed>)> {
     let image = Image::open(iso_path)?;
     let disc = Archive::open(image.bytes())?;
     let index = discfiles::disc_index(&disc);
@@ -989,7 +1084,10 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
         Change::Text(..) => 3,
         Change::Sequence(..) => 4,
     };
-    let fonts = discfiles::disc_fonts(&disc, &image, &index);
+    let mut fonts = discfiles::disc_fonts(&disc, &image, &index);
+    if !english.slots.is_empty() {
+        fonts = fonts.with_english_extra(&english.slots);
+    }
     let mut groups: BTreeMap<(usize, usize, String), Vec<&Edit>> = BTreeMap::new();
     for edit in &resolved.edits {
         let key = (stage(edit), edit.place.members.len(), edit.place.display().to_lowercase());
@@ -1001,8 +1099,6 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
     let mut models: Vec<(String, Vec<u8>, Vec<u8>)> = Vec::new();
     let mut touched: IndexMap<String, Changed> = IndexMap::new();
     let mut warnings: Vec<(String, String)> = Vec::new();
-    // whether an English text uses the accented letters the build adds to the English font
-    let mut english_extra = false;
     for ((stage, _, shown), edits) in groups {
         let first = edits[0];
         let place = &first.place;
@@ -1043,17 +1139,6 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
                 let widths = text::width_warnings(&written, original, &place.display(), &fonts)
                     .map_err(|error| fail(error.into()))?;
                 warnings.extend(widths.into_iter().map(|warning| (shown.clone(), format!("warning: {warning}"))));
-                let english =
-                    text::locate(&place.display()).is_some_and(|found| found.language == text::Language::English);
-                if english && built != old {
-                    // a debug menu's leftover Japanese has glyph numbers there already: only the
-                    // messages the mod changed count
-                    let before = text::Mes::parse(&old).map_err(|error| fail(error.into()))?;
-                    let mes = text::Mes::parse(&built).map_err(|error| fail(error.into()))?;
-                    english_extra |= mes.messages().any(|(id, codes)| {
-                        before.get(id) != Some(codes) && font::uses_english_extra(codes.iter().copied())
-                    });
-                }
                 built
             }
             4 => {
@@ -1125,41 +1210,41 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
             }
         }
     }
-    if english_extra {
-        // the English font texture with the accented letters drawn in (c2_assets::font)
+    if !english.users.is_empty() {
+        // the English font texture with the letters drawn in (c2_assets::font): a debug menu's
+        // leftover Japanese has glyph numbers there already, so only the messages the mods change
+        // count (english_letters)
         let read = |path: &str| {
             index.get(&path.to_lowercase()).map(|entry| (entry.path.clone(), disc.read(image.bytes(), entry).to_vec()))
         };
-        let (Some((path, english)), Some((_, european))) = (read(font::ENGLISH_TEXTURE), read(font::EUROPEAN_TEXTURE))
+        let (Some((path, english_texture)), Some((_, european))) =
+            (read(font::ENGLISH_TEXTURE), read(font::EUROPEAN_TEXTURE))
         else {
             return Err(Error::invalid(format!(
-                "an English text uses accented letters, but the disc has no {} or {} to draw them from",
+                "an English text uses letters past the English font's own, but the disc has no {} or {} to draw them from",
                 font::ENGLISH_TEXTURE,
                 font::EUROPEAN_TEXTURE
             )));
         };
-        let english = files.get(&path).cloned().unwrap_or(english);
-        let extended = font::extended_english(&english, &european)?;
-        let ids: Vec<String> = touched
-            .values()
-            .filter(|changed| {
-                text::locate(&changed.place.display()).is_some_and(|found| found.language == text::Language::English)
-            })
-            .flat_map(|changed| changed.ids.clone())
-            .collect();
-        let modules: Vec<String> = touched.values().flat_map(|changed| changed.modules.clone()).collect();
+        let english_texture = files.get(&path).cloned().unwrap_or(english_texture);
+        let extended = font::extended_english(&english_texture, &european, &english.slots)?;
+        let (mut ids, mut modules): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+        for (id, module, _) in &english.users {
+            if !ids.contains(id) {
+                ids.push(id.clone());
+            }
+            if !modules.contains(module) {
+                modules.push(module.clone());
+            }
+        }
+        let letters: String = english.used().into_iter().collect();
         touched.insert(
             path.to_lowercase(),
             Changed {
                 place: Place { path: path.clone(), members: Vec::new() },
-                ids: vec![format!("the English font's accented letters, for {}", ids.join(", "))],
-                modules: modules.into_iter().fold(Vec::new(), |mut found, module| {
-                    if !found.contains(&module) {
-                        found.push(module);
-                    }
-                    found
-                }),
-                old: english.len(),
+                ids: vec![format!("the English font's added letters {letters}, for {}", ids.join(", "))],
+                modules,
+                old: english_texture.len(),
                 data: Vec::new(),
                 warnings: Vec::new(),
             },

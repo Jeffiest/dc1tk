@@ -140,7 +140,7 @@ A glyph is a number into the language's font texture: 32 glyphs of 16 by
 |---|---|---|
 | all | 0-93 | printable ASCII from the space, **without the backslash** (`!` is 1, `[` 0x3B, `]` 0x3C, `a` 0x40) |
 | English | 94-287 | the English font table `meswin/fonttbl_1.bin` from entry 94 (full-width punctuation, symbols, digits and letters, kana): 288 glyphs is what `FontTex_1_0.tm2` (9 rows) holds |
-| English, added | 288-319 | `¡¿ÀÁÄÇÈÉÑÖÜßàáâäçèéêëíîïñóôöùúûü`, drawn into the texture by `build` (below) |
+| English, added | 288-319 | read as `¡¿ÀÁÄÇÈÉÑÖÜßàáâäçèéêëíîïñóôöùúûü`; `build` draws into the texture those, or any 32 letters the European font has or composes, as the mods' text uses them (below) |
 | French, German, Italian, Spanish | 0x5E-0x9C, 0x9D-0xB4 | the accented letters and the full-width symbols below, which the text mostly writes with their own codes instead |
 | Japanese | 94-1943 | the full-width space, punctuation, symbols, digits and letters, kana, ─ ━ Ⅱ Ⅲ Ⅳ, then 1,564 kanji from glyph 380: in Shift-JIS order to glyph 1921 (腕, the last JIS level 1 kanji), then 22 added later in Unicode order (儚 剝 哺 ... 騙) |
 | Korean | 94-967 | the Korean font table `meswin/fonttbl_6.bin` from entry 94: 12 symbols in Shift-JIS (‘ ’ “ ” 〔 〕 ° ♪ Ⅱ Ⅲ Ⅳ 象, drawn as empty boxes) and 862 Hangul syllables as their Unicode code, big-endian |
@@ -172,21 +172,60 @@ those cells (the corpus test checks both). The numbering is
 `c2_assets::font::JAPANESE`, a list of characters: the pictures stay on the
 disc. `geomenu.mes` follows this numbering in every language.
 
-**The English font gains accented letters.** `FontTex_1_0.tm2` is 512 by
+**The English font gains letters.** `FontTex_1_0.tm2` is 512 by
 192 pixels: 9 rows of glyphs (0 to 287) and the top 12 pixels of a 10th
 that the table's next entries (kana) would use, cut off. The game copies it
 into `font_buff`, 0xD000 bytes (mainloop.cpp), so it can grow by one row and
-no more: 200 pixels, 51,328 bytes. When an English text (a `text:en/...`
-line) uses one of the 32 letters above, `build` writes that row: each letter
-the French font's own picture (glyph 0x5E on), its shades mapped to the
-English palette and centred in its cell, since the engine advances the pen a
-whole cell for every English glyph past 93 (`CheckHalfFont`; the European
-fonts' letters are half-width there only because the code says so for
-languages past English). English event text never reaches these glyphs:
-its table's entries 288 to 319 are kana. A text built by path
-(`shopname.mes.txt` in `disc/`) cannot use them, as nothing then adds the
-texture. A debug menu's leftover Japanese in English `allmenu.mes` uses
-glyph numbers in this range and so reads as accented letters.
+no more: 200 pixels, 51,328 bytes, **32 glyphs** (288 to 319). When the
+English text a build changes uses letters the table lacks, `build` writes
+that row with them. Each letter is the European font's own picture
+(`FontTex_2_0.tm2`, glyph 0x5E on: `¡ª°º¿`, `À`-`Ý` and `à`-`ÿ` but `Ð Ø Þ
+ð ø þ`, `Æ æ ß Œ œ`), or, for a letter it lacks, **composed**: the European
+font's ASCII letter with a mark copied off one of its letters, as Unicode
+decomposes the letter (`ŷ` is `y` and a circumflex). The marks are the ones
+its letters have: grave and acute (from `è é`, `È É`), circumflex (`ê Ê`),
+tilde (`õ Õ`), diaeresis (`ë Ë`), ring (`å Å`) and cedilla (`ç Ç`). The
+mark is that letter's ink above its base letter's rows (below them, for the
+cedilla), set as far from the new letter's ink and as far off its middle as
+it was; a small letter takes the small letter's mark and a capital the
+capital's, the other when that does not fit in the cell, and `i` and `j`
+lose their dot under a mark. That covers, past Latin-1, `Ć ć Ĉ ĉ Ĝ ĝ Ĥ ĥ Ĩ
+ĩ Ĵ ĵ Ķ ķ Ĺ ĺ Ļ ļ Ń ń Ņ ņ Ŕ ŕ Ŗ ŗ Ś ś Ŝ ŝ Ş ş Ţ ţ Ũ ũ Ů ů Ŵ ŵ Ŷ ŷ Ÿ Ź ź`
+(`c2_assets::font`; the corpus test draws them all off the PAL disc's
+font). A letter with a macron, breve, dot above, double acute, caron or
+ogonek (`ā ă ċ ő č ą`), `ģ` (its cedilla does not fit under the `g`), and
+anything else neither font has (`Ø`, `ł`, `€`) are refused, naming the
+mark or the character. Every glyph is mapped to the English palette and
+centred in its cell, since the engine advances the pen a whole cell for
+every English glyph past 93 (`CheckHalfFont`; the European fonts' letters
+are half-width there only because the code says so for languages past
+English).
+
+**Which letters, which glyphs.** An exported text reads glyphs 288 to 319
+as `¡¿ÀÁÄÇÈÉÑÖÜßàáâäçèéêëíîïñóôöùúûü`, the letters the French, German,
+Italian and Spanish text uses most (`font::ENGLISH_EXTRA`). A build gathers
+the letters past the table that the messages it changes use, across every
+mod together: the `text:en/...` lines' messages whose text differs from
+the disc's, and the items' English names and descriptions (`data:items`,
+written into `system_1.mes` and the English `allmenu.mes`; see
+[the data tables](data.md#28-new-items-names-and-descriptions)). Each of
+the 32 above that is used keeps its glyph, and the other letters take the
+glyphs of the ones not used, in code order (`font::english_slots`), so the
+same letters always get the same glyphs, any 32 letters fit, and text using
+only the 32 above builds as it always has. Past 32 the build stops,
+naming every letter and the lines and mods that use them. A message whose
+text is the disc's keeps its codes: it is compared as the export reads it,
+before the letters are given glyphs.
+
+English event text never reaches these glyphs: its table's entries 288 to
+319 are kana. A text built by path (`shopname.mes.txt` in `disc/`) cannot
+use them, as nothing then adds the texture. A debug menu's leftover
+Japanese in English `allmenu.mes` uses glyph numbers in this range and so
+reads as these letters; left as it is, it keeps its glyph numbers (and
+draws whatever letters the build put there, as on the disc it drew
+nothing), and the letters it reads as count only in a message a mod
+changes. Read back from a built disc, the glyphs read as the 32 above
+whatever the build drew, as the export has nothing to tell it otherwise.
 
 `geomenu.mes` is the same file in every language, untranslated: its
 glyphs follow the Japanese numbering, so in the other languages they draw
@@ -313,5 +352,6 @@ gives 120 ids from 310 files.
   whose windows grow with their text), of a line more than a cell wider
   than that message's own widest line.
 - Glyphs past what the font's texture holds draw nothing; the English text
-  has only the 288 glyphs above and the 32 letters `build` adds, and the
-  European languages the ASCII, accented letters and symbols.
+  has only the 288 glyphs above and the 32 letters `build` adds (the
+  letters past the table that all the mods' English text uses, at most
+  32), and the European languages the ASCII, accented letters and symbols.

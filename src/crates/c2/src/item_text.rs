@@ -55,16 +55,19 @@ const FIRST_DESCRIPTION: u16 = (item_data::MESSAGE_BASE + 1) as u16;
 
 /// The message files with the item table's names and descriptions in them: names into each
 /// language's system file, descriptions into every allmenu.mes of the language's menu packs that
-/// has the item descriptions. `current` gives a file as the build has it so far. Returns the disc
-/// files that change.
+/// has the item descriptions. `current` gives a file as the build has it so far; `english_extra`
+/// the letters the build draws as the English font's glyphs 288 on (font::english_slots; empty for
+/// font::ENGLISH_EXTRA). Returns the disc files that change.
 pub fn item_messages(
     disc: &Disc,
     current: &dyn Fn(&str) -> Result<Vec<u8>>,
     texts: &[ItemText],
+    english_extra: &[char],
 ) -> Result<Vec<(String, Vec<u8>)>> {
     let fonts = text::Fonts {
         english_table: disc.read(text::ENGLISH_FONT).ok(),
         korean_table: disc.read(c2_assets::font::KOREAN_TABLE).ok(),
+        english_extra: (!english_extra.is_empty()).then(|| english_extra.to_vec()),
     };
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
     for language in 0..item_data::LANGUAGE_NAMES.len() {

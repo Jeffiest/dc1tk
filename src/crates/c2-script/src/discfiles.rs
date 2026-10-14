@@ -127,7 +127,11 @@ pub fn disc_file(disc: &Archive, image: &Image, index: &HashMap<String, &Entry>,
 /// the disc.
 pub fn disc_fonts(disc: &Archive, image: &Image, index: &HashMap<String, &Entry>) -> Fonts {
     let read = |path: &str| index.get(&path.to_lowercase()).map(|entry| disc.read(image.bytes(), entry).to_vec());
-    Fonts { english_table: read(text::ENGLISH_FONT), korean_table: read(c2_assets::font::KOREAN_TABLE) }
+    Fonts {
+        english_table: read(text::ENGLISH_FONT),
+        korean_table: read(c2_assets::font::KOREAN_TABLE),
+        english_extra: None,
+    }
 }
 
 fn lower(text: &str) -> String {

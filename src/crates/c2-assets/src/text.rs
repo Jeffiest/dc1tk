@@ -17,7 +17,7 @@
 //! changes the messages whose text differs from the disc's and adds new ids, leaving the rest as
 //! they are.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::font;
 use crate::tree::{self, Place};
@@ -510,10 +510,10 @@ pub struct Font {
 
 impl Font {
     /// The font of a language: ASCII in every one; English past it from the English font's
-    /// table (ENGLISH_FONT, from the disc) and the accented letters a build adds to its texture
-    /// (font::ENGLISH_EXTRA, glyphs 288 on); Japanese from font::JAPANESE; Korean from the Korean
-    /// font's table (font::KOREAN_TABLE, from the disc). Without its table a language has ASCII
-    /// only.
+    /// table (ENGLISH_FONT, from the disc) and the letters a build adds to its texture (glyphs 288
+    /// on: Fonts::english_extra, else font::ENGLISH_EXTRA); Japanese from font::JAPANESE; Korean
+    /// from the Korean font's table (font::KOREAN_TABLE, from the disc). Without its table a
+    /// language has ASCII only.
     pub fn new(language: Language, fonts: &Fonts) -> Font {
         // glyphs 0 to 93: printable ASCII without the backslash, in every font
         let mut glyphs: Vec<Option<char>> = (0x20u8..0x7F).filter(|&b| b != b'\\').map(|b| Some(b as char)).collect();
@@ -522,7 +522,10 @@ impl Font {
                 if let Some(table) = fonts.english_table.as_deref().filter(|table| table.len() >= 8) {
                     glyphs = font::table_chars(table, ENGLISH_GLYPHS);
                     if glyphs.len() == ENGLISH_GLYPHS {
-                        glyphs.extend(font::ENGLISH_EXTRA.chars().map(Some));
+                        match &fonts.english_extra {
+                            Some(letters) => glyphs.extend(letters.iter().copied().map(Some)),
+                            None => glyphs.extend(font::ENGLISH_EXTRA.chars().map(Some)),
+                        }
                     }
                 }
             }
@@ -663,6 +666,17 @@ pub fn decode(codes: &[u16], font: &Font) -> String {
 
 fn char_code(c: char, font: &Font) -> Result<u16> {
     font.codes.get(&c).copied().ok_or_else(|| {
+        if font.language == Language::English && font.glyphs.len() > ENGLISH_GLYPHS {
+            // the letters a build draws into the English font
+            return Error::invalid(if font::drawable(c) {
+                format!(
+                    "the English font has no {c:?} (U+{:04X}) here: build draws letters past its own for text:en/... lines and data:items' names and descriptions",
+                    c as u32
+                )
+            } else {
+                format!("the English font has no {c:?} (U+{:04X}): {}", c as u32, font::why_not_drawable(c))
+            });
+        }
         Error::invalid(format!(
             "the {} font has no {c:?} (U+{:04X}); it has {}",
             font.language.name(),
@@ -808,6 +822,9 @@ pub fn english_table<'a>(files: impl IntoIterator<Item = (&'a str, &'a [u8])>) -
 pub struct Fonts {
     pub english_table: Option<Vec<u8>>,
     pub korean_table: Option<Vec<u8>>,
+    /// The letters a build draws as the English font's glyphs 288 on (font::english_slots); None
+    /// for font::ENGLISH_EXTRA, which an exported text reads them as.
+    pub english_extra: Option<Vec<char>>,
 }
 
 impl Fonts {
@@ -832,6 +849,63 @@ impl Fonts {
     pub fn font(&self, language: Language) -> Font {
         Font::new(language, self)
     }
+
+    /// The fonts with `letters` as the English font's glyphs 288 on.
+    pub fn with_english_extra(&self, letters: &[char]) -> Fonts {
+        Fonts { english_extra: Some(letters.to_vec()), ..self.clone() }
+    }
+
+    /// The fonts as an exported text reads them (font::ENGLISH_EXTRA at glyphs 288 on).
+    pub fn exported(&self) -> Fonts {
+        Fonts { english_extra: None, ..self.clone() }
+    }
+
+    /// The letters past the English font's own table (glyphs 288 on) a message's text uses, every
+    /// one the build can draw; a character it cannot is refused.
+    pub fn english_letters(&self, text: &str) -> Result<BTreeSet<char>> {
+        let any = Fonts { english_extra: Some(font::drawable_letters()), ..self.clone() }.font(Language::English);
+        let codes = encode(text, &any)?;
+        Ok(codes
+            .into_iter()
+            .filter(|&code| (ENGLISH_GLYPHS..CODES as usize).contains(&(code as usize)))
+            .filter_map(|code| any.glyphs.get(code as usize).copied().flatten())
+            .collect())
+    }
+}
+
+/// The letters past the English font's own table that the messages of a mod's text (for the
+/// message file at `path`) whose text differs from the reference's use: the ones the build must
+/// draw into the English font. Nothing for another language's file.
+pub fn changed_letters(text: &str, reference: &[u8], path: &str, fonts: &Fonts) -> Result<BTreeSet<char>> {
+    let mut out = BTreeSet::new();
+    if locate(path).map(|found| found.language) != Some(Language::English) {
+        return Ok(out);
+    }
+    let exported = fonts.exported().font(Language::English);
+    let reference = Mes::parse(reference)?;
+    for (id, body) in parse_text(text)? {
+        if encode(&body, &exported).is_ok_and(|codes| reference.get(id) == Some(&codes[..])) {
+            continue;
+        }
+        out.extend(fonts.english_letters(&body).map_err(|error| Error::invalid(format!("@{id}: {error}")))?);
+    }
+    Ok(out)
+}
+
+/// A message's codes when they differ from what `keep` keeps: read first as an exported text
+/// reads it, so a message left as it was keeps its codes whatever letters the build's English font
+/// gains (a debug menu's leftovers in English allmenu.mes use glyph numbers past the table).
+fn changed_codes(
+    body: &str,
+    font: &Font,
+    exported: Option<&Font>,
+    keep: impl Fn(&[u16]) -> bool,
+) -> Result<Option<Vec<u16>>> {
+    if exported.is_some_and(|exported| encode(body, exported).is_ok_and(|codes| keep(&codes))) {
+        return Ok(None);
+    }
+    let codes = encode(body, font)?;
+    Ok((!keep(&codes)).then_some(codes))
 }
 
 /// The comment a text file starts with.
@@ -857,14 +931,17 @@ pub fn build(text: &str, template: &[u8], reference: &[u8], path: &str, fonts: &
         bail!("{path} is not a message file");
     };
     let font = fonts.font(located.language);
+    let exported = fonts.english_extra.is_some().then(|| fonts.exported().font(located.language));
     let reference = Mes::parse(reference)?;
     let mut mes = Mes::parse(template)?;
     let mut changed = false;
     for (id, body) in parse_text(text)? {
-        let codes = encode(&body, &font).map_err(|error| Error::invalid(format!("@{id}: {error}")))?;
-        if reference.get(id) == Some(&codes[..]) || mes.get(id) == Some(&codes[..]) {
+        let keep = |codes: &[u16]| reference.get(id) == Some(codes) || mes.get(id) == Some(codes);
+        let Some(codes) = changed_codes(&body, &font, exported.as_ref(), keep)
+            .map_err(|error| Error::invalid(format!("@{id}: {error}")))?
+        else {
             continue;
-        }
+        };
         mes.set(id, codes);
         changed = true;
     }
@@ -943,16 +1020,18 @@ pub fn width_warnings(text: &str, reference: &[u8], path: &str, fonts: &Fonts) -
         bail!("{path} is not a message file");
     };
     let font = fonts.font(located.language);
+    let exported = fonts.english_extra.is_some().then(|| fonts.exported().font(located.language));
     let reference = Mes::parse(reference)?;
     let widest = |codes: &[u16]| line_widths(codes, located.language, FONT_W).into_iter().max().unwrap_or(0);
     let file_widest = reference.messages().map(|(_, codes)| widest(codes)).max().unwrap_or(0);
     let mut out = Vec::new();
     for (id, body) in parse_text(text)? {
-        let codes = encode(&body, &font).map_err(|error| Error::invalid(format!("@{id}: {error}")))?;
         let own = reference.get(id);
-        if own == Some(&codes[..]) {
+        let Some(codes) = changed_codes(&body, &font, exported.as_ref(), |codes| own == Some(codes))
+            .map_err(|error| Error::invalid(format!("@{id}: {error}")))?
+        else {
             continue;
-        }
+        };
         for (line, width) in line_widths(&codes, located.language, FONT_W).into_iter().enumerate() {
             let what = format!("{path} @{id} line {}: {width} pixels wide", line + 1);
             if width > file_widest {
@@ -1231,7 +1310,7 @@ pub(crate) mod tests {
     #[test]
     fn text_reads_back_to_the_same_codes() {
         let english: String = (0x20u8..0x7F).filter(|&b| b != b'\\').map(char::from).collect::<String>() + "　、。・";
-        let fonts = Fonts { english_table: Some(table(&english)), korean_table: None };
+        let fonts = Fonts { english_table: Some(table(&english)), ..Default::default() };
         let en = fonts.font(Language::English);
         let fr = fonts.font(Language::French);
         let ja = fonts.font(Language::Japanese);
@@ -1307,7 +1386,7 @@ pub(crate) mod tests {
         for _ in 94..ENGLISH_GLYPHS {
             data.extend([0x81, 0x40]);
         }
-        Fonts { english_table: Some(data), korean_table: None }
+        Fonts { english_table: Some(data), ..Default::default() }
     }
 
     #[test]
@@ -1315,7 +1394,62 @@ pub(crate) mod tests {
         let en = english_sized().font(Language::English);
         assert_eq!(encode("Café ¡ü", &en).unwrap(), [ascii("Caf"), vec![288 + 18, SPACE, 288, 288 + 31]].concat());
         assert_eq!(decode(&[288 + 18, 319], &en), "éü");
-        assert!(encode("ì", &en).unwrap_err().to_string().contains("English font has no 'ì'"));
+        // a letter the build draws only when a text: line or an item uses it, and one it cannot
+        let error = encode("ì", &en).unwrap_err().to_string();
+        assert!(error.contains("English font has no 'ì' (U+00EC) here: build draws letters"), "{error}");
+        let error = encode("š", &en).unwrap_err().to_string();
+        assert!(error.contains("English font has no 'š' (U+0161): š is s with a caron"), "{error}");
+    }
+
+    #[test]
+    fn english_glyphs_past_its_table_are_the_letters_the_text_uses() {
+        let fonts = english_sized();
+        // what a text uses past the table, any letter the build can draw
+        let used = fonts.english_letters("gŷros, Café (O) {é}").unwrap();
+        assert_eq!(used, ['é', 'ŷ'].into_iter().collect());
+        let error = fonts.english_letters("ǎ").unwrap_err().to_string();
+        assert!(error.contains("is neither"), "{error}");
+        // the build's letters: ŷ takes ¡'s glyph, é keeps its own; a composed ŷ reads back
+        let slots = font::english_slots(&used).unwrap();
+        let built = fonts.with_english_extra(&slots);
+        let en = built.font(Language::English);
+        assert_eq!(encode("gŷé", &en).unwrap(), [ascii("g"), vec![288, 288 + 18]].concat());
+        assert_eq!(decode(&[288, 288 + 18], &en), "ŷé");
+        assert!(encode("¡", &en).unwrap_err().to_string().contains("here: build draws letters"));
+        // any 32 letters
+        let many: Vec<char> = "ŷŶĉĈĝĜĥĤĵĴŝŜŵŴĩĨũŨůŮĺĹńŃŕŔśŚźŹćĆ".chars().collect();
+        let slots = font::english_slots(&many.iter().copied().collect()).unwrap();
+        let en = fonts.with_english_extra(&slots).font(Language::English);
+        let text: String = many.iter().collect();
+        let codes = encode(&text, &en).unwrap();
+        assert!(codes.iter().all(|&code| (288..320).contains(&code)));
+        assert_eq!(decode(&codes, &en), text);
+    }
+
+    #[test]
+    fn unchanged_messages_keep_their_glyphs_whatever_letters_the_build_adds() {
+        let fonts = english_sized();
+        let path = "menu/1/shop.pac.d/allmenu.mes";
+        // a debug menu's leftover reads as ¡é (glyphs 288 and 306), as the export numbers them
+        let data = sample(&[(0, &[288, 306]), (1, &ascii("Iron Pot"))]);
+        let text = export(&data, path, "x", &fonts).unwrap();
+        assert!(text.contains("@0\n¡é\n"), "{text}");
+        let edited = text.replace("Iron Pot", "Gŷros");
+        assert_eq!(changed_letters(&edited, &data, path, &fonts).unwrap(), ['ŷ'].into_iter().collect());
+        assert!(changed_letters(&edited, &data, "meswin/system_2.mes", &fonts).unwrap().is_empty());
+        let slots = font::english_slots(&['ŷ'].into_iter().collect()).unwrap();
+        let built = fonts.with_english_extra(&slots);
+        let out = build(&edited, &data, &data, path, &built).unwrap();
+        let mes = Mes::parse(&out).unwrap();
+        // the leftover keeps glyph 288, which now draws ŷ; Gŷros takes it too
+        assert_eq!(mes.get(0), Some(&[288, 306][..]));
+        assert_eq!(mes.get(1), Some(&[ascii("G"), vec![288], ascii("ros")].concat()[..]));
+        assert!(width_warnings(&edited, &data, path, &built).unwrap().is_empty());
+        // unedited, it builds the disc's bytes with any letters
+        assert_eq!(build(&text, &data, &data, path, &built).unwrap(), data);
+        // a changed message with the leftover's letters writes them as the build draws them
+        let edited = text.replace("¡é", "¡é!");
+        assert_eq!(changed_letters(&edited, &data, path, &fonts).unwrap(), ['¡', 'é'].into_iter().collect());
     }
 
     #[test]
@@ -1364,6 +1498,7 @@ pub(crate) mod tests {
         let fonts = Fonts {
             english_table: std::fs::read(root.join(ENGLISH_FONT)).ok(),
             korean_table: std::fs::read(root.join(font::KOREAN_TABLE)).ok(),
+            english_extra: None,
         };
         let mut pages = Vec::new();
         for page in 0..4 {
@@ -1415,6 +1550,7 @@ pub(crate) mod tests {
         let fonts = Fonts {
             english_table: std::fs::read(root.join(ENGLISH_FONT)).ok(),
             korean_table: std::fs::read(root.join(font::KOREAN_TABLE)).ok(),
+            english_extra: None,
         };
         assert!(fonts.english_table.is_some(), "no {ENGLISH_FONT} under {corpus:?}");
         let mut checked = 0;

@@ -5,10 +5,11 @@
 //! character tables and parts of the inventions and fishing tables are in the boot executable,
 //! patched in place in the built image, every table's patches together.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{Map, Value};
 
 use c2_assets::cfg_text::Edit;
@@ -18,7 +19,7 @@ use c2_assets::dungeon_layout::{self, Layouts};
 use c2_assets::item_data::{self, ItemText, Items};
 use c2_assets::monster_data::{self, Monsters, Patch};
 use c2_assets::shop_data::{self, Shops};
-use c2_assets::{exe_tables, game_data};
+use c2_assets::{exe_tables, game_data, text};
 use c2_disc::{iso, rebuild, Image};
 use c2_script::discfiles::{self, Files};
 use c2_script::replace::{self, Line};
@@ -269,13 +270,49 @@ fn read_table(line: &Line) -> Result<Value> {
     serde_json::from_str(&text).with_context(|| format!("{} (mod {}): {}", line.key, line.module, line.shown))
 }
 
+/// The letters past the English font's own table that the chosen mods' data:items English names
+/// and descriptions use, for the letters the build draws into the English font
+/// (replace::english_letters): ("data:items", mod, letters).
+pub fn english_item_letters(iso_path: &Path, mod_dirs: &[PathBuf]) -> Result<Vec<(String, String, BTreeSet<char>)>> {
+    let lines: Vec<Line> = replace::all_lines(mod_dirs)?
+        .into_iter()
+        .filter(|line| line.is_data() && line.data_table() == "items")
+        .collect();
+    if lines.is_empty() {
+        return Ok(Vec::new());
+    }
+    let disc = Disc::open(iso_path)?;
+    let loaded = load("items", &executable(iso_path)?, &|path| disc.read(path))?;
+    let mut given = Vec::new();
+    for line in &lines {
+        given.push((line.module.clone(), read_table(line)?));
+    }
+    let mine: Vec<&Line> = lines.iter().collect();
+    let (_, _, texts) = loaded.changes(&given).with_context(|| format!("data:items ({})", modules_of(&mine)))?;
+    let fonts = text::Fonts { english_table: disc.read(text::ENGLISH_FONT).ok(), ..Default::default() };
+    let mut out = Vec::new();
+    for item_text in texts.iter().filter(|item_text| item_text.language == text::Language::English as usize) {
+        let Some(body) = &item_text.text else {
+            continue;
+        };
+        let letters = fonts
+            .english_letters(body)
+            .map_err(|error| anyhow!("{} (mod {}): {error}", item_text.what, item_text.module))?;
+        out.push(("data:items".to_string(), item_text.module.clone(), letters));
+    }
+    Ok(out)
+}
+
 /// The edits of the chosen mods' data: lines, table by table, checked against the disc: what
 /// `mod check --disc` and `build` both run. `files` holds what the build already rewrote; the
-/// executable comes back patched when any table changes it.
+/// executable comes back patched when any table changes it. `english_extra` is the letters the
+/// build draws as the English font's glyphs 288 on (replace::english_letters; empty for
+/// font::ENGLISH_EXTRA), which the items' English names and descriptions are written with.
 pub fn apply_data(
     iso_path: &Path,
     mod_dirs: &[PathBuf],
     files: &Files,
+    english_extra: &[char],
 ) -> Result<(Files, Option<Vec<u8>>, Vec<DataChange>)> {
     let lines: Vec<Line> = replace::all_lines(mod_dirs)?.into_iter().filter(Line::is_data).collect();
     let mut out = files.clone();
@@ -388,7 +425,7 @@ pub fn apply_data(
                     None => disc.read(path),
                 }
             };
-            let written = crate::item_text::item_messages(&disc, &current, &texts)?;
+            let written = crate::item_text::item_messages(&disc, &current, &texts, english_extra)?;
             for (top, data) in &written {
                 change.files.push((top.clone(), data.len(), current(top)?.len()));
             }
