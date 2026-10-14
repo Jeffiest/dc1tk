@@ -21,6 +21,7 @@
 //!   "file:mods/calc/ui.img": {"file": "ui", "like": "texture:logo_d00"},     a new texture file of PNGs
 //!   "file:mods/calc/calc.chr": {"file": "calc/calc.gltf", "like": "model:uki"} a new pack from a glTF
 //!   "map:m05x": {"file": "maps/m05x/m05x.gltf", "like": "m05", "title": "Park"} a new map from a map's scene
+//!   "music:BG_200": {"file": "music/fish.mid", "like": "BG_193"}   a new music file, load_bgm(200)
 //! }
 //! ```
 //!
@@ -39,7 +40,9 @@
 //! template (a texture file of PNGs, or a character pack of a glTF): a new file the disc does not
 //! have, with pictures or meshes of its own. A text (c2_assets::text) changes, at every place of
 //! its id, the messages whose text differs from the one exported (the id's first place), and adds
-//! the ids that place lacks; each place keeps the rest of its own version.
+//! the ids that place lacks; each place keeps the rest of its own version. A music: line under
+//! "add" makes a new music file, snd2/bgm/BG_NNN.snd, from a MIDI file and the disc's music bank
+//! "like" names (add_music, music::new_bank), for scripts to play with load_bgm(NNN).
 //!
 //! Each change is built with the disc's own file as the template, as discfiles does. Models are
 //! built first, then banks, then pictures, so a texture goes into a pack whose model another line
@@ -152,6 +155,16 @@ impl Line {
         self.key[MAP.len()..].trim().to_string()
     }
 
+    /// Whether the line adds a music file (music:BG_200 under "add").
+    pub fn is_new_music(&self) -> bool {
+        self.add && ids::kind_of(&self.key) == Some(Kind::Music)
+    }
+
+    /// The number of the music file a new-music line adds (200 for music:BG_200).
+    pub fn bgm_number(&self) -> Option<u32> {
+        bgm_number(&self.key[Kind::Music.name().len() + 1..])
+    }
+
     /// The disc path of a file: line.
     pub fn disc_path(&self) -> String {
         self.key[FILE.len()..].replace('\\', "/").trim_matches('/').to_string()
@@ -160,6 +173,13 @@ impl Line {
     fn fail(&self, message: impl std::fmt::Display) -> Error {
         Error::invalid(format!("{} (mod {}): {message}", self.key, self.module))
     }
+}
+
+/// The number of a music bank named BG_NNN (three digits, as the disc's files and the engine's
+/// path for 0 to 999 are), ignoring case: 200 for BG_200.
+pub fn bgm_number(name: &str) -> Option<u32> {
+    let digits = name.get(..3).filter(|prefix| prefix.eq_ignore_ascii_case("BG_")).map(|_| &name[3..])?;
+    (digits.len() == 3 && digits.bytes().all(|c| c.is_ascii_digit())).then(|| digits.parse().ok())?
 }
 
 fn name_of(path: &Path) -> String {
@@ -331,7 +351,17 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
                 let volume = value.as_i64().filter(|volume| (0..=127).contains(volume));
                 line.volume = Some(volume.ok_or_else(|| line.fail("\"volume\" is 0 to 127"))?);
             }
-            "instruments" if !add && kind == Some(Kind::Music) => {
+            "like" if add && kind == Some(Kind::Music) => {
+                let like =
+                    value.as_str().ok_or_else(|| line.fail("\"like\" is the disc's music bank to make it like"))?;
+                let like = like.trim();
+                let like = like
+                    .split_once(':')
+                    .filter(|(kind, _)| ["music", "bank"].contains(&kind.trim()))
+                    .map_or(like, |(_, name)| name);
+                line.like = Some(like.trim().to_uppercase());
+            }
+            "instruments" if kind == Some(Kind::Music) => {
                 line.instruments = instruments(mod_dir, &line, value)?;
             }
             "bank" if add && kind == Some(Kind::Sound) => {
@@ -446,7 +476,23 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
                     return Err(line.fail("say which bank the sound goes into: {\"file\": ..., \"bank\": \"SP_004\"}"));
                 }
             }
-            _ => return Err(line.fail("add makes sound entries (sound:NAME with a bank) and files (file:)")),
+            Some(Kind::Music) => {
+                if line.bgm_number().is_none() {
+                    return Err(line.fail(
+                        "a new music file is named BG_ and three digits, the number load_bgm takes (music:BG_200)",
+                    ));
+                }
+                if !line.like.as_deref().is_some_and(|like| bgm_number(like).is_some()) {
+                    return Err(line.fail(
+                        "a new music file names the disc's music bank it is made like: {\"file\": ..., \"like\": \"BG_193\"}",
+                    ));
+                }
+            }
+            _ => {
+                return Err(line.fail(
+                    "add makes sound entries (sound:NAME with a bank), music files (music:BG_200 like a bank), maps (map:) and files (file:)",
+                ))
+            }
         }
     }
     let wanted = match kind {
@@ -471,7 +517,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     if ids::is_pattern(key) && (add || line.is_file()) {
         return Err(line.fail("patterns are for replacing ids"));
     }
-    if let Some(like) = &line.like {
+    if let Some(like) = line.like.as_ref().filter(|_| line.is_file()) {
         check_like(&line, like)?;
     }
     Ok(line)
@@ -566,7 +612,7 @@ pub fn raw_files(mod_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
 /// Whether any of the lines names an id, so that the build needs the disc's index.
 pub fn needs_index(lines: &[Line]) -> bool {
     lines.iter().any(|line| {
-        (!line.is_file() && !line.is_map() && !line.is_data())
+        (!line.is_file() && !line.is_map() && !line.is_data() && !line.is_new_music())
             || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some())
     })
 }
@@ -644,7 +690,9 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
     for module in modules {
         let mine: Vec<&Line> = lines
             .iter()
-            .filter(|line| line.module == module && !line.is_file() && !line.is_map() && !line.is_data())
+            .filter(|line| {
+                line.module == module && !line.is_file() && !line.is_map() && !line.is_data() && !line.is_new_music()
+            })
             .collect();
         // each id by the line that gives it: an exact id wins over a pattern
         let mut chosen: BTreeMap<String, (&Line, bool)> = BTreeMap::new();
@@ -1147,6 +1195,66 @@ pub fn check(out_path: &Path, changed: &[Changed]) -> Result<Vec<String>> {
         })
         .map(|item| item.place.display())
         .collect())
+}
+
+/// Puts the music files the lines add (music:BG_200 under "add") into the disc files build writes,
+/// on top of files: each a new file snd2/bgm/BG_NNN.snd, the like bank with its entry 0 playing
+/// the line's MIDI file (music::new_bank). A number the disc has, one given twice (by two mods),
+/// or a path a file: line or disc/ file gives too is refused. Returns the files and each new
+/// file, its old size 0, its notes those of the instruments and the music memory.
+pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(Files, Vec<Changed>)> {
+    let mut files = files.clone();
+    let wanted: Vec<&Line> = lines.iter().filter(|line| line.is_new_music()).collect();
+    if wanted.is_empty() {
+        return Ok((files, Vec::new()));
+    }
+    let image = Image::open(iso_path)?;
+    let disc = Archive::open(image.bytes())?;
+    let index = discfiles::disc_index(&disc);
+    let mut added: BTreeMap<u32, &Line> = BTreeMap::new();
+    let mut out = Vec::new();
+    for line in wanted {
+        let number = line.bgm_number().ok_or_else(|| line.fail("a new music file is named BG_ and three digits"))?;
+        let name = music::bgm_name(number);
+        let path = music::bgm_path(number);
+        if let Some(other) = added.insert(number, line) {
+            return Err(Error::invalid(format!(
+                "{} (mod {}) and {} (mod {}) both add music file {number} ({path}); give one another number",
+                other.key, other.module, line.key, line.module
+            )));
+        }
+        if index.contains_key(&path.to_lowercase()) {
+            return Err(line.fail(format!(
+                "the disc has {path} already: pick a number it lacks, or replace its tune with a music:{name}_000 line"
+            )));
+        }
+        if files.keys().any(|given| given.eq_ignore_ascii_case(&path)) {
+            return Err(line.fail(format!("{path} is given by a file: line or a disc/ file too")));
+        }
+        let like = line.like.as_deref().and_then(bgm_number).map(music::bgm_path).unwrap_or_default();
+        let Some(entry) = index.get(&like.to_lowercase()) else {
+            return Err(line.fail(format!("the disc has no {like} to make it like")));
+        };
+        let midi = fs::read(&line.file)?;
+        let (data, notes) = music::new_bank(
+            &midi,
+            disc.read(image.bytes(), entry),
+            &name,
+            &line.instruments,
+            Some(music::MUSIC_REGION),
+        )
+        .map_err(|error| line.fail(error))?;
+        files.insert(path.clone(), data.clone());
+        out.push(Changed {
+            place: Place { path, members: Vec::new() },
+            ids: vec![format!("{} like {}", line.key, line.like.as_deref().unwrap_or_default())],
+            modules: vec![line.module.clone()],
+            old: 0,
+            data,
+            warnings: notes.into_iter().map(|note| format!("note: {note}")).collect(),
+        });
+    }
+    Ok((files, out))
 }
 
 /// Adds lines to the mod's replace, keeping the rest of mod.json as it is. A key it has already

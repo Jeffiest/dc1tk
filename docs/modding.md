@@ -245,6 +245,38 @@ the program numbers by `NEW_PROGRAM` in a header both include, and see the
 new map's number as `MAP_M05X`. See [maps](assets/maps.md) section 9 and the
 [new-map-door example](examples/new-map-door/README.md).
 
+## Music of a mod's own
+
+A `music:` line under `add` gives the mod a music file of its own, made from
+a MIDI file and one of the disc's music banks, whose instruments it plays:
+
+```json
+"add": {
+  "music:BG_200": {"file": "music/fish.mid", "like": "BG_193"}
+}
+```
+
+`build` writes the new file `snd2/bgm/BG_200.snd`: a copy of `BG_193`
+whose one entry plays the MIDI file, converted as a `music:` replace line
+converts it (`"instruments"` works as there), and the samples the tune
+does not play cut. Scripts play it as the game's own music, by the number
+in its name:
+
+```c
+load_bgm(200);
+play_bgm(0);
+```
+
+The engine keeps no table of music files: `load_bgm(n)` reads
+`snd2/bgm/BG_<n>.snd` (three digits at least) by name, and `play_bgm(0)`
+plays its entry 0 at the default volume of the like bank's `.vol` unless a
+volume is given (`play_bgm(0, 100)`). The number is written as it is, in
+strict mode too; pick one from 0 to 999 the disc lacks (its own are 0 to
+195, listed as `BGM_...` in `pal.h`), and only one mod may add it. A map
+loads its sound set's tune when it loads (the like map's, for a new map),
+so a map that should play the mod's tune calls `load_bgm` in `map_start`.
+See [music](assets/music.md), "A music file of a mod's own".
+
 ## Editing shared code
 
 Code that several scripts share lives in `lib/`, and an edit there reaches

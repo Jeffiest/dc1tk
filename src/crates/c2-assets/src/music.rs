@@ -668,7 +668,19 @@ pub fn build_with_instruments(
     instruments: &[Instrument],
     region: Option<usize>,
 ) -> Result<(Vec<u8>, Vec<String>)> {
-    let mut bank = Bank::from_bytes(bank_data)?;
+    instrumented(midi, Bank::from_bytes(bank_data)?, sequence, instruments, region, false)
+}
+
+/// What build_with_instruments does, to a parsed bank; `cut_all` cuts every sample nothing plays
+/// any more to a stub whether or not the bank needs the room (a new bank keeps only its tune's).
+fn instrumented(
+    midi: &[u8],
+    mut bank: Bank,
+    sequence: &str,
+    instruments: &[Instrument],
+    region: Option<usize>,
+    cut_all: bool,
+) -> Result<(Vec<u8>, Vec<String>)> {
     let before = bank.samples_size();
     let mut notes = Vec::new();
     let mut old_vags = BTreeSet::new();
@@ -705,7 +717,7 @@ pub fn build_with_instruments(
     let built = build(midi, &bank.pack.members[index].data, Some(&bank))?;
     bank.pack.members[index].data = built;
     let fits = |bank: &Bank| region.is_none_or(|region| bank.samples_size() + 16 <= region);
-    if !fits(&bank) {
+    if cut_all || !fits(&bank) {
         // the samples nothing plays now: the old tune's, and the replaced programs'
         let all: BTreeSet<usize> = (0..bank.vag_data.len()).collect();
         let size = bank.samples_size();
@@ -733,6 +745,115 @@ pub fn build_with_instruments(
         ));
     }
     Ok((bank.build()?, notes))
+}
+
+/// The file of background music number `number` (snd2/bgm/BG_200.snd): the engine's path for
+/// load_bgm(number) (CScene::GetBgmFile, at least three digits).
+pub fn bgm_path(number: u32) -> String {
+    format!("snd2/bgm/{}.snd", bgm_name(number))
+}
+
+/// A music bank's name for its number: BG_200.
+pub fn bgm_name(number: u32) -> String {
+    format!("BG_{number:03}")
+}
+
+/// A pack member's 64-byte name field for a new name: the name and zeros.
+fn name_field(name: &str) -> Result<Vec<u8>> {
+    let mut field = c2_disc::text::encode(name).ok_or_else(|| Error::invalid(format!("{name}: not cp932")))?;
+    if field.len() >= crate::soundbank::PACK_NAME {
+        bail!("{name}: a member's name is at most 63 bytes");
+    }
+    field.resize(crate::soundbank::PACK_NAME, 0);
+    Ok(field)
+}
+
+/// A new music bank, `name` (BG_200), made like one of the disc's (`like_data`): play_bgm's entry
+/// 0 plays a sequence built from a MIDI file with the like bank's entry 0 sequence as the template,
+/// as a music: line builds it (the layout, the loop, ...). The bank keeps the like bank's
+/// instruments, default volume (.vol) and reverb; its members are renamed after it (BG_200.hd,
+/// .bd, .cfg, .vol and BG_200_000.sq, which the .cfg's row 0 names), its other sequences and
+/// their rows are dropped, the instruments given go in, and every sample the new tune does not
+/// play is cut to a silent stub. Returns the bank's bytes and what it did, as
+/// build_with_instruments does.
+pub fn new_bank(
+    midi: &[u8],
+    like_data: &[u8],
+    name: &str,
+    instruments: &[Instrument],
+    region: Option<usize>,
+) -> Result<(Vec<u8>, Vec<String>)> {
+    let like = Bank::from_bytes(like_data)?;
+    let entries = like.entries()?;
+    let Some(first) = entries.first().filter(|entry| entry.kind == crate::soundbank::EntryKind::Sq) else {
+        bail!("the bank's entry 0 plays no sequence, so it is not a music bank");
+    };
+    let sequences = like.pack.find("sq");
+    let kept = sequences[first.seq_index.unwrap_or(0)];
+    let old_sequence = like.pack.members[kept].name.clone();
+    let sequence = format!("{name}_000.sq");
+    let mut pack = like.pack.clone();
+    let mut members = Vec::new();
+    for (at, mut member) in pack.members.into_iter().enumerate() {
+        let ext = member.ext();
+        if ext == "sq" && at != kept {
+            continue;
+        }
+        let renamed = match ext.as_str() {
+            "sq" => sequence.clone(),
+            "hd" | "bd" | "cfg" | "vol" => {
+                let suffix = member.name.rsplit_once('.').map_or("", |(_, suffix)| suffix).to_string();
+                format!("{name}.{suffix}")
+            }
+            _ => member.name.clone(),
+        };
+        if ext == "cfg" {
+            member.data = new_cfg(&member.data, first.line, &old_sequence, &sequence, name)?;
+        }
+        if renamed != member.name {
+            member.raw_name = name_field(&renamed)?;
+            member.name = renamed;
+        }
+        members.push(member);
+    }
+    pack.members = members;
+    let bank = Bank::from_bytes(&pack.build())?;
+    instrumented(midi, bank, &sequence, instruments, region, true)
+}
+
+/// A new music bank's .cfg: the like bank's header (its number column set to the new bank's) and
+/// END kept, its entry 0's row naming the renamed sequence, the other rows dropped.
+fn new_cfg(data: &[u8], row: usize, old_sequence: &str, sequence: &str, name: &str) -> Result<Vec<u8>> {
+    let mut cfg = crate::soundbank::TextFile::parse(data);
+    let end = cfg.end_index();
+    let number = name.rsplit('_').next().unwrap_or(name).trim_start_matches('0');
+    let number = if number.is_empty() { "0" } else { number };
+    let mut lines = Vec::new();
+    for (at, (text, eol)) in cfg.lines.into_iter().enumerate() {
+        let digit = text.first().is_some_and(u8::is_ascii_digit);
+        if at < end && digit && at != row {
+            continue;
+        }
+        let mut columns: Vec<Vec<u8>> = text.split(|&c| c == b'\t').map(<[u8]>::to_vec).collect();
+        if at == row {
+            let Some(column) = columns.iter_mut().find(|column| column.eq_ignore_ascii_case(old_sequence.as_bytes()))
+            else {
+                bail!("the .cfg's row for entry 0 does not name {old_sequence} between tabs");
+            };
+            *column = sequence.as_bytes().to_vec();
+        } else if at < end
+            && !digit
+            && columns.len() > 2
+            && !columns[2].is_empty()
+            && columns[2].iter().all(u8::is_ascii_digit)
+        {
+            // the header: prefix, title, number
+            columns[2] = number.as_bytes().to_vec();
+        }
+        lines.push((columns.join(&b'\t'), eol));
+    }
+    cfg.lines = lines;
+    Ok(cfg.build())
 }
 
 #[cfg(test)]
@@ -1002,6 +1123,41 @@ mod tests {
         );
     }
 
+    /// Every music bank of the disc makes a new bank of its own tune: entry 0 plays the same
+    /// sequence, renamed, and the bank fits the music memory.
+    #[test]
+    fn corpus_music_banks_make_new_banks() {
+        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
+            return;
+        };
+        let folder = std::path::Path::new(&corpus).join("snd2").join("bgm");
+        let Ok(found) = std::fs::read_dir(&folder) else {
+            return;
+        };
+        let mut made = 0;
+        for path in found.flatten().map(|entry| entry.path()) {
+            if !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("snd")) {
+                continue;
+            }
+            let data = std::fs::read(&path).unwrap();
+            let like = Bank::from_bytes(&data).unwrap();
+            let first = like.entries().unwrap()[0].seq_index.unwrap();
+            let original = &like.pack.members[like.pack.find("sq")[first]];
+            let midi = export(&original.data, stem(&original.name)).unwrap();
+            let (built, _) = new_bank(&midi, &data, "BG_999", &[], Some(MUSIC_REGION))
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let bank = Bank::from_bytes(&built).unwrap();
+            let entries = bank.entries().unwrap();
+            assert_eq!((entries.len(), entries[0].file.as_str()), (1, "BG_999_000.sq"), "{}", path.display());
+            assert_eq!(bank.pack.find("sq").len(), 1);
+            assert_eq!(bank.pack.members[bank.pack.find("sq")[0]].data, original.data, "{}", path.display());
+            assert!(bank.samples_size() <= like.samples_size());
+            assert_eq!(bank.volumes(), (vec![like.volumes().0[0], like.volumes().0[1]], like.volumes().1));
+            made += 1;
+        }
+        eprintln!("{made} music banks made new banks of their tunes");
+    }
+
     /// A bank with program 1 (a saw wave, from test_bank) and the sequence x_000.sq (tune(), which
     /// plays program 1) named by a row of its .cfg, as the BG banks name theirs.
     fn bank_with_tune() -> Vec<u8> {
@@ -1094,5 +1250,71 @@ mod tests {
         let error = replace(Some(fitted)).unwrap_err().to_string();
         assert!(error.contains("0x10 too many"), "{error}");
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    /// A music bank as the disc's BG banks are: entry 0 plays x_000.sq (the tune on program 1),
+    /// entry 1 x_001.sq (on program 2); programs 1 and 2 are saw waves of their own samples.
+    fn music_bank() -> Vec<u8> {
+        let mut bank = Bank::from_bytes(&crate::soundbank::test_bank(&[22050, 11025], 100)).unwrap();
+        let eol = bank.cfg.eol();
+        bank.cfg.lines = [
+            "BG\tTEST\t7\t\t\t\t\t",
+            "0\tBGM\tA\t0\tx_000.sq\t*\t*\t",
+            "1\tBGM\tB\t0\tx_001.sq\t*\t*\t",
+            "END\t\t\t\t\t\t\t",
+        ]
+        .iter()
+        .map(|line| (line.as_bytes().to_vec(), eol.clone()))
+        .collect();
+        let data = bank.build().unwrap();
+        let mut members: Vec<(String, Vec<u8>)> =
+            Pack::parse(&data).unwrap().members.into_iter().map(|member| (member.name, member.data)).collect();
+        members.push(("x_000.sq".to_string(), tune().write().unwrap()));
+        let mut second = tune();
+        for event in &mut second.events {
+            if let Message::Program { program, .. } = &mut event.message {
+                *program = 2;
+            }
+        }
+        members.push(("x_001.sq".to_string(), second.write().unwrap()));
+        crate::models::write_pack(&members).unwrap()
+    }
+
+    #[test]
+    fn a_new_music_bank_plays_the_midi_file_as_entry_0() {
+        let like = music_bank();
+        let old = Bank::from_bytes(&like).unwrap();
+        let program_vag = |bank: &Bank, program: i64| bank.resolve(program, 60, 90)[0].vag;
+        let stub_size = crate::soundbank::encode_adpcm(&[0; 28], None, true).unwrap().len();
+        assert!(old.vag_data[program_vag(&old, 1)].len() > stub_size);
+        // a tune on program 2, the bank's second tune's instrument
+        let midi = tune_playing(2);
+        let (built, notes) = new_bank(&midi, &like, "BG_200", &[], Some(MUSIC_REGION)).unwrap();
+        assert!(notes.iter().any(|note| note.contains("cut to stubs")), "{notes:?}");
+        let bank = Bank::from_bytes(&built).unwrap();
+        let names: Vec<&str> = bank.pack.members.iter().map(|member| member.name.as_str()).collect();
+        assert_eq!(names, ["BG_200.hd", "BG_200.bd", "BG_200.cfg", "BG_200.vol", "BG_200_000.sq"]);
+        // one entry, playing the one sequence, which is the MIDI file's built like x_000
+        let entries = bank.entries().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            (entries[0].kind, entries[0].seq_index, entries[0].file.as_str()),
+            (crate::soundbank::EntryKind::Sq, Some(0), "BG_200_000.sq")
+        );
+        let sq = &bank.pack.members[4].data;
+        assert_eq!(*sq, build(&midi, &tune().write().unwrap(), Some(&old)).unwrap());
+        assert_eq!(Sequence::read(sq).unwrap().programs(), vec![2]);
+        let cfg = String::from_utf8(bank.pack.members[2].data.clone()).unwrap();
+        assert!(cfg.starts_with("BG\tTEST\t200\t"), "{cfg}");
+        assert!(!cfg.contains("x_00"), "{cfg}");
+        // the old tune's sample is cut, the new one's kept; the default volume is the like bank's
+        assert_eq!(bank.vag_data[program_vag(&bank, 1)].len(), stub_size);
+        assert_eq!(bank.vag_data[program_vag(&bank, 2)], old.vag_data[program_vag(&old, 2)]);
+        assert_eq!(bank.volumes().0[0], old.volumes().0[0]);
+        // the tune exports and builds back to itself
+        assert_eq!(build(&export(sq, "BG_200_000").unwrap(), sq, Some(&bank)).unwrap(), *sq);
+        // a bank whose entry 0 plays no sequence is no music bank
+        let error = new_bank(&midi, &crate::soundbank::test_bank(&[22050], 100), "BG_200", &[], None).unwrap_err();
+        assert!(error.to_string().contains("plays no sequence"), "{error}");
     }
 }

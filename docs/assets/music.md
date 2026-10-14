@@ -273,6 +273,76 @@ replaces as the template:
   any changed bank. Instruments go in through `music:` lines only, not a
   `.snd.mid` folder.
 
+### A music file of a mod's own
+
+A `music:` line under `add` makes a new music file, so a mod's map or scene
+can play a tune of its own without replacing one the game plays elsewhere:
+
+```json
+"add": {
+  "music:BG_200": {"file": "music/fish.mid", "like": "BG_193"}
+}
+```
+
+`"instruments"` may be given as on a `music:` replace line (above); left
+out, the tune plays the like bank's own programs. A script plays it as it
+plays the game's music:
+
+```c
+load_bgm(200);
+play_bgm(0);
+```
+
+What the engine reads (engine): `load_bgm(n)` (`_LOAD_BGM`) goes to
+`CScene::LoadBGM`, which makes the path `snd2/bgm/BG_%s.snd` from `n`
+padded to three digits (`GetBgmFile`, `GetNumber3`), reads it with
+`LoadFile2` (looked up by name in `DATA.HD4`) and loads it as a bank on the
+music port (`LoadBGMPack`, `sndLoadSound`). Nothing else is kept per number:
+no table of music files, no limit but `n >= 0` (a negative number loads
+nothing; `CheckLoadBGM` also skips the number already loaded), and no other
+file. `play_bgm(0, volume)` (`PlayBGM`) plays entry 0 of the loaded bank as
+`play_se` does: the bank's `.cfg` row 0 names its `.sq` member, and with no
+volume given, the `.vol`'s default for entry 0 (`sndGetSeDefVol`). The
+bank's `.vol` also carries its reverb. So a music file is one `.snd`, whole.
+
+What `build` writes (`music::new_bank`, `replace::add_music`):
+
+- A new file `snd2/bgm/BG_200.snd` (a `DATA.HD4` record, as a new map's
+  files are), a copy of the like bank (`BG_193`, any of the disc's
+  `snd2/bgm/BG_NNN.snd`) with its members renamed after it (`BG_200.hd`,
+  `.bd`, `.cfg`, `.vol`) and one sequence, `BG_200_000.sq`: the MIDI file
+  built with the like bank's entry 0 sequence as the template, exactly as a
+  `music:` replace line builds it (the layout, the loop, the tempo, the
+  program check against the bank and the instruments given).
+- The `.cfg` keeps its header (with the new number) and `END`, and row 0,
+  naming `BG_200_000.sq`; the like bank's other sequences and their rows
+  (`BG_193_001`, the fishing battle) are dropped, so `play_bgm(0)` is the
+  only entry. The `.vol` is the like bank's: the default volume of entry 0
+  (`BG_193`: 93, `BG_000`: 45) and the reverb. Pick a like bank whose
+  default volume suits, or give one in the script (`play_bgm(0, 100)`).
+- Every sample the new tune does not play is cut to a silent stub (as when a
+  replace line's instruments need the room), so the bank takes no more
+  music memory than its tune needs; `build` notes the sizes and checks the
+  bank against the music region and the read buffer as for any changed
+  bank. The like bank's programs stay, so the MIDI file plays the like
+  bank's instruments (its SoundFont, `c2 mod asset ... music:BG_193_000`,
+  is the one to hear it with) or ones the line gives.
+
+Refused: a name that is not `BG_` and three digits (`load_bgm` takes 0 to
+999 that way; the disc's are 0 to 195), a number the disc has (replace its
+tune with a `music:BG_NNN_000` line instead), a like bank the disc lacks or
+whose entry 0 plays no sequence, two lines (two mods) adding one number, and
+a `file:` line or `disc/` file giving the same path. `c2 mod check --disc`
+builds the bank to check it. Scripts write the number itself: it is in the
+line's key already, and `load_bgm` takes a plain `int` (`bgm_file`), in
+strict mode (`#pragma std c89`) too. `c2 mod asset built.iso NAME
+music:BG_200_000` copies the tune back out of a built image.
+
+Checked: `BG_193_001` (the fishing battle) added as `BG_200` like `BG_193`
+builds (64 KB of samples cut, 0x67780 of 0x78000 bytes), and read back out
+of the image its MIDI file is the one given but for the track's name. Not
+yet heard in the game.
+
 ## 5. Verification
 
 | Check | Result |
@@ -281,11 +351,15 @@ replaces as the template:
 | export to MIDI -> build back byte-exact, programs named are in the bank | 447 / 447; the 4 sequences above name programs their banks lack |
 | a bank's SoundFont: chunks add up, every zone's sample and loop in range | 175 banks with sequences (146,708,074 bytes) |
 | asset tree: music ids at every place, tree and index agree, MIDI builds back | `BG_193` alone and in a pack, `SR_138`'s 8 |
+| a new music bank made like each disc bank, of its own tune: one entry, the same sequence, no more samples | 73 / 73 |
 
 A unit test builds a tune that names a program the bank lacks with a
 two-sample instrument (split at middle C, one looped), a program replaced
 in place, and a bank that only fits once the old samples are cut, or not
-at all. Unit tests also cover the compression rule, a foreign MIDI file (format 1, 96
+at all. Another makes a new music bank of a two-tune bank (renamed
+members, one entry, the old tune's sample cut), and one builds a mod's
+added music file into a small disc image and reads it back, with the
+refusals. Unit tests also cover the compression rule, a foreign MIDI file (format 1, 96
 ticks a quarter note, bank select, an RPN, markers), refused programs and
 channels, a tune looped whole, markers moved in an editor, and channel 0
 freed or refused; every disc sequence taken as a new tune comes out laid out
