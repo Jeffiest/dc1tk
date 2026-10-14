@@ -222,6 +222,8 @@ pub struct Model {
     pub language_code: Option<i64>,
     pub disc_names: IndexMap<String, NameTable>,
     pub folder_slots: BTreeMap<String, BTreeMap<i64, String>>,
+    /// The villager slots of the maps the scripts run on.
+    pub villagers: slots::Changing,
     pub exact_to_loose: IndexMap<String, String>,
     pub script_prints: IndexMap<String, Vec<Option<String>>>,
     pub siblings: HashMap<String, HashMap<String, String>>,
@@ -697,6 +699,8 @@ pub fn model_for(
     let disc_names = disc::tables(root, defs);
     let empty = NameTable::new();
     let folder_slots = slots::names(&slot_loads, disc_names.get("chara_pack").unwrap_or(&empty));
+    let villager_tables = crate::villagers::Tables::read(root);
+    let villagers = slots::villagers(&slot_loads, &folder_slots, villager_tables.as_ref(), &disc_names, paths);
     let language_code = disc::language_code(defs);
     let triggers = if root.join("map").is_dir() { maps::folder_triggers(root)? } else { BTreeMap::new() };
     let reserved = reserved_of(&contexts);
@@ -715,6 +719,7 @@ pub fn model_for(
         language_code,
         disc_names,
         folder_slots,
+        villagers,
         exact_to_loose,
         script_prints,
         siblings: sibling_maps(&script_strings, language_code),
@@ -826,9 +831,29 @@ impl Model {
         // sound banks the scripts that include the library pass it, when they agree
         let uses = self.sound_uses.lock().unwrap().get(&library.path).cloned().unwrap_or_default();
         let mut sounds = sdk::Sounds { seed: Some(sdk::library_sounds(&uses)), ..sdk::Sounds::default() };
+        // a library only the scripts of one map include names that map's villager slots
+        let maps: BTreeSet<Option<&String>> = library.user_paths.iter().map(|path| self.villagers.maps.get(path)).collect();
+        let map = match maps.into_iter().collect::<Vec<_>>()[..] {
+            [Some(map)] => Some(map.as_str()),
+            _ => None,
+        };
+        let found = slots::on_map(found, map, &self.villagers);
+        // and one that only the scripts of one folder include, that folder's slot names
+        let folders: BTreeSet<String> = library.user_paths.iter().map(|path| slots::folder(path)).collect();
+        let found = match (folders.len(), library.user_paths.first()) {
+            (1, Some(user)) => {
+                let found = slots::in_folder(found, user, &self.folder_slots);
+                slots::with_loaded(found, &slots::folder(user), &self.villagers)
+            }
+            _ => found,
+        };
         let presented = match &found {
             Some(found) => sdk::present_functions(&functions, found, &params, &[], &mut sounds),
             None => functions,
+        };
+        let presented = match (map.and_then(|map| self.villagers.notes.get(map)), &found) {
+            (Some(notes), Some(found)) => with_villager_notes(&presented, found, notes).as_array().cloned().unwrap_or_default(),
+            _ => presented,
         };
         let presented = notes::annotate_functions(presented, &self.defs.strings);
         source::library_text(&library.table, &presented, header.as_deref(), &library.doc)
@@ -890,6 +915,9 @@ impl Model {
         }
         let natives_name = text(program, "natives").to_string();
         let context = slots::in_folder(self.contexts.get(&natives_name).cloned().flatten(), path, &self.folder_slots);
+        let map = self.villagers.maps.get(path).map(String::as_str);
+        let context = slots::on_map(context, map, &self.villagers);
+        let context = slots::with_loaded(context, &slots::folder(path), &self.villagers);
         let program_names = context.as_ref().map(|context| context.program_names.clone()).unwrap_or_default();
         let found = names::fingerprints(program);
         let mut known: HashMap<String, String> =
@@ -994,6 +1022,9 @@ impl Model {
         let mut sounds = sdk::Sounds { want_out: true, keys, ..sdk::Sounds::default() };
         let numbered = sdk::numbered(context, numbering.as_deref());
         let mut presented = sdk::present(scripted, numbered.as_ref(), &params, &shown_hidden, &mut sounds);
+        if let (Some(notes), Some(found)) = (map.and_then(|map| self.villagers.notes.get(map)), numbered.as_ref()) {
+            presented = presented.clone().with("functions", with_villager_notes(list(&presented, "functions"), found, notes));
+        }
         if let Some(passed) = &sounds.out {
             self.record_sound_uses(&hidden_by_library, &global_names, passed);
         }
@@ -1259,4 +1290,18 @@ pub fn read_includes(
         pending.extend(quoted_includes(&text));
     }
     Ok(texts)
+}
+
+/// Functions with notes on the natives that address a villager slot several villagers can hold.
+fn with_villager_notes(functions: &[Node], found: &sdk::Context, notes: &BTreeMap<i64, String>) -> Node {
+    functions
+        .iter()
+        .map(|function| {
+            if function.kind() == "function" {
+                function.clone().with("body", Node::List(slots::villager_notes(list(function, "body"), found, notes)))
+            } else {
+                function.clone()
+            }
+        })
+        .collect()
 }

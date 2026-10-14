@@ -30,6 +30,26 @@ members who have joined count as id + 1000. So a slot holds different
 villagers at different points of the story, and the scripts find
 villagers by id (`find_villager_slot(50)`) rather than by slot.
 
+The story progress here is the chapter (`PROG_INFO` in `npc_place4.cfg`,
+1 to 10, and 100 for the demo): `CVillagerMngr::GetAppearVlgr` takes, for
+each villager, the last schedule point at or before the current chapter
+that is that chapter or marked "以後" (from then on), its place for the time
+of day in each of up to four alternatives, and `place.cfg` gives the
+place's map number (the row of `map/map1.cfg`). `LoadVillager` fills slots
+from 8 for the map the game jumps to; an interior (type 4 in `map1.cfg`)
+fills them from 24 (`LoadSubVillager`).
+
+Only Palm Brinks, its interiors, Jurak Mall, the Channel Entrance and
+Pau's house have villagers. Most interiors always hold the same one
+(Cedric in his shop at 24, Aunt Polly in the bakery, Mayor Need in his
+office), which `disc.h` names per folder (`enum villager_slots_i01_h01`)
+where the folder's scripts never load that slot themselves; slots whose
+villager changes with the chapter (the town's passers-by) stay numbers,
+with a comment naming the candidates where a script addresses one. Scripts
+address villager slots by number almost only in Cedric's shop; elsewhere
+the numbered slots 8 and up hold the scripts' own characters, which print
+as the character a load puts there where it reaches the use.
+
 ## Dungeons
 
 0 to 7 the party, 8 to 23 event characters the scripts load, 24 and up

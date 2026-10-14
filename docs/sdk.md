@@ -210,7 +210,16 @@ value is.
   `CHARA_PLAYER`, the time gate and save point), and a whole-disc
   decompile adds to `disc.h` the slots each map folder's scripts always
   load with one character (`CHARA_I01_H01_STEVE`), used only in that
-  folder's scripts.
+  folder's scripts (and the libraries only they include). A slot that holds
+  different characters from scene to scene prints as the character a load
+  puts there where that load reaches the use within the function (no call
+  in between that may load or delete the slot): `load_scene_chara(8,
+  "e438_paw.chr")` makes slot 8 `CHARA_S27_PAW` until then (`enum
+  loaded_slots_s27`). A villager slot no script of the map's folder loads
+  itself prints as the villager when the engine always puts the same one
+  there (`CHARA_I01_H01_CEDRIC`, `enum villager_slots_i01_h01`); one that
+  holds different villagers by chapter and time of day gets a comment
+  naming them. See [the character notes](../definitions/pal/notes/characters.md).
 - `play_se(id, n)` plays entry n of the bank `id` was read from, so the
   decompiler follows the variable: after `id = get_system_sound_id()` or
   `get_sound_id(SE_BANK_BASE, &id)` (or `SE_BANK_BATTLE`), n prints from

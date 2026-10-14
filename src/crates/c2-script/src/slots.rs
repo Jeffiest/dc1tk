@@ -168,16 +168,17 @@ pub fn header_text(folder_names: &BTreeMap<String, BTreeMap<i64, String>>) -> St
 pub fn with_header(
     generated: Option<String>,
     folder_names: &BTreeMap<String, BTreeMap<i64, String>>,
+    villagers: &Changing,
 ) -> Option<String> {
     let generated = generated?;
-    if folder_names.is_empty() {
+    if folder_names.is_empty() && villagers.header.is_empty() && villagers.loaded.is_empty() {
         return Some(generated);
     }
     let position = generated.rfind("#endif").expect("disc.h ends with #endif");
     Some(format!(
         "{}\n{}\n{}",
         generated[..position].trim_end_matches('\n'),
-        header_text(folder_names),
+        header_text(folder_names) + &villager_header_text(villagers),
         &generated[position..]
     ))
 }
@@ -194,4 +195,241 @@ pub fn in_folder(
         context.enums.insert("chara_slot_folder".into(), members);
     }
     Some(context)
+}
+
+/// Villager slots per map: the villager the engine loads into a slot no script of the map's folder
+/// loads itself (see villagers.rs): a constant where it is always the same villager, a note where
+/// the chapter and time of day decide among several.
+#[derive(Clone, Debug, Default)]
+pub struct Changing {
+    /// map code → slot → constant
+    pub names: BTreeMap<String, BTreeMap<i64, String>>,
+    /// map code → slot → the villagers it can hold
+    pub notes: BTreeMap<String, BTreeMap<i64, String>>,
+    /// script path → the map it runs on, for maps with villager slots
+    pub maps: BTreeMap<String, String>,
+    /// folder code → constant → slot, for disc.h
+    pub header: BTreeMap<String, BTreeMap<String, i64>>,
+    /// folder → (slot, pack) → constant: the characters a folder's scripts load into slots that
+    /// hold others at other times, named where a load reaches a use (slotflow.rs)
+    pub loaded: BTreeMap<String, BTreeMap<(i64, String), String>>,
+}
+
+/// The characters a folder's scripts load into a slot that holds others at other times:
+/// {folder: {(slot, pack): constant}}, CHARA_<folder>_<character> (with the slot after it where the
+/// name is another slot's).
+pub fn loaded_names(
+    found: &Survey,
+    folder_names: &BTreeMap<String, BTreeMap<i64, String>>,
+    pack_names: &NameTable,
+) -> BTreeMap<String, BTreeMap<(i64, String), String>> {
+    let mut out = BTreeMap::new();
+    for (path, by_slot) in found {
+        let code = folder_code(path);
+        if code.is_empty() {
+            continue;
+        }
+        let constant = folder_names.get(path);
+        let mut taken: std::collections::HashMap<String, i64> =
+            constant.into_iter().flatten().map(|(slot, name)| (name.clone(), *slot)).collect();
+        let mut chosen = BTreeMap::new();
+        for (slot, packs) in by_slot {
+            if ENGINE_SLOTS.contains(slot) || constant.is_some_and(|constant| constant.contains_key(slot)) {
+                continue;
+            }
+            for pack in packs {
+                let Some(character) = character_name(pack, pack_names) else {
+                    continue;
+                };
+                let mut name = format!("CHARA_{code}_{character}");
+                if taken.get(&name).is_some_and(|other| other != slot) {
+                    name = format!("{name}_{slot}");
+                }
+                if taken.get(&name).is_some_and(|other| other != slot) {
+                    continue;
+                }
+                taken.insert(name.clone(), *slot);
+                chosen.insert((*slot, pack.clone()), name);
+            }
+        }
+        if !chosen.is_empty() {
+            out.insert(path.clone(), chosen);
+        }
+    }
+    out
+}
+
+/// The villager slots of the maps the scripts run on.
+pub fn villagers(
+    found: &Survey,
+    folder_names: &BTreeMap<String, BTreeMap<i64, String>>,
+    tables: Option<&crate::villagers::Tables>,
+    names: &IndexMap<String, NameTable>,
+    paths: &[String],
+) -> Changing {
+    let empty = NameTable::new();
+    let npc_names = names.get("npc_id").unwrap_or(&empty);
+    let loaded = loaded_names(found, folder_names, names.get("chara_pack").unwrap_or(&empty));
+    let mut out = Changing { loaded, ..Changing::default() };
+    let Some(tables) = tables else {
+        return out;
+    };
+    let by_map = tables.slots();
+    let mut folders: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for path in paths {
+        if let Some(map) = tables.map_of(path).filter(|map| by_map.contains_key(map)) {
+            out.maps.insert(path.clone(), map.clone());
+            folders.entry(map).or_default().insert(folder(path));
+        }
+    }
+    let mut taken: HashSet<String> = folder_names
+        .values()
+        .flat_map(|chosen| chosen.values().cloned())
+        .chain(out.loaded.values().flat_map(|chosen| chosen.values().cloned()))
+        .collect();
+    for (map, map_folders) in &folders {
+        let Some(code) = map_folders.iter().map(|path| folder_code(path)).find(|code| !code.is_empty()) else {
+            continue;
+        };
+        for (slot, villagers) in &by_map[map] {
+            // a slot the folder's scripts load with characters of their own is not the villager's
+            let loaded = map_folders.iter().any(|path| {
+                found.get(path).is_some_and(|slots| slots.contains_key(slot))
+                    || folder_names.get(path).is_some_and(|chosen| chosen.contains_key(slot))
+            });
+            if loaded {
+                continue;
+            }
+            let named: Vec<String> =
+                villagers.iter().map(|villager| crate::villagers::villager_name(*villager, npc_names)).collect();
+            if let [only] = &named[..] {
+                let mut name = format!("CHARA_{code}_{}", identifier(only));
+                let header = out.header.entry(code.clone()).or_default();
+                if taken.contains(&name) && header.get(&name) != Some(slot) {
+                    name = format!("{name}_{slot}");
+                }
+                taken.insert(name.clone());
+                header.insert(name.clone(), *slot);
+                out.names.entry(map.clone()).or_default().insert(*slot, name);
+            } else {
+                let listed = match &named[..] {
+                    [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
+                    [] => continue,
+                };
+                out.notes
+                    .entry(map.clone())
+                    .or_default()
+                    .insert(*slot, format!("villager slot {slot}: {listed}, by chapter and time of day"));
+            }
+        }
+    }
+    out
+}
+
+/// disc.h's enums of the villager slots that always hold one villager.
+pub fn villager_header_text(villagers: &Changing) -> String {
+    let mut lines = Vec::new();
+    let mut enums = |doc: &str, kind: &str, by_code: BTreeMap<String, BTreeSet<(i64, String)>>| {
+        if by_code.is_empty() {
+            return;
+        }
+        lines.extend([String::new(), doc.to_string()]);
+        for (code, names) in by_code {
+            lines.push(format!("enum {kind}_slots_{} {{", code.to_lowercase()));
+            lines.extend(names.into_iter().map(|(slot, name)| format!("    {name} = {slot},")));
+            lines.push("};".into());
+        }
+    };
+    enums(
+        "// Characters a folder's scripts load into a slot that holds others at other times, named where\n\
+         // a load reaches the code that uses the slot.",
+        "loaded",
+        villagers
+            .loaded
+            .iter()
+            .map(|(path, chosen)| {
+                (folder_code(path), chosen.iter().map(|((slot, _), name)| (*slot, name.clone())).collect())
+            })
+            .collect(),
+    );
+    enums(
+        "// Villager slots: the villager the engine always loads into a slot of a map (npc_place4.cfg).",
+        "villager",
+        villagers
+            .header
+            .iter()
+            .map(|(code, names)| (code.clone(), names.iter().map(|(name, slot)| (*slot, name.clone())).collect()))
+            .collect(),
+    );
+    if lines.is_empty() {
+        return String::new();
+    }
+    lines.join("\n") + "\n"
+}
+
+/// The context a script (or a library its map's scripts alone include) is presented with on a
+/// map: the map's villager slot names are the kind's.
+pub fn on_map(context: Option<Context>, map: Option<&str>, villagers: &Changing) -> Option<Context> {
+    let mut context = context?;
+    if let Some(chosen) = map.and_then(|map| villagers.names.get(map)).filter(|chosen| !chosen.is_empty()) {
+        let members: IndexMap<i64, String> = chosen.iter().map(|(slot, name)| (*slot, name.clone())).collect();
+        context.enums.insert("chara_slot_villager".into(), members);
+    }
+    Some(context)
+}
+
+/// The context of a script in a folder (or a library only that folder's scripts include): the
+/// characters its loads put in slots, for slotflow.
+pub fn with_loaded(context: Option<Context>, folder: &str, villagers: &Changing) -> Option<Context> {
+    let mut context = context?;
+    if let Some(chosen) = villagers.loaded.get(folder) {
+        context.slot_packs = chosen.iter().map(|(key, name)| (key.clone(), name.clone())).collect();
+    }
+    Some(context)
+}
+
+/// Notes on the natives that address a villager slot several villagers can hold.
+pub fn villager_notes(nodes: &[Node], found: &Context, notes: &BTreeMap<i64, String>) -> Vec<Node> {
+    nodes
+        .iter()
+        .map(|node| match node.kind() {
+            "if" => {
+                let otherwise = match node["else"].as_array() {
+                    Some(items) => Node::List(villager_notes(items, found, notes)),
+                    None => Node::Null,
+                };
+                node.clone()
+                    .with("then", Node::List(villager_notes(list(node, "then"), found, notes)))
+                    .with("else", otherwise)
+            }
+            "while" => node.clone().with("body", Node::List(villager_notes(list(node, "body"), found, notes))),
+            "native" => {
+                let Some(declared) = found.natives.get(node["name"].as_str().unwrap_or("")) else {
+                    return node.clone();
+                };
+                let params = list(declared, "params");
+                let mut added: Vec<&String> = Vec::new();
+                for (position, arg) in list(node, "args").iter().enumerate() {
+                    let slot = params.get(position).filter(|param| param["kind"].as_str() == Some("chara_slot"));
+                    if let (Some(_), Some(note)) = (
+                        slot,
+                        arg["value"].as_i64().filter(|_| arg.kind() == "int").and_then(|value| notes.get(&value)),
+                    ) {
+                        if !added.contains(&note) {
+                            added.push(note);
+                        }
+                    }
+                }
+                if added.is_empty() {
+                    return node.clone();
+                }
+                let mut comment: Vec<String> = added.into_iter().cloned().collect();
+                if let Some(existing) = node["comment"].as_str().filter(|existing| !existing.is_empty()) {
+                    comment.insert(0, existing.to_string());
+                }
+                node.clone().with("comment", comment.join("; "))
+            }
+            _ => node.clone(),
+        })
+        .collect()
 }

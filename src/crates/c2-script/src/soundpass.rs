@@ -228,7 +228,8 @@ fn calls_native(node: &Node, name: &str) -> bool {
     match node {
         Node::List(items) => items.iter().any(|item| calls_native(item, name)),
         Node::Map(map) => {
-            (node.kind() == "native" && text(node, "name") == name) || map.values().any(|value| calls_native(value, name))
+            (node.kind() == "native" && text(node, "name") == name)
+                || map.values().any(|value| calls_native(value, name))
         }
         _ => false,
     }
@@ -439,11 +440,10 @@ fn merge_banks(
     for name in all {
         if name == EVENT_PORT {
             // the port always holds something: after paths that disagree, what either left
-            let value = port_value(
-                going_on
-                    .iter()
-                    .flat_map(|path_banks| port_values(path_banks.get(name).map(String::as_str).unwrap_or(UNKNOWN_BANK))),
-            );
+            let value =
+                port_value(going_on.iter().flat_map(|path_banks| {
+                    port_values(path_banks.get(name).map(String::as_str).unwrap_or(UNKNOWN_BANK))
+                }));
             banks.insert(name.clone(), value);
             continue;
         }
@@ -800,12 +800,8 @@ fn callers_first<'a>(functions: &[&'a Node]) -> (Vec<&'a Node>, HashMap<String, 
 
 /// The bank the events that change the event port leave there, when they agree.
 fn resting_port(started: &HashSet<String>, port_out: &HashMap<String, BTreeSet<String>>) -> Option<String> {
-    let left: BTreeSet<&String> = started
-        .iter()
-        .filter_map(|name| port_out.get(name))
-        .flatten()
-        .filter(|out| out.as_str() != AT_ENTRY)
-        .collect();
+    let left: BTreeSet<&String> =
+        started.iter().filter_map(|name| port_out.get(name)).flatten().filter(|out| out.as_str() != AT_ENTRY).collect();
     match left.into_iter().collect::<Vec<_>>()[..] {
         [bank] if bank.as_str() != UNKNOWN_BANK => Some(bank.clone()),
         _ => None,
@@ -1030,8 +1026,11 @@ pub fn program_sounds(
         .filter(|name| !called.contains(name))
         .collect();
     // only functions that load on the port or leave the map, and their callers, change the port
-    let mut related: HashSet<&str> =
-        functions.iter().filter(|function| touches_port(&function["body"])).map(|function| text(function, "name")).collect();
+    let mut related: HashSet<&str> = functions
+        .iter()
+        .filter(|function| touches_port(&function["body"]))
+        .map(|function| text(function, "name"))
+        .collect();
     let calls: Vec<Vec<String>> = if related.is_empty() {
         Vec::new()
     } else {
