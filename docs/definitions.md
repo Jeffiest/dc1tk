@@ -231,6 +231,25 @@ number. Because `set_flag` and `get_flag` take a `flag`, and a kind takes
 constants from every enum named after it, these print wherever a literal
 flag number appears.
 
+A decompiled tree includes these headers from the set itself, so they are
+not learned: to rename a constant, rename it in the set with
+
+```
+c2 defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
+```
+
+which renames the declaration in `include/`, the set's docs, line notes and
+notes that name it, and the variables, parameters and globals the set names
+after it (the decompiler calls what `get_flag(FLAG_X_SEEN)` reads `x_seen`,
+and `learn` records such names, so a set would otherwise keep the old one).
+Each `--in` folder, a decompiled tree or a mod, gets the same renames in
+its source; a tree's files that held no edits stay unedited for `changes`
+and `mod save`. A fresh decompile then prints the new name everywhere, and
+every script compiles to the same bytes. The new name must not be declared
+anywhere yet. Renaming by hand works too, as long as the header and every
+use change together: a tree whose source still says the old name no longer
+compiles.
+
 ### Libraries
 
 Libraries are found automatically and get a default home under `lib/`, in
@@ -389,6 +408,7 @@ The easiest way to write definitions is to edit decompiled code:
    not change bytecode, any edit that still compiles to the same function
    teaches the definition set. Docs come back wrapped at 100 columns, so an annotated
    script written another way decompiles to the same words on other lines.
+   Constants are renamed with `c2 defs rename` instead (see content headers).
 4. Commit the definition set.
 
 To see where things stand:
