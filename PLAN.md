@@ -263,10 +263,17 @@ do:
 3. **Names for a mod's new sounds** (done). `005_beep.wav` in
    `sp_004.snd.wav/` gives a mod's patches `SE_SP_004_BEEP = 5`; `mod check
    --disc` checks the files and pack members scripts load.
-4. **Motions from glTF.** Export writes every motion as an animation, but
-   build does not read animations back yet: decode the remaining channels
-   (per-vertex, material alpha, visibility), confirm the frame rate, and
-   write `.mot` keys and `info.cfg` `KEY` ranges from glTF animations.
+4. **Motions from glTF** (done, being tried). Build reads glTF animations
+   back into `.mot` keys and `info.cfg` `KEY`s: unedited exports and Blender
+   round trips change nothing, an edited motion is written in place (or
+   moved to the timeline's end when its length or shared frames change), and
+   a new action becomes a new `KEY`. Set Blender to 30 fps before importing.
+   Left: vertex, material alpha/colour and visibility lists go out to glTF
+   only as carried data (morph targets, `KHR_animation_pointer`,
+   `KHR_node_visibility` would expose them), motion sets 1-7 and motion-only
+   packs are not exported, deleting an action keeps its `KEY`, and a Blender
+   round trip still rebuilds every character mesh (map models compare by
+   value; characters should too).
 5. **New characters.** A model is rebuilt on the disc model's skeleton; a
    wholly new character needs a new pack, an `info.cfg` and a skeleton of
    its own from glTF, and cloth (`.clo`) left out or carried over.
