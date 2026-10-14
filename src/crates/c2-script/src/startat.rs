@@ -16,7 +16,9 @@
 //! map_start)). For a map the game never loads with load_dungeon_map but which has a map number,
 //! the patch warps that way instead. A map's number is its row in the disc's map table
 //! (map/map<language>.cfg, read by LoadMapName and looked up by GetMapName in mapselect.cpp). The
-//! engine loads the town's own script, so the warp shows a town that has none.
+//! engine loads the town's own script, so the warp shows a town that has none. The town warp
+//! clears the skip of the next music load that New Game sets for the opening, so the town's
+//! default music plays (town_function_text).
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -201,7 +203,14 @@ pub fn came_from(number: i64) -> i64 {
 /// start_dungeon_floor, d07's floor start, s06's way back to Palm Brinks): Max made the player
 /// (a new game starts as Monica; s06 does the same before going to Palm Brinks), the current map
 /// set to another town (came_from) so the town's arrival places the player at its default spot,
-/// then go_to_edit_mode.
+/// the music load allowed again (allow_bgm_load), then go_to_edit_mode.
+///
+/// New Game sets the scene's skip_load_bgm before entering the dungeon loop (TitleLoop), which
+/// keeps it through its own load (InitDungeonMain) for floor 20's load_dungeon_map("s51"), whose
+/// opening starts its own music. The warp runs before that load, so the flag is still set when
+/// the town loads, and the edit loop's map load (editLoadSound) would skip the town's default
+/// music and clear it: the town's sounds play but its music does not. d01's floor 6 clears it the
+/// same way before starting music of its own.
 pub fn town_function_text(target: &Target, number: i64, original: &str) -> String {
     [
         format!(
@@ -222,6 +231,7 @@ pub fn town_function_text(target: &Target, number: i64, original: &str) -> Strin
         "        change_player_chara(USER_CHARA_MAX);".into(),
         "        set_active_chara(0);".into(),
         format!("        set_current_map({});  // came from another town: the arrival takes its default spot", came_from(number)),
+        "        allow_bgm_load();  // New Game skips the next music load, which would be the town's".into(),
         format!("        go_to_edit_mode({number}, {});", target.program),
         "        wait;".into(),
         "        return;".into(),
@@ -388,6 +398,7 @@ MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n MAP_NAME \
                 "change_player_chara(USER_CHARA_MAX);",
                 "set_active_chara(0);",
                 "set_current_map(10);  // came from another town: the arrival takes its default spot",
+                "allow_bgm_load();  // New Game skips the next music load, which would be the town's",
                 "go_to_edit_mode(14, map_start);",
                 "wait;",
                 "return;",
