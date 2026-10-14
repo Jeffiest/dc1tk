@@ -13801,7 +13801,7 @@
    "loose": "d4df51f8fb2baccb",
    "locals": [
     "balance_valley_arrival_seen",
-    "s18_arrival_seen"
+    "yorda_tree_arrival_seen"
    ],
    "doc": "Map start. With flag 300 set and 332 clear it plays the arrival scene (event 332) and places the player at (0, 0, -600); with flag 300 and 332 both set it plays the condor drop-off scene. Otherwise, and after the drop-off, it places the player on the ledge at (-1306, 200.4, -546). It always shows the rev_floor NPC and fades in."
   },
@@ -17685,9 +17685,9 @@
    "locals": [
     "balance_valley_arrival_seen",
     "lin_ill_scene_seen",
-    "clinic_e306_seen",
+    "lin_poisoned_seen",
     "lao_chao_cooking_seen",
-    "clinic_e328_seen",
+    "miracle_dumplings_delivered_seen",
     "lin_recovered",
     "party_npc",
     "sound_id"
@@ -22710,7 +22710,7 @@
    "name": "setup_s01_map",
    "loose": "105d53861a66a33a",
    "locals": [
-    "s01_event_201_seen"
+    "first_walk_outside_channel_seen"
    ],
    "doc": "Parks the train. On the first visit (flag 201 clear) it marks floor 8 of the Underground Channel tree map (this exit) as visited and plays the story 201 walk scene; otherwise it walks the player in from the channel exit. Then updates the train event point."
   },
