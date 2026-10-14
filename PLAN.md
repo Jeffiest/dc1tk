@@ -152,29 +152,30 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    messages): `c2` reads them for names and comments but cannot write them.
    Export them as text, build them back byte for byte, and let mods replace
    and add lines (an item's name, a translation).
-3. **Game data.** Item and weapon stats, monster stats, shops, inventions and
-   Georama parts are not located yet. Find where each lives (the `.cfg`
-   files, other data files or tables in `SCES_511.90`), then give each an
-   editable form and a `mod.json` id.
+3. **Game data** (located, partly editable). Where every kind lives is in
+   [data](docs/assets/data.md). Editable through `mod.json` (`data:items`,
+   `data:shops`, `data:monsters`, JSON with only the changed fields): item
+   and weapon tables (`menu/cfg7`), prices and shop goods per chapter, and
+   monster stats (a table in `SCES_511.90`, patched in place). Not yet tried
+   in the game. Still to make editable: inventions, Georama parts, fishing,
+   floor medals and monster placement (plain cfg, the same way), and the
+   other executable tables (spectrumization, character growth, Donny's
+   shop, fish); adding new items or shops; the remaining unknown fields.
 4. **Memory budgets** (also below, under mod assets): measure what models,
    textures and sound banks may grow to, so `build` can say a mod will not
    fit instead of the game crashing.
 
 ## Next: modding
 
-- **Overrides that survive renames.** A patch overrides a function by name,
-  and the definitions still rename functions. Record the fingerprint of
-  each function a patch overrides, so when a later decompile renames it,
-  `mod check` finds it by fingerprint and says the new name (or follows it).
+Done: mods that need mods (`requires`, `after`), editor headers for patches
+(`mod header`), and overrides that follow a renamed function by its
+fingerprint (`mods/NAME/fingerprints.json`, `mod check --rename`); see
+[modding](docs/modding.md).
+
 - **Wrapping natives.** `#pragma override place_monster` in a patch would
   route every call the target makes to a native through the mod's function,
   so swapping a fight's monsters would not mean copying the function that
   places them.
-- **Editor support for patches.** clangd does not know a target's own
-  functions and globals in a patch. `mod override` could write a header of
-  their declarations beside the patch.
-- **Mods that need mods.** `requires` and `after` in `mod.json`, so a mod
-  can build on another's library or numbers and `build` orders them.
 - **Whole-file mods into patches.** A `mod slim` that compares each copied
   file with the tree and writes overrides for the functions that changed.
 - **Save counters.** `NEW_COUNTER` once the number of 16-bit save counters is
