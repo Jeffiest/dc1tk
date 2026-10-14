@@ -45,14 +45,25 @@ this repository). Map meshes are the MDS format of
   made in Blender stands where it was put with a picture of its own, its
   collision copy blocks the player, and a repainted map picture shows.
 
+- Template libraries (the dungeon floors' parts, add maps) export with each
+  template shown once and build their edits back into the templates
+  (section 8); random floors' layouts are `data:layouts`
+  ([dungeons](dungeons.md)).
+- New maps (section 9): a mod's `"add": {"map:m05x": {"file": ...,
+  "like": "m05"}}` builds a map of its own from an edited copy of another's
+  scene, with a row in every language's map table, so `--start-at m05x`
+  reaches it. Not yet tried in the game.
+
 **Not yet:** how the VU program
 combines vertex colour with lighting is untraced; `invent`'s int and float
 and `sound`'s int are unnamed.
 
 ## 1. Files of a map
 
-A map named `s17` lives at `map/<first letter>/<letters 1-3>/<letters 4-6>/`
-(`GetMapPath`, `mapselect.cpp:197`), so `map/s/s17/`:
+A map named `s17` lives at `map/<first letter>/<letters 1-3>/<letters 4-6>/`,
+the third folder only for a name of six letters or more (`GetMapPath`,
+`mapselect.cpp:197`), so `map/s/s17/`, `map/m/m05/m05x.map` and
+`map/i/i03/h02/i03h02.map`:
 
 | file | what |
 |---|---|
@@ -87,11 +98,12 @@ Six maps sit where the path rule never finds them (`d/d02/f01r/d02f01r.map`,
 5. Run the parts pass: the add map first (`map.cpp:1352`), then the map, then
    its `.cfg`, then `PlacePartsEnd`.
 
-`map/map.cfg` and `map0.cfg`-`map6.cfg` (one per language, 189 entries) list
-the maps: `MAP_NAME "name","title","add_path",type,sel_type[,snd_id[,area_no]]`.
-A map's number is its line, so a new map is appended. 22 map files are not
-listed (dungeon variants and debug maps loaded by name). `snd2/MAP_index.txt`
-gives sound sets by a map's sound id.
+`map0.cfg`-`map6.cfg` (one per language, 189 entries; `map/map.cfg`, 86,
+is an older table nothing reads) list the maps:
+`MAP_NAME "name","title","add_path",type,sel_type[,snd_id[,area_no]]`.
+A map's number is its line, so a new map is appended (section 9). 22 map
+files are not listed (dungeon variants and debug maps loaded by name).
+`snd2/MAP_index.txt` gives sound sets by a map's sound id.
 
 ## 2. The .map file
 
@@ -445,14 +457,12 @@ nothing there.
 - **Dungeon floor libraries** (28 files `d0Nf..`): templates only. Scripts call
   `load_dungeon_map(map, room_cfg, flags)` and `CAutoMapGen::Build`
   (`automap.cpp:595`) lays out a fixed preset (flag 0x40), a preset by floor
-  (0x2), or a random 20×16 (0x8) or 14×14 grid from `dungeon/cfg_file/<cfg>.cfg`
-  (`GRID_SIZE 320,320`, then per room `ROOM_ID`, `ROOM_SIZE`, `ROOM_RATE`,
-  `ROOM_FIXED`, `RD index,attr,...` rows, `ROOM_END`; `automap.cpp:141-215`).
-  RD indices are a hard-coded table of 277 template names
-  (`PartsInfoData__DATA.s`: `way00`-`51`, `room00`-`59`, `door00`-`99`,
-  `part00`-`31`, `step00`-`31`) with each cell's kind and open sides. Each cell's
-  template is placed at (x·320, 0, y·320), plus trees or mountains, the
-  geostone `p01_gio`, stones `obj01` and pots `obj02`.
+  (0x2), or a random 20×16 (0x8) or 14×14 grid from `dungeon/cfg_file/<cfg>.cfg`.
+  Each cell's template, one of the 276 the executable names (`way00`-`51`,
+  `room00`-`59`, `door00`-`99`, `part00`-`31`, `step00`-`31`), is placed at
+  (x·320, 0, y·320), plus trees or mountains, the geostone `p01_gio`, stones
+  `obj01` and pots `obj02`. The format, the generator and editing both are in
+  [dungeons](dungeons.md).
 - **Add maps** (5 under `map/cmn`): template libraries other maps place (train,
   `trn2`/`s36`, battleship01/02, and `g00`, the 52 Georama edit parts).
 - **Georama towns**: the base is a fixed scene (`g0N.map` with `g00`'s
@@ -583,7 +593,9 @@ and gives what to write; `c2 build` does so for each `"map:NAME":
   maps then show it changed too); one the
   disc lacks goes at the end of the map's own first `.img`, in the format of
   its first picture, its sides powers of two up to 1024. The exporter's
-  placeholder for a missing picture is not a picture to add.
+  placeholder for a missing picture is not a picture to add, nor its stand-in
+  for a render target (`no_image`) a change, though another map holds a
+  picture of that name with pixels (d01f01's `d01b17`).
 
 ## 8. The glTF scene (conventions shared by the exporter, the importer and the Blender add-on)
 
@@ -622,6 +634,18 @@ copy of the template of their own (a new template name; scripts never name
 templates). New placements are appended (slots are never reordered); a
 deleted placement is kept with its show flag 0, so later slots keep their
 numbers.
+
+**Template libraries.** A map that places none of its templates (the 28
+dungeon floor libraries, the add maps, `g00`) shows each template once (the
+first of a name) as a placement node with `"preview": true` and no slot,
+laid out on the ground in rows by family (the name before its digits), 480
+units apart (`map_scene::template_previews`). Its pieces and points are
+edited as any placement's and fold into the template on import; the preview
+places nothing, so moving it changes nothing, and the add-on offers no
+Duplicate for it. A floor's parts are placed at run time ([dungeons](dungeons.md)
+section 6). d01f01 (244 templates, 296 models) goes through the add-on in
+Blender 5.1 and back unchanged, and a piece raised in one preview changes
+that template alone.
 
 **Collision.** Pieces of kind `collision` (floor and wall, `-a`) and `camera`
 (`-c`) hold triangles whose material names give their attributes
@@ -685,3 +709,73 @@ what the importer needs and the importer allows for the rest:
 - **Exporting:** `c2 map-export NAME [-o DIR]` writes `DIR/NAME.gltf` (by
   default `extracted/maps/NAME/`); `--all` every fixed scene. The glTF scene
   is named after the map.
+
+## 9. New maps
+
+**What the engine needs.**
+
+- **A row in the map table.** `LoadMapName` (`mapselect.cpp`) runs
+  `map/map<language>.cfg` at boot into `MapNameBuff` (0x8000 bytes):
+  `MAP_NAME_NUM n` sizes the table (n + 1 rows of 0x1C) and the strings follow
+  it; each `MAP_NAME` fills the next row unchecked, and `GetMapNameInfo` finds
+  rows below n only. So a new map is a row appended with n raised: every other
+  map keeps its number, which saves (`map_no`) and scripts hold. The tables
+  fill 9,241 to 13,807 bytes (Korean), room for hundreds of rows. The row's
+  fields: `type` (1 a Georama town with edit data, 2 an interior whose events
+  are a shared script's, 5 a map with areas of its own; the edit loop reads
+  it), `sel_type` (the debug map list), `snd_id` (the sound
+  set and default music, `GetMapSndDataID`), `area_no` (the save's area of
+  the last main map) and `add_path` (an add map loaded with it). Every
+  language's table numbers the maps alike and needs the row.
+- **Its files** at `GetMapPath(name)` (section 1): the `.map`, and when
+  present the `.cfg`, `.mpk`, `.ipk`, `.efp`, `.sky` of the same name
+  (`GetLoadMapInfo`, `mapjump.cpp:147`); the members of its packs are found by
+  the names the `.map`'s `IMG` and `PCP` lines give, so a copy may keep
+  another map's (`e05.img`, `m05_0.pcp`). Its script is
+  `<path>/<name>_<language>.stb`, else `<name>.stb` (`LoadMapScript`,
+  `LoadScript`); a map without one loads with no events. Each new file takes
+  a record of `DATA.HD4` (13 bytes and its path; about 7.6 KB are free, so 25
+  to 35 new maps of 4 to 6 files).
+- **A way in.** Towns are entered with `go_to_edit_mode(number, program)`
+  (what `--start-at` does), other maps from a script with
+  `jump_to_map(point, name or number, program)` (a door is an event point
+  whose program, in the map's script, calls it), `go_to_interior(point,
+  name)` for an interior (a sub map, 320 placements), and in the dungeon loop
+  `load_dungeon_map(name)`. The program runs on arrival.
+- **Save flags.** The save keeps map flags (opened chests and the like) for
+  map numbers below 256 (`SAVE_MAP_FLAG_MAX`): the disc uses 189, so 67 new
+  maps keep them; a map numbered past that loads but keeps none.
+- **Memory** as any map's ([memory](memory.md)).
+
+**Made by a mod.** A new map is a copy of a map the disc has, edited as a
+scene: export the map (`c2 map-export m05`), edit it in Blender, and give it
+under `add` with the map it was made from:
+
+```json
+"add": {
+  "map:m05x": {"file": "maps/m05x/m05.gltf", "like": "m05", "title": "Palm Brinks Park II"}
+}
+```
+
+The name is lower-case letters, digits and `_`, from a letter, at most 12
+long (the engine's file names are 32 bytes), and no map of the disc's. `build`
+imports the scene against the like map's files as a `map:` line under
+`replace` would, and writes under the new name in its own folder
+(`map/m/m05/m05x.map`, `.mpk`, `.ipk`; the `.cfg`, `.efp` and `.sky` copied):
+the rebuilt `.map`, the model pack with the models that changed and the new
+ones, the texture pack with the changed and new pictures (a picture another
+map's pack holds is changed there, as in any map edit). It appends to every
+language's table a copy of the like map's row (type, list, sound set, area,
+add map) with the new name, numbered after the disc's maps, and `title` (printable ASCII) in
+place of the like map's title when given. Two mods adding one name are
+refused. `--start-at m05x` (or `"start_at": "m05x"`) counts the new map and
+enters it as a town (`go_to_edit_mode`).
+
+Checked: a copy of `m05` with its 63 trees raised 250 units and two ground
+pictures repainted builds (4 new files, 7 tables), and `c2 map-export m05x`
+from the built image reads it back as made, while `m05` keeps its pictures.
+Not yet tried in the game. Left: the new map's own script (`build` compiles
+only scripts the disc has; a script compiled with `c2 compile` can be given
+as a game file at `map/m/m05/m05x_1.stb` and the like), and a way in from the
+game's own maps (a door point and a program calling `jump_to_map` in an
+existing map's scene and script).

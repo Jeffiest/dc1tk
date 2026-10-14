@@ -455,7 +455,14 @@ character pack; packs inside packs work the same way).
   adds new models to the map's model pack and pictures to its textures.
   Unedited scenes change nothing. An example is
   [map-edit](examples/map-edit/); the formats are in
-  [maps](assets/maps.md).
+  [maps](assets/maps.md). A dungeon floor's map (`c2 map-export d01f01`)
+  shows each of its parts once, to edit their models, collision and points;
+  the floor generator places them ([dungeons](assets/dungeons.md)). A **new
+  map** is an edited export of another under `add`:
+  `"map:m05x": {"file": "maps/m05x/m05.gltf", "like": "m05", "title": "Park"}`
+  writes its files under the new name, appends its row to every language's
+  map table, and `--start-at m05x` goes there ([maps](assets/maps.md)
+  section 9).
 - **Game data as JSON.** `mod asset ISO NAME data:items data:shops
   data:monsters` writes `data/items.json` (every item's common data, with
   its weapon, usable effect, attachment, ridepod part or fish stats nested:
@@ -471,7 +478,10 @@ character pack; packs inside packs work the same way).
   parts), `data:medals` (each floor's fastest time, fishing record, seal,
   Spheda prizes, practice medal), `data:floors` (each floor's monsters),
   `data:fishing` (spots, race opponents, prizes, fish species and race
-  kinds) and `data:characters` (starting HP and equipment, WHP gained at a
+  kinds), `data:layouts` (the room layouts dungeon floors are built from:
+  each room's rows of parts, as text, how often it is chosen; rooms may be
+  added, see [dungeons](assets/dungeons.md)) and `data:characters`
+  (starting HP and equipment, WHP gained at a
   weapon level-up, Monica's monster forms, badge growth). Keep only the
   records and fields you change, each record with the keys that name it
   (`item`, `shop`, `id`, `recipe`, `dungeon` and `floor`, ...):

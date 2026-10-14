@@ -541,6 +541,7 @@ fn line(module: &str, key: &str, file: &Path, add: bool) -> Line {
         bank: add.then(|| "bank:SP_004".to_string()),
         add,
         like: None,
+        title: None,
     }
 }
 

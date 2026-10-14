@@ -9,7 +9,8 @@
 //!
 //! Placements keep their slots, since scripts can address them by number: an edited one is matched
 //! by the slot it came from, a new one is appended, and one deleted from the scene stays with its
-//! show flag 0.
+//! show flag 0. A template library's previews (one per template, map_scene) fold into their
+//! templates the same way and are never placed.
 
 use std::collections::{HashMap, HashSet};
 
@@ -31,6 +32,10 @@ pub struct PlacementEdit {
     pub placement: Placement,
     pub pieces: Vec<Piece>,
     pub points: Option<Vec<Point>>,
+    /// A template library's preview of one of its templates (map_scene's `preview`): its contents
+    /// are the template's, but it places nothing.
+    #[serde(default)]
+    pub preview: bool,
 }
 
 /// A map as the scene has it.
@@ -67,6 +72,7 @@ pub fn scene_of(map: &MapFile) -> SceneEdit {
                 placement: placement.clone(),
                 pieces: template.map(|template| template.pieces.clone()).unwrap_or_default(),
                 points: template.and_then(|template| template.points.clone()),
+                preview: false,
             }
         })
         .collect();
@@ -190,6 +196,9 @@ pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
     let mut seen = vec![false; original.placements.len()];
     let mut appended = Vec::new();
     for (at, edit) in scene.placements.iter().enumerate() {
+        if edit.preview {
+            continue;
+        }
         let placement = Placement { template: placed[at].clone(), ..edit.placement.clone() };
         match edit.slot {
             Some(slot) if slot < seen.len() => {

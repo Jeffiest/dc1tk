@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 
 use c2_assets::cfg_text::Edit;
 use c2_assets::data_table::{self, Table as DataTable};
+use c2_assets::dungeon_layout::{self, Layouts};
 use c2_assets::item_data::{self, Items};
 use c2_assets::monster_data::{self, Monsters, Patch};
 use c2_assets::shop_data::{self, Shops};
@@ -55,6 +56,8 @@ enum Table {
     Shops(Shops, Vec<String>, DataTable),
     Monsters(Monsters),
     Data(DataTable, Vec<String>),
+    /// Dungeon floor layouts, which add and rewrite whole rooms rather than edit arguments.
+    Layouts(Layouts),
 }
 
 /// A file by its DATA.DAT path, a pack's member as `pack.d/member`.
@@ -85,6 +88,7 @@ fn load(table: &str, elf: &[u8], current: &dyn Fn(&str) -> Result<Vec<u8>>) -> R
             Table::Shops(Shops::read(&read_all(&paths)?, names.as_deref())?, paths, exe_tables::donny(elf)?)
         }
         "monsters" => Table::Monsters(Monsters::read(elf)?),
+        "layouts" => Table::Layouts(Layouts::read(&read_all(&dungeon_layout::paths())?, dungeon_layout::parts(elf)?)?),
         kind if game_data::KINDS.contains(&kind) => {
             let paths = game_data::paths(kind);
             Table::Data(game_data::read(kind, &read_all(&paths)?, elf)?, paths)
@@ -153,6 +157,7 @@ impl Table {
             }
             Table::Monsters(monsters) => monsters.to_json(),
             Table::Data(table, _) => table.to_json(),
+            Table::Layouts(layouts) => layouts.to_json(),
         }
     }
 
@@ -169,6 +174,7 @@ impl Table {
             }
             Table::Monsters(monsters) => (Vec::new(), monsters.changes(given, module)?),
             Table::Data(table, _) => table.changes(given, module)?,
+            Table::Layouts(_) => bail!("layouts are changed by apply_layouts"),
         })
     }
 
@@ -177,7 +183,7 @@ impl Table {
         Ok(match self {
             Table::Items(items, paths, _) => (items.apply(edits)?, paths),
             Table::Shops(shops, paths, _) => (shops.apply(edits)?, paths),
-            Table::Monsters(_) => (Vec::new(), &[]),
+            Table::Monsters(_) | Table::Layouts(_) => (Vec::new(), &[]),
             Table::Data(table, paths) => (table.apply(edits)?, paths),
         })
     }
@@ -265,6 +271,29 @@ pub fn apply_data(
         };
         let loaded = load(table, &elf, &current)?;
         let mut change = DataChange { table: table.to_string(), changed: Vec::new(), files: Vec::new() };
+        if let Table::Layouts(layouts) = &loaded {
+            // whole rooms, written again where they change (no pack holds a room script)
+            let mut found = Vec::new();
+            for line in &mine {
+                let given = layouts
+                    .changes(&read_table(line)?, &line.module)
+                    .with_context(|| format!("{} (mod {})", line.key, line.module))?;
+                change.changed.extend(given.iter().map(|edit| (edit.module.clone(), edit.what.clone())));
+                found.extend(given);
+            }
+            let written = layouts.apply(&found)?;
+            let mut rewritten = Vec::new();
+            for (path, data) in dungeon_layout::paths().into_iter().zip(written) {
+                let old = current(&path)?;
+                if data != old {
+                    change.files.push((path.clone(), data.len(), old.len()));
+                    rewritten.push((path, data));
+                }
+            }
+            out.extend(rewritten);
+            changes.push(change);
+            continue;
+        }
         let mut edits: Vec<Edit> = Vec::new();
         let mut patched = false;
         for line in &mine {

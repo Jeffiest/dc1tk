@@ -379,6 +379,59 @@ fn piece_node(piece: &Piece, order: usize, kind: &str) -> SceneNode {
     }
 }
 
+/// How far apart template previews stand: a dungeon cell (320) and half again.
+pub const PREVIEW_SPACING: i32 = 480;
+/// Previews a row holds before the next row of the same family.
+pub const PREVIEW_ROW: usize = 10;
+
+/// A template library (a map placing none of its templates: the dungeon floors' parts, which the
+/// floor generator places at run time, and the add maps) shown as one placement of each template,
+/// marked `preview`, so its pieces can be seen and edited; reading back folds a preview's pieces
+/// and points into its template and never makes it a placement. Templates are laid out on the
+/// ground in rows by family (the name before its digits: `way`, `room`, `door`, ...), the first of
+/// a repeated name only, as the engine finds it.
+fn template_previews(map: &MapFile, kind_of: &dyn Fn(&str) -> String) -> Vec<SceneNode> {
+    let mut families: Vec<(String, usize)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut row = 0usize;
+    let mut out = Vec::new();
+    for template in &map.templates {
+        if !seen.insert(template.name.as_str()) {
+            continue;
+        }
+        let family = template.name.trim_end_matches(|c: char| c.is_ascii_digit()).to_string();
+        let column = match families.iter_mut().find(|(known, _)| *known == family) {
+            Some((_, count)) => {
+                *count += 1;
+                *count - 1
+            }
+            None => {
+                if !families.is_empty() {
+                    row += families.last().map_or(1, |(_, count)| count.div_ceil(PREVIEW_ROW));
+                }
+                families.push((family, 1));
+                0
+            }
+        };
+        let (x, z) = ((column % PREVIEW_ROW) as i32, (row + column / PREVIEW_ROW) as i32);
+        let pos = [Num::Int(x * PREVIEW_SPACING), Num::Int(0), Num::Int(z * PREVIEW_SPACING)];
+        let mut children: Vec<SceneNode> =
+            template.pieces.iter().enumerate().map(|(order, piece)| piece_node(piece, order, &kind_of(&piece.model))).collect();
+        children.extend(template.points.iter().flatten().enumerate().map(|(order, point)| point_node(point, order)));
+        out.push(SceneNode {
+            name: format!("place:{}", template.name),
+            trs: Some(map_transform::to_trs(&pos, &[Num::Int(0); 3], &[Num::Int(1); 3])),
+            extras: json!({"c2": {
+                "role": "placement", "name": template.name, "template": template.name, "preview": true,
+                "show": 1, "group": "", "far_clip": Value::Null,
+            }}),
+            children,
+            model: None,
+        });
+    }
+    out
+}
+
 /// The scene of a map. `kind_of` gives a piece model's kind (model, collision, camera, chara) from
 /// its pack's info.cfg TYPE.
 pub fn build_scene(map: &MapFile, map_name: &str, kind_of: &dyn Fn(&str) -> String) -> Result<SceneNode> {
@@ -405,6 +458,9 @@ pub fn build_scene(map: &MapFile, map_name: &str, kind_of: &dyn Fn(&str) -> Stri
             children,
             model: None,
         });
+    }
+    if map.placements.is_empty() {
+        placements.extend(template_previews(map, kind_of));
     }
     let points = map.points.iter().flatten().enumerate().map(|(order, point)| point_node(point, order)).collect();
     let cameras = map
@@ -592,7 +648,8 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
         let c2 = node.c2();
         let name = node.exact_name();
         let what = format!("placement {name}");
-        let slot = c2["slot"].as_u64().map(|slot| slot as usize).filter(|&slot| slot < original.placements.len());
+        let preview = c2["preview"].as_bool().unwrap_or(false);
+        let slot = c2["slot"].as_u64().map(|slot| slot as usize).filter(|&slot| slot < original.placements.len() && !preview);
         let old = slot.map(|slot| &original.placements[slot]);
         let template_name = c2["template"].as_str().map(str::to_string).or_else(|| old.map(|p| p.template.clone()));
         let template_name = template_name.ok_or_else(|| Error::invalid(format!("{what}: no template")))?;
@@ -631,7 +688,7 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
                     .collect::<Result<Vec<_>>>()?,
             )
         };
-        placements.push(PlacementEdit { slot, placement, pieces, points });
+        placements.push(PlacementEdit { slot, placement, pieces, points, preview });
     }
 
     let old_points = original.points.as_deref().unwrap_or(&[]);
@@ -764,6 +821,52 @@ mod tests {
         for child in &mut node.children {
             blenderish(child, depth + 1);
         }
+    }
+
+    #[test]
+    fn a_template_library_shows_each_template_once_and_places_none() {
+        let mut map = MapFile::default();
+        let piece = |model: &str| Piece {
+            model: model.into(),
+            show: Num::Int(1),
+            name: model.trim_end_matches(".mds").into(),
+            pos: [Num::Int(0); 3],
+            rot: [Num::Int(0); 3],
+            scale: [Num::Int(1); 3],
+            materials: None,
+            col_type: None,
+            time: [Num::Int(0); 2],
+        };
+        for (name, model) in [("way00", "w00-m.mds"), ("way01", "w01-a.mds"), ("room00", "r00-m.mds"), ("way00", "x.mds")] {
+            map.templates.push(crate::mapfile::Template {
+                name: name.into(),
+                far_clip: None,
+                light_flag: [Num::Int(0); 2],
+                move_flag: Some([Num::Int(0); 4]),
+                pieces: vec![piece(model)],
+                points: None,
+            });
+        }
+        let mut scene = build_scene(&map, "d09f01", &kind_of).unwrap();
+        let previews = &scene.children[0].children;
+        let shown: Vec<(String, [f64; 3])> =
+            previews.iter().map(|node| (node.exact_name(), node.trs.as_ref().unwrap().translation)).collect();
+        assert_eq!(
+            shown,
+            [("way00".into(), [0.0, 0.0, 0.0]), ("way01".into(), [480.0, 0.0, 0.0]), ("room00".into(), [0.0, 0.0, 480.0])]
+        );
+        blenderish(&mut scene, 0);
+        let edit = read_scene(&scene, &map).unwrap();
+        assert!(edit.placements.iter().all(|placement| placement.preview && placement.slot.is_none()));
+        assert_eq!(map_edit::rebuild(&map, &edit).unwrap(), map);
+        // a piece moved in a preview moves in its template; nothing is placed
+        let mut edit = edit;
+        let way01 = edit.placements.iter_mut().find(|placement| placement.placement.name == "way01").unwrap();
+        way01.pieces[0].pos[1] = Num::Int(-20);
+        let out = map_edit::rebuild(&map, &edit).unwrap();
+        assert!(out.placements.is_empty());
+        assert_eq!(out.templates[1].pieces[0].pos[1], Num::Int(-20));
+        assert_eq!((out.templates.len(), &out.templates[3]), (4, &map.templates[3]));
     }
 
     #[test]

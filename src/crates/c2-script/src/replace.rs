@@ -17,6 +17,7 @@
 //!   "sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"},
 //!   "file:mods/calc/ui.img": {"file": "ui", "like": "texture:logo_d00"},     a new texture file of PNGs
 //!   "file:mods/calc/calc.chr": {"file": "calc/calc.gltf", "like": "model:uki"} a new pack from a glTF
+//!   "map:m05x": {"file": "maps/m05x/m05x.gltf", "like": "m05", "title": "Park"} a new map from a map's scene
 //! }
 //! ```
 //!
@@ -62,13 +63,17 @@ use crate::{mods, Error, Result};
 pub const REPLACE: &str = "replace";
 pub const ADD: &str = "add";
 pub const FILE: &str = "file:";
-/// A map edited as a glTF scene (docs/assets/maps.md section 8): `"map:s17": "maps/s17/s17.gltf"`.
+/// A map edited as a glTF scene (docs/assets/maps.md section 8): `"map:s17": "maps/s17/s17.gltf"`;
+/// under "add", a new map made from another's scene (`{"file": ..., "like": "m05"}`, section 9).
 pub const MAP: &str = "map:";
+/// The longest name a new map may have: its files are `<name>_<language>.stb` and the like in the
+/// engine's 32-byte file names.
+pub const MAP_NAME_MOST: usize = 12;
 /// A table of game data edited as JSON (docs/assets/data.md): `"data:items": "data/items.json"`.
 pub const DATA: &str = "data:";
 /// The tables a data: line can name.
-pub const DATA_TABLES: [&str; 9] =
-    ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters"];
+pub const DATA_TABLES: [&str; 10] =
+    ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters", "layouts"];
 
 /// One line of a mod's replace or add.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,8 +88,11 @@ pub struct Line {
     /// The bank an added sound goes into.
     pub bank: Option<String>,
     pub add: bool,
-    /// For a file: line made whole from a common format, the template: an asset id or disc path.
+    /// For a file: line made whole from a common format, the template: an asset id or disc path;
+    /// for a new map, the map it is made from.
     pub like: Option<String>,
+    /// A new map's title in the map table (every language's), instead of the like map's.
+    pub title: Option<String>,
 }
 
 impl Line {
@@ -169,6 +177,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         bank: None,
         add,
         like: None,
+        title: None,
     };
     let kind = ids::kind_of(key);
     if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
@@ -213,6 +222,17 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
                 let like = value.as_str().ok_or_else(|| line.fail("\"like\" is an asset id or a disc path"))?;
                 line.like = Some(like.replace('\\', "/").trim_matches('/').to_string());
             }
+            "like" if line.is_map() && add => {
+                let like = value.as_str().ok_or_else(|| line.fail("\"like\" is the map the new one is made from"))?;
+                line.like = Some(like.trim_start_matches(MAP).to_string());
+            }
+            "title" if line.is_map() && add => {
+                let title = value
+                    .as_str()
+                    .filter(|title| title.chars().all(|c| (' '..='~').contains(&c)) && !title.contains('"'));
+                let title = title.ok_or_else(|| line.fail("\"title\" is text of printable ASCII without quotes"))?;
+                line.title = Some(title.to_string());
+            }
             _ => return Err(line.fail(format!("unknown option \"{option}\""))),
         }
     }
@@ -241,8 +261,22 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     }
     if line.is_map() {
         let name = line.map_name();
-        if add || name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        if !add && (name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
             return Err(line.fail("a map: line replaces a map, named as the game names it (map:s17)"));
+        }
+        if add {
+            let fits = (1..=MAP_NAME_MOST).contains(&name.len())
+                && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                && name.starts_with(|c: char| c.is_ascii_lowercase());
+            if !fits {
+                return Err(line.fail(format!(
+                    "a new map is named in lower-case letters, digits and _, from a letter, at most {MAP_NAME_MOST} long (map:m05x)"
+                )));
+            }
+            let like = line.like.as_deref().unwrap_or_default();
+            if like.is_empty() || !like.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                return Err(line.fail("a new map names the map it is made from: {\"file\": ..., \"like\": \"m05\"}"));
+            }
         }
         if !(line.file.is_file() && suffix_is(&line.file, ".gltf")) {
             return Err(line.fail(format!("{} is not a .gltf file (c2 map export writes one)", line.shown)));
@@ -337,7 +371,7 @@ fn check_like(line: &Line, like: &str) -> Result<()> {
 pub fn templates(lines: &[Line], index: Option<&Index>) -> Result<Templates> {
     let mut out = Templates::new();
     for line in lines {
-        let Some(like) = &line.like else {
+        let Some(like) = line.like.as_ref().filter(|_| line.is_file()) else {
             continue;
         };
         let template = match ids::kind_of(like) {
