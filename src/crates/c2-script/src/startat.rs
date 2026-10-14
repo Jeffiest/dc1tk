@@ -187,9 +187,15 @@ pub fn function_text(target: &Target, original: &str) -> String {
     .join("\n")
 }
 
-/// The warp into a town map, as the game's dungeon scripts leave for one (d07's floor start, d01's
-/// start_dungeon_floor). d01 calls set_current_map with the dungeon's own number first, for the
-/// town's way back to it; a new game has no dungeon to go back to, so the warp does not.
+/// The map a town warp comes from: the Underground Channel (d01f01), the dungeon a new game is in.
+/// d01's start_dungeon_floor sets it with set_current_map before leaving for a town, and towns'
+/// arrival programs place the player by the map they came from (m01 at its dungeon gate when it
+/// was a dungeon); with no previous map they place no one, and the player falls through the map.
+pub const FROM_MAP: i64 = 55;
+
+/// The warp into a town map, as the game's dungeon scripts leave for one (d01's
+/// start_dungeon_floor, d07's floor start): the previous map set to the new game's dungeon
+/// (FROM_MAP), then go_to_edit_mode.
 pub fn town_function_text(target: &Target, number: i64, original: &str) -> String {
     [
         format!(
@@ -207,6 +213,7 @@ pub fn town_function_text(target: &Target, number: i64, original: &str) -> Strin
         "        init_event();".into(),
         "        fade_out(1);".into(),
         "        wait;".into(),
+        format!("        set_current_map({FROM_MAP});  // Underground Channel: towns place the player by it"),
         format!("        go_to_edit_mode({number}, {});", target.program),
         "        wait;".into(),
         "        return;".into(),
@@ -370,6 +377,7 @@ MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n MAP_NAME \
                 "init_event();",
                 "fade_out(1);",
                 "wait;",
+                "set_current_map(55);  // Underground Channel: towns place the player by it",
                 "go_to_edit_mode(14, map_start);",
                 "wait;",
                 "return;",
