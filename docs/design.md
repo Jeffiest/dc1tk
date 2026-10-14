@@ -26,7 +26,7 @@ extracted/assets/
     <id>.gltf, <id>.bin         skeleton, skin, meshes, motions as animations
   sounds/<bank>/<NNN>_<NAME>.wav  one per entry that plays a sample (<NNN>.wav when unnamed)
   maps/<map>/<map>.gltf         later: the map's pieces placed as the .map file places them
-  text/<file>.txt               later: message files
+  text/<language>/<name>.txt    the message files' text, one per name and language (assets/text.md)
 ```
 
 Folders are only for browsing (`<group>` is the folder of the disc file
@@ -38,15 +38,17 @@ or from `extracted/disc/`.
 
 ### What is an asset
 
-The tree reads three kinds of game file wherever they are, on their own or
+The tree reads four kinds of game file wherever they are, on their own or
 as members of packs (as deep as `extract` goes): texture files (`.img`),
-character packs (`.chr`) and sound banks (`.snd`). Over the PAL disc:
+character packs (`.chr`), sound banks (`.snd`) and message files (`.mes`).
+Over the PAL disc:
 
 | | places on the disc | distinct (name and bytes) | distinct (bytes alone) | assets |
 |---|---|---|---|---|
 | pictures | 15,004 in 5,217 texture files | 7,036 | 6,452 | 7,036 textures |
 | character packs | 2,997 | 2,744 | 2,692 | 2,410 models |
 | sound banks | 861 | 846 | 846 | 846 banks, 16,107 sound entries |
+| message files | 310 | 118 | 111 | 120 texts |
 
 An asset is a distinct content under one of the game's names, extracted
 once; changing it changes every place the disc has it. A content found
@@ -98,6 +100,13 @@ bare-named version. So `sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW`, and
 maps one to the other); entries without a name are only by number
 (`sound:EV_000_130/2`, `sound:SP_001@inv0_bg/3`). 1,497 of the 16,107
 entries have names.
+
+Texts are `text:`, the language and the file's name without its language
+number (`text:en/allmenu`, `text:fr/system` for `meswin/system_2.mes`): one
+id for every version of a file of that name and language, unlike the other
+kinds, since a mod's text changes messages and each place keeps the rest
+of its own version. Copies in the old language folders take `@` and their
+folder (`text:en/system@meswin-usa`). See [message files](assets/text.md).
 
 ### The manifest
 
@@ -165,7 +174,9 @@ mod is still the extracted one.
   decoded, and entries that play nothing (9,757 numbered lines of the
   banks' cfgs). A bank's folder of WAVs is what `mod asset --as wav`
   would write, with names after the numbers.
-- Maps and text: later. The `.map` file is text placing `.mds` pieces
+- Text: UTF-8, a message after each `@id` line, one file per name and
+  language whatever versions the disc has (see [message files](assets/text.md)).
+- Maps: later. The `.map` file is text placing `.mds` pieces
   (position, rotation, scale), so a map is a glTF scene of placed meshes;
   writing it back is its own piece of research.
 
@@ -173,10 +184,11 @@ Every exported file builds back to the disc's own bytes when unedited, at
 every place the manifest lists: the hidden `c2 assets-check SOURCE ASSETS`
 checks every file's hash, builds each texture into each texture file the
 manifest gives for it, each model's glTF and buffer into each of its packs
-and each bank's folder into each of its places, compares with the disc,
-and checks every texture file, pack and bank of the disc is listed. On the
-PAL disc: 15,645 files, 15,004 picture places, 2,663 pack places and 861
-bank places build back, no problems, in 13 s.
+each bank's folder into each of its places and each text into each of its
+message files, compares with the disc, and checks every texture file, pack,
+bank and message file of the disc is listed. On the PAL disc: 15,764 files,
+15,004 picture places, 2,663 pack places, 861 bank places and 310 message
+file places build back, no problems.
 
 ## 2. Mods by name
 

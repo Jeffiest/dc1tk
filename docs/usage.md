@@ -100,11 +100,12 @@ only among the scripts decompiled together.
 
 ## The asset tree
 
-`assets` does for textures, character models and sounds what `decompile`
-does for scripts: it writes each distinct one once, in a format common
-tools open (PNG, glTF, WAV), with `manifest.json` giving each its id
-(`texture:e254a1`, `model:c02fuku*`, `sound:SE_CURSOR_MOVE`) and every place
-the disc has it. `setup` writes it into `extracted/assets/` (`--no-assets`
+`assets` does for textures, character models, sounds and the menus' text
+what `decompile` does for scripts: it writes each distinct one once, in a
+format common tools open (PNG, glTF, WAV, UTF-8 text), with
+`manifest.json` giving each its id (`texture:e254a1`, `model:c02fuku*`,
+`sound:SE_CURSOR_MOVE`, `text:en/shopname`) and every place the disc has
+it. `setup` writes it into `extracted/assets/` (`--no-assets`
 leaves it out); to write it again:
 
 ```
@@ -322,8 +323,8 @@ the game's scripts; whole files suit scripts and libraries of the mod's own.
 A mod made on a tree with readable names applies to one without, and the
 other way round: files and `#include` lines follow each tree's layout.
 
-**Game assets by id.** A mod names the textures, models and sounds it
-replaces by their asset ids (see [the asset tree](#the-asset-tree)) in
+**Game assets by id.** A mod names the textures, models, sounds and text
+it replaces by their asset ids (see [the asset tree](#the-asset-tree)) in
 `mod.json`, with the files anywhere in its folder, and `build` replaces
 each at every place the disc has it:
 
@@ -332,6 +333,7 @@ each at every place the disc has it:
   "texture:e254a1": "art/soldier_green.png",
   "model:c02fuku*": "models/monica/c02b.gltf",
   "sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW": {"file": "sounds/boom.wav", "volume": 90},
+  "text:en/shopname": "text/en/shopname.txt",
   "file:snd2/sp/sp_000.snd": "raw/sp_000.snd"
 },
 "add": {
@@ -420,6 +422,28 @@ character pack; packs inside packs work the same way).
   almost nothing to spare, and a bank that outgrows it overwrites the system
   sounds (`build` warns; see [the memory budgets](assets/memory.md#6-sound-memory-spu2)
   and [the sound bank format](assets/sounds.md)).
+- **Text as UTF-8.** The menus' item, shop, map and NPC names, their lines
+  and the system messages are message files (`.mes`): a table of message
+  ids, each a run of the font's glyphs and layout codes. `mod asset ISO NAME
+  text:en/shopname` writes `text/en/shopname.txt` and its line (ids are
+  `text:` and the language, `ja` `en` `fr` `de` `it` `es` `ko`, then the
+  file's name: `text:fr/system`, `text:de/allmenu`); `mod asset ISO NAME
+  menu/1/shop.pac.d/shopname.mes --as txt` writes `shopname.mes.txt` into
+  `disc/` instead. Each message follows a line `@` and its id; line breaks
+  are the message's, `<page>` a page break, and the icons and slots are
+  written as event text writes them (`(O)`, `[heart]`, `[Number1]`,
+  `[Item1]`, `[String1]`), other codes in braces (`{wait 12}`, `{0400}` for
+  one with no name). Change the messages you want and drop the rest; a new
+  `@id` adds a message. An id reaches every copy of the file in that
+  language, in every version (English `allmenu.mes` is in 20 menu packs):
+  each gets the messages whose text you changed and keeps its own others.
+  Unedited text builds back to the disc's own bytes. A character the
+  language's font lacks is refused (English has ASCII, full-width
+  punctuation and kana; French, German, Italian and Spanish ASCII and their
+  accented letters); `meswin/system_N.mes`, `sysmes_N.mes` and
+  `etc/helpN.mes` may not outgrow the buffers the game loads them into, and
+  a menu's window or column is only so wide. See [the message
+  format](assets/text.md).
 - **Maps in Blender.** `c2 map-export s17` writes the map as one glTF scene
   (`extracted/maps/s17/`): placements, pieces with their meshes, trigger
   points, lights, cameras, collision and textures. The

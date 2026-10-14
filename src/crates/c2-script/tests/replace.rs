@@ -1,5 +1,6 @@
 //! Mods by name: mod.json's replace and add lines, found by asset id on a tiny disc, built into its
 //! files, refused when two mods clash, and mod migrate turning a disc/ folder into such lines.
+//! Message files' text too: a made-up one in two menu packs, in two versions.
 
 mod build_common;
 
@@ -11,6 +12,7 @@ use build_common::{archive_files, iso_image, pack, TempDir, SECTOR};
 use c2_assets::ids::{self, Index};
 use c2_assets::im3::{self, Format, Image as Picture, PngMode};
 use c2_assets::mds::{self, Material, Mds, Mdt, Node, Prim, PRIM_TRIANGLES};
+use c2_assets::text::{self, Fonts, Language, Mes};
 use c2_assets::tree::{self, DiscFile, Kind, Place};
 use c2_disc::archive::Archive;
 use c2_disc::{rebuild, Image};
@@ -42,13 +44,31 @@ fn character() -> Vec<u8> {
     pack(&[("info.cfg", b"v2;\nMODEL \"c.mds\";\n".to_vec()), ("c.mds", mds::build(&model).unwrap()), ("c.img", img)])
 }
 
-/// The disc's files: a character pack in two places, and a texture file in two packs.
+/// A message file of ASCII messages, as the game's are laid out.
+fn messages(messages: &[(u16, &str)]) -> Vec<u8> {
+    let font = Fonts::default().font(Language::English);
+    let mut mes = Mes::parse(&[0, 0, 4, 0]).unwrap();
+    mes.lead = vec![text::END, text::NEWLINE];
+    for (id, line) in messages {
+        mes.set(*id, text::encode(line, &font).unwrap());
+    }
+    mes.write().unwrap()
+}
+
+fn message(data: &[u8], id: u16) -> String {
+    text::decode(Mes::parse(data).unwrap().get(id).unwrap(), &Fonts::default().font(Language::English))
+}
+
+/// The disc's files: a character pack in two places, a texture file in two packs, and an English
+/// message file in two menu packs, in two versions.
 fn disc_files() -> Vec<(&'static str, Vec<u8>)> {
     let shared = im3::write(&[picture("tex02", [1, 2, 3, 0x80]), picture("wall", [9, 9, 9, 0x80])], None).unwrap();
     vec![
         ("chara\\c01.chr", character()),
         ("map\\a\\a01.ipk", pack(&[("a01.img", shared.clone()), ("c01.chr", character())])),
         ("map\\b\\b02.ipk", pack(&[("x.img", shared)])),
+        ("menu\\1\\a.pac", pack(&[("names.mes", messages(&[(0, "Pot"), (1, "Pan")]))])),
+        ("menu\\1\\b.pac", pack(&[("names.mes", messages(&[(1, "Pan"), (0, "Pot"), (2, "Lid")]))])),
     ]
 }
 
@@ -132,7 +152,8 @@ fn fails<T>(result: c2_script::Result<T>, words: &str) {
 fn the_disc_gives_ids_with_every_place() {
     let disc = disc("ids");
     let ids: Vec<&str> = disc.index.assets.keys().map(String::as_str).collect();
-    assert_eq!(ids, ["model:c01", "texture:tex01", "texture:tex02", "texture:wall"]);
+    assert_eq!(ids, ["model:c01", "text:en/names", "texture:tex01", "texture:tex02", "texture:wall"]);
+    assert_eq!(disc.index.assets["text:en/names"].places.len(), 2);
     assert_eq!(disc.index.assets["texture:tex02"].places.len(), 2);
     assert_eq!(
         disc.index.assets["model:c01"].places[1].0,
@@ -249,6 +270,51 @@ fn mod_asset_copies_assets_by_id_with_their_lines() {
     // a second copy leaves the mod's files and lines as they are
     let again = replace::copy_out(&disc.iso, &mod_dir, &["model:c01".to_string()], &disc.index).unwrap();
     assert!(!again[0].2);
+}
+
+#[test]
+fn a_text_changes_its_messages_at_every_place() {
+    let disc = disc("text");
+    let mod_dir = disc.mods.join("names");
+    let written = replace::copy_out(&disc.iso, &mod_dir, &["text:en/names".to_string()], &disc.index).unwrap();
+    assert_eq!(written, [("text:en/names".to_string(), "text/en/names.txt".to_string(), true)]);
+    let file = mod_dir.join("text/en/names.txt");
+    let exported = fs::read_to_string(&file).unwrap();
+    assert!(exported.ends_with("@0\nPot\n@1\nPan\n"), "{exported}");
+    // unedited, both versions build back to their own bytes
+    let (files, _) = built(&disc, &["names"]).unwrap();
+    for pack in ["menu/1/a.pac", "menu/1/b.pac"] {
+        assert_eq!(at(&disc, &files, pack, &["names.mes"]), at(&disc, &BTreeMap::new(), pack, &["names.mes"]));
+    }
+    // an edited message and a new one reach both; each keeps its own other messages
+    write(&file, exported.replace("Pot", "Kettle{wait 2}").replace("@1\nPan\n", "").as_bytes());
+    fs::write(&file, fs::read_to_string(&file).unwrap() + "@7\nNew\n").unwrap();
+    let (files, changed) = built(&disc, &["names"]).unwrap();
+    assert_eq!(changed.len(), 2);
+    let a = at(&disc, &files, "menu/1/a.pac", &["names.mes"]);
+    let b = at(&disc, &files, "menu/1/b.pac", &["names.mes"]);
+    assert_eq!([message(&a, 0), message(&a, 1), message(&a, 7)], ["Kettle{wait 2}", "Pan", "New"]);
+    assert_eq!([message(&b, 0), message(&b, 2), message(&b, 7)], ["Kettle{wait 2}", "Lid", "New"]);
+    // a character the font lacks is named with its message
+    write(&file, "@1\nPan\u{e9}\n".as_bytes());
+    fails(built(&disc, &["names"]), "@1: the English font has no '\u{e9}'");
+    // not a .txt
+    write(&mod_dir.join("names.png"), &png([0, 0, 0]));
+    mod_json(&mod_dir, json!({"replace": {"text:en/names": "names.png"}}));
+    fails(replace::lines(&mod_dir), "is not a .txt file of messages");
+
+    // by path, as mod asset --as txt writes it into disc/
+    let paths = ["menu/1/b.pac.d/names.mes".to_string()];
+    let written = discfiles::copy_out(&disc.iso, &mod_dir, &paths, Some("txt")).unwrap();
+    assert_eq!(written, ["menu/1/b.pac.d/names.mes.txt"]);
+    let file = mod_dir.join("disc/menu/1/b.pac.d/names.mes.txt");
+    write(&file, fs::read_to_string(&file).unwrap().replace("Lid", "Cover").as_bytes());
+    mod_json(&mod_dir, json!({}));
+    let (wanted, _) = discfiles::collect(std::slice::from_ref(&mod_dir)).unwrap();
+    let (files, _) =
+        discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default(), &Default::default()).unwrap();
+    let b = at(&disc, &files, "menu/1/b.pac", &["names.mes"]);
+    assert_eq!([message(&b, 0), message(&b, 1), message(&b, 2)], ["Pot", "Pan", "Cover"]);
 }
 
 #[test]
@@ -542,6 +608,7 @@ fn a_migrated_mod_builds_the_same_files() {
         write(&root.join("chara/c01.chr.gltf").join(name), &data);
     }
     write(&root.join("map/a/a01.ipk.d/new.bin"), b"a new member");
+    write(&root.join("menu/1/b.pac.d/names.mes.txt"), b"@2\nCover\n@1\nPan\n");
     mod_json(&mod_dir, json!({"start_at": "s51:500"}));
     let old_files = |mod_dir: &Path| {
         let (wanted, _) = discfiles::collect(&[mod_dir.to_path_buf()]).unwrap();
@@ -560,9 +627,10 @@ fn a_migrated_mod_builds_the_same_files() {
             "model:c01": {"file": "models/c01", "only": ["chara/c01.chr"]},
             "file:map/a/a01.ipk.d/new.bin": "raw/map/a/a01.ipk.d/new.bin",
             "texture:wall": {"file": "textures/wall.png", "only": ["map/b/b02.ipk.d/x.img"]},
+            "text:en/names": {"file": "text/en/names.txt", "only": ["menu/1/b.pac.d/names.mes"]},
         })
     );
-    assert_eq!(found.lines.len(), 4);
+    assert_eq!(found.lines.len(), 5);
     assert!(mod_dir.join("unused/map/b/b02.ipk.d/x.img.png/notes.txt").is_file());
     assert!(found.notes.iter().any(|note| note.contains("notes.txt")));
 

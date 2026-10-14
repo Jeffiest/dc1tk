@@ -8,8 +8,9 @@
 //! format's suffix: build converts it, with the disc's own file as the template (palette size,
 //! sample rate, layout), and mod asset --as exports to it. Textures are a folder of PNGs
 //! (c02a.img.png/c02a01.png), sound banks a folder of WAVs by entry number
-//! (sp_000.snd.wav/003.wav) and character packs a folder holding a glTF with its textures
-//! (c02a.chr.gltf/c02a.gltf); c2_assets converts them.
+//! (sp_000.snd.wav/003.wav), character packs a folder holding a glTF with its textures
+//! (c02a.chr.gltf/c02a.gltf) and message files a text file (shopname.mes.txt); c2_assets converts
+//! them.
 //!
 //! mod.json's file: lines (replace) give game files the same way, by disc path, with the file
 //! anywhere in the mod; a folder there converts by the game file's suffix, whatever it is named.
@@ -20,6 +21,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use c2_assets::text::{self, Fonts};
 use c2_assets::tree::Place;
 use c2_disc::archive::{self, Archive, Entry};
 use c2_disc::{rebuild, Image};
@@ -39,33 +41,45 @@ pub struct Converter {
     pub folder: bool,
 }
 
-pub const CONVERTERS: [Converter; 3] = [
+pub const CONVERTERS: [Converter; 4] = [
     Converter { suffix: ".png", game: ".img", folder: true },
     Converter { suffix: ".wav", game: ".snd", folder: true },
     Converter { suffix: ".gltf", game: ".chr", folder: true },
+    Converter { suffix: ".txt", game: ".mes", folder: false },
 ];
 
 impl Converter {
-    /// The game file's bytes from the common file or folder, with the disc's own file as the
-    /// template.
-    pub fn build(&self, source: &Path, original: &[u8]) -> Result<Vec<u8>> {
+    /// The game file's bytes from the common file or folder, with the disc's own file (at path,
+    /// as extract lays it out) as the template.
+    pub fn build(&self, source: &Path, original: &[u8], path: &str, fonts: &Fonts) -> Result<Vec<u8>> {
         let built = match self.suffix {
             ".png" => c2_assets::textures::build(source, original),
             ".wav" => c2_assets::sounds::build(source, original),
+            ".txt" => c2_py::read_text(source)
+                .map_err(c2_assets::Error::from)
+                .and_then(|written| text::build(&written, original, original, path, fonts)),
             _ => c2_assets::models::build(source, original),
         };
         built.map_err(|error| Error::invalid(error.to_string()))
     }
 
-    /// The disc's own file in the common format: {file name: bytes} of the folder.
-    pub fn export(&self, data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
+    /// The disc's own file in the common format: {file name: bytes} of the folder, or the one file
+    /// (named "") of a converter that writes a file.
+    pub fn export(&self, data: &[u8], path: &str, fonts: &Fonts) -> Result<Vec<(String, Vec<u8>)>> {
         let exported = match self.suffix {
             ".png" => c2_assets::textures::export(data),
             ".wav" => c2_assets::sounds::export(data),
+            ".txt" => text::export(data, path, &format!("file:{path}"), fonts)
+                .map(|text| vec![(String::new(), text.into_bytes())]),
             _ => c2_assets::models::export(data),
         };
         exported.map_err(|error| Error::invalid(error.to_string()))
     }
+}
+
+/// The fonts the disc's message files are drawn with: the English font's table from the disc.
+pub fn disc_fonts(disc: &Archive, image: &Image, index: &HashMap<String, &Entry>) -> Fonts {
+    Fonts { english_table: index.get(text::ENGLISH_FONT).map(|entry| disc.read(image.bytes(), entry).to_vec()) }
 }
 
 fn lower(text: &str) -> String {
@@ -159,32 +173,27 @@ pub fn converter_of(source: &Path) -> Option<Converter> {
 }
 
 /// The converter for a mod file standing for a game file: a folder converts by the game file's
-/// suffix (a folder of PNGs for a .img), whatever the folder is named; a file is the game file
-/// itself.
+/// suffix (a folder of PNGs for a .img), whatever the folder is named; a file in a common format
+/// that writes a file converts by its own suffix too (a .txt for a .mes); another file is the game
+/// file itself.
 pub fn conversion(target: &str, source: &Path) -> Option<Converter> {
-    if !source.is_dir() {
-        return None;
-    }
-    CONVERTERS.iter().copied().find(|converter| lower(target).ends_with(converter.game))
+    CONVERTERS.iter().copied().find(|converter| {
+        lower(target).ends_with(converter.game)
+            && converter.folder == source.is_dir()
+            && (converter.folder || lower(&name_of(source)).ends_with(converter.suffix))
+    })
 }
 
-/// The game file's bytes for a mod file: the file itself, or converted from its common format.
-pub fn game_bytes(source: &Path, original: &[u8]) -> Result<Vec<u8>> {
-    match converter_of(source) {
-        None => Ok(fs::read(source)?),
-        Some(converter) => converter.build(source, original),
-    }
-}
-
-/// game_bytes for the game file at target.
-fn game_bytes_for(target: &str, source: &Path, original: &[u8]) -> Result<Vec<u8>> {
+/// The game file's bytes for a mod file standing for the game file at target: the file itself,
+/// or converted from its common format.
+fn game_bytes_for(target: &str, source: &Path, original: &[u8], fonts: &Fonts) -> Result<Vec<u8>> {
     match conversion(target, source) {
         None if source.is_dir() => Err(Error::invalid(format!(
             "{} is a folder, which stands only for a texture file (.img), sound bank (.snd) or character pack (.chr)",
             source.display()
         ))),
         None => Ok(fs::read(source)?),
-        Some(converter) => converter.build(source, original),
+        Some(converter) => converter.build(source, original, target, fonts),
     }
 }
 
@@ -344,6 +353,7 @@ pub fn replaced(
     let image = Image::open(iso_path)?;
     let disc = Archive::open(image.bytes())?;
     let index = disc_index(&disc);
+    let fonts = disc_fonts(&disc, &image, &index);
     let sorted: BTreeMap<&String, &(String, PathBuf)> = wanted.iter().collect();
     for (path, (module, file)) in sorted {
         let (top, members) = location(path);
@@ -411,7 +421,7 @@ pub fn replaced(
                 Some(old) => {
                     let new = match &made {
                         Some(new) => new.clone(),
-                        None => game_bytes_for(path, file, old)?,
+                        None => game_bytes_for(path, file, old, &fonts)?,
                     };
                     let packed = rebuild::replaced_member(&data, &members, &new)?;
                     Ok((new, packed))
@@ -438,6 +448,7 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
     let image = Image::open(iso_path)?;
     let disc = Archive::open(image.bytes())?;
     let index = disc_index(&disc);
+    let fonts = disc_fonts(&disc, &image, &index);
     for path in paths {
         let path = path.replace('\\', "/").trim_matches('/').to_string();
         let (top, members) = location(&path);
@@ -454,8 +465,16 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
             let Some(converter) = converter.filter(|converter| lower(&path).ends_with(converter.game)) else {
                 return Err(Error::invalid(format!("{path} cannot be exported as {form}")));
             };
-            let exported = converter.export(data)?;
+            let exported = converter.export(data, &path, &fonts)?;
             let folder = target.with_file_name(format!("{}{}", name_of(&target), suffix));
+            if !converter.folder {
+                fs::create_dir_all(target.parent().unwrap())?;
+                for (_, content) in exported {
+                    fs::write(&folder, content)?;
+                    written.push(format!("{path}{suffix}"));
+                }
+                continue;
+            }
             fs::create_dir_all(&folder)?;
             for (name, content) in exported {
                 let file = joined(&folder, &name);

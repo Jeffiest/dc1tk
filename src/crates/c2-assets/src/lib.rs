@@ -25,6 +25,7 @@ pub mod py;
 pub mod shop_data;
 pub mod soundbank;
 pub mod sounds;
+pub mod text;
 pub mod textures;
 pub mod to_gltf;
 pub mod tree;

@@ -157,6 +157,10 @@ table (circle, triangle, cross, square), as the game's text uses them.
 The game's own hint windows hold four lines; keep text that updates live as
 short, so it never runs past what the window shows.
 
+The menus' own text (item, shop and map names, the system messages) is in
+message files with the same codes, already turned from tags; a mod edits it
+as text with the same tags (see [the message format](assets/text.md)).
+
 ## Dungeon events
 
 Besides the programs warps and other scripts start, the dungeon starts these

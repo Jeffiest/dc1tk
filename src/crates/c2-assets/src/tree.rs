@@ -7,6 +7,7 @@
 //! textures/<group>/<id>.png           one per distinct picture
 //! models/<group>/<id>/<id>.gltf, .bin one per distinct character pack
 //! sounds/<bank>/<NNN>[_<NAME>].wav    one per entry of a distinct bank that plays a sample
+//! text/<language>/<name>.txt          one per message file name and language (text.rs)
 //! ```
 //!
 //! A picture, pack or bank found at several places with the same bytes is one asset. Ids are the
@@ -27,7 +28,7 @@ use c2_disc::extract::{MAX_PACK_DEPTH, PACK_SUFFIX};
 use c2_disc::{archive, rebuild};
 
 use crate::soundbank::{self, Bank, EntryKind};
-use crate::{im3, json as pyjson, models, Error, Result};
+use crate::{im3, json as pyjson, models, text, Error, Result};
 
 pub const MANIFEST: &str = "manifest.json";
 /// The manifest's layout; changes when a reader of an older one would misread it.
@@ -105,6 +106,7 @@ pub enum Kind {
     Model,
     Bank,
     Sound,
+    Text,
 }
 
 impl Kind {
@@ -114,6 +116,7 @@ impl Kind {
             Kind::Model => "model",
             Kind::Bank => "bank",
             Kind::Sound => "sound",
+            Kind::Text => "text",
         }
     }
 
@@ -122,13 +125,14 @@ impl Kind {
     }
 }
 
-/// The game files the tree reads: texture files (.img), character packs (.chr) and sound banks
-/// (.snd).
+/// The game files the tree reads: texture files (.img), character packs (.chr), sound banks
+/// (.snd) and message files (.mes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FileKind {
     Textures,
     Pack,
     Bank,
+    Messages,
 }
 
 pub fn file_kind(name: &str) -> Option<FileKind> {
@@ -139,6 +143,8 @@ pub fn file_kind(name: &str) -> Option<FileKind> {
         Some(FileKind::Pack)
     } else if lower.ends_with(".snd") {
         Some(FileKind::Bank)
+    } else if text::is_message_file(&lower) {
+        Some(FileKind::Messages)
     } else {
         None
     }
@@ -364,7 +370,7 @@ fn survey(index: usize, file: &GameFile) -> Surveyed {
             ),
             Err(error) => Surveyed::Failed(error.to_string()),
         },
-        FileKind::Pack | FileKind::Bank => Surveyed::Whole(sha256(&[file.data])),
+        FileKind::Pack | FileKind::Bank | FileKind::Messages => Surveyed::Whole(sha256(&[file.data])),
     }
 }
 
@@ -476,6 +482,8 @@ pub struct Summary {
     pub sounds_exported: usize,
     pub sounds_named: usize,
     pub placeholders: usize,
+    pub message_places: usize,
+    pub texts: usize,
     /// Game files the tree has no asset for, and why: packs with no model, files the converters
     /// cannot read.
     pub failed: Vec<(Place, String)>,
@@ -510,6 +518,9 @@ pub(crate) struct Named<'a> {
     pub textures: Vec<Asset>,
     pub packs: Vec<Asset>,
     pub banks: Vec<Asset>,
+    /// Message files' assets, their places indexes into files.
+    pub texts: Vec<text::TextAsset>,
+    pub message_places: usize,
     /// Game files that give no asset, by their index in files, and why.
     pub failed: Vec<(usize, String)>,
 }
@@ -522,6 +533,7 @@ pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
     let mut pictures = Vec::new();
     let mut packs = Vec::new();
     let mut banks = Vec::new();
+    let mut messages: Vec<(usize, String)> = Vec::new();
     for (index, found) in surveyed.into_iter().enumerate() {
         let place = &files[index].place;
         match found {
@@ -535,6 +547,7 @@ pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
             Surveyed::Whole(hash) if files[index].kind == FileKind::Pack => {
                 packs.push((file_name_stem(place), hash, index, None))
             }
+            Surveyed::Whole(hash) if files[index].kind == FileKind::Messages => messages.push((index, hash)),
             Surveyed::Whole(hash) => banks.push((file_name_stem(place), hash, index, None)),
             Surveyed::Failed(error) => failed.push((index, error)),
         }
@@ -550,6 +563,13 @@ pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
     name_assets(&mut packs, &files);
     let mut banks = distinct(banks.into_iter());
     name_assets(&mut banks, &files);
+    let found: Vec<(&Place, &str)> =
+        messages.iter().map(|(index, hash)| (&files[*index].place, hash.as_str())).collect();
+    let mut texts = text::text_assets(&found);
+    for asset in &mut texts {
+        asset.places = asset.places.iter().map(|&at| messages[at].0).collect();
+    }
+    let message_places = messages.len();
     Named {
         files,
         shadowed,
@@ -561,6 +581,8 @@ pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
         textures,
         packs,
         banks,
+        texts,
+        message_places,
         failed,
     }
 }
@@ -583,7 +605,7 @@ pub(crate) fn sound_id(
 /// it holds.
 pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Summary> {
     let found = named(disc);
-    let Named { files, shadowed, texture_files, pictures, textures, packs, banks, mut failed, .. } = found;
+    let Named { files, shadowed, texture_files, pictures, textures, packs, banks, texts, mut failed, .. } = found;
     let mut summary = Summary {
         shadowed,
         texture_files,
@@ -616,6 +638,11 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         .collect::<Result<Vec<_>>>()?;
     let bank_outs: Vec<Result<Vec<EntryOut>>> =
         banks.par_iter().map(|asset| export_bank(asset, &files, names, write)).collect::<Result<Vec<_>>>()?;
+    let fonts =
+        text::Fonts { english_table: text::english_table(disc.iter().map(|file| (file.path.as_str(), file.data))) };
+    let text_outs: Vec<Result<(String, String)>> =
+        texts.par_iter().map(|asset| export_text(asset, &files, &fonts, write)).collect::<Result<Vec<_>>>()?;
+    summary.message_places = found.message_places;
 
     let mut assets: BTreeMap<String, Value> = BTreeMap::new();
     let mut aliases: BTreeMap<String, Value> = BTreeMap::new();
@@ -721,6 +748,29 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
             }),
         );
     }
+    for (asset, out) in texts.iter().zip(text_outs) {
+        let (file, hash) = match out {
+            Ok(out) => out,
+            Err(error) => {
+                failed.extend(asset.places.iter().map(|&file| (file, error.to_string())));
+                continue;
+            }
+        };
+        summary.texts += 1;
+        let places: Vec<Value> = asset.places.iter().map(|&file| place_json(file, "", None)).collect();
+        assets.insert(
+            Kind::Text.id(&asset.id),
+            json!({
+                "kind": "text",
+                "name": asset.name,
+                "language": asset.language.short(),
+                "files": {file: hash},
+                "game_hash": asset.game_hash,
+                "versions": asset.versions,
+                "places": places,
+            }),
+        );
+    }
     failed.sort_by_key(|(file, _)| *file);
     summary.failed = failed.iter().map(|(file, error)| (files[*file].place.clone(), error.clone())).collect();
     let failed_json: Vec<Value> = failed
@@ -736,6 +786,7 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         "model": summary.models,
         "bank": summary.banks,
         "sound": summary.sounds,
+        "text": summary.texts,
     });
     let manifest = json!({
         "format": FORMAT,
@@ -746,6 +797,24 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
     });
     write(MANIFEST, &manifest_text(&manifest))?;
     Ok(summary)
+}
+
+/// A message file's text, from its reference's first place, written to text/<language>/<name>.txt:
+/// the file and its hash, or why it cannot be read.
+fn export_text(
+    asset: &text::TextAsset,
+    files: &[GameFile],
+    fonts: &text::Fonts,
+    write: &Write,
+) -> Result<Result<(String, String)>> {
+    let file = &files[asset.places[0]];
+    let exported = match text::export(file.data, &file.place.display(), &Kind::Text.id(&asset.id), fonts) {
+        Ok(exported) => exported,
+        Err(error) => return Ok(Err(error)),
+    };
+    let path = text::text_file(&asset.id);
+    write(&path, exported.as_bytes())?;
+    Ok(Ok((path.clone(), sha256(&[exported.as_bytes()]))))
 }
 
 /// The PNG of every texture, from the first place it is found, written to
@@ -1131,6 +1200,8 @@ pub(crate) mod tests {
     pub fn disc() -> Vec<(String, Vec<u8>)> {
         let shared = im3::write(&[picture("tex02", [1, 2, 3, 0x80]), picture("wall", [9, 9, 9, 0x80])], None).unwrap();
         let redrawn = im3::write(&[picture("wall", [200, 0, 0, 0x40])], None).unwrap();
+        let names = text::tests::sample(&[(0, &text::tests::ascii("Pot")), (1, &text::tests::ascii("Pan"))]);
+        let other_names = text::tests::sample(&[(0, &text::tests::ascii("Pot"))]);
         vec![
             ("chara/c01.chr".to_string(), character([10, 20, 30, 0x80])),
             ("map/a/a01.ipk".to_string(), pack(&[("a01.img", &shared), ("c01.chr", &character([10, 20, 30, 0x80]))])),
@@ -1139,6 +1210,10 @@ pub(crate) mod tests {
             // a monster's pack: its cfg named after it, not info.cfg
             ("monster/m01.chr".to_string(), character_with("M01.cfg", [10, 20, 30, 0x80])),
             ("monster/motions.chr".to_string(), pack(&[("info.cfg", b"v2;\n"), ("a.mot", b"")])),
+            // a message file in two menu packs, in two versions, and an old copy of the first
+            ("menu/1/a.pac".to_string(), pack(&[("names.mes", &names)])),
+            ("menu/1/b.pac".to_string(), pack(&[("names.mes", &other_names)])),
+            ("meswin/usa/names.mes".to_string(), names.clone()),
         ]
     }
 
@@ -1228,6 +1303,8 @@ enum item_id {
                 "model:c01",
                 "model:c01@menu",
                 "model:m01",
+                "text:en/names",
+                "text:en/names@meswin-usa",
                 "texture:tex01",
                 "texture:tex01@c01",
                 "texture:tex02",
@@ -1235,6 +1312,13 @@ enum item_id {
                 "texture:wall@b02"
             ]
         );
+        // a message file's id covers both versions in the menu packs, the first exported
+        assert_eq!(assets["text:en/names"]["places"].as_array().unwrap().len(), 2);
+        assert_eq!(assets["text:en/names"]["versions"], 2);
+        assert_eq!(assets["text:en/names"]["language"], "en");
+        let names = std::str::from_utf8(&written["text/en/names.txt"]).unwrap();
+        assert!(names.ends_with("@0\nPot\n@1\nPan\n"), "{names}");
+        assert_eq!((summary.message_places, summary.texts), (3, 2));
         // tex02 and wall: in a01.ipk and in b02.ipk; tex01: in both c01 packs on chara and map/a
         assert_eq!(assets["texture:tex02"]["places"].as_array().unwrap().len(), 2);
         assert_eq!(

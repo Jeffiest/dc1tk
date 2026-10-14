@@ -38,10 +38,10 @@ pub struct Index {
 }
 
 fn kind_named(name: &str) -> Option<Kind> {
-    [Kind::Texture, Kind::Model, Kind::Bank, Kind::Sound].into_iter().find(|kind| kind.name() == name)
+    [Kind::Texture, Kind::Model, Kind::Bank, Kind::Sound, Kind::Text].into_iter().find(|kind| kind.name() == name)
 }
 
-/// The kind an id or pattern names by its prefix (texture:, model:, bank:, sound:).
+/// The kind an id or pattern names by its prefix (texture:, model:, bank:, sound:, text:).
 pub fn kind_of(id: &str) -> Option<Kind> {
     kind_named(&id.split_once(':')?.0.to_lowercase())
 }
@@ -115,6 +115,10 @@ impl Index {
             }
             index.insert(Kind::Bank, &asset.id, &asset.shown, places(asset));
             index.assets.get_mut(&bank_id).unwrap().entries = Some(entries.len());
+        }
+        for asset in &found.texts {
+            let at = asset.places.iter().map(|&file| (files[file].place.clone(), None)).collect();
+            index.insert(Kind::Text, &asset.id, &asset.name, at);
         }
         index
     }
