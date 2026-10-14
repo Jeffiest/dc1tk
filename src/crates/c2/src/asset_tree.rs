@@ -85,7 +85,7 @@ impl Source {
         };
         for item in manifest["files"].as_array().map(Vec::as_slice).unwrap_or_default() {
             let file = item["path"].as_str().unwrap_or("");
-            let relevant = tree::file_kind(file).is_some() || file.eq_ignore_ascii_case(c2_assets::text::ENGLISH_FONT);
+            let relevant = tree::file_kind(file).is_some() || c2_assets::text::Fonts::reads(file);
             if item["packed"].as_bool() == Some(false) {
                 close(&mut current);
                 current = Some((file.to_string(), relevant));

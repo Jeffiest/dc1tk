@@ -12,6 +12,8 @@
 //!   "texture:a01ia_01": {"file": "art/floor.png", "only": ["map/a"]},
 //!   "text:en/shopname": "text/en/shopname.txt",             a message file's text, by message
 //!   "music:BG_000_000": "music/BG_000_000.mid",             a sequence (music, an ambient loop) as MIDI
+//!   "music:BG_001_000": {"file": "music/tune.mid", "instruments": {"100": "music/pulse.wav"}},
+//!                                                           with WAVs as new programs of its bank
 //!   "file:snd2/event/EV_000_130.snd": "raw/bank.snd"        a disc file or pack member by path
 //! },
 //! "add": {
@@ -49,6 +51,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use c2_assets::ids::{self, Index};
+use c2_assets::font;
 use c2_assets::im3;
 use c2_assets::soundbank::Bank;
 use c2_assets::sounds::{self, Given};
@@ -107,6 +110,8 @@ pub struct Line {
     /// A map: line's event points given programs: (point, program), the program a number, a
     /// program's name or a NEW_PROGRAM name of the mod (docs/assets/maps.md section 9).
     pub programs: Vec<(String, Value)>,
+    /// For a music: line, programs the line adds to the sequence's bank (music::Instrument).
+    pub instruments: Vec<music::Instrument>,
 }
 
 impl Line {
@@ -180,6 +185,82 @@ pub fn lines(mod_dir: &Path) -> Result<Vec<Line>> {
     Ok(out)
 }
 
+/// A music: line's "instruments": {program: a WAV, or a sample {"file", "keys": [low, high],
+/// "root", "loop", "volume", "like"}, or a list of samples by key range}.
+fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::Instrument>> {
+    let usage = "\"instruments\" maps program numbers to WAVs: {\"100\": \"music/flute.wav\"}, or to samples \
+                 {\"file\": ..., \"keys\": [0, 127], \"root\": 60, \"loop\": true, \"volume\": 128, \"like\": 3} or lists of them";
+    let Value::Object(programs) = value else {
+        return Err(line.fail(usage));
+    };
+    let mut out = Vec::new();
+    for (number, given) in programs {
+        let Some(program) = number.trim().parse::<u8>().ok().filter(|&program| program < 128) else {
+            return Err(line.fail(format!("instrument {number}: a program is 0 to 127")));
+        };
+        let samples: Vec<&Value> = match given {
+            Value::Array(samples) => samples.iter().collect(),
+            other => vec![other],
+        };
+        let mut instrument = music::Instrument { program, zones: Vec::new(), like: None };
+        for sample in samples {
+            let fail = |message: &str| line.fail(format!("instrument {number}: {message}"));
+            let mut zone = music::InstrumentZone {
+                path: PathBuf::new(),
+                low: 0,
+                high: 127,
+                root: 60,
+                looped: None,
+                volume: 128,
+            };
+            let file = match sample {
+                Value::String(file) => file.clone(),
+                Value::Object(fields) => {
+                    for (field, value) in fields {
+                        let number = |most: u64| value.as_u64().filter(|&n| n <= most).map(|n| n as u8);
+                        match field.as_str() {
+                            "file" => {}
+                            "keys" => {
+                                let keys: Option<Vec<u8>> = value
+                                    .as_array()
+                                    .filter(|keys| keys.len() == 2)
+                                    .map(|keys| keys.iter().filter_map(|key| key.as_u64().filter(|&k| k <= 127)).map(|k| k as u8).collect());
+                                match keys {
+                                    Some(keys) if keys.len() == 2 && keys[0] <= keys[1] => (zone.low, zone.high) = (keys[0], keys[1]),
+                                    _ => return Err(fail("\"keys\" is [lowest, highest], 0 to 127")),
+                                }
+                            }
+                            "root" => zone.root = number(127).ok_or_else(|| fail("\"root\" is a key, 0 to 127"))?,
+                            "volume" => zone.volume = number(128).ok_or_else(|| fail("\"volume\" is 0 to 128"))?,
+                            "loop" => zone.looped = Some(value.as_bool().ok_or_else(|| fail("\"loop\" is true or false"))?),
+                            "like" => instrument.like = Some(number(127).ok_or_else(|| fail("\"like\" is a program, 0 to 127"))?),
+                            other => return Err(fail(&format!("unknown field \"{other}\""))),
+                        }
+                    }
+                    fields.get("file").and_then(Value::as_str).ok_or_else(|| fail("no \"file\""))?.to_string()
+                }
+                _ => return Err(line.fail(usage)),
+            };
+            let inside = Path::new(&file)
+                .components()
+                .all(|part| matches!(part, std::path::Component::Normal(_) | std::path::Component::CurDir));
+            if !inside {
+                return Err(fail(&format!("{file} is not a path inside the mod's folder")));
+            }
+            zone.path = file.split(['/', '\\']).fold(mod_dir.to_path_buf(), |path, part| path.join(part));
+            if !(zone.path.is_file() && suffix_is(&zone.path, ".wav")) {
+                return Err(fail(&format!("{file} is not a WAV file in the mod's folder")));
+            }
+            instrument.zones.push(zone);
+        }
+        if instrument.zones.is_empty() {
+            return Err(line.fail(format!("instrument {number}: no samples")));
+        }
+        out.push(instrument);
+    }
+    Ok(out)
+}
+
 fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Result<Line> {
     let mut line = Line {
         module: module.to_string(),
@@ -194,6 +275,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         title: None,
         script: None,
         programs: Vec::new(),
+        instruments: Vec::new(),
     };
     let kind = ids::kind_of(key);
     if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
@@ -229,6 +311,9 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
             "volume" if kind == Some(Kind::Sound) => {
                 let volume = value.as_i64().filter(|volume| (0..=127).contains(volume));
                 line.volume = Some(volume.ok_or_else(|| line.fail("\"volume\" is 0 to 127"))?);
+            }
+            "instruments" if !add && kind == Some(Kind::Music) => {
+                line.instruments = instruments(mod_dir, &line, value)?;
             }
             "bank" if add && kind == Some(Kind::Sound) => {
                 let bank = value.as_str().ok_or_else(|| line.fail("\"bank\" is a bank's id"))?;
@@ -468,8 +553,9 @@ pub enum Change {
     Entry(Given),
     /// The messages of a text file, with the place its text was exported from (the id's first).
     Text(PathBuf, Place),
-    /// A sequence (.sq member of a bank) built from a MIDI file.
-    Sequence(PathBuf),
+    /// A sequence (.sq member of a bank) built from a MIDI file, with instruments it adds to the
+    /// bank.
+    Sequence(PathBuf, Vec<music::Instrument>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -486,7 +572,7 @@ pub struct Edit {
 impl Edit {
     fn slot(&self) -> (String, Option<usize>) {
         let at = match &self.change {
-            Change::Model(_) | Change::Text(..) | Change::Sequence(_) => None,
+            Change::Model(_) | Change::Text(..) | Change::Sequence(..) => None,
             Change::Picture(entry, _) => Some(*entry),
             Change::Entry(given) => Some(given.number),
         };
@@ -599,7 +685,7 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                 }
                 Kind::Music => {
                     for (place, _) in places {
-                        resolved.edits.push(edit(place, Change::Sequence(line.file.clone())));
+                        resolved.edits.push(edit(place, Change::Sequence(line.file.clone(), line.instruments.clone())));
                     }
                 }
                 Kind::Sound => {
@@ -778,6 +864,9 @@ pub struct Changed {
     pub modules: Vec<String>,
     pub old: usize,
     pub data: Vec<u8>,
+    /// What the build says of it, each line "warning: ..." or "note: ...": a text's lines wider than
+    /// the game's windows take, the instruments a tune added and the memory they take.
+    pub warnings: Vec<String>,
 }
 
 /// The model a line gives, built with the disc's pack as the template.
@@ -819,7 +908,7 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
         Change::Entry(_) => 1,
         Change::Picture(..) => 2,
         Change::Text(..) => 3,
-        Change::Sequence(_) => 4,
+        Change::Sequence(..) => 4,
     };
     let fonts = discfiles::disc_fonts(&disc, &image, &index);
     let mut groups: BTreeMap<(usize, usize, String), Vec<&Edit>> = BTreeMap::new();
@@ -832,6 +921,9 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
     let temp = std::env::temp_dir().join(format!("c2-build-model-{}-{build}", std::process::id()));
     let mut models: Vec<(String, Vec<u8>, Vec<u8>)> = Vec::new();
     let mut touched: IndexMap<String, Changed> = IndexMap::new();
+    let mut warnings: Vec<(String, String)> = Vec::new();
+    // whether an English text uses the accented letters the build adds to the English font
+    let mut english_extra = false;
     for ((stage, _, shown), edits) in groups {
         let first = edits[0];
         let place = &first.place;
@@ -841,7 +933,7 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
         let Some(entry) = index.get(&place.path.to_lowercase()) else {
             return Err(fail(Error::invalid(format!("{} is not a file on the disc", place.path))));
         };
-        let data = match files.get(&entry.path) {
+        let mut data = match files.get(&entry.path) {
             Some(data) => data.clone(),
             None => disc.read(image.bytes(), entry).to_vec(),
         };
@@ -867,14 +959,50 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
                     .get(&reference.path.to_lowercase())
                     .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
                     .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
-                text::build(&written, &old, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?
+                let built =
+                    text::build(&written, &old, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?;
+                let widths =
+                    text::width_warnings(&written, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?;
+                warnings.extend(widths.into_iter().map(|warning| (shown.clone(), format!("warning: {warning}"))));
+                let english = text::locate(&place.display()).is_some_and(|found| found.language == text::Language::English);
+                if english && built != old {
+                    // a debug menu's leftover Japanese has glyph numbers there already: only the
+                    // messages the mod changed count
+                    let before = text::Mes::parse(&old).map_err(|error| fail(error.into()))?;
+                    let mes = text::Mes::parse(&built).map_err(|error| fail(error.into()))?;
+                    english_extra |= mes
+                        .messages()
+                        .any(|(id, codes)| before.get(id) != Some(codes) && font::uses_english_extra(codes.iter().copied()));
+                }
+                built
             }
             4 => {
-                let Change::Sequence(source) = &first.change else { unreachable!() };
+                let Change::Sequence(source, instruments) = &first.change else { unreachable!() };
                 // the bank holding the sequence, for its programs
-                let bank = place.members.split_last().and_then(|(_, bank)| rebuild::read_member(&data, bank));
-                let bank = bank.map(Bank::from_bytes).transpose().map_err(|error| fail(error.into()))?;
-                music::build(&fs::read(source)?, &old, bank.as_ref()).map_err(|error| fail(error.into()))?
+                let Some((sequence, bank_members)) = place.members.split_last() else {
+                    return Err(fail(Error::invalid("a sequence is a member of a bank".to_string())));
+                };
+                let bank_data = rebuild::read_member(&data, bank_members);
+                if instruments.is_empty() || bank_data.is_none() {
+                    let bank = bank_data.map(Bank::from_bytes).transpose().map_err(|error| fail(error.into()))?;
+                    music::build(&fs::read(source)?, &old, bank.as_ref()).map_err(|error| fail(error.into()))?
+                } else {
+                    // the bank gains the instruments, then the sequence goes into it
+                    let bank_path = bank_members.last().unwrap_or(&place.path);
+                    let bank_name = bank_path.rsplit('/').next().unwrap_or(bank_path).to_uppercase();
+                    let region = bank_name.starts_with("BG_").then_some(music::MUSIC_REGION);
+                    let (bank, notes) = music::build_with_instruments(
+                        &fs::read(source)?,
+                        bank_data.unwrap_or_default(),
+                        sequence,
+                        instruments,
+                        region,
+                    )
+                    .map_err(|error| fail(error.into()))?;
+                    warnings.extend(notes.into_iter().map(|note| (shown.clone(), format!("note: {note}"))));
+                    data = rebuild::replaced_member(&data, bank_members, &bank)?;
+                    rebuild::read_member(&data, &place.members).map(<[u8]>::to_vec).unwrap_or_default()
+                }
             }
             1 => {
                 let mut given: Vec<Given> = edits
@@ -906,6 +1034,7 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
             modules: Vec::new(),
             old: old.len(),
             data: Vec::new(),
+            warnings: Vec::new(),
         });
         for edit in edits {
             if !changed.ids.contains(&edit.id) {
@@ -914,6 +1043,52 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
             if !changed.modules.contains(&edit.module) {
                 changed.modules.push(edit.module.clone());
             }
+        }
+    }
+    if english_extra {
+        // the English font texture with the accented letters drawn in (c2_assets::font)
+        let read = |path: &str| {
+            index.get(&path.to_lowercase()).map(|entry| (entry.path.clone(), disc.read(image.bytes(), entry).to_vec()))
+        };
+        let (Some((path, english)), Some((_, european))) = (read(font::ENGLISH_TEXTURE), read(font::EUROPEAN_TEXTURE))
+        else {
+            return Err(Error::invalid(format!(
+                "an English text uses accented letters, but the disc has no {} or {} to draw them from",
+                font::ENGLISH_TEXTURE,
+                font::EUROPEAN_TEXTURE
+            )));
+        };
+        let english = files.get(&path).cloned().unwrap_or(english);
+        let extended = font::extended_english(&english, &european)?;
+        let ids: Vec<String> = touched
+            .values()
+            .filter(|changed| {
+                text::locate(&changed.place.display()).is_some_and(|found| found.language == text::Language::English)
+            })
+            .flat_map(|changed| changed.ids.clone())
+            .collect();
+        let modules: Vec<String> = touched.values().flat_map(|changed| changed.modules.clone()).collect();
+        touched.insert(
+            path.to_lowercase(),
+            Changed {
+                place: Place { path: path.clone(), members: Vec::new() },
+                ids: vec![format!("the English font's accented letters, for {}", ids.join(", "))],
+                modules: modules.into_iter().fold(Vec::new(), |mut found, module| {
+                    if !found.contains(&module) {
+                        found.push(module);
+                    }
+                    found
+                }),
+                old: english.len(),
+                data: Vec::new(),
+                warnings: Vec::new(),
+            },
+        );
+        files.insert(path, extended);
+    }
+    for (shown, warning) in warnings {
+        if let Some(changed) = touched.get_mut(&shown) {
+            changed.warnings.push(warning);
         }
     }
     let mut out: Vec<Changed> = touched.into_values().collect();

@@ -525,7 +525,26 @@ character pack; packs inside packs work the same way).
   before its first note, which comes after them). The loop is
   between the markers `loopStart` and `loopEnd` (move them to move it); a
   tune without them loops whole where the game's did. Unedited files build
-  back to the disc's own bytes. See [music and ambient loops](assets/music.md).
+  back to the disc's own bytes. A tune can bring **new instruments**: WAVs
+  given as programs of the bank, which its MIDI file names by number:
+
+  ```json
+  "music:BG_000_000": {"file": "music/tune.mid",
+    "instruments": {"100": {"file": "music/pulse.wav", "root": 69, "loop": true},
+                    "101": [{"file": "music/low.wav", "keys": [0, 59], "root": 48},
+                            {"file": "music/high.wav", "keys": [60, 127], "root": 72}]}}
+  ```
+
+  Each sample plays over its `keys` (all by default), sounds at its own
+  pitch at `root` (60), loops when `loop` is true (or as its `smpl` chunk
+  says), at `volume` 0 to 128 (128, its own level), with the envelope of a
+  program of the bank named by `"like"` (otherwise no attack, full sustain,
+  a short release). A number the bank has already is replaced. The music
+  banks share 0x78000 bytes of sound memory one at a time (`BG_056` fills
+  it, Palm Brinks' `BG_000` leaves 0x40B50); `build` says how much the
+  bank's samples take, cuts samples nothing plays any more (the old tune's)
+  when the new ones would not fit, and refuses what still does not.
+  See [music and ambient loops](assets/music.md).
 - **Text as UTF-8.** The menus' item, shop, map and NPC names, their lines
   and the system messages are message files (`.mes`): a table of message
   ids, each a run of the font's glyphs and layout codes. `mod asset ISO NAME
@@ -543,10 +562,17 @@ character pack; packs inside packs work the same way).
   each gets the messages whose text you changed and keeps its own others.
   Unedited text builds back to the disc's own bytes. A character the
   language's font lacks is refused (English has ASCII, full-width
-  punctuation and kana; French, German, Italian and Spanish ASCII and their
-  accented letters); `meswin/system_N.mes`, `sysmes_N.mes` and
+  punctuation and kana, and 32 accented letters, `¡¿ÀÁÄÇÈÉÑÖÜßàáâäçèéêëíîïñóôöùúûü`,
+  which `build` draws into the English font when a text uses them; French,
+  German, Italian and Spanish ASCII and their accented letters; Japanese
+  and Korean their fonts' kana, kanji and Hangul). The accented letters in
+  English take a whole cell each (15 pixels, an ASCII letter 8), as the
+  game spaces every glyph past ASCII, so they stand a little apart from
+  their neighbours. `meswin/system_N.mes`, `sysmes_N.mes` and
   `etc/helpN.mes` may not outgrow the buffers the game loads them into, and
-  a menu's window or column is only so wide. See [the message
+  `build` warns of a line wider than the window it goes in is likely to
+  take (wider than any of the file's on the disc, or in a menu more than a
+  letter wider than the message's own). See [the message
   format](assets/text.md).
 - **Maps in Blender.** `c2 map-export s17` writes the map as one glTF scene
   (`extracted/maps/s17/`): placements, pieces with their meshes, trigger

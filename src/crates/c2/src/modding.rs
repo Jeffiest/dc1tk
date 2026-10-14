@@ -598,6 +598,9 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             item.data.len(),
             item.old
         );
+        for warning in &item.warnings {
+            println!("{warning}");
+        }
     }
     let program_of = |line: &replace::Line, value: &serde_json::Value| -> Result<i64> {
         Ok(c2_script::mapscript::program_number(value, &line.module, &plan.numbers, &consts)?)
