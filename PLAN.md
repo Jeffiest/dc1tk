@@ -176,6 +176,37 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    predicted to overflow the field SPU region by 1,392 bytes in s01 (set
    1600 with EV_100_155), not observed.
 
+## Next: standard C
+
+Make the script compiler a conforming C89/C90 freestanding implementation
+(the whole language, and `<float.h>`, `<limits.h>`, `<stdarg.h>` and
+`<stddef.h>`; no hosted library), for code people write: decompiled retail
+code keeps compiling to its own bytes. What the compiler lacks today
+([language](docs/language.md)), in the order to do it:
+
+1. **A conformance suite.** A test of every C89 feature, each passing,
+   failing to compile, or compiling with different behaviour, so progress is
+   measured.
+2. **Cheap features:** `goto` and labels, `sizeof`, the comma operator,
+   unary `+`, `const`/`volatile`/`register`/`auto`, `static` locals (kept
+   between calls), initialised globals, multi-dimensional local arrays, K&R
+   function definitions, macros with parameters with `#` and `##`, `#error`,
+   `#line`, `__FILE__`/`__LINE__`/`__STDC__`, and full `#if` arithmetic.
+3. **Integer types:** `char`, `short`, `long`, `signed` and `unsigned` with
+   C's widths, wrap-around and conversions, emulated on the VM's ints.
+4. **C's semantics in a strict mode** (`#pragma std c89` or a mod option):
+   assignment converts to the variable's type (the VM stores the value's own
+   type), `&&`/`||` give 0 or 1, and natives in conditions run only when C
+   would evaluate them (lowered to branches). Retail code keeps its meaning.
+5. **Composite types, lowered to what the VM has:** structs and unions as
+   their members' slots, global arrays and global pointers (the VM has no
+   indexed access to globals: generated accessors), pointer arithmetic and
+   pointers to pointers, function pointers (an index and a generated
+   dispatch), and user-defined varargs with `<stdarg.h>`.
+6. **`double`.** C89 asks for about 10 significant digits; the VM's floats
+   are 32-bit. Software doubles, or a documented limit of the
+   implementation. The `string` type stays as an extension.
+
 ## Next: modding
 
 Done: mods that need mods (`requires`, `after`), editor headers for patches
