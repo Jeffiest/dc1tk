@@ -134,18 +134,21 @@ pub enum ModCommand {
         #[command(flatten)]
         common: Common,
     },
-    /// Copy game assets off the disc (models, textures, sounds) into a mod, to replace them there.
+    /// Copy game assets off the disc (models, textures, sounds, text) into a mod, to replace them
+    /// there.
     Asset {
         /// The disc image.
         iso: PathBuf,
         /// The mod's name.
         name: String,
-        /// Asset ids (texture:c02a02, model:c02fuku*, sound:SE_CURSOR_MOVE, bank:SP_003), each
-        /// copied in its common format with its line added to mod.json; or files as extract lays
-        /// them out (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied into disc/.
+        /// Asset ids (texture:c02a02, model:c02fuku*, sound:SE_CURSOR_MOVE, bank:SP_003,
+        /// text:en/shopname), each copied in its common format with its line added to mod.json; or
+        /// files as extract lays them out (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img),
+        /// copied into disc/.
         #[arg(required = true)]
         paths: Vec<String>,
-        /// Export files in a common format to edit there: png for textures.
+        /// Export files in a common format to edit there: png for textures, wav for sound banks,
+        /// gltf for character packs, txt for message files.
         #[arg(long = "as")]
         form: Option<String>,
         #[arg(long, default_value = "mods")]

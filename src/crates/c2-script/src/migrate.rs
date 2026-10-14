@@ -131,6 +131,13 @@ fn by_id(
                 ));
             }
         }
+        ".txt" => {
+            let Some(id) = at.get(&(Kind::Text, place, None)) else {
+                return Ok(None);
+            };
+            let target = c2_assets::text::text_file(&id[Kind::Text.name().len() + 1..]);
+            out.push((id.clone(), target, source.to_path_buf()));
+        }
         _ => {
             let Some(id) = at.get(&(Kind::Model, place, None)) else {
                 return Ok(None);

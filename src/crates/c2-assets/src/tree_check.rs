@@ -1,7 +1,7 @@
 //! Checking an asset tree against the disc it came from: every file the manifest lists has the
 //! hash the manifest gives it, every asset, unedited, builds back to the disc's own bytes at every
-//! place the manifest lists, and every texture file, character pack and bank of the disc is in the
-//! manifest.
+//! place the manifest lists, and every texture file, character pack, bank and message file of the
+//! disc is in the manifest.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use serde_json::Value;
 use c2_disc::rebuild;
 
 use crate::tree::{self, DiscFile, FileKind, Place};
-use crate::{im3, sounds, Error, Result};
+use crate::{im3, sounds, text, Error, Result};
 
 /// What a check found.
 #[derive(Debug, Default)]
@@ -21,6 +21,7 @@ pub struct Report {
     pub picture_places: usize,
     pub pack_places: usize,
     pub bank_places: usize,
+    pub message_places: usize,
     /// Places of each kind of game file on the disc, and in the manifest (as assets or failures).
     pub on_disc: BTreeMap<&'static str, usize>,
     pub listed: BTreeMap<&'static str, usize>,
@@ -32,6 +33,7 @@ fn kind_name(kind: FileKind) -> &'static str {
         FileKind::Textures => "texture files",
         FileKind::Pack => "character packs",
         FileKind::Bank => "sound banks",
+        FileKind::Messages => "message files",
     }
 }
 
@@ -97,6 +99,7 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
     let mut pictures: BTreeMap<String, (Place, Wanted)> = BTreeMap::new();
     let mut packs = Vec::new();
     let mut banks = Vec::new();
+    let mut texts = Vec::new();
     for (id, asset) in assets {
         match asset["kind"].as_str() {
             Some("texture") => {
@@ -113,6 +116,7 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
             }
             Some("model") => packs.push((id, asset)),
             Some("bank") => banks.push((id, asset)),
+            Some("text") => texts.push((id, asset)),
             _ => {}
         }
     }
@@ -200,6 +204,39 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
     problems.extend(bank_problems);
     let _ = std::fs::remove_dir_all(temp);
 
+    // message files: the text built into each place, with the first (the one exported) as the
+    // reference
+    let fonts =
+        text::Fonts { english_table: text::english_table(disc.iter().map(|file| (file.path.as_str(), file.data))) };
+    report.message_places = texts.iter().map(|(_, asset)| places(asset).len()).sum();
+    let text_problems: Vec<String> = texts
+        .par_iter()
+        .flat_map(|(id, asset)| -> Vec<String> {
+            let check = || -> Result<Vec<String>> {
+                let Some(file) = first_file(asset, ".txt") else {
+                    return Ok(vec![format!("{id}: no text")]);
+                };
+                let written =
+                    String::from_utf8(read(root, file)?).map_err(|_| Error::invalid(format!("{file} is not UTF-8")))?;
+                let found = places(asset);
+                let Some((reference, _)) = found.first() else {
+                    return Ok(Vec::new());
+                };
+                let reference = at(&tops, reference)?;
+                let mut out = Vec::new();
+                for (place, _) in &found {
+                    let data = at(&tops, place)?;
+                    if text::build(&written, data, reference, &place.display(), &fonts)? != data {
+                        out.push(format!("{id}: builds back to other bytes at {}", place.display()));
+                    }
+                }
+                Ok(out)
+            };
+            check().unwrap_or_else(|error| vec![format!("{id}: {error}")])
+        })
+        .collect();
+    problems.extend(text_problems);
+
     // every game file of the disc is listed
     for file in tree::game_files(disc).files {
         *report.on_disc.entry(kind_name(file.kind)).or_default() += 1;
@@ -210,6 +247,7 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
             Some("texture") => FileKind::Textures,
             Some("model") => FileKind::Pack,
             Some("bank") => FileKind::Bank,
+            Some("text") => FileKind::Messages,
             _ => continue,
         };
         for (place, _) in places(asset) {

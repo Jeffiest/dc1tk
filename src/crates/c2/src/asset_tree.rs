@@ -73,8 +73,9 @@ impl Source {
         let text = std::fs::read(&manifest_path)
             .with_context(|| format!("{} is not an extracted disc (no manifest.json)", path.display()))?;
         let manifest: Value = serde_json::from_slice(&text).with_context(|| manifest_path.display().to_string())?;
-        // the disc files whose bytes hold a texture file, character pack or bank (members follow the
-        // file holding them in the list)
+        // the disc files whose bytes hold a texture file, character pack, bank or message file
+        // (members follow the file holding them in the list), and the English font's table the
+        // message files' text needs
         let mut wanted: Vec<String> = Vec::new();
         let mut current: Option<(String, bool)> = None;
         let mut close = |current: &mut Option<(String, bool)>| {
@@ -84,7 +85,7 @@ impl Source {
         };
         for item in manifest["files"].as_array().map(Vec::as_slice).unwrap_or_default() {
             let file = item["path"].as_str().unwrap_or("");
-            let relevant = tree::file_kind(file).is_some();
+            let relevant = tree::file_kind(file).is_some() || file.eq_ignore_ascii_case(c2_assets::text::ENGLISH_FONT);
             if item["packed"].as_bool() == Some(false) {
                 close(&mut current);
                 current = Some((file.to_string(), relevant));
@@ -196,6 +197,7 @@ pub fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -
         "{} banks from {} places: {} entries, {} as WAVs, {} named",
         summary.banks, summary.bank_places, summary.sounds, summary.sounds_exported, summary.sounds_named
     );
+    println!("{} texts from {} message files", summary.texts, summary.message_places);
     if !summary.failed.is_empty() {
         let mut reasons: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
         for (_, reason) in &summary.failed {
@@ -222,8 +224,8 @@ fn run_check(source: &Path, assets: &Path) -> Result<ExitCode> {
     let report = tree_check::check(&disc.files()?, assets, &temp)?;
     println!("{} files have the manifest's hashes", report.files);
     println!(
-        "built back: {} picture places, {} character pack places, {} bank places",
-        report.picture_places, report.pack_places, report.bank_places
+        "built back: {} picture places, {} character pack places, {} bank places, {} message file places",
+        report.picture_places, report.pack_places, report.bank_places, report.message_places
     );
     for (kind, count) in &report.on_disc {
         println!("{kind}: {count} on the disc, {} in the manifest", report.listed.get(kind).copied().unwrap_or(0));

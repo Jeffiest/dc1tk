@@ -10,6 +10,7 @@
 //!   "sound:EV_000_130/13": {"file": "sounds/chime.wav", "volume": 90},
 //!   "bank:SP_003": "sounds/SP_003",                         a folder of WAVs by entry number
 //!   "texture:a01ia_01": {"file": "art/floor.png", "only": ["map/a"]},
+//!   "text:en/shopname": "text/en/shopname.txt",             a message file's text, by message
 //!   "file:snd2/event/EV_000_130.snd": "raw/bank.snd"        a disc file or pack member by path
 //! },
 //! "add": {
@@ -29,7 +30,9 @@
 //! mod's patches see its name as a constant holding the entry's number. A file: line with "like"
 //! makes its game file whole from a common format, with the asset or disc file "like" names as the
 //! template (a texture file of PNGs, or a character pack of a glTF): a new file the disc does not
-//! have, with pictures or meshes of its own.
+//! have, with pictures or meshes of its own. A text (c2_assets::text) changes, at every place of
+//! its id, the messages whose text differs from the one exported (the id's first place), and adds
+//! the ids that place lacks; each place keeps the rest of its own version.
 //!
 //! Each change is built with the disc's own file as the template, as discfiles does. Models are
 //! built first, then banks, then pictures, so a texture goes into a pack whose model another line
@@ -43,6 +46,7 @@ use std::path::{Path, PathBuf};
 use c2_assets::ids::{self, Index};
 use c2_assets::im3;
 use c2_assets::sounds::{self, Given};
+use c2_assets::text;
 use c2_assets::tree::{self, Kind, Place};
 use c2_disc::archive::Archive;
 use c2_disc::{rebuild, Image};
@@ -152,7 +156,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     let kind = ids::kind_of(key);
     if kind.is_none() && !line.is_file() && !line.is_map() {
         return Err(line.fail(
-            "a key is an asset id (texture:, model:, sound:, bank:), file: and a disc path, or map: and a map's name",
+            "a key is an asset id (texture:, model:, sound:, bank:, text:), file: and a disc path, or map: and a map's name",
         ));
     }
     let options = match value {
@@ -241,6 +245,9 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         }
         Some(Kind::Sound) if !(line.file.is_file() && suffix_is(&line.file, ".wav")) => Some("a WAV file"),
         Some(Kind::Bank) if !line.file.is_dir() => Some("a folder of WAVs named by entry number (004.wav)"),
+        Some(Kind::Text) if !(line.file.is_file() && suffix_is(&line.file, ".txt")) => {
+            Some("a .txt file of messages (mod asset text:ID writes one)")
+        }
         _ => None,
     };
     if let Some(wanted) = wanted {
@@ -355,6 +362,8 @@ pub enum Change {
     Picture(usize, PathBuf),
     /// An entry of the bank, replaced or added.
     Entry(Given),
+    /// The messages of a text file, with the place its text was exported from (the id's first).
+    Text(PathBuf, Place),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -371,7 +380,7 @@ pub struct Edit {
 impl Edit {
     fn slot(&self) -> (String, Option<usize>) {
         let at = match &self.change {
-            Change::Model(_) => None,
+            Change::Model(_) | Change::Text(..) => None,
             Change::Picture(entry, _) => Some(*entry),
             Change::Entry(given) => Some(given.number),
         };
@@ -473,6 +482,12 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                 Kind::Model => {
                     for (place, _) in places {
                         resolved.edits.push(edit(place, Change::Model(line.file.clone())));
+                    }
+                }
+                Kind::Text => {
+                    let reference = asset.places[0].0.clone();
+                    for (place, _) in places {
+                        resolved.edits.push(edit(place, Change::Text(line.file.clone(), reference.clone())));
                     }
                 }
                 Kind::Sound => {
@@ -666,12 +681,14 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
     let disc = Archive::open(image.bytes())?;
     let index = discfiles::disc_index(&disc);
     let mut files = files.clone();
-    // models, then banks, then pictures; outer places first
+    // models, then banks, then pictures, then texts; outer places first
     let stage = |edit: &Edit| match edit.change {
         Change::Model(_) => 0,
         Change::Entry(_) => 1,
         Change::Picture(..) => 2,
+        Change::Text(..) => 3,
     };
+    let fonts = discfiles::disc_fonts(&disc, &image, &index);
     let mut groups: BTreeMap<(usize, usize, String), Vec<&Edit>> = BTreeMap::new();
     for edit in &resolved.edits {
         let key = (stage(edit), edit.place.members.len(), edit.place.display().to_lowercase());
@@ -709,6 +726,15 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
                         built
                     }
                 }
+            }
+            3 => {
+                let Change::Text(source, reference) = &first.change else { unreachable!() };
+                let written = c2_py::read_text(source)?;
+                let original = index
+                    .get(&reference.path.to_lowercase())
+                    .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
+                    .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
+                text::build(&written, &old, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?
             }
             1 => {
                 let mut given: Vec<Given> = edits
@@ -808,9 +834,9 @@ pub fn add_lines(mod_dir: &Path, new: &[(String, Value)]) -> Result<()> {
 
 /// Copies assets off the disc into the mod by id (or pattern), each in its common format where
 /// the mod's line will find it: textures/<name>.png, models/<name>/ (as the export writes it),
-/// sounds/<bank>/<NNN_NAME>.wav, sounds/<bank>/; and adds each one's line to mod.json. An id the
-/// mod has a line for already is left as it is. Returns (id, the file in the mod, whether it was
-/// written).
+/// sounds/<bank>/<NNN_NAME>.wav, sounds/<bank>/, text/<language>/<name>.txt; and adds each one's
+/// line to mod.json. An id the mod has a line for already is left as it is. Returns (id, the file
+/// in the mod, whether it was written).
 pub fn copy_out(
     iso_path: &Path,
     mod_dir: &Path,
@@ -820,6 +846,7 @@ pub fn copy_out(
     let image = Image::open(iso_path)?;
     let disc = Archive::open(image.bytes())?;
     let disc_index = discfiles::disc_index(&disc);
+    let fonts = discfiles::disc_fonts(&disc, &image, &disc_index);
     let known: Vec<String> = if mod_dir.join(mods::INDEX).is_file() {
         lines(mod_dir)?.into_iter().map(|line| line.key.to_lowercase()).collect()
     } else {
@@ -860,6 +887,11 @@ pub fn copy_out(
                     let target = format!("sounds/{stem}");
                     let files = sounds::export(data)?;
                     (target.clone(), files.into_iter().map(|(name, data)| (format!("{target}/{name}"), data)).collect())
+                }
+                Kind::Text => {
+                    let target = text::text_file(&asset.id[Kind::Text.name().len() + 1..]);
+                    let exported = text::export(data, &place.display(), &asset.id, &fonts)?;
+                    (target.clone(), vec![(target, exported.into_bytes())])
                 }
                 Kind::Sound => {
                     let bank = asset.bank.as_deref().unwrap_or_default();
