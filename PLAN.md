@@ -133,7 +133,7 @@ Blender unchanged. The formats and conventions are in
 [maps](docs/assets/maps.md); the example [map-edit](docs/examples/map-edit/)
 was checked in the game. Left over:
 
-- **New maps** (done, being tried). `"add": {"map:m05x": {"file": ...,
+- **New maps** (done, checked in the game: `new-map-test.iso`). `"add": {"map:m05x": {"file": ...,
   "like": "m05"}}` builds a new map from an existing one's edited scene,
   with a row in every language's map table, so `--start-at m05x` reaches it
   ([maps](docs/assets/maps.md) section 9). Left: a new map's own script,
@@ -152,14 +152,16 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    where `jump_to_map` does nothing; towns are entered with
    `go_to_edit_mode(number, program)`, the number from the disc's
    `map/map<language>.cfg`. `--start-at m05` (or `"start_at": "m05"`) starts
-   a new game in a town, scripts of its own or not.
+   a new game in a town, scripts of its own or not, as Max, coming from
+   another town so the town's arrival takes its default spot. Checked in the
+   game (m05, m01).
 2. **Menu and system text** (done). All 302 `.mes` files (and 8 `fconv`
    files laid out the same way) build back byte for byte and export as UTF-8
    text with the game's codes as tags ([text](docs/assets/text.md));
    `text:en/shopname` in `mod.json` changes a file in every copy and version
    of that language. Japanese and Korean beyond ASCII show as `{XXXX}` (no
    table on the disc gives their glyphs); the English font has no accented
-   letters. Not yet tried in the game.
+   letters. Checked in the game (renamed shops).
 3. **Game data** (done). Where every kind lives is in
    [data](docs/assets/data.md); each is a `data:` id in `mod.json`, JSON with
    only the changed fields, merged field by field across mods: `data:items`
@@ -172,7 +174,8 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    engine reads them; the rest are shown to be unread. Left: adding records
    (new items, shops, recipes, parts), Georama requests (mostly code), rivers,
    townspeople (`npc*.cfg`) and a few executable tables (`gift_item_tbl`,
-   `GolfClubDef`, `aquafish_mixTable`). Being tried in the game.
+   `GolfClubDef`, `aquafish_mixTable`). Checked in the game: shop prices; the
+   patched executable boots.
 4. **Memory budgets** (done). [memory](docs/assets/memory.md) gives each
    budget from the engine (read buffer, map and loading-screen limits,
    script buffer, placements, texture blocks, GS memory, character stacks,
@@ -229,8 +232,8 @@ fingerprint (`mods/NAME/fingerprints.json`, `mod check --rename`),
 wrapping natives (`#pragma override place_monster` routes the target
 scripts' calls through the mod's function; `original()` calls the native),
 and `mod slim`, which turns copied files into patches that compile to the
-same bytes; see [modding](docs/modding.md). Not yet tried in the game:
-a native wrapper (e.g. swapping a fight's monsters).
+same bytes; see [modding](docs/modding.md). Native wrappers are checked in
+the game (the castle's soldiers swapped for rats).
 
 - **Save counters.** `NEW_COUNTER` once the number of 16-bit save counters is
   known (scripts use 0 to 20).
@@ -258,7 +261,7 @@ scripts (see [usage](docs/usage.md#mods) and [the formats](docs/assets/)):
 Unedited exports build back to the disc's own bytes in every case. Still to
 do:
 
-1. **Sounds in the game** (fixed where c2 was wrong, being tried). The game
+1. **Sounds in the game** (done, checked in the game: `sound-test.iso`). The game
    reads the copy `build` rewrites (`DATA.HD4`'s first match); the event 50
    test's sounds were most likely too quiet (a 40-140 Hz boom at volume 44)
    or masked by an unchanged shared glass sample. A real gap was fixed: banks
@@ -285,7 +288,7 @@ do:
    (`e210a`) still moves 6 `KEY`s through Blender (leg translations up to
    0.04 off). Character meshes compare by value now: an unedited Blender
    round trip rebuilds nothing, an edited mesh only itself, weights intact.
-5. **New characters** (done, being tried). `models::new_pack` builds a whole
+5. **New characters** (done, checked in the game: a waving figure). `models::new_pack` builds a whole
    pack from glTF (skeleton, rigid and skinned meshes, weights, bind pose,
    motions as `KEY`s, pictures, `info.cfg`), with a template pack for the
    formats; cloth is left out, motion set 0 only, no shadow model. Example:
