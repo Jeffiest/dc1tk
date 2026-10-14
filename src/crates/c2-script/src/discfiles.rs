@@ -382,6 +382,9 @@ pub struct Replaced {
     pub old: Option<usize>,
     pub data: Vec<u8>,
     pub new_file: bool,
+    /// What changed inside it, for the report: a character pack's KEYs and members
+    /// (c2_assets::models::pack_changes).
+    pub details: Vec<String>,
 }
 
 /// Puts the mods' files into the disc files build writes. files holds the files the build already
@@ -430,7 +433,14 @@ pub fn replaced(
                 None => fs::read(file)?,
             };
             files.insert(top, new.clone());
-            report.push(Replaced { path: path.clone(), module: module.clone(), old: None, data: new, new_file: true });
+            report.push(Replaced {
+                path: path.clone(),
+                module: module.clone(),
+                old: None,
+                data: new,
+                new_file: true,
+                details: Vec::new(),
+            });
             continue;
         }
         let Some(entry) = index.get(&lower(&top)) else {
@@ -479,12 +489,19 @@ pub fn replaced(
         };
         let (new, packed) = step().map_err(|error| fail(error.to_string()))?;
         files.insert(top, packed);
+        let details = match &old {
+            Some(old) if lower(path).ends_with(".chr") => {
+                c2_assets::models::pack_changes(old, &new).unwrap_or_default()
+            }
+            _ => Vec::new(),
+        };
         report.push(Replaced {
             path: path.clone(),
             module: module.clone(),
             old: old.map(|old| old.len()),
             data: new,
             new_file: false,
+            details,
         });
     }
     Ok((files, report))

@@ -946,6 +946,9 @@ pub struct Changed {
     /// What the build says of it, each line "warning: ..." or "note: ...": a text's lines wider than
     /// the game's windows take, the instruments a tune added and the memory they take.
     pub warnings: Vec<String>,
+    /// What changed inside it, for the report: a character pack's KEYs and members
+    /// (c2_assets::models::pack_changes).
+    pub details: Vec<String>,
 }
 
 /// The model a line gives, built with the disc's pack as the template.
@@ -1115,7 +1118,11 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
             old: old.len(),
             data: Vec::new(),
             warnings: Vec::new(),
+            details: Vec::new(),
         });
+        if stage == 0 {
+            changed.details = c2_assets::models::pack_changes(&old, &new).unwrap_or_default();
+        }
         for edit in edits {
             if !changed.ids.contains(&edit.id) {
                 changed.ids.push(edit.id.clone());
@@ -1162,6 +1169,7 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
                 old: english.len(),
                 data: Vec::new(),
                 warnings: Vec::new(),
+                details: Vec::new(),
             },
         );
         files.insert(path, extended);
@@ -1252,6 +1260,7 @@ pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(File
             old: 0,
             data,
             warnings: notes.into_iter().map(|note| format!("note: {note}")).collect(),
+            details: Vec::new(),
         });
     }
     Ok((files, out))

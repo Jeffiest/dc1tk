@@ -1462,6 +1462,67 @@ fn build_set(c: &Context, set: &LoadedSet, given: &[Given], gone: &[usize]) -> R
     Ok(Some(SetBuilt { mot, edits, changed, removed }))
 }
 
+/// What an info.cfg's KEYs became, for build's report: a line for each KEY added, taken out, or
+/// given other frames or another step, by motion set, against the original info.cfg. A KEY is
+/// matched by its set and name (a name a set gives twice, in order); a new KEY's number is its
+/// place among its set's KEYs, counted from 0.
+pub fn key_changes(before: &[u8], after: &[u8]) -> Vec<String> {
+    let (old_sets, new_sets) = (motion_sets(before), motion_sets(after));
+    let arg = |info: &[u8], key: &Key, at: usize| {
+        key.statement.args.get(at).map(|(_, bytes)| String::from_utf8_lossy(&info[bytes.clone()]).into_owned())
+    };
+    let name = |key: &Key| match &key.statement.args[0].0 {
+        Value::Str(name) => name.clone(),
+        other => format!("{other:?}"),
+    };
+    let set_name = |set: &SetInfo| match &set.id {
+        Value::Int(id) => id.to_string(),
+        other => format!("{other:?}"),
+    };
+    let frames = |info: &[u8], key: &Key| {
+        format!(
+            "frames {} to {}, step {}",
+            arg(info, key, 1).unwrap_or_default(),
+            arg(info, key, 2).unwrap_or_default(),
+            arg(info, key, 3).unwrap_or_default()
+        )
+    };
+    let mut lines = Vec::new();
+    for new_set in &new_sets {
+        let old_set = old_sets.iter().find(|set| info_cfg::same_value(&set.id, &new_set.id));
+        let mut matched: Vec<bool> = old_set.map_or_else(Vec::new, |set| vec![false; set.keys.len()]);
+        for (number, key) in new_set.keys.iter().enumerate() {
+            let found = old_set.and_then(|set| {
+                set.keys.iter().enumerate().position(|(at, old)| !matched[at] && name(old) == name(key))
+            });
+            let Some(at) = found else {
+                lines.push(format!(
+                    "KEY \"{}\" added to motion set {} as number {number}: {}",
+                    name(key),
+                    set_name(new_set),
+                    frames(after, key)
+                ));
+                continue;
+            };
+            matched[at] = true;
+            let old = &old_set.expect("a matched KEY has its set").keys[at];
+            let (was, now) = (frames(before, old), frames(after, key));
+            if was != now {
+                lines.push(format!("KEY \"{}\" of motion set {}: {now} (was {was})", name(key), set_name(new_set)));
+            }
+        }
+        if let Some(set) = old_set {
+            for (at, key) in set.keys.iter().enumerate().filter(|(at, _)| !matched[*at]) {
+                lines.push(format!("KEY \"{}\" taken out of motion set {} (number {at})", name(key), set_name(set)));
+            }
+        }
+    }
+    for set in old_sets.iter().filter(|old| !new_sets.iter().any(|new| info_cfg::same_value(&new.id, &old.id))) {
+        lines.push(format!("motion set {} taken out", set_name(set)));
+    }
+    lines
+}
+
 /// Frame r of a motion `len` frames long, on a motion `old` frames long.
 fn scaled(r: i64, len: i64, old: i64) -> i64 {
     if len == 0 {
@@ -2007,6 +2068,44 @@ mod tests {
             .replace("KEY_END", "\tKEY \"stand.001\", 30, 34, 0.02;\r\nKEY_END");
         assert_eq!(info, wanted);
         assert_motions(&exported(&built), &given, &model(&pack));
+    }
+
+    #[test]
+    fn the_report_says_which_keys_were_added_moved_or_taken_out_and_which_members_changed() {
+        let pack = sample_pack();
+        let mut given = exported(&pack);
+        retime(&mut given, "jump", 2.0);
+        let mut spin = animation(&given, "stand").clone();
+        spin.set("name", Value::Str("spin".into()));
+        spin.set("extras", crate::object! {"step" => 0.3});
+        if let Some(Value::List(animations)) = given.json.get_mut("animations") {
+            animations.retain(|a| a.get("name").and_then(Value::as_str) != Some("walk"));
+            animations.push(spin);
+        }
+        let (_, built) = rebuilt(&pack, &given).unwrap();
+        assert_eq!(
+            key_changes(&member(&pack, "info.cfg"), &member(&built, "info.cfg")),
+            [
+                "KEY \"jump\" of motion set 0: frames 21 to 29, step 0.30 (was frames 16 to 20, step 0.30)",
+                "KEY \"spin\" added to motion set 0 as number 2: frames 30 to 34, step 0.30",
+                "KEY \"walk\" taken out of motion set 0 (number 1)",
+            ]
+        );
+        let changes = models::pack_changes(&pack, &built).unwrap();
+        let mot = member(&built, "c.mot").len();
+        let info = member(&built, "info.cfg").len();
+        assert_eq!(
+            changes[3..],
+            [
+                format!(
+                    "members changed: info.cfg ({info} bytes, was {}), c.mot ({mot} bytes, was {})",
+                    INFO.len(),
+                    member(&pack, "c.mot").len()
+                ),
+                "members unchanged: c.mds".to_string(),
+            ]
+        );
+        assert_eq!(models::pack_changes(&pack, &pack).unwrap(), ["unchanged"]);
     }
 
     #[test]
