@@ -1522,7 +1522,10 @@ extern void set_treasure_box_state(enum treasure_box_state state) NATIVE(38);
 // Original name: _SET_TB_ANGLE.
 extern void set_treasure_box_lid(float open) NATIVE(39);
 
-// Gives the player count of an item (default 1).
+// Gives the player count of an item (default 1). Owning ITEM_CAMERA is what opens the main
+// menu's invention entry (MenuInternInit's HatumeiMenuOkFlag); ITEM_PHOTO_ALBUM opens its album.
+// Taking photos also needs the camera in one of Max's active-item slots, which no native fills:
+// the player moves it there in the item menu.
 // Original name: _ADD_ITEM.
 extern void add_item(item_id item, OPTIONAL(int count)) NATIVE(40);
 
@@ -4219,7 +4222,8 @@ extern void change_dir(OPTIONAL(directory dir)) NATIVE(1081);
 extern void remove_item(item_id item, OPTIONAL(int count)) NATIVE(1082);
 
 // Equips an owned item on character 0 to 2, swapping it with the item in its slot. Fails if the
-// item is not owned or is already equipped.
+// item is not owned or is already equipped. Only the equipment slots its item type has
+// (weapons, clothes, ridepod parts); never an active-item slot, so not the camera.
 // Original name: _SET_CHARA_EQUIP.
 extern void equip_chara_item(enum user_chara chara, item_id item) NATIVE(1083);
 

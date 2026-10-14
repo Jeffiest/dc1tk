@@ -15,6 +15,7 @@ pub mod font;
 pub mod from_gltf;
 pub mod game_data;
 pub mod georama_data;
+pub mod idea_data;
 pub mod ids;
 pub mod im3;
 pub mod info_cfg;

@@ -3,7 +3,8 @@
 //! chosen mods' tables into the disc files they come from. Most are cfg scripts in DATA.DAT (some
 //! kept in several copies, some inside packs); monsters, spectrumising, Donny's shop, the
 //! character tables and parts of the inventions and fishing tables are in the boot executable,
-//! patched in place in the built image, every table's patches together.
+//! patched in place in the built image, every table's patches together. The inventions table
+//! carries the ideas' names (`ideas`, the copies of `neta2.lst`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use c2_assets::cfg_text::Edit;
 use c2_assets::chest_data::{self, Chests};
 use c2_assets::data_table::{self, Table as DataTable};
 use c2_assets::dungeon_layout::{self, Layouts};
+use c2_assets::idea_data::{self, Ideas};
 use c2_assets::item_data::{self, ItemText, Items};
 use c2_assets::monster_data::{self, Monsters, Patch};
 use c2_assets::shop_data::{self, Shops};
@@ -58,6 +60,8 @@ enum Table {
     Shops(Shops, Vec<String>, DataTable),
     Monsters(Monsters),
     Data(DataTable, Vec<String>),
+    /// The inventions (recipes and scoops) and the ideas, by the paths of both, the recipes' first.
+    Inventions(DataTable, Ideas, Vec<String>),
     /// Dungeon floor layouts, which add and rewrite whole rooms rather than edit arguments.
     Layouts(Layouts),
     /// What dungeon chests hold, rewritten by whole groups and floors as layouts are.
@@ -94,6 +98,13 @@ fn load(table: &str, elf: &[u8], current: &dyn Fn(&str) -> Result<Vec<u8>>) -> R
         "layouts" => Table::Layouts(Layouts::read(&read_all(&dungeon_layout::paths())?, dungeon_layout::parts(elf)?)?),
         "parts" => Table::Data(dungeon_layout::parts_table(elf)?, Vec::new()),
         "chests" => Table::Chests(Chests::read(&read_all(&chest_data::paths())?)?),
+        "inventions" => {
+            let mut paths = game_data::paths(table);
+            let inventions = game_data::read(table, &read_all(&paths)?, elf)?;
+            let ideas = Ideas::read(&read_all(&idea_data::paths())?)?;
+            paths.extend(idea_data::paths());
+            Table::Inventions(inventions, ideas, paths)
+        }
         kind if game_data::KINDS.contains(&kind) => {
             let paths = game_data::paths(kind);
             Table::Data(game_data::read(kind, &read_all(&paths)?, elf)?, paths)
@@ -139,6 +150,13 @@ fn split_items(given: &Value) -> (Value, Value) {
     (items, Value::Object(extra))
 }
 
+/// A mod's invention table split into the recipes and scoops and the ideas (a list).
+fn split_inventions(given: &Value) -> (Value, Value) {
+    let mut inventions = given.clone();
+    let ideas = inventions.as_object_mut().and_then(|object| object.remove("ideas"));
+    (inventions, ideas.unwrap_or_else(|| Value::Array(Vec::new())))
+}
+
 /// A mod's shop table split into the cfg part and Donny's shop.
 fn split_shops(given: &Value) -> (Value, Value) {
     let mut shops = given.clone();
@@ -162,6 +180,13 @@ impl Table {
             }
             Table::Monsters(monsters) => monsters.to_json(),
             Table::Data(table, _) => table.to_json(),
+            Table::Inventions(table, ideas, _) => {
+                let mut json = table.to_json();
+                if let Some(object) = json.as_object_mut() {
+                    object.insert("ideas".into(), ideas.to_json());
+                }
+                json
+            }
             Table::Layouts(layouts) => layouts.to_json(),
             Table::Chests(chests) => chests.to_json(),
         }
@@ -202,6 +227,21 @@ impl Table {
                 let (edits, patches) = table.changes_all(given)?;
                 (edits, patches, Vec::new())
             }
+            Table::Inventions(table, ideas, paths) => {
+                let (mut tables, mut lists) = (Vec::new(), Vec::new());
+                for (module, given) in given {
+                    let (inventions, ideas) = split_inventions(given);
+                    tables.push((module.clone(), inventions));
+                    lists.push((module.clone(), ideas));
+                }
+                let (mut edits, patches) = table.changes_all(&tables)?;
+                // the ideas' files follow the recipes'
+                let first = paths.len() - idea_data::paths().len();
+                edits.extend(
+                    ideas.changes_all(&lists)?.into_iter().map(|edit| Edit { file: edit.file + first, ..edit }),
+                );
+                (edits, patches, Vec::new())
+            }
             Table::Layouts(_) | Table::Chests(_) => bail!("layouts and chests are changed whole, in apply_data"),
         })
     }
@@ -213,6 +253,15 @@ impl Table {
             Table::Shops(shops, paths, _) => (shops.apply(edits)?, paths),
             Table::Monsters(_) | Table::Layouts(_) | Table::Chests(_) => (Vec::new(), &[]),
             Table::Data(table, paths) => (table.apply(edits)?, paths),
+            Table::Inventions(table, ideas, paths) => {
+                let first = paths.len() - idea_data::paths().len();
+                let (mine, theirs): (Vec<Edit>, Vec<Edit>) = edits.iter().cloned().partition(|edit| edit.file < first);
+                let theirs: Vec<Edit> =
+                    theirs.into_iter().map(|edit| Edit { file: edit.file - first, ..edit }).collect();
+                let mut written = table.apply(&mine)?;
+                written.extend(ideas.apply(&theirs)?);
+                (written, paths)
+            }
         })
     }
 }
@@ -492,5 +541,8 @@ mod tests {
         assert_eq!(merged_items(items, &extra)["items"][0]["spectrumise"]["value"], 3);
         let (shops, extra) = split_shops(&json!({"prices": [], "donny": [{"row": 0, "level": 2}]}));
         assert_eq!((shops, extra["donny"][0]["level"].clone()), (json!({"prices": []}), json!(2)));
+        let (inventions, ideas) = split_inventions(&json!({"recipes": [], "ideas": [{"idea": 251, "name": "x"}]}));
+        assert_eq!((inventions, ideas), (json!({"recipes": []}), json!([{"idea": 251, "name": "x"}])));
+        assert_eq!(split_inventions(&json!({"scoops": []})).1, json!([]));
     }
 }
