@@ -1,8 +1,10 @@
 """Writes a tiny map scene that follows docs/assets/maps.md section 8, as `c2 map-export` would:
 two placements of one template (a model piece, a collision piece and a camera-collision piece,
-and a template point), the map's own points (a door, a point light with a KHR light, a sound
-emitter, an invent box, and two points whose data is a raw argument list), a fixed camera, and
-the map settings on the root.
+a template point and a template animation turning the model's node), the map's own points (a
+door, a point light with a KHR light, a sound emitter, an invent box, an animation moving a
+piece of the second placement whose fields have the names scenes had before they were decoded,
+and two points whose data is a raw argument list), a fixed camera, and the map settings on the
+root.
 
     python make_test_map.py OUT_DIR            (any Python 3)
     blender --background --python make_test_map.py -- OUT_DIR
@@ -185,6 +187,19 @@ def build():
             {"role": "point", "kind": "pos", "enable": 1, "flag": [0, 0, 0, 0], "data": {}},
             translation=[0.0, 0.0, 30.0],
         )
+        spin = b.node(
+            "point:spin",
+            {
+                "role": "point",
+                "kind": "anime",
+                "enable": 1,
+                "flag": [0, 0, 0, 0],
+                "data": {
+                    "placement": "house", "piece": "house_m", "frame": "house_body", "drives": 2, "mode": 1,
+                    "start": [0.0, 0.0, 0.0], "step": [0.0, 1.0, 0.0], "end": [0.0, 0.0, 0.0], "uniform": 0, "relative": 0,
+                },
+            },
+        )
         return b.node(
             "place:" + name,
             {
@@ -195,7 +210,7 @@ def build():
                 "far_clip": far_clip,
                 "slot": slot,
             },
-            [model, col, cam, point],
+            [model, col, cam, point, spin],
             translation=translation,
             rotation=quat_y(degrees),
         )
@@ -277,10 +292,23 @@ def build():
         },
         translation=[0.0, 50.0, 200.0],
     )
+    bob = b.node(
+        "point:bob",
+        {
+            "role": "point",
+            "kind": "anime",
+            "enable": 1,
+            "flag": [0, 0, 0, 0],
+            "data": {
+                "placement": "house02", "piece": "house_m", "frame": "", "kind": 1, "unknown_int": 4,
+                "v0": [0.0, 0.0, 0.0], "v1": [0.0, 0.5, 0.0], "v2": [0.0, 20.0, 0.0], "extra": [0, 0],
+            },
+        },
+    )
     camera = b.node("camera:0", {"role": "camera", "index": 0, "pos": [0.0, 100.0, -50.0], "groups": ["inside"]})
 
     placements = b.node("placements", {"role": "group"}, places)
-    points = b.node("points", {"role": "group"}, [door, lamp, sound, invent, raw_door, raw_light])
+    points = b.node("points", {"role": "group"}, [door, lamp, sound, invent, bob, raw_door, raw_light])
     cameras = b.node("cameras", {"role": "group"}, [camera])
     map_tree = {
         "images": ["t01.img"],

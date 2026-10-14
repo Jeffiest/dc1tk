@@ -26,6 +26,8 @@ this repository). Map meshes are the MDS format of
   byte with `c2-assets`' `mds.rs`, and export with `to_gltf.rs` unchanged.
 - What `-m`, `-a` and `-c` meshes are, the collision layout and its per-triangle
   attributes, how textures are found, how pieces are placed (section 2-4).
+- `FUNC_ANIME_DATA` (animated pieces), every field, from `CObjAnime`'s
+  assembly, with each of its 848 lines accounted for (section 5.1).
 - One map model to glTF and back (section 7.1): whole node names, matching by
   `extras.mds_index`, real textures from a search path of `.img` files, blend
   flags as material settings, collision attributes as material names. Every map
@@ -43,9 +45,9 @@ this repository). Map meshes are the MDS format of
   made in Blender stands where it was put with a picture of its own, its
   collision copy blocks the player, and a repainted map picture shows.
 
-**Not yet:** `FUNC_ANIME_DATA` is only partly decoded; the map memory budget
-is unmeasured; how the VU program combines vertex colour with lighting is
-untraced.
+**Not yet:** the map memory budget is unmeasured; how the VU program
+combines vertex colour with lighting is untraced; `invent`'s int and float
+and `sound`'s int are unnamed.
 
 ## 1. Files of a map
 
@@ -296,7 +298,7 @@ Wrap or clamp comes from each picture's GS CLAMP value (52,791 UVs lie outside
 IM3, 2 IM2), 4,802 clamp (5), 839 repeat (0), 18 have no CLAMP (IM2) and 3 hold
 junk values. 166 `#texanime` scripts in 161 map IMGs scroll and
 copy texture areas; `im3::read` skips them, so they must be kept inside the
-`.img`. 848 `FUNC_ANIME_DATA` points animate pieces and frames, and 44
+`.img`. 848 `FUNC_ANIME_DATA` points animate pieces and frames (section 5.1), and 44
 `PIECE_MATERIAL` blocks recolour materials, by name.
 
 ### 4.3 Collision (`-a` floor and wall, `-c` camera)
@@ -354,13 +356,85 @@ start > end past midnight, equal always).
 | `fire` | 1,636 | `FUNC_FIRE_DATA` | fires |
 | `effect` | 1,234 | `FUNC_EFFECT_NAME` (an effect of the map's `.efp`) | effects |
 | `sound` | 1,129 | `FUNC_SOUND_DATA number, near, far, int, shape, start xyz, end xyz` | ambient sound emitters |
-| `anime` | 848 | `FUNC_ANIME_DATA` placement, piece, frame, kind, int, 3 vectors[, 2 shorts] (partly decoded) | procedural motion of pieces (`CObjAnime`) |
+| `anime` | 848 | `FUNC_ANIME_DATA "placement","piece","frame",drives,mode, start xyz, step xyz, end xyz[,uniform,relative]` (section 5.1) | moving, turning, scaling, recolouring and fading placements, pieces and model nodes every frame (clock hands among them) |
 
 "talk", "exit" and "branch" are point names, not kinds. The map's `.cfg` can
 add points too (`FUNC_DATA "event"` with `FUNC_EVENT_DATA n,"check"`).
 
 Many positions are not in the map at all: scripts place characters and the
 camera with literal coordinates (`place_chara(13, 68.04, 41.85, 1180.61, 3.14)`).
+
+### 5.1 Animated pieces (`FUNC_ANIME_DATA`)
+
+`mapFUNC_ANIME_DATA` (`mapload.cpp:1257`) reads the line into the point
+(`CFuncPoint::AnimeData`); a `CObjAnime` per point (`include/funcpoint.hpp`,
+whose `OBJ_ANIME_PARAM` and `OBJ_ANIME_MODE` name the values below) does the
+rest. Its code is assembly only (`funcpoint.cpp:51-55`): `AssignFuncAnime`
+0x2A10B0, `Step` 0x2A05D0 (its mode switch is the table `at_475__2`
+0x373650), `SetParam` 0x2A0C20, `GetParam` 0x2A0FD0, `CheckOver` 0x2A0530.
+The point's own `FUNC_POS` is never read.
+
+| argument | field | meaning |
+|---|---|---|
+| 1 | `placement` | the placement a map's own point moves, by its `MAP_PARTS` name (`CMap::AssignFuncPoint`, `map.cpp:1365`; `GetPlaceParts`, `map.cpp:379`, exact case). A template's points move the placement that copies them (`CMapParts::AssignFuncAnime`, `mapparts.cpp:851`, from `Copy` when `PlaceParts` places it, `map.cpp:313`) and ignore it: 350 of their 524 name the template, 174 something else or `""` |
+| 2 | `piece` | the piece moved, by `PIECE_NAME` (`SearchPiece`, `mapparts.cpp:107`, exact case); `""` moves the whole placement |
+| 3 | `frame` | the node of the piece's model moved (`mgCFrame::SearchFrame`, `mg_frame.cpp:980`: depth first, names compared up to `--` by `StrCmp`, `mg_frame.cpp:948`); `""` moves the whole piece. A found node turns about its own origin (`SetRotType(2)`) |
+| 4 | `drives` | what changes (`SetParam`): 1 position, 2 rotation in degrees (Euler XYZ, kept within ±360,000 and turned into radians), 3 scale, 4 colour (a node only: drawn unlit, `mgCFrameAttr::no_light`, in `color`, whose default is 128 a channel), 5 alpha (a node only: `obj_alpha`, the first number, 1 opaque). Other values change nothing |
+| 5 | `mode` | how it changes each frame (`Step`), below; other values act as 0 |
+| 6-8 | `start` | the value it starts at |
+| 9-11 | `step` | added every frame; mode 10 reads it as start hour, end hour and fade hours |
+| 12-14 | `end` | the value it ends at |
+| 15 | `uniform` | non-zero: y and z are x's (one number scales evenly). Never set on the disc |
+| 16 | `relative` | non-zero with `drives` 1: the position is put through the piece's own matrix (`CObject::GetMatrix`, or the placement's with no piece), so a piece with no `frame` moves by the value every frame (its value becomes a speed). Set on 40 lines, only 8 of them positions (the battleship's two hulls bobbing, `p01_battleship`) |
+
+Arguments 15 and 16 are optional (5 lines have 14 arguments) and default to
+0 (`CFuncPoint::Initialize` clears the point).
+
+Values are absolute, in the space of the moved object's parent, and replace
+its own from the start: `AssignFuncAnime` sets `start` at once, so a node's
+position, rotation or scale from its model and a piece's `PIECE_POS`,
+`PIECE_ROT` or `PIECE_SCALE` give way to it, and a placement's `MAP_PARTS`
+transform (set after the copy) from the first frame on. A rotation's start
+is where it is turned to, not an offset.
+
+| mode | name | each frame |
+|---|---|---|
+| 0 | hold | sets the value again (never on the disc) |
+| 1 | loop | adds `step`, without end |
+| 2 | stop | adds `step`; once an axis that moves reaches `end`, holds `end` |
+| 3 | repeat | adds `step`; once an axis reaches `end`, back to `start` |
+| 4 | ping-pong | adds `step` until an axis reaches `end` (then `end`), then subtracts it until one reaches `start` (then `start`), without end |
+| 5 | there and back once | as 4, then stops for good (never on the disc) |
+| 6 | look at the player | a rotation only: the yaw (y) and pitch (x) from the moved object to the player (the player's position in the placement's or node's space), each kept between `start` and `end`; z stays |
+| 7 | random | `start` + (`end` - `start`) × a new random number from 0 to 1, each axis apart |
+| 8 | minute hand | y = -360 × the hour of the game's clock (one turn an hour); x and z stay |
+| 9 | hour hand | y = -30 × the hour (one turn in twelve hours) |
+| 10 | by the hour | `end` within the hours `step[0]`-`step[1]` (`CheckTime`), `start` outside, blended linearly over `step[2]` hours before and after (`SubTime`, the short way round the clock) |
+
+A step overshooting the range makes a value flicker between `start` and
+`end` every frame (`a05ia`'s nodes `a_0` to `e_3`: scale 0.9 and 0.8, step
+-1). The animation runs every frame while its point is enabled and within
+its hours (`CFuncPoint::Check`, `CheckTime`), from `CMap::AnimeStep`
+(`map.cpp:1286`; a template's points from `CMapParts::AnimeStep`,
+`mapparts.cpp:773`), which the main loop and the Georama edit loop call once
+a frame (`dng_main.cpp:1790`, `editloop.cpp:279`; edit parts too,
+`editmapeffect.cpp:85`), whether the placement is shown or not. 111 points
+start disabled (scripts switch points with `set_func_point_enabled`), and 4
+have hours. A disabled one holds its value.
+
+On the disc: 848 points in 105 maps, 524 in templates and 324 the maps' own;
+783 move a model node, 52 a whole piece and 13 a whole placement (`s03`'s
+ground, scrolled 50 units a frame over 1,600 and repeated). 28 name a
+placement or piece the file lacks (placed at run time, or left over) and move
+nothing there.
+
+| drives | count | modes |
+|---|---|---|
+| position | 66 | ping-pong 49, repeat 16, stop 1 |
+| rotation | 376 | repeat 122, loop 119, ping-pong 72, stop 27, minute hand 14, hour hand 14, look 8 |
+| scale | 199 | ping-pong 162, random 33, stop 4 |
+| colour | 202 | ping-pong 173, random 23, repeat 6 |
+| alpha | 5 | ping-pong 4, by the hour 1 (`g03`'s `seali`, shown 20:00-6:00 fading over an hour) |
 
 ## 6. Map kinds
 
@@ -588,7 +662,7 @@ what the importer needs and the importer allows for the rest:
   - `plight`: `power`, `color[3]` (0-511), `mode`, `args[4]`, `flicker`, `depth`, `period`
   - `effect`: `effect`
   - `sound`: `number`, `near`, `far`, `unknown_int`, `shape`, `start[3]`, `end[3]`
-  - `anime`: `placement`, `piece`, `frame`, `kind`, `unknown_int`, `v0[3]`, `v1[3]`, `v2[3]`, `extra[2]` (when present)
+  - `anime`: `placement`, `piece`, `frame`, `drives`, `mode`, `start[3]`, `step[3]`, `end[3]`, `uniform` and `relative` (when the line has them; one alone writes the other as 0). Scenes exported before section 5.1 named them `kind`, `unknown_int`, `v0`, `v1`, `v2` and `extra[2]`; the importer and the add-on read those too, and the add-on renames them all when one is edited
   - `pos`: none
 - **Other fields:** a point's `flag` is `[a, b, start_hour, end_hour]`; a
   piece's `time` `[start, end]`; `far_clip` `[distance, fade]` or null;

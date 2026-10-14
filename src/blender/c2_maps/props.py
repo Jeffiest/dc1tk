@@ -236,6 +236,33 @@ def data_prop(kind, field):
 
         return StringProperty(name=field.label, get=get, set=set)
 
+    if field.choices:
+        values = [choice[0] for choice in field.choices]
+        items = [(identifier, label, description, value) for value, identifier, label, description in field.choices]
+
+        def get(self):
+            value = _int(c2data.data_field(_active(), field))
+            return value if value in values else values[0]
+
+        def set(self, value):
+            obj = _active()
+            if obj is not None:
+                c2data.set_data_field(obj, field, int(value))
+
+        return EnumProperty(name=field.label, items=items, get=get, set=set)
+
+    if field.kind == "flag":
+
+        def get(self):
+            return bool(_int(c2data.data_field(_active(), field)))
+
+        def set(self, value):
+            obj = _active()
+            if obj is not None:
+                c2data.set_data_field(obj, field, 1 if value else 0)
+
+        return BoolProperty(name=field.label, get=get, set=set)
+
     if field.size == 1:
         if field.kind == "int":
 
@@ -307,6 +334,12 @@ class C2Settings(bpy.types.PropertyGroup):
     paint_mask: IntProperty(name="Ignore mask", min=0, max=255, default=0)
     show_raw: BoolProperty(name="All values", description="Show every value of extras.c2", default=False)
     show_boxes: BoolProperty(name="Invent boxes", description="Draw invent points' boxes (data min, max)", default=True)
+    show_anime: BoolProperty(
+        name="Animations",
+        description="Draw what anime points move: a position's path, a rotation's axis and arc, and a "
+        "line from the selected point to what it moves",
+        default=True,
+    )
     hour: IntProperty(
         name="Hour",
         description="The time of day to show the map at: pieces with hours (towns' day and night "

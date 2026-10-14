@@ -231,6 +231,12 @@ def data_field(obj, field):
         return field.default
     if hasattr(data, "keys"):
         value = data.get(field.key)
+        if value is None and field.old is not None:
+            key, index = (field.old, None) if isinstance(field.old, str) else field.old
+            value = data.get(key)
+            if value is not None and index is not None:
+                value = list(to_py(value))
+                value = value[index] if index < len(value) else None
         if value is None:
             return field.default
         if field.size > 1:
@@ -261,4 +267,68 @@ def set_data_field(obj, field, value):
             data[field.pos] = value
         assign(obj, ("data",), data)
         return
-    assign(obj, ("data", field.key), list(value) if field.size > 1 else value)
+    value = list(value) if field.size > 1 else value
+    if data is not None and field.old is not None:
+        # a field still under its old name: every field of the point takes its new name
+        data = to_py(data)
+        upgraded = schema.upgrade_data(lookup(obj, ("kind",)), data)
+        if upgraded != data:
+            upgraded[field.key] = value
+            assign(obj, ("data",), upgraded)
+            return
+    assign(obj, ("data", field.key), value)
+
+
+# What an anime point moves (docs/assets/maps.md section 5.1).
+
+
+def exact_name(obj, role=None):
+    """The game's name of a node: extras.c2.name, else its name without prefix and suffix."""
+    name = lookup(obj, ("name",))
+    return name if isinstance(name, str) else schema.game_name(obj.name, role)
+
+
+def frame_base(name):
+    """A model node's name as the engine compares it (`StrCmp`, mg_frame.cpp:948): up to `--`."""
+    return name.split("--", 1)[0]
+
+
+def placements_by_name(root):
+    found = {}
+    for obj in placements(root) if root is not None else []:
+        found.setdefault(exact_name(obj, "placement"), obj)
+    return found
+
+
+def anime_target(obj, by_name=None):
+    """(object, problem): the placement, piece or model node an anime point moves, as
+    `CObjAnime::AssignFuncAnime` finds it: a template's point its own placement, a map's own
+    point the placement it names; then the piece by name and the first model node (lowest
+    mds_index) whose name matches up to `--`. The object is None when something is missing."""
+    fields = {field.key: field for field in schema.DATA_FIELDS["anime"]}
+    placement = placement_of(obj)
+    if placement is None:
+        name = data_field(obj, fields["placement"])
+        if by_name is None:
+            by_name = placements_by_name(map_root(obj))
+        placement = by_name.get(name)
+        if placement is None:
+            return None, "no placement %r" % name
+    piece_name = data_field(obj, fields["piece"])
+    if not piece_name:
+        return placement, None
+    piece = next(
+        (child for child in placement.children if role(child) == "piece" and exact_name(child, "piece") == piece_name),
+        None,
+    )
+    if piece is None:
+        return None, "no piece %r in %s" % (piece_name, placement.name)
+    frame_name = data_field(obj, fields["frame"])
+    if not frame_name:
+        return piece, None
+    base = frame_base(frame_name)
+    nodes = [node for node in descendants(piece)[1:] if role(node) == "mds" and frame_base(exact_name(node)) == base]
+    if not nodes:
+        return None, "no model node %r in %s" % (frame_name, piece.name)
+    nodes.sort(key=lambda node: (lookup(node, ("mds_index",), 1 << 30), node.name))
+    return nodes[0], None

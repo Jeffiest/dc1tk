@@ -302,6 +302,54 @@ def main():
     want = Vector((gx, -gz, gy))
     check(any((Vector(p) - want).length < 1e-3 for p in lines), "invent box corner in the right place")
 
+    # Anime points: what they move, their fields by name (also under the old names), the overlay.
+    house01 = bpy.data.objects["place:house01"]
+    house02_obj = bpy.data.objects["place:house02"]
+    spin = next(o for o in house01.children if schema.strip_suffix(o.name) == "point:spin")
+    bob = bpy.data.objects["point:bob"]
+    check(spin.empty_display_type == "ARROWS" and bob.empty_display_type == "ARROWS", "anime points are arrows")
+    target, problem = c2data.anime_target(spin)
+    check(
+        target is not None and schema.strip_suffix(target.name) == "house_body--a40aof-" and c2data.placement_of(target) == house01,
+        "a template animation moves the node of its own placement: %s %s" % (target and target.name, problem),
+    )
+    target, problem = c2data.anime_target(bob)
+    check(
+        target is not None and schema.strip_suffix(target.name) == "piece:house_m" and target.parent == house02_obj,
+        "a map's own animation moves the piece of the placement it names: %s %s" % (target and target.name, problem),
+    )
+    activate(bob)
+    check(settings.d_anime_drives == "POSITION" and settings.d_anime_mode == "PINGPONG", "old kind and int read by name")
+    check(tuple(settings.d_anime_end) == (0.0, 20.0, 0.0) and not settings.d_anime_uniform, "old v2 and extra read by name")
+    check(schema.anime_vectors(1, 4)["end"][0] == "End (units)", "a position's end is in units")
+    # bob ping-pongs piece:house_m of house02 from 0 to 20 up: game (-150, 5 + 20, 220), Blender (-150, -220, 25)
+    lines = overlay.anime_lines(bob)
+    check(any((Vector(p) - Vector((-150.0, -220.0, 25.0))).length < 1e-3 for p in lines), "the path's end in the right place: %s" % lines)
+    lines = overlay.anime_lines(spin)
+    centre = c2data.anime_target(spin)[0].matrix_world.translation
+    ends = [Vector(p) - centre for p in lines[:2]]
+    check(
+        len(lines) > 4 and all(abs(abs(e.z) - overlay.AXIS_HALF) < 1e-3 and e.xy.length < 1e-3 for e in ends),
+        "a turn about the game's Y has an upright axis: %s" % ends,
+    )
+    check(len(overlay.anime_lines(bob, link=True)) == len(overlay.anime_lines(bob)) + 2, "a selected point's line to what it moves")
+    settings.d_anime_mode = "REPEAT"
+    data = c2data.to_py(c2data.lookup(bob, ("data",)))
+    check("unknown_int" not in data and "v0" not in data and "extra" not in data, "an edit gives every field its name: %s" % data)
+    bob_key = (("map:t01", 1), ("points", 1), ("point:bob", 1))
+    edited(
+        bob_key,
+        lambda c2: c2.__setitem__("data", {
+            "placement": "house02", "piece": "house_m", "frame": "", "drives": 1, "mode": 3, "start": [0.0, 0.0, 0.0],
+            "step": [0.0, 0.5, 0.0], "end": [0.0, 20.0, 0.0], "uniform": 0, "relative": 0,
+        }),
+    )
+    activate(spin)
+    settings.d_anime_uniform = True
+    check(c2data.lookup(spin, ("data", "uniform")) == 1, "uniform set")
+    spin_key = (("map:t01", 1), ("placements", 1), ("place:house01", 1), ("point:spin", 1))
+    edited(spin_key, lambda c2: c2["data"].update(uniform=1))
+
     house02 = bpy.data.objects["place:house02"]
     activate(house02)
     settings.place_group = "outside"
@@ -336,6 +384,15 @@ def main():
     check(result == {"FINISHED"}, "add point in a placement")
     talk = bpy.data.objects.get("point:talk")
     check(talk is not None and talk.parent and talk.parent.name == "place:house01", "talk is in place:house01")
+    body = next(o for o in c2data.descendants(house01) if schema.strip_suffix(o.name) == "house_body--a40aof-")
+    activate(body)
+    result = bpy.ops.c2.add_point(preset="ANIME", name="wobble")
+    check(result == {"FINISHED"}, "add an animation of a model node")
+    wobble = bpy.data.objects.get("point:wobble")
+    want = {"placement": "house01", "piece": "house_m", "frame": "house_body--a40aof-", "drives": 2, "mode": 1}
+    got = {key: c2data.lookup(wobble, ("data", key)) for key in want} if wobble else None
+    check(got == want and wobble.parent == house01, "the animation names the active node: %s" % got)
+    check(wobble is not None and c2data.anime_target(wobble)[0] == body, "and moves it")
     added_light = bpy.data.objects.get("point:plight")
     check(added_light is not None and added_light.type == "LIGHT", "the added point light is a light")
     added_door = bpy.data.objects.get("point:door")
@@ -448,6 +505,8 @@ def main():
         photo,
         raw_door,
         raw_light,
+        spin,
+        bob,
         house02,
         bpy.data.objects["piece:house_m"],
         floor,

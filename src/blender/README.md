@@ -59,7 +59,10 @@ the node tree, then:
 - shows trigger points as empties: event points as cubes of their size (doors
   15, ladders 25, chests 20 when the scale is 1), invent boxes as cubes and
   their data's min-max box drawn in the viewport, sounds as spheres of their
-  near distance;
+  near distance, animations (`anime`) as arrows with what they do drawn on
+  what they move: a position's path from start to end, a rotation's axis and
+  the arc it sweeps, and for the selected one a line to what it moves
+  (Animations in the Map panel);
 - makes point lights (`plight`) Blender point lights, with the glTF light's
   range as the light's custom distance;
 - draws the materials as the game does (Material Preview and Rendered): the
@@ -94,7 +97,12 @@ fields, which write straight into `extras.c2`:
   event's kind with a menu of door, event, t_box..., its event number,
   program, arguments, target and flags; a light's power, colour, mode and
   flicker; a sound's number, near and far; an invent box's id and corners...).
-  A point light's colour also sets the Blender light's (r, g, b / 255);
+  A point light's colour also sets the Blender light's (r, g, b / 255). An
+  animation shows the placement, piece and model node it moves (and whether
+  the scene has them), what it drives (position, rotation in degrees, scale,
+  colour, alpha) and how (loop, stop at the end, repeat, ping-pong, random,
+  look at the player, a clock's hands, by the hour), with the start, step and
+  end values that mode reads, labelled for it;
 - "All values" lists every value of `extras.c2`, each with an edit button,
   for anything without a field of its own (cameras, piece materials).
 
@@ -116,7 +124,9 @@ named by the image (31 Latin-1 characters at most, sides powers of two up to
 
 **Add.** Points at the 3D cursor: a position (`point`, for spawns and
 doors), door, treasure chest, event trigger, point light, sound emitter,
-invent box, effect, fire, lens flare. They go into the active object's
+invent box, effect, fire, lens flare, piece animation (it names the active
+model node, piece or placement and turns it about Y, a degree a frame).
+They go into the active object's
 placement (copied with its template) or, with nothing in a placement active,
 the map's own `points`. Names are made unique within their parent and kept
 to 31 bytes. Duplicate Placement copies a placement with its pieces and
@@ -145,7 +155,8 @@ with its button; the whole list is in the text "c2 validation"): names over
 31 bytes (cp932), event targets over 15, repeated placement names, more than
 320 placements (400 for dungeons), unknown point kinds, collision faces that
 are not triangles or whose material is not a `col_` name, more than 8
-`TIME_LIGHT_NUM`, nodes without `extras.c2`, picture names over 31 Latin-1
+`TIME_LIGHT_NUM`, nodes without `extras.c2`, animations naming a placement,
+piece or model node the scene lacks, picture names over 31 Latin-1
 characters, and new pictures whose sides are not powers of two up to 1024.
 
 **Export.** Choose the mod folder (`mods/NAME`) and press Export Map to Mod.
@@ -170,11 +181,13 @@ blender --background --factory-startup --python src/blender/tests/test_addon.py
 
 enables the add-on, writes a small map with `tests/make_test_map.py` (two
 placements of a template with a model, a collision and a camera-collision
-piece and a point; a door, a point light with a KHR light, a sound, an
-invent box, and two points whose data is a raw argument list; a fixed camera;
-map settings), imports it (on Windows through a stand-in for `c2 map
-export`), checks the game look, the light set's world and suns and the hour
-filter, edits fields, adds a point of every kind, duplicates a placement,
+piece, a point and an animation of the model's node; a door, a point light
+with a KHR light, a sound, an invent box, an animation of a piece under the
+field names of older exports, and two points whose data is a raw argument
+list; a fixed camera; map settings), imports it (on Windows through a
+stand-in for `c2 map export`), checks the game look, the light set's world
+and suns and the hour filter, what the animations move and the lines drawn
+for them, edits fields, adds a point of every kind, duplicates a placement,
 makes a new model from a mesh, paints a collision face, validates, draws
 every panel with a checking stand-in layout, exports into a mod and checks
 the written glTF: every node and `extras.c2` of the source kept (edited ones

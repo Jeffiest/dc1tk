@@ -106,6 +106,9 @@ def draw_point(layout, obj, settings):
         layout.label(text="data is a list: fields by position", icon="INFO")
     box = layout.box()
     box.label(text=schema.KIND_LABELS[kind], icon="PROPERTIES")
+    if kind == "anime":
+        draw_anime(box, obj, settings)
+        return
     for field in schema.DATA_FIELDS[kind]:
         prop_name = props.data_prop_name(kind, field)
         if kind == "event" and field.key == "kind":
@@ -131,6 +134,46 @@ def draw_point(layout, obj, settings):
             light.prop(obj.data, "cutoff_distance")
     elif kind == "plight":
         box.label(text="Not a Blender light: re-import or add it again", icon="ERROR")
+
+
+def draw_anime(box, obj, settings):
+    """An anime point: what it moves (and whether the scene has it), what it drives and how, and
+    the vectors its mode reads, labelled for it."""
+    fields = {field.key: field for field in schema.DATA_FIELDS["anime"]}
+
+    def name(key):
+        return props.data_prop_name("anime", fields[key])
+
+    col = box.column(align=True)
+    if c2data.placement_of(obj) is not None:
+        col.label(text="Moves its own placement", icon="OUTLINER_OB_EMPTY")
+    else:
+        col.prop(settings, name("placement"))
+    col.prop(settings, name("piece"))
+    col.prop(settings, name("frame"))
+    target, problem = c2data.anime_target(obj)
+    if target is not None:
+        col.label(text="Moves %s" % target.name, icon="CHECKMARK")
+    else:
+        col.label(text="Moves nothing: %s" % problem, icon="ERROR")
+    col = box.column(align=True)
+    col.prop(settings, name("drives"))
+    col.prop(settings, name("mode"))
+    drives = getattr(settings, name("drives"))
+    mode = getattr(settings, name("mode"))
+    drives_value = next(choice[0] for choice in schema.ANIME_DRIVES if choice[1] == drives)
+    mode_choice = next(choice for choice in schema.ANIME_MODES if choice[1] == mode)
+    box.label(text=mode_choice[3], icon="INFO")
+    for key, (label, elements) in schema.anime_vectors(drives_value, mode_choice[0]).items():
+        col = box.column(align=True)
+        col.label(text=label)
+        row = col.row(align=True)
+        for index, element in enumerate(elements):
+            row.prop(settings, name(key), index=index, text=element)
+    col = box.column(align=True)
+    col.prop(settings, name("uniform"))
+    if drives_value == 1:
+        col.prop(settings, name("relative"))
 
 
 def draw_placement(layout, obj, settings):
@@ -206,7 +249,9 @@ class C2_PT_main(_Panel, bpy.types.Panel):
         row = box.row(align=True)
         row.prop(settings, "collision_colour", text="")
         row.operator(edit.C2_OT_recolour_collision.bl_idname, text="", icon="COLOR")
-        box.prop(settings, "show_boxes")
+        row = box.row(align=True)
+        row.prop(settings, "show_boxes")
+        row.prop(settings, "show_anime")
         row = box.row(align=True)
         row.prop(settings, "by_hour", text="", icon="TIME")
         sub = row.row(align=True)
