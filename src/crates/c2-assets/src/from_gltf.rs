@@ -8,7 +8,7 @@ use crate::json::{self, Value};
 use crate::mds::{self, Material, Mds, Mdt, Node, Prim, IDENT};
 use crate::mot::{self, KeyList};
 use crate::py::{self, Num};
-use crate::to_gltf::{mat_inv, mat_mul, normalize, xform_dir, xform_point, Matrix};
+use crate::to_gltf::{mat_inv, mat_mul, normalize, xform_dir, xform_point, CollisionAttributes, Matrix};
 use crate::{bail, Error, Result};
 
 /// A glTF's JSON and its buffers.
@@ -515,6 +515,67 @@ fn material_from_gltf(gltf: &Value, number: &Value) -> Result<Material> {
     Ok(m)
 }
 
+/// The MDT material for a collision mesh's glTF material: the attributes its name gives
+/// (`col_ground0_foot2_area6_mask12`) encoded in the diffuse colour, or the material as exported
+/// (its extras) when they still encode the same attributes, so an untouched material keeps its
+/// bytes. A material not named so keeps the attributes its extras give.
+fn collision_material(gltf: &Value, number: &Value) -> Result<Material> {
+    if matches!(number, Value::Null) {
+        let mut m = Material::new("");
+        m.diffuse = CollisionAttributes::default().encode();
+        return Ok(m);
+    }
+    let gm = index(item(gltf, "materials")?, number)?;
+    let name = gm.get("name").and_then(Value::as_str).unwrap_or("");
+    let extras = gm.get("extras");
+    let exported = match extras.and_then(|e| e.get("mdt_diffuse")) {
+        Some(diffuse) => Some(floats_of(diffuse)?),
+        None => None,
+    };
+    let Some(attributes) =
+        CollisionAttributes::parse(name).or_else(|| exported.as_deref().map(CollisionAttributes::decode))
+    else {
+        bail!("collision material {name:?} is not named col_ground<n>_foot<n>_area<n>_mask<n>");
+    };
+    if exported.as_deref().is_some_and(|d| d.len() == 4 && CollisionAttributes::decode(d) == attributes) {
+        return material_from_gltf(gltf, number);
+    }
+    let texture = extras.and_then(|e| e.get("texture")).and_then(Value::as_str).unwrap_or("");
+    let mut m = Material::new(texture);
+    m.diffuse = attributes.encode();
+    Ok(m)
+}
+
+/// What a model's collision breaks of the engine's rules (LoadCollisionFile reads positions and
+/// triangle lists only, each corner a vertex index: a prim must be of type 0x213; a strip or a
+/// colour-flagged prim leaves its frame without collision, normal or uv indices are misread).
+pub fn collision_problems(model: &Mds) -> Vec<String> {
+    let mut out = Vec::new();
+    for node in &model.nodes {
+        let Some(t) = &node.mdt else {
+            continue;
+        };
+        for (k, p) in t.prims.iter().enumerate() {
+            if p.kind != COLLISION_PRIM {
+                out.push(format!("{}: prim {k} is of type 0x{:x}, not 0x{COLLISION_PRIM:x}", node.name, p.kind));
+            }
+            if p.verts.len() % 3 != 0 {
+                out.push(format!("{}: prim {k} has {} corners, not whole triangles", node.name, p.verts.len()));
+            }
+            if p.verts.iter().flatten().any(|&v| v < 0 || v as usize >= t.vertices.len()) {
+                out.push(format!("{}: prim {k} names a vertex the mesh does not have", node.name));
+            }
+            if p.material as usize >= t.materials.len() {
+                out.push(format!("{}: prim {k} names a material the mesh does not have", node.name));
+            }
+        }
+    }
+    out
+}
+
+/// The prim type a collision mesh is made of: a triangle list of positions only (stride 1).
+pub const COLLISION_PRIM: u32 = mds::PRIM_TRIANGLES | mds::F_NO_UV | mds::F_NO_NORMAL;
+
 /// What import_gltf writes: the MDS, the .wgt and the .bbp.
 pub struct Imported {
     pub mds: Vec<u8>,
@@ -522,17 +583,160 @@ pub struct Imported {
     pub bbp: Vec<u8>,
 }
 
-/// The model rebuilt from a glTF, the template's meshes replaced by the glTF's of the same names
-/// (only those in `meshes` when given).
+/// Which mesh of a template a glTF mesh node stands for: the frame it replaces the mesh of, or a
+/// new frame of this name.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MeshId {
+    Frame(usize),
+    New(String),
+}
+
+/// How import reads the glTF.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ImportOptions {
+    /// The model is collision: each mesh is written as type 0x213 triangle lists of positions alone
+    /// (normals, uvs and colours dropped), each material's diffuse colour encoding the attributes
+    /// its name gives (`col_ground0_foot2_area6_mask12`, see `collision_material`).
+    pub collision: bool,
+}
+
+/// The template frame each glTF node stands for: the node's `extras.mds_index` when it has one
+/// within the template, otherwise its name (Blender's ".001" and a skinned mesh node's "_skin"
+/// dropped) as a frame's whole name, else as a frame's name without its `--` flags; the k-th node
+/// of a name given more than once takes the k-th frame of that name. None for a node no frame has
+/// the name of.
+pub fn frames_of(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
+    let empty = Vec::new();
+    let nodes = match json.get("nodes") {
+        Some(nodes) => nodes.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?,
+        None => &empty,
+    };
+    let mut whole: HashMap<&str, Vec<usize>> = HashMap::new();
+    let mut base: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, node) in model.nodes.iter().enumerate() {
+        whole.entry(node.name.as_str()).or_default().push(i);
+        base.entry(node.base_name()).or_default().push(i);
+    }
+    let mut taken: HashMap<(bool, bool, String), usize> = HashMap::new();
+    let mut out = Vec::with_capacity(nodes.len());
+    for n in nodes {
+        let index = n.get("extras").and_then(|e| e.get("mds_index")).and_then(Value::as_int);
+        if let Some(i) = index.and_then(|i| usize::try_from(i).ok()).filter(|&i| i < model.nodes.len()) {
+            out.push(Some(i));
+            continue;
+        }
+        let name = frame_name(json, n)?;
+        let stem = name.split_once("--").map_or(name.as_str(), |(stem, _)| stem);
+        let (in_whole, frames) = match (whole.get(name.as_str()), base.get(name.as_str()), base.get(stem)) {
+            (Some(frames), _, _) => (true, frames),
+            (None, Some(frames), _) | (None, None, Some(frames)) => (false, frames),
+            _ => {
+                out.push(None);
+                continue;
+            }
+        };
+        let k = taken.entry((n.has("skin"), in_whole, name.clone())).or_insert(0);
+        out.push(Some(frames[(*k).min(frames.len() - 1)]));
+        *k += 1;
+    }
+    Ok(out)
+}
+
+/// The mesh nodes of a glTF with the template mesh each stands for.
+pub fn mesh_ids(json: &Value, model: &Mds) -> Result<Vec<(usize, MeshId)>> {
+    let frames = frames_of(json, model)?;
+    let empty = Vec::new();
+    let nodes = json.get("nodes").and_then(Value::as_list).unwrap_or(&empty);
+    let mut out = Vec::new();
+    for (gi, n) in nodes.iter().enumerate() {
+        if n.has("mesh") {
+            let id = match frames[gi] {
+                Some(frame) => MeshId::Frame(frame),
+                None => MeshId::New(frame_name(json, n)?),
+            };
+            out.push((gi, id));
+        }
+    }
+    Ok(out)
+}
+
+/// {mesh: what the mesh holds}: its node's transform and skin, and its primitives' vertex data and
+/// materials by value, so a tool that writes the same mesh another way still matches. Meshes are
+/// told apart by the template mesh they stand for.
+pub fn mesh_contents(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, String>> {
+    let mut out = BTreeMap::new();
+    let nodes = item(&gltf.json, "nodes")?.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
+    for (gi, id) in mesh_ids(&gltf.json, model)? {
+        let node = &nodes[gi];
+        let mesh = index(item(&gltf.json, "meshes")?, item(node, "mesh")?)?;
+        let transform = Value::Object(
+            ["translation", "rotation", "scale", "matrix", "skin"]
+                .iter()
+                .map(|key| (key.to_string(), node.get(key).cloned().unwrap_or(Value::Null)))
+                .collect(),
+        );
+        let mut parts = vec![transform.sorted_text()];
+        let Some(primitives) = item(mesh, "primitives")?.as_list() else {
+            bail!("'primitives' is not a list");
+        };
+        for primitive in primitives {
+            let Value::Object(attributes) = item(primitive, "attributes")? else {
+                bail!("'attributes' is not an object");
+            };
+            let mut sorted: Vec<&(String, Value)> = attributes.iter().collect();
+            sorted.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut indices: Vec<&Value> = sorted.iter().map(|(_, index)| index).collect();
+            if let Some(index) = primitive.get("indices") {
+                indices.push(index);
+            }
+            for index in indices {
+                if !matches!(index, Value::Null) {
+                    parts.push(accessor(gltf, index)?.repr());
+                }
+            }
+            let material = match primitive.get("material") {
+                Some(number) => index(item(&gltf.json, "materials")?, number)?.clone(),
+                None => Value::Null,
+            };
+            parts.push(material.sorted_text());
+        }
+        out.insert(id, parts.join("\n"));
+    }
+    Ok(out)
+}
+
+/// The meshes of the given glTF that differ from the export's, or that the export does not have.
+pub fn changed_meshes(exported: &Gltf, given: &Gltf, model: &Mds) -> Result<BTreeSet<MeshId>> {
+    let before = mesh_contents(exported, model)?;
+    let after = mesh_contents(given, model)?;
+    Ok(after.into_iter().filter(|(id, content)| before.get(id) != Some(content)).map(|(id, _)| id).collect())
+}
+
+/// The model rebuilt from a glTF, the template's meshes replaced by the glTF's: each glTF mesh
+/// node replaces the mesh of the frame it stands for (`frames_of`), only those in `meshes` when
+/// given.
 pub fn import_gltf(
     gltf: &Gltf,
     template: &[u8],
     bbp_data: Option<&[u8]>,
     wgt_data: Option<&[u8]>,
-    meshes: Option<&BTreeSet<String>>,
+    meshes: Option<&BTreeSet<MeshId>>,
+) -> Result<Imported> {
+    import_with(gltf, template, bbp_data, wgt_data, meshes, &ImportOptions::default())
+}
+
+/// import_gltf as the options say.
+pub fn import_with(
+    gltf: &Gltf,
+    template: &[u8],
+    bbp_data: Option<&[u8]>,
+    wgt_data: Option<&[u8]>,
+    meshes: Option<&BTreeSet<MeshId>>,
+    options: &ImportOptions,
 ) -> Result<Imported> {
     let j = &gltf.json;
     let mut model: Mds = mds::parse(template)?;
+    let resolved = frames_of(j, &model)?;
     let mut bbp: Vec<Matrix> = match bbp_data {
         Some(data) => mot::parse_bbp(data)?,
         None => model.world_matrices()?,
@@ -544,10 +748,8 @@ pub fn import_gltf(
         Some(data) if !data.is_empty() => mot::parse(data)?,
         _ => Vec::new(),
     };
+    // frames added for glTF mesh nodes no template frame stands for, by name
     let mut by_name: HashMap<String, usize> = HashMap::new();
-    for (i, node) in model.nodes.iter().enumerate() {
-        by_name.insert(node.base_name().to_string(), i);
-    }
     let empty = Value::List(Vec::new());
     let nodes = item(j, "nodes")?;
     let Some(node_list) = nodes.as_list() else {
@@ -570,7 +772,12 @@ pub fn import_gltf(
     let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
     let mds_index_of = |by_name: &HashMap<String, usize>, gi: &Value| -> Result<Option<usize>> {
         let n = index(nodes, gi)?;
-        Ok(by_name.get(&clean(n.get("name"))?).copied())
+        let at = gi.as_int().unwrap_or(-1);
+        let at = if at < 0 { node_list.len() as i64 + at } else { at };
+        match resolved.get(at as usize).copied().flatten() {
+            Some(frame) => Ok(Some(frame)),
+            None => Ok(by_name.get(&clean(n.get("name"))?).copied()),
+        }
     };
 
     // bind matrices of joints from the inverse bind matrices (keeps edits to the bind pose)
@@ -618,11 +825,15 @@ pub fn import_gltf(
         if let Some(stem) = nm.strip_suffix("_skin") {
             nm = stem.to_string();
         }
-        if meshes.is_some_and(|wanted| !wanted.contains(&nm)) {
+        let id = match resolved[gi] {
+            Some(frame) => MeshId::Frame(frame),
+            None => MeshId::New(nm.clone()),
+        };
+        if meshes.is_some_and(|wanted| !wanted.contains(&id)) {
             continue;
         }
-        let target = match by_name.get(&nm) {
-            Some(&target) => target,
+        let target = match resolved[gi].or_else(|| by_name.get(&nm).copied()) {
+            Some(target) => target,
             None => {
                 // a new node, under the root
                 let mut node = Node::new(&nm, if model.nodes.is_empty() { -1 } else { 0 });
@@ -641,6 +852,7 @@ pub fn import_gltf(
             }
         };
         let skin = match n.get("skin") {
+            Some(_) if options.collision => bail!("collision meshes are rigid; mesh {nm} has a skin"),
             Some(s) => Some(index(item(j, "skins")?, s)?).filter(|s| s.truthy()),
             None => None,
         };
@@ -662,7 +874,11 @@ pub fn import_gltf(
             // rigid: vertices into the frame's own space through the glTF hierarchy
             let mut frame_world = None;
             for (g2, n2) in node_list.iter().enumerate() {
-                if !n2.has("mesh") && clean(n2.get("name"))? == nm {
+                let same = match resolved[gi] {
+                    Some(_) => resolved[g2] == Some(target),
+                    None => resolved[g2].is_none() && clean(n2.get("name"))? == nm,
+                };
+                if !n2.has("mesh") && same {
                     frame_world = Some(world_of(g2 as i64, nodes, &parent, &mut world, 0)?);
                 }
             }
@@ -688,9 +904,11 @@ pub fn import_gltf(
             let attributes = item(p, "attributes")?;
             let pos = accessor(gltf, item(attributes, "POSITION")?)?;
             let optional = |name: &str| attributes.get(name).map(|i| accessor(gltf, i)).transpose();
-            let nrm = optional("NORMAL")?;
-            let uv = optional("TEXCOORD_0")?;
-            let col = optional("COLOR_0")?;
+            // collision keeps positions alone
+            let shaded = |name: &str| if options.collision { Ok(None) } else { optional(name) };
+            let nrm = shaded("NORMAL")?;
+            let uv = shaded("TEXCOORD_0")?;
+            let col = shaded("COLOR_0")?;
             let (jts, wts) =
                 if skin.is_some() { (optional("JOINTS_0")?, optional("WEIGHTS_0")?) } else { (None, None) };
             let indices: Vec<Num> = match p.get("indices") {
@@ -707,7 +925,11 @@ pub fn import_gltf(
             let material = match material_of.iter().find(|(k, _)| crate::info_cfg::same_value(k, &mk)) {
                 Some((_, at)) => *at,
                 None => {
-                    materials.push(material_from_gltf(j, &mk)?);
+                    materials.push(if options.collision {
+                        collision_material(j, &mk)?
+                    } else {
+                        material_from_gltf(j, &mk)?
+                    });
                     material_of.push((mk.clone(), materials.len() - 1));
                     materials.len() - 1
                 }
@@ -855,6 +1077,11 @@ pub fn new_model(gltf: &mut Gltf, version: u32, root: &str) -> Result<Vec<u8>> {
     if let Some(Value::List(nodes)) = gltf.json.get_mut("nodes") {
         for (node, name) in nodes.iter_mut().zip(&names) {
             node.set("name", Value::Str(name.clone()));
+            // the frames are the glTF's own, found by these names: an index into another model
+            // (left by an export) names none of them
+            if let Some(Value::Object(extras)) = node.get_mut("extras") {
+                extras.retain(|(key, _)| key != "mds_index");
+            }
         }
     }
     // a material without a texture names none (import_gltf would take the material's name)

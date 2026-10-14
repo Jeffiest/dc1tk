@@ -18,6 +18,10 @@ this repository). Map meshes are the MDS format of
   byte with `c2-assets`' `mds.rs`, and export with `to_gltf.rs` unchanged.
 - What `-m`, `-a` and `-c` meshes are, the collision layout and its per-triangle
   attributes, how textures are found, how pieces are placed (section 2-4).
+- One map model to glTF and back (section 7.1): whole node names, matching by
+  `extras.mds_index`, real textures from a search path of `.img` files, blend
+  flags as material settings, collision attributes as material names. Every map
+  `.mds` exports, and its unedited glTF builds back byte for byte.
 
 **Not yet written:** the scene exporter and importer (section 7 is the plan);
 `FUNC_ANIME_DATA` is only partly decoded; the map memory budget is unmeasured;
@@ -268,7 +272,9 @@ in shared or paired maps' IMGs (`cmn/g00/g00.ipk.d/a01.img`); `noIcon` is
 nowhere on the disc. An exporter needs a search path of IMG files.
 
 Wrap or clamp comes from each picture's GS CLAMP value (52,791 UVs lie outside
-0-1, so tiling is real). 166 `#texanime` scripts in 161 map IMGs scroll and
+0-1, so tiling is real). Of the 5,662 pictures in the 549 map `.img` files (547
+IM3, 2 IM2), 4,802 clamp (5), 839 repeat (0), 18 have no CLAMP (IM2) and 3 hold
+junk values. 166 `#texanime` scripts in 161 map IMGs scroll and
 copy texture areas; `im3::read` skips them, so they must be kept inside the
 `.img`. 848 `FUNC_ANIME_DATA` points animate pieces and frames, and 44
 `PIECE_MATERIAL` blocks recolour materials, by name.
@@ -289,7 +295,10 @@ Both are ordinary MDS read by `LoadCollisionFile` (`collision.cpp`,
 - **Per-triangle attributes come from the material's diffuse colour:**
   ground = (int)(r·0.7+0.01), foot sound = (int)(g·0.7+0.01),
   area = (int)(b·0.7+0.01), ignore mask = (int)(1-a). The files store k/0.7
-  (g = 2.8571 is foot sound 2, b = 8.5714 is area 6, a = -11 is mask 12).
+  (g = 2.8571 is foot sound 2, b = 8.5714 is area 6, a = -11 is mask 12). A
+  zero is stored as 1.0 (the default white) or 0.0. Every collision prim on the
+  disc is 0x213; materials are untextured but for 103 of 14,682, and their other
+  fields are the defaults (ambient 1,1,1,0, power 50).
   In `-a`: ground is almost always 0, foot sound 0-27, area mostly 6, 9, 5, 1,
   7, 8, mask mostly 0, 12, 4, 8, 255. The mask is ANDed with each query's
   (`gameutil.cpp:1010`); areas 1 and 7 are water (`GetCPolyAttr`); foot sound
@@ -363,14 +372,13 @@ camera with literal coordinates (`place_chara(13, 68.04, 41.85, 1180.61, 3.14)`)
 **Export a map to one glTF scene:**
 - Templates become reusable node trees and placements instances of them, so a
   door placed 30 times is one door; each piece is a node, its mesh shared.
-- Meshes through `to_gltf.rs` (already handles every map `.mds`), with node
-  names kept whole (flags included) and `extras.mds_index` to match nodes back.
+- Meshes through `to_gltf.rs` with the map options (7.1): node names kept
+  whole (flags included) and `extras.mds_index` to match nodes back.
 - Real textures from the map's IMGs and a search path of shared ones; GS
-  CLAMP to glTF wrap; name flags to glTF materials (additive, alpha-test,
-  unlit, double-sided).
+  CLAMP to glTF wrap; name flags to glTF materials (done, 7.1; double-sided
+  is not: whether the engine culls back faces is untraced).
 - Collision (`-a`, `-c`) in their own collections, hidden by default, with
-  attributes as named materials (foot sound, area, ignore mask) rather than
-  raw colours.
+  attributes as named materials (done, 7.1).
 - Trigger points as empties (cubes for their boxes) with kind and data in
   custom properties; point lights as Blender lights; fog, light sets, time and
   fixed cameras as scene properties.
@@ -379,9 +387,9 @@ camera with literal coordinates (`place_chara(13, 68.04, 41.85, 1180.61, 3.14)`)
 - Changed placements and pieces rewrite the `.map` (section 2.3); placements
   are only appended, never reordered (scripts address them by slot).
 - Only meshes that changed are rebuilt (the others stay byte for byte, as for
-  characters); `from_gltf.rs` must match nodes by `extras.mds_index`, not by
-  base name. Edited collision is written as type 0x213 triangles with positions
-  only and the attribute encoding of section 4.3.
+  characters), matched by `extras.mds_index`, not by base name; edited
+  collision is written as type 0x213 triangles with positions only and the
+  attribute encoding of section 4.3 (done for one model, 7.1).
 - New meshes go into the map's model pack with an `info.cfg` entry (0x1FF at
   most); packs are patched member by member (`c2_disc::rebuild::replaced_member`
   works two packs deep), never repacked: `models::write_pack` reproduces none
@@ -389,3 +397,45 @@ camera with literal coordinates (`place_chara(13, 68.04, 41.85, 1180.61, 3.14)`)
 - New textures go into an `.img` inside the `.ipk`, keeping its `#texanime`.
 - Limits: 320 placements (400 dungeons; the largest map has 245), names up to
   31 characters, `TIME_LIGHT_NUM` 8 or less. The memory budget is unmeasured.
+
+### 7.1 One map model to glTF and back (written)
+
+The pieces the scene exporter and importer call, in `c2-assets` (details in
+[models.md](models.md) 6.1 and 7.1):
+
+- `models::export_map_model(data, stem, options)` exports one `.mds`;
+  `to_gltf::Options::map(Some(&search))` for drawn meshes,
+  `Options::collision()` for `-a`/`-c` (`to_gltf::is_collision_file`).
+- `to_gltf::TextureSearch::new(&[(file, bytes)])` is the texture search path:
+  the map's `.img` files first, then shared ones; the first file holding a
+  picture name wins. Names it lacks get placeholders and are listed in
+  `Exported::missing_textures`; `no_image` pictures (filled by `#texanime`)
+  in `no_image_textures`.
+- `models::build_map_model(given, original, options)` builds the `.mds` back:
+  only meshes that differ from an export with the same options are rebuilt,
+  each into the frame its `extras.mds_index` (or else its whole name, then its
+  base name) gives. Collision is rebuilt as 0x213 position-only triangle lists
+  with the attributes its material names give; `from_gltf::collision_problems`
+  checks the engine's rules.
+- `to_gltf::FrameFlags` (name flags as the engine reads them) and
+  `to_gltf::CollisionAttributes` (the diffuse encoding) are public for the
+  scene tools.
+
+**Checked on the whole disc** (a research sweep, about 35 s): all 13,372 map
+`.mds` export (7,661 `-m`, 2,657 `-a`, 2,028 `-c`, 1,026 others; 71,683 nodes,
+55,526 meshes), each with every node named whole and carrying its
+`mds_index`, and every unedited glTF builds back to the file's bytes through
+the change detection. Every one of the 4,685 collision files, rebuilt whole in
+collision mode, passes the rules and gives the same triangles with the same
+attributes. With each map's own `.img` files and `map/cmn`'s as the search
+path, 17,393 textures are real pictures, 1,753 are `no_image` and 158 are
+missing: 129 (map, texture) pairs, of which 121 are in another map's `.img` and
+8 nowhere on the disc (`e01h03_06`, `e05g01_01`, `g050104`, `noIcon`). Materials:
+6,007 MASK (alpha test), 5,897 BLEND, 8,195 unlit; 6,917 clamped samplers.
+For each of the 1,486 `-m` files whose mesh frames repeat a base name, moving
+the last such mesh in the glTF changes that frame alone (all others keep their
+bytes); for every collision file, renaming one material to a new foot sound
+rebuilds just the frames using it, which decode to the new attribute.
+`s/s17` (5 files, 158 meshes) and the town `m/m05` (Palm Brinks, 33 files)
+export and build back the same way; with every map's `.img` searched, m05
+lacks only `e05g01_01` and s17 nothing.
