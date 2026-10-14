@@ -14,7 +14,7 @@ use crate::folder::Folder;
 use crate::from_gltf::{self, Gltf, MeshId};
 use crate::info_cfg;
 use crate::json::Value as Arg;
-use crate::{bail, im3, textures, to_gltf, Error, Result};
+use crate::{bail, im3, motions, textures, to_gltf, Error, Result};
 
 pub const TEXTURES: &str = "textures";
 
@@ -41,6 +41,8 @@ pub struct ModelFiles {
     pub weights: String,
     pub pose: Arg,
     pub stem: String,
+    /// Motion set 0's .mot, when it names one.
+    pub motion: Option<String>,
 }
 
 /// Path(name).stem.
@@ -66,7 +68,8 @@ pub fn model_files(folder: &Folder) -> Result<ModelFiles> {
     };
     let stem = path_stem(model).to_string();
     let pose = info.motion0().map_or(Arg::Null, |m| m.bbp.clone());
-    Ok(ModelFiles { model: model.to_string(), weights: format!("{stem}.wgt"), pose, stem })
+    let motion = info.motion0().and_then(|m| m.mot.as_str()).filter(|name| !name.is_empty()).map(str::to_string);
+    Ok(ModelFiles { model: model.to_string(), weights: format!("{stem}.wgt"), pose, stem, motion })
 }
 
 /// The pack's members as the folder they are unpacked into, and its model's files.
@@ -193,9 +196,8 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
             bail!("[Errno 2] No such file or directory: {}", im3::str_repr(&files.model));
         };
         let meshes = changed_meshes(&gltf_path, &exported_folder, template).map_err(wrap)?;
-        let built = load_from_disk(&gltf_path)
-            .and_then(|loaded| from_gltf::import_gltf(&loaded, template, pose, weights, Some(&meshes)))
-            .map_err(wrap)?;
+        let given_gltf = load_from_disk(&gltf_path).map_err(wrap)?;
+        let built = from_gltf::import_gltf(&given_gltf, template, pose, weights, Some(&meshes)).map_err(wrap)?;
         // a dict of member to content: a member named twice keeps its place and the last content
         let mut written: Vec<(&str, Vec<u8>)> = Vec::new();
         let mut outputs = vec![(files.model.as_str(), built.mds), (files.weights.as_str(), built.wgt)];
@@ -218,6 +220,17 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
                 );
             }
             pack = rebuild::replaced_member(&pack, &[member.to_string()], &content)?;
+        }
+        // the animations that differ from the export's go into the motion and its KEY lines
+        if let (Some(mot_name), Some(cfg)) = (files.motion.as_deref(), source.get("info.cfg")) {
+            if let Some(mot) = source.get(mot_name) {
+                let before = load_from_folder(&exported_folder, &gltf)?;
+                let model = crate::mds::parse(template)?;
+                if let Some(rebuilt) = motions::build(&before, &given_gltf, &model, mot, cfg).map_err(wrap)? {
+                    pack = rebuild::replaced_member(&pack, &[mot_name.to_string()], &rebuilt.mot)?;
+                    pack = rebuild::replaced_member(&pack, &["info.cfg".to_string()], &rebuilt.info)?;
+                }
+            }
         }
     }
     with_textures(pack, &given, &exported)
