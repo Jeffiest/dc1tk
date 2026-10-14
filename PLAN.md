@@ -275,9 +275,14 @@ do:
 5. **New characters.** A model is rebuilt on the disc model's skeleton; a
    wholly new character needs a new pack, an `info.cfg` and a skeleton of
    its own from glTF, and cloth (`.clo`) left out or carried over.
-6. **Music.** `.sq` sequences (music and ambient loops) are not decoded, and
-   a WAV given for a sequence entry replaces it with one sound; sequences
-   from MIDI are a separate job.
+6. **Music** (done, being tried). All background music and ambient loops
+   are `.sq` sequences played with their bank's instruments
+   ([music](docs/assets/music.md)); `SOUND.DAT` is streamed voices. All 447
+   round-trip byte for byte and through MIDI; `music:BG_000_000` in
+   `mod.json` replaces a tune from a `.mid` (with a `.sf2` of the bank's
+   instruments to hear it). Left: the IOP sequencer is not decompiled (loop
+   and tempo defaults read from the data), and a tune can only use its
+   bank's existing instruments.
 
 ## Next: names and docs
 
