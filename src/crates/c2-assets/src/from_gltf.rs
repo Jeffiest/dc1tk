@@ -183,46 +183,31 @@ pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
         _ => bail!("'{kind}'"),
     };
     let component = json_int(item(a, "componentType")?, "componentType")?;
-    let size = match component {
-        5120 | 5121 => 1,
-        5122 | 5123 => 2,
-        5125 | 5126 => 4,
-        _ => bail!("{component}"),
-    };
+    if !matches!(component, 5120 | 5121 | 5122 | 5123 | 5125 | 5126) {
+        bail!("{component}");
+    }
     let count = json_int(item(a, "count")?, "count")?.max(0) as usize;
-    let mut values = Vec::with_capacity(count * n);
-    match a.get("bufferView") {
-        None => values.resize(count * n, Num::Int(0)),
-        Some(view) => {
-            let view = index(item(&gltf.json, "bufferViews")?, view)?;
-            let buffer_number = view.get("buffer").map_or(Ok(0), |b| json_int(b, "buffer"))?;
-            let Some(buffer) = usize::try_from(buffer_number).ok().and_then(|b| gltf.buffers.get(b)) else {
-                bail!("list index out of range");
-            };
-            let base = view.get("byteOffset").map_or(Ok(0), |o| json_int(o, "byteOffset"))?
-                + a.get("byteOffset").map_or(Ok(0), |o| json_int(o, "byteOffset"))?;
-            let stride = match view.get("byteStride") {
-                Some(s) if s.truthy() => json_int(s, "byteStride")?,
-                _ => (n * size) as i64,
-            };
-            for k in 0..count as i64 {
-                let at = base + k * stride;
-                if at < 0 || at as usize + n * size > buffer.len() {
-                    bail!("unpack_from requires a buffer of at least {} bytes", at + (n * size) as i64);
-                }
-                let at = at as usize;
-                for j in 0..n {
-                    let b = &buffer[at + j * size..at + (j + 1) * size];
-                    values.push(match component {
-                        5120 => Num::Int(b[0] as i8 as i64),
-                        5121 => Num::Int(b[0] as i64),
-                        5122 => Num::Int(i16::from_le_bytes([b[0], b[1]]) as i64),
-                        5123 => Num::Int(u16::from_le_bytes([b[0], b[1]]) as i64),
-                        5125 => Num::Int(u32::from_le_bytes(b.try_into().unwrap()) as i64),
-                        _ => Num::Float(py::unpack_f32(u32::from_le_bytes(b.try_into().unwrap()))),
-                    });
-                }
+    let mut values = match a.get("bufferView") {
+        None => vec![Num::Int(0); count * n],
+        Some(view) => view_values(gltf, view, a.get("byteOffset"), count, n, component)?,
+    };
+    // a sparse accessor: its values at the indices it lists replaced
+    if let Some(sparse) = a.get("sparse") {
+        let changed = json_int(item(sparse, "count")?, "count")?.max(0) as usize;
+        let indices = item(sparse, "indices")?;
+        let index_type = json_int(item(indices, "componentType")?, "componentType")?;
+        if !matches!(index_type, 5121 | 5123 | 5125) {
+            bail!("sparse indices of component type {index_type}");
+        }
+        let at = view_values(gltf, item(indices, "bufferView")?, indices.get("byteOffset"), changed, 1, index_type)?;
+        let given = item(sparse, "values")?;
+        let replaced = view_values(gltf, item(given, "bufferView")?, given.get("byteOffset"), changed, n, component)?;
+        for (k, place) in at.iter().enumerate() {
+            let place = place.f() as usize;
+            if place >= count {
+                bail!("a sparse index {place} is past the accessor's {count} values");
             }
+            values[place * n..(place + 1) * n].copy_from_slice(&replaced[k * n..(k + 1) * n]);
         }
     }
     if a.get("normalized").is_some_and(Value::truthy) {
@@ -235,10 +220,55 @@ pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
         };
         values = values.into_iter().map(|v| Num::Float(py::max(-1.0, v.f() / divisor))).collect();
     }
-    if a.has("sparse") {
-        bail!("sparse accessors are not supported");
-    }
     Ok(Values { n, values })
+}
+
+/// `count` values of `n` components of a component type from a buffer view, at an offset in it.
+fn view_values(
+    gltf: &Gltf,
+    view: &Value,
+    offset: Option<&Value>,
+    count: usize,
+    n: usize,
+    component: i64,
+) -> Result<Vec<Num>> {
+    let size = match component {
+        5120 | 5121 => 1,
+        5122 | 5123 => 2,
+        5125 | 5126 => 4,
+        _ => bail!("{component}"),
+    };
+    let view = index(item(&gltf.json, "bufferViews")?, view)?;
+    let buffer_number = view.get("buffer").map_or(Ok(0), |b| json_int(b, "buffer"))?;
+    let Some(buffer) = usize::try_from(buffer_number).ok().and_then(|b| gltf.buffers.get(b)) else {
+        bail!("list index out of range");
+    };
+    let base = view.get("byteOffset").map_or(Ok(0), |o| json_int(o, "byteOffset"))?
+        + offset.map_or(Ok(0), |o| json_int(o, "byteOffset"))?;
+    let stride = match view.get("byteStride") {
+        Some(s) if s.truthy() => json_int(s, "byteStride")?,
+        _ => (n * size) as i64,
+    };
+    let mut values = Vec::with_capacity(count * n);
+    for k in 0..count as i64 {
+        let at = base + k * stride;
+        if at < 0 || at as usize + n * size > buffer.len() {
+            bail!("unpack_from requires a buffer of at least {} bytes", at + (n * size) as i64);
+        }
+        let at = at as usize;
+        for j in 0..n {
+            let b = &buffer[at + j * size..at + (j + 1) * size];
+            values.push(match component {
+                5120 => Num::Int(b[0] as i8 as i64),
+                5121 => Num::Int(b[0] as i64),
+                5122 => Num::Int(i16::from_le_bytes([b[0], b[1]]) as i64),
+                5123 => Num::Int(u16::from_le_bytes([b[0], b[1]]) as i64),
+                5125 => Num::Int(u32::from_le_bytes(b.try_into().unwrap()) as i64),
+                _ => Num::Float(py::unpack_f32(u32::from_le_bytes(b.try_into().unwrap()))),
+            });
+        }
+    }
+    Ok(values)
 }
 
 /// The node's name without Blender's ".001" duplicate suffix.
@@ -346,15 +376,17 @@ fn floats(m: &TypedMatrix) -> Matrix {
     out
 }
 
-/// Whether an inverse bind matrix is the one exported, within what Blender's round trip moves it
-/// (it rests bones at the bind pose and writes their inverses back in 32 bits: up to 2e-5 in the
-/// rotation and 4e-4 in the translation on Max): 1e-3 of the larger of 1 and the value, the
-/// translation (12-14) within 0.005 and 2e-6 of the value, as same_geometry compares positions.
-fn close(a: &[Num], b: &Matrix) -> bool {
+/// Whether a bind matrix (the inverse of a glTF's inverse bind matrix) is the one exported, within
+/// what Blender's round trip moves it: it rests bones at the bind pose and writes their inverses
+/// back in 32 bits, a bone's direction only as good as its length allows (head and tail in 32
+/// bits: 3e-4 radians on a bone 0.07 long 200 units out, which its inverse turns into 0.07 in the
+/// translation): 1e-3 of the larger of 1 and the value, the translation (12-14, the bone's place)
+/// within 0.005 and 2e-5 of the value (Blender chains the bones' rests down the skeleton in 32 bits).
+fn close_bind(a: &Matrix, b: &Matrix) -> bool {
     a.iter().zip(b).enumerate().all(|(at, (x, y))| {
-        let difference = (x.f() - y).abs();
+        let difference = (x - y).abs();
         match at {
-            12..=14 => difference <= 5e-3 + 2e-6 * y.abs(),
+            12..=14 => difference <= 5e-3 + 2e-5 * y.abs(),
             _ => difference <= 1e-3 * py::max(1.0, y.abs()),
         }
     })
@@ -790,7 +822,7 @@ pub struct Geometry {
 /// {mesh: its geometry}, for comparing a glTF that went through another tool (Blender), which
 /// splits and reorders vertices, recomputes normals, adds float noise and moves colours by a step.
 pub fn mesh_geometry(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, Geometry>> {
-    geometry(gltf, model, false)
+    geometry(gltf, model, false, None)
 }
 
 /// mesh_geometry for a character: each mesh in the space import_gltf builds it in, so that a tool
@@ -799,7 +831,7 @@ pub fn mesh_geometry(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, Geomet
 /// (through the glTF hierarchy, as `rigid_to_local` gives it), a skinned mesh's in model space
 /// with each corner's skin (joints as the frames they stand for); the matrix is the identity.
 pub fn frame_geometry(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, Geometry>> {
-    geometry(gltf, model, true)
+    geometry(gltf, model, true, None)
 }
 
 /// The parent of every glTF node that has one.
@@ -873,7 +905,14 @@ fn skin_tail(joints: &[Num], weights: &[Num], joint_frames: &[i64]) -> Vec<f64> 
     by_frame.into_iter().flat_map(|(frame, w)| [frame as f64, w]).collect()
 }
 
-fn geometry(gltf: &Gltf, model: &Mds, in_frames: bool) -> Result<BTreeMap<MeshId, Geometry>> {
+/// `binds`: for a character's skinned meshes, the bind matrix of each frame to bring the glTF's
+/// positions into (skin_matrices), as import_gltf does.
+fn geometry(
+    gltf: &Gltf,
+    model: &Mds,
+    in_frames: bool,
+    binds: Option<&HashMap<usize, Matrix>>,
+) -> Result<BTreeMap<MeshId, Geometry>> {
     fn strip_suffix(name: &str) -> &str {
         match name.rsplit_once('.') {
             Some((stem, digits)) if digits.len() == 3 && digits.chars().all(|c| c.is_ascii_digit()) => stem,
@@ -881,9 +920,17 @@ fn geometry(gltf: &Gltf, model: &Mds, in_frames: bool) -> Result<BTreeMap<MeshId
         }
     }
     let mut out = BTreeMap::new();
-    let nodes_value = item(&gltf.json, "nodes")?;
-    let nodes = nodes_value.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
     let resolved = frames_of(&gltf.json, model)?;
+    // a character's animated nodes at their frames' rests (where Blender writes them posed)
+    let at_rest;
+    let nodes_value = match in_frames {
+        true => {
+            at_rest = animated_nodes_at_rest(&gltf.json, model, &resolved)?;
+            &at_rest
+        }
+        false => item(&gltf.json, "nodes")?,
+    };
+    let nodes = nodes_value.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
     let parent = parents_of(nodes);
     let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
     let template_world = model.world_matrices()?;
@@ -892,9 +939,13 @@ fn geometry(gltf: &Gltf, model: &Mds, in_frames: bool) -> Result<BTreeMap<MeshId
         // characters: where the corners go, and the frame each joint stands for
         let mut to_local = None;
         let mut joint_frames: Option<Vec<i64>> = None;
+        let mut reskin: Option<Vec<Matrix>> = None;
         if in_frames {
             match node.get("skin") {
                 Some(skin) => {
+                    if let Some(binds) = binds {
+                        reskin = Some(skin_matrices(gltf, skin, &resolved, binds)?);
+                    }
                     let skin = index(item(&gltf.json, "skins")?, skin)?;
                     let joints =
                         item(skin, "joints")?.as_list().ok_or_else(|| Error::invalid("'joints' is not a list"))?;
@@ -988,10 +1039,22 @@ fn geometry(gltf: &Gltf, model: &Mds, in_frames: bool) -> Result<BTreeMap<MeshId
                 },
                 None => None,
             };
+            let joint_weights = match &reskin {
+                Some(_) => match (read("JOINTS_0")?, read("WEIGHTS_0")?) {
+                    (Some(joints), Some(weights)) => Some((joints, weights)),
+                    _ => None,
+                },
+                None => None,
+            };
             let corner = |at: i64| -> Result<Vec<f64>> {
                 let mut values = vec![f64::NAN; CORNER];
                 for (slot, value) in positions.at(at)?.iter().take(3).enumerate() {
                     values[slot] = value.f();
+                }
+                if let (Some(matrices), Some((joints, weights))) = (&reskin, &joint_weights) {
+                    let m = blend(matrices, joints.at(at)?, weights.at(at)?);
+                    let moved = xform_point(&m, &values[..3]);
+                    values[..3].copy_from_slice(&moved);
                 }
                 if let Some(to_local) = &to_local {
                     let moved = xform_point(to_local, &values[..3]);
@@ -1036,6 +1099,224 @@ fn geometry(gltf: &Gltf, model: &Mds, in_frames: bool) -> Result<BTreeMap<MeshId
     Ok(out)
 }
 
+/// The bind matrix (the inverse of its inverse bind matrix) of each frame a glTF's skins' joints
+/// stand for.
+pub fn bind_matrices(gltf: &Gltf, model: &Mds) -> Result<HashMap<usize, Matrix>> {
+    let resolved = frames_of(&gltf.json, model)?;
+    let mut out = HashMap::new();
+    for skin in gltf.json.get("skins").and_then(Value::as_list).map(Vec::as_slice).unwrap_or_default() {
+        let (Some(ibm), Some(joints)) = (skin.get("inverseBindMatrices"), skin.get("joints").and_then(Value::as_list))
+        else {
+            continue;
+        };
+        let ibm = accessor(gltf, ibm)?;
+        for (k, joint) in joints.iter().enumerate() {
+            let frame =
+                joint.as_int().and_then(|j| usize::try_from(j).ok()).and_then(|j| resolved.get(j).copied().flatten());
+            let values: Vec<f64> = ibm.at(k as i64)?.iter().map(|v| v.f()).collect();
+            if let (Some(frame), true) = (frame, values.len() >= 16) {
+                if let Some(bind) = mat_inv(&values[..16].try_into().unwrap()) {
+                    out.entry(frame).or_insert(bind);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The matrix of each joint of a skin that takes a position of the glTF's bind pose to the same
+/// place in another's (`binds`, by frame): bind · inverse bind matrix, the identity for a joint no
+/// frame of `binds` stands for. Blender rests a bone at a bind pose without scale or shear and
+/// moves the vertices to match (skin_into_bind_pose); this undoes it.
+fn skin_matrices(
+    gltf: &Gltf,
+    skin: &Value,
+    resolved: &[Option<usize>],
+    binds: &HashMap<usize, Matrix>,
+) -> Result<Vec<Matrix>> {
+    let skin = index(item(&gltf.json, "skins")?, skin)?;
+    let Some(joints) = item(skin, "joints")?.as_list() else {
+        bail!("'joints' is not a list");
+    };
+    let ibm = skin.get("inverseBindMatrices").map(|at| accessor(gltf, at)).transpose()?;
+    let mut out = Vec::with_capacity(joints.len());
+    for (k, joint) in joints.iter().enumerate() {
+        let frame =
+            joint.as_int().and_then(|j| usize::try_from(j).ok()).and_then(|j| resolved.get(j).copied().flatten());
+        let inverse: Option<Matrix> = match &ibm {
+            Some(ibm) => {
+                let values: Vec<f64> = ibm.at(k as i64)?.iter().map(|v| v.f()).collect();
+                (values.len() >= 16).then(|| values[..16].try_into().unwrap())
+            }
+            None => Some(IDENT),
+        };
+        out.push(match (frame.and_then(|f| binds.get(&f)), inverse) {
+            (Some(bind), Some(inverse)) => mat_mul(bind, &inverse),
+            _ => IDENT,
+        });
+    }
+    Ok(out)
+}
+
+/// The weighted sum of the joints' matrices a vertex's joints and weights give (the identity for
+/// a vertex of no weight).
+fn blend(matrices: &[Matrix], joints: &[Num], weights: &[Num]) -> Matrix {
+    let mut out = [0.0; 16];
+    let mut total = 0.0;
+    for (joint, weight) in joints.iter().zip(weights) {
+        let (Some(m), w) = (usize::try_from(joint.f() as i64).ok().and_then(|j| matrices.get(j)), weight.f()) else {
+            continue;
+        };
+        if w > 0.0 {
+            for (slot, value) in out.iter_mut().zip(m) {
+                *slot += w * value;
+            }
+            total += w;
+        }
+    }
+    if total > 0.0 {
+        out.map(|value| value / total)
+    } else {
+        IDENT
+    }
+}
+
+/// A mesh's morph targets as the vertices of the frame's mesh they move.
+pub struct MorphMesh {
+    /// The glTF node of the mesh (whose `weights` an animation drives).
+    pub node: usize,
+    /// The targets' names (the mesh's `extras.targetNames`, else `target<i>`).
+    pub names: Vec<String>,
+    /// Per vertex of the frame's mesh the glTF's vertices stand for: its position in the mesh's
+    /// own space, and its position under each target at weight 1.
+    pub vertices: BTreeMap<usize, ([f64; 3], Vec<[f64; 3]>)>,
+}
+
+/// The morph targets of each frame's mesh in a glTF (by the frame its mesh node stands for), its
+/// vertices matched to those of the frame's mesh in `model` by position (within 0.005 and 2e-6 of
+/// the value, as same_geometry compares them; every vertex of the mesh at that place), in the
+/// space the import brings them into: a rigid mesh's frame's, a skinned mesh's own (`binds`, the
+/// bind matrices of the pack's frames, as bind_matrices gives them for its export).
+pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Matrix>) -> Result<BTreeMap<usize, MorphMesh>> {
+    let mut out = BTreeMap::new();
+    let resolved = frames_of(&gltf.json, model)?;
+    let nodes_value = animated_nodes_at_rest(&gltf.json, model, &resolved)?;
+    let nodes = nodes_value.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
+    let parent = parents_of(nodes);
+    let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
+    let template_world = model.world_matrices()?;
+    for (gi, id) in mesh_ids(&gltf.json, model)? {
+        let MeshId::Frame(frame) = id else {
+            continue;
+        };
+        let node = &nodes[gi];
+        let mesh = index(item(&gltf.json, "meshes")?, item(node, "mesh")?)?;
+        let Some(primitives) = item(mesh, "primitives")?.as_list() else {
+            bail!("'primitives' is not a list");
+        };
+        let count = primitives.iter().filter_map(|p| p.get("targets").and_then(Value::as_list)).map(Vec::len).max();
+        let (Some(count), Some(t)) = (count.filter(|&c| c > 0), model.nodes[frame].mdt.as_ref()) else {
+            continue;
+        };
+        let names: Vec<String> = match mesh.get("extras").and_then(|e| e.get("targetNames")).and_then(Value::as_list) {
+            Some(list) => (0..count)
+                .map(|i| list.get(i).and_then(Value::as_str).map_or(format!("target{i}"), str::to_string))
+                .collect(),
+            None => (0..count).map(|i| format!("target{i}")).collect(),
+        };
+        // into the mesh's own space
+        let (to_local, reskin) = match node.get("skin") {
+            Some(skin) => {
+                let bind = binds.get(&frame).copied().or_else(|| template_world.get(frame).copied()).unwrap_or(IDENT);
+                (mat_inv(&bind).unwrap_or(IDENT), Some(skin_matrices(gltf, skin, &resolved, binds)?))
+            }
+            None => {
+                let found = rigid_to_local(gi, &resolved, &nodes_value, &parent, &mut world, &template_world)?;
+                (found.unwrap_or(IDENT), None)
+            }
+        };
+        // the mesh's vertices by place, in cells of 0.01
+        let cell = |p: &[f64]| -> (i64, i64, i64) {
+            ((p[0] / 0.01).floor() as i64, (p[1] / 0.01).floor() as i64, (p[2] / 0.01).floor() as i64)
+        };
+        let mut cells: HashMap<(i64, i64, i64), Vec<usize>> = HashMap::new();
+        for (v, vertex) in t.vertices.iter().enumerate() {
+            cells.entry(cell(&vertex[..3])).or_default().push(v);
+        }
+        let near = |p: &[f64; 3]| -> Vec<usize> {
+            let (cx, cy, cz) = cell(p);
+            let mut found = Vec::new();
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        for &v in cells.get(&(cx + dx, cy + dy, cz + dz)).into_iter().flatten() {
+                            let q = &t.vertices[v];
+                            if (0..3).all(|i| (p[i] - q[i]).abs() <= 5e-3 + 2e-6 * p[i].abs().max(q[i].abs())) {
+                                found.push(v);
+                            }
+                        }
+                    }
+                }
+            }
+            found
+        };
+        let mut vertices: BTreeMap<usize, ([f64; 3], Vec<[f64; 3]>)> = BTreeMap::new();
+        for primitive in primitives {
+            let attributes = item(primitive, "attributes")?;
+            let Some(positions) = attributes.get("POSITION") else {
+                continue;
+            };
+            let positions = accessor(gltf, positions)?;
+            let mut targets = Vec::with_capacity(count);
+            for k in 0..count {
+                let target = primitive.get("targets").and_then(Value::as_list).and_then(|list| list.get(k));
+                targets.push(match target.and_then(|target| target.get("POSITION")) {
+                    Some(at) => Some(accessor(gltf, at)?),
+                    None => None,
+                });
+            }
+            let skin = match &reskin {
+                Some(_) => match (attributes.get("JOINTS_0"), attributes.get("WEIGHTS_0")) {
+                    (Some(j), Some(w)) => Some((accessor(gltf, j)?, accessor(gltf, w)?)),
+                    _ => None,
+                },
+                None => None,
+            };
+            for j in 0..positions.len() {
+                let point: Vec<f64> = positions.at(j as i64)?.iter().take(3).map(|v| v.f()).collect();
+                if point.len() < 3 {
+                    bail!("tuple index out of range");
+                }
+                let m = match (&reskin, &skin) {
+                    (Some(matrices), Some((joints, weights))) => {
+                        mat_mul(&to_local, &blend(matrices, joints.at(j as i64)?, weights.at(j as i64)?))
+                    }
+                    _ => to_local,
+                };
+                let base = xform_point(&m, &point);
+                let found = near(&base);
+                if found.is_empty() {
+                    continue;
+                }
+                let mut moved = Vec::with_capacity(count);
+                for target in &targets {
+                    let delta: Vec<f64> = match target {
+                        Some(values) => values.at(j as i64)?.iter().take(3).map(|v| v.f()).collect(),
+                        None => vec![0.0; 3],
+                    };
+                    let shifted: Vec<f64> = (0..3).map(|i| point[i] + delta.get(i).copied().unwrap_or(0.0)).collect();
+                    moved.push(xform_point(&m, &shifted));
+                }
+                for v in found {
+                    vertices.entry(v).or_insert_with(|| (base, moved.clone()));
+                }
+            }
+        }
+        out.insert(frame, MorphMesh { node: gi, names, vertices });
+    }
+    Ok(out)
+}
+
 /// The picture a glTF material shows, as material_from_gltf names it from its base colour image
 /// (the image's name, else its file's stem), or "" for none.
 fn picture_of(json: &Value, material: &Value) -> Result<String> {
@@ -1058,7 +1339,9 @@ fn picture_of(json: &Value, material: &Value) -> Result<String> {
 /// export's, or that it does not have.
 pub fn changed_character_meshes(exported: &Gltf, given: &Gltf, model: &Mds) -> Result<BTreeSet<MeshId>> {
     let before = frame_geometry(exported, model)?;
-    let after = frame_geometry(given, model)?;
+    // the given skinned meshes brought into the export's bind pose: Blender rests bones without
+    // scale or shear and moves the vertices to match
+    let after = geometry(given, model, true, Some(&bind_matrices(exported, model)?))?;
     Ok(after
         .into_iter()
         .filter(|(id, geometry)| !before.get(id).is_some_and(|old| same_geometry(old, geometry)))
@@ -1205,6 +1488,7 @@ pub fn import_with(
         Some(data) => mot::parse_bbp(data)?,
         None => model.world_matrices()?,
     };
+    let (exported_binds, blender_binds) = exported_binds(&model, &bbp)?;
     if bbp.len() < model.nodes.len() {
         bbp.resize(model.nodes.len(), IDENT);
     }
@@ -1215,7 +1499,9 @@ pub fn import_with(
     // frames added for glTF mesh nodes no template frame stands for, by name
     let mut by_name: HashMap<String, usize> = HashMap::new();
     let empty = Value::List(Vec::new());
-    let nodes = item(j, "nodes")?;
+    // animated nodes at their frames' rests, as frame_geometry compares them
+    let at_rest = animated_nodes_at_rest(j, &model, &resolved)?;
+    let nodes = &at_rest;
     let Some(node_list) = nodes.as_list() else {
         bail!("'nodes' is not a list");
     };
@@ -1253,9 +1539,10 @@ pub fn import_with(
                 continue;
             };
             // the template's bind matrix stays unless the glTF's differs from what to_gltf writes
-            // for it: its inverse, or the frame's rest matrix when it has none
-            let exported = mat_inv(&bbp[mi]).or_else(|| template_world.get(mi).and_then(mat_inv));
-            if !exported.is_some_and(|e| close(matrix, &e)) {
+            // for it (its inverse, or the frame's rest matrix's when it has none) and from what
+            // Blender gives back for that (its bones' rests have no scale or shear)
+            let known = [exported_binds.get(mi), blender_binds.get(mi)];
+            if !known.into_iter().flatten().flatten().any(|e| close_bind(&inverse, e)) {
                 bbp[mi] = inverse;
             }
         }
@@ -1302,7 +1589,19 @@ pub fn import_with(
         };
         let to_local: Matrix;
         let mut joint_map = Vec::new();
+        // a skinned mesh's positions brought into the bind pose kept (Blender's are in its own)
+        let mut reskin: Option<Vec<Matrix>> = None;
         if let Some(skin) = skin {
+            if let Some(number) = n.get("skin") {
+                let template_world = model.world_matrices()?;
+                let binds: HashMap<usize, Matrix> = (0..model.nodes.len())
+                    .filter_map(|f| {
+                        let bind = bbp.get(f).filter(|m| mat_inv(m).is_some()).or_else(|| template_world.get(f));
+                        bind.map(|m| (f, *m))
+                    })
+                    .collect();
+                reskin = Some(skin_matrices(gltf, number, &resolved, &binds)?);
+            }
             // skinned: glTF positions are model space (the mesh node's transform ignored)
             if mat_inv(&bbp[target]).is_none() {
                 bbp[target] = model.world_matrices()?[target];
@@ -1395,14 +1694,20 @@ pub fn import_with(
                     bail!("tuple index out of range");
                 }
                 let point: Vec<f64> = point.iter().map(|v| v.f()).collect();
-                let position = xform_point(&to_local, &point);
+                let skinning = match (&reskin, jts.as_ref(), wts.as_ref()) {
+                    (Some(matrices), Some(jts), Some(wts)) if !jts.is_empty() && !wts.is_empty() => {
+                        blend(matrices, jts.at(c)?, wts.at(c)?)
+                    }
+                    _ => IDENT,
+                };
+                let position = xform_point(&to_local, &xform_point(&skinning, &point));
                 let normal = match nrm.as_ref().filter(|v| !v.is_empty()) {
                     Some(nrm) => {
                         let v: Vec<f64> = nrm.at(c)?.iter().map(|v| v.f()).collect();
                         if v.len() < 3 {
                             bail!("tuple index out of range");
                         }
-                        Some(normalize(&xform_dir(&to_local, &v), &[0.0, 0.0, 1.0]))
+                        Some(normalize(&xform_dir(&to_local, &xform_dir(&skinning, &v)), &[0.0, 0.0, 1.0]))
                     }
                     None => None,
                 };
@@ -1676,6 +1981,147 @@ pub fn material_textures(gltf: &Gltf) -> Result<Vec<(String, Value)>> {
         }
     }
     Ok(out)
+}
+
+/// The glTF's nodes with every node an animation moves (a translation, rotation or scale channel)
+/// put at the rest of the frame it stands for. Blender writes an animated object's transform as
+/// its action leaves it at the scene's frame, not its rest, so a rigid model's meshes would seem
+/// moved; an animated node's own transform is its animation's, not something an edit sets.
+fn animated_nodes_at_rest(json: &Value, model: &Mds, resolved: &[Option<usize>]) -> Result<Value> {
+    let mut nodes = item(json, "nodes")?.clone();
+    let mut animated = BTreeSet::new();
+    for animation in json.get("animations").and_then(Value::as_list).map(Vec::as_slice).unwrap_or_default() {
+        for channel in animation.get("channels").and_then(Value::as_list).map(Vec::as_slice).unwrap_or_default() {
+            let target = channel.get("target");
+            let path = target.and_then(|t| t.get("path")).and_then(Value::as_str);
+            if matches!(path, Some("translation" | "rotation" | "scale")) {
+                if let Some(node) = target.and_then(|t| t.get("node")).and_then(Value::as_int) {
+                    animated.insert(node);
+                }
+            }
+        }
+    }
+    if let Value::List(list) = &mut nodes {
+        for (gi, node) in list.iter_mut().enumerate() {
+            let frame = resolved.get(gi).copied().flatten();
+            let (Some(frame), true) = (frame, animated.contains(&(gi as i64))) else {
+                continue;
+            };
+            let (t, r, s) = crate::to_gltf::decompose(&model.nodes[frame].matrix)?;
+            if let Value::Object(items) = node {
+                items.retain(|(key, _)| !matches!(key.as_str(), "matrix" | "translation" | "rotation" | "scale"));
+            }
+            node.set("translation", Value::floats(&t));
+            node.set("rotation", Value::floats(&r));
+            node.set("scale", Value::floats(&s));
+        }
+    }
+    Ok(nodes)
+}
+
+/// Bind matrices by frame, None where there is none.
+type Binds = Vec<Option<Matrix>>;
+
+/// The bind matrices to_gltf writes the inverses of for a model's frames (each frame's bind
+/// matrix, or its rest where it has none), and the same as Blender gives them back: it makes every
+/// joint a bone, whose rest has no scale or shear, from each joint's bind matrix relative to its
+/// parent's with the scale dropped, chained down the skeleton.
+fn exported_binds(model: &Mds, bbp: &[Matrix]) -> Result<(Binds, Binds)> {
+    let world = model.world_matrices()?;
+    let exported: Vec<Option<Matrix>> = (0..model.nodes.len())
+        .map(|i| match bbp.get(i).filter(|m| mat_inv(m).is_some()) {
+            Some(m) => Some(*m),
+            None => world.get(i).copied().filter(|m| mat_inv(m).is_some()),
+        })
+        .collect();
+    let mut rigid: Vec<Option<Matrix>> = vec![None; model.nodes.len()];
+    for (i, node) in model.nodes.iter().enumerate() {
+        let Some(bind) = exported[i] else {
+            continue;
+        };
+        let parent = usize::try_from(node.parent).ok().filter(|&p| p < i);
+        let (parent_inverse, parent_rigid) = match parent {
+            Some(p) => match (exported[p].as_ref().and_then(mat_inv), rigid[p]) {
+                (Some(a), Some(b)) => (a, b),
+                _ => continue,
+            },
+            None => (IDENT, IDENT),
+        };
+        let local = mat_mul(&parent_inverse, &bind);
+        let rigid_local = crate::to_gltf::compose(&local[12..15], &blender_rotation(&local), &[1.0, 1.0, 1.0]);
+        rigid[i] = Some(mat_mul(&parent_rigid, &rigid_local));
+    }
+    Ok((exported, rigid))
+}
+
+/// The rotation (x, y, z, w) Blender's Matrix.decompose takes from a glTF matrix (the importer's
+/// bind pose of a bone): in Blender's axes (glTF's x, -z, y), each column normalised (all negated
+/// when they turn the wrong way), then Mike Day's method (mat3_normalized_to_quat_fast), which for
+/// a matrix with shear differs from other ways of reading a rotation.
+fn blender_rotation(m: &Matrix) -> Vec<f64> {
+    let g = |row: usize, col: usize| m[col * 4 + row];
+    // Blender's rows: (x, -z, y) of glTF's rows and columns
+    let b = [[g(0, 0), -g(0, 2), g(0, 1)], [-g(2, 0), g(2, 2), -g(2, 1)], [g(1, 0), -g(1, 2), g(1, 1)]];
+    // mat[column][row], columns normalised
+    let mut mat = [[0.0f64; 3]; 3];
+    for (col, column) in mat.iter_mut().enumerate() {
+        let length = (0..3).map(|row| b[row][col] * b[row][col]).sum::<f64>().sqrt();
+        for (row, value) in column.iter_mut().enumerate() {
+            *value = if length > 0.0 { b[row][col] / length } else { 0.0 };
+        }
+    }
+    let det = mat[0][0] * (mat[1][1] * mat[2][2] - mat[2][1] * mat[1][2])
+        - mat[1][0] * (mat[0][1] * mat[2][2] - mat[2][1] * mat[0][2])
+        + mat[2][0] * (mat[0][1] * mat[1][2] - mat[1][1] * mat[0][2]);
+    if det < 0.0 {
+        mat = mat.map(|column| column.map(|v| -v));
+    }
+    // (w, x, y, z)
+    let mut q = [0.0f64; 4];
+    if mat[2][2] < 0.0 {
+        if mat[0][0] > mat[1][1] {
+            let trace = 1.0 + mat[0][0] - mat[1][1] - mat[2][2];
+            let mut s = 2.0 * trace.sqrt();
+            if mat[1][2] < mat[2][1] {
+                s = -s;
+            }
+            q[1] = 0.25 * s;
+            q[0] = (mat[1][2] - mat[2][1]) / s;
+            q[2] = (mat[0][1] + mat[1][0]) / s;
+            q[3] = (mat[2][0] + mat[0][2]) / s;
+        } else {
+            let trace = 1.0 - mat[0][0] + mat[1][1] - mat[2][2];
+            let mut s = 2.0 * trace.sqrt();
+            if mat[2][0] < mat[0][2] {
+                s = -s;
+            }
+            q[2] = 0.25 * s;
+            q[0] = (mat[2][0] - mat[0][2]) / s;
+            q[1] = (mat[0][1] + mat[1][0]) / s;
+            q[3] = (mat[1][2] + mat[2][1]) / s;
+        }
+    } else if mat[0][0] < -mat[1][1] {
+        let trace = 1.0 - mat[0][0] - mat[1][1] + mat[2][2];
+        let mut s = 2.0 * trace.sqrt();
+        if mat[0][1] < mat[1][0] {
+            s = -s;
+        }
+        q[3] = 0.25 * s;
+        q[0] = (mat[0][1] - mat[1][0]) / s;
+        q[1] = (mat[2][0] + mat[0][2]) / s;
+        q[2] = (mat[1][2] + mat[2][1]) / s;
+    } else {
+        let trace = 1.0 + mat[0][0] + mat[1][1] + mat[2][2];
+        let s = 2.0 * trace.sqrt();
+        q[0] = 0.25 * s;
+        q[1] = (mat[1][2] - mat[2][1]) / s;
+        q[2] = (mat[2][0] - mat[0][2]) / s;
+        q[3] = (mat[0][1] - mat[1][0]) / s;
+    }
+    let length = q.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let q = if length > 0.0 && length.is_finite() { q.map(|v| v / length) } else { [1.0, 0.0, 0.0, 0.0] };
+    // back to glTF's axes: x = x, y = Blender's z, z = -Blender's y
+    vec![q[1], q[3], -q[2], q[0]]
 }
 
 /// The glTF world matrix of node i (W in the Python), memoised.

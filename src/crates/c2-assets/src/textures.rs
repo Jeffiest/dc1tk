@@ -149,7 +149,13 @@ fn picture_base(like: &im3::Image) -> im3::Image {
 
 /// A new picture (no entry index yet) from a PNG in the format of `base` (picture_base), checked
 /// against new_file's rules and the names of `others`.
-fn new_picture(name: &str, png: &[u8], base: &im3::Image, power_of_two: bool, others: &[im3::Image]) -> Result<im3::Image> {
+fn new_picture(
+    name: &str,
+    png: &[u8],
+    base: &im3::Image,
+    power_of_two: bool,
+    others: &[im3::Image],
+) -> Result<im3::Image> {
     let fail = |message: String| Error::invalid(format!("{name}: {message}"));
     let latin1 = name.chars().all(|c| (c as u32) < 0x100);
     if name.is_empty() || !latin1 || name.chars().count() > 0x1F {
@@ -398,7 +404,8 @@ mod tests {
             image.pixels = Some([colour, 0, 0, 0x80].repeat(64));
             im3::write(&[image], None).unwrap()
         };
-        let search = crate::to_gltf::TextureSearch::new(&[("a.img".into(), file(10)), ("b.img".into(), file(200))]).unwrap();
+        let search =
+            crate::to_gltf::TextureSearch::new(&[("a.img".into(), file(10)), ("b.img".into(), file(200))]).unwrap();
         let pngs = search.pngs_named("shared").unwrap();
         assert_eq!(pngs.len(), 2, "both maps' pictures of the name");
         assert!(!same_pixels(&pngs[0], &pngs[1]).unwrap());

@@ -2,7 +2,7 @@
 // arguments after its named ones in a hidden array its caller fills, and a hidden pointer to it;
 // va_list points into the array, and va_arg reads the next argument and steps past it. An
 // argument after ... is passed as it is: char and short as int, float as float (there is no
-// double), so read them with va_arg(ap, int) and va_arg(ap, float).
+// double); va_arg(ap, char) and va_arg(ap, short) read the int and convert it back.
 
 #ifndef C2S_STDARG_H
 #define C2S_STDARG_H

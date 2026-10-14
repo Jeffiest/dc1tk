@@ -13,6 +13,7 @@ comes from. The commands are in [usage](usage.md).
 | How does the game get to map s51, and at which program? | `c2 xref extracted/scripts map s51` |
 | Which model and AI script does a monster kind use, and who places it? | `c2 xref extracted/scripts monster golem` |
 | Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `c2 flags extracted/scripts`, `c2 flags extracted/scripts --flag 54` |
+| Which save counters are in use? Who uses counter 5? (`NEW_COUNTER` for a mod's own.) | `c2 flags extracted/scripts --counters`, `c2 flags extracted/scripts --counter 5` |
 | Which maps can a scene start in, and where does the player play? | `c2 maps extracted/scripts` |
 | A map's programs, free program numbers, trigger points and player positions? | `c2 map extracted/scripts s17` |
 | What have I changed? | `c2 changes extracted/scripts` (scripts), `c2 diff dc2.iso` (scripts, assets and disc files) |
@@ -118,6 +119,14 @@ event and marks the AI scripts of monsters the map places.
   `mods/numbers.json` so saves stay valid (see [usage](usage.md#mods)).
   A flag is saved with the game, so clear one that only matters during a
   scene when the scene ends, and on game over.
+- **Save counters** are 128 16-bit numbers in the save (`short_flag` in
+  `savedata.cpp`), read and written by event scripts' `get_counter` and
+  `set_counter` (values -32768 to 32767). The disc's scripts use 0 to 20 but
+  6; the engine reads 5 in the main menu and keeps the fishing tournament's
+  count and wins in 21 to 25. A mod asks for one with `NEW_COUNTER(name)`,
+  and `build` gives it one from 32 up that nothing else uses, kept in
+  `mods/numbers.json` as flags are. `c2 flags extracted/scripts --counters`
+  lists them.
 - **Script globals** keep their values between program runs for as long as
   the map's script stays loaded; they are zeroed when it loads
   (`CRunScript::load`).
@@ -218,6 +227,55 @@ lines that say which of the disc's files to make them like:
 
 Keep them small: a picture file loads into the memory stack the script
 names, and the 256x128 and 32x32 pictures above make a 36 KB file.
+
+## A map of a mod's own, and a door into it
+
+A new map is a copy of one of the disc's, edited as a scene (`"add":
+{"map:m05x": {"file": ..., "like": "m05"}}`), and it can have a script of
+its own: `"script": "m05x.c"` on that line, a whole map script (`PROGRAM`
+lines, `MAIN`, its functions) that `build` compiles in every language. Its
+`map_start` runs when the map loads, and places the player and fades in. A
+way in from the game's maps is a door: a `door` point added to an existing
+map's scene, whose program (given by name, `"programs": {"door_park":
+"ENTER_PARK"}` on that map's line) a patch of the map's script adds:
+`jump_to_map(-1, "m05x", map_start)`. The way back is the same from the new
+map: a program naming the town's own arrival program, or one of the mod's
+that runs it and places the player at the door. The mod's scripts share
+the program numbers by `NEW_PROGRAM` in a header both include, and see the
+new map's number as `MAP_M05X`. See [maps](assets/maps.md) section 9 and the
+[new-map-door example](examples/new-map-door/README.md).
+
+## Music of a mod's own
+
+A `music:` line under `add` gives the mod a music file of its own, made from
+a MIDI file and one of the disc's music banks, whose instruments it plays:
+
+```json
+"add": {
+  "music:BG_200": {"file": "music/fish.mid", "like": "BG_193"}
+}
+```
+
+`build` writes the new file `snd2/bgm/BG_200.snd`: a copy of `BG_193`
+whose one entry plays the MIDI file, converted as a `music:` replace line
+converts it (`"instruments"` works as there), and the samples the tune
+does not play cut. Scripts play it as the game's own music, by the number
+in its name:
+
+```c
+load_bgm(200);
+play_bgm(0);
+```
+
+The engine keeps no table of music files: `load_bgm(n)` reads
+`snd2/bgm/BG_<n>.snd` (three digits at least) by name, and `play_bgm(0)`
+plays its entry 0 at the default volume of the like bank's `.vol` unless a
+volume is given (`play_bgm(0, 100)`). The number is written as it is, in
+strict mode too; pick one from 0 to 999 the disc lacks (its own are 0 to
+195, listed as `BGM_...` in `pal.h`), and only one mod may add it. A map
+loads its sound set's tune when it loads (the like map's, for a new map),
+so a map that should play the mod's tune calls `load_bgm` in `map_start`.
+See [music](assets/music.md), "A music file of a mod's own".
 
 ## Editing shared code
 

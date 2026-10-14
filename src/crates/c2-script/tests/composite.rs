@@ -122,7 +122,15 @@ fn pointers_refuse_what_the_vm_cannot_do() {
         "a pointer cannot be converted to int",
     );
     refuses("int test(void)\n{\n    int *p = (int *)4;\n\n    return 0;\n}\n", "int cannot be converted to a pointer");
-    refuses("struct s {\n    int a : 3;\n};\n\nint test(void)\n{\n    return 0;\n}\n", "bit-fields are not supported");
+    refuses(
+        "struct s {\n    char a : 3;\n};\n\nint test(void)\n{\n    return 0;\n}\n",
+        "a bit-field is an int or an unsigned int",
+    );
+    refuses("struct s {\n    int a : 0;\n};\n\nint test(void)\n{\n    return 0;\n}\n", "only an unnamed one may");
+    refuses(
+        "struct s {\n    int a : 3;\n};\n\nint test(void)\n{\n    struct s x;\n\n    return sizeof x.a;\n}\n",
+        "sizeof of bit-field a",
+    );
     refuses(
         "struct later;\n\nint test(void)\n{\n    struct later x;\n\n    return 0;\n}\n",
         "struct later, which is not defined",

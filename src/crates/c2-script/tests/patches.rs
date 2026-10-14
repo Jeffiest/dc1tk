@@ -234,6 +234,28 @@ fn a_patch_in_standard_c_carries_every_feature_into_the_script() {
 }
 
 #[test]
+fn two_mods_unnamed_structs_keep_their_own_tags() {
+    // each mod's file defines an unnamed struct of its own, and its library another
+    let library = "typedef struct {\n    float scale;\n} zoom;\n";
+    let first = "#pragma target map s17\n#include \"zoom.c\"\n\ntypedef struct {\n    int x;\n    int y;\n} pair;\n\n\
+                 void sum(void)\n{\n    pair p;\n    zoom z;\n\n    p.x = 2;\n    p.y = 3;\n    z.scale = 0.5;\n    print(p.x + p.y, z.scale);\n}\n";
+    let second = "#pragma target map s17\n\nstruct {\n    float f;\n    int i;\n    int j;\n} totals;\n\n\
+                  void count(void)\n{\n    totals.i = 4;\n    totals.j = totals.i * 2;\n    print(totals.j);\n}\n";
+    let folder = TempDir::new("patches-unnamed-structs");
+    let (root, dirs) =
+        setup(folder.path(), &[("a", &[("a.c", first), ("zoom.c", library)]), ("b", &[("b.c", second)])]);
+    let program = program_with_headers(&root, &plan_of(&dirs, &root).unwrap(), "map/s/s17_valley/s17_1.c").unwrap();
+    let tags: Vec<&str> = program["structs"].as_object().unwrap().keys().collect();
+    assert_eq!(tags.len(), 3, "{tags:?}");
+    let table = vm::table_of(&program, &tables()).unwrap();
+    let mut machine = Machine::new(&table, machine_globals(&sdk::resolve(&program, &tables()).unwrap()));
+    for name in ["sum", "count"] {
+        machine.run(name, Vec::new()).unwrap();
+    }
+    assert_eq!(machine.printed, strings(&["5 0.5", "8"]));
+}
+
+#[test]
 fn every_frame_functions_run_before_each_wait() {
     let patch = "#pragma target map s17\n\n#pragma every_frame\nvoid tick(void)\n{\n    print(\"tick\");\n}\n";
     let folder = TempDir::new("patches-every-frame");
@@ -378,6 +400,36 @@ fn a_number_the_tree_takes_later_is_reported() {
     assert_eq!(plan_of(&dirs, &root).unwrap().numbers, given(&[("a", &[("FIGHT", 1024)])]));
     write(&root, "map/s/s18/s18_1.c", &MAP.replace("print(\"talked\");", "set_flag(1024, 1);"));
     fails(plan_of(&dirs, &root), "which something else now uses");
+}
+
+#[test]
+fn counters_are_given_from_32_kept_and_never_shared() {
+    let patch = "#pragma target map s17\n#include \"names.h\"\n\nvoid score(void)\n{\n    _SET_CNT(WINS, 1);\n    \
+                 print(WINS, WON);\n}\n";
+    let folder = TempDir::new("patches-counters");
+    let (root, dirs) = setup(
+        folder.path(),
+        &[
+            ("a", &[("names.h", "NEW_COUNTER(WINS);\nNEW_FLAG(WON);\n"), ("p.c", patch)]),
+            // b writes counter 33 by hand, so neither mod is given it
+            (
+                "b",
+                &[
+                    ("names.h", "NEW_COUNTER(WINS);\nNEW_COUNTER(LOSSES);\n"),
+                    ("q.c", "void f(void)\n{\n    set_counter(33, 1);\n}\n"),
+                ],
+            ),
+        ],
+    );
+    write(&root, "map/s/s18/s18_1.c", &MAP.replace("print(\"talked\");", "set_counter(32, 1);"));
+    let plan = plan_of(&dirs, &root).unwrap();
+    // the tree uses 32, b writes 33
+    assert_eq!(plan.numbers, given(&[("a", &[("WINS", 34), ("WON", 1024)]), ("b", &[("LOSSES", 35), ("WINS", 36)])]));
+    let program = program_of(&root, &plan, "map/s/s17_valley/s17_1.c").unwrap();
+    assert_eq!(run(&program, "score"), strings(&["34 1024"]));
+    let held: serde_json::Value = serde_json::from_str(&read(&folder.path().join("mods").join(numbers::LOCK))).unwrap();
+    assert_eq!(held["counter"], serde_json::json!({"a/WINS": 34, "b/LOSSES": 35, "b/WINS": 36}));
+    assert_eq!(held["flag"], serde_json::json!({"a/WON": 1024}));
 }
 
 #[test]

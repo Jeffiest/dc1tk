@@ -55,22 +55,43 @@ pub const CONVERTERS: [Converter; 5] = [
 impl Converter {
     /// The game file's bytes from the common file or folder, with the disc's own file (at path,
     /// as extract lays it out) as the template.
-    pub fn build(&self, source: &Path, original: &[u8], path: &str, fonts: &Fonts) -> Result<Vec<u8>> {
+    pub fn build(
+        &self,
+        source: &Path,
+        original: &[u8],
+        path: &str,
+        fonts: &Fonts,
+        disc: &DiscFiles,
+    ) -> Result<Vec<u8>> {
         let built = match self.suffix {
             ".png" => c2_assets::textures::build(source, original),
             ".wav" => c2_assets::sounds::build(source, original),
             ".mid" => c2_assets::music::build_bank(source, original),
             ".txt" => c2_py::read_text(source)
                 .map_err(c2_assets::Error::from)
-                .and_then(|written| text::build(&written, original, original, path, fonts)),
-            _ => c2_assets::models::build(source, original),
+                .and_then(|written| text::build(&written, original, original, path, fonts))
+                .and_then(|built| {
+                    // the English font gains its accented letters only through text: ids
+                    let english = text::locate(path).is_some_and(|found| found.language == text::Language::English);
+                    let (before, mes) = (text::Mes::parse(original)?, text::Mes::parse(&built)?);
+                    let added = mes.messages().any(|(id, codes)| {
+                        before.get(id) != Some(codes) && c2_assets::font::uses_english_extra(codes.iter().copied())
+                    });
+                    if english && added {
+                        return Err(c2_assets::Error::invalid(format!(
+                            "{path}: accented letters in English need the font texture the build adds for a text: id line (text:en/NAME)"
+                        )));
+                    }
+                    Ok(built)
+                }),
+            _ => c2_assets::models::build_on_disc(source, original, path, disc),
         };
         built.map_err(|error| Error::invalid(error.to_string()))
     }
 
     /// The disc's own file in the common format: {file name: bytes} of the folder, or the one file
     /// (named "") of a converter that writes a file.
-    pub fn export(&self, data: &[u8], path: &str, fonts: &Fonts) -> Result<Vec<(String, Vec<u8>)>> {
+    pub fn export(&self, data: &[u8], path: &str, fonts: &Fonts, disc: &DiscFiles) -> Result<Vec<(String, Vec<u8>)>> {
         let exported = match self.suffix {
             ".png" => c2_assets::textures::export(data),
             ".wav" => c2_assets::sounds::export(data),
@@ -86,15 +107,27 @@ impl Converter {
             }
             ".txt" => text::export(data, path, &format!("file:{path}"), fonts)
                 .map(|text| vec![(String::new(), text.into_bytes())]),
-            _ => c2_assets::models::export(data),
+            _ => c2_assets::models::export_on_disc(data, path, disc),
         };
         exported.map_err(|error| Error::invalid(error.to_string()))
     }
 }
 
-/// The fonts the disc's message files are drawn with: the English font's table from the disc.
+/// The disc's files as a converter reads others (a pack of motions alone, the model it plays on).
+pub use c2_assets::models::DiscFiles;
+
+/// A disc file or pack member (`a.chr.d/b.chr`) by path, as the disc has it.
+pub fn disc_file(disc: &Archive, image: &Image, index: &HashMap<String, &Entry>, path: &str) -> Option<Vec<u8>> {
+    let (top, members) = location(path);
+    let entry = index.get(&lower(&top))?;
+    rebuild::read_member(disc.read(image.bytes(), entry), &members).map(<[u8]>::to_vec)
+}
+
+/// The fonts the disc's message files are drawn with: the English and Korean fonts' tables from
+/// the disc.
 pub fn disc_fonts(disc: &Archive, image: &Image, index: &HashMap<String, &Entry>) -> Fonts {
-    Fonts { english_table: index.get(text::ENGLISH_FONT).map(|entry| disc.read(image.bytes(), entry).to_vec()) }
+    let read = |path: &str| index.get(&path.to_lowercase()).map(|entry| disc.read(image.bytes(), entry).to_vec());
+    Fonts { english_table: read(text::ENGLISH_FONT), korean_table: read(c2_assets::font::KOREAN_TABLE) }
 }
 
 fn lower(text: &str) -> String {
@@ -200,14 +233,14 @@ pub fn conversion(target: &str, source: &Path) -> Option<Converter> {
 
 /// The game file's bytes for a mod file standing for the game file at target: the file itself,
 /// or converted from its common format.
-fn game_bytes_for(target: &str, source: &Path, original: &[u8], fonts: &Fonts) -> Result<Vec<u8>> {
+fn game_bytes_for(target: &str, source: &Path, original: &[u8], fonts: &Fonts, disc: &DiscFiles) -> Result<Vec<u8>> {
     match conversion(target, source) {
         None if source.is_dir() => Err(Error::invalid(format!(
             "{} is a folder, which stands only for a texture file (.img), sound bank (.snd) or character pack (.chr)",
             source.display()
         ))),
         None => Ok(fs::read(source)?),
-        Some(converter) => converter.build(source, original, target, fonts),
+        Some(converter) => converter.build(source, original, target, fonts, disc),
     }
 }
 
@@ -368,6 +401,8 @@ pub fn replaced(
     let disc = Archive::open(image.bytes())?;
     let index = disc_index(&disc);
     let fonts = disc_fonts(&disc, &image, &index);
+    let read = |path: &str| disc_file(&disc, &image, &index, path);
+    let others = DiscFiles { paths: disc.entries.iter().map(|entry| entry.path.clone()).collect(), read: &read };
     let sorted: BTreeMap<&String, &(String, PathBuf)> = wanted.iter().collect();
     for (path, (module, file)) in sorted {
         let (top, members) = location(path);
@@ -435,7 +470,7 @@ pub fn replaced(
                 Some(old) => {
                     let new = match &made {
                         Some(new) => new.clone(),
-                        None => game_bytes_for(path, file, old, &fonts)?,
+                        None => game_bytes_for(path, file, old, &fonts, &others)?,
                     };
                     let packed = rebuild::replaced_member(&data, &members, &new)?;
                     Ok((new, packed))
@@ -463,6 +498,8 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
     let disc = Archive::open(image.bytes())?;
     let index = disc_index(&disc);
     let fonts = disc_fonts(&disc, &image, &index);
+    let read = |path: &str| disc_file(&disc, &image, &index, path);
+    let others = DiscFiles { paths: disc.entries.iter().map(|entry| entry.path.clone()).collect(), read: &read };
     for path in paths {
         let path = path.replace('\\', "/").trim_matches('/').to_string();
         let (top, members) = location(&path);
@@ -479,7 +516,7 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
             let Some(converter) = converter.filter(|converter| lower(&path).ends_with(converter.game)) else {
                 return Err(Error::invalid(format!("{path} cannot be exported as {form}")));
             };
-            let exported = converter.export(data, &path, &fonts)?;
+            let exported = converter.export(data, &path, &fonts, &others)?;
             let folder = target.with_file_name(format!("{}{}", name_of(&target), suffix));
             if !converter.folder {
                 fs::create_dir_all(target.parent().unwrap())?;

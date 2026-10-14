@@ -91,6 +91,66 @@ pub fn parts(elf: &[u8]) -> Result<Vec<Part>> {
     Ok(out)
 }
 
+/// The entries of PartsInfoData (the last, 276, named "" and placed by nothing).
+pub const PARTS_COUNT: usize = 277;
+/// Each name's own string, 8 bytes apart from 0x36C708: 7 letters at most.
+pub const PART_NAME_SLOT: usize = 8;
+/// MiniMapInfoData, right after PartsInfoData and its 8 bytes of padding: MINIMAP_INFO {char
+/// name[16]; s16 tile[320];} for 18 maps.
+pub const MINIMAP_TABLE: u32 = 0x33EE40;
+pub const MINIMAP_RECORD: usize = 0x290;
+pub const MINIMAP_MAPS: usize = 18;
+pub const MINIMAP_TILES: usize = 320;
+
+/// Why a part's name may not change: the generator finds it by name, not by its entry.
+fn name_found_by_the_engine(part: usize) -> Option<&'static str> {
+    match part {
+        32..=51 => Some("way32-way51 are found by name (\"way%d\") as the ways in and on"),
+        136..=139 => Some("room56-room59 are found by name (\"room5%d\") as the healing point's room"),
+        _ => None,
+    }
+}
+
+/// PartsInfoData and MiniMapInfoData as a data table (`data:parts`, docs/assets/dungeons.md
+/// section 2): each part's name (its string in place, 7 letters at most), kind, link, entrance and
+/// the eight tile numbers no code reads; each mini map's tile for each part.
+pub fn parts_table(elf: &[u8]) -> Result<crate::data_table::Table> {
+    use crate::data_table::{elf_offset, Kind, Record, Table, S16, U8};
+    let start = elf_offset(elf, PARTS_TABLE, PARTS_COUNT * PARTS_RECORD, "PartsInfoData")?;
+    let mut table = Table::new("a parts table", Vec::new(), elf.to_vec());
+    let mut parts = Vec::new();
+    for number in 0..PARTS_COUNT {
+        let at = start + number * PARTS_RECORD;
+        let pointer = u32::from_le_bytes(elf[at..at + 4].try_into().unwrap());
+        let name_at = elf_offset(elf, pointer, PART_NAME_SLOT, "a part's name")?;
+        let mut record = Record::new(&[("part", Value::from(number))]);
+        record.bytes("name", Kind::Text(PART_NAME_SLOT), name_at, 1);
+        if let Some(why) = name_found_by_the_engine(number) {
+            record.fixed(why);
+        }
+        record.bytes("kind", S16, at + 4, 1).bytes("link", U8, at + 6, 1).bytes("entrance", U8, at + 7, 1).bytes(
+            "unread_tiles",
+            S16,
+            at + 8,
+            8,
+        );
+        parts.push(record);
+    }
+    table.section("parts", &["part"], parts);
+    let minimap = elf_offset(elf, MINIMAP_TABLE, MINIMAP_MAPS * MINIMAP_RECORD, "MiniMapInfoData")?;
+    let mut maps = Vec::new();
+    for number in 0..MINIMAP_MAPS {
+        let at = minimap + number * MINIMAP_RECORD;
+        let end = elf[at..at + 16].iter().position(|&byte| byte == 0).unwrap_or(16);
+        let name = String::from_utf8_lossy(&elf[at..at + end]).into_owned();
+        let mut record = Record::new(&[("map", Value::from(name))]);
+        record.bytes("tiles", S16, at + 16, MINIMAP_TILES);
+        maps.push(record);
+    }
+    table.section("minimap", &["map"], maps);
+    Ok(table)
+}
+
 /// One room layout as a file has it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Room {
@@ -660,6 +720,38 @@ mod tests {
 
     /// The room scripts of an extracted disc (C2S_CORPUS) read with the executable's part names,
     /// write back unchanged, and their JSON changes nothing.
+    /// PartsInfoData and MiniMapInfoData of the executable (C2S_CORPUS) as data:parts: they read
+    /// back as written, and a part renamed in its slot is patched in place.
+    #[test]
+    fn corpus_parts_table() {
+        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
+            return;
+        };
+        let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::monster_data::EXECUTABLE)).unwrap();
+        let table = parts_table(&elf).unwrap();
+        assert_eq!(table.check(), Vec::<String>::new());
+        let json = table.to_json();
+        assert_eq!(
+            json["parts"][80],
+            json!({"part": 80, "name": "door00", "kind": 10, "link": 15, "entrance": 1,
+            "unread_tiles": [42, 42, 40, 42, 42, 42, 42, 42]})
+        );
+        assert_eq!(
+            (json["parts"][276]["name"].clone(), json["minimap"][0]["map"].clone()),
+            (json!(""), json!("d01f01"))
+        );
+        assert_eq!(json["minimap"][17]["map"], "d07f01");
+        assert_eq!(json["minimap"][0]["tiles"][276], 0);
+        let (edits, patches) =
+            table.changes(&json!({"parts": [{"part": 276, "name": "newp00", "kind": 4, "link": 15}]}), "m").unwrap();
+        assert!(edits.is_empty() && patches.len() == 3);
+        let patched = crate::data_table::apply_patches(&elf, &patches).unwrap();
+        let parts = super::parts(&patched).unwrap();
+        assert_eq!((parts[276].name.as_str(), parts[276].kind, parts[276].link), ("newp00", 4, 15));
+        assert!(table.changes(&json!({"parts": [{"part": 276, "name": "toolong8"}]}), "m").is_err());
+        assert!(table.changes(&json!({"parts": [{"part": 32, "name": "wayxx"}]}), "m").is_err());
+    }
+
     #[test]
     fn corpus_layouts_round_trip() {
         let Some(corpus) = std::env::var_os("C2S_CORPUS") else {

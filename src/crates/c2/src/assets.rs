@@ -9,6 +9,7 @@ use anyhow::Result;
 use clap::{Subcommand, ValueEnum};
 use rayon::prelude::*;
 
+use c2_assets::models::DiscFiles;
 use c2_assets::textures;
 
 /// The common formats and the game files each converts.
@@ -36,19 +37,20 @@ impl Kind {
         }
     }
 
-    fn export(self, data: &[u8]) -> c2_assets::Result<Vec<(String, Vec<u8>)>> {
+    /// The file at `relative` exported; a character pack read as on the disc under `root`.
+    fn export(self, data: &[u8], relative: &str, disc: &DiscFiles) -> c2_assets::Result<Vec<(String, Vec<u8>)>> {
         match self {
             Kind::Png => textures::export(data),
             Kind::Wav => c2_assets::sounds::export(data),
-            Kind::Gltf => c2_assets::models::export(data),
+            Kind::Gltf => c2_assets::models::export_on_disc(data, relative, disc),
         }
     }
 
-    fn build(self, folder: &Path, original: &[u8]) -> c2_assets::Result<Vec<u8>> {
+    fn build(self, folder: &Path, original: &[u8], relative: &str, disc: &DiscFiles) -> c2_assets::Result<Vec<u8>> {
         match self {
             Kind::Png => textures::build(folder, original),
             Kind::Wav => c2_assets::sounds::build(folder, original),
-            Kind::Gltf => c2_assets::models::build(folder, original),
+            Kind::Gltf => c2_assets::models::build_on_disc(folder, original, relative, disc),
         }
     }
 }
@@ -109,12 +111,19 @@ fn write_failed(out: &Path, failed: Mutex<Vec<String>>) -> Result<usize> {
     Ok(failed.len())
 }
 
+/// The character packs under a root, for a pack of motions alone to find its model in.
+fn packs_under(root: &Path) -> Result<Vec<String>> {
+    game_files(root, Kind::Gltf)
+}
+
 fn run_export(kind: Kind, root: &Path, out: &Path) -> Result<ExitCode> {
     let files = game_files(root, kind)?;
+    let read = |path: &str| std::fs::read(root.join(path)).ok();
+    let disc = DiscFiles { paths: packs_under(root)?, read: &read };
     let failed = Mutex::new(Vec::new());
     files.par_iter().try_for_each(|relative| -> Result<()> {
         let data = std::fs::read(root.join(relative))?;
-        match kind.export(&data) {
+        match kind.export(&data, relative, &disc) {
             Ok(exported) => {
                 let folder = out.join(format!("{relative}{}", kind.suffix()));
                 for (name, content) in exported {
@@ -139,9 +148,11 @@ fn run_build(kind: Kind, root: &Path, folders: &Path, out: &Path, check: bool) -
         .collect();
     let failed = Mutex::new(Vec::new());
     let differ = Mutex::new(Vec::new());
+    let read = |path: &str| std::fs::read(root.join(path)).ok();
+    let disc = DiscFiles { paths: packs_under(root)?, read: &read };
     files.par_iter().try_for_each(|relative| -> Result<()> {
         let original = std::fs::read(root.join(relative))?;
-        match kind.build(&folders.join(format!("{relative}{}", kind.suffix())), &original) {
+        match kind.build(&folders.join(format!("{relative}{}", kind.suffix())), &original, relative, &disc) {
             Ok(built) if check => {
                 if built != original {
                     differ.lock().unwrap().push(relative.clone());

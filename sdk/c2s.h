@@ -24,6 +24,7 @@ float c2s_cos(float angle);
 // here they read as constants. original(...) in a #pragma override function calls the function it
 // replaced. LANGUAGE is the language of the script a patch is merged into; here it reads as English.
 #define NEW_FLAG(name) enum { name = 1024 }
+#define NEW_COUNTER(name) enum { name = 32 }
 #define NEW_PROGRAM(name) enum { name = 9000 }
 #define NEW_MONSTER_VAR(name) enum { name = 8 }
 int c2s_original(int unused, ...);

@@ -23,7 +23,7 @@ shows, and its row below says the same (a test checks that):
 - **planned**: it does not compile yet (or fails when run); the step given makes it work;
 - **limit**: refused by design.
 
-Today: 121 programs, 117 supported (103 giving C's result, 14 giving C's diagnostic) and 4 at
+Today: 129 programs, 125 supported (109 giving C's result, 16 giving C's diagnostic) and 4 at
 the limit (`double` twice, and comparing or subtracting two pointers); none differ or are
 planned. `src/crates/c2-script/tests/composite.rs` runs larger programs that use the composite
 types together.
@@ -87,13 +87,20 @@ C89 leaves these to the implementation and asks it to say what it does.
 - **Structs and unions** hold their members in order in whole slots; a union's members share
   them. `sizeof` and `offsetof` count C's bytes as the types above define them, each member
   aligned to its size (to 4 at most) and a struct to its largest member's, so `sizeof(struct
-  { char c; int i; })` is 8 although the struct takes two slots. Bit-fields are refused: every
-  member takes a slot of its own. A struct's tag is known from its declaration to the end of the
-  file, also when it is declared in a block.
+  { char c; int i; })` is 8 although the struct takes two slots. A struct's tag declared in a
+  block is the block's, hiding one outside until the block ends.
+- **Bit-fields** are `int` (signed), `signed int` or `unsigned int`. They share an int slot,
+  allocated from its lowest bit; one that does not fit in the bits the slot has left starts the
+  next slot (none straddles two), as does one after a member that is not a bit-field, or after
+  `:0`. A slot of bit-fields counts 4 bytes for `sizeof`, and a 32-bit field is an ordinary int
+  member. Reading one is `(slot & mask) >> offset` (and spreading its sign); storing one keeps the
+  slot's other bits, so a value wraps to the field's width.
 - **Function pointers** hold the function's number, from 1 in the order the program takes the
-  functions' addresses; functions that take `...` or a struct, or return one, have none.
+  functions' addresses, for every function: one that takes `...` or a struct, or returns one,
+  too.
 - **Variable arguments** after `...` are passed as they are: a `char` or `short` as an int, a
-  `float` as a float (there is no `double`), so `va_arg` reads `int` and `float`.
+  `float` as a float (there is no `double`). `va_arg` of `char` or `short` reads the int and
+  converts it back, as the default argument promotions have it.
 - **String literals** are the VM's strings, the values natives and `string` variables take. A
   literal that is subscripted or dereferenced, or stored in, passed as or returned as a `char`
   pointer, is an array of its characters and a 0 instead, as C has it, kept for as long as the
@@ -164,6 +171,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.3.13-14 `&&` and `\|\|` | supported | `expressions_logical` | the right side runs only when needed |
 | 3.3.13-14 Their value | supported | `expressions_logical_value` | strict mode: `NOT NOT` where the value is used |
 | 3.3.15 `?:` | supported | `expressions_conditional` | |
+| 3.3.15 `?:` of structs | supported | `expressions_conditional_structs` | one of the two structs' addresses |
 | 3.3.16.1 Assignment | supported | `expressions_assignment` | |
 | 3.3.16.2 Compound assignment | supported | `expressions_compound_assignment` | |
 | 3.3.17 Comma operator | supported | `expressions_comma` | |
@@ -185,7 +193,10 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.5.2 long long | supported | `declarations_long_long` | refused: C99 |
 | 3.5.2 Implicit int | supported | `declarations_implicit_int` | |
 | 3.5.2 double | limit | `declarations_double` | |
-| 3.5.2.1 Structures | supported | `declarations_struct` | their members' slots, copied slot by slot; no bit-fields |
+| 3.5.2.1 Structures | supported | `declarations_struct` | their members' slots, copied slot by slot |
+| 3.5.2.1 Bit-fields | supported | `declarations_bit_fields` | masks on an int slot they share |
+| 3.5.2.1 A bit-field's width | supported | `declarations_bit_field_width` | more than an int's 32 bits: refused |
+| 3.3.3.2 `&` of a bit-field | supported | `declarations_bit_field_address` | refused |
 | 3.5.2.1 Unions | supported | `declarations_union` | the members share slots; another member reads the value, not its bits |
 | 3.5.2.2 Enumerations | supported | `declarations_enums` | in functions too |
 | 3.5.3 const | supported | `declarations_const` | |
@@ -203,6 +214,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.5.6 typedef | supported | `declarations_typedef` | in functions too |
 | 3.5.7 char arrays from strings | supported | `declarations_char_arrays` | a character per element |
 | 3.1.2.1 Block scope | supported | `declarations_block_scope` | an inner name hides an outer one |
+| 3.1.2.1 Tags in blocks | supported | `declarations_struct_tag_scope` | a struct of the block's, under another tag |
 | 3.5 One declaration in a block | supported | `declarations_redeclared` | refused |
 
 ### 3.6 Statements
@@ -232,6 +244,8 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.1.2.2 static functions | supported | `functions_static` | |
 | 2.2.4.1 31 parameters | supported | `functions_many_parameters` | |
 | 4.8 Variable arguments | supported | `functions_varargs` | a hidden array in the caller's frame |
+| 4.8.1.2 `va_arg` of char and short | supported | `functions_varargs_promoted` | the int read and converted |
+| 3.5.4.3 Pointers to any function | supported | `functions_pointers_composite` | structs and `...` passed as a direct call passes them |
 | 3.5.4.3 Returning pointers | supported | `functions_return_pointer` | |
 
 ### 3.8 Preprocessing directives
@@ -262,6 +276,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 | `<limits.h>` | supported | `library_limits` | |
 | `<float.h>` | supported | `library_float` | `float` only |
 | `<stddef.h>` | supported | `library_stddef` | `NULL`, `size_t`, `ptrdiff_t`, `wchar_t` |
+| A header's typedefs as type names | supported | `library_header_typedefs` | where a declaration or cast has them |
 | `offsetof` | supported | `library_offsetof` | C's bytes |
 | `<stdarg.h>` | supported | `functions_varargs` | `va_list` points into the caller's array |
 
@@ -296,8 +311,10 @@ Done (see `src/crates/c2-script/src/lower.rs`, `parse.rs` and `cpp.rs`):
 
 - **A header's macros** (`#include <...>`) are read from the header's text from the macros
   before it, so they reach `#if`; its declarations are read apart as before, and its constants
-  stay names in code. Its typedefs are known for sizes (`sizeof(wchar_t)`), not as type words,
-  since a script's own names may be the same.
+  stay names in code. Its typedefs are type words (`size_t n;`, `size_t f(size_t)`,
+  `(size_t)x`, `int f(size_t, size_t);`) where a name, `*` or `)` follows (or `,` in a
+  parameter list), unless the file declares the name as a variable, enumerator or constant:
+  the SDK's value kinds (`flag`, `message`) are names scripts use for variables too.
 - **Strict mode** (`lower.rs`, `sdk.rs`): a store, argument or return converts with `FTOI` or
   `ITOF` (or the unsigned runtime) where the types differ, constants folded; `&&` and `||`
   whose value is used are followed by `NOT NOT`; and in `a && f()`, `a || f()`, `c ? f() : x`
@@ -335,9 +352,22 @@ before come out as they went in, so retail scripts keep their bytes.
   caller's stays as it was; a struct result is written through a hidden first parameter,
   `__result`, that points at a hidden local of the caller's. Initializers follow C's brace
   elision, and set what they leave out to 0.
-- **Function pointers** are numbers. Each call through one calls `__call_N` for its number of
-  arguments, a function the compiler adds that switches on the number to the function, passing
-  the arguments on as they are.
+- **Function pointers** are numbers. Each call through one calls `__call_N` for the number of
+  arguments the function takes in the VM, a function the compiler adds that switches on the
+  number to the function, passing the arguments on as they are. A call through a pointer passes
+  what a direct call passes: a struct argument's address, the address of the caller's hidden
+  local for a struct result first, and the hidden array of the arguments after `...` last.
+- **Bit-fields** are bits of an int slot: a read is `(slot & mask) >> offset`, then
+  `(v ^ top) - top` for a signed field (the bits below the field are 0, so the VM's `>>`, a
+  division, is exact); a store is `slot = (slot & ~mask) | ((value << offset) & mask)`, with the slot's
+  address worked out once, and gives the field read back. `f.b++` keeps the old value in a hidden
+  local. An initializer puts the fields that share a slot together in one value.
+- **`?:` of structs** gives the address of one of the two, which is copied or reached through
+  as any struct's value is.
+- **Tags in blocks**: a struct declared in a block gets a tag of its own (`T#...`), which the
+  block's uses of `T` name until the block ends; messages show it as `T`. An unnamed struct's
+  made-up tag carries a hash of its file's text, so two files' (two mods' patches, a script and
+  its library) never share one.
 - **Variadic functions** take a hidden last parameter, `__va`, pointing at a hidden array in the
   caller's frame that holds the arguments after the named ones; `<stdarg.h>`'s `va_list` is a
   pointer into it, `va_start` sets it from `__va` and `va_arg` steps it.

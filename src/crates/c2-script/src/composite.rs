@@ -158,6 +158,8 @@ enum Place {
     At(Node, Node),
     /// An access the compiler read before (var, index, deref of a variable), as it was.
     Plain(Node),
+    /// A bit-field: some bits of an int slot.
+    Bits(Box<Place>, ctype::Bits),
 }
 
 /// An expression lowered and its type; an array's value is its first element's address (typed as
@@ -407,6 +409,37 @@ impl Lowering<'_> {
         name
     }
 
+    /// A hidden int local.
+    fn hidden_int(&mut self) -> String {
+        let name = format!("__value_{}", self.hidden.len());
+        self.hidden.push(node!({"name": name.as_str(), "type": "int", "size": null}));
+        let variable = Variable { ty: ctype::int(), storage: Storage::Local, name: name.clone(), typed: true };
+        self.variables.insert(name.clone(), variable);
+        name
+    }
+
+    /// A bit-field stored: its slot's other bits kept and the new value's put in its own, the value
+    /// worked out from the field's current one by value_of. The expression's value is the field's
+    /// after the store, read back (so it is the value wrapped to the field's width).
+    fn store_bits(&mut self, slot: Place, bits: ctype::Bits, ty: &Ty, value_of: impl FnOnce(Node) -> Node) -> Typed {
+        let int = ctype::int();
+        let signed = self.slot_kind(ty) != "unsigned int";
+        let mut parts = Vec::new();
+        let slot = self.stable(slot, &int, &mut parts);
+        let current = bits.read(self.access(&slot, &int), signed);
+        let mut value = value_of(current);
+        if has_effects(&value) {
+            // worked out before the slot is read for the store, which it may change
+            let held = self.hidden_int();
+            parts.push(assign(var(&held), value));
+            value = var(&held);
+        }
+        let stored = bits.stored(self.access(&slot, &int), bits.packed(value));
+        parts.push(assign(self.access(&slot, &int), stored));
+        parts.push(bits.read(self.access(&slot, &int), signed));
+        Typed::new(sequence(parts), ty.clone())
+    }
+
     // ---- statements ------------------------------------------------------------------------
 
     fn statements(&mut self, nodes: &[Node]) -> Result<Vec<Node>> {
@@ -557,10 +590,14 @@ impl Lowering<'_> {
                     let shown = if node["arrow"] == Node::Bool(true) { "->" } else { "." };
                     return fail(format!("{shown}{name} of {}, which is not a struct or union", ty.shown()));
                 };
-                let Some((offset, _, member)) = ctype::member(&self.structs, tag, name) else {
+                let Some((offset, _, member, bits)) = ctype::member_bits(&self.structs, tag, name) else {
                     return fail(format!("{} has no member {name}", ty.shown()));
                 };
-                Ok((self.offset(base, offset, None), member))
+                let place = self.offset(base, offset, None);
+                Ok(match bits {
+                    Some(bits) => (Place::Bits(Box::new(place), bits), member),
+                    None => (place, member),
+                })
             }
             "field" => {
                 // an initializer's slot (parse.rs), of its C type, read as its type's base
@@ -692,6 +729,8 @@ impl Lowering<'_> {
                 };
                 self.offset(place, by, index)
             }
+            // a bit-field is a scalar: nothing is reached past it
+            Place::Bits(slot, _) => self.offset(*slot, by, index),
         }
     }
 
@@ -710,6 +749,8 @@ impl Lowering<'_> {
                 node!({"kind": "at", "pointer": pointer.clone(), "index": index.clone(), "type": kind})
             }
             Place::Plain(node) => node.clone(),
+            // the slot the bits are in
+            Place::Bits(slot, _) => self.access(slot, &ctype::int()),
         }
     }
 
@@ -727,6 +768,10 @@ impl Lowering<'_> {
 
     /// The value at a place: a scalar's, an array's or a struct's address.
     fn load(&self, place: &Place, ty: Ty) -> Typed {
+        if let Place::Bits(slot, bits) = place {
+            let signed = self.slot_kind(&ty) != "unsigned int";
+            return Typed::new(bits.read(self.access(slot, &ctype::int()), signed), ty);
+        }
         match ty {
             Ty::Array(of, _) => Typed::new(self.address(place), Ty::Pointer(of)),
             Ty::Struct(_) => Typed::new(self.address(place), ty),
@@ -821,7 +866,11 @@ impl Lowering<'_> {
                 let then = self.rvalue(&node["then"])?;
                 let otherwise = self.rvalue(&node["else"])?;
                 if then.ty.is_struct() || otherwise.ty.is_struct() {
-                    return fail("a ?: of structs is not supported: give each branch an assignment");
+                    // each branch's value is its struct's address, so the ?: gives one of the two
+                    self.same_struct(&then.ty, &otherwise.ty, "a ?: of")?;
+                    let node =
+                        node.clone().with("cond", cond.node).with("then", then.node).with("else", otherwise.node);
+                    return Ok(Typed::new(node, then.ty));
                 }
                 let ty = if then.ty.is_pointer() || matches!(then.ty, Ty::Scalar(ref name) if name == "float") {
                     then.ty.clone()
@@ -885,14 +934,13 @@ impl Lowering<'_> {
 
     /// A function's address: its number, given the first time it is taken.
     fn function_number(&mut self, name: &str, signature: &Signature) -> Result<Typed> {
-        if signature.variadic || signature.returns.is_struct() || signature.params.iter().any(Ty::is_struct) {
-            return fail(format!(
-                "{name} has no address: a function that takes ... or a struct, or returns one, cannot be called through a pointer"
-            ));
-        }
         let next = self.numbered.len() as i64 + 1;
         let number = *self.numbered.entry(name.to_string()).or_insert(next);
-        let ty = ctype::pointer(Ty::Function(Box::new(signature.returns.clone()), signature.params.clone(), false));
+        let ty = ctype::pointer(Ty::Function(
+            Box::new(signature.returns.clone()),
+            signature.params.clone(),
+            signature.variadic,
+        ));
         Ok(Typed::new(int_node(number), ty))
     }
 
@@ -904,6 +952,9 @@ impl Lowering<'_> {
             }
         }
         let (place, ty) = self.place(target)?;
+        if let Place::Bits(..) = place {
+            return fail("a bit-field has no address");
+        }
         if let Place::Plain(plain) = &place {
             // &x, &a[i] and &*p of the variables the compiler had before, as they were
             return Ok(Typed::new(node.clone().with("target", plain.clone()), ctype::pointer(ty)));
@@ -953,6 +1004,11 @@ impl Lowering<'_> {
 
     fn assignment(&mut self, node: &Node) -> Result<Typed> {
         let (place, ty) = self.place(&node["target"])?;
+        if let Place::Bits(slot, bits) = place {
+            let value = self.scalar(&node["value"], "a bit-field's value")?;
+            self.assignable(&ty, &value, "assigning")?;
+            return Ok(self.store_bits(*slot, bits, &ty, |_| value.node));
+        }
         if let Ty::Array(..) = ty {
             return fail("an array cannot be assigned; assign its elements");
         }
@@ -973,6 +1029,15 @@ impl Lowering<'_> {
     fn compound(&mut self, node: &Node) -> Result<Typed> {
         let (place, ty) = self.place(&node["target"])?;
         let value = self.scalar(&node["value"], "an operand")?;
+        if let Place::Bits(slot, bits) = place {
+            let op = text(node, "op").to_string();
+            return Ok(self.store_bits(
+                *slot,
+                bits,
+                &ty,
+                |current| node!({"kind": "binary", "op": op.as_str(), "left": current, "right": value.node}),
+            ));
+        }
         if !ty.is_pointer() {
             if ty.is_aggregate() {
                 return fail(format!("{}= of {}", text(node, "op"), ty.shown()));
@@ -1018,6 +1083,17 @@ impl Lowering<'_> {
             // p++: the old value, kept in a hidden local, and the pointer stepped
             let target = &node["left"]["target"];
             let (place, ty) = self.place(target)?;
+            if let Place::Bits(slot, bits) = place {
+                // the old value, kept in a hidden local, and the field stepped
+                let step = if node["left"]["op"] == "-" { "-" } else { "+" };
+                let old = self.hidden_int();
+                let mut stepped = self.store_bits(*slot, bits, &ty, |current| {
+                    let kept = assign(var(&old), current);
+                    node!({"kind": "binary", "op": step, "left": kept, "right": int_node(1)})
+                });
+                stepped.node = sequence(vec![stepped.node, var(&old)]);
+                return Ok(stepped);
+            }
             if ty.is_pointer() {
                 let old = self.hidden_pointer(&ty);
                 let read = self.access(&place, &ty);
@@ -1180,18 +1256,7 @@ impl Lowering<'_> {
             args.push(value.node);
         }
         if signature.variadic {
-            // the other arguments, in a hidden array the function reads through __va
-            let extra = &given[fixed..];
-            let storage =
-                self.hidden_storage("arguments", &Ty::Array(Box::new(ctype::int()), extra.len().max(1) as i64));
-            for (slot, arg) in extra.iter().enumerate() {
-                let value = self.scalar(arg, "an argument after ...")?;
-                // stored as it is: of its own type, so strict mode converts nothing
-                let kind = self.slot_kind(&value.ty);
-                let cell = node!({"kind": "field", "name": storage.as_str(), "offset": slot, "type": kind});
-                parts.push(assign(cell, value.node));
-            }
-            args.push(var(&storage));
+            args.push(self.extra_arguments(&given[fixed..], &mut parts)?);
         }
         let call = node.clone().with("args", args);
         parts.push(call);
@@ -1202,7 +1267,23 @@ impl Lowering<'_> {
         Ok(Typed::new(sequence(parts), ty))
     }
 
-    /// A call through a function pointer: __call_N(number, arguments...).
+    /// The arguments after ... in a hidden array the function reads through __va, set by parts:
+    /// the array's address.
+    fn extra_arguments(&mut self, extra: &[Node], parts: &mut Vec<Node>) -> Result<Node> {
+        let storage = self.hidden_storage("arguments", &Ty::Array(Box::new(ctype::int()), extra.len().max(1) as i64));
+        for (slot, arg) in extra.iter().enumerate() {
+            let value = self.scalar(arg, "an argument after ...")?;
+            // stored as it is: of its own type, so strict mode converts nothing
+            let kind = self.slot_kind(&value.ty);
+            let cell = node!({"kind": "field", "name": storage.as_str(), "offset": slot, "type": kind});
+            parts.push(assign(cell, value.node));
+        }
+        Ok(var(&storage))
+    }
+
+    /// A call through a function pointer: __call_N(number, arguments...), N the arguments the
+    /// function takes in the VM: a struct's result's address first, a struct argument's address,
+    /// and the hidden array of the arguments after ... last, as a direct call passes them.
     fn call_through(&mut self, node: &Node) -> Result<Typed> {
         let callee = &node["callee"];
         let designated = match callee.kind() {
@@ -1222,27 +1303,48 @@ impl Lowering<'_> {
             Ty::Pointer(to) => (**to).clone(),
             other => other.clone(),
         };
-        let Ty::Function(returns, params, _) = function else {
+        let Ty::Function(returns, params, variadic) = function else {
             return fail(format!("{} is not a function or a function pointer", pointer.ty.shown()));
         };
-        if returns.is_struct() {
-            return fail("a function that returns a struct cannot be called through a pointer");
-        }
         let given = list(node, "args");
-        if !params.is_empty() && params.len() != given.len() {
+        let wrong = if variadic { given.len() < params.len() } else { params.len() != given.len() };
+        if !params.is_empty() && wrong {
             return fail(format!("the function pointer's function takes {} arguments", params.len()));
         }
+        let mut parts = Vec::new();
         let mut args = vec![pointer.node];
-        for (at, arg) in given.iter().enumerate() {
-            let value = self.scalar(arg, "an argument")?;
-            if let Some(param) = params.get(at) {
-                self.assignable(param, &value, "passing through a function pointer")?;
+        let mut result = None;
+        if returns.is_struct() {
+            let storage = self.hidden_storage("result", &returns);
+            args.push(var(&storage));
+            result = Some(storage);
+        }
+        let fixed = if variadic { params.len() } else { given.len() };
+        for (at, arg) in given[..fixed].iter().enumerate() {
+            let value = match params.get(at) {
+                Some(param) => self.value_for(arg, param)?,
+                None => self.rvalue(arg)?,
+            };
+            match params.get(at) {
+                Some(param) if param.is_struct() || value.ty.is_struct() => {
+                    // the function copies the struct at the address it is given
+                    self.same_struct(param, &value.ty, "passing through a function pointer")?;
+                }
+                Some(param) => self.assignable(param, &value, "passing through a function pointer")?,
+                None => {}
             }
             args.push(value.node);
         }
-        self.arities.insert(given.len());
-        let name = format!("__call_{}", given.len());
-        Ok(Typed::new(node!({"kind": "call", "name": name, "args": args}), *returns))
+        if variadic {
+            args.push(self.extra_arguments(&given[fixed..], &mut parts)?);
+        }
+        let arity = args.len() - 1;
+        self.arities.insert(arity);
+        parts.push(node!({"kind": "call", "name": format!("__call_{arity}"), "args": args}));
+        if let Some(storage) = result {
+            parts.push(var(&storage));
+        }
+        Ok(Typed::new(sequence(parts), *returns))
     }
 
     /// The function a call through a pointer with arity arguments calls: a switch on the number to
@@ -1255,13 +1357,20 @@ impl Lowering<'_> {
         }
         let mut cases = Vec::new();
         for (name, number) in &self.numbered {
-            if self.signatures[name].params.len() != arity {
+            let signature = &self.signatures[name];
+            let taken =
+                signature.params.len() + usize::from(signature.returns.is_struct()) + usize::from(signature.variadic);
+            if taken != arity {
                 continue;
             }
             let call = node!({"kind": "call", "name": name.as_str(), "args": args.clone()});
-            cases.push(
-                node!({"value": int_node(*number), "default": false, "body": [{"kind": "return", "value": call}]}),
-            );
+            let body = if signature.returns.is_struct() || signature.returns == Ty::Void {
+                // a function with no value (one returning a struct writes it through its pointer)
+                node!([{"kind": "expr", "expr": call}, {"kind": "return", "value": null}])
+            } else {
+                node!([{"kind": "return", "value": call}])
+            };
+            cases.push(node!({"value": int_node(*number), "default": false, "body": body}));
         }
         let body = if cases.is_empty() {
             Vec::new()
@@ -1286,11 +1395,12 @@ impl Lowering<'_> {
         if ty.is_aggregate() {
             return fail("va_arg of a struct or array is not supported");
         }
-        if let Ty::Scalar(name) = &ty {
-            if matches!(name.as_str(), "char" | "unsigned char" | "short" | "unsigned short") {
-                return fail(format!("va_arg of {name}, which an argument after ... is promoted from; use int"));
-            }
-        }
+        // a char or short after ... was passed as an int (C's default argument promotions): it is
+        // read as one and converted back
+        let narrow = matches!(&ty, Ty::Scalar(name) if matches!(
+            scalar_base(name, self.kinds).as_str(),
+            "char" | "signed char" | "unsigned char" | "short" | "unsigned short"
+        ));
         let (place, list_ty) = self.place(&node["list"])?;
         if !list_ty.is_pointer() {
             return fail("va_arg takes a va_list");
@@ -1299,6 +1409,11 @@ impl Lowering<'_> {
         let stepped = assign(self.access(&place, &list_ty), step);
         let read = self.access(&place, &list_ty);
         let (base, _) = self.deref_place(Typed::new(read, list_ty))?;
+        if narrow {
+            let value = self.access(&self.offset(base, -1, None), &ctype::int());
+            let converted = node!({"kind": "cast", "type": self.slot_kind(&ty), "operand": value});
+            return Ok(Typed::new(sequence(vec![stepped, converted]), ty));
+        }
         let value = self.access(&self.offset(base, -1, None), &ty);
         Ok(Typed::new(sequence(vec![stepped, value]), ty))
     }

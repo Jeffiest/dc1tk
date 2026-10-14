@@ -275,6 +275,10 @@ in `c2-assets`' `ids`).
   picture under a new name) need a script or model to ask for that name,
   so they are `file:` lines, by the path the script loads; the design's
   "mod's generated header" is not needed while patches see the names.
+  A `music:BG_NNN` line under `add` (`{"file": "x.mid", "like": "BG_193"}`)
+  makes a new music file `snd2/bgm/BG_NNN.snd`, the like bank playing the
+  MIDI file, for `load_bgm(NNN)`; the number is the mod's choice, one the
+  disc lacks ([music](assets/music.md), "A music file of a mod's own").
 - **New files from common formats.** A `file:` line with `like` makes its
   game file whole, from PNGs or a glTF, with the disc's file `like` names
   as the template, so a mod can have a picture file or model pack of its

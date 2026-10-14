@@ -32,7 +32,9 @@ impl ModelPack {
                     match tag.as_str() {
                         "MDS" => current = args.first().and_then(|arg| arg.as_str()).map(str::to_string),
                         "TYPE" => {
-                            if let (Some(model), Some(kind)) = (&current, args.first().and_then(|arg| arg.as_f64()).map(|kind| kind as i64)) {
+                            if let (Some(model), Some(kind)) =
+                                (&current, args.first().and_then(|arg| arg.as_f64()).map(|kind| kind as i64))
+                            {
                                 types.push((model.clone(), kind));
                             }
                         }
@@ -124,7 +126,8 @@ impl Scene {
         let doc: Value = serde_json::from_slice(text).map_err(|error| Error::invalid(format!("{stem}: {error}")))?;
         let list = |key: &str| doc[key].as_array().cloned().unwrap_or_default();
         let base = |scene: &Scene, key: &str| scene.len(key);
-        let (buffer_base, view_base, accessor_base) = (base(self, "buffers"), base(self, "bufferViews"), base(self, "accessors"));
+        let (buffer_base, view_base, accessor_base) =
+            (base(self, "buffers"), base(self, "bufferViews"), base(self, "accessors"));
         let (sampler_base, texture_base, material_base, mesh_base) =
             (base(self, "samplers"), base(self, "textures"), base(self, "materials"), base(self, "meshes"));
         let shift = |value: &Value, by: usize| json!(value.as_u64().unwrap_or(0) as usize + by);
@@ -187,7 +190,11 @@ impl Scene {
                 ("", "emissiveTexture"),
             ];
             for (parent, key) in texture_infos {
-                let info = if parent.is_empty() { material.get_mut(key) } else { material.get_mut(parent).and_then(|p| p.get_mut(key)) };
+                let info = if parent.is_empty() {
+                    material.get_mut(key)
+                } else {
+                    material.get_mut(parent).and_then(|p| p.get_mut(key))
+                };
                 if let Some(index) = info.and_then(|info| info.get_mut("index")) {
                     *index = json!(index.as_u64().unwrap_or(0) as usize + texture_base);
                 }
@@ -286,8 +293,14 @@ fn point_light(node: &SceneNode) -> Option<Value> {
 /// The map as a glTF scene: `<name>.gltf`, `models/*.bin`, `textures/*.png`, by relative path.
 /// `packs` are the map's model packs (and its add map's), `textures` the texture files to look
 /// pictures up in (the map's own first).
-pub fn export_map(name: &str, map: &MapFile, packs: &[ModelPack], textures: &TextureSearch) -> Result<(BTreeMap<String, Vec<u8>>, Report)> {
-    let kind_of = |model: &str| find_model(packs, model).map_or("model".to_string(), |(kind, _)| kind_name(kind).to_string());
+pub fn export_map(
+    name: &str,
+    map: &MapFile,
+    packs: &[ModelPack],
+    textures: &TextureSearch,
+) -> Result<(BTreeMap<String, Vec<u8>>, Report)> {
+    let kind_of =
+        |model: &str| find_model(packs, model).map_or("model".to_string(), |(kind, _)| kind_name(kind).to_string());
     let tree = map_scene::build_scene(map, name, &kind_of)?;
     let mut report = Report::default();
     let mut scene = Scene { json: Map::new(), files: BTreeMap::new(), images: HashMap::new() };

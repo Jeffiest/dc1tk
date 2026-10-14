@@ -151,6 +151,12 @@ def check_pictures(found, root):
                     found.append(
                         (ERROR, obj.name, "Picture \"%s\" is %dx%d: sides must be powers of two up to 1024" % (name, w, h))
                     )
+                elif w < 16:
+                    # a new picture takes the format of the texture file's first, and most maps'
+                    # are swizzled 8-bit, whose rows are 16 texels at least
+                    found.append(
+                        (WARNING, obj.name, "Picture \"%s\" is %d wide: most maps take new pictures 16 wide or more" % (name, w))
+                    )
 
 
 def check_point(found, obj, data):

@@ -46,9 +46,10 @@ changes it.
   visibility) and the time base: 30 motion frames a second at step 1.0 (section 3).
 - info.cfg syntax and all its tags. .clo is a text script of the same syntax (cloth/spring chains).
 - Byte-exact round trip of all 2,159 .mot, 1,825 .wgt (128 empty) and 2,189 .bbp files.
-- Motions back from glTF (section 7.3): an unedited export changes no motion in any of the 1,628
-  pack files with motions, nor does a Blender round trip of the nine packs tried; a turned bone
-  comes back as given in all of them.
+- Motions back from glTF (section 7.3), every motion set and the packs of motions alone
+  included: an unedited export changes no motion in any of the 1,628 pack files with motions,
+  nor does a Blender round trip of any pack tried (e210a's included); a turned bone comes back as
+  given in all of them, and a deleted action takes its KEY out.
 
 **Not settled / open:**
 - Texture pixels: `.img` is researched separately. A material refers to a texture only by
@@ -56,10 +57,10 @@ changes it.
   .img data. No flip is expected, because GS and glTF both put (0,0) at the top-left.
 - Meaning of material fields 0x10 (ambient?), 0x20, 0x30 (power?) and odd diffuse values (w = -11,
   components > 1: 8,598 of them in map files). The engine only reads diffuse, 0x10 and the name.
-- Motion types 12 (vertex), 40 (material alpha) and 50 (visibility) are decoded but not exported
-  to glTF; a rebuilt motion takes them from the motion it was edited from (7.3).
-- Motion sets other than 0 (`MOTION 1..7`, and packs that only add a set to a loaded character,
-  such as `chara/c01_fishing.chr`) are not exported.
+- Motion types 12 (vertex), 40/41 (material alpha and colour) and 50/51 (visibility) go to glTF
+  as morph targets and carriers Blender keeps (6), not as `KHR_animation_pointer` and
+  `KHR_node_visibility`, which Blender 5.1 cannot take back; their engine meaning beyond what
+  `MotionProc` does is not traced (what `SKIP_CHILDREN` hides).
 - The CPU skinning path (`SHADOW_MOTION` and the .wgt given in `MOTION`'s 4th argument) is only
   partly followed. `_MOTION` ignores its 4th argument (sets `entry[2].data = 0`), so the main model
   is skinned only by the VU1 path, from `<model>.wgt`.
@@ -436,11 +437,41 @@ which puts the pack's own textures in place of the placeholders.
   (float), JOINTS_0 (u16) and WEIGHTS_0. Unweighted vertices get the engine's default (slot 0, weight 1).
 - materials: name = texture name. The base colour texture is `textures/<name>.png`, an 8x8
   placeholder until .img decoding exists. Raw MDT fields are kept in `extras`. diffuse.a < 1 gives BLEND.
-- animations: one per KEY of motion set 0 (a name given twice gets `_<start>`), sampled every
-  frame from start to end with the engine's interpolation. LINEAR, time = (frame - start) / 30
-  (3.2). Rotation, translation and scale only, each list on the node its `frame` numbers (before,
-  lists went to the first node of the same lower-case name, which put 1,866 lists of nodes
-  named alike, `3` and `3--ba`, on the wrong node). `extras` keeps start/end/step.
+- animations: one per KEY of every motion set the pack holds a .mot for (a name given twice in a
+  set gets `_<start>`), sampled every frame from start to end with the engine's interpolation.
+  LINEAR, time = (frame - start) / 30 (3.2). Set 0's KEYs (else the first set's) keep their
+  names; another set's are named `<set>:<name>` (`3:bow`, with `extras.motion_set`). Rotation,
+  translation and scale lists drive the node their `frame` numbers (before, lists went to the
+  first node of the same lower-case name, which put 1,866 lists of nodes named alike, `3` and
+  `3--ba`, on the wrong node). `extras` keeps start/end/step.
+- the other lists are morph targets of their frame's mesh, named in `extras.targetNames`, and the
+  animations drive the mesh's `weights`:
+  - vertex lists (12): a target `c2_frame_<f>` (`c2_set<id>_frame_<f>` for another set) for every
+    frame f a KEY of the set plays, moving each vertex a list drives to its value at f (through
+    the bind matrix for a skinned mesh). An animation gives weight 1 to its frame's target and 0
+    to the others, so the linear blend between two frames is the engine's lerp.
+  - material fade (40), colour (41) and visibility (50, 51) lists: carriers with no
+    displacement, `c2_fade_<k>`, `c2_red_<k>`/`c2_green_<k>`/`c2_blue_<k>` (material k of the
+    mesh), `c2_visible` (`c2_visible_51`), whose weight is the list's value (the fade, 1 - alpha;
+    the colour; below 1 hidden). The mesh's default weights are the rests (no frame, the
+    material's own colour, shown).
+  The standard places are not used because Blender 5.1 cannot take them back: its importer stops
+  on a `KHR_animation_pointer` channel to a textured material's `baseColorFactor` (a bug in
+  `animation_pointer.py`: `base_color_socket.links`), its exporter writes pointer animations only
+  in the NLA Tracks or Scene modes and starts them a frame late, and it does not read
+  `KHR_node_visibility`. Shape keys and their values come back from Blender as written.
+- a pack of motions alone (`MOTION 7` and no model: `chara/c01_fishing.chr`, the event packs of
+  Max's and Monica's motions) is exported on the model pack whose skeleton it plays on
+  (`models::skeleton_for`): Max's `chara/c01_base.chr` for a name with `mints` or `c01`, Monica's
+  `chara/c02_base.chr` for `monica` or `c02` (their town and dungeon packs share one skeleton),
+  else the pack beside it sharing the longest word of its name (`e352_guiltoni.chr` for
+  `vs_e352_guiltoni.chr`; numbers dropped, so `mints1` is `mints`): the first whose model has
+  every frame its lists and attach points name, else the first with every frame its lists name
+  (`taxi_ride_c01`'s attach points are the taxi's). The glTF (named after its first .mot) has
+  that pack's skeleton, skin, meshes and pictures, to see the motions on. All 244 such packs on
+  the disc export and build back unchanged; through Blender, `c01_fishing`, `vs_e352_guiltoni`,
+  `monica_set`, `c01b_win`, `taxi_ride_c01`, `p4_mints1`, `e208_mints` and `e412_monica` come
+  back unchanged, and a bone turned in one of `c01_fishing`'s actions changes its set 7 alone.
 - Robustness: all 1,950 character packs with a MODEL export, and the self-check (accessor bounds,
   index ranges, joints, weight sums) passes on every one. 670 have skins. For 422 of them the MDS
   rest pose differs from the bbp, so the rest pose shows deformed skin parts, as the engine would
@@ -534,10 +565,28 @@ model space, each corner's skin as (frame, weight) pairs (the joints as the fram
 the 4 largest weights normalised and summed by frame) with every weight within 0.01 (Blender
 renormalises), materials by the picture they show. Maps (`changed_geometry`, `mesh_geometry`):
 corners as the mesh node has them, its matrix within 1e-3 (translations as positions), materials
-by name and picture. The inverse bind matrices count as unchanged within 1e-3 (translations
-0.005 and 2e-6 of the value): Blender rests bones at the bind pose and writes their inverses back
-with up to 2e-5 in the rotation and 4e-4 in the translation on Max, which used to rewrite the
-.bbp. Before, characters were compared by accessor bytes, so after Blender every mesh was rebuilt.
+by name and picture. Before, characters were compared by accessor bytes, so after Blender every
+mesh was rebuilt.
+
+What Blender does to a character that is no edit, and how the build tells:
+- **Bind matrices.** A joint's bind matrix (the inverse of its inverse bind matrix) counts as
+  unchanged within 1e-3 of the export's (its translation, the bone's place, within 0.005 and
+  2e-5 of the value), or of the bind matrix Blender makes of it (`exported_binds`): Blender's
+  bones rest without scale or shear, so its importer takes each joint's bind relative to its
+  parent's, drops the scale (`Matrix.decompose`, whose quaternion is Mike Day's method on Blender's
+  axes, `blender_rotation`) and chains the results down the skeleton. For joints whose bind has
+  scale or shear (`e612_griffon`'s claws) that is up to 0.05 off, and a short bone (0.07 long,
+  200 units out: `b02a`'s `null202`) points only as well as 32-bit head and tail allow, 3e-4
+  radians, which its inverse turns into 0.07 in the translation. Before, either rewrote the .bbp.
+- **Skinned vertices.** Blender moves a skinned mesh's vertices to fit the bones it rests
+  (`skin_into_bind_pose`); the build brings them back, each vertex by its weights' blend of bind
+  (the export's, or the one kept) times the glTF's inverse bind matrix (`skin_matrices`), both to
+  compare and to import, so they come back where they were.
+- **Animated objects.** Blender writes an animated object's transform as its action leaves it at
+  the scene's frame, not its rest, so a rigid model's meshes seemed moved (`denkousekka_h`,
+  `e244a`, `e516_gun_m`). Every node a translation, rotation or scale channel animates is taken at
+  its frame's rest (`animated_nodes_at_rest`), its own transform being its animation's; a node no
+  animation moves still carries its mesh where it was put.
 
 **Map models** (`models::build_map_model(given, original, options)`): the same, against an export
 with the same `to_gltf::Options`. With `options.collision` the import runs in collision mode
@@ -569,9 +618,10 @@ original's. Through Blender 5.1 (import at 30 fps, export glTF Separate, `--back
 `p01_01a` (Need's mayor) rebuild no mesh and change no member; one mesh's vertices moved (a
 skinned body, or a rigid head part such as `kami`) rebuild that mesh alone, with its weights (the
 same set of per-vertex weights; vertices only degenerate triangles used are dropped) and every
-other mesh's, the bind pose and the motions kept. The monster `e210a`'s round trip rebuilds no mesh
-but moves six KEYs to new frames: Blender gives some leg translations back up to 0.04 off in its
-fast motions, above the motion tolerance (7.3).
+other mesh's, the bind pose and the motions kept. Unedited Blender round trips of 58 packs
+(those, `e210a`, `b02a`, `e612_griffon`, `denkousekka_h`, `e244a`, `e516_gun_m`, the vertex,
+fade and visibility packs, packs of motions alone, and every 97th character pack of the disc)
+change no member.
 
 ### 7.2 What any importer has to respect
 
@@ -604,10 +654,14 @@ Nothing VU-specific: the file is an indexed mesh and the engine batches it. Requ
 
 ### 7.3 Motions from glTF (`motions.rs`)
 
-`motions::build(exported, given, model, mot, info)` gives the pack's .mot and info.cfg with the
-given glTF's animations written in, or nothing when no animation differs from the export's;
-`models::build` runs it after the meshes. Animations are matched to KEYs by name (the export's
-names, `_<start>` on a repeated one).
+`motions::build(exported, given, model, member, info, rebuilt)` gives the pack's rebuilt .mot
+files (by member) and info.cfg with the given glTF's animations written in, or nothing when no
+animation differs from the export's and none is gone; `models::build` runs it after the meshes,
+`models::build_motions` for a pack of motions alone (on its skeleton pack's model, 6). Each
+motion set the pack holds a .mot of is rebuilt on its own timeline. Animations are matched to
+KEYs by name (the export's names, `_<start>` on a repeated one, `<set>:` before another set's).
+A new animation goes to the set its name gives (`3:curtsy`), to its source's set when it is a
+copy (`3:bow.001`), else to set 0 (else the pack's first), its KEY named without the set.
 
 **Frames.** A channel's node stands for a frame by its `extras.mds_index`, or else by name: a
 name with `--` flags is a frame's whole name, one without the name of every frame of it; among
@@ -617,15 +671,33 @@ made them) and then in glTF order. Blender splits a rigid mesh off its bone as a
 same name parented to it: both stand for the frame, and the bone's channels count. A skinned
 mesh node stands for none.
 
+**Morph weights.** A mesh node's `weights` channel gives its frame's vertex, material and
+visibility channels (6): its targets by `targetNames` (`to_gltf::Target`), each vertex of the
+frame's mesh matched to the glTF's vertices by place (as the import brings them into its space,
+`from_gltf::morph_meshes`), its value its place plus each frame target's move times its weight;
+the carriers' values their weights. An animation that drives a mesh's weights leaves the channels
+it has no target for at their rests (the vertex's place, the material's own colour, shown); one
+that does not (a tool that dropped the targets) leaves them as they were.
+
 **What changed.** Each animation is sampled at its KEY's frames (frame r at r/30 s, glTF
 interpolation: LINEAR with slerp for rotations, STEP, CUBICSPLINE), held after its last key, and
-compared with the export's: rotations within 3e-3 radians, translations and scales within 1e-3
-(plus 2e-5 of the value). A channel no list drives counts as unchanged while it holds a rest: the
-export's node, or the given node's, since Blender rests a bone at its bind pose (from the
-inverse bind matrices) and writes that for every bone an action leaves alone. A Blender round
-trip moves rotations by up to 7e-4 and translations by a few millionths, and reduces constant
-channels to two keys. An animation changed when a channel differs or it got longer (more than
-half a motion frame); one that got shorter changed only if what it holds differs.
+compared with the export's: rotations within 3e-3 radians, translations, scales and vertices
+within 1e-3 (plus 2e-5 of the value), fades, colours and visibility within 1e-3. A channel no
+list drives counts as unchanged while it holds a rest: the export's node, or the given node's,
+since Blender rests a bone at its bind pose (from the inverse bind matrices) and writes that for
+every bone an action leaves alone. A Blender round trip moves rotations by up to 7e-4 and
+translations by a few millionths, and reduces constant channels to two keys. An animation changed
+when a channel differs or it got longer (more than half a motion frame); one that got shorter
+changed only if what it holds differs.
+
+A translation of a frame under ancestors shrunk to a scale s (the product of each ancestor's
+smallest scale at that time, the larger s of the export's and the given animation) is allowed
+1/s times the tolerance: it moves the frame in the model by s times as much. This is what moved
+`e210a`'s KEYs: the monster hides its legs by scaling its upper legs to 0.0001 in its guard,
+attack, flail and getting-up motions, and Blender's exporter takes each bone's
+local matrix from 32-bit armature-space matrices, which leaves the translations of the frames
+below them (`chn353`, `eff351`, the lower legs) only to about 1e-6/1e-4, 0.01 to 0.04. A frame
+an edit brings back to full size is compared as any other.
 
 **Where it goes.**
 - An edited motion of the same length is written over its own frames: each changed channel's
@@ -633,36 +705,58 @@ half a motion frame); one that got shorter changed only if what it holds differs
   (the motion moves instead when they would change), and the frames just outside get a key of
   their old value if they had none, so no other KEY's motion moves. The KEY line stays.
 - A retimed motion, one whose shared frames change, and a new animation go after the last frame
-  any list or KEY uses (`last`): every list gets a key per frame of the new range, and a key at
-  `last` holding its last value if it ended before, so the frames before keep their values.
-  Rotation, scale and translation lists take the animation's values (its node's rest where it
-  does not animate one; a channel it leaves as it was, of a motion moved without a retime, keeps
-  its own keys); vertex, material and visibility lists take the source motion's values,
-  stretched to the new length. The KEY's start and end are rewritten in info.cfg; a new
-  animation gets a `KEY "name", start, end, step;` line after the motion set's last KEY, its step
-  from `extras.step`, else that of the KEY it is a copy of (`歩き.001` of `歩き`, as Blender names
-  a duplicated action, which also gives its source motion), else 1.00 (30 frames a second, as
-  Blender plays it). Names are 1 to 35 bytes of Shift-JIS.
-- A channel no list drives that an animation moves gets a new list: the export's rest at frame 0
-  and `last`, the animation's values at its frames, the rest around them. New lists go among
-  their node's lists (rotation, scale, translation order), never right after a vertex group.
+  any list or KEY of its set uses (`last`): every list gets a key per frame of the new range, and
+  a key at `last` holding its last value if it ended before, so the frames before keep their
+  values. Lists take the animation's values (a node's rest where it does not animate one; the
+  rests where it drives a mesh's weights without a target; a channel it leaves as it was, of a
+  motion moved without a retime, keeps its own keys), and lists the glTF carries nothing of take
+  the source motion's values, stretched to the new length. The KEY's start and end are rewritten
+  in info.cfg; a new animation gets a `KEY "name", start, end, step;` line after its set's last
+  KEY, its step from `extras.step`, else that of the KEY it is a copy of (`歩き.001` of `歩き`,
+  as Blender names a duplicated action, which also gives its source motion), else 1.00 (30 frames
+  a second, as Blender plays it). Names are 1 to 35 bytes of Shift-JIS.
+- A channel no list drives that an animation moves gets a new list: the rest at frame 0 and
+  `last`, the animation's values at its frames, the rest around them. New lists go among their
+  node's lists (material, rotation, scale, translation order), never right after a vertex group;
+  a new vertex list joins the end of its frame's vertex lists, and every frame's vertex lists
+  are keyed at the same frames (MotionProc reads the group with the first list's key numbers).
+- A mesh the build rebuilt numbers its vertices anew: its vertex lists are made again, a list for
+  each vertex its frame targets move, keyed at every frame a KEY of the set plays with that KEY's
+  animation's values.
 - Lists nothing writes to keep their bytes; rotations written are turned to the side of the key
   before them.
 
-Removing an animation leaves its KEY and frames as they were. info.cfg is edited in place
-(`info_cfg::statements` gives each argument's bytes), so comments and layout stay. SE cues are
-fractions of their KEY on the disc (3.3) and follow a moved one.
+**Deleting an action.** A KEY whose animation the given glTF no longer has (and which animated
+something) is taken out: its KEY line, the `SE`/`SELP` cues and `SEQ` steps naming it (when no
+KEY of that name is left; a sequence left without steps goes too; `SE_START`'s count stays, as
+some of the disc's are already larger than their lines), and the frames of it no other KEY plays
+from every list of its set, with a key of the value it held just before and after each run taken
+out, so every other KEY's frames read as before (a list keyed only there keeps its keys). A glTF
+with no animation at all deletes nothing (a tool may have left them out). KEYs after it are
+counted one lower by scripts that play motions by number (`GetKeyListIndexPtr`), and a script
+that plays it by name finds none. info.cfg is edited in place (`info_cfg::statements` gives each
+argument's bytes), so comments and layout stay. SE cues are fractions of their KEY on the disc
+(3.3) and follow a moved one.
 
 Checks: an unedited export changes nothing in any of the 1,628 pack files with motions, nor
 without its node extras and with repeated names numbered as Blender numbers them; a bone of each
 pack's first motion turned 30 degrees comes back from a fresh export of the rebuilt pack as given,
-and every other motion as it was (1,280 written in place, 348 moved). Through Blender 5.1 (import
-at 30 fps, export glTF Separate, `--background --factory-startup`): unedited round trips of
-Max (`chara/c01_base`), Monica (`chara/c02_base`), `b02a`, `p00_23a_hibasira` (rigid, names
-repeated under several parents), `ring_loop`, `denkousekka_h`, `e206_cloth` (vertex lists) and
-`e616_osmond` (visibility) change no motion; a bone turned in one action changes that bone's list
-over that KEY's frames alone; a duplicated action becomes a new KEY, and a stretched one moves to
-new frames with its KEY.
+and every other motion as it was (1,280 written in place, 348 moved); and that motion's action
+deleted takes its KEY out and leaves every other motion as it was (packs of one motion, or whose
+KEY's name another repeats, aside). All 244 packs of motions alone export and build back
+unchanged. Through Blender 5.1 (import at 30 fps, export glTF Separate, `--background
+--factory-startup`): unedited round trips of 58 packs change no motion, among them Max
+(`chara/c01_base`, `mainchr/c01_base2`), Monica (`chara/c02_base`), `e210a` (its shrunk legs),
+`b02a`, `p00_23a_hibasira` (rigid, names repeated under several parents), `denkousekka_h`
+(fades), `e206_cloth`, `e612_gri_kao`, `e372_waku1`, `p5_hata` (vertex lists), `e616_osmond`,
+`e532_guil_kage`, `e10a` (visibility), `e206_h_polcurse` (sets 0 and 5) and packs of motions
+alone (`c01_fishing`, `vs_e352_guiltoni`, `p4_mints1`); a bone turned in one action changes that
+bone's list over that KEY's frames alone (or moves the KEY, when another shares them); a
+duplicated action becomes a new KEY, and a stretched one moves to new frames with its KEY. Edited
+in Blender: a fade shape key's values changed in `denkousekka_h`'s action rewrites its material
+list, a vertex of a frame shape of `e206_cloth` moved rewrites that vertex's list, `c2_visible`
+keyed shown in an action of `e616_osmond` rewrites its visibility, and Max's run (`走り`) deleted
+takes its KEY line and its two sound cues out.
 
 ### 7.4 New characters (`models::new_pack`)
 

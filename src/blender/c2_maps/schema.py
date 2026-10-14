@@ -246,7 +246,9 @@ def new_point(kind, data=None, enable=1, hours=(0, 0)):
 # Presets for the "add point" operator: (id, label, kind, data overrides, node scale, base name).
 POINT_PRESETS = (
     ("SPAWN", "Position (spawn)", "pos", {}, 1.0, "point"),
-    ("DOOR", "Door", "event", {"kind": "door", "flags": [1, 0, 0]}, 1.0, "door"),
+    # as every door of the disc: the action button opens it, and 0x100 fades the screen out before
+    # its program runs or the target map loads (editevent.cpp)
+    ("DOOR", "Door", "event", {"kind": "door", "flags": [1, 0, 1]}, 1.0, "door"),
     ("CHEST", "Treasure chest", "event", {"kind": "t_box", "flags": [1, 0, 0]}, 1.0, "t_box"),
     ("EVENT", "Event trigger", "event", {"kind": "event", "flags": [0, 0, 0]}, 30.0, "event"),
     ("LIGHT", "Point light", "plight", {}, 1.0, "plight"),

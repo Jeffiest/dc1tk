@@ -38,6 +38,7 @@ c2 xref extracted/scripts event 510 --map s51    what defines, starts and reques
 c2 xref extracted/scripts map s51                how the game enters a map
 c2 xref extracted/scripts monster golem          a monster's model, AI script and users
 c2 flags extracted/scripts [--flag N]            save flags in use, and free ones
+c2 flags extracted/scripts --counters [--counter N]   the same for save counters
 c2 fork extracted/scripts lib/x.c lib/y.c script.c   a library copy for some scripts
 c2 mod save extracted/scripts castle             copy edits made in the tree into a mod
 c2 mod apply extracted/scripts castle            write a mod into the tree
@@ -47,6 +48,8 @@ c2 defs todo extracted/disc                      unnamed functions, most called 
 c2 disassemble <script.stb>                      text assembly, for debugging
 c2 assemble <script.asm> -o <script.stb>
 c2 defs learn <source> <definition set>
+c2 defs rename <definition set> OLD NEW --in extracted/scripts   rename a flag or other constant
+c2 defs migrate extracted/scripts mods/my-mod                    give an older tree or mod the set's renames
 c2 defs disc extracted/disc <definition set>     record which disc a set is for
 c2 natives <ChronicleTwo checkout>
 ```
@@ -298,11 +301,12 @@ void start_castle_battle(void)
   reach its `#if`. A struct the target defines otherwise is refused.
 - **`PROGRAM` lines** add programs. To change a program the script has,
   override its function.
-- **`NEW_FLAG(name)`, `NEW_PROGRAM(name)` and `NEW_MONSTER_VAR(name)`**, in
-  any file of the mod (a shared `.h` is handy), ask `build` for a save flag
-  (from 1024), a program number (from 9000) or a shared monster variable (8
-  to 135) that the game, the engine and every mod in `mods/` leave alone,
-  hand-written numbers included. The numbers are kept in
+- **`NEW_FLAG(name)`, `NEW_COUNTER(name)`, `NEW_PROGRAM(name)` and
+  `NEW_MONSTER_VAR(name)`**, in any file of the mod (a shared `.h` is
+  handy), ask `build` for a save flag (from 1024), a 16-bit save counter
+  (from 32, of 128), a program number (from 9000) or a shared monster
+  variable (8 to 135) that the game, the engine and every mod in `mods/`
+  leave alone, hand-written numbers included. The numbers are kept in
   `mods/numbers.json`, so a name keeps its number from build to build and
   saves stay valid when mods are added; a mod left out of a build keeps its
   numbers reserved. Use the name where the number would go:
@@ -411,13 +415,17 @@ each at every place the disc has it:
 "add": {
   "sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"},
   "file:mods/calculator/ui.img": {"file": "ui", "like": "texture:logo_d00"},
-  "file:mods/calculator/calc.chr": {"file": "model/calc.gltf", "like": "model:uki"}
+  "file:mods/calculator/calc.chr": {"file": "model/calc.gltf", "like": "model:uki"},
+  "music:BG_200": {"file": "music/fish.mid", "like": "BG_193"}
 }
 ```
 
 A `file:` line with `like` makes a new picture file from PNGs, or a new
 model pack from a glTF, in the format of the disc's file `like` names (see
-[the modding guide](modding.md#pictures-and-models-of-a-mods-own)).
+[the modding guide](modding.md#pictures-and-models-of-a-mods-own)). A
+`music:BG_NNN` line under `add` makes a new music file, `snd2/bgm/BG_200.snd`,
+whose tune is the MIDI file, played with `load_bgm(200); play_bgm(0);` (see
+[the modding guide](modding.md#music-of-a-mods-own)).
 `mod asset ISO NAME ID...` copies assets out by id and adds their lines,
 `mod check SOURCE NAME... --disc ISO` checks every line resolves, and
 `mod migrate ISO NAME` turns a mod's `disc/` folder (below) into such
@@ -522,7 +530,26 @@ character pack; packs inside packs work the same way).
   before its first note, which comes after them). The loop is
   between the markers `loopStart` and `loopEnd` (move them to move it); a
   tune without them loops whole where the game's did. Unedited files build
-  back to the disc's own bytes. See [music and ambient loops](assets/music.md).
+  back to the disc's own bytes. A tune can bring **new instruments**: WAVs
+  given as programs of the bank, which its MIDI file names by number:
+
+  ```json
+  "music:BG_000_000": {"file": "music/tune.mid",
+    "instruments": {"100": {"file": "music/pulse.wav", "root": 69, "loop": true},
+                    "101": [{"file": "music/low.wav", "keys": [0, 59], "root": 48},
+                            {"file": "music/high.wav", "keys": [60, 127], "root": 72}]}}
+  ```
+
+  Each sample plays over its `keys` (all by default), sounds at its own
+  pitch at `root` (60), loops when `loop` is true (or as its `smpl` chunk
+  says), at `volume` 0 to 128 (128, its own level), with the envelope of a
+  program of the bank named by `"like"` (otherwise no attack, full sustain,
+  a short release). A number the bank has already is replaced. The music
+  banks share 0x78000 bytes of sound memory one at a time (`BG_056` fills
+  it, Palm Brinks' `BG_000` leaves 0x40B50); `build` says how much the
+  bank's samples take, cuts samples nothing plays any more (the old tune's)
+  when the new ones would not fit, and refuses what still does not.
+  See [music and ambient loops](assets/music.md).
 - **Text as UTF-8.** The menus' item, shop, map and NPC names, their lines
   and the system messages are message files (`.mes`): a table of message
   ids, each a run of the font's glyphs and layout codes. `mod asset ISO NAME
@@ -540,10 +567,17 @@ character pack; packs inside packs work the same way).
   each gets the messages whose text you changed and keeps its own others.
   Unedited text builds back to the disc's own bytes. A character the
   language's font lacks is refused (English has ASCII, full-width
-  punctuation and kana; French, German, Italian and Spanish ASCII and their
-  accented letters); `meswin/system_N.mes`, `sysmes_N.mes` and
+  punctuation and kana, and 32 accented letters, `¡¿ÀÁÄÇÈÉÑÖÜßàáâäçèéêëíîïñóôöùúûü`,
+  which `build` draws into the English font when a text uses them; French,
+  German, Italian and Spanish ASCII and their accented letters; Japanese
+  and Korean their fonts' kana, kanji and Hangul). The accented letters in
+  English take a whole cell each (15 pixels, an ASCII letter 8), as the
+  game spaces every glyph past ASCII, so they stand a little apart from
+  their neighbours. `meswin/system_N.mes`, `sysmes_N.mes` and
   `etc/helpN.mes` may not outgrow the buffers the game loads them into, and
-  a menu's window or column is only so wide. See [the message
+  `build` warns of a line wider than the window it goes in is likely to
+  take (wider than any of the file's on the disc, or in a menu more than a
+  letter wider than the message's own). See [the message
   format](assets/text.md).
 - **Maps in Blender.** `c2 map-export s17` writes the map as one glTF scene
   (`extracted/maps/s17/`): placements, pieces with their meshes, trigger
@@ -563,7 +597,15 @@ character pack; packs inside packs work the same way).
   `"map:m05x": {"file": "maps/m05x/m05.gltf", "like": "m05", "title": "Park"}`
   writes its files under the new name, appends its row to every language's
   map table, and `--start-at m05x` goes there ([maps](assets/maps.md)
-  section 9).
+  section 9). `"script": "m05x.c"` gives it an event script of the mod's
+  (a whole script, compiled in every language and added where the engine
+  loads a map's script, with the mod's `NEW_PROGRAM` numbers), and
+  `"programs": {"door_park": "ENTER_PARK"}` on any map: line gives event
+  points programs by name: a door added in an existing map runs a program
+  of a patch of that map's script, which calls `jump_to_map(-1, "m05x",
+  map_start)`. Every mod's scripts see a new map's number as `MAP_M05X`.
+  The example [new-map-door](examples/new-map-door/README.md) adds a map
+  with a script, a door into it in Palm Brinks and a way back.
 - **Game data as JSON.** `mod asset ISO NAME data:items data:shops
   data:monsters` writes `data/items.json` (every item's common data, with
   its weapon, usable effect, attachment, ridepod part or fish stats nested:
@@ -581,9 +623,17 @@ character pack; packs inside packs work the same way).
   `data:fishing` (spots, race opponents, prizes, fish species and race
   kinds), `data:layouts` (the room layouts dungeon floors are built from:
   each room's rows of parts, as text, how often it is chosen; rooms may be
-  added, see [dungeons](assets/dungeons.md)) and `data:characters`
+  added, see [dungeons](assets/dungeons.md)), `data:parts` (the parts those
+  layouts name, and the mini maps' tiles: a part renamed in place is a new
+  kind of part), `data:chests` (what each dungeon floor's chests hold: groups
+  of items by rank, and each floor's groups) and `data:characters`
   (starting HP and equipment, WHP gained at a
-  weapon level-up, Monica's monster forms, badge growth). Keep only the
+  weapon level-up, Monica's monster forms, badge growth), `data:requests`
+  (Georama requests: their conditions, map parts shown, percentages),
+  `data:townspeople` (names' models, abilities, costs), `data:gifts`
+  (gifts that win a badge), `data:spheda` (club power) and `data:breeding`
+  (aquarium breeding pairs); `data:georama` also has each town's rivers and
+  water. Keep only the
   records and fields you change, each record with the keys that name it
   (`item`, `shop`, `id`, `recipe`, `dungeon` and `floor`, ...):
   `{"items": [{"item": 1, "weapon": {"attack": 50}}]}`. `build` writes only
@@ -592,9 +642,21 @@ character pack; packs inside packs work the same way).
   each language's Georama parts and race fish) into every one, and the
   executable tables into the boot executable `SCES_511.90`, patched in
   place. Lists keep within what the game reads (a recipe's 1 to 4
-  materials, a floor's 32 monsters) and lines are never added. Several mods'
+  materials, a floor's 32 monsters). Several mods'
   tables merge; two giving one value different numbers are refused, as are
-  values the game's field cannot hold. Names are labels (they are text).
+  values the game's field cannot hold. Names are labels (they are text),
+  except items': an item's `name` and `description` (English) and `names`
+  and `descriptions` (`{"fr": ...}`) go into the item name files and the
+  menus' messages. **New records**: a record whose number the game lacks,
+  with `like` naming one to copy, adds an item (`{"item": 429, "like": 1,
+  "name": "Mega Wrench", "weapon": {"attack": 250}}`, its name in every
+  language, its description copied unless given), a price or shop, a
+  recipe, a Georama part or placed part, a fishing spot (and fish to a
+  spot), a request or a townsperson; build copies the like record's lines
+  with the changes, counts it where the engine counts them, and refuses
+  what the engine cannot hold (432 items, 116 weapons, 234 recipes, Georama
+  IDs to 127, 16 requests a town, 180 townspeople, ...: the table in [game
+  data](assets/data.md#status)).
   What each field means is in [game data](assets/data.md).
 - **Character models as glTF.** A character pack (`.chr`) holds a model,
   its skin weights, bind pose, motions and textures. `mod asset ISO NAME
@@ -639,11 +701,30 @@ character pack; packs inside packs work the same way).
   at new frames with its KEY moved, and a new action as a new KEY after the
   last (a copy named `walk.001` takes the copied KEY's speed, others 1.00,
   the speed Blender plays it at). A KEY's `step` scales its speed in the
-  game: it plays at 30 × step frames a second. Vertex, material-fade and
-  visibility keys are not in the glTF; a rebuilt motion keeps those of the
-  motion it came from. Deleting an action changes nothing, and motion sets
-  other than 0 are not exported. See [the model formats](assets/models.md)
-  (sections 3 and 7.3).
+  game: it plays at 30 × step frames a second. Deleting an action takes its
+  KEY out of `info.cfg`, with its sound cues and the frames no other KEY
+  plays (scripts that play motions by number then count the later ones one
+  lower; deleting every action deletes none). Motion sets other than 0 are
+  actions too, named `3:bow` for KEY `bow` of `MOTION 3`; a new action named
+  `3:curtsy` joins set 3.
+
+  Vertex animation (cloth, flags, faces), material fades and colours and
+  visibility are shape keys of the mesh, animated with the actions: a
+  vertex-animated mesh has a shape key `c2_frame_<f>` per motion frame
+  (keyed 1 on its frame), and `c2_fade_<k>` (0 opaque, 1 invisible),
+  `c2_red_<k>`/`c2_green_<k>`/`c2_blue_<k>` and `c2_visible` (below 1
+  hidden) hold the values of material k's fade and colour and of the
+  frame's visibility as their shape key values; they move nothing. Edit
+  the shapes or key the values like any shape key.
+
+  A pack of motions alone, with no model of its own
+  (`chara/c01_fishing.chr`, the event packs of Max's and Monica's motions
+  such as `event/e200/e209/e209_mints.chr`), exports the same way on the
+  model of the character it is loaded onto (Max's `chara/c01_base.chr`,
+  Monica's `chara/c02_base.chr`, or the event's model beside it), to see
+  the motions on; `build` writes back its motions alone (the model, skin
+  and pictures there are the other pack's). See
+  [the model formats](assets/models.md) (sections 3, 6 and 7.3).
 
   **New characters.** A `file:` line with `like` naming a character's model
   makes a pack of a character of your own from a glTF: its own skeleton
@@ -758,8 +839,27 @@ comment above a statement, and the file name, top comment and global
 names of each library. A function that
 appears in several files takes the copy you edited; the aliases the
 decompiler gives a second copy in one file (`start_event_for_program_506`,
-`do_nothing_2`) are not learned as names. See
+`unused_do_nothing`, `unlock_interrupts_for_recoil_from_hit`) are not
+learned as names. See
 [definitions](definitions.md).
+
+Constants (flag names, the music and sound enums) live in the set's
+`include/pal.h`, which trees include from the set, so they are not learned.
+`defs rename` renames one in the header, in what the set says about it
+(docs, notes, the variables named after it) and in the source of each tree
+or mod given with `--in`, keeping unedited files unedited:
+
+```
+c2 defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
+```
+
+The set records each rename in `renamed.json`. A tree or mod made before
+a rename still says the old name and stops compiling (the error notes the
+new name); `defs migrate` gives it every recorded rename:
+
+```
+c2 defs migrate extracted/scripts mods/my-mod
+```
 
 ## Checking a C toolchain can read the output
 

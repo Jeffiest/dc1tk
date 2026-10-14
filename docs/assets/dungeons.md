@@ -26,10 +26,17 @@ through m2c). Corpus: the extracted PAL disc. Map files are in
   through `c2 map-export` of the floor's map (section 6). Both build and read
   back as made.
 
-**Not yet:** tried in the game. The routes `GetDngMapNextRoot` opens (which
-of `way36`-`way51` a floor gets) and the dummy tree layout
-(`SetDummyTree`) are read only in outline; the parts' `tile` table (unused:
-the mini map takes its tiles from `MiniMapInfoData`) is not decoded.
+- Which ways on a floor gets (`GetDngMapNextRoot`, from the dungeon's tree
+  map `menu/dngmap/dmap<n>.cfg`, section 3), the dummy trees
+  (`SetDummyTree`), and the parts' tile numbers (an older mini map table no
+  code reads; the mini map's own is `MiniMapInfoData`), from the engine.
+- `data:parts` edits the parts table and the mini maps' tiles in the
+  executable, patched in place (section 2.1), and `data:chests` what the
+  floors' chests hold (`tbox_d0*.cfg`, section 4.1); both read back as
+  written, and every chest script writes back byte for byte.
+
+**Not yet:** tried in the game. The table of parts cannot grow (section
+2.1).
 
 ## 1. Loading a floor
 
@@ -106,7 +113,8 @@ statement a line, three blank lines between layouts.
 **Cells.** A part is an index into `PartsInfoData` (0x33D440 in
 `SCES_511.90`, 277 entries of `AUTOMAP_PARTS_INFO`: the name of a template
 of the floor's map, its cell kind, the sides it opens onto, an entrance's
-side, and eight tile numbers no code reads); -1 leaves the cell empty. The
+side, and eight tile numbers no code reads (section 2.1)); -1 leaves the
+cell empty. The
 attribute is the cell's (`AUTOMAP_ATTR`): bit 0 hides it from the mini map
 and keeps monsters, chests and stones off it (`SearchMapFlatPosition`);
 scripts read it with `GetAttrStatus`. Values 0, 1 and 3 occur.
@@ -127,6 +135,59 @@ scripts read it with `GetAttrStatus`. Values 0, 1 and 3 occur.
 
 The table's names are the templates a floor's map must define; a map
 lacking one places nothing there. The JSON writes the names (section 5).
+
+### 2.1 The parts as data (`data:parts`)
+
+Five functions read the table: `CreatRoom` and `CreatFixedMap` (a layout's
+cells: kind and link), `SetPartsIndex` (kind, link, entrance),
+`IndexToPartsPlace` (the name it places) and `CMiniMapSymbol::SetMapInfo`
+(the name, to give each placed part its mini map tile). Nothing reads the
+eight numbers after the entrance: six of them are d01f01's mini map tiles
+for parts 0-135 and the other two differ where d03's and d04's do, so they
+are most likely an older per-dungeon tile table (the newer parts reuse room
+tiles there). The mini map's own tiles are `MiniMapInfoData` (0x33EE40, 18
+maps of `char name[16]; s16 tile[320]`, by the first six letters of the
+floor map's name, so its four `...r` entries never match): `tile[part]` is a
+16 × 16 cell of the picture `minimap1` (u = tile % 16 × 16, v = tile / 16 ×
+16), -1 none; entries 276-319 are 0 in every map.
+
+What the generator places by itself: corridors `way00`, `01`, `08`-`11`,
+`16`, `20`-`23`, `28`-`31` (the first part of each `link`), every `door` of
+kind 0xA, 0xC, 0x2C, 0x6C, 0xAC and 0x10C (the first of its kind, entrance
+and link), their closed versions (+4), `room56`-`59` and `way32`-`51`. Every
+room, part and step cell, the corridors `way02`-`07`, `12`-`15`, `17`-`19`,
+`24`-`27`, and entry 276 (named "", kind 0) come only from layouts that name
+them. Hard-coded numbers: the ways in and on are dead ends (28-31) + 4, 8,
+12, 16, 20 and are found again by name (`way%d`), the healing room is
+`room28`-`35` + 28 or 24 and found as `room5%d`, `CreatDoorRoom` skips rooms
+holding parts 232-239; the entrance search runs to 280, past the table.
+
+**It cannot grow.** `MiniMapInfoData` follows the table (after 8 bytes of
+padding, whose first word ends `SetMapInfo`'s walk at entry 277), and every
+reference to the table is code; a longer table would mean moving it and
+patching those functions. **Entries can be repurposed:** each name is its own
+8-byte string (0x36C708 + 8 × part, nothing else points at them), so a name
+changes in place (7 letters at most), and the kind, link and entrance with
+it. Entry 276 is free: named "" and placed by nothing, its mini map tile 0
+in every map. A part a layout alone places (a room or step cell, a corridor
+variant) can be renamed too, for every dungeon at once; a floor's map then
+needs a template of the new name, and the layouts name it (`data:parts` is
+applied before `data:layouts`, so a layout of the same build can use the new
+name).
+
+`c2 mod asset ISO NAME data:parts` writes `data/parts.json`:
+
+```json
+{"parts": [{"part": 80, "name": "door00", "kind": 10, "link": 15, "entrance": 1,
+            "unread_tiles": [42, 42, 40, 42, 42, 42, 42, 42]}, ...],
+ "minimap": [{"map": "d01f01", "tiles": [0, 1, 2, ...]}, ...]}
+```
+
+A mod keeps only what it changes (`{"parts": [{"part": 276, "name":
+"newp00", "kind": 4, "link": 15}]}`; a map's `tiles` are given whole, 320).
+The names of `way32`-`51` and `room56`-`59` are refused (the engine finds
+them by name). `build` patches the executable in place, with the other
+executable tables.
 
 ## 3. Laying out a random floor (`RandomMapMainProc`, 0x1D9DF0)
 
@@ -161,7 +222,8 @@ lacking one places nothing there. The JSON writes the names (section 5).
    a chest outside that room. Unless 0x20, with 51% one `room28`-`room35`
    cell becomes the healing room `room56`-`59` (`SetHealingPointIndex`).
    Dead ends then become the ways on, one per route the floor manager gives
-   (`GetDngMapNextRoot` bits 1, 2, 4, 8: + 8, 12, 16, 20).
+   (`GetDngMapNextRoot` bits 1, 2, 4, 8: + 8, 12, 16, 20; below), each on a
+   random dead end still left; with none left, that way is missing.
 7. Placing (`IndexToPartsPlace`, 0x1D9660): the map's placements are cleared
    (a library's own `MAP_PARTS`, if it had any, would go too), every cell's
    part placed at (x × cell width, 0, y × cell depth), unturned, scale 1, its
@@ -175,7 +237,35 @@ lacking one places nothing there. The JSON writes the names (section 5).
 
 A preset floor (0x02, 0x40) is one layout copied into the grid as it is
 (`CreatFixedMap`), its parts placed the same way; nothing is chosen, linked
-or closed. A layout given whole names its own corridors and entrances.
+or closed. A layout given whole names its own corridors and entrances (and
+its ways on: d03's layouts name `way36`-`51` cells).
+
+**Which ways on** (`CDngFloorManager::GetDngMapNextRoot`, `dngfloor.cpp`).
+Floor 100 gets one (bit 1). Otherwise the floor's room on the dungeon's tree
+map (the map menu's, `menu/dngmap/dmap<n>.cfg`, read by `LoadDataTable` with
+`dflr<n>.cfg`) is found, and for each of its four `RI_LINK` sides that leads
+to a room of a higher `order` (back floors are ignored), the passage cell
+next to it (`GI 0`, the first found that way) gives bit `1 << type` of its
+`RT type,...` statement: one bit per kind of route, which the debug menu
+names Nrm, Sun, Moon and Star (dmap0 uses only 0; the others 0-3). So a
+floor has at most four ways on, one of each kind. The way's template in the
+floor's map carries a door event whose program the dungeon's script runs:
+`way36`-`39` program 300 (`gate`), `way40`-`43` 310, `way44`-`47` 320,
+`way48`-`51` 330, and the script's `use_floor_gate(n)` asks
+`get_next_floor(floor, n)` (`GetDngMapNextFloorID`) for the first floor
+linked forward through a passage of type `n`. More or fewer ways on are
+edits of `dmap<n>.cfg` (an `RI_LINK` to a later room, with a passage of
+another type beside it), which also draw the dungeon map menu; the
+dungeon's script needs a program for 310-330, and the floor's map the
+`way40`-`51` templates. (`dmap<n>.cfg` is not yet a `data:` table.)
+
+**Dummy trees** (`SetDummyTree`, flag 0x01, placed after the grid in every
+mode and before the mountain): the empty cells that touch a placed cell
+(any of the eight around it) get `o00`, and the empty cells that touch
+those get `o01`: two whole rings around the floor, one tree a cell, placed
+where a part of that cell would be, unturned, scale 1, no mini map tile. No count of its
+own: each takes a placement slot (400), before `p01_gio`, the stones and the
+pot, so a large floor with trees can run out of slots for those.
 
 ## 4. Chests, monsters, stones (`AutoSetTreasureBox`, `AutoSetMonster`)
 
@@ -197,6 +287,44 @@ may stand is painted area 5; other areas (6, the usual floor) carry no spawns.
   else (`CheckObjectPutArea`). The key of a closed room in a chest outside it.
 - **Monsters** (`AutoSetMonster`): up to 24 from the floor's list
   (`mos_place`, `data:floors`), each more than 520 from the way in.
+
+### 4.1 What chests hold (`data:chests`)
+
+`AutoSetTreasureBox` loads `dungeon/cfg_file/tbox_d0<n>.cfg`, n the dungeon
+from 1 (`tbox_d08.cfg`, "back dungeon 2", is empty), and
+`CreatTresuarBoxInfo` (`dng_event.cpp`) runs it:
+
+```
+GROUP_START 5,29;                 groups, items (read and dropped; the counts)
+GROUP 13,6;                       a group: its id, how many items it uses
+ITEM 268,60,3,275,70,2,...;       item, rank, count, ... (any number a line, appended)
+FLOOR_START 5,19;                 floors, group references (kept, otherwise the counts)
+FLOOR 2,4,13,24,63,12;            a floor (the dungeon's floor number), how many groups, their ids
+```
+
+At most 64 groups of 96 items, floors 0-127 of 64 groups. A chest asks for
+a rank; `PickupRandomItem` picks one of the floor's groups at random and one
+of its items, again and again, until the item's rank is at least the one
+asked for (or at most, for a negative rank), within the floor's lowest and
+highest. A floor naming a group the file lacks hangs the game (it prints and
+loops); a floor the file does not list has no groups to draw from (the
+disc's leave out the floors without chests, boss floors among them).
+
+`c2 mod asset ISO NAME data:chests` writes `data/chests.json`, the dungeon
+from 0 as the other floor tables number them (0 is `tbox_d01.cfg`):
+
+```json
+{"chests": [{"dungeon": 0,
+  "groups": [{"group": 12, "items": [{"item": 1, "rank": 15, "count": 1}, ...]}, ...],
+  "floors": [{"floor": 1, "groups": [12, 13, 44]}, ...]}]}
+```
+
+A mod keeps the dungeons, groups and floors it changes, a group's `items`
+and a floor's `groups` whole; a group or floor the file lacks is added (after
+the last of its kind). `build` writes the changed blocks again in the
+files' layout (five items a line, the start lines' counts kept true) and
+leaves the rest as they were; it refuses a floor naming a group the file
+does not have, and two mods giving one group or floor different contents.
 
 ## 5. Layouts as data (`data:layouts`)
 
@@ -247,6 +375,11 @@ changes nothing. Keep a part within its 320 × 320 cell around its origin
 parts edge to edge and never looks at their meshes. An unedited export
 changes nothing (d01f01 imported and exported by the add-on in Blender 5.1).
 
-New parts cannot be named: the 276 names are fixed in the executable, and a
-layout can only use them. A floor's map may define them differently from
-another's (each dungeon's `way00` is its own model).
+A layout names only the table's parts, and a floor's map may define them
+differently from another's (each dungeon's `way00` is its own model). A new
+kind of part is an entry repurposed with `data:parts` (section 2.1: entry
+276 is free, and a part only layouts place can be renamed), a template of
+that name in the floor's map, its mini map tile set in `minimap`, and
+layouts that name it. A renamed part's old template stays in the maps,
+unplaced. Giving a floor's map a template of a new name from Blender is not
+tried yet.

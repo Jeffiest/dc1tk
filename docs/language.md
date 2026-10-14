@@ -179,15 +179,17 @@ instructions:
   index is reached through the array's address.
 - `struct` and `union`, with members of any type, nested, in arrays, through
   pointers (`p->next->value`), assigned, passed and returned by value, and
-  initialized with C's lists; `typedef` of any type; `offsetof` in
-  `<stddef.h>`. A member takes whole slots, so there are no bit-fields.
+  initialized with C's lists, also chosen with `?:`; bit-fields, which share
+  an int slot; `typedef` of any type; `offsetof` in `<stddef.h>`. A struct
+  declared in a block is the block's.
 - Pointers of any type and depth (`int **pp`), pointer arithmetic (`p + 2`,
   `p++`, `*(a + i)`, `i[a]`), functions that return pointers, and a pointer
   compared with 0 or `NULL`. Two pointers do not compare or subtract: the VM
   gives no address as a number (keep an index instead).
 - Function pointers (`int (*f)(int) = twice; f(2);`, in arrays and structs
-  too), as the function's number, called through a function the compiler adds
-  that switches on it.
+  too), to any function (one taking or returning a struct, or taking `...`,
+  too), as the function's number, called through a function the compiler
+  adds that switches on it.
 - Variadic functions (`int sum(int count, ...)`) with `<stdarg.h>`, and wide
   strings (`L"..."`, arrays of `wchar_t`). A string literal is the VM's string
   (what natives and `string` variables take), but one indexed or used as a
@@ -196,7 +198,8 @@ instructions:
   bits and signed, short 16, int and long 32) and wrap-around, `const`
   (checked), `volatile`, `register`, `auto`, `typedef`, `enum` and `sizeof`
   (1 for a char, 2 for a short, 4 for the rest). `<limits.h>`, `<float.h>`,
-  `<stddef.h>` and `<stdarg.h>` are in the SDK.
+  `<stddef.h>` and `<stdarg.h>` are in the SDK, and their typedefs
+  (`size_t`) are type names.
 - `for`, `do ... while`, `switch` with `case`, `default`, fall-through and
   `break`, and `goto` with labels. `continue` in a `for` runs the step first.
 - `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `++` and

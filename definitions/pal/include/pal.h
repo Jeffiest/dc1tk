@@ -44,7 +44,7 @@ enum flag_story {
     // Set on first entry to the Underground Channel boss room d01b01, which seals door01, shows the
     // barrier map piece and plays the Halloween intro; later entries play the short entry scene.
     // The d01 story warps to the boss room clear it so the intro plays again.
-    FLAG_D01B01_INTRO_STARTED = 10,
+    FLAG_CHANNEL_BOSS_ROOM_ENTERED = 10,
     // No script sets it; the engine's invention menu (inventmn.cpp) uses it. Cedric's Energy Pack
     // event 520 reads it to play the finish scene, where Cedric takes the Energy Pack, sets flag 20
     // and puts the pack on Steve; the story 105c variant checks for the Energy Pack item instead.
@@ -85,10 +85,10 @@ enum flag_story {
     FLAG_GRAPE_JUICE_GIVEN = 28,
     // Set when Max stays in Cedric's house after event 520 instead of returning to the Underground
     // Channel; nothing reads it.
-    FLAG_CEDRIC_HOUSE_E108C_READY = 29,
+    FLAG_STAYED_IN_CEDRIC_HOUSE = 29,
     // Cleared at the start of the s02 train arrival scene and set later in it; the scene reads it
     // to decide whether to tilt the slope parts.
-    FLAG_SCENE_S02_TRAIN_SLOPE = 30,
+    FLAG_TRAIN_ARRIVAL_SLOPE_TILTED = 30,
     // Set whenever Max picks up a Geostone in a dungeon; the s02 map start reads it with the item
     // board flag to play the first Geostone scene.
     FLAG_GEOSTONE_PICKED_UP = 31,
@@ -191,7 +191,7 @@ enum flag_story {
     // Set by event 106 in Cedric's house, where Cedric asks if Max is ready and they ride out on
     // Steve; cleared by the Palm Brinks warp that replays event 106. The s06 entry reads it with
     // Steve in the party to lock map moves.
-    FLAG_CEDRIC_HOUSE_E106_SEEN = 106,
+    FLAG_CEDRIC_RIDE_OUT_SEEN = 106,
     // Set by the elephant ambush and boss intro scenes in s06, the s06b story warp and Cedric's
     // event 520; cleared by the Palm Brinks warp to event 106. Cedric's house reads it to place
     // Steve, enable the e108c trigger and encourage Max after a loss.
@@ -212,7 +212,7 @@ enum flag_story {
     // Set by event 201, Max's first walk along the s01 road outside the channel. The s01 map start
     // plays it while clear and marks d01 floor 8 visited; the d01 floor 8 start skips the music
     // load until it is set.
-    FLAG_S01_EVENT_201_SEEN = 201,
+    FLAG_FIRST_WALK_OUTSIDE_CHANNEL_SEEN = 201,
     // Set by event 202 in s01, where the Blackstone train roars in and Cedric invites Max aboard.
     // Unlocks boarding: the Palm Brinks station lets Max board and shows the train, and s01 and s08
     // read it to place the train and crew.
@@ -261,18 +261,18 @@ enum flag_story {
     // Set by event 235 in s05b, where Max and Monica decide to fish out the Holy One with Poison
     // Apple bait; cleared by the s05 story resets. No script reads it; the engine reads it in
     // fishing.cpp.
-    FLAG_S05_EVENT_235_SEEN = 235,
+    FLAG_POISON_APPLE_BAIT_IDEA_SEEN = 235,
     // Set by event 240 in s05, when Max hooks Mardan the swamp master and he asks for a Priscleen
     // Fish. s05 setup places Mardan while it is set and flag 245 is clear; villagers change their
     // swamp master lines. The engine reads it in fishing.cpp.
-    FLAG_SWAMP_MASTER_E240_SEEN = 240,
+    FLAG_MARDAN_HOOKED_SEEN = 240,
     // Set by event 245 in s05, when Max brings Mardan the Priscleen Fish and he turns the three
     // Firbits back to normal; s05 setup stops placing Mardan once it is set.
-    FLAG_SWAMP_MASTER_E245_SEEN = 245,
+    FLAG_MARDAN_FISH_DELIVERED_SEEN = 245,
     // Set by event 247 in s05b, where the bewitched Firbits return to normal and Max and Monica
     // head back to Sindain. With flag 250 clear, entering the g01i07 Firbit house then plays the
     // Firbits' deal scene; the seated Firbits are no longer placed.
-    FLAG_S05B_EVENT_247_SEEN = 247,
+    FLAG_FIRBITS_RESTORED_SEEN = 247,
     // Set by the event 250 scenes: the Firbits' deal in g01i07, the Carpenterion's arrival and
     // Monica's Time Gate talk in s47 and g01c. Unlocks Georama editing in Sindain (engine:
     // editloop.cpp); Sindain maps, s05 story points and f01 read it.
@@ -281,10 +281,10 @@ enum flag_story {
     FLAG_UTAN_BOULDER_MOVED = 253,
     // Set by both Lafrescia sapling scenes in d02b01, the seed explosion and the Sundrop light;
     // nothing reads it.
-    FLAG_LAFRESCIA_EVENT_255_SEEN = 255,
+    FLAG_LAFRESCIA_SAPLING_SCENE_SEEN = 255,
     // Set by event 256 in d02b01, where Max and Monica grab the Lafrescia vine and are pulled up
     // toward the boss floor; nothing reads it.
-    FLAG_LAFRESCIA_EVENT_256_SEEN = 256,
+    FLAG_LAFRESCIA_VINE_CLIMB_SEEN = 256,
     // Set by event 257 in d02b02, where the Rainbow Butterfly swoops down on Max and Monica. While
     // it is set and flag 260 is clear, the d02 floor 15 start loads the d02b02 boss room instead of
     // the d02b01 Lafrescia room.
@@ -296,18 +296,18 @@ enum flag_story {
     // Set by event 270 in Jurak Mall (f01), where Max and Monica ask Jurak about Griffon; cleared
     // by the f01 story_270 debug jump. The f01 map start and the event 270/272 gates read it, and
     // the Sindain red gate skips the BGM load while it is pending.
-    FLAG_SINDAIN_EVENT_270_SEEN = 270,
+    FLAG_JURAK_GRIFFON_TALK_SEEN = 270,
     // Set by event 272 in Jurak Mall (f01), where Jurak gives Max the Lafrescia Seed and Badge Box;
     // cleared by the f01 debug jump. The f01 map start, the event gate and Jurak's hint talk read
     // it.
-    FLAG_SINDAIN_EVENT_272_SEEN = 272,
+    FLAG_JURAK_SEED_GIVEN_SEEN = 272,
     // Set by event 275 in Jurak Mall (f01), when the monster badge shop opens; cleared by the f01
     // debug jump. The f01 map start and event gate read it, f01 shows the shop NPCs only once it is
     // set, and Jurak's hint talk reads it.
-    FLAG_SINDAIN_EVENT_275_SEEN = 275,
+    FLAG_BADGE_SHOP_OPENED_SEEN = 275,
     // Set when the e277 point in Jurak Mall (f01) plays the scene where Monica shows Max the
     // Himarra badge; cleared by the f01 debug jump. No script reads it.
-    FLAG_SINDAIN_EVENT_277_SEEN = 277,
+    FLAG_HIMARRA_BADGE_SHOWN_SEEN = 277,
     // Set by event 280: Jurak remembers Griffon in f01, then the crew clears the rock from the
     // tracks at Sindain Station (s02); cleared by the f01 debug jump. Marks the train as free to
     // leave Sindain: train crew (Cedric offers departure on map 16 until flag 283, Erik's rock
@@ -320,7 +320,7 @@ enum flag_story {
     // Set by event 285 in Jurak Mall (f01) when Sindain is 100% restored and Jurak gives Max the
     // Jurak Gun; cleared by the f01 debug jump. The f01 map start and the event gate read it to
     // play it once.
-    FLAG_SINDAIN_EVENT_285_SEEN = 285,
+    FLAG_JURAK_GUN_GIVEN_SEEN = 285,
     // Set when the monster talk in d02 gives Max the Sundrop; the same talk handler reads it to
     // give it once.
     FLAG_SUNDROP_RECEIVED = 290,
@@ -329,7 +329,7 @@ enum flag_story {
     // scenes on it, and Cedric says he cannot leave map 16 yet until it is set.
     FLAG_BALANCE_VALLEY_ARRIVAL_SEEN = 300,
     // Set by event 302 in Balance Valley g02; the g02 map start reads it with flag 300.
-    FLAG_BALANCE_VALLEY_E302_SEEN = 302,
+    FLAG_BALANCE_VALLEY_PLATEAUS_SEEN = 302,
     // Set by the scene where Max finds Lin in pain in the g02i02 clinic; the Dr. Dell recruit
     // check, Palm Brinks and the g02 house entry read it.
     FLAG_LIN_ILL_SCENE_SEEN = 304,
@@ -339,13 +339,13 @@ enum flag_story {
     // Set by event 306: Dr. Dell, now in the party, finds Lin poisoned by toxic mist and sends Max
     // to Lao Chao for a miracle dish, then a g02 scene explains the fields' heights. g02 refuses
     // entry to Starlight Canyon until it is set; Argo, the clinic and g02 NPC setup read it.
-    FLAG_CLINIC_E306_SEEN = 306,
+    FLAG_LIN_POISONED_SEEN = 306,
     // Set by event 307 on first reaching Starlight Canyon (d03) floor 2: a big bird drops Max, who
     // remembers Eina nursing him as a sick child (s46). d03 floor start reads it to play the event
     // once, and the g02 canyon entry skips the BGM load for floor 2 while it is unset.
     FLAG_EINA_NURSES_MAX_SEEN = 307,
     // Set by event 308 in s17 and the d03 warp to it; nothing reads it.
-    FLAG_S17_E308_SEEN = 308,
+    FLAG_BARGAS_DEAD_END_SEEN = 308,
     // Set by the Condor time distortion scene in s17 and the d03 warp to it; nothing reads it.
     FLAG_CONDOR_TIME_DISTORTION_SEEN = 312,
     // Set by the Spheda lesson scene in s17; the Mina NPC and s17 setup read it to change her
@@ -370,14 +370,14 @@ enum flag_story {
     // Set by event 328, when the party brings Lao Chao's Miracle Dumplings back to Lin's clinic
     // (g02i02). The clinic map start and the g02 house entry read it with flag 324 to play the
     // delivery once.
-    FLAG_CLINIC_E328_SEEN = 328,
+    FLAG_MIRACLE_DUMPLINGS_DELIVERED_SEEN = 328,
     // Set by event 330 in Lin's clinic (g02i02), when Lin wakes after eating the dumplings but
     // cannot remember Crest's death; the clinic replays set or clear it. s18 scenes and exit lines
     // (Max worries about Lin until it is set), Argo, Starlight Temple villagers and the engine
     // (editanalyze.cpp) read it.
     FLAG_LIN_RECOVERED = 330,
     // Set by the first scene on s18; the s18 map start reads it with flag 300 to play it once.
-    FLAG_S18_ARRIVAL_SEEN = 332,
+    FLAG_YORDA_TREE_ARRIVAL_SEEN = 332,
     // Set by the scene where Lin tells Max she wants to be a sage in s18; nothing reads it.
     FLAG_LIN_WANTS_SAGE_SEEN = 336,
     // Set by the scene where Lin remembers the lighthouse in s18. The s18 exit only offers to go on
@@ -389,7 +389,7 @@ enum flag_story {
     // Set by event 352, where Lin is left to wait at the lighthouse (d03b01) and the party travels
     // back in time with the Starglass (s56). Lighthouse rooms and s56 read it to disable the event
     // point.
-    FLAG_LIGHTHOUSE_E352_SEEN = 352,
+    FLAG_LIN_WAITS_AT_LIGHTHOUSE_SEEN = 352,
     // Set by event 356 in d03b02, after Gaspard (Giltoni) is driven off and Crest shields everyone
     // from the battleship's shells. d03 floor 23 reads it to load d03b01 instead of s56, Argo reads
     // it, and the engine reads it in editanalyze.cpp.
@@ -401,11 +401,11 @@ enum flag_story {
     // Set by event 364 in Starlight Temple (f02), when Max and Monica find Lao Chao's Bistro open;
     // cleared by the f02 story_364 replay jump. The f02 event gate and the f02i08 bistro setup read
     // it.
-    FLAG_BALANCE_VALLEY_EVENT_364_SEEN = 364,
+    FLAG_LAO_CHAO_BISTRO_OPEN_SEEN = 364,
     // Set by event 368 in Starlight Temple (f02), when the party talks about using a Starglass
     // after seeing the Star Items shop; cleared by the f02 story_368 replay jump. The f02 event
     // gate reads it.
-    FLAG_BALANCE_VALLEY_EVENT_368_SEEN = 368,
+    FLAG_STARGLASS_IDEA_SEEN = 368,
     // Set by event 372: Max and Monica meet Lin as the Great Sage Crest in Starlight Temple (f02),
     // who sends them to the Luna Lab, then Cedric says the train is ready at s04; cleared by the
     // f02 replay jump. Train crew (Cedric offers departure on map 54 until flag 360), Jurak and
@@ -414,7 +414,7 @@ enum flag_story {
     // Set by event 376 in Starlight Temple (f02) when Balance Valley is fully restored and Crest
     // gives Max a Serpent Slicer; cleared by the f02 story_376 replay jump. The f02 event gate
     // reads it.
-    FLAG_BALANCE_VALLEY_EVENT_376_SEEN = 376,
+    FLAG_SERPENT_SLICER_GIVEN_SEEN = 376,
     // Set by event 400 in s09 when Max and Monica first arrive at Veniccio Station (also by the s19
     // and d04 story replay warps); marks the start of the Veniccio chapter. s19, Shigura Village,
     // the Luna Lab doors and rooms, Starlight Temple villagers and train crew read it.
@@ -620,7 +620,7 @@ enum flag_story {
     // (SAVE_FLAG_WORLD_MAP_S12_REDIRECT); partner hints read it.
     FLAG_ANDREA_GARDEN_CLUE_SEEN = 700,
     // Set by the first scene on s21; the s21 map start reads it to play it once.
-    FLAG_S21_FIRST_VISIT_SEEN = 704,
+    FLAG_BROKEN_FLOWER_MEMORY_SEEN = 704,
     // Set by event 708 in s50, where the broken flower is forgiven and the doors open. Once set,
     // s50 shows the doors open and lets the player through to the next palace floor, and s21 no
     // longer offers the Flower of the Sun pickup.

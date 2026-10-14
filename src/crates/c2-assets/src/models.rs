@@ -129,6 +129,222 @@ pub fn export(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(export_folder(data)?.sorted())
 }
 
+/// The disc's files, for a pack of motions alone to find the model it plays on: every file's path
+/// (as extract lays the disc out, `chara/c01_base.chr`) and a reader of a path (a pack's member
+/// as `a.chr.d/b.chr`).
+pub struct DiscFiles<'a> {
+    pub paths: Vec<String>,
+    pub read: &'a (dyn Fn(&str) -> Option<Vec<u8>> + Sync),
+}
+
+/// Whether a pack holds motion sets and no model (`chara/c01_fishing.chr`: `MOTION 7`, no MODEL),
+/// motions for a character another pack loads.
+pub fn motions_only(data: &[u8]) -> bool {
+    let Ok(found) = members(data) else {
+        return false;
+    };
+    let Some((_, cfg)) = found.iter().find(|(name, _)| name.eq_ignore_ascii_case("info.cfg")) else {
+        return false;
+    };
+    let info = info_cfg::read(cfg);
+    info.model.as_ref().is_none_or(|model| !model.truthy()) && !info.motions.is_empty()
+}
+
+/// The words of a pack's name, and of three letters or more without their numbers:
+/// `vs_e352_guiltoni2` gives vs, e352, guiltoni2, guiltoni.
+fn words(stem: &str) -> Vec<String> {
+    let mut out: Vec<String> =
+        stem.to_lowercase().split(['_', '-', '.']).filter(|w| !w.is_empty()).map(str::to_string).collect();
+    for word in out.clone() {
+        let letters = word.trim_end_matches(|c: char| c.is_ascii_digit());
+        if letters.len() >= 3 && letters.len() < word.len() {
+            out.push(letters.to_string());
+        }
+    }
+    out
+}
+
+/// The model pack a pack of motions alone plays on (path and bytes): Max's town pack
+/// (`chara/c01_base.chr`) for a name of `mints` or `c01`, Monica's (`chara/c02_base.chr`) for
+/// `monica` or `c02`, else the model pack beside it sharing the longest word of its name
+/// (`e352_guiltoni.chr` for `vs_e352_guiltoni.chr`): the first whose model has every frame its key
+/// lists and info.cfg name, else the first with every frame its key lists name (a motion pack's
+/// attach points may name another model's frames, as `taxi_ride_c01`'s the taxi's). Max's and Monica's packs (town and dungeon) share their
+/// skeletons, so the town one serves the dungeon's motions too.
+pub fn skeleton_for(path: &str, data: &[u8], disc: &DiscFiles) -> Result<(String, Vec<u8>)> {
+    let found = members(data)?;
+    let cfg = found.iter().find(|(name, _)| name.eq_ignore_ascii_case("info.cfg")).map(|(_, data)| data.clone());
+    let Some(cfg) = cfg else {
+        bail!("{path} has no info.cfg");
+    };
+    let info = info_cfg::read(&cfg);
+    // the frames its lists drive, and the frames its cfg names
+    let mut frames = 0usize;
+    for (_, motion) in &info.motions {
+        let Some(mot) = motion.mot.as_str().and_then(|name| found.iter().find(|(n, _)| n == name)) else {
+            continue;
+        };
+        for list in crate::mot::parse(&mot.1).unwrap_or_default() {
+            frames = frames.max(usize::try_from(list.frame).map_or(0, |f| f + 1));
+        }
+    }
+    let named: BTreeSet<String> = info_cfg::parse(&cfg)
+        .into_iter()
+        .filter(|(tag, _)| matches!(tag.as_str(), "OBJECT_NAME" | "OBJECT_NAME2" | "OUTLINE"))
+        .flat_map(|(_, args)| args.into_iter().filter_map(|a| a.as_str().map(str::to_string)))
+        .filter(|name| !name.is_empty())
+        .collect();
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let stem = path_stem(name);
+    let own = words(stem);
+    let mut candidates: Vec<String> = Vec::new();
+    if own.iter().any(|w| w.starts_with("mints") || w.starts_with("c01")) {
+        candidates.push("chara/c01_base.chr".into());
+    }
+    if own.iter().any(|w| w.starts_with("monica") || w.starts_with("c02")) {
+        candidates.push("chara/c02_base.chr".into());
+    }
+    let folder = path.rsplit_once('/').map_or("", |(folder, _)| folder);
+    let mut beside: Vec<(usize, String)> = disc
+        .paths
+        .iter()
+        .filter(|other| {
+            other.to_lowercase().ends_with(".chr")
+                && other.rsplit_once('/').map_or("", |(f, _)| f).eq_ignore_ascii_case(folder)
+                && !other.eq_ignore_ascii_case(path)
+        })
+        .map(|other| {
+            let theirs = words(path_stem(other.rsplit('/').next().unwrap_or(other)));
+            let shared = own.iter().filter(|w| theirs.contains(w)).map(|w| w.len()).max().unwrap_or(0);
+            (shared, other.clone())
+        })
+        .filter(|(shared, _)| *shared > 0)
+        .collect();
+    beside.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    candidates.extend(beside.into_iter().map(|(_, other)| other));
+    let mut fitting: Option<(String, Vec<u8>)> = None;
+    for candidate in candidates {
+        let Some(bytes) = (disc.read)(&candidate) else {
+            continue;
+        };
+        let stem = path_stem(candidate.rsplit('/').next().unwrap_or(&candidate)).to_string();
+        let (pack, _) = crate::tree::model_pack(&bytes, &stem);
+        let Ok((folder, files)) = unpacked(&pack) else {
+            continue;
+        };
+        let Some(model) = folder.get(&files.model).and_then(|data| crate::mds::parse(data).ok()) else {
+            continue;
+        };
+        if model.nodes.len() < frames {
+            continue;
+        }
+        let has = |name: &String| model.nodes.iter().any(|node| node.name == *name || node.base_name() == name);
+        if named.iter().all(has) {
+            return Ok((candidate, bytes));
+        }
+        fitting.get_or_insert((candidate, bytes));
+    }
+    if let Some(found) = fitting {
+        return Ok(found);
+    }
+    bail!("{path} holds motions alone, and no model pack on the disc fits them (Max's, Monica's, or one beside it of a name it shares)")
+}
+
+/// A pack of motions alone exported on a model pack's skeleton (its stem the first motion set's
+/// .mot's): that pack's skeleton, skin, meshes and pictures, with an animation per KEY of the
+/// motion pack's sets.
+fn motion_export_folder(data: &[u8], skeleton: &[u8], skeleton_name: &str) -> Result<(Folder, String)> {
+    let (skeleton, _) = crate::tree::model_pack(skeleton, skeleton_name);
+    let pictures = pack_pictures(&skeleton)?;
+    let (source, _) = unpacked(&skeleton)?;
+    let mut motion = Folder::new();
+    for (name, content) in members(data)? {
+        motion.write(&name, content);
+    }
+    let info = info_cfg::read(motion.get("info.cfg").unwrap_or_default());
+    let stem = info
+        .motions
+        .iter()
+        .find_map(|(_, m)| m.mot.as_str().filter(|name| !name.is_empty()).map(|name| path_stem(name).to_string()))
+        .ok_or_else(|| Error::invalid("the pack names no .mot"))?;
+    let mut out = Folder::new();
+    to_gltf::export_motions(&motion, &source, &mut out, &stem, 30.0)?;
+    for (path, content) in out.files_mut() {
+        if let Some(name) = path.strip_prefix("textures/") {
+            if let Some(found) = picture(&pictures, path_stem(name)) {
+                *content = found.1.clone();
+            }
+        }
+    }
+    Ok((out, stem))
+}
+
+/// (relative path, bytes) of a pack of motions alone exported on a model pack (`skeleton`, the
+/// pack named `skeleton_name`, as skeleton_for finds it).
+pub fn export_motions(data: &[u8], skeleton: &[u8], skeleton_name: &str) -> Result<Vec<(String, Vec<u8>)>> {
+    Ok(motion_export_folder(data, skeleton, skeleton_name)?.0.sorted())
+}
+
+/// A pack of motions alone with the motions of a folder export_motions wrote (and edited) in: its
+/// .mot files and info.cfg rebuilt from the glTF's animations, against the model pack's skeleton.
+/// The model, its skin and pictures are the other pack's and change nothing here.
+pub fn build_motions(folder: &Path, original: &[u8], skeleton: &[u8], skeleton_name: &str) -> Result<Vec<u8>> {
+    let (exported, stem) = motion_export_folder(original, skeleton, skeleton_name)?;
+    let gltf = format!("{stem}.gltf");
+    let gltf_path = folder.join(&gltf);
+    if !gltf_path.is_file() {
+        bail!("the folder has no {gltf}, the motions' glTF");
+    }
+    let unchanged = |name: &str| std::fs::read(folder.join(name)).ok().as_deref() == exported.get(name);
+    if unchanged(&gltf) && unchanged(&format!("{stem}.bin")) {
+        return Ok(original.to_vec());
+    }
+    let wrap = |error: Error| match error {
+        Error::Invalid(message) => Error::invalid(format!("{gltf}: {message}")),
+        other => other,
+    };
+    let given = load_from_disk(&gltf_path).map_err(wrap)?;
+    let before = load_from_folder(&exported, &gltf)?;
+    let (skeleton, _) = crate::tree::model_pack(skeleton, skeleton_name);
+    let (source, files) = unpacked(&skeleton)?;
+    let Some(template) = source.get(&files.model) else {
+        bail!("the model pack has no {}", files.model);
+    };
+    let model = crate::mds::parse(template)?;
+    let pack = members(original)?;
+    let member = |name: &str| pack.iter().find(|(n, _)| n == name).map(|(_, data)| data.clone());
+    let Some((_, cfg)) = pack.iter().find(|(name, _)| name == "info.cfg") else {
+        bail!("the pack has no info.cfg");
+    };
+    match motions::build(&before, &given, &model, &member, cfg, None).map_err(wrap)? {
+        Some(rebuilt) => write_motions(original.to_vec(), &rebuilt),
+        None => Ok(original.to_vec()),
+    }
+}
+
+/// models::export for any character pack on the disc: a pack of motions alone on the model pack
+/// skeleton_for finds, any other as itself (its cfg named after it, as tree::model_pack reads it).
+pub fn export_on_disc(data: &[u8], path: &str, disc: &DiscFiles) -> Result<Vec<(String, Vec<u8>)>> {
+    if motions_only(data) {
+        let (skeleton_path, skeleton) = skeleton_for(path, data, disc)?;
+        let name = path_stem(skeleton_path.rsplit('/').next().unwrap_or(&skeleton_path)).to_string();
+        return export_motions(data, &skeleton, &name);
+    }
+    let stem = path_stem(path.rsplit('/').next().unwrap_or(path));
+    crate::tree::exported_model(data, stem)
+}
+
+/// models::build for any character pack on the disc, as export_on_disc exports it.
+pub fn build_on_disc(folder: &Path, original: &[u8], path: &str, disc: &DiscFiles) -> Result<Vec<u8>> {
+    if motions_only(original) {
+        let (skeleton_path, skeleton) = skeleton_for(path, original, disc)?;
+        let name = path_stem(skeleton_path.rsplit('/').next().unwrap_or(&skeleton_path)).to_string();
+        return build_motions(folder, original, &skeleton, &name);
+    }
+    let stem = path_stem(path.rsplit('/').next().unwrap_or(path));
+    crate::tree::build_model(folder, original, stem)
+}
+
 /// The files under a folder by relative path, sorted as the Python lists them.
 fn folder_files(folder: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     crate::files_under(folder)?
@@ -201,6 +417,7 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
         let built = from_gltf::import_gltf(&given_gltf, template, pose, weights, Some(&meshes)).map_err(wrap)?;
         // a dict of member to content: a member named twice keeps its place and the last content
         let mut written: Vec<(&str, Vec<u8>)> = Vec::new();
+        let rebuilt_model = crate::mds::parse(&built.mds)?;
         let mut outputs = vec![(files.model.as_str(), built.mds), (files.weights.as_str(), built.wgt)];
         if let Some(pose_name) = pose_name {
             outputs.push((pose_name, built.bbp));
@@ -222,19 +439,34 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
             }
             pack = rebuild::replaced_member(&pack, &[member.to_string()], &content)?;
         }
-        // the animations that differ from the export's go into the motion and its KEY lines
-        if let (Some(mot_name), Some(cfg)) = (files.motion.as_deref(), source.get("info.cfg")) {
-            if let Some(mot) = source.get(mot_name) {
-                let before = load_from_folder(&exported_folder, &gltf)?;
-                let model = crate::mds::parse(template)?;
-                if let Some(rebuilt) = motions::build(&before, &given_gltf, &model, mot, cfg).map_err(wrap)? {
-                    pack = rebuild::replaced_member(&pack, &[mot_name.to_string()], &rebuilt.mot)?;
-                    pack = rebuild::replaced_member(&pack, &["info.cfg".to_string()], &rebuilt.info)?;
-                }
+        // the animations that differ from the export's go into the motions and their KEY lines
+        if let Some(cfg) = source.get("info.cfg") {
+            let before = load_from_folder(&exported_folder, &gltf)?;
+            let model = crate::mds::parse(template)?;
+
+            let frames: BTreeSet<usize> = meshes
+                .iter()
+                .filter_map(|id| match id {
+                    MeshId::Frame(frame) => Some(*frame),
+                    MeshId::New(_) => None,
+                })
+                .collect();
+            let member = |name: &str| source.get(name).map(<[u8]>::to_vec);
+            let rebuilt = (!frames.is_empty()).then_some((&rebuilt_model, &frames));
+            if let Some(rebuilt) = motions::build(&before, &given_gltf, &model, &member, cfg, rebuilt).map_err(wrap)? {
+                pack = write_motions(pack, &rebuilt)?;
             }
         }
     }
     with_textures(pack, &given, &exported)
+}
+
+/// The pack with rebuilt motions' .mot files and info.cfg in place of its own.
+fn write_motions(mut pack: Vec<u8>, rebuilt: &motions::Rebuilt) -> Result<Vec<u8>> {
+    for (member, mot) in &rebuilt.mots {
+        pack = rebuild::replaced_member(&pack, std::slice::from_ref(member), mot)?;
+    }
+    rebuild::replaced_member(&pack, &["info.cfg".to_string()], &rebuilt.info).map_err(Error::from)
 }
 
 /// Files by relative path.
@@ -997,8 +1229,8 @@ mod tests {
         let exported = load_from_folder(&folder_of(&export(&built).unwrap()), "hero.gltf").unwrap();
         let given = load_from_disk(&path).unwrap();
         assert!(from_gltf::changed_character_meshes(&exported, &given, &model).unwrap().is_empty());
-        let unchanged =
-            crate::motions::build(&exported, &given, &model, get(&found, "hero.mot"), cfg.as_bytes()).unwrap();
+        let member = |name: &str| found.iter().find(|(n, _)| n == name).map(|(_, data)| data.clone());
+        let unchanged = crate::motions::build(&exported, &given, &model, &member, cfg.as_bytes(), None).unwrap();
         assert!(unchanged.is_none());
         // and building the glTF given over the pack changes nothing
         assert_eq!(build(&folder, &built).unwrap(), built);
@@ -1157,6 +1389,78 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A pack of motions alone for Max (`MOTION 7`, no model) whose one KEY turns the hip of the
+    /// character_pack skeleton, and the disc it is on (that pack as Max's `chara/c01_base.chr`).
+    fn motion_pack() -> Vec<u8> {
+        let turn = |f: i64| {
+            let half = (5.0 * f as f64).to_radians() / 2.0;
+            [half.cos(), half.sin(), 0.0, 0.0]
+        };
+        let mot =
+            crate::mot::build(&[crate::mot::KeyList::new(1, 0, 0, (1..=8).map(|f| (f, turn(f))).collect())]).unwrap();
+        let cfg = "v2;\nOBJECT_NAME2 0, \"hip\";\nMOTION 7, \"bow.mot\", \"\", \"\";\nKEY_START;\n\tKEY \"bow\", 1, 8, 0.50;\nKEY_END;\nMOTION_END;\n";
+        pack(&[("info.cfg", cfg.as_bytes()), ("bow.mot", &mot)])
+    }
+
+    #[test]
+    fn a_pack_of_motions_alone_is_exported_and_built_on_its_characters_skeleton() {
+        let (motion, skeleton) = (motion_pack(), character_pack());
+        assert!(motions_only(&motion) && !motions_only(&skeleton));
+        let read = |path: &str| (path == "chara/c01_base.chr").then(|| skeleton.clone());
+        let disc = DiscFiles { paths: vec!["chara/c01_base.chr".into(), "event/e1/e1_mints.chr".into()], read: &read };
+        let (found, _) = skeleton_for("event/e1/e1_mints.chr", &motion, &disc).unwrap();
+        assert_eq!(found, "chara/c01_base.chr");
+        assert!(skeleton_for("event/e1/e1_guard.chr", &motion, &disc).is_err());
+        let files = export_on_disc(&motion, "event/e1/e1_mints.chr", &disc).unwrap();
+        let names: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
+        assert_eq!(names, ["bow.bin", "bow.gltf", "textures/body01.png"]);
+        let gltf = load_from_folder(&folder_of(&files), "bow.gltf").unwrap();
+        let animations = gltf.json.get("animations").unwrap().as_list().unwrap().clone();
+        assert_eq!(animations.len(), 1);
+        assert_eq!(animations[0].get("name").unwrap().as_str(), Some("bow"));
+        // unedited: the same pack
+        let folder = written(&files, "motion-unedited");
+        assert_eq!(build_on_disc(&folder, &motion, "event/e1/e1_mints.chr", &disc).unwrap(), motion);
+        std::fs::remove_dir_all(folder).unwrap();
+        // the hip's turn doubled: bow.mot alone changes, over the KEY's frames
+        let mut edited = gltf;
+        let channel = &animations[0].get("channels").unwrap().as_list().unwrap()[0];
+        let sampler =
+            from_gltf::index(animations[0].get("samplers").unwrap(), channel.get("sampler").unwrap()).unwrap().clone();
+        let output = from_gltf::accessor(&edited, sampler.get("output").unwrap()).unwrap();
+        let view_of = |gltf: &Gltf| {
+            let accessor =
+                from_gltf::index(gltf.json.get("accessors").unwrap(), sampler.get("output").unwrap()).unwrap();
+            let view =
+                from_gltf::index(gltf.json.get("bufferViews").unwrap(), accessor.get("bufferView").unwrap()).unwrap();
+            view.get("byteOffset").and_then(|v| v.as_int()).unwrap_or(0) as usize
+        };
+        let base = view_of(&edited);
+        for k in 0..output.len() {
+            let q: Vec<f64> = output.at(k as i64).unwrap().iter().map(|v| v.f()).collect();
+            // twice the angle: the square of the quaternion (x, 0, 0, w)
+            let doubled = [2.0 * q[0] * q[3], 0.0, 0.0, q[3] * q[3] - q[0] * q[0]];
+            for (i, x) in doubled.iter().enumerate() {
+                let at = base + 16 * k + 4 * i;
+                edited.buffers[0][at..at + 4].copy_from_slice(&(*x as f32).to_le_bytes());
+            }
+        }
+        let mut changed = files.clone();
+        for (path, content) in changed.iter_mut() {
+            if path == "bow.bin" {
+                *content = edited.buffers[0].clone();
+            }
+        }
+        let folder = written(&changed, "motion-edited");
+        let built = build_on_disc(&folder, &motion, "event/e1/e1_mints.chr", &disc).unwrap();
+        std::fs::remove_dir_all(folder).unwrap();
+        let info = ["info.cfg".to_string()];
+        assert_eq!(rebuild::read_member(&built, &info), rebuild::read_member(&motion, &info));
+        let lists = crate::mot::parse(rebuild::read_member(&built, &["bow.mot".to_string()]).unwrap()).unwrap();
+        let w = lists[0].keys.iter().find(|k| k.0 == 8).unwrap().1[0];
+        assert!((w - 40f64.to_radians().cos()).abs() < 1e-5, "{w}");
     }
 
     /// A character pack: bones root and hip (10 up), a skinned quad `skin` (its lower corners on the

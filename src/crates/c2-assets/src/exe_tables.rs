@@ -26,6 +26,19 @@ pub const PROGRESS_TABLE: u32 = 0x358C90;
 pub const PROGRESS_ROWS: usize = 19;
 
 pub const CHARACTERS: [&str; 2] = ["max", "monica"];
+/// gift_item_tbl: s16 {gift type, item, unread} rows up to one of gift type -1 (CheckGiftPack).
+pub const GIFT_TABLE: u32 = 0x351660;
+pub const GIFT_ROWS: usize = 14;
+/// GolfClubDef: {f32 power, f32, s32} for Spheda clubs 9 to 14 (GetSphidaClubDef: club - 9); a
+/// seventh row, of zeros, no club reaches.
+pub const CLUB_TABLE: u32 = 0x361340;
+pub const CLUBS: std::ops::RangeInclusive<usize> = 9..=14;
+/// aquafish_mixTable: s8 {parent, parent, child} × 171, each a fish item less 0x136
+/// (GetChildFishNo, a fixed count of rows).
+pub const BREEDING_TABLE: u32 = 0x3535A0;
+pub const BREEDING_ROWS: usize = 171;
+/// The fish item a breeding row's numbers count from.
+pub const FIRST_FISH: i64 = 0x136;
 
 /// Spectrumising: what each item number adds to the attachment it becomes. `slot` 0-7 is an
 /// attribute (flame to scale), 10 attack, 11 durability, any other nothing; `value` the points,
@@ -100,6 +113,63 @@ pub fn characters(elf: &[u8]) -> Result<Table> {
     Ok(table)
 }
 
+/// The gifts that win a monster's badge (`data:gifts`, gift_item_tbl): by `row`, the
+/// `gift_type` a monster kind names (data:monsters' `gift_type`), the `item` given and a third
+/// value nothing reads (`unread`). CheckGiftPack (monster.cpp) finds the row of the monster's
+/// gift type and takes a gift whose three gift slots all hold the item. The rows are the
+/// table's; none is added (the row after the last ends it).
+pub fn gifts(elf: &[u8]) -> Result<Table> {
+    let start = data_table::elf_offset(elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table")?;
+    let mut records = Vec::new();
+    for row in 0..GIFT_ROWS {
+        let at = start + row * 6;
+        let mut record = Record::new(&[("row", Value::from(row))]);
+        // a gift type of -1 would end the table there
+        record.bytes("gift_type", Kind::Int(0, i16::MAX as i64), at, 1);
+        record.bytes("item", Kind::Int(0, 0x1FF), at + 2, 1).bytes("unread", S16, at + 4, 1);
+        records.push(record);
+    }
+    let mut table = Table::new("a gift table", Vec::new(), elf.to_vec());
+    table.section("gifts", &["row"], records);
+    Ok(table)
+}
+
+/// Spheda's clubs (`data:spheda`, GolfClubDef): by `club` (9 to 14), the `power` the status
+/// shows and two values only event scripts read (_SPHIDA_GET_CULB_DEF), `unknown_4` and
+/// `unknown_8`.
+pub fn spheda(elf: &[u8]) -> Result<Table> {
+    let start = data_table::elf_offset(elf, CLUB_TABLE, 7 * 0xC, "Spheda club table")?;
+    let mut records = Vec::new();
+    for club in CLUBS {
+        let at = start + (club - CLUBS.start()) * 0xC;
+        let mut record = Record::new(&[("club", Value::from(club))]);
+        record.bytes("power", Kind::Float, at, 1).bytes("unknown_4", Kind::Float, at + 4, 1);
+        record.bytes("unknown_8", data_table::S32, at + 8, 1);
+        records.push(record);
+    }
+    let mut table = Table::new("a Spheda table", Vec::new(), elf.to_vec());
+    table.section("clubs", &["club"], records);
+    Ok(table)
+}
+
+/// Aquarium breeding (`data:breeding`, aquafish_mixTable): by `row`, the two `parents` and the
+/// `child`, fish item numbers (0x136 to 0x1B4: the table keeps each less 0x136 in a byte). The
+/// 171 rows are all GetChildFishNo reads, in either order of the parents; a pair no row has
+/// breeds item 0x136.
+pub fn breeding(elf: &[u8]) -> Result<Table> {
+    let start = data_table::elf_offset(elf, BREEDING_TABLE, BREEDING_ROWS * 3, "breeding table")?;
+    let mut records = Vec::new();
+    for row in 0..BREEDING_ROWS {
+        let at = start + row * 3;
+        let mut record = Record::new(&[("row", Value::from(row))]);
+        record.bytes("parents", S8, at, 2).bytes("child", S8, at + 2, 1);
+        records.push(record);
+    }
+    let mut table = Table::new("a breeding table", Vec::new(), elf.to_vec());
+    table.section("breeding", &["row"], records);
+    Ok(table)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,7 +183,14 @@ mod tests {
             return;
         };
         let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::monster_data::EXECUTABLE)).unwrap();
-        for table in [spectrumise(&elf).unwrap(), donny(&elf).unwrap(), characters(&elf).unwrap()] {
+        for table in [
+            spectrumise(&elf).unwrap(),
+            donny(&elf).unwrap(),
+            characters(&elf).unwrap(),
+            gifts(&elf).unwrap(),
+            spheda(&elf).unwrap(),
+            breeding(&elf).unwrap(),
+        ] {
             assert_eq!(table.check(), Vec::<String>::new(), "{}", table.what);
         }
         let characters = characters(&elf).unwrap();
@@ -126,5 +203,22 @@ mod tests {
         let patched = data_table::apply_patches(&elf, &patches).unwrap();
         assert_eq!(super::characters(&patched).unwrap().to_json()["weapon_level_up"][0]["whp_gain"][3], 9);
         assert_eq!(donny(&elf).unwrap().to_json()["donny"].as_array().unwrap().len(), DONNY_ROWS);
+        // the table after the gifts ends at a gift type of -1; the clubs and breeding as found
+        let start = data_table::elf_offset(&elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table").unwrap();
+        assert_eq!(&elf[start + GIFT_ROWS * 6..start + GIFT_ROWS * 6 + 2], &(-1i16).to_le_bytes());
+        assert_eq!(
+            gifts(&elf).unwrap().to_json()["gifts"][0],
+            json!({"row": 0, "gift_type": 0, "item": 0x10D, "unread": 1})
+        );
+        assert_eq!(
+            spheda(&elf).unwrap().to_json()["clubs"][0],
+            json!({"club": 9, "power": 38, "unknown_4": 0.2, "unknown_8": 6})
+        );
+        let breeding = breeding(&elf).unwrap();
+        assert_eq!(breeding.to_json()["breeding"][170], json!({"row": 170, "parents": [0x1A, 0x1A], "child": 0x1A}));
+        let (_, patches) = breeding.changes(&json!({"breeding": [{"row": 0, "child": 5}]}), "m").unwrap();
+        let patched = data_table::apply_patches(&elf, &patches).unwrap();
+        assert_eq!(super::breeding(&patched).unwrap().to_json()["breeding"][0]["child"], 5);
+        assert!(gifts(&elf).unwrap().changes(&json!({"gifts": [{"row": 0, "gift_type": -1}]}), "m").is_err());
     }
 }

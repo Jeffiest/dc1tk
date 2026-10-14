@@ -15,7 +15,7 @@
 use serde_json::Value;
 
 use crate::cfg_text::{Arg, Script};
-use crate::data_table::{self, Kind, Place, Record, Table, S32};
+use crate::data_table::{self, Adding, Kind, Place, Record, Table, S32};
 use crate::Result;
 
 pub const TOWNS: usize = 5;
@@ -24,6 +24,17 @@ pub const LANGUAGES: usize = 7;
 pub const LABELS: usize = 1;
 /// EDIT_PARTS_MATERIAL_MAX.
 pub const MATERIALS_MOST: usize = 4;
+/// GEORAMA_PARTS_LIST_MAX: the editor's lists (placed, stock, make) hold 0x180 parts, and
+/// MakeDownLoadAnaunce goes over the first 0x180 definitions.
+pub const PARTS_MOST: usize = 0x180;
+/// The stock list (CMenuGeorama::UpdateGeoramaPartsList) goes over IDs 0 to 0x7F; the save's
+/// stock (CSaveData::build_parts_num[0x100]) is by ID for all towns: a part of the ID of another
+/// town's part shares its stock, as the towns' own houses and fences do.
+pub const PART_ID_MOST: i64 = 0x7F;
+/// GEORAMA_PARTS_LIST_ITEM's name[0x30], filled by strcpy.
+pub const NAME_MOST: usize = 0x2F;
+/// CEditMap::CreateTable(main_data, 0x100, ...): the parts placed in a town.
+pub const PLACED_MOST: usize = 0x100;
 
 fn town(number: usize) -> String {
     format!("g{:02}", number + 1)
@@ -40,9 +51,9 @@ pub fn paths() -> Vec<String> {
     out
 }
 
-/// {part ID: {tag: statement indices}} of a parts file's blocks, and each block's name.
-/// A block: its name and {tag: statement indices}.
-type Block = (Option<Value>, std::collections::BTreeMap<String, Vec<usize>>);
+/// A block of a parts file: its name, {tag: statement indices}, and its first and last
+/// statements (EDIT_PARTS and EDIT_PARTS_END).
+type Block = (Option<Value>, std::collections::BTreeMap<String, Vec<usize>>, usize, usize);
 type Blocks = std::collections::BTreeMap<i32, Block>;
 
 fn blocks(script: &Script) -> Blocks {
@@ -55,18 +66,18 @@ fn blocks(script: &Script) -> Blocks {
                     Some(Arg::Str(text)) => Some(Value::from(c2_disc::text::decode_lossy(text))),
                     _ => None,
                 };
-                current = Some((name, Default::default()));
+                current = Some((name, Default::default(), at, at));
             }
             "EDIT_PARTS_END" => {
-                if let Some((name, tags)) = current.take() {
+                if let Some((name, tags, first, _)) = current.take() {
                     if let Some(&id) = tags.get("ID").and_then(|places| places.last()) {
                         let id = script.statements[id].values().first().map_or(0, Arg::int);
-                        out.insert(id, (name, tags));
+                        out.insert(id, (name, tags, first, at));
                     }
                 }
             }
             tag => {
-                if let Some((_, tags)) = current.as_mut() {
+                if let Some((_, tags, ..)) = current.as_mut() {
                     tags.entry(tag.to_string()).or_default().push(at);
                 }
             }
@@ -81,7 +92,7 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
     for number in 0..TOWNS {
         let files: Vec<usize> = (0..LANGUAGES).map(|language| number * LANGUAGES + language).collect();
         let found: Vec<Blocks> = files.iter().map(|&file| blocks(&scripts[file])).collect();
-        for (&id, (name, tags)) in &found[LABELS] {
+        for (&id, (name, tags, first, last)) in &found[LABELS] {
             let mut record = Record::new(&[("town", Value::from(town(number))), ("part", Value::from(id))]);
             if let Some(name) = name {
                 record.label("name", name.clone());
@@ -93,7 +104,7 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
                     out.push((files[LABELS], *places.last().unwrap()));
                 }
                 for (language, blocks) in found.iter().enumerate().filter(|(language, _)| *language != LABELS) {
-                    if let Some(places) = blocks.get(&id).and_then(|(_, tags)| tags.get(tag)) {
+                    if let Some(places) = blocks.get(&id).and_then(|(_, tags, ..)| tags.get(tag)) {
                         out.push((files[language], *places.last().unwrap()));
                     }
                 }
@@ -133,8 +144,11 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
             let copies: Vec<Vec<(usize, usize)>> = std::iter::once(LABELS)
                 .chain((0..LANGUAGES).filter(|&language| language != LABELS))
                 .filter_map(|language| {
-                    let tags =
-                        if language == LABELS { Some(tags) } else { found[language].get(&id).map(|(_, tags)| tags) }?;
+                    let tags = if language == LABELS {
+                        Some(tags)
+                    } else {
+                        found[language].get(&id).map(|(_, tags, ..)| tags)
+                    }?;
                     Some(tags.get("PARTS_MATERIAL").map_or(Vec::new(), |places| {
                         places.iter().map(|&statement| (files[language], statement)).collect()
                     }))
@@ -148,8 +162,16 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
                     entry: vec![("item", S32), ("count", S32)],
                     count: (0, MATERIALS_MOST),
                     per_line: 1,
+                    grow: true,
                 },
             );
+            // the block in every language's file, the English first
+            record.block.push((files[LABELS], *first, *last));
+            for (language, blocks) in found.iter().enumerate().filter(|(language, _)| *language != LABELS) {
+                if let Some((.., first, last)) = blocks.get(&id) {
+                    record.block.push((files[language], *first, *last));
+                }
+            }
             parts.push(record);
         }
     }
@@ -163,6 +185,7 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
                 }
                 let at = [(file, statement)];
                 let mut record = Record::new(&[("town", Value::from(town(number))), ("number", Value::from(index))]);
+                record.block = vec![(file, statement, statement)];
                 record.arg("part", S32, &at, 0);
                 record.field("position", Kind::Float, Place::Args { at: at.to_vec(), arg: 1, len: 3 });
                 record.arg("angle", S32, &at, 4);
@@ -171,11 +194,125 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
         }
     }
     let [fixed, starting] = placed;
+    let rivers = river_sections(&scripts);
     let mut table = Table::new("a Georama table", scripts, Vec::new());
+    let count_of = |table: &Table, tag: &str, files: std::ops::Range<usize>| -> Vec<(usize, usize, usize)> {
+        files.filter_map(|file| data_table::tagged(&table.scripts[file], tag).last().map(|&at| (file, at, 0))).collect()
+    };
+    let languages = (0..TOWNS * LANGUAGES).map(|file| (file, file % LANGUAGES)).collect();
     table.section("parts", &["town", "part"], parts);
-    table.section("fixed_parts", &["town", "number"], fixed);
-    table.section("starting_parts", &["town", "number"], starting);
+    table.adding(Adding {
+        counts: count_of(&table, "EDIT_PARTS_NUM", 0..TOWNS * LANGUAGES),
+        most: PARTS_MOST,
+        why: "GEORAMA_PARTS_LIST_MAX, the editor's lists of parts",
+        key_args: vec![("part", "ID", 0, Kind::Int(0, PART_ID_MOST))],
+        label_args: vec![("name", "EDIT_PARTS", 0, NAME_MOST), ("comment", "PARTS_COMMENT", 0, 0xFF)],
+        languages,
+        ..Adding::default()
+    });
+    let configs = TOWNS * LANGUAGES..TOWNS * LANGUAGES + TOWNS;
+    for (name, tag, records) in
+        [("fixed_parts", "FIX_EPARTS_START", fixed), ("starting_parts", "INIT_EPARTS_START", starting)]
+    {
+        let counts = count_of(&table, tag, configs.clone());
+        table.section(name, &["town", "number"], records);
+        table.adding(Adding {
+            counts,
+            most: PLACED_MOST,
+            why: "the parts placed in a town (CEditMap::CreateTable)",
+            place: Some("number"),
+            ..Adding::default()
+        });
+    }
+    for (name, keys, records) in rivers {
+        table.section(name, &keys, records);
+    }
+    // MakeDownLoadAnaunce reads g01's parts file into a 0x7800-byte stack buffer, aligned first
+    table.limits = (0..LANGUAGES).map(|file| (file, 0x7800 - 0x30, "MakeDownLoadAnaunce's stack buffer")).collect();
     Ok(table)
+}
+
+/// The rivers and water of each town's cfg (CEditMap::LoadEditInfo, emap_tag, and CMap::LoadCfgFile):
+/// `RIVER_PARTS_NAME slot, "map part", "model.mds";` (slots 0 to 7), `WATER_PARTS_NAME
+/// "model.mds";` and `MASK_PARTS_NAME 0, "model.mds";` between `EDIT_RIVER` and `EDIT_RIVER_END`;
+/// `WATER_SURFACE_START;` .. `WATER_SURFACE_END;` blocks of `WATER_VERTEX nx, nz, x0, y0, z0, x1,
+/// y1, z1;`, `WATER_POS x, y, z;` and `WATER_PARAM a, b, c, d;`; and `WATER_DRAW surface, "part or
+/// #followN", x, y, z;`.
+fn river_sections(scripts: &[Script]) -> Vec<(&'static str, Vec<&'static str>, Vec<Record>)> {
+    let mut rivers = Vec::new();
+    let mut water = Vec::new();
+    let mut surfaces = Vec::new();
+    let mut draws = Vec::new();
+    for number in 0..TOWNS {
+        let file = TOWNS * LANGUAGES + number;
+        let script = &scripts[file];
+        let keys = |key: &str, value: Value| Record::new(&[("town", Value::from(town(number))), (key, value)]);
+        let args = |at: usize| script.statements[at].args().len();
+        for at in data_table::tagged(script, "RIVER_PARTS_NAME") {
+            if args(at) < 3 {
+                continue;
+            }
+            let slot = script.statements[at].values()[0].int();
+            let mut record = keys("slot", Value::from(slot));
+            record.arg("part", Kind::Text(63), &[(file, at)], 1).arg("model", Kind::Text(63), &[(file, at)], 2);
+            rivers.push(record);
+        }
+        let mut record = Record::new(&[("town", Value::from(town(number)))]);
+        if let Some(&at) = data_table::tagged(script, "WATER_PARTS_NAME").last().filter(|&&at| args(at) >= 1) {
+            record.arg("model", Kind::Text(63), &[(file, at)], 0);
+        }
+        if let Some(&at) = data_table::tagged(script, "MASK_PARTS_NAME").last().filter(|&&at| args(at) >= 2) {
+            record.arg("mask_model", Kind::Text(63), &[(file, at)], 1);
+        }
+        if !record.fields.is_empty() {
+            water.push(record);
+        }
+        let mut current: Option<Record> = None;
+        for (at, statement) in script.statements.iter().enumerate() {
+            let place = [(file, at)];
+            match statement.tag.as_str() {
+                "WATER_SURFACE_START" => {
+                    current = Some(keys(
+                        "surface",
+                        Value::from(
+                            surfaces.iter().filter(|record: &&Record| record.keys[0].1 == town(number)).count(),
+                        ),
+                    ))
+                }
+                "WATER_VERTEX" if args(at) >= 8 => {
+                    if let Some(record) = current.as_mut() {
+                        record.field("grid", S32, Place::Args { at: place.to_vec(), arg: 0, len: 2 });
+                        record.field("corners", Kind::Float, Place::Args { at: place.to_vec(), arg: 2, len: 6 });
+                    }
+                }
+                "WATER_POS" if args(at) >= 3 => {
+                    if let Some(record) = current.as_mut() {
+                        record.field("position", Kind::Float, Place::Args { at: place.to_vec(), arg: 0, len: 3 });
+                    }
+                }
+                "WATER_PARAM" if args(at) >= 4 => {
+                    if let Some(record) = current.as_mut() {
+                        record.field("params", Kind::Float, Place::Args { at: place.to_vec(), arg: 0, len: 4 });
+                    }
+                }
+                "WATER_SURFACE_END" => surfaces.extend(current.take()),
+                "WATER_DRAW" if args(at) >= 5 => {
+                    let index = draws.iter().filter(|record: &&Record| record.keys[0].1 == town(number)).count();
+                    let mut record = keys("number", Value::from(index));
+                    record.arg("surface", S32, &place, 0).arg("follow", Kind::Text(63), &place, 1);
+                    record.field("position", Kind::Float, Place::Args { at: place.to_vec(), arg: 2, len: 3 });
+                    draws.push(record);
+                }
+                _ => {}
+            }
+        }
+    }
+    vec![
+        ("rivers", vec!["town", "slot"], rivers),
+        ("water", vec!["town"], water),
+        ("water_surfaces", vec!["town", "surface"], surfaces),
+        ("water_draws", vec!["town", "number"], draws),
+    ]
 }
 
 #[cfg(test)]
@@ -205,6 +342,64 @@ mod tests {
             assert!(text.contains("MAX_NUM 99") || text.contains("MAX_NUM  99"), "language {language}");
         }
         assert_eq!(again.to_json()["parts"][0]["materials"], json!([{"item": 210, "count": 1}]));
+        // a fifth material is refused, a missing one added as a line
+        let five = json!([{"item": 1, "count": 1}, {"item": 2, "count": 1}, {"item": 3, "count": 1}, {"item": 4, "count": 1}, {"item": 5, "count": 1}]);
+        let edit = json!({"parts": [{"town": first["town"], "part": first["part"], "materials": five}]});
+        assert!(table.changes(&edit, "m").unwrap_err().to_string().contains("5 entries"));
+        // a new part: a copy of another in every language, with an ID no town uses
+        let json = table.to_json();
+        let used: Vec<i64> =
+            json["parts"].as_array().unwrap().iter().map(|part| part["part"].as_i64().unwrap()).collect();
+        let free = (0..=PART_ID_MOST).find(|id| !used.contains(id)).unwrap();
+        let new = json!({"parts": [{"town": first["town"], "part": free, "like": first["part"], "name": {"en": "New Hut", "fr": "Hutte"},
+            "comment": "A new hut.", "max": 3}]});
+        let (edits, _) = table.changes(&new, "m").unwrap();
+        let written = table.apply(&edits).unwrap();
+        let again = read(&written).unwrap();
+        let part =
+            again.to_json()["parts"].as_array().unwrap().iter().find(|part| part["part"] == free).unwrap().clone();
+        assert_eq!((&part["name"], &part["max"], &part["model"]), (&json!("New Hut"), &json!(3), &first["model"]));
+        for language in 0..LANGUAGES {
+            let text = String::from_utf8_lossy(&written[language]).into_owned();
+            let count = |data: &[u8]| {
+                let script = Script::parse(data).unwrap();
+                let at = *data_table::tagged(&script, "EDIT_PARTS_NUM").last().unwrap();
+                script.statements[at].values()[0].int()
+            };
+            assert_eq!(count(&written[language]), count(&files[language]) + 1, "{language}");
+            assert!(
+                text.contains(if language == 2 { "EDIT_PARTS \"Hutte\";" } else { "EDIT_PARTS \"New Hut\";" }),
+                "{language}"
+            );
+            assert!(text.contains(&format!("ID {free};")) || text.contains(&format!("ID {free} ;")), "{language}");
+        }
+        let refused = |edit: Value| table.changes(&edit, "m").unwrap_err().to_string();
+        let taken = json!({"parts": [{"town": "g02", "part": first["part"], "like": json!({"town": "g02", "part": used[60]})}]});
+        assert!(refused(taken).contains("game's own"));
+        let high = json!({"parts": [{"town": first["town"], "part": 128, "like": first["part"], "name": "x"}]});
+        assert!(refused(high).contains("0 to 127"));
+        let long =
+            json!({"parts": [{"town": first["town"], "part": free, "like": first["part"], "name": "x".repeat(48)}]});
+        assert!(refused(long).contains("47 bytes"));
+        // a new starting part, counted in INIT_EPARTS_START
+        let starts = json["starting_parts"].as_array().unwrap().iter().filter(|part| part["town"] == "g01").count();
+        let start = json!({"starting_parts": [{"town": "g01", "number": starts, "like": {"town": "g01", "number": 0}, "position": [1.5, 0, 2]}]});
+        let (edits, _) = table.changes(&start, "m").unwrap();
+        let written = table.apply(&edits).unwrap();
+        let config = String::from_utf8_lossy(&written[TOWNS * LANGUAGES]).into_owned();
+        assert!(config.contains(&format!("INIT_EPARTS_START {};", starts + 1)), "{config}");
+        let again = read(&written).unwrap().to_json();
+        let added =
+            again["starting_parts"].as_array().unwrap().iter().rfind(|part| part["town"] == "g01").unwrap().clone();
+        assert_eq!(added["position"], json!([1.5, 0, 2]));
+        // rivers and water read and edit
+        assert_eq!(json["rivers"].as_array().unwrap().len(), 16);
+        let river = json!({"rivers": [{"town": "g01", "slot": 0, "model": "g010501_r-m.mds"}],
+            "water_surfaces": [{"town": "g01", "surface": 0, "params": [0.2, 0.0045, 0.0, 16.0]}]});
+        let (edits, _) = table.changes(&river, "m").unwrap();
+        let config = String::from_utf8_lossy(&table.apply(&edits).unwrap()[TOWNS * LANGUAGES]).into_owned();
+        assert!(config.contains("RIVER_PARTS_NAME 0,\"p04_g0105\",\"g010501_r-m.mds\";"));
+        assert!(config.contains("WATER_PARAM 0.2,0.0045,0.0,16.0;"), "{config}");
         eprintln!(
             "{} parts, {} fixed and {} starting parts round-trip",
             table.sections[0].records.len(),

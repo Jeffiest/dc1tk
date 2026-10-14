@@ -4,15 +4,17 @@
 //! mds.py, mot.py, info_cfg.py, to_gltf.py, from_gltf.py, models.py) do.
 
 pub mod cfg_text;
+pub mod chest_data;
 pub mod data_table;
 pub mod dungeon_data;
 pub mod dungeon_layout;
 pub mod exe_tables;
 pub mod fishing_data;
 pub mod folder;
-pub mod georama_data;
+pub mod font;
 pub mod from_gltf;
 pub mod game_data;
+pub mod georama_data;
 pub mod ids;
 pub mod im3;
 pub mod info_cfg;
@@ -27,10 +29,10 @@ pub mod map_transform;
 pub mod mapfile;
 pub mod mds;
 pub mod models;
-pub mod music;
 pub mod monster_data;
 pub mod mot;
 pub mod motions;
+pub mod music;
 pub mod py;
 pub mod sequence;
 pub mod shop_data;
@@ -40,6 +42,7 @@ pub mod sounds;
 pub mod text;
 pub mod textures;
 pub mod to_gltf;
+pub mod town_data;
 pub mod tree;
 pub mod tree_check;
 

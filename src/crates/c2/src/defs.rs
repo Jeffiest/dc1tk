@@ -1,5 +1,5 @@
 //! c2 defs: learn a definition set from edited source, report how much of a disc it names, list
-//! what it leaves unnamed, and record which disc it is for.
+//! what it leaves unnamed, rename a constant of its headers, bring trees made before a rename up to date, and record which disc it is for.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -8,7 +8,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use rayon::prelude::*;
 
-use c2_script::{coverage, definitions, learn, sdk};
+use c2_script::{constants, coverage, definitions, learn, sdk};
 
 use crate::files;
 use crate::tree_decompile::disc_match_text;
@@ -37,6 +37,30 @@ pub enum DefsCommand {
         /// Rows to print.
         #[arg(long, default_value_t = 50, allow_negative_numbers = true)]
         limit: i64,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// Rename a constant of a definition set's headers (a flag, a music file), with what the set
+    /// says about it and its uses in decompiled trees and mods.
+    Rename {
+        /// Definition set directory whose include/ headers declare the constant.
+        set: PathBuf,
+        /// The constant's name now.
+        old: String,
+        /// Its new name.
+        new: String,
+        /// A decompiled tree or mod folder whose source uses the constant; repeat for more.
+        #[arg(long = "in")]
+        folders: Vec<PathBuf>,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// Give decompiled trees and mods made before a definition set renamed constants the new
+    /// names (every rename the sets record in renamed.json).
+    Migrate {
+        /// Decompiled trees or mod folders.
+        #[arg(required = true)]
+        folders: Vec<PathBuf>,
         #[command(flatten)]
         common: Common,
     },
@@ -78,6 +102,34 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
                 .map(|path| Ok((path.clone(), std::fs::read(extracted.join(path))?)))
                 .collect::<Result<_>>()?;
             println!("{}", disc_match_text(&defs, &definitions::disc_differences(&scripts, &defs, "")));
+            Ok(ExitCode::SUCCESS)
+        }
+        DefsCommand::Rename { set, old, new, folders, common } => {
+            let defs = common.definitions()?;
+            let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
+            let renamed = constants::rename(set, old, new, &headers, folders)?;
+            for file in &renamed.set_files {
+                println!("renamed in {}", files::python_path(&file.to_string_lossy()));
+            }
+            for (folder, changed) in &renamed.folders {
+                println!(
+                    "{} file{} renamed in {}",
+                    changed.len(),
+                    if changed.len() == 1 { "" } else { "s" },
+                    files::python_path(&folder.to_string_lossy())
+                );
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        DefsCommand::Migrate { folders, common } => {
+            for (folder, changed) in constants::migrate(&common.def_sets(), folders)? {
+                println!(
+                    "{} file{} given new names in {}",
+                    changed.len(),
+                    if changed.len() == 1 { "" } else { "s" },
+                    files::python_path(&folder.to_string_lossy())
+                );
+            }
             Ok(ExitCode::SUCCESS)
         }
         DefsCommand::Disc { extracted, into, common } => {

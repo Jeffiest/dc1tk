@@ -56,9 +56,9 @@ static inline void start_turning_to_target(float *angle, float turn_speed)
   `DIRECT`, `wait`, `end`, `skip_end`, `print`, `sin` and `cos` so that
   `clang -m32 -fsyntax-only -x c -std=c2x -I sdk` reads a script. `-m32`
   matches the PS2 and lets `any` hold a pointer. For mod patches it also
-  gives `NEW_FLAG`, `NEW_PROGRAM` and `NEW_MONSTER_VAR` (as placeholder
-  constants), `original(...)` and the `LANGUAGE` names, which the compiler
-  knows itself (see [usage](usage.md#mods)).
+  gives `NEW_FLAG`, `NEW_COUNTER`, `NEW_PROGRAM` and `NEW_MONSTER_VAR` (as
+  placeholder constants), `original(...)` and the `LANGUAGE` names, which
+  the compiler knows itself (see [usage](usage.md#mods)).
 
 Signatures accept every call the retail scripts make, so the decompiled disc
 passes clang's type checks. Where a retail call disagrees with what the
