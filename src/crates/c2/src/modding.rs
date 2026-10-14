@@ -432,6 +432,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             );
         }
     }
+    let (files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files)?;
+    for item in &map_changes {
+        println!("replaced: {} (map:{}; mod {}, {} bytes, was {})", item.path, item.map, item.module, item.new, item.old);
+    }
     let written = rebuild::write_disc(&args.iso, &args.output, &files)?;
     for item in &written.placed {
         let how = if item.added {
@@ -461,7 +465,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     println!(
         "{} scripts changed, {} game files replaced or added, {} disc files rewritten, written to {}",
         found.scripts.len(),
-        replaced.len() + changed.len(),
+        replaced.len() + changed.len() + map_changes.len(),
         files.len(),
         shown(&args.output)
     );

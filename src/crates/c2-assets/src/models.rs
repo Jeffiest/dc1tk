@@ -246,7 +246,8 @@ pub fn build_map_model(given: &Gltf, original: &[u8], options: &to_gltf::Options
     let mut exported = Folder::new();
     to_gltf::export_model(&model, &mut exported, "model", options)?;
     let before = load_from_folder(&exported, "model.gltf")?;
-    let meshes = from_gltf::changed_meshes(&before, given, &model)?;
+    // by geometry: a map's glTF goes through Blender, which rewrites unedited meshes another way
+    let meshes = from_gltf::changed_geometry(&before, given, &model)?;
     let import = from_gltf::ImportOptions { collision: options.collision };
     Ok(from_gltf::import_with(given, original, None, None, Some(&meshes), &import)?.mds)
 }

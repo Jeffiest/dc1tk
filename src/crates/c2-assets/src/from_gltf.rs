@@ -705,6 +705,189 @@ pub fn mesh_contents(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, String
     Ok(out)
 }
 
+/// A mesh as values: its node's matrix and, per material (by name, without a `.NNN` suffix), its
+/// triangles' corners (position, then first UVs and colour when it has them).
+pub struct Geometry {
+    pub matrix: Vec<f64>,
+    pub groups: BTreeMap<String, Vec<[Vec<f64>; 3]>>,
+}
+
+/// {mesh: its geometry}, for comparing a glTF that went through another tool (Blender), which
+/// splits and reorders vertices, recomputes normals, adds float noise and moves colours by a step.
+pub fn mesh_geometry(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, Geometry>> {
+    fn strip_suffix(name: &str) -> &str {
+        match name.rsplit_once('.') {
+            Some((stem, digits)) if digits.len() == 3 && digits.chars().all(|c| c.is_ascii_digit()) => stem,
+            _ => name,
+        }
+    }
+    let mut out = BTreeMap::new();
+    let nodes = item(&gltf.json, "nodes")?.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
+    for (gi, id) in mesh_ids(&gltf.json, model)? {
+        let node = &nodes[gi];
+        let list = |key: &str| -> Option<Vec<f64>> {
+            node.get(key).and_then(Value::as_list).map(|l| l.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
+        };
+        let matrix = match list("matrix").filter(|m| m.len() == 16) {
+            Some(m) => m,
+            None => {
+                let t = list("translation").filter(|v| v.len() == 3).unwrap_or(vec![0.0; 3]);
+                let s = list("scale").filter(|v| v.len() == 3).unwrap_or(vec![1.0; 3]);
+                let q = list("rotation").filter(|v| v.len() == 4).unwrap_or(vec![0.0, 0.0, 0.0, 1.0]);
+                let (x, y, z, w) = (q[0], q[1], q[2], q[3]);
+                let r = [
+                    [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+                    [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+                    [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+                ];
+                // column-major, as glTF writes a matrix
+                let mut m = vec![0.0; 16];
+                for col in 0..3 {
+                    for row in 0..3 {
+                        m[col * 4 + row] = r[row][col] * s[col];
+                    }
+                }
+                m[12] = t[0];
+                m[13] = t[1];
+                m[14] = t[2];
+                m[15] = 1.0;
+                m
+            }
+        };
+        let mesh = index(item(&gltf.json, "meshes")?, item(node, "mesh")?)?;
+        let Some(primitives) = item(mesh, "primitives")?.as_list() else {
+            bail!("'primitives' is not a list");
+        };
+        let mut groups: BTreeMap<String, Vec<[Vec<f64>; 3]>> = BTreeMap::new();
+        for primitive in primitives {
+            let material = match primitive.get("material") {
+                Some(number) => {
+                    let found = index(item(&gltf.json, "materials")?, number)?;
+                    strip_suffix(found.get("name").and_then(Value::as_str).unwrap_or("")).to_string()
+                }
+                None => String::new(),
+            };
+            let attributes = item(primitive, "attributes")?;
+            let read = |key: &str| -> Result<Option<Values>> {
+                match attributes.get(key) {
+                    Some(at) if !matches!(at, Value::Null) => Ok(Some(accessor(gltf, at)?)),
+                    _ => Ok(None),
+                }
+            };
+            let Some(positions) = read("POSITION")? else {
+                continue;
+            };
+            let (uvs, colors) = (read("TEXCOORD_0")?, read("COLOR_0")?);
+            let corner = |at: i64| -> Result<Vec<f64>> {
+                let mut values: Vec<f64> = positions.at(at)?.iter().map(|v| v.f()).collect();
+                if let Some(uvs) = &uvs {
+                    values.extend(uvs.at(at)?.iter().map(|v| v.f()));
+                }
+                if let Some(colors) = &colors {
+                    values.extend(colors.at(at)?.iter().map(|v| v.f()));
+                }
+                Ok(values)
+            };
+            let order: Vec<i64> = match primitive.get("indices") {
+                Some(at) if !matches!(at, Value::Null) => {
+                    let values = accessor(gltf, at)?;
+                    (0..values.len()).map(|i| values.at(i as i64).map(|v| v[0].f() as i64)).collect::<Result<_>>()?
+                }
+                _ => (0..positions.len() as i64).collect(),
+            };
+            let triangles = groups.entry(material).or_default();
+            for triangle in order.chunks(3).filter(|chunk| chunk.len() == 3) {
+                let corners = [corner(triangle[0])?, corner(triangle[1])?, corner(triangle[2])?];
+                let same = |a: &Vec<f64>, b: &Vec<f64>| a.iter().zip(b).take(3).all(|(x, y)| (x - y).abs() < 1e-9);
+                if same(&corners[0], &corners[1]) || same(&corners[1], &corners[2]) || same(&corners[0], &corners[2]) {
+                    continue;
+                }
+                triangles.push(corners);
+            }
+        }
+        out.insert(id, Geometry { matrix, groups });
+    }
+    Ok(out)
+}
+
+/// Whether two meshes are the same within what another tool's round trip moves: matrices within
+/// 1e-3 (of the larger of 1 and the value), and every triangle of one matched by a triangle of the
+/// other in any corner order (winding kept): positions within 0.005, UVs within 0.001, colours
+/// within 4/255.
+fn same_geometry(a: &Geometry, b: &Geometry) -> bool {
+    let close = |x: f64, y: f64, tolerance: f64| (x - y).abs() <= tolerance * x.abs().max(y.abs()).max(1.0);
+    if a.matrix.len() != b.matrix.len() || !a.matrix.iter().zip(&b.matrix).all(|(x, y)| close(*x, *y, 1e-3)) {
+        return false;
+    }
+    if a.groups.keys().ne(b.groups.keys()) {
+        return false;
+    }
+    // Blender writes vertex colours without alpha: a corner that lost only its alpha compares on
+    // the rest
+    let corner_close = |x: &[f64], y: &[f64]| -> bool {
+        x.len().abs_diff(y.len()) <= 1
+            && x.iter().zip(y).enumerate().all(|(at, (p, q))| {
+                let tolerance = match at {
+                    0..=2 => 0.005,
+                    3 | 4 if x.len().max(y.len()) == 5 || x.len().max(y.len()) == 9 => 0.001,
+                    _ => 4.0 / 255.0,
+                };
+                close(*p, *q, tolerance)
+            })
+    };
+    let tri_close = |x: &[Vec<f64>; 3], y: &[Vec<f64>; 3]| -> bool {
+        (0..3).any(|r| (0..3).all(|k| corner_close(&x[k], &y[(k + r) % 3])))
+    };
+    // triangles found by their centroid in cells of one unit, looking in the cells around it too
+    let cell = |tri: &[Vec<f64>; 3]| -> (i64, i64, i64) {
+        let c = |axis: usize| ((tri[0][axis] + tri[1][axis] + tri[2][axis]) / 3.0).floor() as i64;
+        (c(0), c(1), c(2))
+    };
+    for (material, xs) in &a.groups {
+        let ys = &b.groups[material];
+        if xs.len() != ys.len() {
+            return false;
+        }
+        let mut cells: HashMap<(i64, i64, i64), Vec<usize>> = HashMap::new();
+        for (at, y) in ys.iter().enumerate() {
+            cells.entry(cell(y)).or_default().push(at);
+        }
+        let mut used = vec![false; ys.len()];
+        for x in xs {
+            let (cx, cy, cz) = cell(x);
+            let mut found = false;
+            'search: for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        for &at in cells.get(&(cx + dx, cy + dy, cz + dz)).into_iter().flatten() {
+                            if !used[at] && tri_close(x, &ys[at]) {
+                                used[at] = true;
+                                found = true;
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+            }
+            if !found {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// The meshes whose geometry (mesh_geometry) differs from the export's, or that it does not have.
+pub fn changed_geometry(exported: &Gltf, given: &Gltf, model: &Mds) -> Result<BTreeSet<MeshId>> {
+    let before = mesh_geometry(exported, model)?;
+    let after = mesh_geometry(given, model)?;
+    Ok(after
+        .into_iter()
+        .filter(|(id, geometry)| !before.get(id).is_some_and(|old| same_geometry(old, geometry)))
+        .map(|(id, _)| id)
+        .collect())
+}
+
 /// The meshes of the given glTF that differ from the export's, or that the export does not have.
 pub fn changed_meshes(exported: &Gltf, given: &Gltf, model: &Mds) -> Result<BTreeSet<MeshId>> {
     let before = mesh_contents(exported, model)?;
@@ -1222,3 +1405,4 @@ fn world_of(
     world.insert(i, m.clone());
     Ok(m)
 }
+

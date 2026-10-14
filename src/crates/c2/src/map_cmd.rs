@@ -201,3 +201,92 @@ pub fn run_map_export(args: &MapExportArgs) -> Result<ExitCode> {
     println!("{}", export_one(&disc, name, &out, None)?);
     Ok(ExitCode::SUCCESS)
 }
+
+/// What a mod's map: lines changed, for build to print.
+pub struct MapChange {
+    pub module: String,
+    pub map: String,
+    pub path: String,
+    pub old: usize,
+    pub new: usize,
+}
+
+/// Builds the chosen mods' map: lines (an edited scene of `c2 map-export`) into the disc files:
+/// the map's .map rebuilt from the scene, and the models whose meshes changed rebuilt into their
+/// model packs. `files` holds what the build already rewrote, by DATA.DAT path.
+pub fn apply_maps(
+    iso: &Path,
+    mod_dirs: &[PathBuf],
+    files: &c2_script::discfiles::Files,
+) -> Result<(c2_script::discfiles::Files, Vec<MapChange>)> {
+    let lines: Vec<c2_script::replace::Line> =
+        c2_script::replace::all_lines(mod_dirs)?.into_iter().filter(|line| line.is_map()).collect();
+    let mut out = files.clone();
+    let mut changes = Vec::new();
+    if lines.is_empty() {
+        return Ok((out, changes));
+    }
+    let disc = Disc::open(iso)?;
+    for line in &lines {
+        let name = line.map_name();
+        let found = mapedit::map_files(disc.entries(), &name)?;
+        // a file an earlier step rewrote is the one to build on
+        let current = |path: &str| -> Result<Vec<u8>> {
+            match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
+                Some((_, data)) => Ok(data.clone()),
+                None => disc.read(path),
+            }
+        };
+        let original = current(&found.map)?;
+        let mut packs = Vec::new();
+        let mpk = match &found.mpk {
+            Some(path) => {
+                let data = current(path)?;
+                for (pcp, pcp_data) in members(&data) {
+                    packs.push(ModelPack::new(&pcp, members(&pcp_data)));
+                }
+                Some((path.clone(), data))
+            }
+            None => None,
+        };
+        let search = texture_search(&disc, &found)?;
+        let folder = line.file.parent().map(Path::to_path_buf).unwrap_or_default();
+        let read = |relative: &str| -> c2_assets::Result<Vec<u8>> {
+            let path = relative.split('/').fold(folder.clone(), |path, part| path.join(part));
+            fs::read(&path).map_err(|error| c2_assets::Error::invalid(format!("{}: {error}", path.display())))
+        };
+        let gltf = fs::read(&line.file).with_context(|| line.file.display().to_string())?;
+        let imported = c2_assets::map_import::import_map(&gltf, &read, &original, &packs, &search)
+            .with_context(|| format!("{} (mod {})", line.key, line.module))?;
+        for note in &imported.notes {
+            println!("note: {} (mod {}): {note}", line.key, line.module);
+        }
+        if let Some(text) = imported.map {
+            changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: found.map.clone(), old: original.len(), new: text.len() });
+            out.insert(found.map.clone(), text);
+        }
+        if !imported.models.is_empty() {
+            let Some((mpk_path, mut mpk_data)) = mpk else {
+                bail!("{} (mod {}): the map has no model pack to rebuild models in", line.key, line.module);
+            };
+            let old_size = mpk_data.len();
+            for (model, data) in &imported.models {
+                let Some(pack) = packs.iter().find(|pack| pack.files.contains_key(&model.to_lowercase())) else {
+                    continue;
+                };
+                // the member's own spelling, as the pack lists it
+                let pcp_data = members(&mpk_data).into_iter().find(|(name, _)| name.eq_ignore_ascii_case(&pack.name)).map(|(_, data)| data);
+                let member = pcp_data
+                    .as_deref()
+                    .map(members)
+                    .and_then(|list| list.into_iter().find(|(name, _)| name.eq_ignore_ascii_case(model)).map(|(name, _)| name))
+                    .unwrap_or_else(|| model.clone());
+                mpk_data = c2_disc::rebuild::replaced_member(&mpk_data, &[pack.name.clone(), member.clone()], data)?;
+                println!("  {} (map {}): rebuilt {} in {}", line.module, name, member, pack.name);
+            }
+            changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: mpk_path.clone(), old: old_size, new: mpk_data.len() });
+            out.insert(mpk_path, mpk_data);
+        }
+    }
+    Ok((out, changes))
+}
