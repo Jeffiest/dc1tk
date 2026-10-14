@@ -41,7 +41,7 @@ fn int(value: i128) -> Value {
 fn initializers_and_declarations_anywhere() {
     same(
         "void f(void)\n{\n    int a = 1;\n    wait;\n    float b = 2.0;\n    int c[3] = {4, 5};\n}\n",
-        "void f(void)\n{\n    int a;\n    float b;\n    int c[3];\n\n    a = 1;\n    wait;\n    b = 2.0;\n    c[0] = 4;\n    c[1] = 5;\n}\n",
+        "void f(void)\n{\n    int a;\n    float b;\n    int c[3];\n\n    a = 1;\n    wait;\n    b = 2.0;\n    c[0] = 4;\n    c[1] = 5;\n    c[2] = 0;\n}\n",
         HEAD,
     );
     same(
@@ -171,10 +171,13 @@ fn string_variables_hold_strings() {
 fn errors_name_the_line() {
     fails("void f(void)\n{\n    wait;\n    nope = 1;\n}\n", "line 9: unknown variable nope");
     fails("int g[2];\n", "global arrays are not supported");
-    fails("int g = 1;\n", "globals start at 0");
-    fails("#define TWICE(x) ((x) * 2)\n", "macros with parameters");
+    fails("int h;\nint g = h;\nvoid f(void)\n{\n}\n", "the value of global g must be a constant expression, not h");
+    fails(
+        "#define TWICE(x) ((x) * 2)\nvoid f(void)\n{\n    TWICE(1, 2);\n}\n",
+        "line 9: macro TWICE takes 1 argument, given 2",
+    );
     fails("void f(void)\n{\n#if 1\n}\n", "#if without #endif");
-    fails("void f(void)\n{\n    int a;\n    float a;\n}\n", "declared again with another type");
+    fails("void f(void)\n{\n    int a;\n    float a;\n}\n", "a is declared twice in one block");
     fails("void f(void)\n{\n    break;\n}\n", "break outside a loop or switch");
 }
 
@@ -246,4 +249,26 @@ fn dividing_by_zero_stops_the_test_vm_as_it_stops_the_game() {
             Ok(value) => panic!("divided by zero: {text} gave {value:?}"),
         }
     }
+}
+
+// Standard C's forms meet the c2s ones: natives, the SDK's kinds, hoisted results.
+
+#[test]
+fn natives_work_in_cs_new_forms() {
+    let text = "#define READ(n) get_counter(n)\nstatic int calls;\nint lives = 3;\n\nint f(void)\n{\n    static int seen = 2;\n    unsigned char low = READ(3) + 300;\n    flag which = 5;\n    int i;\n\n    for (i = 0, calls++; i < 2 && get_flag(which); i++) {\n        goto out;\n    }\nout:\n    seen++;\n    return low + seen * 1000 + lives * 100 + calls;\n}\n";
+    // natives do nothing in the test VM, so their results are 0
+    let table = common::functions(&format!("{EVENT}{text}")).unwrap();
+    let found = common::run_function(&table, "f", vec![], vec![int(0); 8]).unwrap();
+    assert_eq!(found, int(44 + 3000 + 300 + 1));
+}
+
+#[test]
+fn hidden_globals_and_the_runtime_are_added_only_when_used() {
+    let global_num = |bytes: &[u8]| i32::from_le_bytes(bytes[0x18..0x1c].try_into().unwrap());
+    let plain = built("int g;\n\nint f(void)\n{\n    return g / 2;\n}\n", HEAD).unwrap();
+    let initialised = built("int g = 4;\n\nint f(void)\n{\n    return g / 2;\n}\n", HEAD).unwrap();
+    let unsigned = built("unsigned g;\n\nint f(void)\n{\n    return g / 2;\n}\n", HEAD).unwrap();
+    assert!(initialised.len() > plain.len() && unsigned.len() > plain.len());
+    // the flag that sets the values once is a global of its own
+    assert_eq!((global_num(&plain), global_num(&initialised), global_num(&unsigned)), (1, 2, 1));
 }

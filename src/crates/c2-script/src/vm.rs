@@ -126,6 +126,11 @@ pub fn lines_table(text: &str) -> Result<Functions> {
     Ok(found)
 }
 
+/// An int as the VM's 32 bits hold it.
+fn wrapped(value: i128) -> i128 {
+    value as i32 as i128
+}
+
 fn truncated(left: i128, right: i128) -> i128 {
     let quotient = left.abs() / right.abs();
     if (left < 0) == (right < 0) {
@@ -140,7 +145,8 @@ fn arithmetic(op: &str, left: &Value, right: &Value) -> Result<Value> {
         return Err(Error::invalid("division by zero, which stops the game's VM"));
     }
     if let (Value::Int(a), Value::Int(b)) = (left, right) {
-        return Ok(Value::Int(match op {
+        // the game's ints are 32 bits, and its arithmetic wraps
+        return Ok(Value::Int(wrapped(match op {
             "add" => a + b,
             "sub" => a - b,
             "mul" => a * b,
@@ -148,7 +154,7 @@ fn arithmetic(op: &str, left: &Value, right: &Value) -> Result<Value> {
             "mod" => a - b * truncated(*a, *b),
             "and" => a & b,
             _ => a | b,
-        }));
+        })));
     }
     let (a, b) = (left.number()?, right.number()?);
     Ok(match op {
@@ -255,9 +261,11 @@ impl<'a> Machine<'a> {
                     } else if let Ok(value) = word(1).parse::<i128>() {
                         Value::Int(value)
                     } else {
-                        Value::Float(c2_py::parse_float(word(1)).ok_or_else(|| {
+                        // a constant is a 32-bit float, as the assembler writes it
+                        let value = c2_py::parse_float(word(1)).ok_or_else(|| {
                             Error::invalid(format!("could not convert string to float: '{}'", word(1)))
-                        })?)
+                        })?;
+                        Value::Float(value as f32 as f64)
                     };
                     stack.push(value);
                 }
@@ -293,7 +301,7 @@ impl<'a> Machine<'a> {
                 }
                 "neg" => {
                     let value = match pop(&mut stack)? {
-                        Value::Int(value) => Value::Int(-value),
+                        Value::Int(value) => Value::Int(wrapped(-value)),
                         Value::Float(value) => Value::Float(-value),
                         other => return Err(Error::invalid(format!("bad operand type for unary -: {other:?}"))),
                     };

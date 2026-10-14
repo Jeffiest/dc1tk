@@ -160,36 +160,51 @@ This is a made-up script. For a whole mod, see the
 ## Writing your own code
 
 The decompiler writes only the forms above, so retail scripts compile back
-byte for byte. Code you write can also use more of C; each form compiles to
-the VM's own instructions:
+byte for byte. Code you write can use C89 (ANSI C) almost whole, without
+`double`; [the standard](c-standard.md) lists every feature, what the
+compiler does with it, and what is still to come (structs, unions, pointer
+arithmetic, global arrays, function pointers and varargs). Each form compiles
+to the VM's own instructions:
 
 - Declarations anywhere in a function, with initializers: `int count = 0;`,
-  `for (int i = 0; ...)`, `int table[] = {1, 2, 4};`, `int *p = &x;`. Every
-  local still gets one slot for the whole function, so a name declared again
-  in another block reuses the slot, and must have the same type.
-- `for`, `do ... while`, and `switch` with `case`, `default`, fall-through
-  and `break`. `continue` in a `for` runs the step first.
+  `for (int i = 0; ...)`, `int table[] = {1, 2, 4};`, `int grid[3][4];`,
+  `int *p = &x;`, `char name[] = "Max";`. An array's initializer sets the
+  elements it leaves out to 0. Every local gets one slot for the whole
+  function: a name declared again in a block beside another reuses the slot,
+  and one that hides a name of an enclosing block gets a slot of its own.
+- `static` locals, which keep their value between calls, and globals with
+  values (`int lives = 3;`), set once when the script loads, before the first
+  program that starts runs its own code. Global and static arrays and pointers
+  are not supported yet: the VM cannot index a global.
+- `char`, `short`, `long`, `signed` and `unsigned`, with C's widths (char 8
+  bits and signed, short 16, int and long 32) and wrap-around, `const`
+  (checked), `volatile`, `register`, `auto`, `typedef`, `enum` and `sizeof`
+  (1 for a char, 2 for a short, 4 for the rest). `<limits.h>`, `<float.h>` and
+  `<stddef.h>` are in the SDK.
+- `for`, `do ... while`, `switch` with `case`, `default`, fall-through and
+  `break`, and `goto` with labels. `continue` in a `for` runs the step first.
 - `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `++` and
-  `--`, before or after, and `?:`.
+  `--`, before or after, `?:` and the comma operator.
 - `^`, `~`, `<<` and `>>`, which the VM has no instruction for: `a ^ b` is
   worked out as `(a | b) - (a & b)`, `~a` as `-a - 1`, and shifts as
   multiplying or dividing by a power of 2 (a loop when the count is not a
-  constant). `>>` of a negative number rounds toward zero, not down.
-- Bodies without braces (`if (x) wait;`), nested `{ }` blocks and empty
-  statements.
+  constant). `>>` of a negative `int` rounds toward zero, not down; of an
+  `unsigned` value it shifts zeros in.
+- Function prototypes and old-style (K&R) definitions; bodies without braces
+  (`if (x) wait;`), nested `{ }` blocks and empty statements.
 - `string` variables, `int *p` parameters and locals, `*p` for `p[0]`, and an
   array name standing for its first element's address (`fill(table, 3)`).
-- Character literals (`'A'`, `'\n'`) and literal suffixes (`2.5f`, `10u`).
-- `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif` and `#undef`, with
-  `defined(NAME)`; conditions see the file's own `#define`s.
+- C's literals: octal and hexadecimal numbers, suffixes (`2.5f`, `10u`),
+  character constants with every escape, adjacent strings joined.
+- C's preprocessor: macros with parameters, `#` and `##`, `#if` with C's
+  arithmetic and `defined`, `#ifdef`, `#elif`, `#undef`, `#error`, `#line`,
+  `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__` and `__STDC__`. A
+  `#define` whose value is a constant stays a named constant, which is how
+  the decompiler's trees and a header's constants reach code; a header's
+  macros are not seen by the including file's `#if`.
 - Errors name the line.
 
-Not available, because the VM cannot do them: global arrays and global
-pointers (the VM has no indexed access to globals), initialized globals
-(globals start at 0 when the script loads; set them in a program), structs,
-unions, function pointers, `double`, 64-bit and unsigned arithmetic, and
-macros with parameters (write a function). `goto` and multi-dimensional
-arrays are not supported either.
+`double` is refused (the VM's floats are 32 bits); use `float`.
 
 The VM differs from C in ways that matter when writing code:
 
