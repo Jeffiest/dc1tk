@@ -125,7 +125,16 @@ pub fn new_file(pngs: &[(String, Vec<u8>)], like: &im3::Image, power_of_two: boo
     if pngs.is_empty() {
         bail!("no pictures: give PNG files");
     }
-    // a template whose colours read as PS2 alpha (0x80 opaque), so PNG alpha is scaled to it
+    let base = picture_base(like);
+    let mut images = Vec::new();
+    for (name, png) in pngs {
+        images.push(new_picture(name, png, &base, power_of_two, &images)?);
+    }
+    im3::write(&images, None)
+}
+
+/// A template whose colours read as PS2 alpha (0x80 opaque), so PNG alpha is scaled to it.
+fn picture_base(like: &im3::Image) -> im3::Image {
     let mut base = like.clone();
     if base.paletted() {
         let n = base.palette.as_ref().map_or(256, Vec::len).max(1);
@@ -135,34 +144,61 @@ pub fn new_file(pngs: &[(String, Vec<u8>)], like: &im3::Image, power_of_two: boo
         base.pixels = Some(vec![0, 0, 0, 0x80]);
     }
     base.clamp = base.clamp.or(Some(5));
-    let mut images = Vec::new();
-    for (name, png) in pngs {
-        let fail = |message: String| Error::invalid(format!("{name}: {message}"));
-        let latin1 = name.chars().all(|c| (c as u32) < 0x100);
-        if name.is_empty() || !latin1 || name.chars().count() > 0x1F {
-            return Err(fail("a picture's name is 1 to 31 Latin-1 characters".into()));
-        }
-        if images.iter().any(|image: &im3::Image| image.name.eq_ignore_ascii_case(name)) {
-            return Err(fail("two pictures of this name (ignoring case)".into()));
-        }
-        let decoded = im3::read_png(png).map_err(|error| fail(error.to_string()))?;
-        let (w, h) = (decoded.width, decoded.height);
-        if !(1..=MAX_SIDE).contains(&w) || !(1..=MAX_SIDE).contains(&h) {
-            return Err(fail(format!("{w}x{h}: sides are 1 to {MAX_SIDE} texels")));
-        }
-        if power_of_two && !(w.is_power_of_two() && h.is_power_of_two()) {
-            return Err(fail(format!("{w}x{h}: a model's texture has sides that are powers of two")));
-        }
-        if base.format == im3::Format::T8 && base.swizzled && !w.is_multiple_of(16) {
-            return Err(fail(format!("{w}x{h}: this format needs a width that is a multiple of 16")));
-        }
-        let mut image = im3::from_png(png, &base).map_err(|error| fail(error.to_string()))?;
-        image.name = name.clone();
-        image.raw_name = None;
-        image.index = None;
-        images.push(image);
+    base
+}
+
+/// A new picture (no entry index yet) from a PNG in the format of `base` (picture_base), checked
+/// against new_file's rules and the names of `others`.
+fn new_picture(name: &str, png: &[u8], base: &im3::Image, power_of_two: bool, others: &[im3::Image]) -> Result<im3::Image> {
+    let fail = |message: String| Error::invalid(format!("{name}: {message}"));
+    let latin1 = name.chars().all(|c| (c as u32) < 0x100);
+    if name.is_empty() || !latin1 || name.chars().count() > 0x1F {
+        return Err(fail("a picture's name is 1 to 31 Latin-1 characters".into()));
     }
-    im3::write(&images, None)
+    if others.iter().any(|image: &im3::Image| image.name.eq_ignore_ascii_case(name)) {
+        return Err(fail("two pictures of this name (ignoring case)".into()));
+    }
+    let decoded = im3::read_png(png).map_err(|error| fail(error.to_string()))?;
+    let (w, h) = (decoded.width, decoded.height);
+    if !(1..=MAX_SIDE).contains(&w) || !(1..=MAX_SIDE).contains(&h) {
+        return Err(fail(format!("{w}x{h}: sides are 1 to {MAX_SIDE} texels")));
+    }
+    if power_of_two && !(w.is_power_of_two() && h.is_power_of_two()) {
+        return Err(fail(format!("{w}x{h}: a model's texture has sides that are powers of two")));
+    }
+    if base.format == im3::Format::T8 && base.swizzled && !w.is_multiple_of(16) {
+        return Err(fail(format!("{w}x{h}: this format needs a width that is a multiple of 16")));
+    }
+    let mut image = im3::from_png(png, base).map_err(|error| fail(error.to_string()))?;
+    image.name = name.to_string();
+    image.raw_name = None;
+    image.index = None;
+    Ok(image)
+}
+
+/// The texture file (an IM3) with new pictures added at its end, each in the format of its first
+/// picture with pixels and named by the PNG's name, under new_file's rules (powers of two: a map's
+/// textures wrap). Its other entries (#texanime scripts) stay.
+pub fn with_new_pictures(pngs: &[(String, Vec<u8>)], original: &[u8]) -> Result<Vec<u8>> {
+    let mut images = im3::read(original)?;
+    let Some(like) = images.iter().find(|image| !image.no_image) else {
+        bail!("the texture file has no picture with pixels to take a format from");
+    };
+    let base = picture_base(like);
+    for (name, png) in pngs {
+        let picture = new_picture(name, png, &base, true, &images)?;
+        images.push(picture);
+    }
+    im3::write(&images, Some(original))
+}
+
+/// Whether two PNGs hold the same pixels (size and RGBA), however they are encoded.
+pub fn same_pixels(a: &[u8], b: &[u8]) -> Result<bool> {
+    if a == b {
+        return Ok(true);
+    }
+    let (a, b) = (im3::read_png(a)?, im3::read_png(b)?);
+    Ok(a.width == b.width && a.height == b.height && im3::png_rgba(&a)? == im3::png_rgba(&b)?)
 }
 
 /// (picture name, PNG) for every PNG a mod gives for a new texture file: the file itself, or each
@@ -323,5 +359,35 @@ mod tests {
         fails(vec![("a_name_that_is_far_too_long_for_it", rgba_png(16, 16, 0))], false, "31");
         fails(vec![("same", rgba_png(16, 16, 0)), ("SAME", rgba_png(16, 16, 1))], false, "two pictures");
         fails(vec![], false, "no pictures");
+    }
+
+    #[test]
+    fn new_pictures_go_at_the_end_in_the_first_pictures_format() {
+        let data = sample_texture_file();
+        let red = im3::write_png(16, 16, PngMode::Rgb, &[255, 0, 0].repeat(256), &[], &[]).unwrap();
+        let grown = with_new_pictures(&[("wood".into(), red.clone())], &data).unwrap();
+        let images = im3::read(&grown).unwrap();
+        let names: Vec<&str> = images.iter().map(|image| image.name.as_str()).collect();
+        assert_eq!(names, ["tex01", "tex02", "wood"]);
+        assert_eq!(images[2].format, Format::T8);
+        // the pictures it had are as they were
+        assert_eq!(export(&grown).unwrap()[..2], export(&data).unwrap()[..]);
+        let wood = &export(&grown).unwrap()[2];
+        assert!(same_pixels(&wood.1, &red).unwrap());
+        // a name taken, or a side that is not a power of two
+        assert!(with_new_pictures(&[("TEX01".into(), red.clone())], &data).is_err());
+        let odd = im3::write_png(12, 16, PngMode::Rgb, &[0; 12 * 16 * 3], &[], &[]).unwrap();
+        assert!(with_new_pictures(&[("odd".into(), odd)], &data).is_err());
+    }
+
+    #[test]
+    fn same_pixels_ignores_the_encoding() {
+        let rgb = im3::write_png(2, 1, PngMode::Rgb, &[1, 2, 3, 4, 5, 6], &[], &[]).unwrap();
+        let rgba = im3::write_png(2, 1, PngMode::Rgba, &[1, 2, 3, 255, 4, 5, 6, 255], &[], &[]).unwrap();
+        let paletted = im3::write_png(2, 1, PngMode::P, &[1, 0], &[[4, 5, 6, 255], [1, 2, 3, 255]], &[]).unwrap();
+        assert!(same_pixels(&rgb, &rgba).unwrap());
+        assert!(same_pixels(&rgb, &paletted).unwrap());
+        let other = im3::write_png(2, 1, PngMode::Rgb, &[1, 2, 3, 4, 5, 7], &[], &[]).unwrap();
+        assert!(!same_pixels(&rgb, &other).unwrap());
     }
 }

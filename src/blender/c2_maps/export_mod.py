@@ -121,6 +121,20 @@ class _Visible:
         return False
 
 
+def image_picture(gltf, material):
+    """The game picture a written material's base colour image stands for: the image's name
+    (without Blender's .001), else its file's stem; None without an image."""
+    texture = material.get("pbrMetallicRoughness", {}).get("baseColorTexture")
+    if not isinstance(texture, dict):
+        return None
+    try:
+        image = gltf["images"][gltf["textures"][texture["index"]]["source"]]
+    except (KeyError, IndexError, TypeError):
+        return None
+    name = image.get("name") or os.path.splitext(os.path.basename(image.get("uri", "")))[0]
+    return schema.strip_suffix(name) or None
+
+
 def fix_gltf(path):
     """Game names back in the written glTF: Blender adds .001 to keep object and material names
     unique (pieces and points repeat in every placement of a template, models' nodes in every
@@ -154,6 +168,13 @@ def fix_gltf(path):
         name = material.get("name", "")
         if schema.parse_col(name) is not None and schema.strip_suffix(name) != name:
             material["name"] = schema.strip_suffix(name)
+            changed += 1
+        # the picture a material shows is its image's: one swapped in for the map's own is
+        # named by the image, not by the texture the material was imported with
+        picture = image_picture(gltf, material)
+        extras = material.get("extras")
+        if picture and isinstance(extras, dict) and extras.get("texture") not in (None, picture):
+            extras["texture"] = picture
             changed += 1
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(gltf, handle, ensure_ascii=False, indent=1)

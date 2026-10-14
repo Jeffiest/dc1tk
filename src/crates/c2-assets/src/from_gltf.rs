@@ -750,7 +750,7 @@ pub fn mesh_contents(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, String
     Ok(out)
 }
 
-/// A mesh as values: its node's matrix and, per material (by name, without a `.NNN` suffix), its
+/// A mesh as values: its node's matrix and, per material (by name, without a `.NNN` suffix, and the picture it shows), its
 /// triangles' corners (position, then first UVs and colour when it has them).
 pub struct Geometry {
     pub matrix: Vec<f64>,
@@ -808,7 +808,10 @@ pub fn mesh_geometry(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, Geomet
             let material = match primitive.get("material") {
                 Some(number) => {
                     let found = index(item(&gltf.json, "materials")?, number)?;
-                    strip_suffix(found.get("name").and_then(Value::as_str).unwrap_or("")).to_string()
+                    // with the picture it shows, so a material given another picture differs
+                    let texture = found.get("extras").and_then(|extras| extras.get("texture")).and_then(Value::as_str);
+                    let name = strip_suffix(found.get("name").and_then(Value::as_str).unwrap_or(""));
+                    format!("{name}\u{0}{}", texture.unwrap_or(""))
                 }
                 None => String::new(),
             };

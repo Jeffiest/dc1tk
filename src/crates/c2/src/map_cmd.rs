@@ -294,8 +294,122 @@ pub fn apply_maps(
             changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: mpk_path.clone(), old: old_size, new: mpk_data.len() });
             out.insert(mpk_path, mpk_data);
         }
+        if !imported.textures.is_empty() {
+            let current = |path: &str| -> Result<Vec<u8>> {
+                match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
+                    Some((_, data)) => Ok(data.clone()),
+                    None => disc.read(path),
+                }
+            };
+            let rewritten = with_pictures(&disc, &found, &imported.textures, &current)
+                .with_context(|| format!("{} (mod {})", line.key, line.module))?
+                .into_iter()
+                .map(|Rewritten { path, data, said }| Ok((current(&path)?.len(), path, data, said)))
+                .collect::<Result<Vec<_>>>()?;
+            for (old, path, data, said) in rewritten {
+                for text in said {
+                    println!("  {} (map {}): {text}", line.module, name);
+                }
+                changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: path.clone(), old, new: data.len() });
+                out.insert(path, data);
+            }
+        }
     }
     Ok((out, changes))
+}
+
+/// Pictures as (file name or picture name, PNG).
+type Pngs = Vec<(String, Vec<u8>)>;
+
+/// A texture pack rewritten: its path, bytes, and what was done to it.
+struct Rewritten {
+    path: String,
+    data: Vec<u8>,
+    said: Vec<String>,
+}
+
+/// The map's texture packs (.ipk) with the scene's pictures put in: a changed picture into the
+/// texture file holding it (the map's own first, then other maps', which then show it changed
+/// too), a new one at the end of the map's own first texture file.
+fn with_pictures(
+    disc: &Disc,
+    own: &mapedit::MapFiles,
+    edits: &[c2_assets::map_import::TextureEdit],
+    current: &dyn Fn(&str) -> Result<Vec<u8>>,
+) -> Result<Vec<Rewritten>> {
+    // texture packs in search order: the map's own, then every other map's
+    let mut packs: Vec<String> = own.ipk.iter().cloned().collect();
+    packs.extend(
+        disc.entries()
+            .iter()
+            .map(|entry| entry.path.clone())
+            .filter(|path| path.to_lowercase().starts_with("map/") && path.to_lowercase().ends_with(".ipk"))
+            .filter(|path| Some(path) != own.ipk.as_ref()),
+    );
+    // (pack, texture file) -> (file name, PNG) of its changed pictures
+    let mut changed: BTreeMap<(String, String), Pngs> = BTreeMap::new();
+    let mut added: Pngs = Vec::new();
+    let mut opened: BTreeMap<String, Pngs> = BTreeMap::new();
+    for edit in edits {
+        if edit.new {
+            added.push((edit.name.clone(), edit.png.clone()));
+            continue;
+        }
+        let mut home = None;
+        'packs: for pack in &packs {
+            if !opened.contains_key(pack) {
+                let files = members(&current(pack)?).into_iter().filter(|(name, _)| name.to_lowercase().ends_with(".img")).collect();
+                opened.insert(pack.clone(), files);
+            }
+            for (file, data) in &opened[pack] {
+                let pictures = c2_assets::im3::read(data).unwrap_or_default();
+                if pictures.iter().any(|picture| picture.name == edit.name) {
+                    home = Some((pack.clone(), file.clone()));
+                    break 'packs;
+                }
+            }
+        }
+        let Some(home) = home else {
+            bail!("picture {}: no texture file of the disc holds it", edit.name);
+        };
+        changed.entry(home).or_default().push((c2_assets::textures::file_name(&edit.name), edit.png.clone()));
+    }
+    let mut out: BTreeMap<String, (Vec<u8>, Vec<String>)> = BTreeMap::new();
+    for ((pack, file), pngs) in changed {
+        let (data, said) = match out.remove(&pack) {
+            Some(found) => found,
+            None => (current(&pack)?, Vec::new()),
+        };
+        let names = [file.clone()];
+        let img = c2_disc::rebuild::read_member(&data, &names).with_context(|| format!("{pack} has no {file}"))?;
+        let built = c2_assets::textures::build_from(&pngs, img)?;
+        let data = c2_disc::rebuild::replaced_member(&data, &names, &built)?;
+        let mut said = said;
+        let shared = if Some(&pack) == own.ipk.as_ref() { String::new() } else { " (another map's: it changes there too)".into() };
+        for (png, _) in &pngs {
+            said.push(format!("repainted {} in {pack}/{file}{shared}", png.trim_end_matches(c2_assets::textures::SUFFIX)));
+        }
+        out.insert(pack, (data, said));
+    }
+    if !added.is_empty() {
+        let Some(pack) = &own.ipk else {
+            bail!("the map has no texture pack to add pictures {} to", added.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>().join(", "));
+        };
+        let (data, mut said) = match out.remove(pack) {
+            Some(found) => found,
+            None => (current(pack)?, Vec::new()),
+        };
+        let Some((file, img)) = members(&data).into_iter().find(|(name, _)| name.to_lowercase().ends_with(".img")) else {
+            bail!("{pack} holds no texture file to add pictures to");
+        };
+        let built = c2_assets::textures::with_new_pictures(&added, &img)?;
+        let data = c2_disc::rebuild::replaced_member(&data, std::slice::from_ref(&file), &built)?;
+        for (name, _) in &added {
+            said.push(format!("added picture {name} to {pack}/{file}"));
+        }
+        out.insert(pack.clone(), (data, said));
+    }
+    Ok(out.into_iter().map(|(path, (data, said))| Rewritten { path, data, said }).collect())
 }
 
 /// The most models and characters a model pack holds (CMdsList::LoadPCPFile).

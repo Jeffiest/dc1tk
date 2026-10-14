@@ -25,7 +25,45 @@ pub struct Imported {
     pub models: Vec<(String, Vec<u8>)>,
     /// Models made in the scene, which no pack has: to add to the map's first model pack.
     pub new_models: Vec<NewModel>,
+    /// Pictures the scene's materials show that differ from the disc's, or that it does not have.
+    pub textures: Vec<TextureEdit>,
     pub notes: Vec<String>,
+}
+
+/// A picture of the scene that differs from the disc's (or is new to it).
+#[derive(Debug)]
+pub struct TextureEdit {
+    /// The picture's name, as materials name it.
+    pub name: String,
+    pub png: Vec<u8>,
+    /// No texture file of the disc has a picture of this name: it goes into the map's own.
+    pub new: bool,
+}
+
+/// The pictures the scene's materials show: (picture name, the image's file), the name as the
+/// model import takes it (the material's extras.texture, the image's name, its file's stem).
+fn scene_pictures(doc: &Value) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for material in doc["materials"].as_array().into_iter().flatten() {
+        let Some(texture) = material["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64() else {
+            continue;
+        };
+        let image = &doc["images"][doc["textures"][texture as usize]["source"].as_u64().unwrap_or(u64::MAX) as usize];
+        let Some(uri) = image["uri"].as_str() else {
+            continue;
+        };
+        let stem = uri.rsplit(['/', '\\']).next().unwrap_or(uri);
+        let stem = stem.rsplit_once('.').map_or(stem, |(stem, _)| stem);
+        let name = material["extras"]["texture"]
+            .as_str()
+            .or(image["name"].as_str().filter(|name| !name.is_empty()))
+            .unwrap_or(stem)
+            .to_string();
+        if !name.is_empty() && !out.iter().any(|(known, _)| *known == name) {
+            out.push((name, uri.replace("%20", " ")));
+        }
+    }
+    out
 }
 
 /// A model made in the scene (pieces naming a model no pack has, with meshes under them).
@@ -421,6 +459,22 @@ pub fn import_map(
             out.models.push((model, rebuilt));
         }
     }
+    for (name, uri) in scene_pictures(&doc) {
+        let png = read_cached(&uri).map_err(|error| Error::invalid(format!("picture {name}: {error}")))?;
+        match textures.find(&name) {
+            Some(_) => {
+                // a render target has no pixels to change
+                if let Some(old) = textures.png(&name)? {
+                    if !crate::textures::same_pixels(&old, &png)? {
+                        out.textures.push(TextureEdit { name, png, new: false });
+                    }
+                }
+            }
+            // the exporter's stand-in for a picture the disc lacks is not a picture to add
+            None if crate::textures::same_pixels(&png, &crate::to_gltf::placeholder_png(&name))? => {}
+            None => out.textures.push(TextureEdit { name, png, new: true }),
+        }
+    }
     Ok(out)
 }
 
@@ -473,6 +527,9 @@ mod tests {
             assert!(imported.map.is_none(), "{name}: the .map changed");
             let changed: Vec<&String> = imported.models.iter().map(|(model, _)| model).collect();
             assert!(changed.is_empty(), "{name}: models rebuilt: {changed:?}");
+            assert!(imported.new_models.is_empty(), "{name}: new models");
+            let pictures: Vec<&String> = imported.textures.iter().map(|edit| &edit.name).collect();
+            assert!(pictures.is_empty(), "{name}: pictures changed: {pictures:?}");
             checked += 1;
         }
         println!("{checked} maps export and import unchanged");

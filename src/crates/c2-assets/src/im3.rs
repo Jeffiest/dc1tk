@@ -1697,7 +1697,7 @@ fn downsample(rgba: &[u8], w: usize, h: usize) -> (Vec<u8>, usize, usize) {
 }
 
 /// PNG colours (indexed or not) as RGBA, unused palette entries black and opaque.
-fn png_rgba(png: &Png) -> Result<Vec<u8>> {
+pub fn png_rgba(png: &Png) -> Result<Vec<u8>> {
     if png.paletted {
         lookup(&png.data, &png.palette, [0, 0, 0, 0xFF])
     } else {
