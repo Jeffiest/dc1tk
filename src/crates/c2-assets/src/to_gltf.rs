@@ -128,6 +128,24 @@ pub fn decompose(m: &Matrix) -> Result<([f64; 3], Vec<f64>, [f64; 3])> {
     Ok((t, quat_from_rot(&rc[0], &rc[1], &rc[2])?, s))
 }
 
+/// The column-major matrix of a translation, rotation (x, y, z, w) and scale.
+pub fn compose(t: &[f64], r: &[f64], s: &[f64]) -> Matrix {
+    let (x, y, z, w) = (r[0], r[1], r[2], r[3]);
+    let columns = [
+        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y + z * w), 2.0 * (x * z - y * w)],
+        [2.0 * (x * y - z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z + x * w)],
+        [2.0 * (x * z + y * w), 2.0 * (y * z - x * w), 1.0 - 2.0 * (x * x + y * y)],
+    ];
+    let mut m = IDENT;
+    for (c, column) in columns.iter().enumerate() {
+        for row in 0..3 {
+            m[c * 4 + row] = column[row] * s[c];
+        }
+    }
+    m[12..15].copy_from_slice(&t[..3]);
+    m
+}
+
 /// .mot rotation keys are (w, x, y, z) fed to QuatToMat, which builds the transpose of the usual
 /// matrix; so the glTF rotation is the conjugate.
 fn engine_quat_to_gltf(q: &[f64; 4]) -> Vec<f64> {
@@ -390,13 +408,73 @@ pub fn py_index<T>(items: &[T], i: i64) -> Result<&T> {
     Ok(&items[index as usize])
 }
 
-/// A character's info.cfg, model, bind pose, weights and motion, read from its unpacked pack.
+/// A character's info.cfg, model, bind pose, weights and motion sets, read from its unpacked pack.
 pub struct Character {
     pub info: CharInfo,
     pub model: Mds,
     pub bbp: Option<Vec<Matrix>>,
     pub wgt: Option<Vec<KeyList>>,
-    pub motion: Option<Vec<KeyList>>,
+    /// The motion sets whose .mot the pack holds, in the order info.cfg first gives their ids.
+    pub motions: Vec<SetMotion>,
+}
+
+/// A motion set (`MOTION id, "x.mot", ...`): its id, its .mot's key lists and its KEYs.
+#[derive(Clone, Debug)]
+pub struct SetMotion {
+    pub id: Arg,
+    pub lists: Vec<KeyList>,
+    pub keys: Vec<info_cfg::Key>,
+}
+
+/// The motion sets of an info.cfg whose .mot a folder holds (set 0's must read; another set whose
+/// .mot does not read is left out).
+pub fn load_motions(folder: &Folder, info: &CharInfo) -> Result<Vec<SetMotion>> {
+    let mut out = Vec::new();
+    for (id, motion) in &info.motions {
+        let zero = info_cfg::same_value(id, &Arg::Int(0));
+        let name = match text_arg(&motion.mot) {
+            Ok(name) => name,
+            Err(error) if zero => return Err(error),
+            Err(_) => continue,
+        };
+        let Some(data) = name.and_then(|name| folder.get(name)) else {
+            continue;
+        };
+        let lists = match mot::parse(data) {
+            Ok(lists) => lists,
+            Err(error) if zero => return Err(error),
+            Err(_) => continue,
+        };
+        out.push(SetMotion { id: id.clone(), lists, keys: motion.keys.clone() });
+    }
+    Ok(out)
+}
+
+/// A motion set's id as names give it (`7`).
+pub fn id_text(id: &Arg) -> String {
+    py_str(id)
+}
+
+/// The set whose KEYs keep their names in the export: set 0, else the first.
+pub fn primary_set(ids: &[&Arg]) -> usize {
+    ids.iter().position(|id| info_cfg::same_value(id, &Arg::Int(0))).unwrap_or(0)
+}
+
+/// The animation name of a KEY of a motion set: the KEY's own for the primary set (with its set's
+/// id in front when it would read as another set's), `<id>:<name>` for the others.
+pub fn set_animation_name(id: &Arg, primary: bool, name: &str) -> String {
+    if primary && set_of_name(name).is_none() {
+        name.to_string()
+    } else {
+        format!("{}:{name}", py_str(id))
+    }
+}
+
+/// The set id and KEY name an animation name gives (`7:walk`), None for a name without one.
+pub fn set_of_name(name: &str) -> Option<(i64, &str)> {
+    let (text, rest) = name.split_once(':')?;
+    let id: i64 = text.parse().ok().filter(|id| (0..8).contains(id))?;
+    (id.to_string() == text).then_some((id, rest))
 }
 
 fn text_arg(value: &Arg) -> Result<Option<&str>> {
@@ -445,13 +523,8 @@ pub fn load_char(folder: &Folder) -> Result<Character> {
             wgt = Some(mot::parse(data)?);
         }
     }
-    let mut motion = None;
-    if let Some(name) = motion0.map(|m| text_arg(&m.mot)).transpose()?.flatten() {
-        if let Some(data) = folder.get(name) {
-            motion = Some(mot::parse(data)?);
-        }
-    }
-    Ok(Character { info, model, bbp, wgt, motion })
+    let motions = load_motions(folder, &info)?;
+    Ok(Character { info, model, bbp, wgt, motions })
 }
 
 /// A material key: equal as the Python's tuple (texture, diffuse, ambient) is.
@@ -493,10 +566,28 @@ pub fn export(folder: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result
     Ok(())
 }
 
+/// Exports a pack of motion sets alone (`chara/c01_fishing.chr`: `MOTION 7`, no model) on the
+/// model of another pack (`skeleton`, whose motions it plays): that pack's skeleton, skin and
+/// meshes with an animation per KEY of the motion pack's sets.
+pub fn export_motions(motion_folder: &Folder, skeleton: &Folder, out: &mut Folder, base: &str, fps: f64) -> Result<()> {
+    let Some(info) = motion_folder.get("info.cfg") else {
+        bail!("the motion pack has no info.cfg");
+    };
+    let info = info_cfg::read(info);
+    let mut character = load_char(skeleton)?;
+    character.motions = load_motions(motion_folder, &info)?;
+    if character.motions.is_empty() {
+        bail!("the pack has no motion set to export");
+    }
+    export_parts(&character, &character.model, out, base, fps, &Options::default())?;
+    Ok(())
+}
+
 /// Exports one model (a map piece's .mds: no skin, no motion) to `<base>.gltf` and `<base>.bin` in
 /// `out`, with its textures in textures/, as the options say.
 pub fn export_model(model: &Mds, out: &mut Folder, base: &str, options: &Options) -> Result<Exported> {
-    let character = Character { info: CharInfo::default(), model: Mds::new(), bbp: None, wgt: None, motion: None };
+    let character =
+        Character { info: CharInfo::default(), model: Mds::new(), bbp: None, wgt: None, motions: Vec::new() };
     export_parts(&character, model, out, base, 30.0, options)
 }
 
@@ -847,6 +938,245 @@ impl CollisionAttributes {
     }
 }
 
+impl SetMotion {
+    /// The list of a frame, kind and target, with keys.
+    pub fn list(&self, frame: usize, kind: i32, target: i32) -> Option<&KeyList> {
+        self.lists
+            .iter()
+            .find(|l| l.frame as i64 == frame as i64 && l.kind == kind && l.target == target && !l.keys.is_empty())
+    }
+
+    /// The frames its KEYs play.
+    fn key_frames(&self) -> std::collections::BTreeSet<i64> {
+        let mut out = std::collections::BTreeSet::new();
+        for key in &self.keys {
+            if let (Arg::Int(s), Arg::Int(e)) = (&key.start, &key.end) {
+                out.extend(*s..=(*e).max(*s));
+            }
+        }
+        out
+    }
+}
+
+/// A list's value at a frame with the keys between interpolated (lerp), as MotionProc reads
+/// vertex and material lists.
+fn lerped_value(list: &KeyList, f: i64) -> [f64; 4] {
+    let keys = &list.keys;
+    let after = keys.partition_point(|(k, _)| *k <= f);
+    if after == 0 {
+        return keys[0].1;
+    }
+    let (f0, a) = keys[after - 1];
+    if f0 == f || after == keys.len() {
+        return a;
+    }
+    let (f1, b) = keys[after];
+    let t = (f - f0) as f64 / (f1 - f0) as f64;
+    [0, 1, 2, 3].map(|i| a[i] + (b[i] - a[i]) * t)
+}
+
+/// A list's value at a frame held from the key at or before it, as visibility lists are read.
+fn held_value(list: &KeyList, f: i64) -> [f64; 4] {
+    let after = list.keys.partition_point(|(k, _)| *k <= f);
+    list.keys[after.saturating_sub(1)].1
+}
+
+/// A morph target of a frame's mesh: a frame of its vertex lists in a motion set (weight 1 at
+/// that frame, 0 at others), or a carrier of a list glTF has no channel for that Blender keeps
+/// (no displacement; its weight is the list's value): a material's fade (`c2_fade_<k>`, value.x
+/// of a type 40 list, alpha being 1 - it), colour (`c2_red_<k>`, `c2_green_<k>`, `c2_blue_<k>`,
+/// type 41) or the frame's visibility (`c2_visible`, value.x of a type 50 list; `c2_visible_51`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Target {
+    Frame { set: usize, frame: i64 },
+    Fade(usize),
+    Colour(usize, usize),
+    Visible(i32),
+}
+
+impl Target {
+    /// The target's name (`targetNames`): `c2_frame_<frame>` for the primary set's frames,
+    /// `c2_set<id>_frame_<frame>` for another's.
+    pub fn name(&self, ids: &[String], primary: usize) -> String {
+        match *self {
+            Target::Frame { set, frame } if set == primary => format!("c2_frame_{frame}"),
+            Target::Frame { set, frame } => format!("c2_set{}_frame_{frame}", ids[set]),
+            Target::Fade(k) => format!("c2_fade_{k}"),
+            Target::Colour(k, c) => format!("c2_{}_{k}", ["red", "green", "blue"][c]),
+            Target::Visible(50) => "c2_visible".to_string(),
+            Target::Visible(kind) => format!("c2_visible_{kind}"),
+        }
+    }
+
+    /// The target a name stands for, given the sets' ids (frames of a set the pack lacks are None).
+    pub fn parse(name: &str, ids: &[String], primary: usize) -> Option<Target> {
+        let number = |text: &str| -> Option<i64> { text.parse().ok().filter(|_| !text.starts_with('+')) };
+        if let Some(rest) = name.strip_prefix("c2_frame_") {
+            return Some(Target::Frame { set: primary, frame: number(rest)? });
+        }
+        if let Some(rest) = name.strip_prefix("c2_set") {
+            let (id, frame) = rest.split_once("_frame_")?;
+            let set = ids.iter().position(|known| known == id)?;
+            return Some(Target::Frame { set, frame: number(frame)? });
+        }
+        if let Some(rest) = name.strip_prefix("c2_fade_") {
+            return Some(Target::Fade(usize::try_from(number(rest)?).ok()?));
+        }
+        for (c, colour) in ["red", "green", "blue"].iter().enumerate() {
+            if let Some(rest) = name.strip_prefix(&format!("c2_{colour}_")) {
+                return Some(Target::Colour(usize::try_from(number(rest)?).ok()?, c));
+            }
+        }
+        match name {
+            "c2_visible" => Some(Target::Visible(50)),
+            "c2_visible_51" => Some(Target::Visible(51)),
+            _ => None,
+        }
+    }
+}
+
+/// The morph targets of a frame's mesh for its motion sets' vertex, material and visibility lists.
+struct MeshMotion<'a> {
+    frame: usize,
+    sets: &'a [SetMotion],
+    targets: Vec<Target>,
+    names: Vec<String>,
+}
+
+impl<'a> MeshMotion<'a> {
+    fn of(frame: usize, t: &mds::Mdt, sets: &'a [SetMotion], primary: usize) -> Option<MeshMotion<'a>> {
+        let mut targets = Vec::new();
+        let mut carriers = std::collections::BTreeSet::new();
+        for (s, set) in sets.iter().enumerate() {
+            let lists = set.lists.iter().filter(|l| l.frame as i64 == frame as i64 && !l.keys.is_empty());
+            let mut vertices = false;
+            for list in lists {
+                let k = usize::try_from(list.target).ok().filter(|&k| k < t.materials.len());
+                match (list.kind, k) {
+                    (12, _) => vertices = true,
+                    (40, Some(k)) => {
+                        carriers.insert(Target::Fade(k));
+                    }
+                    (41, Some(k)) => {
+                        carriers.extend((0..3).map(|c| Target::Colour(k, c)));
+                    }
+                    (50 | 51, _) => {
+                        carriers.insert(Target::Visible(list.kind));
+                    }
+                    _ => {}
+                }
+            }
+            if vertices {
+                targets.extend(set.key_frames().into_iter().map(|frame| Target::Frame { set: s, frame }));
+            }
+        }
+        targets.extend(carriers);
+        if targets.is_empty() {
+            return None;
+        }
+        let ids: Vec<String> = sets.iter().map(|set| py_str(&set.id)).collect();
+        let names = targets.iter().map(|target| target.name(&ids, primary)).collect();
+        Some(MeshMotion { frame, sets, targets, names })
+    }
+
+    /// Whether a motion set has lists for these targets.
+    fn animated_by(&self, set: usize) -> bool {
+        self.sets[set].lists.iter().any(|l| {
+            l.frame as i64 == self.frame as i64 && matches!(l.kind, 12 | 40 | 41 | 50 | 51) && !l.keys.is_empty()
+        })
+    }
+
+    /// Each target's weight at rest: no vertex frame, the materials' own colours, shown.
+    fn rest_weights(&self, t: &mds::Mdt) -> Vec<f64> {
+        self.targets.iter().map(|target| self.rest(t, target)).collect()
+    }
+
+    fn rest(&self, t: &mds::Mdt, target: &Target) -> f64 {
+        let diffuse = |k: usize, c: usize| t.materials.get(k).and_then(|m| m.diffuse.get(c)).copied().unwrap_or(1.0);
+        match *target {
+            Target::Frame { .. } => 0.0,
+            Target::Fade(k) => 1.0 - diffuse(k, 3),
+            Target::Colour(k, c) => diffuse(k, c),
+            Target::Visible(_) => 1.0,
+        }
+    }
+
+    /// Each target's weight at a frame of a motion set.
+    fn weights(&self, t: &mds::Mdt, set: usize, f: i64) -> Vec<f64> {
+        let motion = &self.sets[set];
+        self.targets
+            .iter()
+            .map(|target| match *target {
+                Target::Frame { set: s, frame } => f64::from(u8::from(s == set && frame == f)),
+                Target::Fade(k) => {
+                    motion.list(self.frame, 40, k as i32).map_or(self.rest(t, target), |l| lerped_value(l, f)[0])
+                }
+                Target::Colour(k, c) => {
+                    motion.list(self.frame, 41, k as i32).map_or(self.rest(t, target), |l| lerped_value(l, f)[c])
+                }
+                Target::Visible(kind) => motion.list(self.frame, kind, 0).map_or(1.0, |l| held_value(l, f)[0]),
+            })
+            .collect()
+    }
+
+    /// The targets of a primitive whose corners are `corners` (vertex, normal, uv, colour numbers):
+    /// each vertex frame's displacement of the vertices its lists move (by the bind matrix for a
+    /// skinned mesh), the carriers' none.
+    fn displacements(
+        &self,
+        g: &mut Gltf,
+        t: &mds::Mdt,
+        corners: &[[i64; 4]],
+        bind: Option<&Matrix>,
+    ) -> Result<Vec<Value>> {
+        let place = |v: &[f64]| -> [f64; 3] {
+            match bind {
+                Some(bind) => xform_point(bind, v),
+                None => [v[0], v[1], v[2]],
+            }
+        };
+        let mut zero: Option<usize> = None;
+        let mut out = Vec::with_capacity(self.targets.len());
+        for target in &self.targets {
+            let Target::Frame { set, frame } = *target else {
+                let at = match zero {
+                    Some(at) => at,
+                    None => {
+                        let values = vec![vec![0.0; 3]; corners.len()];
+                        let at = g.floats(&values, "VEC3", Some(ARRAY_BUFFER), true)?;
+                        zero = Some(at);
+                        at
+                    }
+                };
+                out.push(object! {"POSITION" => at});
+                continue;
+            };
+            // the vertices this frame moves: vertex index (target - 1) -> position
+            let mut moved: std::collections::HashMap<i64, [f64; 4]> = Default::default();
+            for list in &self.sets[set].lists {
+                if list.frame as i64 == self.frame as i64 && list.kind == 12 && !list.keys.is_empty() {
+                    moved.insert(list.target as i64 - 1, lerped_value(list, frame));
+                }
+            }
+            let mut values = Vec::with_capacity(corners.len());
+            for k in corners {
+                let base = py_index(&t.vertices, k[0])?;
+                let index = if k[0] < 0 { t.vertices.len() as i64 + k[0] } else { k[0] };
+                let delta = match moved.get(&index) {
+                    Some(p) => {
+                        let (a, b) = (place(&base[..3]), place(&p[..3]));
+                        vec![b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+                    }
+                    None => vec![0.0; 3],
+                };
+                values.push(delta);
+            }
+            out.push(object! {"POSITION" => g.floats(&values, "VEC3", Some(ARRAY_BUFFER), true)?});
+        }
+        Ok(out)
+    }
+}
+
 /// export with the character's parts (info, weights, pose, motion) and the model to write.
 fn export_parts(
     character: &Character,
@@ -927,8 +1257,11 @@ fn export_parts(
         bail!("list index out of range");
     };
 
+    let primary = primary_set(&character.motions.iter().map(|m| &m.id).collect::<Vec<_>>());
     let mut texture_index: Vec<(String, usize)> = Vec::new();
     let mut material_index: Vec<(MaterialKey, usize)> = Vec::new();
+    // the morph targets of each frame's mesh
+    let mut mesh_motions: std::collections::BTreeMap<usize, (usize, MeshMotion)> = Default::default();
     // per frame: its own flag text, and its ancestors' flag texts that push flags down ('.')
     let flag_text = |node: &mds::Node| node.name.split_once("--").map_or("", |(_, flags)| flags).to_string();
     let mut inherited_text: Vec<String> = Vec::with_capacity(nodes.len());
@@ -1157,6 +1490,7 @@ fn export_parts(
             }
         }
         let mut prims = Vec::new();
+        let morph = MeshMotion::of(i, t, &character.motions, primary);
         for ((mat, hn, hu, hc), (vs, _, indices)) in &groups {
             if indices.is_empty() {
                 continue;
@@ -1214,6 +1548,11 @@ fn export_parts(
                     Value::from(material(&mut g, out, &t.materials[*mat as usize], (i, *mat as usize), *hu)?),
                 );
             }
+            if let Some(morph) = &morph {
+                let bind = skinned.then_some(&bind);
+                let targets = morph.displacements(&mut g, t, vs, bind)?;
+                gp.set("targets", Value::List(targets));
+            }
             prims.push(gp);
         }
         if prims.is_empty() {
@@ -1223,11 +1562,18 @@ fn export_parts(
         if options.full_names {
             mesh_extras.set("mds_index", Value::from(i));
         }
-        g.meshes.push(object! {
+        let mut gmesh = object! {
             "name" => name_of(node),
             "primitives" => Value::List(prims),
             "extras" => mesh_extras,
-        });
+        };
+        if let Some(morph) = &morph {
+            gmesh.set("weights", Value::floats(&morph.rest_weights(t)));
+            if let Some(extras) = gmesh.get_mut("extras") {
+                extras.set("targetNames", Value::List(morph.names.iter().map(|n| Value::from(n.as_str())).collect()));
+            }
+        }
+        g.meshes.push(gmesh);
         let mesh = g.meshes.len() - 1;
         if skinned {
             any_skinned = true;
@@ -1240,6 +1586,10 @@ fn export_parts(
             g.scene_nodes.push(g.nodes.len() - 1);
         } else {
             g.nodes[i].set("mesh", Value::from(mesh));
+        }
+        if let Some(morph) = morph {
+            let node = if skinned { g.nodes.len() - 1 } else { i };
+            mesh_motions.insert(i, (node, morph));
         }
     }
 
@@ -1262,11 +1612,13 @@ fn export_parts(
         });
     }
 
-    let clips = info.motion0().map(|m| m.keys.as_slice()).unwrap_or_default();
-    if let Some(motion) = character.motion.as_ref().filter(|m| !m.is_empty() && !clips.is_empty()) {
+    for (set, motion) in character.motions.iter().enumerate() {
+        if motion.lists.is_empty() || motion.keys.is_empty() {
+            continue;
+        }
         // a list drives the frame its number gives (MotionProc's GetFrame), whatever its name
         let mut channels_of: std::collections::BTreeMap<(usize, &str), &KeyList> = Default::default();
-        for list in motion {
+        for list in &motion.lists {
             let Some(frame) = usize::try_from(list.frame).ok().filter(|&f| f < nodes.len()) else {
                 continue;
             };
@@ -1277,7 +1629,7 @@ fn export_parts(
             channels_of.insert((frame, path), list);
         }
         let mut seen: Vec<Arg> = Vec::new();
-        for clip in clips {
+        for clip in &motion.keys {
             let mut name = clip.name.clone();
             if seen.iter().any(|s| info_cfg::same_value(s, &name)) {
                 let start = match clip.start {
@@ -1288,6 +1640,11 @@ fn export_parts(
                 name = Arg::Str(format!("{}_{}", py_str(&name), start));
             }
             seen.push(name.clone());
+            let name = match name {
+                Arg::Str(text) => Arg::Str(set_animation_name(&motion.id, set == primary, &text)),
+                other if set == primary => other,
+                other => Arg::Str(set_animation_name(&motion.id, false, &py_str(&other))),
+            };
             let Arg::Int(s) = clip.start else {
                 bail!("'float' object cannot be interpreted as an integer");
             };
@@ -1320,11 +1677,33 @@ fn export_parts(
                     "target" => object! {"node" => node, "path" => path},
                 });
             }
+            // the meshes' morph weights: vertex frames and the carriers of the other lists
+            for (&frame, (node, morph)) in &mesh_motions {
+                let Some(t) = &nodes[frame].mdt else {
+                    continue;
+                };
+                if !morph.animated_by(set) {
+                    continue;
+                }
+                let weights: Vec<Vec<f64>> =
+                    frames.iter().flat_map(|&f| morph.weights(t, set, f)).map(|w| vec![w]).collect();
+                let output = g.floats(&weights, "SCALAR", None, false)?;
+                samplers.push(object! {"input" => times, "output" => output, "interpolation" => "LINEAR"});
+                channels.push(object! {
+                    "sampler" => samplers.len() - 1,
+                    "target" => object! {"node" => *node, "path" => "weights"},
+                });
+            }
+            let mut extras =
+                object! {"start" => clip.start.clone(), "end" => clip.end.clone(), "step" => clip.step.clone()};
+            if set != primary {
+                extras.set("motion_set", motion.id.clone());
+            }
             g.animations.push(object! {
                 "name" => name,
                 "samplers" => Value::List(samplers),
                 "channels" => Value::List(channels),
-                "extras" => object! {"start" => clip.start.clone(), "end" => clip.end.clone(), "step" => clip.step.clone()},
+                "extras" => extras,
             });
         }
     }
