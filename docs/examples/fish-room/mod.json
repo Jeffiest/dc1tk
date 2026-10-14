@@ -1,0 +1,27 @@
+{
+ "title": "The Fish Room",
+ "version": "1.0.0",
+ "start_at": "m01",
+ "replace": {
+  "map:m01": {"file": "maps/m01/m01.gltf", "programs": {"door_fish": "ENTER_FISH_ROOM"}}
+ },
+ "add": {
+  "map:fishroom": {
+   "file": "maps/m07/m07.gltf",
+   "like": "m07",
+   "title": "The Fish Room",
+   "script": "fishroom.c",
+   "programs": {"door_out": "LEAVE_FISH_ROOM"}
+  },
+  "music:BG_200": {
+   "like": "BG_193",
+   "file": "music/fish.mid",
+   "instruments": {
+    "100": {"file": "music/vibes.wav", "root": 72},
+    "101": {"file": "music/marimba.wav", "root": 72},
+    "102": {"file": "music/bass.wav", "root": 48},
+    "103": {"file": "music/bubble.wav", "root": 60}
+   }
+  }
+ }
+}

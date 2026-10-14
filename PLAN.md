@@ -139,7 +139,11 @@ was checked in the game. Left over:
   "ENTER_PARK"}`), so a door in an existing town leads in and a point leads
   back; patches see each new map's number as `MAP_<NAME>`. Example:
   [new-map-door](docs/examples/new-map-door/), checked in the game
-  (`new-map-door-test.iso`).
+  (`new-map-door-test.iso`). A new map can be all new: the
+  [fish-room](docs/examples/fish-room/) example clears a copy of `m07`,
+  models a room, a door and a giant fish in Blender (New Model from
+  Selection), spins the fish with a Piece animation point and plays a tune
+  of its own (`fish-room.iso`, being tried in the game).
 - **Dungeon floors** (done). Layouts are `data:layouts`, the part kinds
   `data:parts` (entries renamed in place; the table cannot grow, entry 276
   is free), chest items `data:chests`; the parts edit in Blender
@@ -165,7 +169,11 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    `text:en/shopname` in `mod.json` changes a file in every copy and version
    of that language. Japanese and Korean beyond ASCII show as `{XXXX}` (no
    table on the disc gives their glyphs); the English font has no accented
-   letters. Checked in the game (renamed shops).
+   letters. Checked in the game (renamed shops). Since: Japanese (1,850
+   glyphs, the order worked out from the font pictures) and Korean (the
+   disc's table) read as text; English takes 32 accented letters, drawn into
+   its font by the build; build warns of lines wider than the disc's.
+   Being tried: `text-music-test.iso`.
 3. **Game data** (done). Where every kind lives is in
    [data](docs/assets/data.md); each is a `data:` id in `mod.json`, JSON with
    only the changed fields, merged field by field across mods: `data:items`
@@ -174,12 +182,17 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    in place), `data:inventions` (recipes, scoops), `data:georama` (parts,
    fixed and starting parts), `data:medals`, `data:floors` (monsters per
    floor), `data:fishing` and `data:characters` (starting HP and equipment,
-   weapon level-ups, Monica's forms, badges). Fields are named where the
-   engine reads them; the rest are shown to be unread. Left: adding records
-   (new items, shops, recipes, parts), Georama requests (mostly code), rivers,
-   townspeople (`npc*.cfg`) and a few executable tables (`gift_item_tbl`,
-   `GolfClubDef`, `aquafish_mixTable`). Checked in the game: shop prices; the
-   patched executable boots.
+   weapon level-ups, Monica's forms, badges), `data:requests` (Georama
+   requests), `data:townspeople` (`npc*.cfg`), `data:gifts`,
+   `data:spheda`, `data:breeding`, and Georama rivers and water. Fields are
+   named where the engine reads them; the rest are shown to be unread. New
+   records (items, prices, shop goods, recipes, Georama parts, fishing
+   spots, requests, townspeople) are added `"like"` an existing one, up to
+   the engine's limits, which build checks; an item's name and description
+   are part of `data:items`. Checked in the game: shop prices; the patched
+   executable boots. Being tried: a new weapon sold in Palm Brinks
+   (`new-item-test.iso`). Not addable: monster kinds, rows of executable
+   tables, request conditions (code).
 4. **Memory budgets** (done). [memory](docs/assets/memory.md) gives each
    budget from the engine (read buffer, map and loading-screen limits,
    script buffer, placements, texture blocks, GS memory, character stacks,
@@ -221,8 +234,10 @@ code keeps compiling to its own bytes. What the compiler lacks today
    offsets, copied, passed and returned by value), pointer arithmetic,
    pointers to pointers, global and static arrays and pointers, function
    pointers (a generated dispatch), varargs with `<stdarg.h>`, `offsetof`,
-   wide strings, string literals as `char` arrays; all of it works in mod
-   patches. Conformance: 117 of 121 programs supported; refused: comparing
+   wide strings, string literals as `char` arrays, bit-fields, block-scoped
+   tags, `?:` of structs, any function through a pointer, header typedefs as
+   type words; all of it works in mod patches. Conformance: 125 of 129
+   programs supported; refused: comparing
    or subtracting two pointers (the VM gives no address as a number) and
    `double`. Checked in the game: a mod patch's 12 checks (global arrays,
    structs, pointers, function pointers, varargs, strict conversion, static
@@ -244,8 +259,10 @@ and `mod slim`, which turns copied files into patches that compile to the
 same bytes; see [modding](docs/modding.md). Native wrappers are checked in
 the game (the castle's soldiers swapped for rats).
 
-- **Save counters.** `NEW_COUNTER` once the number of 16-bit save counters is
-  known (scripts use 0 to 20).
+- **Save counters** (done). The save holds 128; the disc uses 0 to 25
+  (the fishing tournament 21 to 25, the menu 5). `NEW_COUNTER` gives a mod
+  one from 32 up, kept in `numbers.json`; `c2 flags --counters` reports
+  them.
 
 ## Next: mod assets
 
@@ -285,18 +302,19 @@ do:
 3. **Names for a mod's new sounds** (done). `005_beep.wav` in
    `sp_004.snd.wav/` gives a mod's patches `SE_SP_004_BEEP = 5`; `mod check
    --disc` checks the files and pack members scripts load.
-4. **Motions from glTF** (done, being tried). Build reads glTF animations
+4. **Motions from glTF** (done). Build reads glTF animations
    back into `.mot` keys and `info.cfg` `KEY`s: unedited exports and Blender
    round trips change nothing, an edited motion is written in place (or
    moved to the timeline's end when its length or shared frames change), and
    a new action becomes a new `KEY`. Checked in the game (Max's idle). Set
    Blender to 30 fps before importing.
-   Left: vertex, material alpha/colour and visibility lists go out to glTF
-   only as carried data (morph targets, `KHR_animation_pointer`,
-   `KHR_node_visibility` would expose them), motion sets 1-7 and motion-only
-   packs are not exported, deleting an action keeps its `KEY`, and one pack
-   (`e210a`) still moves 6 `KEY`s through Blender (leg translations up to
-   0.04 off). Character meshes compare by value now: an unedited Blender
+   Since: vertex, fade, colour and visibility lists go out as shape keys
+   Blender keeps (`c2_frame_<f>`, `c2_fade_<k>`, `c2_visible`) and come
+   back edited; motion sets 1-7 (`3:bow`) and the 244 motion-only packs
+   (on the skeleton of the character they play on) export and build back;
+   deleting an action removes its `KEY` and sound lines; `e210a` and every
+   Blender round trip tried (58 packs) change nothing. Not yet tried in the
+   game. Character meshes compare by value now: an unedited Blender
    round trip rebuilds nothing, an edited mesh only itself, weights intact.
 5. **New characters** (done, checked in the game: a waving figure). `models::new_pack` builds a whole
    pack from glTF (skeleton, rigid and skinned meshes, weights, bind pose,
@@ -308,9 +326,11 @@ do:
    ([music](docs/assets/music.md)); `SOUND.DAT` is streamed voices. All 447
    round-trip byte for byte and through MIDI; `music:BG_000_000` in
    `mod.json` replaces a tune from a `.mid` (with a `.sf2` of the bank's
-   instruments to hear it). Left: the IOP sequencer is not decompiled (loop
-   and tempo defaults read from the data), and a tune can only use its
-   bank's existing instruments.
+   instruments to hear it). A tune can bring new instruments made from
+   WAVs (`"instruments"`), and a mod can add a music file of its own
+   (`"add": {"music:BG_200": {"like": "BG_193", ...}}`, played with
+   `load_bgm(200)`). Left: the IOP sequencer is not decompiled (loop and
+   tempo defaults read from the data); instruments with velocity layers.
 
 ## Next: names and docs
 
@@ -341,18 +361,19 @@ do:
    frame counts and distances the code cuts short, or left out return
    values; and names for the wrong monster or event (the Vanguard's name
    on Mammo, a "Griffon" fight against Sirus, Gaspard for Dr. Jaming).
-2. **Fewer numbered names.** 2,196 function definitions on the disc end
-   in a number (from about 2,700). The rest are copies the decompiler
-   numbers because a file holds two functions of one name, identical
-   stubs (`do_nothing_2`, `unlock_interrupts_3`) that cannot be told
-   apart, or event, exit and analysis numbers that are part of the name.
+2. **Fewer numbered names** (done). 1,366 function definitions end in a
+   number (from 2,196): a later copy of code a file already holds is named
+   after its one caller, or `unused_` when nothing calls it. Left are
+   numbers that mean something (events, exits, motions: about 740),
+   program-numbered entries (236) and copies called from several places.
 3. **Constants.** `defs learn` learns function names, variables and their
    kinds, return types, line notes, docs, script docs, globals (a
    library's too), and library paths and docs. The constants (flag names,
    the music, sound and bank enums) live in the set's `include/pal.h`,
-   which a decompiled tree includes from the set itself, so an edit there
-   is already an edit of the set; renaming one means renaming its uses
-   across the tree too (an editor's rename does both).
+   which a decompiled tree includes from the set itself (done): `c2 defs
+   rename` renames one in the set and its uses in trees and mods (26 story
+   flags renamed so far), records it in `renamed.json`, and `c2 defs
+   migrate` brings trees and mods made before a rename up to date.
 
 Script docs (210 corrected), library docs (190 corrected, 85 libraries
 renamed) and the 185 story flags (35 renamed, 91 comments corrected) have
