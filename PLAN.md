@@ -133,16 +133,19 @@ Blender unchanged. The formats and conventions are in
 [maps](docs/assets/maps.md); the example [map-edit](docs/examples/map-edit/)
 was checked in the game. Left over:
 
-- **New maps** (done, checked in the game: `new-map-test.iso`). `"add": {"map:m05x": {"file": ...,
-  "like": "m05"}}` builds a new map from an existing one's edited scene,
-  with a row in every language's map table, so `--start-at m05x` reaches it
-  ([maps](docs/assets/maps.md) section 9). Left: a new map's own script,
-  and a door into it from the game's maps.
-- **Dungeon floors** (done, being tried). The floor layouts
-  (`dungeon/cfg_file/*.cfg`) are `data:layouts`; the parts they place edit
-  in Blender (`c2 map-export d01f01` shows each template once)
-  ([dungeons](docs/assets/dungeons.md)). Left: new part kinds (fixed in the
-  executable), which ways on a floor gets, the chest-item scripts.
+- **New maps** (done; checked in the game: `new-map-test.iso`). A new map
+  gets its own script (`"script": "m05x.c"`, compiled per language), and
+  any map's event points can be given programs (`"programs": {"door_park":
+  "ENTER_PARK"}`), so a door in an existing town leads in and a point leads
+  back; patches see each new map's number as `MAP_<NAME>`. Example:
+  [new-map-door](docs/examples/new-map-door/). Being tried in the game
+  (`new-map-door-test.iso`).
+- **Dungeon floors** (done). Layouts are `data:layouts`, the part kinds
+  `data:parts` (entries renamed in place; the table cannot grow, entry 276
+  is free), chest items `data:chests`; the parts edit in Blender
+  ([dungeons](docs/assets/dungeons.md)). Left: the tree maps
+  (`menu/dngmap/dmap<n>.cfg`, which decide a floor's ways on) as data, and
+  adding a template to a floor's map from Blender is untried.
 
 ## Now: the rest of the game
 
