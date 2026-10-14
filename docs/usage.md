@@ -38,6 +38,7 @@ c2 xref extracted/scripts event 510 --map s51    what defines, starts and reques
 c2 xref extracted/scripts map s51                how the game enters a map
 c2 xref extracted/scripts monster golem          a monster's model, AI script and users
 c2 flags extracted/scripts [--flag N]            save flags in use, and free ones
+c2 flags extracted/scripts --counters [--counter N]   the same for save counters
 c2 fork extracted/scripts lib/x.c lib/y.c script.c   a library copy for some scripts
 c2 mod save extracted/scripts castle             copy edits made in the tree into a mod
 c2 mod apply extracted/scripts castle            write a mod into the tree
@@ -298,11 +299,12 @@ void start_castle_battle(void)
   reach its `#if`. A struct the target defines otherwise is refused.
 - **`PROGRAM` lines** add programs. To change a program the script has,
   override its function.
-- **`NEW_FLAG(name)`, `NEW_PROGRAM(name)` and `NEW_MONSTER_VAR(name)`**, in
-  any file of the mod (a shared `.h` is handy), ask `build` for a save flag
-  (from 1024), a program number (from 9000) or a shared monster variable (8
-  to 135) that the game, the engine and every mod in `mods/` leave alone,
-  hand-written numbers included. The numbers are kept in
+- **`NEW_FLAG(name)`, `NEW_COUNTER(name)`, `NEW_PROGRAM(name)` and
+  `NEW_MONSTER_VAR(name)`**, in any file of the mod (a shared `.h` is
+  handy), ask `build` for a save flag (from 1024), a 16-bit save counter
+  (from 32, of 128), a program number (from 9000) or a shared monster
+  variable (8 to 135) that the game, the engine and every mod in `mods/`
+  leave alone, hand-written numbers included. The numbers are kept in
   `mods/numbers.json`, so a name keeps its number from build to build and
   saves stay valid when mods are added; a mod left out of a build keeps its
   numbers reserved. Use the name where the number would go:

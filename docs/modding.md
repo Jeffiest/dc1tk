@@ -13,6 +13,7 @@ comes from. The commands are in [usage](usage.md).
 | How does the game get to map s51, and at which program? | `c2 xref extracted/scripts map s51` |
 | Which model and AI script does a monster kind use, and who places it? | `c2 xref extracted/scripts monster golem` |
 | Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `c2 flags extracted/scripts`, `c2 flags extracted/scripts --flag 54` |
+| Which save counters are in use? Who uses counter 5? (`NEW_COUNTER` for a mod's own.) | `c2 flags extracted/scripts --counters`, `c2 flags extracted/scripts --counter 5` |
 | Which maps can a scene start in, and where does the player play? | `c2 maps extracted/scripts` |
 | A map's programs, free program numbers, trigger points and player positions? | `c2 map extracted/scripts s17` |
 | What have I changed? | `c2 changes extracted/scripts` (scripts), `c2 diff dc2.iso` (scripts, assets and disc files) |
@@ -118,6 +119,14 @@ event and marks the AI scripts of monsters the map places.
   `mods/numbers.json` so saves stay valid (see [usage](usage.md#mods)).
   A flag is saved with the game, so clear one that only matters during a
   scene when the scene ends, and on game over.
+- **Save counters** are 128 16-bit numbers in the save (`short_flag` in
+  `savedata.cpp`), read and written by event scripts' `get_counter` and
+  `set_counter` (values -32768 to 32767). The disc's scripts use 0 to 20 but
+  6; the engine reads 5 in the main menu and keeps the fishing tournament's
+  count and wins in 21 to 25. A mod asks for one with `NEW_COUNTER(name)`,
+  and `build` gives it one from 32 up that nothing else uses, kept in
+  `mods/numbers.json` as flags are. `c2 flags extracted/scripts --counters`
+  lists them.
 - **Script globals** keep their values between program runs for as long as
   the map's script stays loaded; they are zeroed when it loads
   (`CRunScript::load`).

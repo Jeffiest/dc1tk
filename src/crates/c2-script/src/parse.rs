@@ -109,6 +109,7 @@ fn compound_op(op: &str) -> Option<&'static str> {
 fn request(word: &str) -> Option<&'static str> {
     Some(match word {
         "NEW_FLAG" => "flag",
+        "NEW_COUNTER" => "counter",
         "NEW_PROGRAM" => "program",
         "NEW_MONSTER_VAR" => "monster_var",
         _ => return None,
@@ -1025,6 +1026,10 @@ struct State {
     types: HashMap<String, Ty>,
     /// Unnamed structs so far, for their tags.
     anonymous: usize,
+    /// What makes the file's unnamed structs' tags its own: a hash of its text, so that two files
+    /// (two mods' patches, a script and its library) never give two different structs one tag, and
+    /// a file read twice (as an include and as a library, under two names) gives the same tags.
+    file_key: String,
     /// The typedefs of the headers and libraries included so far, read when they are given
     /// (parse_source): what a type's size and slots need. They are not type words here, as a
     /// script's names may be the same (sdk::resolve reads the headers' kinds for the rest).
@@ -1051,6 +1056,7 @@ impl State {
             // what <stdarg.h>'s va_list stands for: a pointer into a variadic call's arguments
             types: HashMap::from([("__va_list".to_string(), ctype::pointer(ctype::int()))]),
             anonymous: 0,
+            file_key: String::new(),
             header_kinds: HashMap::new(),
         }
     }
@@ -1691,7 +1697,7 @@ fn struct_specifier(state: &mut State, union: bool) -> Parsed<String> {
         state.name()?
     } else if state.at("{", 0) {
         state.anonymous += 1;
-        format!("__anonymous_{}", state.anonymous)
+        format!("__anonymous_{}_{}", state.file_key, state.anonymous)
     } else {
         let found = state.shown(state.peek(0))?;
         return state.fail(format!("expected the name of a {word}, found {found}"));
@@ -4278,6 +4284,17 @@ thread_local! {
     static INCLUDED: RefCell<HashMap<u64, Included>> = RefCell::new(HashMap::new());
 }
 
+/// A file's own part of its unnamed structs' tags: 8 hexadecimal digits of a hash of its text that
+/// stays the same from run to run (FNV-1a), as the program's bytes must. Two files with the same
+/// text give the same tags to the same structs, which is harmless.
+fn file_key(text: &str) -> String {
+    let mut hash: u32 = 0x811c_9dc5;
+    for byte in text.bytes() {
+        hash = (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193);
+    }
+    format!("{hash:08x}")
+}
+
 /// What an included file declares, for the file including it.
 fn included(path: &str, headers: Files) -> Parsed<Included> {
     let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {
@@ -4312,6 +4329,7 @@ fn parse_state(
     }
     let tokens = tokenize_with(&chars, &mut macros, file, CALLER_FRAMES + 2, headers, 0)?;
     let mut state = State::new(tokens, CALLER_FRAMES + 1);
+    state.file_key = file_key(text);
     if state.tokens[0].kind == Kind::Assembly {
         return Ok((node!({"kind": "program", "asm": state.tokens[0].text()}), Included::default()));
     }
