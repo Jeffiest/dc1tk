@@ -44,9 +44,22 @@ from: a path given to `load_sound`, a sound set's event bank,
 bank) or `get_system_sound_id()` (`SY_000`, also `play_system_se(n)`).
 Every bank is a pack whose cfg names its entries, in Japanese: 840 banks,
 8,050 entries. All map base banks share one layout (`BS_999`). Following
-the variable from the load to `play_se` within a function matches about
-7,700 of the 8,860 calls. Monster and character sounds use the owner's own
-bank (`snd2/mon/EN_nnn`, `snd2/chara/CH_nnn`).
+the variable from the load to `play_se` names 8,846 of the 8,858 entries;
+the other 12 are in two helpers nothing calls (`slide_train_to_stop` in
+s02, `run_voice_with_machine_noise` in s06), so no bank reaches them.
+Monster and character sounds use the owner's own bank (`snd2/mon/EN_nnn`,
+`snd2/chara/CH_nnn`).
+
+The event port (4) holds one bank at a time. In dungeons the floor scripts
+load `EV_200_000` there (`EV_200_010` is the Moon Flower Palace's) and every
+scene that loads another event bank calls `load_event_sound` before it ends,
+so the events the engine starts find the battle music there. The engine
+plays entry 0 of whatever bank the port holds as the battle music, fading
+it in near monsters, while `DNG_PAUSE_BATTLE_MUSIC` is clear and the floor
+is not a boss floor (`DngBattleBgm`, dng_event.cpp); the game over and
+victory scenes save its state and volume (`get_battle_bgm_volume`) and
+stop and restore entry 0. `SE_EVENT_PORT_BATTLE_MUSIC` names that entry
+where the scripts that share such code disagree on the bank.
 
 ## Voices and effects
 

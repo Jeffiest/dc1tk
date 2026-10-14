@@ -477,7 +477,7 @@ fn banks_reach_entries_through_parameters_and_out_parameters() {
     let caller = node!({"kind": "function", "name": "on_start", "params": [], "locals": [{"name": "id"}],
                         "body": [call("load_fanfare", vec![node!({"kind": "addr", "target": var("id")})]),
                                  call("play_fanfare", vec![var("id")])]});
-    let (known, _) = soundpass::program_sounds(&[loader.clone(), player.clone(), caller.clone()], &found, None);
+    let (known, _) = soundpass::program_sounds(&[loader.clone(), player.clone(), caller.clone()], &found, None, None);
     let mut banks = soundpass::sound_banks(&player, &known);
     let flow = soundpass::sound_flow(&player, &known);
     let body = player["body"].as_array().unwrap();
@@ -487,7 +487,7 @@ fn banks_reach_entries_through_parameters_and_out_parameters() {
     let other = node!({"kind": "function", "name": "on_end", "params": [], "locals": [{"name": "id"}],
                        "body": [{"kind": "expr", "expr": {"kind": "assign", "target": var("id"), "value": {"kind": "call", "name": "get", "args": []}}},
                                 call("play_fanfare", vec![var("id")])]});
-    let (known, _) = soundpass::program_sounds(&[loader, player, caller, other], &found, None);
+    let (known, _) = soundpass::program_sounds(&[loader, player, caller, other], &found, None, None);
     assert!(!known.params.contains_key(&key("play_fanfare", 0)));
 }
 
@@ -500,13 +500,13 @@ fn a_library_takes_the_banks_every_script_that_includes_it_passes() {
                         "body": [{"kind": "native", "name": "play_se", "args": [var("bank"), {"kind": "int", "value": 0}]}]});
     let caller = node!({"kind": "function", "name": "on_start", "params": [], "locals": [{"name": "id"}],
                         "body": [load, {"kind": "expr", "expr": {"kind": "call", "name": "play_fanfare", "args": [var("id")]}}]});
-    let (known, seen) = soundpass::program_sounds(&[caller, helper.clone()], &found, None);
+    let (known, seen) = soundpass::program_sounds(&[caller, helper.clone()], &found, None, None);
     let passed = soundpass::passed_sounds(std::slice::from_ref(&helper), &known, &seen);
     let expected: IndexMap<(String, usize), BTreeSet<String>> =
         [(key("play_fanfare", 0), BTreeSet::from(["se_sp_000".to_string()]))].into_iter().collect();
     assert_eq!(passed.params, expected);
     let seed = sdk::library_sounds(&[passed.clone(), passed.clone()]);
-    let (known, _) = soundpass::program_sounds(std::slice::from_ref(&helper), &found, Some(&seed));
+    let (known, _) = soundpass::program_sounds(std::slice::from_ref(&helper), &found, Some(&seed), None);
     assert_eq!(known.params, HashMap::from([(key("play_fanfare", 0), "se_sp_000".to_string())]));
     // a script that passes something else leaves the library's parameter a number
     let other = Passed {
@@ -514,7 +514,7 @@ fn a_library_takes_the_banks_every_script_that_includes_it_passes() {
         ..Passed::default()
     };
     let seed = sdk::library_sounds(&[passed, other]);
-    let (known, _) = soundpass::program_sounds(std::slice::from_ref(&helper), &found, Some(&seed));
+    let (known, _) = soundpass::program_sounds(std::slice::from_ref(&helper), &found, Some(&seed), None);
     assert!(known.params.is_empty());
 }
 
@@ -567,4 +567,99 @@ fn locals_called_unused_that_are_read_get_a_true_name() {
     assert_eq!(renamed(&[]), ["unset_mode", "mode", "unused4"]);
     // nor do they take the name of one of the script's functions
     assert_eq!(renamed(&["mode"]), ["unset_mode", "mode_2", "unused4"]);
+}
+
+/// The named body of one function after the program pass over all of them.
+fn sounds_in(functions: &[Node], entries: &[&str], found: &Context, name: &str) -> Node {
+    let entries: HashSet<String> = entries.iter().map(|entry| entry.to_string()).collect();
+    let (known, _) = soundpass::program_sounds(functions, found, None, Some(&entries));
+    let function = functions.iter().find(|function| function["name"].as_str() == Some(name)).unwrap();
+    let mut banks = soundpass::sound_banks(function, &known);
+    let flow = soundpass::sound_flow(function, &known);
+    soundpass::named_sounds(function["body"].as_array().unwrap(), found, &mut banks, Some(&flow), None)
+}
+
+fn function(name: &str, body: Node) -> Node {
+    node!({"kind": "function", "name": name, "params": [], "locals": [], "body": body})
+}
+
+fn load_event(path: &str) -> Node {
+    node!({"kind": "native", "name": "load_sound",
+           "args": [var("SND_PORT_EVENT"), {"kind": "string", "text": path}]})
+}
+
+fn read_port() -> Node {
+    node!({"kind": "native", "name": "get_sound_port_bank", "args": [var("SND_PORT_EVENT")], "result": var("port")})
+}
+
+fn stop_port_entry(entry: i64) -> Node {
+    node!({"kind": "native", "name": "stop_se", "args": [var("port"), num(entry)]})
+}
+
+#[test]
+fn the_event_port_follows_calls_and_rests_at_the_bank_events_put_back() {
+    let mut found = sound_context(
+        &[("se_ev_200_000_pal", 0, "SE_EV_200_000_BATTLE_MUSIC"), ("se_ev_100_105_pal", 11, "SE_EV_100_105_DOOR")],
+        &[],
+    );
+    found.constants.insert("SND_PORT_EVENT".into(), num(4));
+    let restore = function("load_event_sound", node!([load_event("snd2/event/EV_200_000.snd")]));
+    // a scene loads its own bank, plays from it after a call that keeps the port, and puts the
+    // battle music back
+    let scene = function(
+        "scene",
+        node!([load_event("snd2/event/EV_100_105.snd"), call("keep", vec![]), read_port(), stop_port_entry(11),
+               call("load_event_sound", vec![])]),
+    );
+    let keep = function("keep", node!([]));
+    let victory = function("victory", node!([read_port(), stop_port_entry(0)]));
+    let functions = [restore, scene, keep, victory];
+    let entries = ["scene", "victory"];
+    assert_eq!(sounds_in(&functions, &entries, &found, "scene")[3]["args"][1], var("SE_EV_100_105_DOOR"));
+    assert_eq!(sounds_in(&functions, &entries, &found, "victory")[1]["args"][1], var("SE_EV_200_000_BATTLE_MUSIC"));
+    // an event that leaves its bank there, and stays on the map, leaves the resting bank unknown
+    let leaves = function("leaves", node!([load_event("snd2/event/EV_100_105.snd")]));
+    let functions = [functions.to_vec(), vec![leaves]].concat();
+    let shown = sounds_in(&functions, &["scene", "victory", "leaves"], &found, "victory");
+    assert_eq!(shown[1]["args"][1], num(0));
+    // unless it asks to leave the map
+    let jumps = function(
+        "leaves",
+        node!([load_event("snd2/event/EV_100_105.snd"),
+               {"kind": "native", "name": "jump_to_map", "args": [num(-1), num(3)]}]),
+    );
+    let functions = [functions[..4].to_vec(), vec![jumps]].concat();
+    let shown = sounds_in(&functions, &["scene", "victory", "leaves"], &found, "victory");
+    assert_eq!(shown[1]["args"][1], var("SE_EV_200_000_BATTLE_MUSIC"));
+}
+
+#[test]
+fn an_unknown_event_port_read_with_the_battle_music_volume_is_the_battle_music() {
+    let found = sound_context(&[("se_event_port_pal", 0, "SE_EVENT_PORT_BATTLE_MUSIC")], &[]);
+    let volume = node!({"kind": "native", "name": "get_battle_bgm_volume", "args": [], "result": var("volume")});
+    let game_over = function("game_over", node!([read_port(), volume, stop_port_entry(0)]));
+    let other = function("other", node!([read_port(), stop_port_entry(0)]));
+    let functions = [game_over, other];
+    assert_eq!(sounds_in(&functions, &[], &found, "game_over")[2]["args"][1], var("SE_EVENT_PORT_BATTLE_MUSIC"));
+    assert_eq!(sounds_in(&functions, &[], &found, "other")[1]["args"][1], num(0));
+}
+
+#[test]
+fn a_bank_set_under_a_condition_is_known_under_the_same_condition() {
+    let found = sound_context(&[("se_en_900_pal", 19, "SE_EN_900_VANISH")], &[]);
+    let load = |path: &str| {
+        node!({"kind": "native", "name": "load_sound",
+               "args": [var("SND_PORT_MENU"), {"kind": "string", "text": path}], "result": var("bank")})
+    };
+    let holed = node!({"kind": "binary", "op": "==", "left": var("holed"), "right": num(1)});
+    let minus_one = node!({"kind": "unary", "op": "-", "operand": num(1)});
+    let shot = node!({"kind": "function", "name": "shot", "params": [], "locals": [{"name": "bank"}, {"name": "holed"}],
+        "body": [load("snd2/mon/EN_900.snd"),
+                 {"kind": "if", "cond": holed.clone(), "then": [load("snd2/sp/sp_000.snd")], "else": null},
+                 {"kind": "if", "cond": holed, "then": [call("consume", vec![minus_one])],
+                  "else": [call("consume", vec![var("bank")])]}]});
+    let consume = node!({"kind": "function", "name": "consume", "params": [{"name": "bank", "array": false}], "locals": [],
+        "body": [{"kind": "native", "name": "play_se", "args": [var("bank"), num(19)]}]});
+    let functions = [shot, consume];
+    assert_eq!(sounds_in(&functions, &["shot"], &found, "consume")[0]["args"][1], var("SE_EN_900_VANISH"));
 }

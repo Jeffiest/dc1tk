@@ -871,6 +871,12 @@ impl Model {
                     .filter(|(name, _)| used.contains(*name))
                     .map(|(name, kinds)| (name.clone(), kinds.clone()))
                     .collect(),
+                port_in: passed
+                    .port_in
+                    .iter()
+                    .filter(|(name, _)| own.contains(name.as_str()))
+                    .map(|(name, kinds)| (name.clone(), kinds.clone()))
+                    .collect(),
             };
             uses.entry(library.path.clone()).or_default().push(mine);
         }

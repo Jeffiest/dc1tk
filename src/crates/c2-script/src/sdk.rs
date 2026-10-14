@@ -1742,7 +1742,7 @@ pub fn present_functions(
         }
     }
     let all: Vec<Node> = prepared.iter().chain(&prepared_hidden).cloned().collect();
-    let (known, seen) = crate::soundpass::program_sounds(&all, found, sounds.seed.as_ref());
+    let (known, seen) = crate::soundpass::program_sounds(&all, found, sounds.seed.as_ref(), sounds.entries.as_ref());
     if sounds.want_out {
         sounds.out = Some(crate::soundpass::passed_sounds(&prepared_hidden, &known, &seen));
     }
@@ -1791,6 +1791,13 @@ pub fn present(
             entry.clone().with("no", number)
         })
         .collect();
+    // the functions the engine starts, which find the event port as the last event left it
+    let mut entries: HashSet<String> =
+        list(&program, "programs").iter().map(|entry| text(entry, "function").to_string()).collect();
+    if let Some(main) = program["main"].as_str() {
+        entries.insert(main.to_string());
+    }
+    sounds.entries = Some(entries);
     let mut functions: Vec<Node> =
         found.includes.iter().map(|path| node!({"kind": "include", "path": path.clone(), "system": true})).collect();
     functions.extend(present_functions(list(&program, "functions"), found, params_by_kind, hidden, sounds));

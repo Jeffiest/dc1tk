@@ -217,9 +217,20 @@ value is.
   `system_se`, `base_se` or `battle_se` (`play_se(snd_id, SE_TREASURE_GET)`),
   and after `load_sound(..., &id)` from that bank's `se_<bank>` enum. It
   follows the id through branches (after an `if`, only a bank every path
-  agrees on), globals, the functions it is passed to and helpers that
-  return it through a pointer, and into a library when every script that
-  includes the library passes it the same bank.
+  agrees on, or a bank that depends on the `if`'s condition while a later
+  `if` tests the same one), globals, the functions it is passed to (a
+  number passed, `-1`, means none) and helpers that return it through a
+  pointer, and into a library when every script that includes the library
+  passes it the same bank.
+- `get_sound_port_bank(SND_PORT_EVENT)` reads the event port, which the
+  decompiler follows like a variable every function shares: a call leaves
+  the port as the function does, and the events the engine starts find it
+  at the map's resting bank, the one every event that loads another bank
+  (and stays on the map) puts back, such as a dungeon floor's battle music
+  `EV_200_000`. Where the bank cannot be followed, a function that keeps
+  the battle music's volume (`get_battle_bgm_volume`) prints entry 0 as
+  `SE_EVENT_PORT_BATTLE_MUSIC`: the dungeon engine plays entry 0 of the
+  event port's bank as the battle music (`DngBattleBgm`, dng_event.cpp).
 
 ## Unregistered numbers
 
