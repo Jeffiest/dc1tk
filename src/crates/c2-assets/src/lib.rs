@@ -18,6 +18,7 @@ pub mod mapfile;
 pub mod mds;
 pub mod models;
 pub mod mot;
+pub mod motions;
 pub mod py;
 pub mod soundbank;
 pub mod sounds;

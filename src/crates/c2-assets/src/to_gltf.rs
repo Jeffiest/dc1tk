@@ -135,7 +135,7 @@ fn engine_quat_to_gltf(q: &[f64; 4]) -> Vec<f64> {
     normalize(&[-x, -y, -z, w], &NO_ROTATION)
 }
 
-fn slerp(a: &[f64], b: &[f64], t: f64) -> Result<Vec<f64>> {
+pub(crate) fn slerp(a: &[f64], b: &[f64], t: f64) -> Result<Vec<f64>> {
     let mut b = b.to_vec();
     let mut d = py::sum(a.iter().zip(&b).map(|(x, y)| x * y));
     if d < 0.0 {
@@ -1241,24 +1241,17 @@ fn export_parts(
 
     let clips = info.motion0().map(|m| m.keys.as_slice()).unwrap_or_default();
     if let Some(motion) = character.motion.as_ref().filter(|m| !m.is_empty() && !clips.is_empty()) {
-        let mut by_name: Vec<(String, usize)> = Vec::new();
-        for (i, node) in nodes.iter().enumerate() {
-            let lower = node.base_name().to_lowercase();
-            if !by_name.iter().any(|(n, _)| *n == lower) {
-                by_name.push((lower, i));
-            }
-        }
+        // a list drives the frame its number gives (MotionProc's GetFrame), whatever its name
         let mut channels_of: std::collections::BTreeMap<(usize, &str), &KeyList> = Default::default();
         for list in motion {
-            if !(0..=2).contains(&list.kind) || list.keys.is_empty() || list.frame as i64 >= nodes.len() as i64 {
-                continue;
-            }
-            let lower = py_index(nodes, list.frame as i64)?.base_name().to_lowercase();
-            let Some(&(_, target)) = by_name.iter().find(|(n, _)| *n == lower) else {
+            let Some(frame) = usize::try_from(list.frame).ok().filter(|&f| f < nodes.len()) else {
                 continue;
             };
+            if !(0..=2).contains(&list.kind) || list.keys.is_empty() {
+                continue;
+            }
             let path = ["rotation", "scale", "translation"][list.kind as usize];
-            channels_of.insert((target, path), list);
+            channels_of.insert((frame, path), list);
         }
         let mut seen: Vec<Arg> = Vec::new();
         for clip in clips {

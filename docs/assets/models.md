@@ -16,11 +16,13 @@ The code, in `src/crates/c2-assets/src/`:
 | `info_cfg.rs` | info.cfg reader (same tokenising rules as `CScriptInterpreter`) |
 | `to_gltf.rs` | character pack or map model -> glTF 2.0 (.gltf + .bin + textures; map options in 6.1) |
 | `from_gltf.rs` | glTF -> MDS + .wgt + .bbp, with the original MDS as a template (section 7) |
+| `motions.rs` | glTF animations -> .mot keys and info.cfg `KEY` lines (section 7.3) |
 | `models.rs` | the glTF folders mods use (`mod asset --as gltf`, `build`); map models (`export_map_model`, `build_map_model`) |
 
 Mods use these through `models.rs`: textures come from the pack's own
-`.img` files (not placeholders), only meshes that differ from the export are
-rebuilt, and the template's bind pose is kept unless the glTF changes it.
+`.img` files (not placeholders), only meshes and motions that differ from the
+export are rebuilt, and the template's bind pose is kept unless the glTF
+changes it.
 
 ## Status summary
 
@@ -40,8 +42,13 @@ rebuilt, and the template's bind pose is kept unless the glTF changes it.
   the transpose (glTF quaternion = conjugate). Checked against the MDS matrices (7,806 of 7,915 first
   keys match) and visually (walk cycle preview).
 - Motions are named in info.cfg `KEY "name", start, end, step;`: frame ranges inside one .mot.
+- Every .mot key type the disc uses (rotation, scale, translation, vertex, material alpha,
+  visibility) and the time base: 30 motion frames a second at step 1.0 (section 3).
 - info.cfg syntax and all its tags. .clo is a text script of the same syntax (cloth/spring chains).
 - Byte-exact round trip of all 2,159 .mot, 1,825 .wgt (128 empty) and 2,189 .bbp files.
+- Motions back from glTF (section 7.3): an unedited export changes no motion in any of the 1,628
+  pack files with motions, nor does a Blender round trip of the nine packs tried; a turned bone
+  comes back as given in all of them.
 
 **Not settled / open:**
 - Texture pixels: `.img` is researched separately. A material refers to a texture only by
@@ -49,9 +56,10 @@ rebuilt, and the template's bind pose is kept unless the glTF changes it.
   .img data. No flip is expected, because GS and glTF both put (0,0) at the top-left.
 - Meaning of material fields 0x10 (ambient?), 0x20, 0x30 (power?) and odd diffuse values (w = -11,
   components > 1: 8,598 of them in map files). The engine only reads diffuse, 0x10 and the name.
-- Motion time base: `KEY ... step` is frames advanced per game step. The export assumes 30 fps
-  (not verified; it only scales time).
-- Motion types 12 (vertex), 40 (material alpha) and 50 (visibility) are not exported to glTF.
+- Motion types 12 (vertex), 40 (material alpha) and 50 (visibility) are decoded but not exported
+  to glTF; a rebuilt motion takes them from the motion it was edited from (7.3).
+- Motion sets other than 0 (`MOTION 1..7`, and packs that only add a set to a loaded character,
+  such as `chara/c01_fishing.chr`) are not exported.
 - The CPU skinning path (`SHADOW_MOTION` and the .wgt given in `MOTION`'s 4th argument) is only
   partly followed. `_MOTION` ignores its 4th argument (sets `entry[2].data = 0`), so the main model
   is skinned only by the VU1 path, from `<model>.wgt`.
@@ -254,19 +262,66 @@ key:   u32 frame, u32[3] 0, f32[4] value
 - `more` is only tested for zero. Its non-zero value is always the block size. The two trailing
   words are uninitialised exporter memory (pointer-like 0x0137e6ac / 0x77fcf0b0), never read.
 - types (`MotionKeyType`, include/gameutil.hpp): 0 rotation (58,590 blocks), 1 scale (9,957),
-  2 translation (17,506), 12 vertex position (1,028; target = vertex index + 1), 40 material
-  alpha (11,211; target = material index, alpha = 1 - x), 41 colour, 50/51 visibility (12),
-  30-33 camera (none in .mot files).
-- key frames ascending in every list. The first key is at frame 1 in 92,772 lists and at 0 in
-  3,565. Interpolation: slerp (`QuatSlerp`, shortest arc) for rotation, lerp otherwise, between the
-  two keys around the frame (binary search).
-- **Rotation:** value = (w, x, y, z), unit length (175,703 of 175,703). `QuatToMat` (mg_frame.cpp:123)
-  writes the transpose of the usual matrix, and the result *replaces* the 3x3 of the node's local
-  matrix (scale from the MDS matrix is lost). glTF rotation = (-x, -y, -z, w).
-- **Translation:** value.xyz replaces local translation (w = 0 in all).
-- One .mot holds every motion of the character on one timeline (chara c01b.mot: frames 1..379; mainchr c01b.mot: 1..598).
+  2 translation (17,506), 12 vertex position (1,028), 40 material alpha (11,211), 41 material
+  colour (none), 50/51 visibility (12), 30-33 camera (none in .mot files). `frame` is the MDS node
+  index: `MotionProc` drives `root->GetFrame(list->frame)`, whatever the node's name.
+- key frames ascending in every list, never repeated, and **one key every frame**: of 10,314,102
+  steps between keys, 10,314,034 are 1. The first key is at frame 1 in 92,772 lists and at 0 in
+  3,565. Lists are in node order; a node's lists run 40 (one per material), 0, 1, 2.
+- One .mot holds every motion of the character on one timeline (chara c01b.mot: frames 1..379;
+  mainchr c01b.mot: 1..598). Every list is applied every game frame (`SetMotionTime` walks the
+  whole list), so every list needs keys over every KEY's frames.
 
-### 3.1 Motion names
+### 3.1 Key types (`MotionProc`, gameutil.cpp:102)
+
+The value at time `time` (a float frame): binary search for the last key at or before
+`(u32)time`, the key after it (the same key past the last), `t = (time - key) / (next - key)`.
+Below the first key the search lands one key before the list (index -1): the engine reads
+before the array, so the first key must be at or before every frame a KEY plays. Past the last
+key the divisor is 0.
+- **0 rotation:** value = (w, x, y, z), unit length (175,703 of 175,703). `QuatSlerp` (shortest
+  arc) for 0.001 < t < 0.999, else the nearer key. `QuatToMat` (mg_frame.cpp:123) writes the
+  transpose of the usual matrix, and `SetTransMatrix` *replaces* the 3x3 of the node's local
+  matrix, keeping its translation (scale from the MDS matrix is lost). glTF rotation =
+  (-x, -y, -z, w).
+- **1 scale:** lerp of xyz (w = 0 in all) into `SetScale`, which the node applies apart from the
+  matrix (`use_srt`).
+- **2 translation:** lerp of xyz (w = 0 in all) replaces the local translation.
+- **12 vertex:** `target` = vertex index + 1, value = (x, y, z, 1): the vertex of the node's
+  `mgCVisualMDT` (the MDS vertex array, used in place) is set to the lerped xyz. `MotionProc` takes
+  the following lists in one go while their `frame` stays the same, with the key indices of the
+  first: a node's vertex lists must be consecutive and share their key frames (all of the disc's
+  do; a few event packs such as `event/e200/e206/e206_cloth`). A list of another type for the same
+  node right after the group is taken as a vertex list too (one file has one).
+- **40 material alpha:** `target` = the MDT material index, value.x (y, z, w = 0):
+  `diffuse.a = 1 - lerp(x)`, so 0 is opaque and 1 invisible. 11,211 lists, all varying (fades in
+  effect packs, mostly material 0). No t clamping.
+- **41 material colour:** lerp of xyz into the material's diffuse rgb, and the frame's attribute
+  `unk_28 = 2`. None on the disc.
+- **50 / 51 visibility:** value.x of the key at or before the frame, no interpolation. 50: below
+  1 hides the node (`draw = 0`), else `VISIBLE | SKIP_CHILDREN`. 51: below 1 sets
+  `SKIP_CHILDREN` alone, else `VISIBLE`. 12 lists, all type 50 (`e532_guil_kage`,
+  `e616_osmond`).
+- **30-33 camera** (position, target, roll, field of view) run with an `mgCCamera` only; not in
+  any .mot.
+
+Blending to the next motion (`ChangeMotion`, used while `blend < 1`) takes the keys at
+`(int)(0.9 + frame)` and at the next KEY's start and mixes them by `blend` (slerp or lerp,
+thresholds 0.0001/0.9999), which grows by `blend_speed` (0.2 from `SetMotion`, a SEQ's own)
+each game frame from 0.1.
+
+### 3.2 Time base
+
+The PAL game runs its logic at 25 Hz: `mgFrameRate` is 2 (title.cpp), and `mgEndFrame` waits that
+many 50 Hz vertical blanks per frame. `CCharacter2::NormalDrive` advances a playing KEY by
+`1.2 * step` motion frames per game frame (character.cpp:974), the 1.2 making up for PAL's 25
+against NTSC's 30. So a KEY plays at **30 × step motion frames a second**: step 1.0 is 30 fps,
+walk (0.5) 15, idle (0.02) 0.6. A loop goes back to `start` once `frame + 1.2 * step` would pass
+`end`, so `end` itself shows only with `CHARA_MOTION_HOLD`. Steps on the disc: 0.30 (796 KEYs),
+0.50 (616), 0.40 (575), ... down to 0.00 (119, held poses). The export writes one key per motion
+frame at 1/30 s (step 1.0); the step stays in the animation's `extras` and in info.cfg.
+
+### 3.3 Motion names
 info.cfg:
 ```
 MOTION 0, "c01b.mot", "c01b.bbp", "c01b.wgt";
@@ -278,9 +333,16 @@ MOTION_END;
 ```
 `_KEY` fills `CHRINFO_KEY_SET {char name[0x24]; s32 start, end; f32 step}`. Scripts call
 `SetMotion(name)` -> `GetKeyListPtr` (strcmp over the 8 motion sets' key lists), or by number
-(`GetKeyListIndexPtr`, counting KEY entries in order). `step` is frames per game step:
-walk 0.5, run 1.0, idle 0.02. `SEQ_START/SEQ/SEQ_END` chain named KEYs (blend speed, type, loop count).
-`SE "name", foot, ?, phase` ties sounds to KEY names. Up to 8 motion sets (`MOTION 0..7`).
+(`GetKeyListIndexPtr`, counting KEY entries in order), so a new KEY goes after the last. `step`
+sets the speed (3.2): walk 0.5, run 1.0, idle 0.02. Several KEYs may
+share frames (1,770 pairs have the same range, such as `ドア開け`/`ドア開かない`; 325 share an end
+frame; 106 overlap). `SEQ_START/SEQ/SEQ_END` chain named KEYs (blend speed, type, loop count).
+`SE "name", kind, bank, frame` ties sounds to KEY names (`_SE`, character.cpp:2140): a frame up
+to 1.0 is a fraction of the KEY, turned into a timeline frame with the KEY's range as it stands
+when the line is read; a larger one is a timeline frame. All 1,915 on the disc are fractions, so a
+KEY moved to other frames keeps its sounds. `SELP` gives a start and an end the same way. Up to 8
+motion sets (`MOTION 0..7`); a pack can bring sets alone (`chara/c01_fishing.chr`: `MOTION 7`, no
+model) for a character already loaded.
 
 ## 4. info.cfg
 
@@ -347,9 +409,11 @@ which puts the pack's own textures in place of the placeholders.
   (float), JOINTS_0 (u16) and WEIGHTS_0. Unweighted vertices get the engine's default (slot 0, weight 1).
 - materials: name = texture name. The base colour texture is `textures/<name>.png`, an 8x8
   placeholder until .img decoding exists. Raw MDT fields are kept in `extras`. diffuse.a < 1 gives BLEND.
-- animations: one per KEY, sampled every frame from start to end with the engine's interpolation.
-  LINEAR, time = (frame - start) / fps. Rotation, translation and scale only. `extras` keeps
-  start/end/step.
+- animations: one per KEY of motion set 0 (a name given twice gets `_<start>`), sampled every
+  frame from start to end with the engine's interpolation. LINEAR, time = (frame - start) / 30
+  (3.2). Rotation, translation and scale only, each list on the node its `frame` numbers (before,
+  lists went to the first node of the same lower-case name, which put 1,866 lists of nodes
+  named alike, `3` and `3--ba`, on the wrong node). `extras` keeps start/end/step.
 - Robustness: all 1,950 character packs with a MODEL export, and the self-check (accessor bounds,
   index ranges, joints, weight sums) passes on every one. 670 have skins. For 422 of them the MDS
   rest pose differs from the bbp, so the rest pose shows deformed skin parts, as the engine would
@@ -476,6 +540,68 @@ Nothing VU-specific: the file is an indexed mesh and the engine batches it. Requ
    into `base_stack`, and `_MODEL` uses a 6400-qword work buffer. Larger meshes than the original
    may overflow. The limits are not measured yet. POLY_NUM in info.cfg may also need updating
    (meaning not traced).
+
+### 7.3 Motions from glTF (`motions.rs`)
+
+`motions::build(exported, given, model, mot, info)` gives the pack's .mot and info.cfg with the
+given glTF's animations written in, or nothing when no animation differs from the export's;
+`models::build` runs it after the meshes. Animations are matched to KEYs by name (the export's
+names, `_<start>` on a repeated one).
+
+**Frames.** A channel's node stands for a frame by its `extras.mds_index`, or else by name: a
+name with `--` flags is a frame's whole name, one without the name of every frame of it; among
+those, the frames under the frame the node's parent stands for; nodes of one name under one parent
+take that name's frames in file order, by Blender's `.NNN` (which numbers names in the order it
+made them) and then in glTF order. Blender splits a rigid mesh off its bone as an object of the
+same name parented to it: both stand for the frame, and the bone's channels count. A skinned
+mesh node stands for none.
+
+**What changed.** Each animation is sampled at its KEY's frames (frame r at r/30 s, glTF
+interpolation: LINEAR with slerp for rotations, STEP, CUBICSPLINE), held after its last key, and
+compared with the export's: rotations within 3e-3 radians, translations and scales within 1e-3
+(plus 2e-5 of the value). A channel no list drives counts as unchanged while it holds a rest: the
+export's node, or the given node's, since Blender rests a bone at its bind pose (from the
+inverse bind matrices) and writes that for every bone an action leaves alone. A Blender round
+trip moves rotations by up to 7e-4 and translations by a few millionths, and reduces constant
+channels to two keys. An animation changed when a channel differs or it got longer (more than
+half a motion frame); one that got shorter changed only if what it holds differs.
+
+**Where it goes.**
+- An edited motion of the same length is written over its own frames: each changed channel's
+  list gets the given values at the KEY's frames, the frames another KEY also uses keep theirs
+  (the motion moves instead when they would change), and the frames just outside get a key of
+  their old value if they had none, so no other KEY's motion moves. The KEY line stays.
+- A retimed motion, one whose shared frames change, and a new animation go after the last frame
+  any list or KEY uses (`last`): every list gets a key per frame of the new range, and a key at
+  `last` holding its last value if it ended before, so the frames before keep their values.
+  Rotation, scale and translation lists take the animation's values (its node's rest where it
+  does not animate one; a channel it leaves as it was, of a motion moved without a retime, keeps
+  its own keys); vertex, material and visibility lists take the source motion's values,
+  stretched to the new length. The KEY's start and end are rewritten in info.cfg; a new
+  animation gets a `KEY "name", start, end, step;` line after the motion set's last KEY, its step
+  from `extras.step`, else that of the KEY it is a copy of (`歩き.001` of `歩き`, as Blender names
+  a duplicated action, which also gives its source motion), else 1.00 (30 frames a second, as
+  Blender plays it). Names are 1 to 35 bytes of Shift-JIS.
+- A channel no list drives that an animation moves gets a new list: the export's rest at frame 0
+  and `last`, the animation's values at its frames, the rest around them. New lists go among
+  their node's lists (rotation, scale, translation order), never right after a vertex group.
+- Lists nothing writes to keep their bytes; rotations written are turned to the side of the key
+  before them.
+
+Removing an animation leaves its KEY and frames as they were. info.cfg is edited in place
+(`info_cfg::statements` gives each argument's bytes), so comments and layout stay. SE cues are
+fractions of their KEY on the disc (3.3) and follow a moved one.
+
+Checks: an unedited export changes nothing in any of the 1,628 pack files with motions, nor
+without its node extras and with repeated names numbered as Blender numbers them; a bone of each
+pack's first motion turned 30 degrees comes back from a fresh export of the rebuilt pack as given,
+and every other motion as it was (1,280 written in place, 348 moved). Through Blender 5.1 (import
+at 30 fps, export glTF Separate, `--background --factory-startup`): unedited round trips of
+Max (`chara/c01_base`), Monica (`chara/c02_base`), `b02a`, `p00_23a_hibasira` (rigid, names
+repeated under several parents), `ring_loop`, `denkousekka_h`, `e206_cloth` (vertex lists) and
+`e616_osmond` (visibility) change no motion; a bone turned in one action changes that bone's list
+over that KEY's frames alone; a duplicated action becomes a new KEY, and a stretched one moves to
+new frames with its KEY.
 
 ## 8. Evidence log (research scripts run while the formats were worked out; not in this repository)
 - explore1/2: header/record/layout statistics over all 16,876 .mds (section 1).
