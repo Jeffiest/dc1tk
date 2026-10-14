@@ -203,9 +203,11 @@ code keeps compiling to its own bytes. What the compiler lacks today
    indexed access to globals: generated accessors), pointer arithmetic and
    pointers to pointers, function pointers (an index and a generated
    dispatch), and user-defined varargs with `<stdarg.h>`.
-6. **`double`.** C89 asks for about 10 significant digits; the VM's floats
-   are 32-bit. Software doubles, or a documented limit of the
-   implementation. The `string` type stays as an extension.
+6. **`double` is left out on purpose.** C89 asks for about 10 significant
+   digits and the VM's floats are 32-bit, so code that uses `double` or
+   `long double` is refused with a clear error rather than given 32-bit
+   doubles; the implementation documents this as its one departure. The
+   `string` type stays as an extension.
 
 ## Next: modding
 
