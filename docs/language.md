@@ -160,11 +160,10 @@ This is a made-up script. For a whole mod, see the
 ## Writing your own code
 
 The decompiler writes only the forms above, so retail scripts compile back
-byte for byte. Code you write can use C89 (ANSI C) almost whole, without
-`double`; [the standard](c-standard.md) lists every feature, what the
-compiler does with it, and what is still to come (structs, unions, pointer
-arithmetic, global arrays, function pointers and varargs). Each form compiles
-to the VM's own instructions:
+byte for byte. Code you write can use C89 (ANSI C) whole but for `double`
+and pointers as numbers; [the standard](c-standard.md) lists every feature
+and what the compiler does with it. Each form compiles to the VM's own
+instructions:
 
 - Declarations anywhere in a function, with initializers: `int count = 0;`,
   `for (int i = 0; ...)`, `int table[] = {1, 2, 4};`, `int grid[3][4];`,
@@ -173,14 +172,31 @@ to the VM's own instructions:
   function: a name declared again in a block beside another reuses the slot,
   and one that hides a name of an enclosing block gets a slot of its own.
 - `static` locals, which keep their value between calls, and globals with
-  values (`int lives = 3;`), set once when the script loads, before the first
-  program that starts runs its own code. Global and static arrays and pointers
-  are not supported yet: the VM cannot index a global.
+  values (`int lives = 3;`, `int primes[] = {2, 3, 5};`, `int *at = &lives;`),
+  set once when the script loads, before the first program that starts runs
+  its own code. Global and static arrays and pointers work as local ones: an
+  element at a constant index is the global slot itself, one at a variable
+  index is reached through the array's address.
+- `struct` and `union`, with members of any type, nested, in arrays, through
+  pointers (`p->next->value`), assigned, passed and returned by value, and
+  initialized with C's lists; `typedef` of any type; `offsetof` in
+  `<stddef.h>`. A member takes whole slots, so there are no bit-fields.
+- Pointers of any type and depth (`int **pp`), pointer arithmetic (`p + 2`,
+  `p++`, `*(a + i)`, `i[a]`), functions that return pointers, and a pointer
+  compared with 0 or `NULL`. Two pointers do not compare or subtract: the VM
+  gives no address as a number (keep an index instead).
+- Function pointers (`int (*f)(int) = twice; f(2);`, in arrays and structs
+  too), as the function's number, called through a function the compiler adds
+  that switches on it.
+- Variadic functions (`int sum(int count, ...)`) with `<stdarg.h>`, and wide
+  strings (`L"..."`, arrays of `wchar_t`). A string literal is the VM's string
+  (what natives and `string` variables take), but one indexed or used as a
+  `char *` (`char *p = "abc";`) is an array of its characters, as in C.
 - `char`, `short`, `long`, `signed` and `unsigned`, with C's widths (char 8
   bits and signed, short 16, int and long 32) and wrap-around, `const`
   (checked), `volatile`, `register`, `auto`, `typedef`, `enum` and `sizeof`
-  (1 for a char, 2 for a short, 4 for the rest). `<limits.h>`, `<float.h>` and
-  `<stddef.h>` are in the SDK.
+  (1 for a char, 2 for a short, 4 for the rest). `<limits.h>`, `<float.h>`,
+  `<stddef.h>` and `<stdarg.h>` are in the SDK.
 - `for`, `do ... while`, `switch` with `case`, `default`, fall-through and
   `break`, and `goto` with labels. `continue` in a `for` runs the step first.
 - `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `++` and
@@ -192,21 +208,23 @@ to the VM's own instructions:
   `unsigned` value it shifts zeros in.
 - Function prototypes and old-style (K&R) definitions; bodies without braces
   (`if (x) wait;`), nested `{ }` blocks and empty statements.
-- `string` variables, `int *p` parameters and locals, `*p` for `p[0]`, and an
-  array name standing for its first element's address (`fill(table, 3)`).
+- `string` variables, and an array name standing for its first element's
+  address (`fill(table, 3)`).
 - C's literals: octal and hexadecimal numbers, suffixes (`2.5f`, `10u`),
   character constants with every escape, adjacent strings joined.
 - C's preprocessor: macros with parameters, `#` and `##`, `#if` with C's
   arithmetic and `defined`, `#ifdef`, `#elif`, `#undef`, `#error`, `#line`,
   `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__` and `__STDC__`. A
   `#define` whose value is a constant stays a named constant, which is how
-  the decompiler's trees and a header's constants reach code; a header's
-  macros are not seen by the including file's `#if`.
+  the decompiler's trees and a header's constants reach code. `#include <...>`
+  reads the header as text for its macros too, so they reach the including
+  file's `#if`.
 - Errors name the line.
 
 `double` is refused (the VM's floats are 32 bits); use `float`.
 
-The VM differs from C in ways that matter when writing code:
+The VM differs from C in ways that matter when writing code, unless the code
+asks for C's own semantics with `#pragma std c89` (below):
 
 - **Values keep their type.** Every value on the VM's stack and in a
   variable carries its type, and storing copies it: after `int x; x = 1.5;`,
@@ -218,3 +236,17 @@ The VM differs from C in ways that matter when writing code:
   even on the right of `&&` or `||` or in a branch of `?:`, since natives
   cannot run in the middle of an expression. Write an `if` when a native
   should only run some of the time.
+
+`#pragma std c89` (or `c90`) turns on strict mode for the functions and
+globals after it in the file: a value converts to the type it is stored in,
+passed as or returned as (`int x = 2.5;` gives 2, by `FTOI`; an int stored in
+a float gets `ITOF`), `&&` and `||` give 0 or 1 where their value is used, and
+a native in an operand C may not evaluate (the right of `&&` or `||`, a branch
+of `?:`, the right of a comma) runs only when C would evaluate it, in an `if`
+on a hidden local. Strict code costs a few instructions more where these
+apply; the decompiler never writes the pragma, so retail scripts keep their
+bytes. A library or mod file that wants C's semantics starts with the pragma;
+the conformance suite (see [the standard](c-standard.md)) runs in strict mode.
+Strict mode also gives C's diagnostics for assigning an integer to a pointer
+(but 0), a pointer to an integer, or a pointer to one type to a pointer to
+another.

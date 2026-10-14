@@ -287,5 +287,7 @@ fn addresses_passed_for_a_pointer_of_another_type_are_cast() {
     let read = text.replace("void keep(int unused[])\n{\n    wait;", "void keep(void *unused)\n{\n    unused[0] = 1;");
     let error = compile::compile_program(&parse::parse(&read).unwrap(), tables()).unwrap_err().to_string();
     assert!(error.contains("void pointer"), "{error}");
-    assert!(parse::parse(&text.replace("measure(&distance)", "measure((int *)distance)")).is_err());
+    let cast = parse::parse(&text.replace("measure(&distance)", "measure((int *)distance)")).unwrap();
+    let error = compile::compile_program(&cast, tables()).unwrap_err().to_string();
+    assert!(error.contains("float cannot be converted to a pointer"), "{error}");
 }

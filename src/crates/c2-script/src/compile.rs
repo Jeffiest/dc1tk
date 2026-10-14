@@ -102,15 +102,16 @@ fn int(node: &Node) -> Result<i64> {
     node.as_i64().ok_or_else(|| Error::invalid(format!("{node} is not a number")))
 }
 
+/// The globals' slots, one after another: one each, or an array's or struct's "size".
 fn global_symbols(program: &Node) -> HashMap<String, Symbol> {
-    list(program, "globals")
-        .iter()
-        .enumerate()
-        .map(|(slot, declared)| {
-            let symbol = Symbol { slot: slot as i64, kind: text(declared, "type").to_string(), scope: Scope::Global };
-            (text(declared, "name").to_string(), symbol)
-        })
-        .collect()
+    let mut slot = 0;
+    let mut symbols = HashMap::new();
+    for declared in list(program, "globals") {
+        let symbol = Symbol { slot, kind: text(declared, "type").to_string(), scope: Scope::Global };
+        symbols.insert(text(declared, "name").to_string(), symbol);
+        slot += declared["size"].as_i64().unwrap_or(1);
+    }
+    symbols
 }
 
 fn frame(function: &Node, globals: &HashMap<String, Symbol>) -> Result<(HashMap<String, Symbol>, i64)> {
@@ -213,11 +214,14 @@ fn scalar_mode(symbol: &Symbol, name: &str) -> Result<&'static str> {
     }
 }
 
-fn indexed_mode(symbol: &Symbol, name: &str) -> Result<&'static str> {
+/// The indexed mode for an element: of the variable's own type, or the one the node gives (a
+/// member or element of C's other types, composite.rs).
+fn indexed_mode(symbol: &Symbol, name: &str, node: &Node) -> Result<&'static str> {
+    let kind = node["type"].as_str().unwrap_or(&symbol.kind);
     match symbol.scope {
-        Scope::Array => Ok(array_modes(&symbol.kind)),
-        Scope::Pointer if symbol.kind == "void" => fail(format!("{name} is a void pointer; give it int or float")),
-        Scope::Pointer => Ok(pointer_modes(&symbol.kind)),
+        Scope::Array => Ok(array_modes(kind)),
+        Scope::Pointer if kind == "void" => fail(format!("{name} is a void pointer; give it int or float")),
+        Scope::Pointer => Ok(pointer_modes(kind)),
         _ => fail(format!("{name} is not an array")),
     }
 }
@@ -232,7 +236,7 @@ fn access(state: &mut State, node: &Node, mnemonic: &str) -> Result<()> {
             let name = text(operand, "name");
             let symbol = state.lookup(name)?;
             state.emit("push 0");
-            state.emit(format!("{} {} {}", mnemonic, indexed_mode(&symbol, name)?, symbol.slot));
+            state.emit(format!("{} {} {}", mnemonic, indexed_mode(&symbol, name, node)?, symbol.slot));
         }
         "var" => {
             let name = text(node, "name");
@@ -243,7 +247,22 @@ fn access(state: &mut State, node: &Node, mnemonic: &str) -> Result<()> {
             let name = text(node, "name");
             let symbol = state.lookup(name)?;
             expression(state, &node["index"])?;
-            state.emit(format!("{} {} {}", mnemonic, indexed_mode(&symbol, name)?, symbol.slot));
+            state.emit(format!("{} {} {}", mnemonic, indexed_mode(&symbol, name, node)?, symbol.slot));
+        }
+        "field" => {
+            // a slot of a variable's storage at a constant offset: the plain mode, no index
+            let name = text(node, "name");
+            let symbol = state.lookup(name)?;
+            let kind = text(node, "type");
+            let mode = if symbol.scope == Scope::Global { global_modes(kind) } else { scalar_modes(kind) };
+            state.emit(format!("{} {} {}", mnemonic, mode, symbol.slot + int(&node["offset"])?));
+        }
+        "at" => {
+            // through a pointer an expression gives: the VM indexes through a local only
+            let slot = state.temporary();
+            store_temporary(state, slot, &node["pointer"])?;
+            expression(state, &node["index"])?;
+            state.emit(format!("{} {} {}", mnemonic, pointer_modes(text(node, "type")), slot));
         }
         other => return fail(format!("cannot take the address of {other}")),
     }
@@ -269,7 +288,7 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
             state.emit("push 0");
             state.emit(format!("addr {} {}", array_modes(&symbol.kind), symbol.slot));
         }
-        "var" | "index" | "deref" => access(state, node, "load")?,
+        "var" | "index" | "deref" | "field" | "at" => access(state, node, "load")?,
         "addr" => access(state, &node["target"], "addr")?,
         "assign" => {
             access(state, &node["target"], "addr")?;
@@ -392,7 +411,8 @@ fn narrow(state: &mut State, kind: &str) {
 
 /// target op= value. A variable compiles as target = target op value. An element's address is
 /// worked out once, into a hidden local, and the element is read and written through it, so an
-/// index with side effects (a[i++] += 1) runs them once.
+/// index with side effects (a[i++] += 1) runs them once. "convert": "int" truncates a float result
+/// for an int target (strict mode), before a narrow type wraps it.
 fn compound(state: &mut State, node: &Node) -> Result<()> {
     let target = &node["target"];
     if target.kind() == "var" {
@@ -401,14 +421,23 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
             state,
             &node!({"kind": "binary", "op": node["op"].clone(), "left": target.clone(), "right": node["value"].clone()}),
         )?;
+        if node["convert"] == "int" {
+            state.emit("ftoi");
+        }
         if let Some(kind) = node["narrow"].as_str() {
             narrow(state, kind);
         }
         state.emit("store");
         return Ok(());
     }
-    let name = if target.kind() == "index" { text(target, "name") } else { text(&target["operand"], "name") };
-    let symbol = state.lookup(name)?;
+    // the element's type: the node's own (composite.rs), or its variable's
+    let kind = match target["type"].as_str() {
+        Some(kind) => kind.to_string(),
+        None => {
+            let name = if target.kind() == "index" { text(target, "name") } else { text(&target["operand"], "name") };
+            state.lookup(name)?.kind
+        }
+    };
     let slot = state.temporary();
     state.emit(format!("addr local {slot}"));
     access(state, target, "addr")?;
@@ -416,11 +445,14 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
     state.emit("pop");
     state.emit("push 0");
     state.emit(format!("addr ptr_idx {slot}"));
-    let via = node!({"kind": "via", "slot": slot, "type": symbol.kind});
+    let via = node!({"kind": "via", "slot": slot, "type": kind});
     expression(
         state,
         &node!({"kind": "binary", "op": node["op"].clone(), "left": via, "right": node["value"].clone()}),
     )?;
+    if node["convert"] == "int" {
+        state.emit("ftoi");
+    }
     if let Some(kind) = node["narrow"].as_str() {
         narrow(state, kind);
     }
@@ -934,12 +966,12 @@ pub fn compile_file(path: &std::path::Path, tools: &Toolchain, options: &Options
             &owned
         }
     };
-    let mut program = crate::parse::parse(text)?;
+    let mut headers = tools.headers.clone();
+    headers.extend(crate::definitions::source_headers(path)?);
+    let mut program = crate::parse::parse_source(text, crate::parse::UNNAMED_FILE, &headers)?;
     if let Some(table) = options.table.filter(|_| program.get("asm").is_none() && program["natives"].is_null()) {
         program = program.with("natives", table);
     }
-    let mut headers = tools.headers.clone();
-    headers.extend(crate::definitions::source_headers(path)?);
     let includes = crate::library::read_includes(&program, path, options.overlay, tools.sdk_dir, &[])?;
     let mut program = crate::library::expand(program, &includes, &headers)?;
     if program.get("asm").is_none() && program["natives"].is_null() {

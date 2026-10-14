@@ -1,6 +1,6 @@
 //! The C89 conformance suite: a small program in tests/c89/ for each feature of the language
-//! (ANSI X3.159-1989, by section of the standard), compiled with the SDK's headers and run in the
-//! test VM. A program's second line says what it shows:
+//! (ANSI X3.159-1989, by section of the standard), compiled with the SDK's headers in strict mode
+//! (#pragma std c89) and run in the test VM. A program's second line says what it shows:
 //!
 //! - `// expect: V`: it compiles, and test() returns V (an int, or a float when V has a point);
 //! - `// rejects: TEXT`: C requires a diagnostic, and the compiler gives one with TEXT in it;
@@ -18,6 +18,10 @@ mod common;
 use c2_script::vm::{self, Value};
 use c2_script::{compile, library, parse};
 use common::{root, sdk_texts, tables};
+
+/// Every program is compiled in strict mode, where C's semantics apply; #line keeps its line
+/// numbers its own.
+const HEAD: &str = "#pragma std c89\n#line 1\n";
 
 /// What makes a program a script: its native table and the program table.
 const TRAILER: &str = "\n#pragma natives event\nPROGRAM(100, test);\nMAIN(test);\n";
@@ -60,7 +64,7 @@ fn source(name: &str) -> String {
 
 /// The program compiled (to bytes, so it assembles) and run: test()'s result.
 fn run(name: &str, text: &str) -> c2_script::Result<Value> {
-    let program = parse::parse_file(&format!("{text}{TRAILER}"), &format!("{name}.c"))?;
+    let program = parse::parse_source(&format!("{HEAD}{text}{TRAILER}"), &format!("{name}.c"), sdk_texts())?;
     let program = library::expand(program, &common::no_texts(), sdk_texts())?;
     compile::compile_program(&program, tables())?;
     let table = vm::table_of(&program, tables())?;
@@ -109,6 +113,7 @@ programs! {
     lexical_long_double_constants,
     lexical_character_constants,
     lexical_string_literals,
+    lexical_string_literal_arrays,
     lexical_comments,
     lexical_trigraphs,
     lexical_wide_characters,
@@ -123,6 +128,8 @@ programs! {
     conversions_assignment,
     conversions_void,
     conversions_null_pointer,
+    conversions_pointer_integer,
+    conversions_incompatible_pointers,
     // 3.3 expressions and 3.4 constant expressions
     expressions_primary,
     expressions_array_subscript,
@@ -138,6 +145,8 @@ programs! {
     expressions_multiplicative,
     expressions_additive,
     expressions_pointer_arithmetic,
+    expressions_pointer_comparison,
+    expressions_pointer_difference,
     expressions_shift,
     expressions_relational,
     expressions_equality,
@@ -201,6 +210,7 @@ programs! {
     functions_many_parameters,
     functions_varargs,
     functions_return_pointer,
+    functions_struct_arguments,
     // 3.8 preprocessing directives
     preprocessor_object_macros,
     preprocessor_function_macros,
