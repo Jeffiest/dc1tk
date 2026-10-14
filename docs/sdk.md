@@ -210,16 +210,36 @@ value is.
   `CHARA_PLAYER`, the time gate and save point), and a whole-disc
   decompile adds to `disc.h` the slots each map folder's scripts always
   load with one character (`CHARA_I01_H01_STEVE`), used only in that
-  folder's scripts.
+  folder's scripts (and the libraries only they include). A slot that holds
+  different characters from scene to scene prints as the character a load
+  puts there where that load reaches the use within the function (no call
+  in between that may load or delete the slot): `load_scene_chara(8,
+  "e438_paw.chr")` makes slot 8 `CHARA_S27_PAW` until then (`enum
+  loaded_slots_s27`). A villager slot no script of the map's folder loads
+  itself prints as the villager when the engine always puts the same one
+  there (`CHARA_I01_H01_CEDRIC`, `enum villager_slots_i01_h01`); one that
+  holds different villagers by chapter and time of day gets a comment
+  naming them. See [the character notes](../definitions/pal/notes/characters.md).
 - `play_se(id, n)` plays entry n of the bank `id` was read from, so the
   decompiler follows the variable: after `id = get_system_sound_id()` or
   `get_sound_id(SE_BANK_BASE, &id)` (or `SE_BANK_BATTLE`), n prints from
   `system_se`, `base_se` or `battle_se` (`play_se(snd_id, SE_TREASURE_GET)`),
   and after `load_sound(..., &id)` from that bank's `se_<bank>` enum. It
   follows the id through branches (after an `if`, only a bank every path
-  agrees on), globals, the functions it is passed to and helpers that
-  return it through a pointer, and into a library when every script that
-  includes the library passes it the same bank.
+  agrees on, or a bank that depends on the `if`'s condition while a later
+  `if` tests the same one), globals, the functions it is passed to (a
+  number passed, `-1`, means none) and helpers that return it through a
+  pointer, and into a library when every script that includes the library
+  passes it the same bank.
+- `get_sound_port_bank(SND_PORT_EVENT)` reads the event port, which the
+  decompiler follows like a variable every function shares: a call leaves
+  the port as the function does, and the events the engine starts find it
+  at the map's resting bank, the one every event that loads another bank
+  (and stays on the map) puts back, such as a dungeon floor's battle music
+  `EV_200_000`. Where the bank cannot be followed, a function that keeps
+  the battle music's volume (`get_battle_bgm_volume`) prints entry 0 as
+  `SE_EVENT_PORT_BATTLE_MUSIC`: the dungeon engine plays entry 0 of the
+  event port's bank as the battle music (`DngBattleBgm`, dng_event.cpp).
 
 ## Unregistered numbers
 

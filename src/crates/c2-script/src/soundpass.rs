@@ -2,6 +2,11 @@
 //! the bank the id was read from (the system bank, a scene bank, a bank load_sound loaded, the
 //! event port's latest bank), following ids through variables, globals, parameters and helpers'
 //! out-parameters across a program's functions.
+//!
+//! The event port is followed like a variable every function shares: a function starts with the
+//! bank its callers leave there, a call leaves the bank the function leaves, and an event the
+//! engine starts finds the port's resting bank, the one every event that loads another bank puts
+//! back before it ends (a dungeon floor's battle music, EV_200_000).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -26,13 +31,52 @@ fn sound_entry_args(name: &str) -> Option<(usize, usize)> {
 /// The natives the sound pass reads.
 pub fn is_sound_native(name: &str) -> bool {
     sound_entry_args(name).is_some()
-        || matches!(name, "load_sound" | "get_sound_id" | "get_system_sound_id" | "get_sound_port_bank")
+        || matches!(
+            name,
+            "load_sound"
+                | "get_sound_id"
+                | "get_system_sound_id"
+                | "get_sound_port_bank"
+                | "reset_sound_port"
+                | "delete_sound_port"
+        )
 }
 
 const EVENT_PORT: &str = "event port";
 /// What the pass records for a variable that is written, or a parameter passed, something it cannot
 /// follow; a variable seen with it is never settled.
 pub const UNKNOWN_BANK: &str = "?";
+/// The event port as a function found it, while the pass does not know what its callers leave
+/// there: a function that ends with it leaves the port as it was.
+const AT_ENTRY: &str = "@entry";
+/// Joins what the event port may hold, where paths differ ("@entry|se_ev_200_000").
+const PORT_OR: char = '|';
+
+/// What the event port may hold, from its value in the banks.
+fn port_values(value: &str) -> BTreeSet<&str> {
+    value.split(PORT_OR).collect()
+}
+
+/// The event port's value in the banks for what it may hold: UNKNOWN_BANK when that is one of them.
+fn port_value<'a>(values: impl IntoIterator<Item = &'a str>) -> String {
+    let values: BTreeSet<&str> = values.into_iter().collect();
+    if values.is_empty() || values.contains(UNKNOWN_BANK) {
+        return UNKNOWN_BANK.into();
+    }
+    values.into_iter().collect::<Vec<_>>().join(&PORT_OR.to_string())
+}
+
+/// The bank the event port holds, when the pass knows one.
+fn port_bank(banks: &HashMap<String, String>) -> Option<&String> {
+    banks
+        .get(EVENT_PORT)
+        .filter(|bank| bank.as_str() != UNKNOWN_BANK && bank.as_str() != AT_ENTRY && !bank.contains(PORT_OR))
+}
+
+/// What a call passes on the event port: its bank, or UNKNOWN_BANK.
+fn port_passed(banks: &HashMap<String, String>) -> String {
+    port_bank(banks).cloned().unwrap_or_else(|| UNKNOWN_BANK.into())
+}
 
 /// The kind of sound entry play_se plays from a bank id, by where the id came from.
 fn scene_bank(bank: &Node) -> Option<&'static str> {
@@ -68,10 +112,11 @@ fn bank_kind(stem: &str) -> String {
     format!("se_{}", stem.to_lowercase())
 }
 
-/// An int literal's value, or an int constant's.
+/// An int literal's value (-1 included), or an int constant's.
 fn literal_value(node: &Node, found: &Context) -> Option<i64> {
     match node.kind() {
         "int" => node["value"].as_i64(),
+        "unary" if text(node, "op") == "-" => literal_value(&node["operand"], found).map(|value| -value),
         "var" => {
             let value = found.constants.get(text(node, "name"))?;
             if value.kind() == "int" {
@@ -108,39 +153,53 @@ pub struct Known {
     pub globals: HashMap<String, String>,
     pub params: HashMap<ParamKey, String>,
     pub outs: HashMap<ParamKey, String>,
+    /// The event port's resting bank: what it holds when the engine starts an event.
     pub port: Option<String>,
+    /// The bank on the event port when a function starts, where every way in agrees.
+    pub port_in: HashMap<String, String>,
+    /// What a function leaves on the event port where it returns: banks, AT_ENTRY (the port as it
+    /// found it) or UNKNOWN_BANK.
+    pub port_out: HashMap<String, BTreeSet<String>>,
 }
 
 /// What one round of the pass sees: every bank written to globals, passed for parameters and
-/// written through out-parameters, and loaded on the event port.
+/// written through out-parameters, and loaded on the event port; the port's bank where each
+/// function is called (or started as an event) and where it returns.
 #[derive(Clone, Debug, Default)]
 pub struct Info {
     pub globals: IndexMap<String, BTreeSet<String>>,
     pub params: IndexMap<ParamKey, BTreeSet<String>>,
     pub outs: IndexMap<ParamKey, BTreeSet<String>>,
     pub port: BTreeSet<String>,
+    pub port_in: IndexMap<String, BTreeSet<String>>,
 }
 
 /// What the scripts that include a library pass it: a bank for each parameter and global they
-/// agree on (UNKNOWN_BANK where they do not).
+/// agree on, and the event port's bank where each function starts (UNKNOWN_BANK where they do not).
 #[derive(Clone, Debug, Default)]
 pub struct Seed {
     pub params: IndexMap<ParamKey, String>,
     pub globals: IndexMap<String, String>,
+    pub port_in: IndexMap<String, String>,
 }
 
 /// What a script shows about the library code it includes: the banks it passes each parameter of
-/// the hidden functions, and the bank each global they use holds.
+/// the hidden functions, the bank each global they use holds, and the event port's bank where it
+/// calls or starts each of them.
 #[derive(Clone, Debug, Default)]
 pub struct Passed {
     pub params: IndexMap<ParamKey, BTreeSet<String>>,
     pub globals: IndexMap<String, BTreeSet<String>>,
+    pub port_in: IndexMap<String, BTreeSet<String>>,
 }
 
 /// The sound pass's state across scripts: the seed for a library, where to put what a script
 /// passes its libraries, and included functions prepared once per key.
 #[derive(Default)]
 pub struct Sounds {
+    /// The functions the engine starts (the script's programs and main); None for a library,
+    /// whose functions' starting port comes from the scripts that include it (seed).
+    pub entries: Option<HashSet<String>>,
     pub seed: Option<Seed>,
     /// Whether to record what the script passes its libraries, into out.
     pub want_out: bool,
@@ -155,6 +214,25 @@ pub struct Flow<'a> {
     pub locals: HashSet<String>,
     pub pointers: HashMap<String, usize>,
     pub known: &'a Known,
+    /// Whether the function reads the dungeon battle music's volume (get_battle_bgm_volume): the
+    /// event port's bank it reads is the one the engine plays the battle music from.
+    pub battle_music: bool,
+}
+
+/// The kind of an entry of the event port's bank when the pass does not know the bank but the
+/// function handles the dungeon battle music, which the engine plays from entry 0 (enum
+/// se_event_port).
+const EVENT_PORT_KIND: &str = "se_event_port";
+
+fn calls_native(node: &Node, name: &str) -> bool {
+    match node {
+        Node::List(items) => items.iter().any(|item| calls_native(item, name)),
+        Node::Map(map) => {
+            (node.kind() == "native" && text(node, "name") == name)
+                || map.values().any(|value| calls_native(value, name))
+        }
+        _ => false,
+    }
 }
 
 pub fn sound_flow<'a>(function: &Node, known: &'a Known) -> Flow<'a> {
@@ -169,7 +247,8 @@ pub fn sound_flow<'a>(function: &Node, known: &'a Known) -> Flow<'a> {
         .filter(|(_, param)| truthy(&param["array"]))
         .map(|(position, param)| (text(param, "name").to_string(), position))
         .collect();
-    Flow { function: text(function, "name").to_string(), locals, pointers, known }
+    let battle_music = calls_native(&function["body"], "get_battle_bgm_volume");
+    Flow { function: text(function, "name").to_string(), locals, pointers, known, battle_music }
 }
 
 /// The banks a function starts with: its globals and parameters the program pass settled, and the
@@ -192,9 +271,8 @@ pub fn sound_banks(function: &Node, known: &Known) -> HashMap<String, String> {
             banks.insert(text(param, "name").to_string(), kind.clone());
         }
     }
-    if let Some(port) = &known.port {
-        banks.insert(EVENT_PORT.into(), port.clone());
-    }
+    let port = known.port_in.get(name).cloned().unwrap_or_else(|| AT_ENTRY.into());
+    banks.insert(EVENT_PORT.into(), port);
     banks
 }
 
@@ -211,6 +289,78 @@ fn record_bank(name: &str, kind: &str, flow: Option<&Flow>, info: &mut Option<&m
     }
 }
 
+/// Marks a bank that depends on a condition: a variable that holds one bank after an if's then
+/// path and another after its else path, written COND vars KEY then KEY else ("" for no bank),
+/// with the condition's variables and text. A later if with the same condition, while none of
+/// its variables was written, takes each path's bank (if (holed == 1) after the hole-in fanfare).
+const COND: char = '\u{1}';
+const COND_KEY: char = '\u{2}';
+
+/// A conditional bank's condition variables, condition text, and then and else banks.
+fn cond_parts(value: &str) -> Option<(&str, &str, &str, &str)> {
+    let rest = value.strip_prefix(COND)?;
+    let mut parts = rest.split(COND_KEY);
+    Some((parts.next()?, parts.next()?, parts.next()?, parts.next()?))
+}
+
+/// A bank a variable holds whichever way the program went, as play_se and calls read it.
+fn plain(value: Option<&String>) -> Option<&String> {
+    value.filter(|value| !value.starts_with(COND))
+}
+
+/// The text of a condition the pass can test again (no calls or assignments), and its variables.
+fn condition_key(cond: &Node) -> Option<(String, String)> {
+    fn pure(node: &Node, vars: &mut BTreeSet<String>) -> bool {
+        match node {
+            Node::List(items) => items.iter().all(|item| pure(item, vars)),
+            Node::Map(map) => {
+                if matches!(node.kind(), "call" | "native" | "assign") {
+                    return false;
+                }
+                if node.kind() == "var" {
+                    vars.insert(text(node, "name").to_string());
+                }
+                map.values().all(|value| pure(value, vars))
+            }
+            _ => true,
+        }
+    }
+    let mut vars = BTreeSet::new();
+    if !pure(cond, &mut vars) {
+        return None;
+    }
+    let (key, _) = crate::source::expression(cond).ok()?;
+    Some((vars.into_iter().collect::<Vec<_>>().join(","), key))
+}
+
+/// Forgets the conditional banks whose condition reads a variable just written.
+fn invalidate(banks: &mut HashMap<String, String>, written: &str) {
+    banks.retain(|_, value| cond_parts(value).is_none_or(|(vars, ..)| !vars.split(',').any(|var| var == written)));
+}
+
+/// Two paths' values for a variable merged, where they differ: a conditional bank on the if's
+/// condition, or merged into the conditional bank one of them already holds. None for no bank.
+fn merged_cond(then: Option<&String>, otherwise: Option<&String>, cond: Option<&(String, String)>) -> Option<String> {
+    let same = |a: &str, b: &str| if a == b { a.to_string() } else { String::new() };
+    let value = |vars: &str, key: &str, then: &str, otherwise: &str| {
+        (!then.is_empty() || !otherwise.is_empty())
+            .then(|| format!("{COND}{vars}{COND_KEY}{key}{COND_KEY}{then}{COND_KEY}{otherwise}"))
+    };
+    let (a, b) = (then.map(String::as_str).unwrap_or(""), otherwise.map(String::as_str).unwrap_or(""));
+    match (cond_parts(a), cond_parts(b)) {
+        (None, None) => {
+            let (vars, key) = cond?;
+            value(vars, key, a, b)
+        }
+        (Some((vars, key, t, e)), None) => value(vars, key, &same(t, b), &same(e, b)),
+        (None, Some((vars, key, t, e))) => value(vars, key, &same(a, t), &same(a, e)),
+        (Some((vars, key, t1, e1)), Some((_, key2, t2, e2))) if key == key2 => {
+            value(vars, key, &same(t1, t2), &same(e1, e2))
+        }
+        _ => None,
+    }
+}
+
 fn set_bank(
     banks: &mut HashMap<String, String>,
     name: &str,
@@ -218,8 +368,10 @@ fn set_bank(
     flow: Option<&Flow>,
     info: &mut Option<&mut Info>,
 ) {
+    invalidate(banks, name);
     banks.insert(name.to_string(), kind.to_string());
-    record_bank(name, kind, flow, info);
+    // a conditional bank is not one bank to a global or a caller
+    record_bank(name, if kind.starts_with(COND) { UNKNOWN_BANK } else { kind }, flow, info);
 }
 
 /// A write of something other than a bank id: the variable no longer holds a bank here, and a
@@ -233,7 +385,13 @@ fn forget_bank(
     let Some(name) = name else {
         return;
     };
-    banks.remove(name);
+    if name == EVENT_PORT {
+        // the port holds something the pass cannot name, not nothing
+        banks.insert(name.into(), UNKNOWN_BANK.into());
+    } else {
+        banks.remove(name);
+        invalidate(banks, name);
+    }
     record_bank(name, UNKNOWN_BANK, flow, info);
 }
 
@@ -255,9 +413,15 @@ fn pointer_target(node: &Node, flow: Option<&Flow>) -> Option<String> {
 const ENDS_PATH: [&str; 3] = ["return", "break", "continue"];
 
 /// Sets banks to what the paths that go on agree on: a variable one path forgets, or two paths give
-/// different banks, is forgotten; one only some paths set keeps that bank (on the other paths it was
-/// never a bank id). A path whose statements end in a return, break or continue does not go on.
-fn merge_banks(banks: &mut HashMap<String, String>, paths: Vec<(HashMap<String, String>, &[Node])>) {
+/// different banks, is forgotten (or, after an if whose condition can be tested again, holds a
+/// conditional bank); one only some paths set keeps that bank (on the other paths it was never a
+/// bank id). A path whose statements end in a return, break or continue does not go on. cond: the
+/// if's condition, with paths its then and else.
+fn merge_banks(
+    banks: &mut HashMap<String, String>,
+    paths: Vec<(HashMap<String, String>, &[Node])>,
+    cond: Option<&(String, String)>,
+) {
     let going_on: Vec<HashMap<String, String>> = paths
         .into_iter()
         .filter(|(_, statements)| statements.last().is_none_or(|last| !ENDS_PATH.contains(&last.kind())))
@@ -266,12 +430,23 @@ fn merge_banks(banks: &mut HashMap<String, String>, paths: Vec<(HashMap<String, 
     if going_on.is_empty() {
         return;
     }
+    // only an if whose two paths go on can tell them apart later
+    let cond = cond.filter(|_| going_on.len() == 2);
     let before = std::mem::take(banks);
     let mut all: HashSet<&String> = before.keys().collect();
     for path_banks in &going_on {
         all.extend(path_banks.keys());
     }
     for name in all {
+        if name == EVENT_PORT {
+            // the port always holds something: after paths that disagree, what either left
+            let value =
+                port_value(going_on.iter().flat_map(|path_banks| {
+                    port_values(path_banks.get(name).map(String::as_str).unwrap_or(UNKNOWN_BANK))
+                }));
+            banks.insert(name.clone(), value);
+            continue;
+        }
         let kinds: HashSet<Option<&String>> = going_on
             .iter()
             .filter(|path_banks| path_banks.contains_key(name) || before.contains_key(name))
@@ -280,6 +455,10 @@ fn merge_banks(banks: &mut HashMap<String, String>, paths: Vec<(HashMap<String, 
         if kinds.len() == 1 {
             if let Some(Some(kind)) = kinds.into_iter().next() {
                 banks.insert(name.clone(), kind.clone());
+            }
+        } else if going_on.len() == 2 {
+            if let Some(value) = merged_cond(going_on[0].get(name), going_on[1].get(name), cond) {
+                banks.insert(name.clone(), value);
             }
         }
     }
@@ -302,8 +481,23 @@ pub fn named_sounds(
             // each branch starts from the banks after the condition, and after the if a variable
             // keeps the bank every path that goes on agrees on
             let cond = sound_expression(&node["cond"], found, banks, flow, &mut info);
+            let key = condition_key(&cond);
             node = node.with("cond", cond);
             let (mut then_banks, mut else_banks) = (banks.clone(), banks.clone());
+            // a bank that depends on this same condition is known on each path
+            if let Some((_, key)) = &key {
+                for (name, value) in banks.iter() {
+                    if let Some((_, _, then, otherwise)) = cond_parts(value).filter(|parts| parts.1 == key) {
+                        for (path_banks, bank) in [(&mut then_banks, then), (&mut else_banks, otherwise)] {
+                            if bank.is_empty() {
+                                path_banks.remove(name);
+                            } else {
+                                path_banks.insert(name.clone(), bank.to_string());
+                            }
+                        }
+                    }
+                }
+            }
             let then = named_sounds(list(&node, "then"), found, &mut then_banks, flow, info.as_deref_mut());
             let otherwise = match node["else"].as_array() {
                 Some(items) => named_sounds(items, found, &mut else_banks, flow, info.as_deref_mut()),
@@ -312,7 +506,7 @@ pub fn named_sounds(
             node = node.with("then", then).with("else", otherwise);
             let then_list = node["then"].as_array().cloned().unwrap_or_default();
             let else_list = node["else"].as_array().cloned().unwrap_or_default();
-            merge_banks(banks, vec![(then_banks, &then_list), (else_banks, &else_list)]);
+            merge_banks(banks, vec![(then_banks, &then_list), (else_banks, &else_list)], key.as_ref());
         } else if kind == "while" {
             let cond = sound_expression(&node["cond"], found, banks, flow, &mut info);
             node = node.with("cond", cond);
@@ -320,7 +514,7 @@ pub fn named_sounds(
             let body = named_sounds(list(&node, "body"), found, &mut body_banks, flow, info.as_deref_mut());
             node = node.with("body", body);
             let unchanged = banks.clone();
-            merge_banks(banks, vec![(body_banks, &[]), (unchanged, &[])]);
+            merge_banks(banks, vec![(body_banks, &[]), (unchanged, &[])], None);
         } else if kind == "expr" && node["expr"].kind() == "assign" {
             let target = node["expr"]["target"].clone();
             let value = sound_expression(&node["expr"]["value"], found, banks, flow, &mut info);
@@ -336,6 +530,7 @@ pub fn named_sounds(
                         // bank
                         if let Some(written) = &written {
                             banks.remove(written);
+                            invalidate(banks, written);
                         }
                     } else {
                         forget_bank(banks, written.as_deref(), flow, &mut info);
@@ -400,7 +595,7 @@ fn sound_expression(
     let args = list(&node, "args").to_vec();
     if let Some((bank, entry)) = sound_entry_args(text(&node, "name")) {
         if args.len() > entry {
-            if let Some(kind) = assigned_var(&args[bank]).and_then(|name| banks.get(&name).cloned()) {
+            if let Some(kind) = assigned_var(&args[bank]).and_then(|name| plain(banks.get(&name)).cloned()) {
                 let mut args = args.clone();
                 args[entry] = named_literal(&args[entry], &kind, found);
                 node = node.with("args", args);
@@ -409,17 +604,26 @@ fn sound_expression(
     }
     if kind == "call" {
         let name = text(&node, "name").to_string();
+        if let Some(info) = info.as_deref_mut() {
+            info.port_in.entry(name.clone()).or_default().insert(port_passed(banks));
+        }
+        // the call leaves the port as the function does, once the pass knows
+        if let Some(outs) = flow.and_then(|flow| flow.known.port_out.get(&name)) {
+            let now = banks.get(EVENT_PORT).map(String::as_str).unwrap_or(UNKNOWN_BANK);
+            let port = port_after_call(now, outs);
+            banks.insert(EVENT_PORT.into(), port);
+        }
         for (position, arg) in args.iter().enumerate() {
             let key = (name.clone(), position);
             let out_bank = flow.and_then(|flow| flow.known.outs.get(&key));
             if !matches!(arg.kind(), "addr" | "int") && info.is_some() {
                 // a number passed for a bank says there is none (-1), not another bank
                 let passed = if arg.kind() == "var" {
-                    banks.get(text(arg, "name")).cloned().unwrap_or_else(|| UNKNOWN_BANK.into())
+                    plain(banks.get(text(arg, "name"))).cloned().unwrap_or_else(|| UNKNOWN_BANK.into())
                 } else {
                     UNKNOWN_BANK.into()
                 };
-                if let Some(info) = info.as_deref_mut() {
+                if let Some(info) = info.as_deref_mut().filter(|_| literal_value(arg, found).is_none()) {
                     info.params.entry(key).or_default().insert(passed);
                 }
             } else if arg.kind() == "addr" {
@@ -433,6 +637,7 @@ fn sound_expression(
                     (None, target) => {
                         if let Some(target) = target {
                             banks.remove(&target);
+                            invalidate(banks, &target);
                         }
                     }
                 }
@@ -501,11 +706,21 @@ fn native_banks(
                 written.insert(EVENT_PORT.into(), loaded);
             }
         }
-        "get_sound_port_bank" if result.is_some() && banks.contains_key(EVENT_PORT) => {
+        "get_sound_port_bank" if result.is_some() => {
             let port = args.first().filter(|arg| arg.kind() == "var").map(|arg| text(arg, "name"));
             if port.is_none() || port == Some("SND_PORT_EVENT") {
-                written.insert(result.unwrap(), banks.get(EVENT_PORT).cloned());
+                // the dungeon engine plays entry 0 of the event port's bank as the battle music
+                // (DngBattleBgm, dng_event.cpp); a function that keeps its volume handles that
+                let bank = port_bank(banks)
+                    .cloned()
+                    .or_else(|| flow.is_some_and(|flow| flow.battle_music).then(|| EVENT_PORT_KIND.to_string()));
+                written.insert(result.unwrap(), bank);
             }
+        }
+        "reset_sound_port" | "delete_sound_port"
+            if args.first().is_some_and(|arg| arg.kind() == "var" && text(arg, "name") == "SND_PORT_EVENT") =>
+        {
+            written.insert(EVENT_PORT.into(), None);
         }
         _ => {}
     }
@@ -520,15 +735,354 @@ fn single_kinds<K: Clone + std::hash::Hash + Eq>(found: &IndexMap<K, BTreeSet<St
         .collect()
 }
 
+fn called_functions(node: &Node, out: &mut Vec<String>) {
+    match node {
+        Node::List(items) => items.iter().for_each(|item| called_functions(item, out)),
+        Node::Map(map) => {
+            if node.kind() == "call" {
+                out.push(text(node, "name").to_string());
+            }
+            map.values().for_each(|value| called_functions(value, out));
+        }
+        _ => {}
+    }
+}
+
+/// The functions callers first (reverse postorder of the call graph), and for each whether all its
+/// callers come before it, so the port it starts with is known when the pass reaches it.
+fn callers_first<'a>(functions: &[&'a Node]) -> (Vec<&'a Node>, HashMap<String, bool>, HashSet<String>) {
+    let position: HashMap<&str, usize> =
+        functions.iter().enumerate().rev().map(|(index, function)| (text(function, "name"), index)).collect();
+    let callees: Vec<Vec<usize>> = functions
+        .iter()
+        .map(|function| {
+            let mut called = Vec::new();
+            called_functions(&function["body"], &mut called);
+            called.iter().filter_map(|name| position.get(name.as_str()).copied()).collect()
+        })
+        .collect();
+    let mut seen = vec![false; functions.len()];
+    let mut postorder = Vec::with_capacity(functions.len());
+    for root in 0..functions.len() {
+        if seen[root] {
+            continue;
+        }
+        seen[root] = true;
+        let mut stack = vec![(root, 0)];
+        while let Some((node, next)) = stack.last_mut() {
+            if let Some(&callee) = callees[*node].get(*next) {
+                *next += 1;
+                if !seen[callee] {
+                    seen[callee] = true;
+                    stack.push((callee, 0));
+                }
+            } else {
+                postorder.push(*node);
+                stack.pop();
+            }
+        }
+    }
+    postorder.reverse();
+    let order: HashMap<usize, usize> = postorder.iter().enumerate().map(|(at, &index)| (index, at)).collect();
+    let mut complete: HashMap<String, bool> =
+        functions.iter().map(|function| (text(function, "name").to_string(), true)).collect();
+    let mut called = HashSet::new();
+    for (caller, targets) in callees.iter().enumerate() {
+        for &callee in targets {
+            called.insert(text(functions[callee], "name").to_string());
+            if order[&caller] >= order[&callee] {
+                complete.insert(text(functions[callee], "name").to_string(), false);
+            }
+        }
+    }
+    (postorder.into_iter().map(|index| functions[index]).collect(), complete, called)
+}
+
+/// The bank the events that change the event port leave there, when they agree.
+fn resting_port(started: &HashSet<String>, port_out: &HashMap<String, BTreeSet<String>>) -> Option<String> {
+    let left: BTreeSet<&String> =
+        started.iter().filter_map(|name| port_out.get(name)).flatten().filter(|out| out.as_str() != AT_ENTRY).collect();
+    match left.into_iter().collect::<Vec<_>>()[..] {
+        [bank] if bank.as_str() != UNKNOWN_BANK => Some(bank.clone()),
+        _ => None,
+    }
+}
+
+fn settled(kinds: Option<&BTreeSet<String>>) -> Option<String> {
+    let kinds = kinds?;
+    (kinds.len() == 1 && !kinds.contains(UNKNOWN_BANK)).then(|| kinds.iter().next().unwrap().clone())
+}
+
+/// The event port after a call to a function that leaves outs there.
+fn port_after_call(port: &str, outs: &BTreeSet<String>) -> String {
+    port_value(outs.iter().flat_map(|out| {
+        if out.as_str() == AT_ENTRY {
+            port_values(port)
+        } else {
+            BTreeSet::from([out.as_str()])
+        }
+    }))
+}
+
+/// Natives that ask to leave the map when the event ends: the map's other events never run after.
+const LEAVES_MAP: [&str; 6] =
+    ["jump_to_map", "go_to_interior", "go_to_outside", "enter_interior", "load_event_script", "run_pending_map_jump"];
+
+/// Whether statements call a native that loads on a sound port or leaves the map.
+fn touches_port(node: &Node) -> bool {
+    match node {
+        Node::List(items) => items.iter().any(touches_port),
+        Node::Map(map) => {
+            (node.kind() == "native" && {
+                let name = text(node, "name");
+                matches!(name, "load_sound" | "reset_sound_port" | "delete_sound_port") || LEAVES_MAP.contains(&name)
+            }) || map.values().any(touches_port)
+        }
+        _ => false,
+    }
+}
+
+/// The event port along a path: what it may hold, and what it may hold if the path stays on the map
+/// (None once it asked to leave).
+#[derive(Clone)]
+struct PortPath {
+    all: String,
+    stay: Option<String>,
+}
+
+impl PortPath {
+    fn merged<'a>(paths: impl IntoIterator<Item = &'a PortPath>) -> Option<PortPath> {
+        let paths: Vec<&PortPath> = paths.into_iter().collect();
+        if paths.is_empty() {
+            return None;
+        }
+        let all = port_value(paths.iter().flat_map(|path| port_values(&path.all)));
+        let stays: Vec<&String> = paths.iter().filter_map(|path| path.stay.as_ref()).collect();
+        let stay = (!stays.is_empty()).then(|| port_value(stays.into_iter().flat_map(|stay| port_values(stay))));
+        Some(PortPath { all, stay })
+    }
+}
+
+/// What a function leaves on the event port where it returns (AT_ENTRY for the port as it found
+/// it), and where it returns without having asked to leave the map.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct PortOut {
+    all: BTreeSet<String>,
+    stay: BTreeSet<String>,
+}
+
+impl PortOut {
+    fn add(&mut self, path: &PortPath) {
+        self.all.extend(port_values(&path.all).into_iter().map(str::to_string));
+        if let Some(stay) = &path.stay {
+            self.stay.extend(port_values(stay).into_iter().map(str::to_string));
+        }
+    }
+}
+
+/// Follows the event port through an expression: calls leave what the function leaves, and loads
+/// put their bank there.
+fn port_expression(
+    node: &Node,
+    found: &Context,
+    path: &mut PortPath,
+    outs: &HashMap<String, PortOut>,
+    loaded: &mut BTreeSet<String>,
+) {
+    match node {
+        Node::List(items) => items.iter().for_each(|item| port_expression(item, found, path, outs, loaded)),
+        Node::Map(map) if !matches!(node.kind(), "if" | "while") => {
+            for (key, value) in map.entries() {
+                if EXPRESSION_KEYS.contains(&key.as_ref()) {
+                    port_expression(value, found, path, outs, loaded);
+                }
+            }
+            let name = text(node, "name");
+            match node.kind() {
+                "call" => {
+                    if let Some(out) = outs.get(name) {
+                        path.all = port_after_call(&path.all, &out.all);
+                        path.stay = match &path.stay {
+                            Some(stay) if !out.stay.is_empty() => Some(port_after_call(stay, &out.stay)),
+                            _ => None,
+                        };
+                    }
+                }
+                "native" if matches!(name, "load_sound" | "reset_sound_port" | "delete_sound_port") => {
+                    for (target, bank) in native_banks(node, found, &HashMap::new(), None) {
+                        if target == EVENT_PORT {
+                            path.all = bank.unwrap_or_else(|| UNKNOWN_BANK.into());
+                            if path.stay.is_some() {
+                                path.stay = Some(path.all.clone());
+                            }
+                            loaded.insert(path.all.clone());
+                        }
+                    }
+                }
+                "native" if LEAVES_MAP.contains(&name) => path.stay = None,
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Follows the event port through statements, as named_sounds follows banks; the port where the
+/// function returns goes into exits.
+fn port_statements(
+    nodes: &[Node],
+    found: &Context,
+    path: &mut PortPath,
+    outs: &HashMap<String, PortOut>,
+    exits: &mut PortOut,
+    loaded: &mut BTreeSet<String>,
+) {
+    for node in nodes {
+        match node.kind() {
+            "if" => {
+                port_expression(&node["cond"], found, path, outs, loaded);
+                let then = list(node, "then");
+                let otherwise = list(node, "else");
+                let (mut then_path, mut else_path) = (path.clone(), path.clone());
+                port_statements(then, found, &mut then_path, outs, exits, loaded);
+                port_statements(otherwise, found, &mut else_path, outs, exits, loaded);
+                let going_on = [(&then_path, then), (&else_path, otherwise)]
+                    .into_iter()
+                    .filter(|(_, statements)| statements.last().is_none_or(|last| !ENDS_PATH.contains(&last.kind())))
+                    .map(|(going, _)| going);
+                if let Some(merged) = PortPath::merged(going_on) {
+                    *path = merged;
+                }
+            }
+            "while" => {
+                port_expression(&node["cond"], found, path, outs, loaded);
+                let mut body_path = path.clone();
+                port_statements(list(node, "body"), found, &mut body_path, outs, exits, loaded);
+                if let Some(merged) = PortPath::merged([&*path, &body_path]) {
+                    *path = merged;
+                }
+            }
+            "return" => {
+                port_expression(&node["value"], found, path, outs, loaded);
+                exits.add(path);
+            }
+            _ => port_expression(node, found, path, outs, loaded),
+        }
+    }
+}
+
+/// What each function leaves on the event port where it returns: the port as it found it
+/// (AT_ENTRY), or the banks it or the functions it calls load there. functions: callees first.
+/// Also every bank they load there.
+fn port_summaries(functions: &[&Node], found: &Context) -> (HashMap<String, PortOut>, BTreeSet<String>) {
+    let mut outs: HashMap<String, PortOut> = HashMap::new();
+    let mut loaded = BTreeSet::new();
+    for _ in 0..8 {
+        let mut changed = false;
+        for function in functions {
+            let mut path = PortPath { all: AT_ENTRY.into(), stay: Some(AT_ENTRY.into()) };
+            let mut exits = PortOut::default();
+            let body = list(function, "body");
+            port_statements(body, found, &mut path, &outs, &mut exits, &mut loaded);
+            if body.last().is_none_or(|last| last.kind() != "return") {
+                exits.add(&path);
+            }
+            let name = text(function, "name");
+            if outs.get(name) != Some(&exits) {
+                outs.insert(name.to_string(), exits);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    (outs, loaded)
+}
+
 /// What the sound pass learns across a program's functions: the bank a global always holds, the
 /// bank every call passes for a parameter, the bank a helper writes through a pointer parameter,
-/// and the event port's bank when the program loads only one there. A few rounds settle it, as one
-/// fact can lead to another (a helper's out-parameter feeding a global). Also what the last round
-/// saw.
-pub fn program_sounds(functions: &[Node], found: &Context, seed: Option<&Seed>) -> (Known, Info) {
-    let mut known = Known::default();
+/// and the event port's bank where each function starts and what it leaves there.
+///
+/// entries: the functions the engine starts (the programs and main); they, and the functions
+/// nothing here calls, start with the port's resting bank: the one bank the programs that change
+/// the port leave there, or failing that the only bank the script loads there. A library (no
+/// entries) takes the port its functions start with from the scripts that include it (seed), and
+/// where they disagree its uncalled functions start with the library's own resting bank.
+///
+/// A few rounds settle it, as one fact can lead to another (a helper's out-parameter feeding a
+/// global). Also what the last round saw.
+pub fn program_sounds(
+    functions: &[Node],
+    found: &Context,
+    seed: Option<&Seed>,
+    entries: Option<&HashSet<String>>,
+) -> (Known, Info) {
+    let functions: Vec<&Node> = functions.iter().filter(|function| function.kind() == "function").collect();
+    let (ordered, complete, called) = callers_first(&functions);
+    let uncalled: HashSet<String> = functions
+        .iter()
+        .map(|function| text(function, "name").to_string())
+        .filter(|name| !called.contains(name))
+        .collect();
+    // only functions that load on the port or leave the map, and their callers, change the port
+    let mut related: HashSet<&str> = functions
+        .iter()
+        .filter(|function| touches_port(&function["body"]))
+        .map(|function| text(function, "name"))
+        .collect();
+    let calls: Vec<Vec<String>> = if related.is_empty() {
+        Vec::new()
+    } else {
+        functions
+            .iter()
+            .map(|function| {
+                let mut called = Vec::new();
+                called_functions(&function["body"], &mut called);
+                called
+            })
+            .collect()
+    };
+    let mut grown = !related.is_empty();
+    while grown {
+        grown = false;
+        for (function, called) in functions.iter().zip(&calls) {
+            let name = text(function, "name");
+            if !related.contains(name) && called.iter().any(|callee| related.contains(callee.as_str())) {
+                related.insert(name);
+                grown = true;
+            }
+        }
+    }
+    let callees_first: Vec<&Node> =
+        ordered.iter().rev().copied().filter(|function| related.contains(text(function, "name"))).collect();
+    let (port_out, loaded) = port_summaries(&callees_first, found);
+    // the programs that set the port's resting bank: the script's, or a library's uncalled functions
+    let programs: HashSet<String> = match entries {
+        Some(entries) => functions
+            .iter()
+            .map(|function| text(function, "name").to_string())
+            .filter(|name| entries.contains(name))
+            .collect(),
+        None => uncalled.clone(),
+    };
+    // where the programs return on the map
+    let stays: HashMap<String, BTreeSet<String>> =
+        port_out.iter().map(|(name, out)| (name.clone(), out.stay.clone())).collect();
+    let port = resting_port(&programs, &stays).or_else(|| single_kinds(&IndexMap::from([((), loaded)])).remove(&()));
+    let port_out = port_out.into_iter().map(|(name, out)| (name, out.all)).collect();
+    let mut known = Known { port, port_out, ..Known::default() };
+    // a library's own resting bank, for uncalled functions the scripts disagree on
+    let fallback = |port_in: &mut HashMap<String, String>, port: &Option<String>| {
+        if let (None, Some(port)) = (entries, port) {
+            for name in &uncalled {
+                port_in.entry(name.clone()).or_insert_with(|| port.clone());
+            }
+        }
+    };
     let mut info = Info::default();
-    for _ in 0..4 {
+    for _ in 0..8 {
+        let before = known.clone();
         info = Info::default();
         // what the scripts that include a library pass it counts as one more caller
         if let Some(seed) = seed {
@@ -538,23 +1092,47 @@ pub fn program_sounds(functions: &[Node], found: &Context, seed: Option<&Seed>) 
             for (key, kind) in &seed.params {
                 info.params.entry(key.clone()).or_default().insert(kind.clone());
             }
+            for (name, kind) in &seed.port_in {
+                // where the scripts disagree, a library with a resting bank of its own follows it
+                if kind != UNKNOWN_BANK || known.port.is_none() {
+                    info.port_in.entry(name.clone()).or_default().insert(kind.clone());
+                }
+            }
         }
-        for function in functions.iter().filter(|function| function.kind() == "function") {
+        if entries.is_some() {
+            let resting = known.port.clone().unwrap_or_else(|| UNKNOWN_BANK.into());
+            for name in programs.union(&uncalled) {
+                info.port_in.entry(name.clone()).or_default().insert(resting.clone());
+            }
+        }
+        for function in &ordered {
+            let name = text(function, "name");
+            if complete.get(name) == Some(&true) {
+                // every call to it was seen this round
+                let library_resting = known.port.clone().filter(|_| entries.is_none() && uncalled.contains(name));
+                match settled(info.port_in.get(name)).or(library_resting) {
+                    Some(port) => known.port_in.insert(name.to_string(), port),
+                    None => known.port_in.remove(name),
+                };
+            }
             let flow = sound_flow(function, &known);
             let mut banks = sound_banks(function, &known);
             named_sounds(list(function, "body"), found, &mut banks, Some(&flow), Some(&mut info));
         }
-        let port = single_kinds(&IndexMap::from([("port".to_string(), info.port.clone())])).remove("port");
+        let mut port_in = single_kinds(&info.port_in);
+        fallback(&mut port_in, &known.port);
         let learned = Known {
             globals: single_kinds(&info.globals),
             params: single_kinds(&info.params),
             outs: single_kinds(&info.outs),
-            port,
+            port: known.port.clone(),
+            port_in,
+            port_out: known.port_out.clone(),
         };
-        if learned == known {
+        known = learned;
+        if known == before {
             break;
         }
-        known = learned;
     }
     (known, info)
 }
@@ -590,20 +1168,31 @@ pub fn passed_sounds(hidden: &[Node], known: &Known, seen: &Info) -> Passed {
             (name, BTreeSet::from([bank]))
         })
         .collect();
-    Passed { params, globals }
+    let port_in = seen
+        .port_in
+        .iter()
+        .filter(|(name, _)| hidden_names.contains(name.as_str()))
+        .map(|(name, kinds)| (name.clone(), kinds.clone()))
+        .collect();
+    Passed { params, globals, port_in }
 }
 
 /// The seed for a library's sound pass from what each script that includes it passes (passed per
-/// script): a parameter or global every script agrees on keeps that bank, others are unknown.
+/// script): a parameter, global or starting event port every script agrees on keeps that bank,
+/// others are unknown.
 pub fn library_sounds(passed: &[Passed]) -> Seed {
     let mut params: IndexMap<ParamKey, BTreeSet<String>> = IndexMap::new();
     let mut globals: IndexMap<String, BTreeSet<String>> = IndexMap::new();
+    let mut port_in: IndexMap<String, BTreeSet<String>> = IndexMap::new();
     for found in passed {
         for (key, kinds) in &found.params {
             params.entry(key.clone()).or_default().extend(kinds.iter().cloned());
         }
         for (key, kinds) in &found.globals {
             globals.entry(key.clone()).or_default().extend(kinds.iter().cloned());
+        }
+        for (name, kinds) in &found.port_in {
+            port_in.entry(name.clone()).or_default().extend(kinds.iter().cloned());
         }
     }
     let settle = |kinds: &BTreeSet<String>| {
@@ -616,5 +1205,6 @@ pub fn library_sounds(passed: &[Passed]) -> Seed {
     Seed {
         params: params.iter().map(|(key, kinds)| (key.clone(), settle(kinds))).collect(),
         globals: globals.iter().map(|(key, kinds)| (key.clone(), settle(kinds))).collect(),
+        port_in: port_in.iter().map(|(name, kinds)| (name.clone(), settle(kinds))).collect(),
     }
 }

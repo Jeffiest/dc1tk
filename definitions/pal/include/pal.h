@@ -1384,22 +1384,27 @@ enum battle_se_pal {
 // Sound banks scripts load (load_sound by path, or a sound set's event bank): each enum names
 // the entries of one bank, from its cfg, for play_se(id, n) after the load (see notes/sounds.md).
 enum se_en_287_pal {
+    SE_EN_287_STANDBY = 0,  // standby sound slot, empty in this bank
     SE_EN_287_PRESS_ATTACK = 4,
+    SE_EN_287_OTHER_04 = 20,  // spare slot, empty in this bank
     SE_EN_287_SPIRAL_FALL = 21,
     SE_EN_287_IDLE = 22,
 };
 enum se_en_288_pal {
+    SE_EN_288_STANDBY = 0,  // standby sound slot, empty in this bank
     SE_EN_288_ARM_SWING_ATTACK = 4,
     SE_EN_288_SPIRAL_FALL = 21,
     SE_EN_288_IDLE = 22,
 };
 enum se_en_289_pal {
+    SE_EN_289_STANDBY = 0,  // standby sound slot, empty in this bank
     SE_EN_289_STAB_ATTACK = 4,
     SE_EN_289_PUNCH_ATTACK = 5,
     SE_EN_289_SPIRAL_LANDING = 21,
     SE_EN_289_IDLE = 22,
 };
 enum se_en_290_pal {
+    SE_EN_290_STANDBY = 0,  // standby sound slot, empty in this bank
     SE_EN_290_SWORD_COMBO_ATTACK = 5,
     SE_EN_290_SPIRAL_LANDING = 21,
     SE_EN_290_IDLE = 22,
@@ -2961,6 +2966,16 @@ enum se_ev_150_115_pal {
 };
 enum se_ev_200_000_pal {
     SE_EV_200_000_BATTLE_MUSIC = 0,
+};
+enum se_ev_200_010_pal {
+    SE_EV_200_010_BATTLE_MUSIC = 0,  // the Moon Flower Palace's
+};
+// Entry 0 of whatever bank is on the event port: the dungeon engine plays it as the battle music
+// while the battle music is not paused and the floor is not a boss floor (DngBattleBgm,
+// dng_event.cpp). Named so where a script handles the battle music's volume
+// (get_battle_bgm_volume) on a port whose bank the decompiler cannot follow.
+enum se_event_port_pal {
+    SE_EVENT_PORT_BATTLE_MUSIC = 0,
 };
 enum se_ev_300_100_pal {
     SE_EV_300_100_TRAIN_RUNNING = 2,

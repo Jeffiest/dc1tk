@@ -86,7 +86,7 @@ pub fn run(
     let headers_used = sdk::header_texts(&defs, sdk_dir)?;
     let (defs, headers, generated) = disc::with_header(&root, defs, headers_used.clone());
     let mut model = library::model_for(&root, &paths, &tables, &defs, &headers)?;
-    let generated = slots::with_header(generated, &model.folder_slots);
+    let generated = slots::with_header(generated, &model.folder_slots, &model.villagers);
     let generated = assets::with_header(generated, &model.asset_names);
     let naming = pathnames::lookups(&root, &defs);
     let mut renamed: IndexMap<String, String> = IndexMap::new();

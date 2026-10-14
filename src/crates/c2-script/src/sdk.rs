@@ -228,6 +228,9 @@ pub struct Context {
     pub sound_set_banks: HashMap<i64, String>,
     /// Names for the game's asset strings: {(prefix, text): name}.
     pub asset_names: IndexMap<(String, String), String>,
+    /// The constant a slot takes while a load has put a pack in it: {(slot, pack): name}, for the
+    /// folder's scripts (slots::loaded_names).
+    pub slot_packs: HashMap<(i64, String), String>,
     /// The function being resolved was written under #pragma std c89: a native in an operand C
     /// may not evaluate runs only when C would evaluate it.
     pub strict: bool,
@@ -1742,12 +1745,12 @@ pub fn present_functions(
         }
     }
     let all: Vec<Node> = prepared.iter().chain(&prepared_hidden).cloned().collect();
-    let (known, seen) = crate::soundpass::program_sounds(&all, found, sounds.seed.as_ref());
+    let (known, seen) = crate::soundpass::program_sounds(&all, found, sounds.seed.as_ref(), sounds.entries.as_ref());
     if sounds.want_out {
         sounds.out = Some(crate::soundpass::passed_sounds(&prepared_hidden, &known, &seen));
     }
     let float_names: Vec<&String> = found.float_names.values().collect();
-    prepared
+    let presented: Vec<Node> = prepared
         .into_iter()
         .map(|function| {
             if function.kind() != "function" {
@@ -1762,7 +1765,8 @@ pub fn present_functions(
             }
             function.with("body", body)
         })
-        .collect()
+        .collect();
+    crate::slotflow::named_slots(presented, hidden, found)
 }
 
 /// A decompiled program as readable source: natives by their SDK names, helpers, constants,
@@ -1791,6 +1795,13 @@ pub fn present(
             entry.clone().with("no", number)
         })
         .collect();
+    // the functions the engine starts, which find the event port as the last event left it
+    let mut entries: HashSet<String> =
+        list(&program, "programs").iter().map(|entry| text(entry, "function").to_string()).collect();
+    if let Some(main) = program["main"].as_str() {
+        entries.insert(main.to_string());
+    }
+    sounds.entries = Some(entries);
     let mut functions: Vec<Node> =
         found.includes.iter().map(|path| node!({"kind": "include", "path": path.clone(), "system": true})).collect();
     functions.extend(present_functions(list(&program, "functions"), found, params_by_kind, hidden, sounds));

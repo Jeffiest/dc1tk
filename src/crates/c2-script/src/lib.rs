@@ -43,6 +43,7 @@ pub mod renames;
 pub mod replace;
 pub mod sdk;
 pub mod slim;
+pub mod slotflow;
 pub mod slots;
 pub mod soundpass;
 pub mod source;
@@ -53,6 +54,7 @@ pub mod parse;
 pub mod stack;
 pub mod stb;
 pub mod tree;
+pub mod villagers;
 pub mod vm;
 pub mod xref;
 

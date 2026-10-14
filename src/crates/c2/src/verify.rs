@@ -194,7 +194,7 @@ pub fn verify(
     let model = library::model_for(root, &paths, tables, &defs, &headers)?;
     if let Some(text) = headers.get(disc::HEADER).cloned() {
         // the names a disc decompile adds to disc.h, which the presented scripts use
-        let named = assets::with_header(slots::with_header(Some(text), &model.folder_slots), &model.asset_names);
+        let named = assets::with_header(slots::with_header(Some(text), &model.folder_slots, &model.villagers), &model.asset_names);
         headers.insert(disc::HEADER.to_string(), named.unwrap_or_default());
     }
     let texts = model.library_texts()?;
