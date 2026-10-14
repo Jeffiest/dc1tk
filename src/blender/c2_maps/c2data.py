@@ -294,17 +294,38 @@ def frame_base(name):
 
 
 def placements_by_name(root):
+    """{name: placement} of a map, from its `placements` group when it has one (Blender finds an
+    object's children by going through every object, so walking the whole tree is slow)."""
     found = {}
-    for obj in placements(root) if root is not None else []:
+    if root is None:
+        return found
+    group = group_node(root, "placements")
+    candidates = group.children if group is not None else placements(root)
+    for obj in candidates:
+        if role(obj) != "placement":
+            continue
         found.setdefault(exact_name(obj, "placement"), obj)
     return found
 
 
-def anime_target(obj, by_name=None):
+def model_nodes(piece):
+    """{name up to `--`: the first model node of that name (lowest mds_index)} under a piece."""
+    found = {}
+    below = piece.children_recursive if hasattr(piece, "children_recursive") else descendants(piece)[1:]
+    nodes = [node for node in below if role(node) == "mds"]
+    nodes.sort(key=lambda node: (lookup(node, ("mds_index",), 1 << 30), node.name))
+    for node in nodes:
+        found.setdefault(frame_base(exact_name(node)), node)
+    return found
+
+
+def anime_target(obj, by_name=None, nodes_of=None):
     """(object, problem): the placement, piece or model node an anime point moves, as
     `CObjAnime::AssignFuncAnime` finds it: a template's point its own placement, a map's own
     point the placement it names; then the piece by name and the first model node (lowest
-    mds_index) whose name matches up to `--`. The object is None when something is missing."""
+    mds_index) whose name matches up to `--`. The object is None when something is missing.
+    `by_name` (placements_by_name) and `nodes_of` (a dict filled with model_nodes by piece)
+    save work over many points."""
     fields = {field.key: field for field in schema.DATA_FIELDS["anime"]}
     placement = placement_of(obj)
     if placement is None:
@@ -326,9 +347,13 @@ def anime_target(obj, by_name=None):
     frame_name = data_field(obj, fields["frame"])
     if not frame_name:
         return piece, None
-    base = frame_base(frame_name)
-    nodes = [node for node in descendants(piece)[1:] if role(node) == "mds" and frame_base(exact_name(node)) == base]
-    if not nodes:
+    if nodes_of is None:
+        nodes = model_nodes(piece)
+    else:
+        nodes = nodes_of.get(piece.name)
+        if nodes is None:
+            nodes = nodes_of[piece.name] = model_nodes(piece)
+    node = nodes.get(frame_base(frame_name))
+    if node is None:
         return None, "no model node %r in %s" % (frame_name, piece.name)
-    nodes.sort(key=lambda node: (lookup(node, ("mds_index",), 1 << 30), node.name))
-    return nodes[0], None
+    return node, None

@@ -100,7 +100,7 @@ def _axis_index(mode, vectors):
     return index if abs(change[index]) > 1e-9 else None
 
 
-def anime_lines(obj, by_name=None, link=False):
+def anime_lines(obj, by_name=None, link=False, nodes_of=None):
     """Line coordinates (pairs of world points) of what an anime point does: a position's path
     from start to end (a looping one as far as it goes in LOOP_FRAMES), a rotation's axis through
     the moved object and the arc its local Z (X for turns about Z) sweeps, and with `link` a line
@@ -109,7 +109,7 @@ def anime_lines(obj, by_name=None, link=False):
 
     from mathutils import Euler, Matrix, Vector
 
-    target, _problem = c2data.anime_target(obj, by_name)
+    target, _problem = c2data.anime_target(obj, by_name, nodes_of)
     if target is None:
         return []
     drives, mode, relative, vectors = _anime_values(obj)
@@ -171,6 +171,7 @@ def anime_coords(context):
     lines = []
     selected = []
     by_root = {}
+    nodes_of = {}
     for obj in context.visible_objects:
         if obj.type != "EMPTY" or c2data.KEY not in obj:
             continue
@@ -181,7 +182,7 @@ def anime_coords(context):
             by_root[root] = c2data.placements_by_name(root)
         chosen = obj.select_get()
         try:
-            found = anime_lines(obj, by_root[root], link=chosen)
+            found = anime_lines(obj, by_root[root], link=chosen, nodes_of=nodes_of)
         except (TypeError, ValueError, IndexError):
             continue
         (selected if chosen else lines).extend(found)
