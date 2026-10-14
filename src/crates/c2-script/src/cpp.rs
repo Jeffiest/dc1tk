@@ -30,6 +30,9 @@ pub struct Macros {
     pub table: HashMap<String, Macro>,
     /// Object-like macros the compiler resolves as constants, which code does not expand.
     pub constants: std::collections::HashSet<String>,
+    /// The integer constants' values, for the constant expressions (array sizes, case labels,
+    /// enumerators) of a file that includes the header defining them.
+    pub values: HashMap<String, i128>,
 }
 
 impl Macros {
@@ -39,12 +42,14 @@ impl Macros {
         } else {
             self.constants.remove(name);
         }
+        self.values.remove(name);
         self.table.insert(name.to_string(), definition);
     }
 
     pub fn undefine(&mut self, name: &str) {
         self.table.remove(name);
         self.constants.remove(name);
+        self.values.remove(name);
     }
 
     pub fn defined(&self, name: &str) -> bool {

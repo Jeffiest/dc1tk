@@ -255,6 +255,74 @@ fn two_mods_unnamed_structs_keep_their_own_tags() {
     assert_eq!(machine.printed, strings(&["5 0.5", "8"]));
 }
 
+/// A mod's own header, included with quotes, and the one it includes in turn.
+const CULT_H: &str =
+    "#include \"colours.h\"\n\n#define CONVERT_COUNT 5\n#define EXPR_COUNT (4 + 1)\n#define TWICE(x) ((x) * 2)\n";
+const COLOURS_H: &str = "#define INNER_COUNT 3\n\nenum colours { RED, GREEN, BLUE, COLOURS };\n";
+const CULT_PATCH: &str = r#"#pragma target map s17
+#include "cult.h"
+
+struct convert {
+    int a;
+    int b;
+};
+
+struct convert converts[CONVERT_COUNT] = {{5, 1}};
+int counts[CONVERT_COUNT];
+int sized[EXPR_COUNT] = {1, 2};
+int grid[INNER_COUNT][2];
+int texts[LANGUAGE_SPANISH + 1] = {10, 11, 12, 13, 14, 15};
+enum more { NEXT = CONVERT_COUNT + 1 };
+
+#if CONVERT_COUNT > 3 && TWICE(INNER_COUNT) == 6
+int big = 1;
+#else
+int big = 0;
+#endif
+
+int kind(int n)
+{
+    switch (n) {
+    case CONVERT_COUNT:
+        return 1;
+    case COLOURS:
+        return 2;
+    }
+    return 0;
+}
+
+PROGRAM(9000, counted);
+
+void counted(void)
+{
+    int i;
+    int total = 0;
+    int local[INNER_COUNT - 1] = {4};
+
+    for (i = 0; i < CONVERT_COUNT; i++) {
+        counts[i] = TWICE(i);
+        total += counts[i];
+    }
+    print(total, converts[0].a, (int)(sizeof(converts) / sizeof(converts[0])), (int)(sizeof(sized) / sizeof(int)));
+    print((int)(sizeof(grid) / sizeof(int)), NEXT, kind(5), kind(3), big, local[0], (int)(sizeof(local) / sizeof(int)), texts[LANGUAGE]);
+}
+"#;
+
+#[test]
+fn a_patch_uses_its_own_headers_macros_as_c_expands_them() {
+    // array sizes (with values, of structs, of two dimensions), enumerators, case labels and #if
+    // from a header in the mod's folder, the header it includes, and LANGUAGE's constants
+    let folder = TempDir::new("patches-header-constants");
+    let (root, dirs) =
+        setup(folder.path(), &[("t", &[("cult.h", CULT_H), ("colours.h", COLOURS_H), ("p.c", CULT_PATCH)])]);
+    let plan = plan_of(&dirs, &root).unwrap();
+    let program = program_with_headers(&root, &plan, "map/s/s17_valley/s17_1.c").unwrap();
+    let table = vm::table_of(&program, &tables()).unwrap();
+    let mut machine = Machine::new(&table, machine_globals(&sdk::resolve(&program, &tables()).unwrap()));
+    machine.run("counted", Vec::new()).unwrap();
+    assert_eq!(machine.printed, strings(&["20 5 5 5", "6 6 1 2 1 4 2 11"]));
+}
+
 #[test]
 fn every_frame_functions_run_before_each_wait() {
     let patch = "#pragma target map s17\n\n#pragma every_frame\nvoid tick(void)\n{\n    print(\"tick\");\n}\n";

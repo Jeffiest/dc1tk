@@ -257,6 +257,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.8.1 One `#else`, last | supported | `preprocessor_else_twice` | refused otherwise |
 | 3.8.2 `#include` | supported | `preprocessor_include` | |
 | 3.8.2 A header's macros in `#if` | supported | `preprocessor_header_macros` | the header read as text for its macros; its constants stay names in code |
+| 3.8.2 A header's macros in constant expressions | supported | `preprocessor_header_constants` | array sizes, enumerators, case labels, initialisers: an SDK header's, a library's or a mod's own header included with quotes |
 | 3.8.3 Object-like macros | supported | `preprocessor_object_macros` | |
 | 3.8.3 Function-like macros | supported | `preprocessor_function_macros` | |
 | 3.8.3 Defined again differently | supported | `preprocessor_redefinition` | refused |
@@ -288,7 +289,13 @@ Done (see `src/crates/c2-script/src/lower.rs`, `parse.rs` and `cpp.rs`):
   number, a string, a negative number, or a parenthesised integer expression) stays a named
   constant the compiler substitutes, as the decompiler's trees need. Anything else, and every
   function-like macro, is text, expanded and rescanned as C says. Arguments are expanded in
-  full, constants too, so `#` and `##` of a macro that passes one on see its value.
+  full, constants too, so `#` and `##` of a macro that passes one on see its value. A
+  constant a header or library defines (an SDK header, a library, or a mod's own header
+  included with quotes) has its value wherever C needs one while parsing (array sizes,
+  enumerators, case labels, `#if`), read with the macros in force where it is included. In
+  code it stays a name, given the value the header or library has read on its own (a library
+  is read once, as if it had `#pragma once`): the two differ only for a constant the header
+  defines under an `#if` of a macro the including file defines first.
 - **goto** is a jump to a label of the compiler's own kind (a `NOP` with its number).
 - **sizeof** is worked out by the parser, from the declarations it has read.
 - **Static locals** are hidden globals named after the function and the local. **Initialised

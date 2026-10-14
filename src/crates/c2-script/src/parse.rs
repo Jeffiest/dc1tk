@@ -324,6 +324,8 @@ struct Token {
     /// An #include's path, and whether it was <path>.
     path: String,
     system: bool,
+    /// The integer constants an #include's file #defines (or changes), with their values.
+    constants: Vec<(String, i128)>,
     /// An asm block's lines.
     lines: Vec<String>,
     /// A string literal written L"...".
@@ -341,6 +343,7 @@ impl Token {
             pragma: Vec::new(),
             path: String::new(),
             system: false,
+            constants: Vec::new(),
             lines: Vec::new(),
             wide: false,
         }
@@ -751,10 +754,15 @@ fn tokenize_with(
                     } else {
                         let words: Vec<String> = split_first_word(rest).into_iter().map(String::from).collect();
                         let constant = match words.get(1) {
-                            Some(value) => constant_of(value, frames + 1)?.is_some(),
-                            None => false,
+                            Some(value) => constant_of(value, frames + 1)?,
+                            None => None,
                         };
-                        macros.define(&name, definition, constant);
+                        let integer = constant.as_ref().filter(|value| value.kind() == "int");
+                        let integer = integer.and_then(|value| value["value"].as_i64());
+                        macros.define(&name, definition, constant.is_some());
+                        if let Some(integer) = integer {
+                            macros.values.insert(name.clone(), integer as i128);
+                        }
                         let mut token = Token::new(Kind::Define, line, None);
                         token.words = words;
                         tokens.push(token);
@@ -763,6 +771,7 @@ fn tokenize_with(
                 "include" => {
                     let rest = strip(rest);
                     let mut token = Token::new(Kind::Include, line, None);
+                    let before = headers.map(|_| macros.values.clone());
                     if rest.starts_with('<') && rest.ends_with('>') {
                         token.path = strip(&rest[1..rest.len() - 1]).to_string();
                         token.system = true;
@@ -782,6 +791,13 @@ fn tokenize_with(
                             let key = included_key(&token.path, false);
                             *macros = header_macros(&key, files, std::mem::take(macros), depth)?;
                         }
+                    }
+                    // the integer constants the file (and what it includes) defines or changes,
+                    // which the including file's constant expressions use as C expands them
+                    if let Some(before) = before {
+                        let changed = macros.values.iter().filter(|(name, value)| before.get(*name) != Some(value));
+                        token.constants = changed.map(|(name, value)| (name.clone(), *value)).collect();
+                        token.constants.sort();
                     }
                     tokens.push(token);
                 }
@@ -1010,6 +1026,11 @@ struct State {
     constants: HashMap<String, i128>,
     /// The enumerators so far, for constant expressions.
     enumerators: HashMap<String, i128>,
+    /// The integer #defines and the enumerators of the headers and libraries included so far,
+    /// for constant expressions as C reads them. They stay names in code (and a size a name alone
+    /// gives stays the name), which sdk::resolve gives the same values.
+    included_constants: HashMap<String, i128>,
+    included_enumerators: HashMap<String, i128>,
     /// Enumerators an enum defined in a declaration gave, for the program's constants.
     constants_found: Vec<Node>,
     /// typedef'd value kinds and their base types.
@@ -1049,6 +1070,8 @@ impl State {
             pos: 0,
             constants,
             enumerators: HashMap::new(),
+            included_constants: HashMap::new(),
+            included_enumerators: HashMap::new(),
             constants_found: Vec::new(),
             kinds,
             scope: None,
@@ -1064,6 +1087,14 @@ impl State {
             file_key: String::new(),
             header_kinds: HashMap::new(),
         }
+    }
+
+    /// An integer constant's value by its name: this file's #define or enumerator, or one of a
+    /// header or library it includes.
+    fn constant(&self, name: &str) -> Option<i128> {
+        let own = self.constants.get(name).or_else(|| self.enumerators.get(name));
+        let included = || self.included_constants.get(name).or_else(|| self.included_enumerators.get(name));
+        own.or_else(included).copied()
     }
 
     /// A variable's declaration, by the name code uses for it (storage_name): a parameter, a local,
@@ -2037,12 +2068,11 @@ fn abstract_type(state: &mut State) -> Parsed<Ty> {
     Ok(ty)
 }
 
-/// An integer constant expression (an array size): numbers, this file's integer #defines and enum
-/// members, sizeof, and C's operators.
+/// An integer constant expression (an array size): numbers, the integer #defines and enum members
+/// of this file and the files it includes, sizeof, and C's operators.
 fn constant_expression(state: &mut State) -> Parsed<i64> {
     let node = ternary(state)?;
-    let found =
-        |name: &str| state.constants.get(name).or_else(|| state.enumerators.get(name)).map(|value| *value as i64);
+    let found = |name: &str| state.constant(name).map(|value| value as i64);
     match folded(&node, &found) {
         Some((value, _)) => Ok(value),
         None => state.fail("expected an integer constant"),
@@ -2064,9 +2094,9 @@ fn type_size(state: &State, kind: &str) -> i64 {
 fn elements(state: &State, entry: &Node) -> Parsed<i64> {
     match &entry["size"] {
         Node::Null => Ok(1),
-        Node::Str(name) => match state.constants.get(name) {
-            Some(value) => Ok(*value as i64),
-            None => state.fail(format!("sizeof needs the value of {name}, which this file does not define")),
+        Node::Str(name) => match state.constant(name) {
+            Some(value) => Ok(value as i64),
+            None => state.fail(format!("sizeof needs the value of {name}, which this file does not define or include")),
         },
         size => Ok(size.as_i64().unwrap_or(1)),
     }
@@ -2514,9 +2544,7 @@ fn switch(state: &mut State) -> Parsed<Node> {
             if state.at("case", 0) {
                 state.take();
                 let value = ternary(state)?;
-                let found = |name: &str| {
-                    state.constants.get(name).or_else(|| state.enumerators.get(name)).map(|value| *value as i64)
-                };
+                let found = |name: &str| state.constant(name).map(|value| value as i64);
                 if let Some((number, _)) = folded(&value, &found) {
                     if numbers.contains(&number) {
                         return state.fail(format!("case {number} is in the switch twice"));
@@ -2967,9 +2995,10 @@ fn array_values(state: &State, declared: &Declared, kind: &str) -> Parsed<(Vec<i
                 // resolved with the headers' constants later
                 return Ok((Vec::new(), Vec::new()));
             }
+            Size::Named(name) if state.constant(name).is_some() => dims.push(state.constant(name).unwrap() as i64),
             Size::Named(name) => {
                 return state.fail(format!(
-                    "{}: size {} of {} must be a constant this file defines",
+                    "{}: size {} of {} must be a constant this file defines or includes",
                     declared.name,
                     at + 1,
                     name
@@ -3113,10 +3142,13 @@ fn plain_type(state: &State, declared: &Declared, kind: &str) -> Parsed<Ty> {
     for size in declared.dims.iter().rev() {
         let size = match size {
             Size::Number(size) => *size as i64,
-            Size::Named(name) => match state.constants.get(name).or_else(|| state.enumerators.get(name)) {
-                Some(size) => *size as i64,
+            Size::Named(name) => match state.constant(name) {
+                Some(size) => size as i64,
                 None => {
-                    return state.fail(format!("{}: size {name} must be a constant this file defines", declared.name))
+                    return state.fail(format!(
+                        "{}: size {name} must be a constant this file defines or includes",
+                        declared.name
+                    ))
                 }
             },
             Size::None => -1,
@@ -3651,7 +3683,14 @@ fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool, bool)> {
                     state.take();
                     match array_size(state)? {
                         Size::Number(size) => inner.push(size as i64),
-                        _ => return state.fail("a parameter's inner array sizes must be constants this file defines"),
+                        Size::Named(name) if state.constant(&name).is_some() => {
+                            inner.push(state.constant(&name).unwrap() as i64)
+                        }
+                        _ => {
+                            return state.fail(
+                                "a parameter's inner array sizes must be constants this file defines or includes",
+                            )
+                        }
                     }
                     state.expect("]")?;
                 }
@@ -4014,7 +4053,7 @@ fn inline_definition(state: &mut State) -> Parsed<Node> {
 }
 
 /// An enumerator's value: a number, as headers write them, or any integer constant expression of
-/// numbers, this file's integer #defines and the enumerators before it.
+/// numbers, the integer #defines (this file's and its includes') and the enumerators before it.
 fn enum_value(state: &mut State) -> Parsed<i128> {
     let negative = state.at("-", 0);
     let offset = usize::from(negative);
@@ -4412,13 +4451,15 @@ fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, head
 }
 
 /// What an included file declares that the file including it needs while it is parsed: typedefs
-/// of scalars (for sizes), of other types, and structs and unions, its own and those of the files
-/// it includes.
+/// of scalars (for sizes), of other types, structs and unions, and enumerators (for constant
+/// expressions), its own and those of the files it includes. Its #defines reach the including file
+/// through the tokens (Token::constants), read with the macros in force.
 #[derive(Clone, Debug, Default)]
 struct Included {
     kinds: HashMap<String, String>,
     types: HashMap<String, Ty>,
     structs: Structs,
+    enumerators: HashMap<String, i128>,
 }
 
 thread_local! {
@@ -4468,9 +4509,15 @@ fn parse_state(
     let mut macros = Macros::default();
     for (name, value) in defines {
         macros.define(name, cpp::Macro { params: None, body: value.clone() }, true);
+        if let Ok(value) = value.trim().parse::<i128>() {
+            macros.values.insert(name.clone(), value);
+        }
     }
+    let predefined = macros.values.clone();
     let tokens = tokenize_with(&chars, &mut macros, file, CALLER_FRAMES + 2, headers, 0)?;
     let mut state = State::new(tokens, CALLER_FRAMES + 1);
+    // the constants in force before the first line (LANGUAGE), as a header's are
+    state.included_constants = predefined;
     state.file_key = file_key(text);
     if state.tokens[0].kind == Kind::Assembly {
         return Ok((node!({"kind": "program", "asm": state.tokens[0].text()}), Included::default()));
@@ -4512,11 +4559,18 @@ fn parse_state(
                     let found = included(&included_key(&token.path, token.system), files)?;
                     state.header_kinds.extend(found.kinds);
                     state.types.extend(found.types);
+                    state.included_enumerators.extend(found.enumerators);
                     for (tag, composite) in found.structs {
                         if state.structs.get(&tag).is_none_or(|known| known.members.is_empty()) {
                             state.structs.insert(tag, composite);
                         }
                     }
+                }
+                // the integer #defines the file leaves, as C includes it: they replace this
+                // file's own of the same names
+                for (name, value) in &token.constants {
+                    state.constants.remove(name);
+                    state.included_constants.insert(name.clone(), *value);
                 }
                 program["functions"].as_array_mut().unwrap().push(node!({
                     "kind": "include",
@@ -4599,8 +4653,14 @@ fn parse_state(
     }
     let mut kinds = std::mem::take(&mut state.header_kinds);
     kinds.extend(state.kinds.clone());
-    let included =
-        Included { kinds, types: std::mem::take(&mut state.types), structs: std::mem::take(&mut state.structs) };
+    let mut enumerators = std::mem::take(&mut state.included_enumerators);
+    enumerators.extend(std::mem::take(&mut state.enumerators));
+    let included = Included {
+        kinds,
+        types: std::mem::take(&mut state.types),
+        structs: std::mem::take(&mut state.structs),
+        enumerators,
+    };
     Ok((with_own_padding(program), included))
 }
 
