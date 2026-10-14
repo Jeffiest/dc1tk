@@ -147,11 +147,13 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    `go_to_edit_mode(number, program)`, the number from the disc's
    `map/map<language>.cfg`. `--start-at m05` (or `"start_at": "m05"`) starts
    a new game in a town, scripts of its own or not.
-2. **Menu and system text.** Dialogue in scripts is editable, but 302 `.mes`
-   files hold the rest (menus, item, map and shop names, NPC lines, system
-   messages): `c2` reads them for names and comments but cannot write them.
-   Export them as text, build them back byte for byte, and let mods replace
-   and add lines (an item's name, a translation).
+2. **Menu and system text** (done). All 302 `.mes` files (and 8 `fconv`
+   files laid out the same way) build back byte for byte and export as UTF-8
+   text with the game's codes as tags ([text](docs/assets/text.md));
+   `text:en/shopname` in `mod.json` changes a file in every copy and version
+   of that language. Japanese and Korean beyond ASCII show as `{XXXX}` (no
+   table on the disc gives their glyphs); the English font has no accented
+   letters. Not yet tried in the game.
 3. **Game data** (located, partly editable). Where every kind lives is in
    [data](docs/assets/data.md). Editable through `mod.json` (`data:items`,
    `data:shops`, `data:monsters`, JSON with only the changed fields): item
