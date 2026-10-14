@@ -583,7 +583,12 @@ character pack; packs inside packs work the same way).
   each room's rows of parts, as text, how often it is chosen; rooms may be
   added, see [dungeons](assets/dungeons.md)) and `data:characters`
   (starting HP and equipment, WHP gained at a
-  weapon level-up, Monica's monster forms, badge growth). Keep only the
+  weapon level-up, Monica's monster forms, badge growth), `data:requests`
+  (Georama requests: their conditions, map parts shown, percentages),
+  `data:townspeople` (names' models, abilities, costs), `data:gifts`
+  (gifts that win a badge), `data:spheda` (club power) and `data:breeding`
+  (aquarium breeding pairs); `data:georama` also has each town's rivers and
+  water. Keep only the
   records and fields you change, each record with the keys that name it
   (`item`, `shop`, `id`, `recipe`, `dungeon` and `floor`, ...):
   `{"items": [{"item": 1, "weapon": {"attack": 50}}]}`. `build` writes only
@@ -592,9 +597,21 @@ character pack; packs inside packs work the same way).
   each language's Georama parts and race fish) into every one, and the
   executable tables into the boot executable `SCES_511.90`, patched in
   place. Lists keep within what the game reads (a recipe's 1 to 4
-  materials, a floor's 32 monsters) and lines are never added. Several mods'
+  materials, a floor's 32 monsters). Several mods'
   tables merge; two giving one value different numbers are refused, as are
-  values the game's field cannot hold. Names are labels (they are text).
+  values the game's field cannot hold. Names are labels (they are text),
+  except items': an item's `name` and `description` (English) and `names`
+  and `descriptions` (`{"fr": ...}`) go into the item name files and the
+  menus' messages. **New records**: a record whose number the game lacks,
+  with `like` naming one to copy, adds an item (`{"item": 429, "like": 1,
+  "name": "Mega Wrench", "weapon": {"attack": 250}}`, its name in every
+  language, its description copied unless given), a price or shop, a
+  recipe, a Georama part or placed part, a fishing spot (and fish to a
+  spot), a request or a townsperson; build copies the like record's lines
+  with the changes, counts it where the engine counts them, and refuses
+  what the engine cannot hold (432 items, 116 weapons, 234 recipes, Georama
+  IDs to 127, 16 requests a town, 180 townspeople, ...: the table in [game
+  data](assets/data.md#status)).
   What each field means is in [game data](assets/data.md).
 - **Character models as glTF.** A character pack (`.chr`) holds a model,
   its skin weights, bind pose, motions and textures. `mod asset ISO NAME
