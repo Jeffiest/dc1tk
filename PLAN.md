@@ -161,9 +161,14 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    floor medals and monster placement (plain cfg, the same way), and the
    other executable tables (spectrumization, character growth, Donny's
    shop, fish); adding new items or shops; the remaining unknown fields.
-4. **Memory budgets** (also below, under mod assets): measure what models,
-   textures and sound banks may grow to, so `build` can say a mod will not
-   fit instead of the game crashing.
+4. **Memory budgets** (done). [memory](docs/assets/memory.md) gives each
+   budget from the engine (read buffer, map and loading-screen limits,
+   script buffer, placements, texture blocks, GS memory, character stacks,
+   SPU regions) with the retail maximum and headroom; `build` checks every
+   changed load against them (an error over a certain budget, a warning over
+   an estimated one). Estimates remain for map and pack memory; retail is
+   predicted to overflow the field SPU region by 1,392 bytes in s01 (set
+   1600 with EV_100_155), not observed.
 
 ## Next: modding
 
@@ -215,11 +220,10 @@ do:
    was at the fade. Rebuild with loud mid-range sounds; if the old ones are
    still heard, read the engine's sound table over PINE once event 50 has
    loaded (`PortInfo` 0x3F6540, port 4) to see what the rows became.
-2. **Memory.** Models, textures and sound banks load into fixed memory the
-   build cannot see, so it only warns when a file grows. Measure the
-   budgets: the character memory stacks, how much of a texture block a
-   scene leaves free, and the SPU regions (a sound-set row's banks add up
-   to more than the field region as read, so something is not understood).
+2. **Memory** (done, see "Now: the rest of the game" item 4). The sound-set
+   puzzle is settled: a set's event bank never loads with that set's own
+   field banks; a script's `load_sound(set)` adds only the event bank to the
+   set already loaded.
 3. **Names for a mod's new sounds.** New bank entries are used by number;
    generate names for them (`SE_SP_004_BEEP`) as `disc.h` names the game's,
    and have `mod check` check the pack paths and member names scripts load.

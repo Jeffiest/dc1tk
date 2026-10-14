@@ -45,7 +45,7 @@ this repository). Map meshes are the MDS format of
   made in Blender stands where it was put with a picture of its own, its
   collision copy blocks the player, and a repainted map picture shows.
 
-**Not yet:** the map memory budget is unmeasured; how the VU program
+**Not yet:** how the VU program
 combines vertex colour with lighting is untraced; `invent`'s int and float
 and `sound`'s int are unnamed.
 
@@ -490,7 +490,8 @@ nothing there.
   of the map packs.
 - New textures go into an `.img` inside the `.ipk`, keeping its `#texanime`.
 - Limits: 320 placements (400 dungeons; the largest map has 245), names up to
-  31 characters, `TIME_LIGHT_NUM` 8 or less. The memory budget is unmeasured.
+  31 characters, `TIME_LIGHT_NUM` 8 or less. Memory: see [memory](memory.md) (read
+  buffer, loading-screen limit, placements, texture blocks); `build` checks them.
 
 ### 7.1 One map model to glTF and back (written)
 
