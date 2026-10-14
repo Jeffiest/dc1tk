@@ -1,11 +1,31 @@
 {
  "title": "The Spinning Cult",
- "version": "0.1.0",
- "start_at": "s17:GILL_TEST",
+ "version": "1.0.0",
+ "start_at": "m01",
+ "replace": {
+  "map:m01": {"file": "maps/m01/m01.gltf", "programs": {"door_fish": "ENTER_FISH_ROOM"}},
+  "data:items": "data/items.json",
+  "data:inventions": "data/inventions.json"
+ },
  "add": {
-  "file:mods/gill/gill.chr": {
-   "file": "model/gill.gltf",
-   "like": "model:p01_01a"
-  }
+  "map:fishroom": {
+   "file": "maps/m07/m07.gltf",
+   "like": "m07",
+   "title": "The Fish Room",
+   "script": "fishroom.c",
+   "programs": {"door_out": "LEAVE_FISH_ROOM"}
+  },
+  "music:BG_201": {
+   "like": "BG_193",
+   "file": "music/turning.mid",
+   "instruments": {
+    "100": {"file": "music/musicbox.wav", "root": 84},
+    "101": {"file": "music/drone.wav", "root": 36, "loop": true},
+    "102": {"file": "music/choir.wav", "root": 60},
+    "103": {"file": "music/bell.wav", "root": 36},
+    "104": {"file": "music/whisper.wav", "root": 60}
+   }
+  },
+  "file:mods/gill/gill.chr": {"file": "model/gill.gltf", "like": "model:p01_01a"}
  }
 }
