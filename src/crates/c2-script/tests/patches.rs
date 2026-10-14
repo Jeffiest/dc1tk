@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use build_common::{disc_for, fails, make_tree, map, read, recorded, sdk_dir, strings, tables, write, TempDir, Tools};
 use c2_script::node::Node;
 use c2_script::patches::{self, Plan, Scripts, Target};
+use c2_script::renames::{self, Followed};
 use c2_script::vm::{self, Machine, Value};
 use c2_script::{build, definitions, editor, library, mods, numbers, parse, pathnames, sdk, Result};
 use indexmap::IndexMap;
@@ -384,6 +385,59 @@ fn editors_get_a_header_of_the_targets_declarations_that_build_never_reads() {
         program_of(&root, &after, "map/s/s17_valley/s17_1.c").unwrap(),
         program_of(&root, &before, "map/s/s17_valley/s17_1.c").unwrap()
     );
+}
+
+fn compiled_with(root: &Path, plan: &Plan, script: &str, tools: &Tools) -> Vec<u8> {
+    let patched = build::Patched { tree: root, relative: script, patches: plan.for_script(script).unwrap() };
+    build::compiled(&root.join(script), &tools.toolchain(), None, None, None, Some(&patched)).unwrap()
+}
+
+#[test]
+fn an_override_follows_its_function_when_a_new_decompile_renames_it() {
+    let patch = "#pragma target map s17\n\nvoid twice(void)\n{\n    greet();\n}\n\n\
+                 #pragma override\nvoid greet(void)\n{\n    print(\"hi\");\n    original();\n}\n";
+    let folder = TempDir::new("patches-renamed");
+    let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch)])]);
+    let tools = Tools::new();
+    let script = "map/s/s17_valley/s17_1.c";
+    let mut plan = plan_of(&dirs, &root).unwrap();
+    // the first check records the fingerprint of the function the patch overrides
+    let found = renames::follow(&dirs, &mut plan, &root, &tools.toolchain(), &IndexMap::new()).unwrap();
+    assert!(found.followed.is_empty() && found.notes.is_empty());
+    let recorded = renames::read_lock(&dirs[0]).unwrap();
+    let print = recorded["p.c"]["greet"].clone();
+    assert_eq!(renames::script_prints(&root, script, &tools.toolchain(), &IndexMap::new()).unwrap()["greet"], print);
+    let before = compiled_with(&root, &plan, script, &tools);
+    // a later decompile names the library's function salute
+    for path in ["map/s/s17_valley/s17_1.c", "map/s/s17_valley/s17_2.c", "lib/map/s/s17/greet.c"] {
+        write(&root, path, &read(&root.join(path)).replace("greet(", "salute("));
+    }
+    fails(program_of(&root, &plan_of(&dirs, &root).unwrap(), script), "the script has no function greet");
+    let mut plan = plan_of(&dirs, &root).unwrap();
+    let found = renames::follow(&dirs, &mut plan, &root, &tools.toolchain(), &IndexMap::new()).unwrap();
+    let followed = Followed { module: "m".into(), patch: "p.c".into(), old: "greet".into(), new: "salute".into() };
+    assert_eq!(found.followed, [followed]);
+    assert_eq!(run(&program_of(&root, &plan, script).unwrap(), "twice"), strings(&["hi", "hello"]));
+    assert_eq!(run(&program_of(&root, &plan, script).unwrap(), "start"), strings(&["hi", "hello"]));
+    // names are not in the bytes: the patched script compiles as it did before the rename
+    assert_eq!(compiled_with(&root, &plan, script, &tools), before);
+    // when two functions have the code, the patch must say which
+    let library = read(&root.join("lib/map/s/s17/greet.c"));
+    write(&root, "lib/map/s/s17/greet.c", &format!("{library}\n{}", library.replace("salute(", "wave(")));
+    let mut ambiguous = plan_of(&dirs, &root).unwrap();
+    let noted = renames::follow(&dirs, &mut ambiguous, &root, &tools.toolchain(), &IndexMap::new()).unwrap();
+    assert!(noted.followed.is_empty());
+    assert!(noted.notes[0].contains("has no greet; its code is in salute, wave"), "{:?}", noted.notes);
+    write(&root, "lib/map/s/s17/greet.c", &library);
+    // rename writes the new name into the mod, with its fingerprint
+    assert_eq!(renames::rename(&dirs[0], &found.followed).unwrap(), [dirs[0].join("p.c")]);
+    assert_eq!(read(&dirs[0].join("p.c")), patch.replace("greet", "salute"));
+    assert_eq!(renames::read_lock(&dirs[0]).unwrap()["p.c"]["salute"], print);
+    let mut plan = plan_of(&dirs, &root).unwrap();
+    assert!(renames::follow(&dirs, &mut plan, &root, &tools.toolchain(), &IndexMap::new())
+        .unwrap()
+        .followed
+        .is_empty());
 }
 
 fn names_of(dirs: &[PathBuf]) -> Vec<String> {

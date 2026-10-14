@@ -28,7 +28,7 @@ script on it (about 40 s) and every `.map` scene file (a few seconds).
 | crate | holds |
 |---|---|
 | `c2-disc` | the disc: ISO 9660, `DATA.HD4` and `DATA.DAT`, the packs inside its files, extracting them all, writing a new image with files replaced or added, cp932 names |
-| `c2-script` | the scripts: the `.stb` format, its assembly, the native tables, definition sets, the C parser, the decompiler, names, notes and messages, libraries, the SDK, the compiler, a VM interpreter for `mod test`, the source index (flags, xref, maps), learning definitions, and build and mods (patches, additions, numbers, `start_at`, assets by id) |
+| `c2-script` | the scripts: the `.stb` format, its assembly, the native tables, definition sets, the C parser, the decompiler, names, notes and messages, libraries, the SDK, the compiler, a VM interpreter for `mod test`, the source index (flags, xref, maps), learning definitions, and build and mods (patches, additions, numbers, `start_at`, assets by id, editor headers, overrides followed by fingerprint) |
 | `c2-assets` | textures (IM3/TIM2 to and from PNG), sound banks (SPU2 ADPCM to and from WAV), character packs (MDS, motions, skin weights to and from glTF), map scene files (`.map` as a typed tree), the asset tree and its ids |
 | `c2-py` | number and text formatting as CPython does it (float repr, `%g`, `int(x, 0)`, `json.dumps`, `textwrap`, `difflib`, Unicode `str` methods): `c2` was ported from a Python tool and writes the same bytes it did, so trees and mods made with that tool still match |
 | `c2` | the command line: one module per group of commands (`setup.rs`, `tree_decompile.rs`, `modding.rs`, `verify.rs`, `defs.rs`, `xref.rs`, `asset_tree.rs`) |

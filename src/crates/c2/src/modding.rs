@@ -11,7 +11,9 @@ use indexmap::IndexMap;
 
 use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
-use c2_script::{build, definitions, discfiles, editor, index, migrate, mods, patches, replace, sdk, startat, tree};
+use c2_script::{
+    build, definitions, discfiles, editor, index, migrate, mods, patches, renames, replace, sdk, startat, tree,
+};
 
 use crate::Common;
 use crate::{asset_tree, files};
@@ -181,6 +183,10 @@ pub enum ModCommand {
         /// change one place.
         #[arg(long)]
         disc: Option<PathBuf>,
+        /// Write the new names of overridden functions the tree has renamed (found by their
+        /// fingerprints) into the mods' files.
+        #[arg(long)]
+        rename: bool,
         #[command(flatten)]
         common: Common,
     },
@@ -248,6 +254,20 @@ fn write_editor_files(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Resul
     let tables = common.tables()?;
     let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
     Ok(editor::write(mod_dir, tree_dir, &tools, &sdk_dir, &defs.sets)?)
+}
+
+/// The fingerprints of the functions a mod's patches override, kept in its renames::LOCK so build
+/// finds them when a later decompile renames them.
+fn record_fingerprints(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Result<()> {
+    let defs = common.definitions()?;
+    let sdk_dir = common.sdk_dir();
+    let headers = sdk::header_texts(&defs, &sdk_dir)?;
+    let tables = common.tables()?;
+    let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    let dirs = [mod_dir.to_path_buf()];
+    let mut plan = mods::patch_plan(&dirs, tree_dir, &default_constants(tree_dir)?, false)?;
+    renames::follow(&dirs, &mut plan, tree_dir, &tools, &IndexMap::new())?;
+    Ok(())
 }
 
 /// The places and changes of the chosen mods' asset ids, and the templates of the game files they
@@ -412,6 +432,13 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let headers = sdk::header_texts(&defs, &sdk_dir)?;
     let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    let following = renames::follow(&mod_dirs, &mut plan, &args.source, &tools, &overrides)?;
+    for followed in &following.followed {
+        println!("note: {}; c2 mod check --rename writes the new name into the mod", renames::describe(followed));
+    }
+    for note in &following.notes {
+        println!("note: {note}");
+    }
     let found = build::changes(&args.source, &args.iso, &tools, &overrides, args.full, Some(&plan))?;
     match &found.all_because {
         Some(why) => println!("compiled all {} scripts: {}", found.compiled, why),
@@ -553,7 +580,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             println!("{} files applied to {}", applied.len(), shown(source));
             Ok(ExitCode::SUCCESS)
         }
-        ModCommand::Check { source, names, mods: mods_dir, disc, common } => {
+        ModCommand::Check { source, names, mods: mods_dir, disc, rename, common } => {
             let defs = common.definitions()?;
             let sdk_dir = common.sdk_dir();
             let headers = sdk::header_texts(&defs, &sdk_dir)?;
@@ -625,6 +652,21 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 for (constant, number) in sorted {
                     println!("{name}: {constant} = {number}");
                 }
+            }
+            for followed in &result.following.followed {
+                println!("{}", renames::describe(followed));
+            }
+            for note in &result.following.notes {
+                println!("note: {note}");
+            }
+            if *rename {
+                for mod_dir in &mod_dirs {
+                    for path in renames::rename(mod_dir, &result.following.followed)? {
+                        println!("renamed in {}", shown(&path));
+                    }
+                }
+            } else if !result.following.followed.is_empty() {
+                println!("--rename writes the new names into the mods");
             }
             for (path, error) in &result.errors {
                 println!("error: {path}: {error}");
@@ -720,6 +762,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 if result.scripts.len() == 1 { "" } else { "s" }
             );
             write_editor_files(&mod_dir, source, common)?;
+            record_fingerprints(&mod_dir, source, common)?;
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Header { source, name, mods: mods_dir, common } => {

@@ -41,7 +41,7 @@ use crate::compile::Toolchain;
 use crate::discfiles::Clashes;
 use crate::node::Node;
 use crate::patches::{self, ModTexts, Plan, Scripts, Target};
-use crate::{additions, discfiles, index, numbers, pathnames, source, tree, Error, Result};
+use crate::{additions, discfiles, index, numbers, pathnames, renames, source, tree, Error, Result};
 
 pub const INDEX: &str = "mod.json";
 pub const FILES: &str = "files";
@@ -106,9 +106,9 @@ pub struct Chosen {
 }
 
 /// The mods named, with every mod they require (and those require) added, ordered so that each
-/// comes after the mods it requires and the chosen mods its "after" names. Where neither says,
-/// the order given is kept, added mods after the chosen ones. A requirement missing from the mods
-/// folder, or a cycle, is an error naming the mods.
+/// comes after the mods it requires and the chosen mods its "after" names: the mods in the order
+/// given, each just after those it must follow. A requirement missing from the mods folder, or a
+/// cycle, is an error naming the mods.
 pub fn chosen(mods_dir: &Path, names: &[String]) -> Result<Chosen> {
     let mut order: Vec<String> = Vec::new();
     let mut added = Vec::new();
@@ -143,33 +143,38 @@ pub fn chosen(mods_dir: &Path, names: &[String]) -> Result<Chosen> {
             (name, order.iter().filter(|other| requires.contains(other) || after.contains(other)).collect())
         })
         .collect();
-    let mut placed: Vec<String> = Vec::new();
-    while placed.len() < order.len() {
-        let ready =
-            order.iter().find(|name| !placed.contains(name) && before[name].iter().all(|other| placed.contains(other)));
-        match ready {
-            Some(name) => placed.push(name.clone()),
-            None => {
-                // every mod left waits on another left: follow them round to a cycle
-                let mut walk: Vec<&String> = vec![order.iter().find(|name| !placed.contains(name)).unwrap()];
-                loop {
-                    let last = walk[walk.len() - 1];
-                    let next = *before[last].iter().find(|other| !placed.contains(other)).unwrap();
-                    if let Some(start) = walk.iter().position(|name| *name == next) {
-                        let cycle: Vec<String> = walk[start..]
-                            .iter()
-                            .enumerate()
-                            .map(|(at, name)| format!("{name} after {}", walk[start..].get(at + 1).unwrap_or(&next)))
-                            .collect();
-                        return Err(Error::invalid(format!(
-                            "the mods' \"requires\" and \"after\" go round in a cycle ({}); change one of their mod.json",
-                            cycle.join(", ")
-                        )));
-                    }
-                    walk.push(next);
-                }
-            }
+    // each mod in the order given, just after the mods it must follow, placed the same way
+    fn place<'a>(
+        name: &'a String,
+        before: &HashMap<&'a String, Vec<&'a String>>,
+        placed: &mut Vec<&'a String>,
+        walk: &mut Vec<&'a String>,
+    ) -> Result<()> {
+        if placed.contains(&name) {
+            return Ok(());
         }
+        if let Some(start) = walk.iter().position(|other| *other == name) {
+            let cycle: Vec<String> = walk[start..]
+                .iter()
+                .enumerate()
+                .map(|(at, other)| format!("{other} after {}", walk[start..].get(at + 1).unwrap_or(&name)))
+                .collect();
+            return Err(Error::invalid(format!(
+                "the mods' \"requires\" and \"after\" go round in a cycle ({}); change one of their mod.json",
+                cycle.join(", ")
+            )));
+        }
+        walk.push(name);
+        for other in &before[name] {
+            place(other, before, placed, walk)?;
+        }
+        walk.pop();
+        placed.push(name);
+        Ok(())
+    }
+    let mut placed = Vec::new();
+    for name in &order {
+        place(name, &before, &mut placed, &mut Vec::new())?;
     }
     let dirs = placed.iter().map(|name| folder(mods_dir, name)).collect::<Result<_>>()?;
     Ok(Chosen { dirs, added })
@@ -335,10 +340,14 @@ pub struct Checked {
     pub compiled: usize,
     pub errors: Vec<(String, String)>,
     pub numbers: BTreeMap<String, IndexMap<String, i64>>,
+    /// Overrides of functions the tree has renamed since, found by fingerprint (renames).
+    pub following: renames::Following,
 }
 
 /// Compiles every script the chosen mods change, as build would, without a disc: the scripts their
-/// files replace or reach through a library, and the scripts their patches change.
+/// files replace or reach through a library, and the scripts their patches change. Overrides of
+/// functions the tree has renamed follow them by fingerprint, and the fingerprints of overridden
+/// functions not yet in a mod's renames::LOCK are recorded there.
 pub fn check(
     mod_dirs: &[PathBuf],
     tree_dir: &Path,
@@ -367,6 +376,7 @@ pub fn check_with(
             patch.numbers.extend(added.iter().map(|(name, value)| (name.clone(), *value)));
         }
     }
+    let following = renames::follow(mod_dirs, &mut found, tree_dir, tools, &texts)?;
     let mut scripts: BTreeSet<String> =
         texts.keys().filter(|path| path.ends_with(source::EXTENSION) && !index::is_library(path)).cloned().collect();
     scripts.extend(found.scripts.keys().cloned());
@@ -396,7 +406,12 @@ pub fn check_with(
             result.err().map(|error| (path.clone(), error.to_string()))
         })
         .collect();
-    Ok(Checked { compiled: scripts.len(), errors: errors.into_iter().flatten().collect(), numbers: found.numbers })
+    Ok(Checked {
+        compiled: scripts.len(),
+        errors: errors.into_iter().flatten().collect(),
+        numbers: found.numbers,
+        following,
+    })
 }
 
 fn sorted_keys(value: &Value) -> Value {

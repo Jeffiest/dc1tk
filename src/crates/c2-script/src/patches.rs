@@ -226,6 +226,9 @@ pub struct Patch {
     pub scripts: Vec<String>,
     pub plain: HashMap<String, String>,
     pub numbers: IndexMap<String, i64>,
+    /// Overridden functions the tree has renamed, found by fingerprint (renames): {script: {name
+    /// in the patch: name in the script}}. The patch is merged as if it said the new names.
+    pub follow: HashMap<String, IndexMap<String, String>>,
 }
 
 impl Patch {
@@ -344,6 +347,7 @@ pub fn located(mod_list: &[ModTexts], tree: &Path) -> Result<(ByScript, Vec<Patc
                 plain: chosen.iter().map(|script| (script.clone(), scripts.plain[script].clone())).collect(),
                 scripts: chosen.into_iter().collect(),
                 numbers: IndexMap::new(),
+                follow: HashMap::new(),
             });
         }
     }
@@ -386,7 +390,25 @@ pub fn prepared(
                 .extend(list(&library_program, "globals").iter().map(|declared| declared.clone().with("source", path)));
         }
     }
-    let expanded = library::expand(parsed, &texts, headers)?;
+    let mut expanded = library::expand(parsed, &texts, headers)?;
+    if let Some(follow) = patch.follow.get(script).filter(|follow| !follow.is_empty()) {
+        // overrides of functions the tree renamed: the override and every call to the old name
+        // take the new one
+        let functions: Vec<Node> = list(&expanded, "functions")
+            .iter()
+            .map(|function| {
+                let name = text(function, "name");
+                let mut out = renamed(function, follow, &IndexMap::new(), &own_names(function));
+                if truthy(&function["override"]) {
+                    if let Some(to) = follow.get(name) {
+                        out["name"] = to.as_str().into();
+                    }
+                }
+                out
+            })
+            .collect();
+        expanded = expanded.with("functions", functions);
+    }
     let mut consts: IndexMap<String, Node> = list(&expanded["declarations"], "constants")
         .iter()
         .map(|declared| (text(declared, "name").to_string(), declared["value"].clone()))
@@ -968,12 +990,27 @@ pub fn patch_header(module: &str, kind: &str, value: &str, script_text: &str) ->
     lines.join("\n") + "\n"
 }
 
+fn overrides_pattern() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    regex(&CELL, r"#[ \t]*pragma[ \t]+override\s+(?:\w+\s+)*?(\w+)\s*\(")
+}
+
+/// The functions a patch's text overrides, in order, each once.
+pub fn overridden(patch_text: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for capture in overrides_pattern().captures_iter(&index::without_comments(patch_text)) {
+        if !found.iter().any(|name| *name == capture[1]) {
+            found.push(capture[1].to_string());
+        }
+    }
+    found
+}
+
 /// One line per patch for mod list and build: what it targets, overrides, adds and asks for.
 pub fn summary(patch: &Patch) -> String {
-    static OVERRIDES: OnceLock<Regex> = OnceLock::new();
     static EVERY_FRAME: OnceLock<Regex> = OnceLock::new();
     static PROGRAMS: OnceLock<Regex> = OnceLock::new();
-    let overrides = regex(&OVERRIDES, r"#[ \t]*pragma[ \t]+override\s+(?:\w+\s+)*?(\w+)\s*\(");
+    let overrides = overrides_pattern();
     let every_frame = regex(&EVERY_FRAME, r"#[ \t]*pragma[ \t]+every_frame\s+(?:\w+\s+)*?(\w+)\s*\(");
     let programs = regex(&PROGRAMS, r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*(\w+)\s*\);");
     let text = index::without_comments(&patch.text);

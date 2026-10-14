@@ -387,7 +387,10 @@ patch holding just that function, and
 `c2 build extracted/scripts dc2.iso -o modded.iso --mod castle --mod another`
 merges the chosen mods into the scripts they target. A patch holds only what it changes, so a fresh tree,
 decompiled after a tools update, takes the same mods, and several mods can
-change one script. (`mod new` copies whole files into a mod instead; `mod
+change one script. Better definitions can rename a function a patch
+overrides; the mod keeps the function's fingerprint, so `build` still finds
+it and says its new name, and `c2 mod check extracted/scripts castle
+--rename` puts the new name in the patch. (`mod new` copies whole files into a mod instead; `mod
 list` marks a copied file whose decompiler version has changed since, to
 compare.) See [usage](usage.md#mods).
 

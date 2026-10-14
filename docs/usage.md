@@ -225,6 +225,13 @@ void start_castle_battle(void)
   from a library: no fork needed. `original(...)` inside it calls the
   function it replaced. Two mods can override the same function when the
   later one calls `original()`; when neither does, `build` names both.
+  The function's fingerprint (its code's, as the definitions name functions
+  by) is kept in the mod's `fingerprints.json`, written by `mod override`,
+  `mod check` and `build`. When a later decompile renames the function,
+  `build` and `mod check` find it by fingerprint, say the new name and
+  build the override as if the patch said it; `mod check --rename` writes
+  the new name into the mod's files. If the code is in several functions
+  of the script, they name them and you choose.
 - **`#pragma every_frame`** before a function without parameters calls it
   before every `wait;` in the target, so it runs once a frame whatever the
   script is waiting in: a monster keeping a timer, say. It must not wait.
@@ -277,7 +284,9 @@ The commands:
   decompiling again.
 - `mod check SOURCE NAME...` compiles every script the mods change, as
   `build` would but without a disc, and prints the mods it added for
-  `requires`, the order they apply in, and the numbers they were given.
+  `requires`, the order they apply in, the numbers they were given, and
+  overridden functions the tree has renamed (`--rename` writes the new
+  names into the mods).
 - `build --mod NAME` (repeat it for several) merges each patch into its
   targets after their libraries are included, and lists each mod's patches
   and numbers. The tree is not changed.

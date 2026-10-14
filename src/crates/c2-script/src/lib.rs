@@ -30,6 +30,7 @@ pub mod notes;
 pub mod numbers;
 pub mod patches;
 pub mod pathnames;
+pub mod renames;
 pub mod replace;
 pub mod sdk;
 pub mod slots;
