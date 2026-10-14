@@ -281,12 +281,15 @@ do:
    Left: vertex, material alpha/colour and visibility lists go out to glTF
    only as carried data (morph targets, `KHR_animation_pointer`,
    `KHR_node_visibility` would expose them), motion sets 1-7 and motion-only
-   packs are not exported, deleting an action keeps its `KEY`, and a Blender
-   round trip still rebuilds every character mesh (map models compare by
-   value; characters should too).
-5. **New characters.** A model is rebuilt on the disc model's skeleton; a
-   wholly new character needs a new pack, an `info.cfg` and a skeleton of
-   its own from glTF, and cloth (`.clo`) left out or carried over.
+   packs are not exported, deleting an action keeps its `KEY`, and one pack
+   (`e210a`) still moves 6 `KEY`s through Blender (leg translations up to
+   0.04 off). Character meshes compare by value now: an unedited Blender
+   round trip rebuilds nothing, an edited mesh only itself, weights intact.
+5. **New characters** (done, being tried). `models::new_pack` builds a whole
+   pack from glTF (skeleton, rigid and skinned meshes, weights, bind pose,
+   motions as `KEY`s, pictures, `info.cfg`), with a template pack for the
+   formats; cloth is left out, motion set 0 only, no shadow model. Example:
+   [new-character](docs/examples/new-character/).
 6. **Music** (done, being tried). All background music and ambient loops
    are `.sq` sequences played with their bank's instruments
    ([music](docs/assets/music.md)); `SOUND.DAT` is streamed voices. All 447
