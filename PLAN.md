@@ -138,7 +138,7 @@ was checked in the game. Left over:
   any map's event points can be given programs (`"programs": {"door_park":
   "ENTER_PARK"}`), so a door in an existing town leads in and a point leads
   back; patches see each new map's number as `MAP_<NAME>`. Example:
-  [new-map-door](docs/examples/new-map-door/). Being tried in the game
+  [new-map-door](docs/examples/new-map-door/), checked in the game
   (`new-map-door-test.iso`).
 - **Dungeon floors** (done). Layouts are `data:layouts`, the part kinds
   `data:parts` (entries renamed in place; the table cannot grow, entry 276
