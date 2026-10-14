@@ -1,50 +1,82 @@
-# spinning-cult: Brother Gill, made in Blender
+# spinning-cult: The Spinning Cult
 
-The leader of the Spinning Cult, for an eerie mod: a tall, gaunt figure (34
-units; Max is about 26) in a long grey-green robe flaring to the floor, a
-capelet, long bell sleeves and a deep pointed hood. Inside the hood there is
-no face, only black and two small pale eyes set a little too far apart. A
-worn fish emblem on his chest, a cord belt, thin pale hands with long
-fingers. Everything is made by `make_gill.py`; nothing of the game's is in
-this folder.
+An eerie mod built on the [fish-room](../fish-room/) example. Behind a door in
+Palm Brinks the giant fish still turns in the dark, and someone is waiting
+under it: Brother Gill, faceless in his hood. He gives Max a camera and asks
+for the fish's likeness, then a shape the town can hold. Max invents the
+Whirligig, and everyone he shows it to begins to turn. When five have turned,
+the fish stops, and looks at him.
 
-- `model/gill.gltf` (with `gill.bin` and `gill_skin.png`, one 256x256
-  picture) is the character as Blender exports it: an armature of eighteen
-  bones (`root`, `hips`, `spine`, `chest`, `neck`, `head`, and per side
-  `shoulder`, `upper_arm`, `forearm`, `hand`, `fingers1`, `fingers2`), the
-  skinned mesh `robe` (robe, capelet, hood, sleeves, hands, the black void
-  in the hood) and a rigid mesh `eyes--c0` on the head bone, whose frame
-  name carries the flag `c0` so the game draws the eyes unlit.
-- `mod.json` makes it a new pack, `mods/gill/gill.chr`, like the villager
-  `p01_01a`'s (see [usage](../../usage.md#mods), "New characters").
-- `gill_test.c` adds the start program a new game begins at: it loads the
-  pack with `load_chara`, stands Gill in front of the player at Barga's
-  Valley's "talk" point and plays each motion in turn, named in a caption;
-  (X) plays them again, (O) ends the test.
+Nothing of the game's is in this folder: the maps come from your own disc,
+the townspeople's new motions are added to your own disc's models, and Brother
+Gill, the room, the fish, the pictures and the music are made here.
 
-Motions, at 30 frames a second (step 1.00):
-
-| name | length | what |
-|---|---|---|
-| `idle` | 4 s, loops | a slow breath; the head tilts to one side and back; the fingers flex |
-| `beckon` | 3 s, ends held | the right hand rises towards the viewer, palm up, and the long fingers curl three times |
-| `raise` | 4 s, ends held | both arms rise slowly above the head, palms up, the head tipped back; the fingers tremble |
-| `spin` | 4 s, loops | one full turn on the spot about the vertical (the `root` bone) |
-| `turn_head` | 4 s, loops | the head turns 90 degrees to his left, slowly, holds, and comes back |
-| `vanish` | 2 s, ends held | he fades out: the robe first, the eyes last; hidden on the last frame |
-
-`vanish` uses the shape keys build reads as material fades: each mesh has
-`c2_fade_0` (material 0's fade, 0 opaque, 1 invisible) and `c2_visible`
-(below 1 hidden), shape keys that move nothing, keyed in the action. Play
-it with `CHARA_MOTION_HOLD`, or it loops back to visible; any other motion
-shows him again.
+## Making it
 
 ```bash
-c2 build extracted/scripts dc2.iso -o gill-test.iso --mod spinning-cult --mods docs/examples
+c2 map-export m01
+c2 map-export m07
+blender --background --python docs/examples/spinning-cult/make_gill.py
+blender --background --python docs/examples/spinning-cult/make_mod.py
+blender --background --python docs/examples/spinning-cult/make_villagers.py
+c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
 ```
 
-To make the model again (or change it and build again):
+- `make_gill.py` models Brother Gill (`model/gill.gltf`, made by code): a
+  gaunt robed figure, 34 units tall, a black void in his hood with two pale
+  unlit eyes, eighteen bones, and six motions: `idle`, `beckon`, `raise`,
+  `spin`, `turn_head` (too far, too slowly) and `vanish` (a material fade to
+  nothing, played held). mod.json makes him a new pack, `mods/gill/gill.chr`.
+- `make_mod.py` builds the Fish Room with the fish-room example's
+  `make_mod.py`, then adds: a second fish, awake, its pupils grown huge,
+  hidden until the ending and turned to the player by a Piece animation point
+  in "look at the player" mode; an Invent box round the fish, so a photo of
+  it gives the new idea "Endless Turning" (251); black fog, and a red light
+  set for the ending. Palm Brinks gets the door and a ninth light set, dark
+  with a dried-blood fog. It writes the music (`compose_turned.py`) and copies
+  this folder's scripts and data into `mods/spinning-cult`.
+- `make_villagers.py` exports five townspeople from your disc (Parn, Sheriff
+  Blinkhorn, Giles, Aegira and Fournet), adds two motions to each in
+  Blender, `spin` (arms limp, face tilted up, a slow turn on the spot) and
+  `stare` (still, head hung), and exports them back into the mod, where
+  build adds them as new KEYs.
+- `compose_turned.py`: "The Turning", the Fish Room's tune gone wrong: a
+  detuned music box in F minor over a breathing drone, a wordless choir, a
+  deep bell and the odd whisper, all five instruments synthesized; a music
+  file of the mod's own (`BG_201`).
+- `data/items.json` adds the Whirligig (item 429, a key item like the
+  Treasure Chest Key); `data/inventions.json` adds the idea Endless Turning
+  and the recipe: Endless Turning, Flag and Post, from one Scrap of Metal.
 
-```bash
-blender --background --factory-startup --python docs/examples/spinning-cult/make_gill.py
-```
+## The scripts
+
+- `cult.h`: the cult's state in one save counter (`NEW_COUNTER`), read through
+  a union of an int and a struct of bit-fields: which of the five have turned,
+  the stage, whether the town has gone dark, how many have turned.
+- `fishroom.c`, the Fish Room's script: Gill turning with the fish; talking
+  to him (he turns his head before he turns round), the camera, the hints, the
+  count; the ending.
+- `m01.c`, a patch of Palm Brinks: the five, turned by the Whirligig in a
+  scene each, staying turned across saves; the town going dark and its music
+  changing after three; after the ending, the five standing still, facing the
+  Fish Room's door, for good. Palm Brinks' script is within a few hundred
+  bytes of the most a map's script may be, so this patch is small: it talks
+  through the script's own helpers and reads the counter as plain bits.
+- `speech.h`: speech bubbles and camera helpers for the Fish Room.
+
+## In the game
+
+A new game starts in Palm Brinks (the first arrival moves the story on to
+when the town's people are out, and enters again).
+
+1. Go through the house door near the start of the street (the Fish Room's).
+   Talk to the robed figure under the fish. He gives you a Camera, a
+   notebook, a photo album and a Scrap of Metal.
+2. Put the Camera in one of Max's active item slots (Items menu), and take a
+   photo of the fish: the idea "Endless Turning".
+3. In Palm Brinks, photograph a Flag and a Post.
+4. Invent: Endless Turning, Flag and Post make the Whirligig (Invention
+   menu); make it from the Scrap of Metal. Show it to Gill.
+5. Talk to Parn, Sheriff Blinkhorn, Giles, Aegira and Fournet with the
+   Whirligig. Each one turns. After the third, the town goes dark.
+6. When all five have turned, go back into the Fish Room.
