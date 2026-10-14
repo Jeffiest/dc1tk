@@ -2149,6 +2149,8 @@ struct Pending {
     strings: Option<Vec<Node>>,
     padding: Option<Node>,
     override_: bool,
+    /// What #pragma override NAME names, when it names something: a native the function wraps.
+    override_of: Option<String>,
     every_frame: bool,
 }
 
@@ -2182,6 +2184,9 @@ fn function_definition(
     }
     if pending.override_ {
         function["override"] = Node::Bool(true);
+    }
+    if let Some(of) = &pending.override_of {
+        function["override_of"] = Node::from(of.as_str());
     }
     if pending.every_frame {
         function["every_frame"] = Node::Bool(true);
@@ -2521,7 +2526,11 @@ fn pragma(state: &mut State, token: &Token, program: &mut Node, pending: &mut Pe
             }
             program["targets"].as_array_mut().unwrap().push(node!({"kind": kind, "values": values}));
         }
-        "override" => pending.override_ = true,
+        "override" => {
+            // #pragma override, or #pragma override place_monster before a function of another name
+            pending.override_ = true;
+            pending.override_of = rest.first().map(word).transpose()?;
+        }
         "every_frame" => pending.every_frame = true,
         "once" => {}
         _ => return state.fail(format!("unknown pragma {key}")),

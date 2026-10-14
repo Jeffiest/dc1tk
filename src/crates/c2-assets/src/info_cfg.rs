@@ -6,17 +6,33 @@ use c2_disc::text;
 
 use crate::json::Value;
 
-fn strip_comments(t: &[char]) -> Vec<char> {
+/// The characters of cp932 text, each with the offset of its first byte, decoded as
+/// `text::decode_lossy` decodes.
+fn chars_at(data: &[u8]) -> Vec<(char, usize)> {
+    let mut out = Vec::with_capacity(data.len());
+    let mut i = 0;
+    while i < data.len() {
+        let lead = matches!(data[i], 0x81..=0x9F | 0xE0..=0xFC);
+        let width = if lead && data.get(i..i + 2).and_then(text::decode_strict).is_some() { 2 } else { 1 };
+        out.extend(text::decode_lossy(&data[i..i + width]).chars().map(|c| (c, i)));
+        i += width;
+    }
+    out
+}
+
+/// The text with its comments taken out (a block comment leaves a space), each character keeping
+/// its byte offset.
+fn strip_comments(t: &[(char, usize)]) -> Vec<(char, usize)> {
     let mut out = Vec::with_capacity(t.len());
     let n = t.len();
     let mut i = 0;
-    let starts = |i: usize, a: char, b: char| i + 1 < n && t[i] == a && t[i + 1] == b;
+    let starts = |i: usize, a: char, b: char| i + 1 < n && t[i].0 == a && t[i + 1].0 == b;
     while i < n {
         if starts(i, '/', '/') {
-            i = (i..n).find(|&j| t[j] == '\n').unwrap_or(n);
+            i = (i..n).find(|&j| t[j].0 == '\n').unwrap_or(n);
         } else if starts(i, '/', '*') {
+            out.push((' ', t[i].1));
             i = (i + 2..n).find(|&j| starts(j, '*', '/')).map_or(n, |j| j + 2);
-            out.push(' ');
         } else {
             out.push(t[i]);
             i += 1;
@@ -52,50 +68,67 @@ fn value(arg: &str) -> Value {
     parse_int(a).map_or(Value::Null, Value::Int)
 }
 
-/// (tag, args) of every statement, in file order.
-pub fn parse(data: &[u8]) -> Vec<(String, Vec<Value>)> {
-    let decoded: Vec<char> = text::decode_lossy(data).chars().collect();
-    let t = strip_comments(&decoded);
+/// A statement with where its parts are in the file's bytes.
+#[derive(Clone, Debug)]
+pub struct Statement {
+    pub tag: String,
+    /// Each argument with the bytes of its text, surrounding spaces left out.
+    pub args: Vec<(Value, std::ops::Range<usize>)>,
+    /// Where the tag starts.
+    pub start: usize,
+    /// Just after the statement's ';' (the end of the file when it has none).
+    pub end: usize,
+}
+
+/// Every statement, in file order, with where it is.
+pub fn statements(data: &[u8]) -> Vec<Statement> {
+    let t = strip_comments(&chars_at(data));
     let n = t.len();
+    let width = |c: char| text::encode(&c.to_string()).map_or(1, |bytes| bytes.len());
     let mut out = Vec::new();
     let mut i = 0;
     while i < n {
-        while i < n && matches!(t[i], ' ' | '\t' | '\r' | '\n') {
+        while i < n && matches!(t[i].0, ' ' | '\t' | '\r' | '\n') {
             i += 1;
         }
         if i >= n {
             break;
         }
         let mut j = i;
-        while j < n && (t[j].is_alphanumeric() || t[j] == '_') {
+        while j < n && (t[j].0.is_alphanumeric() || t[j].0 == '_') {
             j += 1;
         }
-        let tag: String = t[i..j].iter().collect();
+        let tag: String = t[i..j].iter().map(|&(c, _)| c).collect();
         let mut args = Vec::new();
-        let mut current = String::new();
+        let mut current: Vec<(char, usize)> = Vec::new();
         let mut quoted = false;
         let mut k = j;
         while k < n {
-            let c = t[k];
+            let c = t[k].0;
             if c == '"' {
                 quoted = !quoted;
             }
             if !quoted && (c == ',' || c == ';') {
-                if !c2_py::strip(&current).is_empty() {
-                    args.push(value(&current));
+                let text: String = current.iter().map(|&(c, _)| c).collect();
+                if !c2_py::strip(&text).is_empty() {
+                    let first = current.iter().position(|&(c, _)| !c2_py::is_space(c)).unwrap_or(0);
+                    let last = current.iter().rposition(|&(c, _)| !c2_py::is_space(c)).unwrap_or(0);
+                    let (c, offset) = current[last];
+                    args.push((value(&text), current[first].1..offset + width(c)));
                 }
                 current.clear();
                 if c == ';' {
                     break;
                 }
             } else {
-                current.push(c);
+                current.push(t[k]);
             }
             k += 1;
         }
         let empty = tag.is_empty();
         if !empty {
-            out.push((tag, args));
+            let end = if k < n { t[k].1 + 1 } else { data.len() };
+            out.push(Statement { tag, args, start: t[i].1, end });
         }
         i = k + 1;
         if empty {
@@ -103,6 +136,11 @@ pub fn parse(data: &[u8]) -> Vec<(String, Vec<Value>)> {
         }
     }
     out
+}
+
+/// (tag, args) of every statement, in file order.
+pub fn parse(data: &[u8]) -> Vec<(String, Vec<Value>)> {
+    statements(data).into_iter().map(|s| (s.tag, s.args.into_iter().map(|(value, _)| value).collect())).collect()
 }
 
 /// A motion set: its .mot, .bbp and .wgt and the named clips (KEY lines).

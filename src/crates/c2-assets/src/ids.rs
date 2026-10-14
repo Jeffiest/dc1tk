@@ -7,7 +7,7 @@
 //! One difference: the tree lists as models only the packs its export converts, while the index
 //! takes every pack whose info.cfg names a model (on the PAL disc, the same packs).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use rayon::prelude::*;
 use serde_json::Value;
@@ -99,21 +99,26 @@ impl Index {
         }
         let entries: Vec<Option<Vec<usize>>> =
             found.banks.par_iter().map(|asset| bank_entries(files[asset.first()].data)).collect();
-        let mut taken = HashSet::new();
-        for (asset, entries) in found.banks.iter().zip(entries) {
+        let sounds = tree::bank_sounds(&found.banks, files, &entries, names);
+        index.aliases.extend(sounds.aliases.clone());
+        for (at, (asset, entries)) in found.banks.iter().zip(&entries).enumerate() {
             let Some(entries) = entries else {
                 continue;
             };
             let bank_id = Kind::Bank.id(&asset.id);
-            let entry_names = tree::entry_names(asset, names);
-            for &entry in &entries {
-                let (id, is_named) = tree::sound_id(&asset.id, entry, &entry_names, &mut taken);
-                if is_named {
-                    index.aliases.insert(Kind::Sound.id(&format!("{}/{entry}", asset.id)), id.clone());
+            for (_, id) in &sounds.ids[at] {
+                let reached = &sounds.places[id];
+                if reached[0].0 != at {
+                    continue;
                 }
-                let at = places(asset).into_iter().map(|(place, _)| (place, Some(entry))).collect();
-                index.insert(Kind::Sound, &id[Kind::Sound.name().len() + 1..], "", at);
-                index.assets.get_mut(&id).unwrap().bank = Some(bank_id.clone());
+                let places = reached
+                    .iter()
+                    .flat_map(|&(bank, entry)| {
+                        places(&found.banks[bank]).into_iter().map(move |(place, _)| (place, Some(entry)))
+                    })
+                    .collect();
+                index.insert(Kind::Sound, &id[Kind::Sound.name().len() + 1..], "", places);
+                index.assets.get_mut(id).unwrap().bank = Some(bank_id.clone());
             }
             index.insert(Kind::Bank, &asset.id, &asset.shown, places(asset));
             index.assets.get_mut(&bank_id).unwrap().entries = Some(entries.len());
@@ -258,5 +263,35 @@ mod tests {
         let at = from_disc.at();
         let key = (Kind::Texture, "map/b/b02.ipk.d/x.img".to_string(), Some(1));
         assert_eq!(at[&key], "texture:wall");
+    }
+
+    #[test]
+    fn an_entry_that_plays_alike_in_another_version_of_its_bank_is_one_sound() {
+        use crate::soundbank::test_bank;
+        let disc = vec![
+            ("snd2/sp/SP_009.snd".to_string(), test_bank(&[22050, 11025], 100)),
+            // a copy in a menu pack whose volumes differ: every entry plays alike
+            ("menu/m.pac".to_string(), tree::tests::pack(&[("SP_009.snd", &test_bank(&[22050, 11025], 90))])),
+            // a version whose entry 2 plays at another rate
+            ("menu/n.pac".to_string(), tree::tests::pack(&[("SP_009.snd", &test_bank(&[22050, 16000], 100))])),
+        ];
+        let (_, written) = build_disc(&disc);
+        let manifest: Value = serde_json::from_slice(&written[tree::MANIFEST]).unwrap();
+        let files: Vec<DiscFile> = disc.iter().map(|(path, data)| DiscFile { path: path.clone(), data }).collect();
+        let index = Index::from_disc(&files, &tree::sound_names(""));
+        assert_eq!(index, Index::from_manifest(&manifest).unwrap());
+        let shown = |id: &str| -> Vec<(String, Option<usize>)> {
+            index.get(id).unwrap().places.iter().map(|(place, at)| (place.display(), *at)).collect()
+        };
+        let all = ["snd2/sp/SP_009.snd", "menu/m.pac.d/SP_009.snd", "menu/n.pac.d/SP_009.snd"];
+        assert_eq!(shown("sound:SP_009/1"), all.map(|path| (path.to_string(), Some(1))));
+        assert_eq!(
+            shown("sound:SP_009/2"),
+            all[..2].iter().map(|path| (path.to_string(), Some(2))).collect::<Vec<_>>()
+        );
+        assert_eq!(index.get("sound:SP_009@m/2").unwrap().id, "sound:SP_009/2");
+        assert_eq!(shown("sound:SP_009@n/2"), [("menu/n.pac.d/SP_009.snd".to_string(), Some(2))]);
+        // each version is still a bank of its own
+        assert_eq!(index.get("bank:SP_009@m").unwrap().places.len(), 1);
     }
 }

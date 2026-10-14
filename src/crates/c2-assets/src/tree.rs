@@ -649,6 +649,111 @@ pub(crate) fn sound_id(
     }
 }
 
+/// What each entry of a bank plays, as a hash: its kind, its sequence's bytes, and each voice's
+/// samples, rate, loop, key and base note. Two versions of a bank's name play an entry alike when
+/// the hashes agree (the menu packs' copies of snd2/sp/SP_001.snd differ only in their volumes).
+/// None when the bank cannot be read.
+pub(crate) fn entry_sounds(data: &[u8]) -> Option<Vec<String>> {
+    let bank = Bank::from_bytes(data).ok()?;
+    let mut out = Vec::new();
+    for entry in bank.entries().ok()? {
+        let mut parts: Vec<Vec<u8>> = vec![format!("{:?}", entry.kind).into_bytes()];
+        let ext = match entry.kind {
+            EntryKind::SeSeq => Some("mid"),
+            EntryKind::Sq => Some("sq"),
+            _ => None,
+        };
+        if let (Some(ext), Some(at)) = (ext, entry.seq_index) {
+            let member = *bank.pack.find(ext).get(at)?;
+            parts.push(bank.pack.members[member].data.clone());
+        }
+        for voice in bank.voices(&entry).ok()? {
+            let vag = &bank.hd.vags[voice.vag];
+            let base = bank.hd.samples[voice.sample].as_ref().map_or(0, |sample| sample.get("base_note"));
+            parts.push(format!("{} {} {} {}", vag.get("rate"), vag.get("attribute"), voice.key, base).into_bytes());
+            parts.push(bank.vag_data[voice.vag].clone());
+        }
+        let refs: Vec<&[u8]> = parts.iter().map(Vec::as_slice).collect();
+        out.push(sha256(&refs));
+    }
+    Some(out)
+}
+
+/// The sound ids of the banks' entries and the places each reaches.
+#[derive(Default)]
+pub(crate) struct BankSounds {
+    /// For each bank, in the order given, (entry, sound id) for each of its entries.
+    pub ids: Vec<Vec<(usize, String)>>,
+    /// Each sound id's places: (bank, entry) by the bank's position in the order given. The first
+    /// is the bank whose entry the id names.
+    pub places: HashMap<String, Vec<(usize, usize)>>,
+    /// The ids that are the header's names.
+    pub named: HashSet<String>,
+    /// sound:BANK/N for an entry known by another id: a named entry, or an entry of a version of
+    /// a bank that plays as the first version's does.
+    pub aliases: BTreeMap<String, String>,
+}
+
+/// The sound id of every entry of the banks (entries[i] the entry numbers of banks[i], None for
+/// a bank that cannot be read). An entry is one sound with every place the disc has it: where
+/// versions of a bank's name differ (copies in menu packs whose volumes differ), an entry that
+/// plays alike in another version is the same sound, so a mod replacing it reaches every copy.
+/// The bank with the bare name is taken first, so its entries keep the header's names.
+pub(crate) fn bank_sounds(
+    banks: &[Asset],
+    files: &[GameFile],
+    entries: &[Option<Vec<usize>>],
+    names: &SoundNames,
+) -> BankSounds {
+    let mut versions: HashMap<String, usize> = HashMap::new();
+    for asset in banks {
+        *versions.entry(asset.name.to_uppercase()).or_default() += 1;
+    }
+    let shared: Vec<bool> = banks.iter().map(|asset| versions[&asset.name.to_uppercase()] > 1).collect();
+    let hashes: Vec<Option<Vec<String>>> = banks
+        .par_iter()
+        .zip(&shared)
+        .map(|(asset, &shared)| if shared { entry_sounds(files[asset.first()].data) } else { None })
+        .collect();
+    let mut order: Vec<usize> = (0..banks.len()).collect();
+    order.sort_by_key(|&at| banks[at].id.contains('@'));
+    let mut out = BankSounds { ids: vec![Vec::new(); banks.len()], ..BankSounds::default() };
+    let mut taken = HashSet::new();
+    let mut alike: HashMap<(String, usize, String), String> = HashMap::new();
+    for at in order {
+        let Some(numbers) = &entries[at] else {
+            continue;
+        };
+        let asset = &banks[at];
+        let entry_names = entry_names(asset, names);
+        for &entry in numbers {
+            let hash = hashes[at].as_ref().and_then(|hashes| hashes.get(entry));
+            let key = hash.map(|hash| (asset.name.to_uppercase(), entry, hash.clone()));
+            let own = Kind::Sound.id(&format!("{}/{entry}", asset.id));
+            let id = match key.as_ref().and_then(|key| alike.get(key)) {
+                Some(id) => {
+                    out.aliases.insert(own, id.clone());
+                    id.clone()
+                }
+                None => {
+                    let (id, is_named) = sound_id(&asset.id, entry, &entry_names, &mut taken);
+                    if is_named {
+                        out.named.insert(id.clone());
+                        out.aliases.insert(own, id.clone());
+                    }
+                    if let Some(key) = key {
+                        alike.insert(key, id.clone());
+                    }
+                    id
+                }
+            };
+            out.places.entry(id.clone()).or_default().push((at, entry));
+            out.ids[at].push((entry, id));
+        }
+    }
+    out
+}
+
 /// Writes the asset tree for the disc's files through `write`, the manifest last, and says what
 /// it holds.
 pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Summary> {
@@ -696,7 +801,11 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
 
     let mut assets: BTreeMap<String, Value> = BTreeMap::new();
     let mut aliases: BTreeMap<String, Value> = BTreeMap::new();
-    let mut taken = HashSet::new();
+    let bank_entries: Vec<Option<Vec<usize>>> = bank_outs
+        .iter()
+        .map(|out| out.as_ref().ok().map(|entries| entries.iter().map(|entry| entry.index).collect()))
+        .collect();
+    let sounds = bank_sounds(&banks, &files, &bank_entries, names);
     let place_json = |file: usize, key: &str, entry: Option<usize>| {
         let mut out = files[file].place.json();
         if let Some(entry) = entry {
@@ -747,7 +856,10 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
             }),
         );
     }
-    for (asset, out) in banks.iter().zip(bank_outs) {
+    for (alias, id) in &sounds.aliases {
+        aliases.insert(alias.clone(), json!(id));
+    }
+    for (at, (asset, out)) in banks.iter().zip(bank_outs).enumerate() {
         let entries = match out {
             Ok(entries) => entries,
             Err(error) => {
@@ -758,16 +870,25 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         summary.banks += 1;
         let bank_id = Kind::Bank.id(&asset.id);
         let folder = format!("{SOUNDS}/{}", file_stem(&asset.id));
-        let entry_names = entry_names(asset, names);
         let mut sound_ids = Vec::new();
-        for entry in &entries {
-            let (id, is_named) = sound_id(&asset.id, entry.index, &entry_names, &mut taken);
-            if is_named {
-                summary.sounds_named += 1;
-                aliases.insert(Kind::Sound.id(&format!("{}/{}", asset.id, entry.index)), json!(id));
+        for (entry, (_, id)) in entries.iter().zip(&sounds.ids[at]) {
+            let id = id.clone();
+            sound_ids.push(json!(id));
+            // an entry another version of the bank plays alike is that version's sound
+            let reached = &sounds.places[&id];
+            if reached[0].0 != at {
+                continue;
             }
-            let places: Vec<Value> =
-                asset.places.iter().map(|&(file, _)| place_json(file, "entry", Some(entry.index))).collect();
+            if sounds.named.contains(&id) {
+                summary.sounds_named += 1;
+            }
+            let places: Vec<Value> = reached
+                .iter()
+                .flat_map(|&(bank, entry)| {
+                    banks[bank].places.iter().map(move |&(file, _)| (file, entry)).collect::<Vec<_>>()
+                })
+                .map(|(file, entry)| place_json(file, "entry", Some(entry)))
+                .collect();
             let mut sound = Map::new();
             sound.insert("kind".into(), json!("sound"));
             sound.insert("bank".into(), json!(bank_id));
@@ -782,7 +903,6 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
             }
             sound.insert("places".into(), Value::Array(places));
             summary.sounds += 1;
-            sound_ids.push(json!(id));
             assets.insert(id, Value::Object(sound));
         }
         let places: Vec<Value> = asset.places.iter().map(|&(file, _)| place_json(file, "", None)).collect();

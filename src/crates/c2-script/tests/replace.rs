@@ -597,6 +597,67 @@ fn sounds_are_found_by_name_or_number_and_added_entries_numbered_on() {
 }
 
 #[test]
+fn a_banks_folder_reaches_the_copies_whose_entry_plays_alike() {
+    let folder = TempDir::new("bank-copies");
+    let bank = folder.path().join("bank");
+    write(&bank.join("002.wav"), b"");
+    write(&bank.join("001.wav"), b"");
+    // entry 2 plays alike in a menu pack's copy of the bank (tree::bank_sounds), entry 1 does not
+    let mut index = bank_index();
+    let copy = Place { path: "menu/0/m.pac".into(), members: vec!["SP_004.snd".into()] };
+    index.assets.get_mut("sound:SP_004/2").unwrap().places.push((copy.clone(), Some(2)));
+    let found = replace::resolve(&[line("m", "bank:SP_004", &bank, false)], &index).unwrap();
+    let edits: Vec<(String, usize)> = found
+        .edits
+        .iter()
+        .map(|edit| match &edit.change {
+            Change::Entry(given) => (edit.place.display(), given.number),
+            _ => panic!("not an entry"),
+        })
+        .collect();
+    assert_eq!(
+        edits,
+        [
+            ("snd2/sp/SP_004.snd".to_string(), 1),
+            ("snd2/sp/SP_004.snd".to_string(), 2),
+            ("menu/0/m.pac.d/SP_004.snd".to_string(), 2)
+        ]
+    );
+}
+
+#[test]
+fn named_wavs_give_the_mods_patches_constants() {
+    let folder = TempDir::new("wav-names");
+    let mod_dir = folder.path().join("beeps");
+    let wavs = mod_dir.join("disc/snd2/sp/sp_004.snd.wav");
+    for name in ["001_door.wav", "005_beep.wav", "006.wav", "007_Big beep!.wav"] {
+        write(&wavs.join(name), b"");
+    }
+    // a file: line's folder counts too; a bank: line's cannot add entries and gives none
+    write(&mod_dir.join("menu/sp_001/003_chime.wav"), b"");
+    mod_json(&mod_dir, json!({"replace": {"file:menu/0/m.pac.d/SP_001.snd": "menu/sp_001"}}));
+    let found = replace::wav_constants(&mod_dir).unwrap();
+    let found: Vec<(&str, i64)> = found.iter().map(|(name, number)| (name.as_str(), *number)).collect();
+    assert_eq!(
+        found,
+        [("SE_SP_004_DOOR", 1), ("SE_SP_004_BEEP", 5), ("SE_SP_004_BIG_BEEP", 7), ("SE_SP_001_CHIME", 3)]
+    );
+    assert_eq!(
+        replace::wav_constant("EV_000_130", "griffon break window").unwrap(),
+        "SE_EV_000_130_GRIFFON_BREAK_WINDOW"
+    );
+
+    // the game's own name for the entry is left to the headers; another value is refused
+    let mods = [mod_dir.clone()];
+    let mut consts = indexmap::IndexMap::new();
+    consts.insert("SE_SP_004_DOOR".to_string(), 1);
+    let given = replace::sound_constants(&mods, &consts, &BTreeMap::new()).unwrap();
+    assert_eq!(given["beeps"].keys().collect::<Vec<_>>(), ["SE_SP_004_BEEP", "SE_SP_004_BIG_BEEP", "SE_SP_001_CHIME"]);
+    consts.insert("SE_SP_004_BEEP".to_string(), 2);
+    fails(replace::sound_constants(&mods, &consts, &BTreeMap::new()), "headers give 2");
+}
+
+#[test]
 fn a_migrated_mod_builds_the_same_files() {
     let disc = disc("migrate");
     let mod_dir = disc.mods.join("old");

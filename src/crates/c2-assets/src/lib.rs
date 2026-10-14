@@ -29,6 +29,7 @@ pub mod models;
 pub mod music;
 pub mod monster_data;
 pub mod mot;
+pub mod motions;
 pub mod py;
 pub mod sequence;
 pub mod shop_data;
