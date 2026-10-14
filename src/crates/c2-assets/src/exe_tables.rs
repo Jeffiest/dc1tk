@@ -206,8 +206,14 @@ mod tests {
         // the table after the gifts ends at a gift type of -1; the clubs and breeding as found
         let start = data_table::elf_offset(&elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table").unwrap();
         assert_eq!(&elf[start + GIFT_ROWS * 6..start + GIFT_ROWS * 6 + 2], &(-1i16).to_le_bytes());
-        assert_eq!(gifts(&elf).unwrap().to_json()["gifts"][0], json!({"row": 0, "gift_type": 0, "item": 0x10D, "unread": 1}));
-        assert_eq!(spheda(&elf).unwrap().to_json()["clubs"][0], json!({"club": 9, "power": 38, "unknown_4": 0.2, "unknown_8": 6}));
+        assert_eq!(
+            gifts(&elf).unwrap().to_json()["gifts"][0],
+            json!({"row": 0, "gift_type": 0, "item": 0x10D, "unread": 1})
+        );
+        assert_eq!(
+            spheda(&elf).unwrap().to_json()["clubs"][0],
+            json!({"club": 9, "power": 38, "unknown_4": 0.2, "unknown_8": 6})
+        );
         let breeding = breeding(&elf).unwrap();
         assert_eq!(breeding.to_json()["breeding"][170], json!({"row": 170, "parents": [0x1A, 0x1A], "child": 0x1A}));
         let (_, patches) = breeding.changes(&json!({"breeding": [{"row": 0, "child": 5}]}), "m").unwrap();

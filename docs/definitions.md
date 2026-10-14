@@ -149,10 +149,15 @@ also names language variants. `params` and `locals` name variables in
 declaration order. `doc` is printed as a comment above the function.
 
 Several fingerprints may share a name: versions of the same helper should.
-When two different functions with the same name meet in one file, or one
-function appears twice, the later one gets a numbered suffix
-(`do_nothing_2`); an entry point in that position is named for its program
-instead (`on_stopped`, `start` for `MAIN`, `return_zero_for_program_212`).
+When two different functions with the same name meet in one file, the later
+one gets a numbered suffix (`swing_attack_2`); an entry point in that
+position is named for its program instead (`on_stopped`, `start` for
+`MAIN`, `return_zero_for_program_212`). A file that holds the same code
+twice or more (identical stubs, which no fingerprint can tell apart) names
+the later copies by their use: for the one function that calls a copy
+(`unlock_interrupts_for_recoil_from_hit`, a caller's `on_` left off), or
+`unused_do_nothing` for a copy nothing calls or starts. Copies called from
+several places keep a number.
 Library functions keep one name everywhere, so where two libraries that
 meet in some script both have a function of the same name, one is numbered
 on every disc file. Names that clash with a native, helper, constant or
@@ -225,6 +230,36 @@ comment for each of the 185 save flags the retail scripts set or read by
 number. Because `set_flag` and `get_flag` take a `flag`, and a kind takes
 constants from every enum named after it, these print wherever a literal
 flag number appears.
+
+A decompiled tree includes these headers from the set itself, so they are
+not learned: to rename a constant, rename it in the set with
+
+```
+c2 defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
+```
+
+which renames the declaration in `include/`, the set's docs, line notes and
+notes that name it, and the variables, parameters and globals the set names
+after it (the decompiler calls what `get_flag(FLAG_X_SEEN)` reads `x_seen`,
+and `learn` records such names, so a set would otherwise keep the old one).
+Each `--in` folder, a decompiled tree or a mod, gets the same renames in
+its source; a tree's files that held no edits stay unedited for `changes`
+and `mod save`. A fresh decompile then prints the new name everywhere, and
+every script compiles to the same bytes. The new name must not be declared
+anywhere yet.
+
+The set lists every rename in `renamed.json`, old name to new, so trees and
+mods made before one, which still say the old name, can catch up: building
+or checking them stops with `unknown variable FLAG_S17_E308_SEEN` and a note
+of its new name, and
+
+```
+c2 defs migrate extracted/scripts mods/my-mod
+```
+
+gives each folder every rename the set records, in order, keeping unedited
+files unedited. Renaming by hand works too, but then the rename is not in
+`renamed.json`, and trees made before it have to be fixed by hand.
 
 ### Libraries
 
@@ -384,6 +419,7 @@ The easiest way to write definitions is to edit decompiled code:
    not change bytecode, any edit that still compiles to the same function
    teaches the definition set. Docs come back wrapped at 100 columns, so an annotated
    script written another way decompiles to the same words on other lines.
+   Constants are renamed with `c2 defs rename` instead (see content headers).
 4. Commit the definition set.
 
 To see where things stand:

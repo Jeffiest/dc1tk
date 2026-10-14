@@ -236,6 +236,42 @@ replaces as the template:
   not change; the sequence itself goes to IOP memory, as the disc's biggest
   (44 KB) do. A tune plays with the SPU2's voices the game leaves the music
   (not measured): keep to the disc's few channels and short chords.
+- **New instruments**: a `music:` line's `"instruments"` gives programs
+  of the bank from WAV files, by the number the MIDI file's program changes
+  name (0 to 127):
+
+  ```json
+  "music:BG_000_000": {"file": "music/tune.mid",
+    "instruments": {"100": "music/organ.wav",
+                    "101": {"file": "music/pulse.wav", "root": 69, "loop": true, "volume": 100, "like": 1},
+                    "102": [{"file": "music/low.wav", "keys": [0, 59], "root": 48},
+                            {"file": "music/high.wav", "keys": [60, 127], "root": 72}]}}
+  ```
+
+  `music::build_with_instruments` puts each in before the tune is built, so
+  its programs are checked against them: a program of one split per sample
+  over its `keys` (default all), each sample (encoded as the sound
+  effects' WAVs are, at its own rate up to 48 kHz) sounding at its own pitch
+  at `root` (default 60), looping where its WAV's `smpl` loop says or, with
+  `"loop": true`, whole (a loop is made a whole number of 28-sample ADPCM
+  blocks; a sample of whole periods and a multiple of 28 samples loops
+  without a click), at `volume` (0 to 128, default 128, the sample's own
+  level). The envelope, pan and priority are those of the bank's program
+  `"like"` names (its first split and sample), else Sony's defaults the
+  sound effects use: attack 0, full sustain held, release rate 12. A
+  number the bank has already is replaced, and its samples cut to silent
+  stubs when nothing plays them any more.
+- **Memory.** A BG bank's samples load into the music region of SPU2
+  memory, 0x78000 bytes from 0x5210, one bank at a time (bd + 16 bytes;
+  [memory](memory.md#6-sound-memory-spu2)). `BG_056` takes 0x77E80 of it,
+  but most banks leave far more: `BG_000` (Palm Brinks) 0x37170, 0x40B50
+  free. `build` notes the samples' size before and after; when the new
+  instruments do not fit, it cuts every sample nothing plays any more (the
+  old tune's programs, once the new tune no longer names them) to a stub,
+  and refuses the build if that is still not enough, saying by how much.
+  The build's memory check then counts the bank against the region as for
+  any changed bank. Instruments go in through `music:` lines only, not a
+  `.snd.mid` folder.
 
 ## 5. Verification
 
@@ -246,7 +282,10 @@ replaces as the template:
 | a bank's SoundFont: chunks add up, every zone's sample and loop in range | 175 banks with sequences (146,708,074 bytes) |
 | asset tree: music ids at every place, tree and index agree, MIDI builds back | `BG_193` alone and in a pack, `SR_138`'s 8 |
 
-Unit tests cover the compression rule, a foreign MIDI file (format 1, 96
+A unit test builds a tune that names a program the bank lacks with a
+two-sample instrument (split at middle C, one looped), a program replaced
+in place, and a bank that only fits once the old samples are cut, or not
+at all. Unit tests also cover the compression rule, a foreign MIDI file (format 1, 96
 ticks a quarter note, bank select, an RPN, markers), refused programs and
 channels, a tune looped whole, markers moved in an editor, and channel 0
 freed or refused; every disc sequence taken as a new tune comes out laid out
@@ -261,9 +300,11 @@ as the disc's are.
    Sony's IOP modules.
 2. **Voices.** How many SPU2 voices the music may use while effects play was
    not established; a dense tune may lose notes.
-3. **New instruments.** A tune plays the bank's own programs. Adding samples
-   and programs to a BG bank (from a SoundFont, say) is not implemented;
-   `sounds.rs` adds one-sample programs for effects.
+3. **New instruments** come from WAVs (section 4), one sample a key range;
+   velocity layers, an envelope other than a bank program's, and importing
+   a SoundFont's instruments are not done. Whether the IOP's synthesizer
+   reads the new programs as the disc's is from the format, not yet heard in
+   the game (`text-music-test.iso`).
 4. **The SoundFont is approximate** (above); nothing was compared with the
    game's output.
 5. `sounds::free_unused` still leaves banks with sequences alone, though

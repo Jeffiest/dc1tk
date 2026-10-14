@@ -471,6 +471,9 @@ pub fn assign(
     let mut mapping = HashMap::new();
     let mut taken: HashSet<String> = reserved.clone();
     let mut own = 0;
+    // the fingerprints named so far, and the later copies of one the numbering named
+    let mut prints: HashSet<String> = HashSet::new();
+    let mut copies: Vec<(String, String)> = Vec::new();
     for function in list(program, "functions") {
         let name = function["name"].as_str().unwrap_or("");
         let fingerprint = found.get(name).cloned().flatten();
@@ -499,16 +502,67 @@ pub fn assign(
                 base = entry_alias(&base, entry);
             }
         }
-        let mut unique = base.clone();
-        let mut copy = 1;
-        while taken.contains(&unique) {
-            copy += 1;
-            unique = format!("{base}_{copy}");
+        let unique = numbered(&base, &taken);
+        let repeated = fingerprint.is_some_and(|print| !prints.insert(print));
+        if repeated && unique != base && !entries.contains_key(name) {
+            copies.push((name.to_string(), base));
         }
         taken.insert(unique.clone());
         mapping.insert(name.to_string(), unique);
     }
+    named_copies(program, &copies, &mut mapping, &mut taken);
     mapping
+}
+
+/// base, or base_2, base_3 ... whichever is free.
+fn numbered(base: &str, taken: &HashSet<String>) -> String {
+    let mut unique = base.to_string();
+    let mut copy = 1;
+    while taken.contains(&unique) {
+        copy += 1;
+        unique = format!("{base}_{copy}");
+    }
+    unique
+}
+
+/// Renames the later copies of code a file holds twice or more (identical stubs such as
+/// do_nothing, which a fingerprint cannot tell apart), which the numbering named base_2: one that
+/// a single other function calls is named for it (unlock_interrupts_for_recoil_from_hit, without
+/// the caller's on_), one nothing calls or starts is unused_<base>. Copies called from several
+/// places, or only from another copy, keep their number.
+fn named_copies(
+    program: &Node,
+    copies: &[(String, String)],
+    mapping: &mut HashMap<String, String>,
+    taken: &mut HashSet<String>,
+) {
+    if copies.is_empty() {
+        return;
+    }
+    let renamed: HashSet<&str> = copies.iter().map(|(name, _)| name.as_str()).collect();
+    let mut callers: HashMap<String, Vec<String>> = HashMap::new();
+    for function in list(program, "functions") {
+        let caller = function["name"].as_str().unwrap_or("").to_string();
+        for callee in callees(&function["body"]) {
+            let found = callers.entry(callee).or_default();
+            if !found.contains(&caller) {
+                found.push(caller.clone());
+            }
+        }
+    }
+    for (name, base) in copies {
+        let wanted = match callers.get(name).map(Vec::as_slice).unwrap_or(&[]) {
+            [] => format!("unused_{base}"),
+            [caller] if caller != name && !renamed.contains(caller.as_str()) => {
+                let shown = &mapping[caller];
+                format!("{base}_for_{}", shown.strip_prefix("on_").unwrap_or(shown))
+            }
+            _ => continue,
+        };
+        let unique = numbered(&wanted, taken);
+        taken.insert(unique.clone());
+        mapping.insert(name.clone(), unique);
+    }
 }
 
 pub fn rename(program: Node, mapping: &HashMap<String, String>) -> Result<Node> {
@@ -635,4 +689,67 @@ pub fn apply(
     let mapping = assign(&program, &found, &class_names, reserved, program_names);
     let renamed = rename(program, &mapping)?;
     Ok(described(renamed, &order, entries, reserved))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn function(name: &str, calls: &[&str]) -> Node {
+        let body: Vec<Node> = calls.iter().map(|callee| node!({"kind": "call", "name": *callee, "args": []})).collect();
+        node!({"name": name, "kind": "function", "body": body})
+    }
+
+    fn stubs(count: usize, other: impl Fn(usize) -> bool) -> IndexMap<String, Option<String>> {
+        (0..count)
+            .map(|at| (format!("f_{at}"), Some(if other(at) { format!("p{at}") } else { "stub".to_string() })))
+            .collect()
+    }
+
+    #[test]
+    fn later_copies_are_named_for_their_caller() {
+        let program = node!({
+            "functions": [
+                function("f_0", &[]),
+                function("f_1", &[]),
+                function("f_2", &[]),
+                function("f_3", &[]),
+                function("f_4", &["f_1"]),
+                function("f_5", &["f_2", "f_3"]),
+                function("f_6", &["f_3"]),
+            ],
+            "programs": [{"no": 100, "function": "f_5"}],
+            "main": "f_6",
+        });
+        let found = stubs(7, |at| at >= 4);
+        let class_names = HashMap::from([
+            ("stub".to_string(), "do_nothing".to_string()),
+            ("p4".to_string(), "recoil".to_string()),
+            ("p5".to_string(), "on_damage".to_string()),
+        ]);
+        let program_names = HashMap::from([(100, "damage".to_string())]);
+        let mapping = assign(&program, &found, &class_names, &HashSet::new(), &program_names);
+        assert_eq!(mapping["f_0"], "do_nothing");
+        assert_eq!(mapping["f_1"], "do_nothing_for_recoil");
+        assert_eq!(mapping["f_2"], "do_nothing_for_damage");
+        // called from two functions: the number stays
+        assert_eq!(mapping["f_3"], "do_nothing_4");
+        assert_eq!(mapping["f_6"], "start");
+    }
+
+    #[test]
+    fn copies_nothing_calls_are_unused() {
+        let program = node!({
+            "functions": [function("f_0", &[]), function("f_1", &[]), function("f_2", &[]), function("f_3", &[])],
+            "programs": [{"no": 200, "function": "f_3"}],
+            "main": "f_0",
+        });
+        let class_names = HashMap::from([("stub".to_string(), "do_nothing".to_string())]);
+        let mapping = assign(&program, &stubs(4, |_| false), &class_names, &HashSet::new(), &HashMap::new());
+        assert_eq!(mapping["f_0"], "do_nothing");
+        assert_eq!(mapping["f_1"], "unused_do_nothing");
+        assert_eq!(mapping["f_2"], "unused_do_nothing_2");
+        // an entry point is named for its program, as before
+        assert_eq!(mapping["f_3"], "do_nothing_for_program_200");
+    }
 }

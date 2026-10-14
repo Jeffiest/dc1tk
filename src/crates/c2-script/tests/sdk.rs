@@ -294,7 +294,9 @@ fn a_constant_declared_twice_is_refused() {
         sdk::header_context("event", &headers, tables(), &["pal.h".into()], &|text| parse::parse(text))
     };
     let error = content("    SE_STEP_CARPET_L = 42,\n").unwrap_err().to_string();
-    assert!(error.contains("SE_STEP_CARPET_L is declared twice (= 8 in enum base_se_pal, then = 42 in enum base_se_pal)"));
+    assert!(
+        error.contains("SE_STEP_CARPET_L is declared twice (= 8 in enum base_se_pal, then = 42 in enum base_se_pal)")
+    );
     // also against a member of another enum or a #define, and a #define given another value
     assert!(content("};\nenum other_se_pal {\n    SE_STEP_CARPET_L = 8,\n").is_err());
     assert!(content("    SIDE = 1,\n").is_err());
@@ -311,7 +313,8 @@ fn a_constant_declared_twice_is_refused() {
 
 #[test]
 fn an_address_passed_for_an_enum_is_cast_to_it() {
-    let cast = CONSTANTS.replace("set_actor_motion(0, \"walk\", 6);", "set_actor_motion(0, \"walk\", (enum motion_flags)&angle);");
+    let cast = CONSTANTS
+        .replace("set_actor_motion(0, \"walk\", 6);", "set_actor_motion(0, \"walk\", (enum motion_flags)&angle);");
     let loose = constant_headers()["event.h"].replace("enum motion_flags flags", "any flags");
     let plain = cast.replace("(enum motion_flags)&angle", "&angle");
     // the cast compiles to nothing: the same bytes as passing the address where any is taken

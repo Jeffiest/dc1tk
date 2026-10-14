@@ -1,10 +1,10 @@
 //! Numbers a mod asks for by name instead of choosing them: NEW_FLAG(name) for a save flag,
-//! NEW_PROGRAM(name) for a map program number and NEW_MONSTER_VAR(name) for a monster variable
-//! every monster on a floor shares. build gives each name a number that nothing on the disc, in the
+//! NEW_COUNTER(name) for a 16-bit save counter, NEW_PROGRAM(name) for a map program number and
+//! NEW_MONSTER_VAR(name) for a monster variable every monster on a floor shares. build gives each name a number that nothing on the disc, in the
 //! engine or in the chosen mods' own code uses, so mods built together never share one.
 //!
 //! The numbers are kept in LOCK in the mods folder, so a name keeps its number from build to
-//! build: a flag is saved with the game, and a save made with one set of mods must mean the same
+//! build: a flag or a counter is saved with the game, and a save made with one set of mods must mean the same
 //! after another mod is added. A number stays reserved while its mod is left out of a build, so it
 //! is never handed to another mod's name; delete its line from the file to free it.
 
@@ -20,14 +20,17 @@ use crate::index::{self, Folded};
 use crate::{flags, Error, Result};
 
 pub const LOCK: &str = "numbers.json";
-pub const KINDS: [&str; 3] = ["flag", "program", "monster_var"];
+pub const KINDS: [&str; 4] = ["flag", "counter", "program", "monster_var"];
 
 /// Where each kind's numbers come from. Flags start above every flag the disc and the engine use
-/// (they stop at 824) with room to spare; 2047 is build --start-at's. Program numbers are the ones
-/// c2 map offers mods. Monster variables 8 to 135 are shared by every monster on a floor.
+/// (they stop at 824) with room to spare; 2047 is build --start-at's. Counters likewise: the disc's
+/// scripts use 0 to 20 and the engine 5 and 21 to 25 of the 128, so mods' start at 32. Program
+/// numbers are the ones c2 map offers mods. Monster variables 8 to 135 are shared by every monster
+/// on a floor.
 pub fn pool(kind: &str) -> Range<i64> {
     match kind {
         "flag" => 1024..flags::FLAG_COUNT - 1,
+        "counter" => 32..flags::COUNTER_COUNT,
         "program" => 9000..10000,
         _ => 8..136,
     }
@@ -36,6 +39,7 @@ pub fn pool(kind: &str) -> Range<i64> {
 pub fn word(kind: &str) -> &'static str {
     match kind {
         "flag" => "save flag",
+        "counter" => "save counter",
         "program" => "program",
         _ => "monster variable",
     }
@@ -43,7 +47,9 @@ pub fn word(kind: &str) -> &'static str {
 
 fn declaration() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r"(?m)^[ \t]*NEW_(FLAG|PROGRAM|MONSTER_VAR)\(\s*([A-Za-z_]\w*)\s*\)\s*;").unwrap())
+    CELL.get_or_init(|| {
+        Regex::new(r"(?m)^[ \t]*NEW_(FLAG|COUNTER|PROGRAM|MONSTER_VAR)\(\s*([A-Za-z_]\w*)\s*\)\s*;").unwrap()
+    })
 }
 
 /// Calls whose first argument is a number of the kind: what a mod or the tree may have written by
@@ -51,6 +57,7 @@ fn declaration() -> &'static Regex {
 fn calls(kind: &str) -> Vec<&'static str> {
     match kind {
         "flag" => flags::FLAG_FUNCTIONS.iter().map(|(name, _)| *name).collect(),
+        "counter" => flags::COUNTER_FUNCTIONS.iter().map(|(name, _)| *name).collect(),
         "program" => vec!["run_event_script", "queue_dungeon_event", "load_event_script"],
         _ => vec!["set_monster_var", "get_monster_var", "set_monster_var2", "get_monster_var2"],
     }
@@ -104,6 +111,9 @@ pub fn used_by_tree(tree: &Path, consts: &IndexMap<String, i64>, kinds: &BTreeSe
     if kinds.contains("flag") {
         found.insert("flag".into(), flags::used_numbers(&flags::scan(tree, consts)?));
     }
+    if kinds.contains("counter") {
+        found.insert("counter".into(), flags::used_numbers(&flags::scan_counters(tree, consts)?));
+    }
     if kinds.contains("program") {
         for outline in index::outlines(tree)?.values() {
             for (number, _) in &outline.programs {
@@ -148,7 +158,7 @@ pub fn read_lock(path: Option<&Path>) -> Result<Lock> {
 }
 
 pub fn write_lock(path: &Path, lock: &Lock) -> Result<()> {
-    let note = "Numbers build gave mods' NEW_FLAG, NEW_PROGRAM and NEW_MONSTER_VAR names, kept so a name keeps its number and \
+    let note = "Numbers build gave mods' NEW_FLAG, NEW_COUNTER, NEW_PROGRAM and NEW_MONSTER_VAR names, kept so a name keeps its number and \
                 saves stay valid. Delete a line to free its number.";
     let mut body = serde_json::Map::new();
     for kind in KINDS {

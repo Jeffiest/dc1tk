@@ -384,7 +384,11 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
                     if let To::Insert(text) = &edit.to {
                         for statement in Script::parse(text)?.statements {
                             if statement.args().len() > ARGS_MOST {
-                                bail!("{}: {} arguments; the engine reads at most {ARGS_MOST} a statement", edit.what, statement.args().len());
+                                bail!(
+                                    "{}: {} arguments; the engine reads at most {ARGS_MOST} a statement",
+                                    edit.what,
+                                    statement.args().len()
+                                );
                             }
                         }
                     }
@@ -462,7 +466,11 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
             }
         }
         if statement.args().len() > ARGS_MOST {
-            bail!("{}: {} arguments; the engine reads at most {ARGS_MOST} a statement", edit.what, statement.args().len());
+            bail!(
+                "{}: {} arguments; the engine reads at most {ARGS_MOST} a statement",
+                edit.what,
+                statement.args().len()
+            );
         }
     }
     let mut out = Vec::new();

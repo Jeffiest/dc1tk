@@ -154,6 +154,7 @@ programs! {
     expressions_logical,
     expressions_logical_value,
     expressions_conditional,
+    expressions_conditional_structs,
     expressions_assignment,
     expressions_compound_assignment,
     expressions_comma,
@@ -175,6 +176,10 @@ programs! {
     declarations_enums,
     declarations_typedef,
     declarations_struct,
+    declarations_bit_fields,
+    declarations_bit_field_width,
+    declarations_bit_field_address,
+    declarations_struct_tag_scope,
     declarations_union,
     declarations_pointers,
     declarations_pointer_to_pointer,
@@ -209,6 +214,8 @@ programs! {
     functions_static,
     functions_many_parameters,
     functions_varargs,
+    functions_varargs_promoted,
+    functions_pointers_composite,
     functions_return_pointer,
     functions_struct_arguments,
     // 3.8 preprocessing directives
@@ -232,6 +239,7 @@ programs! {
     library_limits,
     library_float,
     library_stddef,
+    library_header_typedefs,
     library_offsetof,
 }
 

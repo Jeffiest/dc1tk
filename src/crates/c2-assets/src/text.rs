@@ -19,6 +19,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::font;
 use crate::tree::{self, Place};
 use crate::{bail, Error, Result};
 
@@ -344,19 +345,10 @@ impl Mes {
 
 /// The accented letters the European fonts draw, as the codes FF00 + their Latin-1 byte the
 /// menus write them with (GetAlphabeticalFontNo_us, font.cpp; 0xBD and 0xBE are Œ and œ).
-const LATIN: [u8; 63] = [
-    0xA1, 0xAA, 0xB0, 0xBA, 0xBF, 0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD,
-    0xCE, 0xCF, 0xD1, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDF, 0xE0, 0xE1, 0xE2, 0xE3, 0xE4,
-    0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF9, 0xFA,
-    0xFB, 0xFC, 0xFD, 0xFF, 0xBD, 0xBE,
-];
+const LATIN: [u8; 63] = font::EUROPEAN_LETTERS;
 
 fn latin_char(byte: u8) -> char {
-    match byte {
-        0xBD => 'Œ',
-        0xBE => 'œ',
-        byte => byte as char,
-    }
+    font::latin_char(byte)
 }
 
 /// The full-width symbols the codes FDE0 to FDF7 draw in the European fonts
@@ -511,33 +503,36 @@ pub struct Font {
     glyphs: Vec<Option<char>>,
     /// The code each character is written with.
     codes: HashMap<char, u16>,
+    /// A second code that draws a character, written `{c}`: the European fonts' own glyphs for the
+    /// accented letters and symbols the menus mostly write as FFxx and FDEx codes.
+    alternates: HashMap<char, u16>,
 }
 
 impl Font {
-    /// The font of a language. The English glyphs past ASCII are the English font table's
-    /// (ENGLISH_FONT, from the disc); without it English has ASCII only, as Japanese and Korean
-    /// do: the disc has no table of their menus' glyphs.
-    pub fn new(language: Language, english_table: Option<&[u8]>) -> Font {
+    /// The font of a language: ASCII in every one; English past it from the English font's
+    /// table (ENGLISH_FONT, from the disc) and the accented letters a build adds to its texture
+    /// (font::ENGLISH_EXTRA, glyphs 288 on); Japanese from font::JAPANESE; Korean from the Korean
+    /// font's table (font::KOREAN_TABLE, from the disc). Without its table a language has ASCII
+    /// only.
+    pub fn new(language: Language, fonts: &Fonts) -> Font {
         // glyphs 0 to 93: printable ASCII without the backslash, in every font
         let mut glyphs: Vec<Option<char>> = (0x20u8..0x7F).filter(|&b| b != b'\\').map(|b| Some(b as char)).collect();
-        if language == Language::English {
-            if let Some(table) = english_table.filter(|table| table.len() >= 8) {
-                let count = ((table.len() - 8) / 2).min(ENGLISH_GLYPHS);
-                glyphs = (0..count)
-                    .map(|at| {
-                        let code = [table[8 + 2 * at], table[9 + 2 * at]];
-                        if code[1] == b' ' && code[0] < 0x80 {
-                            return Some(code[0] as char);
-                        }
-                        let text = c2_disc::text::decode_strict(&code)?;
-                        let mut chars = text.chars();
-                        match (chars.next(), chars.next()) {
-                            (Some(c), None) => Some(c),
-                            _ => None,
-                        }
-                    })
-                    .collect();
+        match language {
+            Language::English => {
+                if let Some(table) = fonts.english_table.as_deref().filter(|table| table.len() >= 8) {
+                    glyphs = font::table_chars(table, ENGLISH_GLYPHS);
+                    if glyphs.len() == ENGLISH_GLYPHS {
+                        glyphs.extend(font::ENGLISH_EXTRA.chars().map(Some));
+                    }
+                }
             }
+            Language::Japanese => glyphs.extend(font::JAPANESE.chars().map(Some)),
+            Language::Korean => {
+                if let Some(table) = fonts.korean_table.as_deref().filter(|table| table.len() >= 8) {
+                    glyphs = font::table_chars(table, usize::MAX);
+                }
+            }
+            _ => {}
         }
         let mut codes = HashMap::new();
         for (glyph, c) in glyphs.iter().enumerate() {
@@ -545,16 +540,24 @@ impl Font {
                 codes.entry(*c).or_insert(glyph as u16);
             }
         }
+        let mut alternates = HashMap::new();
         if language.european() {
-            for byte in LATIN {
+            for (at, byte) in LATIN.into_iter().enumerate() {
                 codes.insert(latin_char(byte), 0xFF00 | byte as u16);
+                alternates.insert(latin_char(byte), 0x5E + at as u16);
             }
             for (at, c) in FONT_GAIJI.chars().enumerate() {
                 codes.insert(c, 0xFDE0 + at as u16);
+                alternates.insert(c, 0x9D + at as u16);
             }
         }
         codes.insert(' ', SPACE);
-        Font { language, glyphs, codes }
+        Font { language, glyphs, codes, alternates }
+    }
+
+    /// The character whose second code (written `{c}`) a code is.
+    fn alternate_of(&self, code: u16) -> Option<char> {
+        self.alternates.iter().find(|(_, &known)| known == code).map(|(&c, _)| c)
     }
 
     /// The character a code draws, when it is the one that character is written with.
@@ -590,6 +593,9 @@ enum Token {
 fn token(code: u16, font: &Font) -> Token {
     if let Some(c) = font.char_of(code) {
         return Token::Char(c);
+    }
+    if let Some(c) = font.alternate_of(code) {
+        return Token::Text(format!("{{{c}}}"));
     }
     if code == NEWLINE {
         return Token::Text("\n".into());
@@ -707,7 +713,12 @@ pub fn encode(text: &str, font: &Font) -> Result<Vec<u16>> {
                 // {c} is the character itself, even a brace
                 let inside = rest[1..].chars().next().filter(|&c| rest[1 + c.len_utf8()..].starts_with('}'));
                 let (code, length) = match inside {
-                    Some(c) => (char_code(c, font)?, 2 + c.len_utf8()),
+                    // a character's second code where the font has one (the European fonts' own
+                    // glyphs for the letters the menus write as FFxx)
+                    Some(c) => match font.alternates.get(&c) {
+                        Some(&code) => (code, 2 + c.len_utf8()),
+                        None => (char_code(c, font)?, 2 + c.len_utf8()),
+                    },
                     None => {
                         let Some(end) = rest.find('}') else {
                             bail!("a {{ without its }}: {}", rest.chars().take(20).collect::<String>());
@@ -792,15 +803,34 @@ pub fn english_table<'a>(files: impl IntoIterator<Item = (&'a str, &'a [u8])>) -
     files.into_iter().find(|(path, _)| path.eq_ignore_ascii_case(ENGLISH_FONT)).map(|(_, data)| data.to_vec())
 }
 
-/// The fonts of every language, with the English font's table as the disc has it.
+/// The fonts of every language, with the English and Korean fonts' tables as the disc has them.
 #[derive(Clone, Debug, Default)]
 pub struct Fonts {
     pub english_table: Option<Vec<u8>>,
+    pub korean_table: Option<Vec<u8>>,
 }
 
 impl Fonts {
+    /// The fonts from the disc's files, by path as extract lays them out.
+    pub fn from_files<'a>(files: impl IntoIterator<Item = (&'a str, &'a [u8])>) -> Fonts {
+        let mut fonts = Fonts::default();
+        for (path, data) in files {
+            if path.eq_ignore_ascii_case(ENGLISH_FONT) {
+                fonts.english_table = Some(data.to_vec());
+            } else if path.eq_ignore_ascii_case(font::KOREAN_TABLE) {
+                fonts.korean_table = Some(data.to_vec());
+            }
+        }
+        fonts
+    }
+
+    /// Whether the fonts read a disc file.
+    pub fn reads(path: &str) -> bool {
+        path.eq_ignore_ascii_case(ENGLISH_FONT) || path.eq_ignore_ascii_case(font::KOREAN_TABLE)
+    }
+
     pub fn font(&self, language: Language) -> Font {
-        Font::new(language, self.english_table.as_deref())
+        Font::new(language, self)
     }
 }
 
@@ -848,6 +878,93 @@ pub fn build(text: &str, template: &[u8], reference: &[u8], path: &str, fonts: &
         }
     }
     Ok(built)
+}
+
+/// The width of a glyph cell's pen step in the menus' windows (ClsMes::font_w; CFont's clearance
+/// and the windows' presets give 15).
+pub const FONT_W: i32 = 15;
+
+/// The widths of the icons FD00 to FD31 (GaijiDataTbl, font.cpp's data).
+const ICON_WIDTHS: [i32; 50] = [
+    86, 110, 32, 32, 32, 32, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 26, 26, 26, 26, 26, 66, 56, 40, 22, 0, 0,
+    0, 0, 0, 0, 12, 16, 8, 10, 10, 26, 26, 26, 28, 28, 16, 16, 16, 26, 28, 28, 16,
+];
+
+/// How far each line of a message moves the pen, in pixels, as ClsMes::MakeMesWinTbl lays it out
+/// with a cell step of `font_w`: a half-width glyph (ASCII, and the European fonts' letters at
+/// 0x5E to 0x9C, and the FFxx letters) font_w × 0.55 (half_font_w_percent) cut to a whole pixel,
+/// the space font_w / 2 (or the {gap} width), any other glyph and the FDEx symbols a whole cell,
+/// an icon its own width, {move N} N. Slots (numbers, items, names, text) count nothing: what
+/// fills them is not known here. A page break starts a line.
+pub fn line_widths(codes: &[u16], language: Language, font_w: i32) -> Vec<i32> {
+    let half = (font_w as f32 * 0.55) as i32;
+    let mut lines = vec![0];
+    let mut gap = None;
+    for &code in codes {
+        let width = match code {
+            NEWLINE | PAGE => {
+                lines.push(0);
+                gap = None;
+                continue;
+            }
+            SPACE => gap.unwrap_or(font_w / 2),
+            0 => font_w / 2,
+            1..=93 => half,
+            0x5E..=0x9C if language.european() => half,
+            94..=0xEFFF => font_w,
+            0xFFA0..=0xFFFF => half,
+            0xFDE0..=0xFDF7 => font_w,
+            0xFD00..=0xFD31 => ICON_WIDTHS[(code - 0xFD00) as usize],
+            0xF900..=0xF9FF => (code & 0xFF) as i32,
+            0xF800..=0xF8FF => {
+                gap = Some((code & 0xFF) as i32);
+                0
+            }
+            _ => 0,
+        };
+        *lines.last_mut().expect("a line") += width;
+    }
+    lines
+}
+
+/// The message files whose windows grow with their text (dialogue, NPC lines, help pages), where
+/// only the widest line any of them has is a limit; the rest are menus, item and map names drawn
+/// into windows and columns of a fixed width.
+fn grows_with_text(name: &str) -> bool {
+    ["sysmes", "npcmsg", "help"].iter().any(|kind| name.starts_with(kind))
+}
+
+/// Warnings for a mod's text whose lines are wider than the game's windows take: wider than any
+/// line of the file on the disc (the reference), or, in a menu's file, wider than the message's own
+/// widest line on the disc by more than a cell. A line past its window is cut off or drawn over
+/// the window's edge, which shows only in the game.
+pub fn width_warnings(text: &str, reference: &[u8], path: &str, fonts: &Fonts) -> Result<Vec<String>> {
+    let Some(located) = locate(path) else {
+        bail!("{path} is not a message file");
+    };
+    let font = fonts.font(located.language);
+    let reference = Mes::parse(reference)?;
+    let widest = |codes: &[u16]| line_widths(codes, located.language, FONT_W).into_iter().max().unwrap_or(0);
+    let file_widest = reference.messages().map(|(_, codes)| widest(codes)).max().unwrap_or(0);
+    let mut out = Vec::new();
+    for (id, body) in parse_text(text)? {
+        let codes = encode(&body, &font).map_err(|error| Error::invalid(format!("@{id}: {error}")))?;
+        let own = reference.get(id);
+        if own == Some(&codes[..]) {
+            continue;
+        }
+        for (line, width) in line_widths(&codes, located.language, FONT_W).into_iter().enumerate() {
+            let what = format!("{path} @{id} line {}: {width} pixels wide", line + 1);
+            if width > file_widest {
+                out.push(format!("{what}, wider than any line of the file on the disc ({file_widest}); the game cuts it off or draws it past its window"));
+            } else if let Some(own) =
+                own.map(widest).filter(|&own| !grows_with_text(&located.name) && width > own + FONT_W)
+            {
+                out.push(format!("{what}, the disc's text {own}; a menu's window or column may cut it off"));
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// A message file's asset: its id's name (en/allmenu, without text:), language and the game's
@@ -1114,7 +1231,7 @@ pub(crate) mod tests {
     #[test]
     fn text_reads_back_to_the_same_codes() {
         let english: String = (0x20u8..0x7F).filter(|&b| b != b'\\').map(char::from).collect::<String>() + "　、。・";
-        let fonts = Fonts { english_table: Some(table(&english)) };
+        let fonts = Fonts { english_table: Some(table(&english)), korean_table: None };
         let en = fonts.font(Language::English);
         let fr = fonts.font(Language::French);
         let ja = fonts.font(Language::Japanese);
@@ -1130,9 +1247,15 @@ pub(crate) mod tests {
         assert_eq!(encode(&text, &en).unwrap(), codes);
         // European accents are FF00 and their Latin-1 byte, the full-width symbols FDE0 on
         let accented = vec![0xFFE9, 0xFFBD, 0xFDF3, 0x5E, 0x41];
-        assert_eq!(decode(&accented, &fr), "éŒ・{005E}b");
-        assert_eq!(encode("éŒ・{005E}b", &fr).unwrap(), accented);
-        assert_eq!(decode(&accented, &ja), "{FFE9}{FFBD}{FDF3}{005E}b");
+        assert_eq!(decode(&accented, &fr), "éŒ・{¡}b");
+        assert_eq!(encode("éŒ・{¡}b", &fr).unwrap(), accented);
+        // the European fonts' own glyphs for a letter or symbol are its second code, in braces
+        assert_eq!(decode(&[0x5E + 42, 0x9D + 19], &fr), "{é}{・}");
+        assert_eq!(encode("{é}{・}{{}", &fr).unwrap(), vec![0x5E + 42, 0x9D + 19, 0x5A]);
+        // Japanese glyph 94 is the full-width space
+        assert_eq!(decode(&accented, &ja), "{FFE9}{FFBD}{FDF3}\u{3000}b");
+        assert_eq!(decode(&[95, 300, 1943, 1944], &ja), "、ガ騙{0798}");
+        assert_eq!(encode("、ガ騙", &ja).unwrap(), vec![95, 300, 1943]);
         // Japanese spellings of the slots, and characters a font lacks
         assert_eq!(encode("[数値１６][文字列２][アイテム５]", &ja).unwrap(), vec![0xFBDF, 0xFAF8, 0xFBF2]);
         assert!(encode("é", &en).unwrap_err().to_string().contains("English font has no 'é'"));
@@ -1177,6 +1300,109 @@ pub(crate) mod tests {
         assert!(error.to_string().contains("buffer of 4096"), "{error}");
     }
 
+    /// A font table of the English one's length (288 glyphs): ASCII, then full-width spaces.
+    fn english_sized() -> Fonts {
+        let ascii: String = (0x20u8..0x7F).filter(|&b| b != b'\\').map(char::from).collect();
+        let mut data = table(&ascii);
+        for _ in 94..ENGLISH_GLYPHS {
+            data.extend([0x81, 0x40]);
+        }
+        Fonts { english_table: Some(data), korean_table: None }
+    }
+
+    #[test]
+    fn english_gains_accented_letters_after_its_table() {
+        let en = english_sized().font(Language::English);
+        assert_eq!(encode("Café ¡ü", &en).unwrap(), [ascii("Caf"), vec![288 + 18, SPACE, 288, 288 + 31]].concat());
+        assert_eq!(decode(&[288 + 18, 319], &en), "éü");
+        assert!(encode("ì", &en).unwrap_err().to_string().contains("English font has no 'ì'"));
+    }
+
+    #[test]
+    fn lines_are_measured_as_the_windows_lay_them_out() {
+        // ASCII 8 pixels, the space 7, a full-width glyph 15, an icon its width, {move} its pixels
+        let mut codes = ascii("Ab c");
+        codes.extend([100, 0xFD06, 0xF905, NEWLINE, 0xFFE9, 0xF803, SPACE, 0x5E]);
+        assert_eq!(line_widths(&codes, Language::English, FONT_W), vec![8 + 8 + 7 + 8 + 15 + 22 + 5, 8 + 3 + 15]);
+        // the European fonts' letters at 0x5E on are half-width
+        assert_eq!(line_widths(&[0xFFE9, 0x5E, PAGE, 0x9D], Language::French, FONT_W), vec![16, 15]);
+    }
+
+    #[test]
+    fn lines_too_wide_for_the_game_are_warned_of() {
+        let fonts = Fonts::default();
+        let path = "menu/1/shop.pac.d/shopname.mes";
+        let data = sample(&[(0, &ascii("Iron Pot")), (1, &ascii("A Much Longer Shop Name"))]);
+        let text = export(&data, path, "x", &fonts).unwrap();
+        assert!(width_warnings(&text, &data, path, &fonts).unwrap().is_empty());
+        // a little longer is fine, past a cell more than the disc's line is warned of, past the
+        // file's widest line too
+        let edited = text.replace("Iron Pot", "Iron Pots");
+        assert!(width_warnings(&edited, &data, path, &fonts).unwrap().is_empty());
+        let edited = text.replace("Iron Pot", "Iron Pot Shop");
+        let warnings = width_warnings(&edited, &data, path, &fonts).unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("@0 line 1: 102 pixels wide, the disc's text 63"), "{}", warnings[0]);
+        let edited = text.replace("Iron Pot", "Iron Pot, Pans, Kettles and Cups") + "@9\nNew\n";
+        let warnings = width_warnings(&edited, &data, path, &fonts).unwrap();
+        assert!(warnings[0].contains("wider than any line of the file on the disc (180)"), "{warnings:?}");
+        // a window that grows with its text takes anything up to the file's widest line
+        let path = "meswin/sysmes_1.mes";
+        let edited = text.replace("Iron Pot", "Iron Pot Shop");
+        assert!(width_warnings(&edited, &data, path, &fonts).unwrap().is_empty());
+    }
+
+    /// Japanese and Korean message files of an extracted disc (C2S_CORPUS) read as text: every
+    /// glyph the game's own files use has its character, and the Japanese font pages have ink in
+    /// exactly the cells font::JAPANESE names.
+    #[test]
+    fn corpus_japanese_and_korean_read_as_text() {
+        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
+            return;
+        };
+        let root = std::path::Path::new(&corpus);
+        let fonts = Fonts {
+            english_table: std::fs::read(root.join(ENGLISH_FONT)).ok(),
+            korean_table: std::fs::read(root.join(font::KOREAN_TABLE)).ok(),
+        };
+        let mut pages = Vec::new();
+        for page in 0..4 {
+            pages.push(
+                font::Page::read(&std::fs::read(root.join(format!("meswin/FontTex_{page}.tm2"))).unwrap()).unwrap(),
+            );
+        }
+        for glyph in 94..2432 {
+            let (page, at) = (glyph / 0x260, glyph % 0x260);
+            let inked = at < pages[page].glyphs() && pages[page].inked(at);
+            assert_eq!(inked, (95..font::JAPANESE_GLYPHS).contains(&glyph), "Japanese glyph {glyph}");
+        }
+        let mut glyphs = BTreeMap::new();
+        let mut unread = BTreeMap::new();
+        for path in crate::files_under(root).unwrap() {
+            let relative = crate::relative_posix(&path, root);
+            let Some(located) = locate(&relative) else {
+                continue;
+            };
+            let old = located.rank > 1 || ["sysmes0", "sysmes1", "sysmes2", "sysmes3"].contains(&located.name.as_str());
+            if !matches!(located.language, Language::Japanese | Language::Korean) || old {
+                continue;
+            }
+            let font = fonts.font(located.language);
+            let mes = Mes::parse(&std::fs::read(&path).unwrap()).unwrap();
+            for (_, codes) in mes.messages() {
+                for &code in codes.iter().filter(|&&code| code < CODES) {
+                    *glyphs.entry(located.language.short()).or_insert(0) += 1;
+                    if font.char_of(code).is_none() {
+                        *unread.entry(format!("{relative} {code}")).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        eprintln!("glyphs read: {glyphs:?}");
+        assert!(glyphs["ja"] > 100_000 && glyphs["ko"] > 10_000, "{glyphs:?}");
+        assert!(unread.is_empty(), "{unread:?}");
+    }
+
     /// Every message file of an extracted disc (C2S_CORPUS): read and written back, and through
     /// its text, byte for byte.
     #[test]
@@ -1186,7 +1412,10 @@ pub(crate) mod tests {
         };
         let root = std::path::Path::new(&corpus);
         let paths = crate::files_under(root).unwrap();
-        let fonts = Fonts { english_table: std::fs::read(root.join(ENGLISH_FONT)).ok() };
+        let fonts = Fonts {
+            english_table: std::fs::read(root.join(ENGLISH_FONT)).ok(),
+            korean_table: std::fs::read(root.join(font::KOREAN_TABLE)).ok(),
+        };
         assert!(fonts.english_table.is_some(), "no {ENGLISH_FONT} under {corpus:?}");
         let mut checked = 0;
         let mut failed = Vec::new();

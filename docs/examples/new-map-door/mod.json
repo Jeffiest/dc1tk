@@ -1,0 +1,17 @@
+{
+ "title": "A new map and a door into it",
+ "version": "1.0.0",
+ "start_at": "m01",
+ "replace": {
+  "map:m01": {"file": "maps/m01/m01.gltf", "programs": {"door_park": "ENTER_PARK"}}
+ },
+ "add": {
+  "map:m05x": {
+   "file": "maps/m05x/m05.gltf",
+   "like": "m05",
+   "title": "Palm Brinks Park II",
+   "script": "m05x.c",
+   "programs": {"dun07": "BACK_TO_TOWN"}
+  }
+ }
+}

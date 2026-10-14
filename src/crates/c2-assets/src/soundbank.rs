@@ -1267,6 +1267,19 @@ const DEFAULT_PROGRAM: &[(&str, i64)] = &[
 /// SE_Play sends the program as a 7-bit MIDI value.
 pub const MAX_PROGRAMS: usize = 128;
 
+/// One sample of a program set_program makes: the keys it plays (low to high), the key it sounds
+/// at its own pitch, whether it loops (None: as the sound says), and its volume (0 to 128, 128
+/// the sample's own level).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Zone {
+    pub sound: Sound,
+    pub low: i64,
+    pub high: i64,
+    pub root: i64,
+    pub looped: Option<bool>,
+    pub volume: i64,
+}
+
 /// How replace_entry gives an entry its new sound.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -1650,6 +1663,107 @@ impl Bank {
         hd.programs[number] =
             Some(Program { record: program.record.with(&[("transpose", 0), ("detune", 0)]), splits: vec![split] });
         Ok(number)
+    }
+
+    /// Program `number` made of zones, one split each, in place of any program of that number
+    /// (its samples stay until nothing plays them; see sounds::free_unused). Each zone's sample
+    /// plays at its own pitch at its root key, over its key range, with the default envelope (no
+    /// attack, full sustain, a short release) unless `like` names a program of the bank whose
+    /// first sample's and split's settings (envelope, pan, priority) it takes. Returns the VAGs the
+    /// program it replaced played.
+    pub fn set_program(&mut self, number: usize, zones: &[Zone], like: Option<usize>) -> Result<BTreeSet<usize>> {
+        if number >= MAX_PROGRAMS {
+            bail!("program {number}: a program is 0 to {}", MAX_PROGRAMS - 1);
+        }
+        let mut old = BTreeSet::new();
+        if let Some(Some(program)) = self.hd.programs.get(number) {
+            for split in &program.splits {
+                if let Some(Some(set)) = self.hd.sample_sets.get(split.get("sample_set") as usize) {
+                    for &sample in &set.samples {
+                        if let Some(Some(sample)) = self.hd.samples.get(sample as usize) {
+                            old.insert(sample.get("vag_index") as usize);
+                        }
+                    }
+                }
+            }
+        }
+        let template = match like {
+            Some(like) => {
+                let Some(Some(program)) = self.hd.programs.get(like) else {
+                    bail!("program {number}: \"like\" names program {like}, which the bank lacks");
+                };
+                let split = program.splits.first().cloned();
+                let sample = split
+                    .as_ref()
+                    .and_then(|split| self.hd.sample_sets.get(split.get("sample_set") as usize).cloned().flatten())
+                    .and_then(|set| {
+                        set.samples.first().and_then(|&at| self.hd.samples.get(at as usize).cloned().flatten())
+                    });
+                Some((program.record.clone(), split, sample))
+            }
+            None => None,
+        };
+        let mut splits = Vec::new();
+        for (at, zone) in zones.iter().enumerate() {
+            if !(0..=zone.high).contains(&zone.low) || zone.high > 127 || !(0..=127).contains(&zone.root) {
+                bail!("program {number}: keys run from 0 to 127, low to high, and the root is one of them");
+            }
+            if !(0..=128).contains(&zone.volume) {
+                bail!("program {number}: a volume is 0 to 128 (128 plays the sample at its own level)");
+            }
+            let (data, rate, looped) = self.encode(&zone.sound, None, zone.looped)?;
+            self.hd.vags.push(Record::new(
+                LayoutKind::VagInfo,
+                &[("offset", 0), ("rate", rate), ("attribute", looped as i64), ("reserved", 0xFF)],
+            ));
+            self.vag_data.push(data);
+            let vag = self.hd.vags.len() as i64 - 1;
+            let sample = template
+                .as_ref()
+                .and_then(|(_, _, sample)| sample.clone())
+                .unwrap_or_else(|| Record::new(LayoutKind::Sample, DEFAULT_SAMPLE));
+            let sample = sample.with(&[
+                ("vag_index", vag),
+                ("vel_range_low", 1),
+                ("vel_range_high", 127),
+                ("base_note", zone.root),
+                ("detune", 0),
+                ("volume", zone.volume),
+            ]);
+            self.hd.samples.push(Some(sample));
+            self.hd.sample_sets.push(Some(SampleSet {
+                samples: vec![self.hd.samples.len() as i64 - 1],
+                vel_curve: 0,
+                vel_limit_low: 1,
+                vel_limit_high: 127,
+            }));
+            let split = template
+                .as_ref()
+                .and_then(|(_, split, _)| split.clone())
+                .unwrap_or_else(|| Record::new(LayoutKind::Split, DEFAULT_SPLIT));
+            splits.push(split.with(&[
+                ("sample_set", self.hd.sample_sets.len() as i64 - 1),
+                ("range_low", zone.low),
+                ("range_high", zone.high),
+                ("number", at as i64),
+                ("transpose", 0),
+                ("detune", 0),
+            ]));
+        }
+        let record = template
+            .map(|(record, _, _)| record)
+            .unwrap_or_else(|| Record::new(LayoutKind::Program, DEFAULT_PROGRAM))
+            .with(&[("transpose", 0), ("detune", 0)]);
+        if self.hd.programs.len() < number + 1 {
+            self.hd.programs.resize(number + 1, None);
+        }
+        self.hd.programs[number] = Some(Program { record, splits });
+        Ok(old)
+    }
+
+    /// The bytes the bank's samples take in SPU2 memory when loaded (the .bd).
+    pub fn samples_size(&self) -> usize {
+        self.vag_data.iter().map(Vec::len).sum()
     }
 
     /// A program number no KeyOn row and no .mid program change names: numbers past the table

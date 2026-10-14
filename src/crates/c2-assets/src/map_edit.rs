@@ -170,9 +170,8 @@ pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
             }
         };
         // the group the template itself keeps: the one still the same, else the first
-        let unchanged = groups.iter().position(|group| {
-            original_at.is_some() && contents(group[0]) == (&base.pieces, &base.points)
-        });
+        let unchanged =
+            groups.iter().position(|group| original_at.is_some() && contents(group[0]) == (&base.pieces, &base.points));
         let keeper = unchanged.unwrap_or(0);
         for (number, group) in groups.iter().enumerate() {
             let (pieces, points) = contents(group[0]);
@@ -222,7 +221,9 @@ pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
     out.placements.extend(appended);
     let mut names = HashSet::new();
     for placement in &out.placements {
-        if !names.insert(placement.name.to_lowercase()) && !original.placements.iter().any(|old| old.name == placement.name) {
+        if !names.insert(placement.name.to_lowercase())
+            && !original.placements.iter().any(|old| old.name == placement.name)
+        {
             return Err(Error::invalid(format!("two placements are named {}; names find them", placement.name)));
         }
     }

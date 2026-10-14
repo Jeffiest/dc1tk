@@ -128,7 +128,10 @@ invent box, effect, fire, lens flare, piece animation (it names the active
 model node, piece or placement and turns it about Y, a degree a frame).
 They go into the active object's
 placement (copied with its template) or, with nothing in a placement active,
-the map's own `points`. Names are made unique within their parent and kept
+the map's own `points`. A door is made as the disc's are (action button, the
+screen fading out); its program, the map script's program it runs once open,
+is a number or given by name in `mod.json` (`"programs"`, as for a door into
+a new map: [maps](../../docs/assets/maps.md) section 9). Names are made unique within their parent and kept
 to 31 bytes. Duplicate Placement copies a placement with its pieces and
 points (meshes shared) under a new name (`house01_2`); with no slot it is
 appended after the map's placements.

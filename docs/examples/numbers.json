@@ -3,5 +3,5 @@
   "calculator/CALC_START": 9000,
   "new-character/NEWCHR_START": 9001
  },
- "note": "Numbers build gave mods' NEW_FLAG, NEW_PROGRAM and NEW_MONSTER_VAR names, kept so a name keeps its number and saves stay valid. Delete a line to free its number."
+ "note": "Numbers build gave mods' NEW_FLAG, NEW_COUNTER, NEW_PROGRAM and NEW_MONSTER_VAR names, kept so a name keeps its number and saves stay valid. Delete a line to free its number."
 }

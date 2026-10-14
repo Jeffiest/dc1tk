@@ -793,8 +793,7 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         .collect::<Result<Vec<_>>>()?;
     let bank_outs: Vec<Result<Vec<EntryOut>>> =
         banks.par_iter().map(|asset| export_bank(asset, &files, names, write)).collect::<Result<Vec<_>>>()?;
-    let fonts =
-        text::Fonts { english_table: text::english_table(disc.iter().map(|file| (file.path.as_str(), file.data))) };
+    let fonts = text::Fonts::from_files(disc.iter().map(|file| (file.path.as_str(), file.data)));
     let text_outs: Vec<Result<(String, String)>> =
         texts.par_iter().map(|asset| export_text(asset, &files, &fonts, write)).collect::<Result<Vec<_>>>()?;
     summary.message_places = found.message_places;

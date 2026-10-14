@@ -213,9 +213,10 @@ impl Shops {
         }
         let mut out = Vec::new();
         for (module, table) in tables {
-            out.extend(self.changes_with(table, module, &priced).map_err(|error| {
-                crate::Error::invalid(format!("mod {module}: {error}"))
-            })?);
+            out.extend(
+                self.changes_with(table, module, &priced)
+                    .map_err(|error| crate::Error::invalid(format!("mod {module}: {error}")))?,
+            );
         }
         Ok(out)
     }
@@ -235,12 +236,7 @@ impl Shops {
         })
     }
 
-    fn changes_with(
-        &self,
-        table: &Value,
-        module: &str,
-        priced: &std::collections::BTreeSet<i32>,
-    ) -> Result<Vec<Edit>> {
+    fn changes_with(&self, table: &Value, module: &str, priced: &std::collections::BTreeSet<i32>) -> Result<Vec<Edit>> {
         let Some(object) = table.as_object() else {
             bail!("a shop table is {{\"prices\": [...], \"shops\": [...]}}, as mod asset writes it");
         };
@@ -490,7 +486,12 @@ mod tests {
         let files = shops.apply(&edits).unwrap();
         for file in &files {
             let text = String::from_utf8_lossy(file);
-            assert!(text.contains("PRICE 12,640,320;\r\nPRICE 429,1,0;\r\n//shop\r\nSHOP 0,1,429;\r\nSHOP 33;\r\nSHOP 40,429;\r\n"), "{text}");
+            assert!(
+                text.contains(
+                    "PRICE 12,640,320;\r\nPRICE 429,1,0;\r\n//shop\r\nSHOP 0,1,429;\r\nSHOP 33;\r\nSHOP 40,429;\r\n"
+                ),
+                "{text}"
+            );
         }
         let again = Shops::read(&files, None).unwrap().to_json();
         assert_eq!(again["shops"][2], json!({"shop": 40, "currency": "money", "items": [429]}));
@@ -498,7 +499,8 @@ mod tests {
         let twice = shops.changes_all(&[("a".into(), price.clone()), ("b".into(), price)]).unwrap();
         assert_eq!(String::from_utf8_lossy(&shops.apply(&twice).unwrap()[0]).matches("PRICE 429").count(), 1);
         let other = json!({"prices": [{"item": 429, "buy": 2, "sell": 0}]});
-        let clash = shops.changes_all(&[("a".into(), json!({"prices": [{"item": 429, "buy": 1, "sell": 0}]})), ("b".into(), other)]);
+        let clash = shops
+            .changes_all(&[("a".into(), json!({"prices": [{"item": 429, "buy": 1, "sell": 0}]})), ("b".into(), other)]);
         assert!(shops.apply(&clash.unwrap()).unwrap_err().to_string().contains("mod a and mod b"));
         let refused = |edit: Value| shops.changes(&edit, "m").unwrap_err().to_string();
         assert!(refused(json!({"prices": [{"item": 11, "buy": [1, 2]}]})).contains("list of 8"));

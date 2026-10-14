@@ -398,8 +398,7 @@ impl Items {
                     }
                 }
                 2 => {
-                    if let Some(found) = list_index.filter(|&at| at < attach_count).and_then(|at| attachments.get(at))
-                    {
+                    if let Some(found) = list_index.filter(|&at| at < attach_count).and_then(|at| attachments.get(at)) {
                         block_fields(&mut fields, ATTACH, 3, found, &attach_specs);
                         block = span(found).map(|(first, last)| (3, first, last));
                     }
@@ -649,9 +648,10 @@ impl Items {
     /// The MES_SYS statement naming an item in a language's file (the last, which wins).
     fn name_statement(&self, language: usize, item: i32) -> Option<usize> {
         let script = self.scripts.get(FILES.len() + language)?;
-        script.statements.iter().rposition(|statement| {
-            statement.tag == "MES_SYS" && statement.values().first().map(Arg::int) == Some(item)
-        })
+        script
+            .statements
+            .iter()
+            .rposition(|statement| statement.tag == "MES_SYS" && statement.values().first().map(Arg::int) == Some(item))
     }
 
     /// The last statement with a tag in a file.
@@ -850,7 +850,14 @@ impl Items {
                         bail!("{what}: {} has no MES_SYS to add one after", NAME_FILES[language]);
                     };
                     let line = cfg_text::statement_text("MES_SYS", &[cfg_text::int_text(item as i64), text]);
-                    out.push(Edit { file, statement: after, arg: 0, to: To::Insert(line), what, module: module.into() });
+                    out.push(Edit {
+                        file,
+                        statement: after,
+                        arg: 0,
+                        to: To::Insert(line),
+                        what,
+                        module: module.into(),
+                    });
                 }
             }
             texts.push(ItemText {
@@ -942,7 +949,8 @@ impl Items {
             let mut attribute = self.common_value(like, "attribute").as_i64().unwrap_or(0);
             let mut item_type = like_type;
             for (key, value) in object {
-                if key == "item" || key == "like" || TEXT_KEYS.contains(&key.as_str()) || GROUPS.contains(&key.as_str()) {
+                if key == "item" || key == "like" || TEXT_KEYS.contains(&key.as_str()) || GROUPS.contains(&key.as_str())
+                {
                     continue;
                 }
                 let what = format!("{label} {key}");
@@ -978,14 +986,11 @@ impl Items {
                 list = next[table].0 + next[table].1 as i64;
                 next[table].1 += 1;
                 if list as usize >= most {
-                    bail!(
-                        "{label}: {} entries in {}; the game holds {most} ({count_tag})",
-                        list + 1,
-                        FILES[file]
-                    );
+                    bail!("{label}: {} entries in {}; the game holds {most} ({count_tag})", list + 1, FILES[file]);
                 }
                 if let Some((block_file, first, last)) = like.block {
-                    let mut block: Vec<cfg_text::Statement> = self.scripts[block_file].statements[first..=last].to_vec();
+                    let mut block: Vec<cfg_text::Statement> =
+                        self.scripts[block_file].statements[first..=last].to_vec();
                     if last_tag != "WEP_BUILD" && last_tag != "AT_ST_SP" {
                         set(&mut block[0], 0, cfg_text::int_text(item), &label)?;
                     }
@@ -1050,7 +1055,10 @@ impl Items {
             });
             let names = texts_by_language(object, "name", "names", true, &label)?;
             if names.len() < LANGUAGE_NAMES.len() {
-                bail!("{label}: a new item has a \"name\" (every language) or \"names\" in all of {}", LANGUAGE_NAMES.join(", "));
+                bail!(
+                    "{label}: a new item has a \"name\" (every language) or \"names\" in all of {}",
+                    LANGUAGE_NAMES.join(", ")
+                );
             }
             let at = (item as i32, item_type);
             self.text_changes(at.0, at.1, message, &label, &names, object, Some(like_number), module, out, texts)?;
@@ -1116,7 +1124,9 @@ fn name_units(script: &Script, items: &std::collections::BTreeSet<i32>, language
         .iter()
         .filter(|statement| statement.tag == "MES_SYS")
         .filter_map(|statement| match &statement.values()[..] {
-            [number, Arg::Str(text)] if items.contains(&number.int()) => Some((converted_len(text, language) + 16) / 16),
+            [number, Arg::Str(text)] if items.contains(&number.int()) => {
+                Some((converted_len(text, language) + 16) / 16)
+            }
             _ => None,
         })
         .sum()
@@ -1304,7 +1314,10 @@ mod tests {
         assert!(text(9).contains("MES_SYS 429,\"Cl[UNI00e9] g[UNI00e9]ante\";"));
         let again = Items::read(&files, None).unwrap().to_json();
         let new = again["items"].as_array().unwrap().iter().find(|item| item["item"] == 429).unwrap().clone();
-        assert_eq!((&new["name"], &new["list"], &new["weapon"]["attack"]), (&json!("Mega Wrench"), &json!(1), &json!(200)));
+        assert_eq!(
+            (&new["name"], &new["list"], &new["weapon"]["attack"]),
+            (&json!("Mega Wrench"), &json!(1), &json!(200))
+        );
         let system: Vec<_> = texts.iter().filter(|text| text.file == "system").collect();
         assert_eq!(system.len(), 7);
         assert!(system.iter().all(|text| text.id == 10429));
@@ -1315,7 +1328,8 @@ mod tests {
         let (edits, _) = items.changes_all(&[("a".into(), same.clone()), ("b".into(), same)]).unwrap();
         assert!(items.apply(&edits).is_ok());
         let one = |name: &str| json!({"items": [{"item": 429, "like": 1, "name": name}]});
-        let error = items.changes_all(&[("a".into(), one("Mega")), ("b".into(), one("Other"))]).unwrap_err().to_string();
+        let error =
+            items.changes_all(&[("a".into(), one("Mega")), ("b".into(), one("Other"))]).unwrap_err().to_string();
         assert!(error.contains("mod a and mod b"), "{error}");
         let refused = |edit: Value| items.changes_all(&[("m".into(), edit)]).unwrap_err().to_string();
         assert!(refused(json!({"items": [{"item": 429, "max": 5}]})).contains("like"));
@@ -1325,7 +1339,9 @@ mod tests {
         assert!(refused(json!({"items": [{"item": 429, "like": 1, "name": "x", "list": 3}]})).contains("list number"));
         assert!(refused(json!({"items": [{"item": 429, "like": 246, "name": "x", "attribute": 2}]}))
             .contains("etcitem_spectol_table"));
-        assert!(refused(json!({"items": [{"item": 429, "like": 1, "name": "x", "fish": {"size": 1}}]})).contains("no fish"));
+        assert!(
+            refused(json!({"items": [{"item": 429, "like": 1, "name": "x", "fish": {"size": 1}}]})).contains("no fish")
+        );
         let many: Vec<Value> = (390..510).map(|item| json!({"item": item, "like": 1, "name": "x"})).collect();
         assert!(refused(json!({"items": many})).contains("116"));
         // renaming one of the game's items: English, and a language of its own

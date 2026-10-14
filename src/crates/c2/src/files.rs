@@ -94,3 +94,28 @@ pub fn find_scripts(root: &Path) -> Result<Vec<String>> {
     found.sort();
     Ok(found)
 }
+
+/// When errors name constants a definition set has renamed since the tree was made ("unknown
+/// variable FLAG_S17_E308_SEEN"), a note saying their new names and how to bring the tree up to date.
+pub fn rename_hint<'a>(sets: &[PathBuf], errors: impl IntoIterator<Item = &'a str>, tree: &Path) -> Option<String> {
+    let mut found: Vec<(String, String)> = Vec::new();
+    for error in errors {
+        for word in error.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+            if word.is_empty() || found.iter().any(|(old, _)| old == word) {
+                continue;
+            }
+            if let Some(new) = c2_script::constants::renamed_to(sets, word) {
+                found.push((word.to_string(), new));
+            }
+        }
+    }
+    if found.is_empty() {
+        return None;
+    }
+    let names: Vec<String> = found.iter().map(|(old, new)| format!("{old} is now {new}")).collect();
+    Some(format!(
+        "note: renamed since the tree was made: {}; c2 defs migrate {} gives it the new names",
+        names.join(", "),
+        python_path(&tree.to_string_lossy())
+    ))
+}

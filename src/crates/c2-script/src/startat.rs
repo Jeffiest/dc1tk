@@ -196,7 +196,11 @@ pub fn function_text(target: &Target, original: &str) -> String {
 /// default arrival (m01 does, from the station, unless a train arrival is pending). The previous
 /// map is only recorded when the current one changes, so it cannot be the town itself.
 pub fn came_from(number: i64) -> i64 {
-    if number == 10 { 11 } else { 10 }
+    if number == 10 {
+        11
+    } else {
+        10
+    }
 }
 
 /// The warp into a town map, as the game's dungeon scripts leave for one (d01's
@@ -230,7 +234,10 @@ pub fn town_function_text(target: &Target, number: i64, original: &str) -> Strin
         "        wait;".into(),
         "        change_player_chara(USER_CHARA_MAX);".into(),
         "        set_active_chara(0);".into(),
-        format!("        set_current_map({});  // came from another town: the arrival takes its default spot", came_from(number)),
+        format!(
+            "        set_current_map({});  // came from another town: the arrival takes its default spot",
+            came_from(number)
+        ),
         "        allow_bgm_load();  // New Game skips the next music load, which would be the town's".into(),
         format!("        go_to_edit_mode({number}, {});", target.program),
         "        wait;".into(),

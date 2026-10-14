@@ -12,6 +12,7 @@ use anyhow::{bail, Context, Result};
 use serde_json::{Map, Value};
 
 use c2_assets::cfg_text::Edit;
+use c2_assets::chest_data::{self, Chests};
 use c2_assets::data_table::{self, Table as DataTable};
 use c2_assets::dungeon_layout::{self, Layouts};
 use c2_assets::item_data::{self, ItemText, Items};
@@ -59,6 +60,8 @@ enum Table {
     Data(DataTable, Vec<String>),
     /// Dungeon floor layouts, which add and rewrite whole rooms rather than edit arguments.
     Layouts(Layouts),
+    /// What dungeon chests hold, rewritten by whole groups and floors as layouts are.
+    Chests(Chests),
 }
 
 /// A file by its DATA.DAT path, a pack's member as `pack.d/member`.
@@ -89,6 +92,8 @@ fn load(table: &str, elf: &[u8], current: &dyn Fn(&str) -> Result<Vec<u8>>) -> R
         }
         "monsters" => Table::Monsters(Monsters::read(elf)?),
         "layouts" => Table::Layouts(Layouts::read(&read_all(&dungeon_layout::paths())?, dungeon_layout::parts(elf)?)?),
+        "parts" => Table::Data(dungeon_layout::parts_table(elf)?, Vec::new()),
+        "chests" => Table::Chests(Chests::read(&read_all(&chest_data::paths())?)?),
         kind if game_data::KINDS.contains(&kind) => {
             let paths = game_data::paths(kind);
             Table::Data(game_data::read(kind, &read_all(&paths)?, elf)?, paths)
@@ -158,6 +163,7 @@ impl Table {
             Table::Monsters(monsters) => monsters.to_json(),
             Table::Data(table, _) => table.to_json(),
             Table::Layouts(layouts) => layouts.to_json(),
+            Table::Chests(chests) => chests.to_json(),
         }
     }
 
@@ -196,7 +202,7 @@ impl Table {
                 let (edits, patches) = table.changes_all(given)?;
                 (edits, patches, Vec::new())
             }
-            Table::Layouts(_) => bail!("layouts are changed by apply_layouts"),
+            Table::Layouts(_) | Table::Chests(_) => bail!("layouts and chests are changed whole, in apply_data"),
         })
     }
 
@@ -205,7 +211,7 @@ impl Table {
         Ok(match self {
             Table::Items(items, paths, _) => (items.apply(edits)?, paths),
             Table::Shops(shops, paths, _) => (shops.apply(edits)?, paths),
-            Table::Monsters(_) | Table::Layouts(_) => (Vec::new(), &[]),
+            Table::Monsters(_) | Table::Layouts(_) | Table::Chests(_) => (Vec::new(), &[]),
             Table::Data(table, paths) => (table.apply(edits)?, paths),
         })
     }
@@ -291,7 +297,13 @@ pub fn apply_data(
                 None => disc.read(path),
             }
         };
-        let loaded = load(table, &elf, &current)?;
+        // the layouts name parts as a data:parts line of the build names them
+        let renamed = if table == "layouts" && !patches.is_empty() {
+            Some(data_table::apply_patches(&elf, &patches)?)
+        } else {
+            None
+        };
+        let loaded = load(table, renamed.as_deref().unwrap_or(&elf), &current)?;
         let mut change = DataChange { table: table.to_string(), changed: Vec::new(), files: Vec::new() };
         if let Table::Layouts(layouts) = &loaded {
             // whole rooms, written again where they change (no pack holds a room script)
@@ -306,6 +318,27 @@ pub fn apply_data(
             let written = layouts.apply(&found)?;
             let mut rewritten = Vec::new();
             for (path, data) in dungeon_layout::paths().into_iter().zip(written) {
+                let old = current(&path)?;
+                if data != old {
+                    change.files.push((path.clone(), data.len(), old.len()));
+                    rewritten.push((path, data));
+                }
+            }
+            out.extend(rewritten);
+            changes.push(change);
+            continue;
+        }
+        if let Table::Chests(chests) = &loaded {
+            let mut found = Vec::new();
+            for line in &mine {
+                let given = chests
+                    .changes(&read_table(line)?, &line.module)
+                    .with_context(|| format!("{} (mod {})", line.key, line.module))?;
+                change.changed.extend(given.iter().map(|edit| (edit.module.clone(), edit.what.clone())));
+                found.extend(given);
+            }
+            let mut rewritten = Vec::new();
+            for (path, data) in chest_data::paths().into_iter().zip(chests.apply(&found)?) {
                 let old = current(&path)?;
                 if data != old {
                     change.files.push((path.clone(), data.len(), old.len()));

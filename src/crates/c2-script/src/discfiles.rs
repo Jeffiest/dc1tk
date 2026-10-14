@@ -62,7 +62,21 @@ impl Converter {
             ".mid" => c2_assets::music::build_bank(source, original),
             ".txt" => c2_py::read_text(source)
                 .map_err(c2_assets::Error::from)
-                .and_then(|written| text::build(&written, original, original, path, fonts)),
+                .and_then(|written| text::build(&written, original, original, path, fonts))
+                .and_then(|built| {
+                    // the English font gains its accented letters only through text: ids
+                    let english = text::locate(path).is_some_and(|found| found.language == text::Language::English);
+                    let (before, mes) = (text::Mes::parse(original)?, text::Mes::parse(&built)?);
+                    let added = mes.messages().any(|(id, codes)| {
+                        before.get(id) != Some(codes) && c2_assets::font::uses_english_extra(codes.iter().copied())
+                    });
+                    if english && added {
+                        return Err(c2_assets::Error::invalid(format!(
+                            "{path}: accented letters in English need the font texture the build adds for a text: id line (text:en/NAME)"
+                        )));
+                    }
+                    Ok(built)
+                }),
             _ => c2_assets::models::build(source, original),
         };
         built.map_err(|error| Error::invalid(error.to_string()))
@@ -92,9 +106,11 @@ impl Converter {
     }
 }
 
-/// The fonts the disc's message files are drawn with: the English font's table from the disc.
+/// The fonts the disc's message files are drawn with: the English and Korean fonts' tables from
+/// the disc.
 pub fn disc_fonts(disc: &Archive, image: &Image, index: &HashMap<String, &Entry>) -> Fonts {
-    Fonts { english_table: index.get(text::ENGLISH_FONT).map(|entry| disc.read(image.bytes(), entry).to_vec()) }
+    let read = |path: &str| index.get(&path.to_lowercase()).map(|entry| disc.read(image.bytes(), entry).to_vec());
+    Fonts { english_table: read(text::ENGLISH_FONT), korean_table: read(c2_assets::font::KOREAN_TABLE) }
 }
 
 fn lower(text: &str) -> String {

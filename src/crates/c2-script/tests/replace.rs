@@ -483,6 +483,46 @@ fn lines_are_checked_as_mod_json_is_read() {
 }
 
 #[test]
+fn a_music_line_gives_instruments_by_program() {
+    let folder = TempDir::new("instruments");
+    let mod_dir = folder.path().join("m");
+    write(&mod_dir.join("t.mid"), b"");
+    write(&mod_dir.join("a.wav"), b"");
+    write(&mod_dir.join("b.wav"), b"");
+    let music =
+        |instruments: Value| json!({"replace": {"music:BG_000_000": {"file": "t.mid", "instruments": instruments}}});
+    let case = |body: Value, words: &str| {
+        mod_json(&mod_dir, body);
+        fails(replace::lines(&mod_dir), words);
+    };
+    case(music(json!(["a.wav"])), "maps program numbers to WAVs");
+    case(music(json!({"128": "a.wav"})), "a program is 0 to 127");
+    case(music(json!({"100": "c.wav"})), "c.wav is not a WAV file in the mod's folder");
+    case(music(json!({"100": "../a.wav"})), "not a path inside");
+    case(music(json!({"100": {"file": "a.wav", "keys": [60, 10]}})), "\"keys\" is [lowest, highest]");
+    case(music(json!({"100": {"file": "a.wav", "volume": 200}})), "\"volume\" is 0 to 128");
+    case(music(json!({"100": {"file": "a.wav", "pitch": 2}})), "unknown field \"pitch\"");
+    case(music(json!({"100": []})), "no samples");
+    case(json!({"replace": {"texture:x": {"file": "a.wav", "instruments": {}}}}), "unknown option \"instruments\"");
+    mod_json(
+        &mod_dir,
+        music(json!({"100": "a.wav", "7": [{"file": "a.wav", "keys": [0, 59], "root": 48, "like": 3},
+                                            {"file": "b.wav", "keys": [60, 127], "loop": true, "volume": 90}]})),
+    );
+    let lines = replace::lines(&mod_dir).unwrap();
+    let instruments = &lines[0].instruments;
+    assert_eq!(instruments.len(), 2);
+    let program = |number: u8| instruments.iter().find(|instrument| instrument.program == number).unwrap();
+    let zone = &program(100).zones[0];
+    assert_eq!((zone.low, zone.high, zone.root, zone.looped, zone.volume), (0, 127, 60, None, 128));
+    assert_eq!(program(7).like, Some(3));
+    let zones: Vec<(u8, u8, u8, Option<bool>, u8)> =
+        program(7).zones.iter().map(|z| (z.low, z.high, z.root, z.looped, z.volume)).collect();
+    assert_eq!(zones, [(0, 59, 48, None, 128), (60, 127, 60, Some(true), 90)]);
+    assert_eq!(program(7).zones[1].path, mod_dir.join("b.wav"));
+}
+
+#[test]
 fn data_lines_name_a_table_and_merge_across_mods() {
     let folder = TempDir::new("data-lines");
     let mod_dir = folder.path().join("m");
@@ -542,6 +582,9 @@ fn line(module: &str, key: &str, file: &Path, add: bool) -> Line {
         add,
         like: None,
         title: None,
+        script: None,
+        programs: vec![],
+        instruments: Vec::new(),
     }
 }
 

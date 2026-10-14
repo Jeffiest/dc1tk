@@ -561,7 +561,10 @@ impl Table {
                     let values: Vec<Value> = wanted.into_iter().cloned().collect();
                     match added[number].iter().find(|known| known.keys == values) {
                         Some(known) if known.given != given => {
-                            bail!("{key}: new record {keys} is given two ways, by mod {} and mod {module}", known.module)
+                            bail!(
+                                "{key}: new record {keys} is given two ways, by mod {} and mod {module}",
+                                known.module
+                            )
                         }
                         Some(_) => {}
                         None => added[number].push(Added { keys: values, module, given }),
@@ -638,7 +641,9 @@ impl Table {
             let kept: Vec<String> = record
                 .keys
                 .iter()
-                .filter(|(key, _)| Some(key.as_str()) != adding.place && !adding.key_args.iter().any(|(known, ..)| known == key))
+                .filter(|(key, _)| {
+                    Some(key.as_str()) != adding.place && !adding.key_args.iter().any(|(known, ..)| known == key)
+                })
                 .map(|(_, value)| shown(value))
                 .collect();
             format!("{} {}", first_file(record), kept.join(" "))
@@ -739,7 +744,9 @@ impl Table {
             let moved_record = Record { fields, ..Record::default() };
             let mut flat = Vec::new();
             for (key, value) in added.given.iter() {
-                if section.keys.contains(key) || key == "like" || adding.label_args.iter().any(|(known, ..)| known == key)
+                if section.keys.contains(key)
+                    || key == "like"
+                    || adding.label_args.iter().any(|(known, ..)| known == key)
                 {
                     continue;
                 }
@@ -932,7 +939,11 @@ impl Table {
         let written = cfg_text::apply_edits(&self.scripts, edits)?;
         for &(file, most, why) in &self.limits {
             if written[file].len() > most && written[file] != self.scripts[file].write() {
-                bail!("{} file {file} would be {} bytes; the game reads it into {most} ({why})", self.what, written[file].len());
+                bail!(
+                    "{} file {file} would be {} bytes; the game reads it into {most} ({why})",
+                    self.what,
+                    written[file].len()
+                );
             }
         }
         if let Some((most, why)) = self.string_units {

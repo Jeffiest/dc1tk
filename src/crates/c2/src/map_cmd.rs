@@ -93,7 +93,10 @@ fn members(data: &[u8]) -> Vec<(String, Vec<u8>)> {
 /// Every .img a map's .ipk holds.
 fn images_of(disc: &Disc, ipk: &Option<String>) -> Result<Vec<(String, Vec<u8>)>> {
     match ipk {
-        Some(path) => Ok(members(&disc.read(path)?).into_iter().filter(|(name, _)| name.to_lowercase().ends_with(".img")).collect()),
+        Some(path) => Ok(members(&disc.read(path)?)
+            .into_iter()
+            .filter(|(name, _)| name.to_lowercase().ends_with(".img"))
+            .collect()),
         None => Ok(Vec::new()),
     }
 }
@@ -242,6 +245,7 @@ pub fn apply_maps(
     iso: &Path,
     mod_dirs: &[PathBuf],
     files: &c2_script::discfiles::Files,
+    program_of: &dyn Fn(&c2_script::replace::Line, &serde_json::Value) -> Result<i64>,
 ) -> Result<(c2_script::discfiles::Files, Vec<MapChange>)> {
     let lines: Vec<c2_script::replace::Line> =
         c2_script::replace::all_lines(mod_dirs)?.into_iter().filter(|line| line.is_map()).collect();
@@ -256,9 +260,14 @@ pub fn apply_maps(
         let name = line.map_name();
         let source = if line.add { line.like.clone().unwrap_or_default() } else { name.clone() };
         if line.add && mapedit::map_files(disc.entries(), &name).is_ok() {
-            bail!("{} (mod {}): the disc has a map {name}; edit it with a map: line under \"replace\"", line.key, line.module);
+            bail!(
+                "{} (mod {}): the disc has a map {name}; edit it with a map: line under \"replace\"",
+                line.key,
+                line.module
+            );
         }
-        let found = mapedit::map_files(disc.entries(), &source).with_context(|| format!("{} (mod {})", line.key, line.module))?;
+        let found = mapedit::map_files(disc.entries(), &source)
+            .with_context(|| format!("{} (mod {})", line.key, line.module))?;
         // where a file of the map goes: its own place, or a new map's
         let place = |path: &str| if line.add { new_map_path(path, &found, &name) } else { path.to_string() };
         // a file an earlier step rewrote is the one to build on
@@ -286,14 +295,30 @@ pub fn apply_maps(
             let path = relative.split('/').fold(folder.clone(), |path, part| path.join(part));
             fs::read(&path).map_err(|error| c2_assets::Error::invalid(format!("{}: {error}", path.display())))
         };
-        let gltf = fs::read(&line.file).with_context(|| line.file.display().to_string())?;
+        let mut gltf = fs::read(&line.file).with_context(|| line.file.display().to_string())?;
+        if !line.programs.is_empty() {
+            let mut given = Vec::new();
+            for (point, program) in &line.programs {
+                let number = program_of(line, program)
+                    .with_context(|| format!("{} (mod {}): \"programs\"", line.key, line.module))?;
+                println!("  {} (map {}): point {point} runs program {number}", line.module, name);
+                given.push((point.clone(), number));
+            }
+            gltf = with_programs(&gltf, &given).with_context(|| format!("{} (mod {})", line.key, line.module))?;
+        }
         let imported = c2_assets::map_import::import_map(&gltf, &read, &original, &packs, &search)
             .with_context(|| format!("{} (mod {})", line.key, line.module))?;
         for note in &imported.notes {
             println!("note: {} (mod {}): {note}", line.key, line.module);
         }
         if let Some(text) = imported.map {
-            changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: place(&found.map), old: if line.add { 0 } else { original.len() }, new: text.len() });
+            changes.push(MapChange {
+                module: line.module.clone(),
+                map: name.clone(),
+                path: place(&found.map),
+                old: if line.add { 0 } else { original.len() },
+                new: text.len(),
+            });
             out.insert(place(&found.map), text);
         }
         if !imported.models.is_empty() || !imported.new_models.is_empty() {
@@ -306,11 +331,16 @@ pub fn apply_maps(
                     continue;
                 };
                 // the member's own spelling, as the pack lists it
-                let pcp_data = members(&mpk_data).into_iter().find(|(name, _)| name.eq_ignore_ascii_case(&pack.name)).map(|(_, data)| data);
+                let pcp_data = members(&mpk_data)
+                    .into_iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case(&pack.name))
+                    .map(|(_, data)| data);
                 let member = pcp_data
                     .as_deref()
                     .map(members)
-                    .and_then(|list| list.into_iter().find(|(name, _)| name.eq_ignore_ascii_case(model)).map(|(name, _)| name))
+                    .and_then(|list| {
+                        list.into_iter().find(|(name, _)| name.eq_ignore_ascii_case(model)).map(|(name, _)| name)
+                    })
                     .unwrap_or_else(|| model.clone());
                 mpk_data = c2_disc::rebuild::replaced_member(&mpk_data, &[pack.name.clone(), member.clone()], data)?;
                 println!("  {} (map {}): rebuilt {} in {}", line.module, name, member, pack.name);
@@ -319,10 +349,22 @@ pub fn apply_maps(
                 mpk_data = with_new_models(mpk_data, &found.name, &imported.new_models)
                     .with_context(|| format!("{} (mod {})", line.key, line.module))?;
                 for model in &imported.new_models {
-                    println!("  {} (map {}): added {} ({})", line.module, name, model.file, map_export::kind_name(model.kind));
+                    println!(
+                        "  {} (map {}): added {} ({})",
+                        line.module,
+                        name,
+                        model.file,
+                        map_export::kind_name(model.kind)
+                    );
                 }
             }
-            changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: place(&mpk_path), old: if line.add { 0 } else { old_size }, new: mpk_data.len() });
+            changes.push(MapChange {
+                module: line.module.clone(),
+                map: name.clone(),
+                path: place(&mpk_path),
+                old: if line.add { 0 } else { old_size },
+                new: mpk_data.len(),
+            });
             out.insert(place(&mpk_path), mpk_data);
         }
         if !imported.textures.is_empty() {
@@ -346,13 +388,26 @@ pub fn apply_maps(
                     println!("  {} (map {}): {text}", line.module, name);
                 }
                 let old = if own { 0 } else { old };
-                changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: path.clone(), old, new: data.len() });
+                changes.push(MapChange {
+                    module: line.module.clone(),
+                    map: name.clone(),
+                    path: path.clone(),
+                    old,
+                    new: data.len(),
+                });
                 out.insert(path, data);
             }
         }
         if line.add {
             // the like map's other files, copied as they are
-            let theirs = [Some(&found.map), found.mpk.as_ref(), found.ipk.as_ref(), found.cfg.as_ref(), found.efp.as_ref(), found.sky.as_ref()];
+            let theirs = [
+                Some(&found.map),
+                found.mpk.as_ref(),
+                found.ipk.as_ref(),
+                found.cfg.as_ref(),
+                found.efp.as_ref(),
+                found.sky.as_ref(),
+            ];
             let mut copies = Vec::new();
             for path in theirs.into_iter().flatten() {
                 let target = place(path);
@@ -365,7 +420,13 @@ pub fn apply_maps(
                 }
             }
             for (path, target, data) in copies {
-                changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: target.clone(), old: 0, new: data.len() });
+                changes.push(MapChange {
+                    module: line.module.clone(),
+                    map: name.clone(),
+                    path: target.clone(),
+                    old: 0,
+                    new: data.len(),
+                });
                 println!("  {} (map {}): {target}, a copy of {path}", line.module, name);
                 out.insert(target, data);
             }
@@ -373,7 +434,8 @@ pub fn apply_maps(
     }
     if !new_maps.is_empty() {
         // a row for each new map in every language's map table
-        let module = lines.iter().filter(|line| line.add).map(|line| line.module.clone()).collect::<Vec<_>>().join(", ");
+        let module =
+            lines.iter().filter(|line| line.add).map(|line| line.module.clone()).collect::<Vec<_>>().join(", ");
         let names = new_maps.iter().map(|map| map.name.as_str()).collect::<Vec<_>>().join(", ");
         for language in c2_script::maptable::LANGUAGES {
             let path = c2_script::startat::map_table_path(Some(language));
@@ -384,7 +446,8 @@ pub fn apply_maps(
                     Err(_) => continue,
                 },
             };
-            let (written, numbers) = c2_script::maptable::with_new_maps(&table, &new_maps).with_context(|| path.clone())?;
+            let (written, numbers) =
+                c2_script::maptable::with_new_maps(&table, &new_maps).with_context(|| path.clone())?;
             if language == 1 {
                 for (map, number) in new_maps.iter().zip(&numbers) {
                     println!("  map {} (like {}) is map number {number}", map.name, map.like);
@@ -397,11 +460,69 @@ pub fn apply_maps(
                     }
                 }
             }
-            changes.push(MapChange { module: module.clone(), map: names.clone(), path: path.clone(), old: table.len(), new: written.len() });
+            changes.push(MapChange {
+                module: module.clone(),
+                map: names.clone(),
+                path: path.clone(),
+                old: table.len(),
+                new: written.len(),
+            });
             out.insert(path, written);
         }
     }
     Ok((out, changes))
+}
+
+/// The scene with event points given programs (a map: line's "programs"): each named event point's
+/// FUNC_EVENT_DATA program (`data.program`: the program a door runs when its door is open, an event
+/// point when it is reached), by the point's name.
+fn with_programs(gltf: &[u8], programs: &[(String, i64)]) -> Result<Vec<u8>> {
+    use serde_json::Value;
+    let mut doc: Value = serde_json::from_slice(gltf).context("the scene's glTF")?;
+    let nodes = doc["nodes"].as_array_mut().context("the scene's glTF has no nodes")?;
+    for (point, number) in programs {
+        let mut found = 0;
+        for node in nodes.iter_mut() {
+            // the add-on keeps extras.c2 as an object; a scene through other tools may hold it as text
+            let as_text = node["extras"]["c2"].as_str().map(str::to_string);
+            let mut c2 = match &as_text {
+                Some(text) => serde_json::from_str::<Value>(text).unwrap_or(Value::Null),
+                None => node["extras"]["c2"].clone(),
+            };
+            let named = match c2["name"].as_str() {
+                Some(name) => name.to_string(),
+                None => {
+                    let shown = node["name"].as_str().unwrap_or_default();
+                    let shown = shown.strip_prefix("point:").unwrap_or(shown);
+                    // Blender's .001 suffixes
+                    match shown.rsplit_once('.') {
+                        Some((stem, digits))
+                            if digits.len() >= 3 && digits.bytes().all(|byte| byte.is_ascii_digit()) =>
+                        {
+                            stem.to_string()
+                        }
+                        _ => shown.to_string(),
+                    }
+                }
+            };
+            if c2["role"] != "point" || c2["kind"] != "event" || named != *point {
+                continue;
+            }
+            if !c2["data"].is_object() {
+                bail!("event point {point} has no data to give a program");
+            }
+            c2["data"]["program"] = Value::from(*number);
+            node["extras"]["c2"] = match as_text {
+                Some(_) => Value::String(c2.to_string()),
+                None => c2,
+            };
+            found += 1;
+        }
+        if found == 0 {
+            bail!("\"programs\" names {point}, but the scene has no event point of that name");
+        }
+    }
+    Ok(serde_json::to_vec(&doc)?)
 }
 
 /// Pictures as (file name or picture name, PNG).
@@ -437,7 +558,10 @@ fn with_pictures(
         let mut home = None;
         'packs: for pack in &packs {
             if !opened.contains_key(pack) {
-                let files = members(&current(pack)?).into_iter().filter(|(name, _)| name.to_lowercase().ends_with(".img")).collect();
+                let files = members(&current(pack)?)
+                    .into_iter()
+                    .filter(|(name, _)| name.to_lowercase().ends_with(".img"))
+                    .collect();
                 opened.insert(pack.clone(), files);
             }
             for (file, data) in &opened[pack] {
@@ -464,21 +588,32 @@ fn with_pictures(
         let built = c2_assets::textures::build_from(&pngs, img)?;
         let data = c2_disc::rebuild::replaced_member(&data, &names, &built)?;
         let mut said = said;
-        let shared = if Some(&pack) == own.ipk.as_ref() { String::new() } else { " (another map's: it changes there too)".into() };
+        let shared = if Some(&pack) == own.ipk.as_ref() {
+            String::new()
+        } else {
+            " (another map's: it changes there too)".into()
+        };
         for (png, _) in &pngs {
-            said.push(format!("repainted {} in {pack}/{file}{shared}", png.trim_end_matches(c2_assets::textures::SUFFIX)));
+            said.push(format!(
+                "repainted {} in {pack}/{file}{shared}",
+                png.trim_end_matches(c2_assets::textures::SUFFIX)
+            ));
         }
         out.insert(pack, (data, said));
     }
     if !added.is_empty() {
         let Some(pack) = &own.ipk else {
-            bail!("the map has no texture pack to add pictures {} to", added.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>().join(", "));
+            bail!(
+                "the map has no texture pack to add pictures {} to",
+                added.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>().join(", ")
+            );
         };
         let (data, mut said) = match out.remove(pack) {
             Some(found) => found,
             None => (current(pack)?, Vec::new()),
         };
-        let Some((file, img)) = members(&data).into_iter().find(|(name, _)| name.to_lowercase().ends_with(".img")) else {
+        let Some((file, img)) = members(&data).into_iter().find(|(name, _)| name.to_lowercase().ends_with(".img"))
+        else {
             bail!("{pack} holds no texture file to add pictures to");
         };
         let built = c2_assets::textures::with_new_pictures(&added, &img)?;
@@ -503,7 +638,8 @@ fn with_new_models(mpk: Vec<u8>, map: &str, models: &[c2_assets::map_import::New
         bail!("the map's model pack holds no .pcp");
     };
     let inside = members(pcp_data);
-    let count = inside.iter().filter(|(name, _)| [".mds", ".chr"].iter().any(|end| name.to_lowercase().ends_with(end))).count();
+    let count =
+        inside.iter().filter(|(name, _)| [".mds", ".chr"].iter().any(|end| name.to_lowercase().ends_with(end))).count();
     if count + models.len() > PACK_MODELS {
         bail!("{pcp} holds {count} models; {} more would pass the game's {PACK_MODELS}", models.len());
     }
@@ -559,6 +695,23 @@ mod tests {
     }
 
     #[test]
+    fn programs_are_given_to_event_points_by_name() {
+        let scene = serde_json::json!({"nodes": [
+            {"name": "point:door_park", "extras": {"c2": {"role": "point", "kind": "event", "data": {"kind": "door", "program": 0}}}},
+            {"name": "point:dun07.001", "extras": {"c2": "{\"role\": \"point\", \"kind\": \"event\", \"data\": {\"program\": 290}}"}},
+            {"name": "point:door_park2", "extras": {"c2": {"role": "point", "kind": "pos", "data": {}}}}
+        ]});
+        let written =
+            with_programs(scene.to_string().as_bytes(), &[("door_park".into(), 9001), ("dun07".into(), 9002)]).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        assert_eq!(doc["nodes"][0]["extras"]["c2"]["data"]["program"], 9001);
+        let text: serde_json::Value = serde_json::from_str(doc["nodes"][1]["extras"]["c2"].as_str().unwrap()).unwrap();
+        assert_eq!(text["data"]["program"], 9002);
+        let missing = with_programs(scene.to_string().as_bytes(), &[("door_park2".into(), 1)]).unwrap_err();
+        assert!(missing.to_string().contains("no event point"));
+    }
+
+    #[test]
     fn info_cfg_gets_an_entry_per_new_model() {
         let cfg = "PCP_NAME \"s17\";\nMDS \"s17_01-m.mds\",\"Y:\\s17_01-m.mds\";\n\tTYPE 0;\nMDS_END;\n\n\n";
         let with = info_cfg_with(cfg, &[("s17_box-m.mds", 0), ("s17_box-a.mds", 1)]);
@@ -568,6 +721,9 @@ mod tests {
              MDS \"s17_box-m.mds\",\"s17_box-m.mds\";\n\tTYPE 0;\nMDS_END;\n\
              MDS \"s17_box-a.mds\",\"s17_box-a.mds\";\n\tTYPE 1;\nMDS_END;\n\n\n"
         );
-        assert_eq!(info_cfg_with("A;\r\n", &[("b.mds", 2)]), "A;\r\nMDS \"b.mds\",\"b.mds\";\r\n\tTYPE 2;\r\nMDS_END;\r\n");
+        assert_eq!(
+            info_cfg_with("A;\r\n", &[("b.mds", 2)]),
+            "A;\r\nMDS \"b.mds\",\"b.mds\";\r\n\tTYPE 2;\r\nMDS_END;\r\n"
+        );
     }
 }

@@ -66,21 +66,28 @@ pub fn replaced_member(data: &[u8], names: &[String], new: &[u8]) -> Result<Vec<
 /// The pack with a member added at the end of the pack a chain of names leads to (the pack itself
 /// for none), every pack around it resized.
 pub fn added_member(data: &[u8], names: &[String], name: &str, new: &[u8]) -> Result<Vec<u8>> {
-    let inner = read_member(data, names).ok_or_else(|| Error::invalid(format!("the pack has no member {}", names.join("/"))))?;
-    let members = archive::parse_pack(inner).ok_or_else(|| Error::invalid(format!("{}: not a pack", names.join("/"))))?;
+    let inner = read_member(data, names)
+        .ok_or_else(|| Error::invalid(format!("the pack has no member {}", names.join("/"))))?;
+    let members =
+        archive::parse_pack(inner).ok_or_else(|| Error::invalid(format!("{}: not a pack", names.join("/"))))?;
     if member_named(&members, name, true).is_some() {
         return Err(Error::invalid(format!("the pack already has a member {name}")));
     }
-    let raw = crate::text::encode(name)
-        .filter(|raw| !raw.is_empty() && raw.len() < archive::PACK_NAME)
-        .ok_or_else(|| Error::invalid(format!("{name} cannot be a member's name (1 to {} bytes of Shift-JIS)", archive::PACK_NAME - 1)))?;
+    let raw =
+        crate::text::encode(name).filter(|raw| !raw.is_empty() && raw.len() < archive::PACK_NAME).ok_or_else(|| {
+            Error::invalid(format!(
+                "{name} cannot be a member's name (1 to {} bytes of Shift-JIS)",
+                archive::PACK_NAME - 1
+            ))
+        })?;
     let size = i32::try_from(new.len()).map_err(|_| Error::invalid(format!("{name} is too big for a pack")))?;
     let pad = archive::padding(new.len());
     let mut slot = vec![0u8; archive::PACK_SLOT];
     slot[..raw.len()].copy_from_slice(&raw);
     slot[archive::PACK_NAME..archive::PACK_NAME + 4].copy_from_slice(&(archive::PACK_SLOT as i32).to_le_bytes());
     slot[archive::PACK_NAME + 4..archive::PACK_NAME + 8].copy_from_slice(&size.to_le_bytes());
-    slot[archive::PACK_NAME + 8..archive::PACK_NAME + 12].copy_from_slice(&((archive::PACK_SLOT + new.len() + pad) as i32).to_le_bytes());
+    slot[archive::PACK_NAME + 8..archive::PACK_NAME + 12]
+        .copy_from_slice(&((archive::PACK_SLOT + new.len() + pad) as i32).to_le_bytes());
     // the members, then the new one, then the empty slot that ends a pack
     let end = members.last().map_or(0, |member| member.offset + member.size + archive::padding(member.size));
     let mut grown = inner[..end].to_vec();
@@ -322,10 +329,16 @@ mod tests {
         let changed = added_member(&outer, &names, "new-m.mds", b"a new model").unwrap();
         assert_eq!(
             changed,
-            pack(&[("s17_0.pcp", &pack(&[("info.cfg", b"cfg"), ("a-m.mds", b"model"), ("new-m.mds", b"a new model")])), ("other", b"x")])
+            pack(&[
+                ("s17_0.pcp", &pack(&[("info.cfg", b"cfg"), ("a-m.mds", b"model"), ("new-m.mds", b"a new model")])),
+                ("other", b"x")
+            ])
         );
         assert!(added_member(&outer, &names, "A-M.mds", b"twice").is_err());
-        assert_eq!(added_member(&inner, &[], "b", b"1").unwrap(), pack(&[("info.cfg", b"cfg"), ("a-m.mds", b"model"), ("b", b"1")]));
+        assert_eq!(
+            added_member(&inner, &[], "b", b"1").unwrap(),
+            pack(&[("info.cfg", b"cfg"), ("a-m.mds", b"model"), ("b", b"1")])
+        );
     }
 
     #[test]
@@ -337,7 +350,8 @@ mod tests {
         overwrite_iso_file(&path, "SCES_511.90", b"EXECUTABLE").unwrap();
         assert!(overwrite_iso_file(&path, "SCES_511.90", b"longer than it was").is_err());
         let image = crate::Image::open(&path).unwrap();
-        let read = |name: &str| iso::read_file(image.bytes(), &iso::find(image.bytes(), name).unwrap().unwrap()).to_vec();
+        let read =
+            |name: &str| iso::read_file(image.bytes(), &iso::find(image.bytes(), name).unwrap().unwrap()).to_vec();
         assert_eq!((read("SCES_511.90"), read("OTHER")), (b"EXECUTABLE".to_vec(), b"kept".to_vec()));
         drop(image);
         fs::remove_dir_all(&folder).unwrap();

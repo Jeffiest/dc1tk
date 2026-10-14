@@ -114,15 +114,24 @@ fn trs_of(node: &Value) -> Result<Option<Trs>> {
         return Ok(Some(Trs { translation: [0.0; 3], rotation: [0.0, 0.0, 0.0, 1.0], scale: [1.0; 3] }));
     }
     let three = |key: &str, default: [f64; 3]| -> [f64; 3] {
-        floats(&node[key]).filter(|values| values.len() == 3).map_or(default, |values| [values[0], values[1], values[2]])
+        floats(&node[key])
+            .filter(|values| values.len() == 3)
+            .map_or(default, |values| [values[0], values[1], values[2]])
     };
-    let rotation = floats(&node["rotation"]).filter(|values| values.len() == 4).map_or([0.0, 0.0, 0.0, 1.0], |q| [q[0], q[1], q[2], q[3]]);
+    let rotation = floats(&node["rotation"])
+        .filter(|values| values.len() == 4)
+        .map_or([0.0, 0.0, 0.0, 1.0], |q| [q[0], q[1], q[2], q[3]]);
     Ok(Some(Trs { translation: three("translation", [0.0; 3]), rotation, scale: three("scale", [1.0; 3]) }))
 }
 
 /// The scene tree under a glTF node; model nodes (role "mds") are left out, their indices kept in
 /// `models` for the pieces they hang under.
-fn tree_of(doc: &Value, index: usize, model_roots: &mut HashMap<usize, Vec<usize>>, seen: &mut HashSet<usize>) -> Result<SceneNode> {
+fn tree_of(
+    doc: &Value,
+    index: usize,
+    model_roots: &mut HashMap<usize, Vec<usize>>,
+    seen: &mut HashSet<usize>,
+) -> Result<SceneNode> {
     if !seen.insert(index) {
         return Err(Error::invalid(format!("glTF node {index} appears twice in the scene tree")));
     }
@@ -163,7 +172,8 @@ fn tree_of(doc: &Value, index: usize, model_roots: &mut HashMap<usize, Vec<usize
 /// meshes, accessors, materials, textures, images, samplers, views and buffers).
 pub fn subtree(doc: &Value, roots: &[usize]) -> Value {
     let list = |key: &str| doc[key].as_array().cloned().unwrap_or_default();
-    let (nodes, meshes, accessors, materials, textures) = (list("nodes"), list("meshes"), list("accessors"), list("materials"), list("textures"));
+    let (nodes, meshes, accessors, materials, textures) =
+        (list("nodes"), list("meshes"), list("accessors"), list("materials"), list("textures"));
     let (images, samplers, views, buffers) = (list("images"), list("samplers"), list("bufferViews"), list("buffers"));
 
     // nodes reachable from the roots, in order
@@ -179,7 +189,8 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Value {
             pending.push(child.as_u64().unwrap_or(0) as usize);
         }
     }
-    let renumber = |order: &[usize]| -> HashMap<usize, usize> { order.iter().enumerate().map(|(new, &old)| (old, new)).collect() };
+    let renumber =
+        |order: &[usize]| -> HashMap<usize, usize> { order.iter().enumerate().map(|(new, &old)| (old, new)).collect() };
     let node_map = renumber(&node_order);
     let mut mesh_order = Vec::new();
     for &at in &node_order {
@@ -207,9 +218,19 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Value {
             add(&mut material_order, &primitive["material"]);
         }
     }
-    let texture_keys = [("pbrMetallicRoughness", "baseColorTexture"), ("pbrMetallicRoughness", "metallicRoughnessTexture"), ("", "normalTexture"), ("", "occlusionTexture"), ("", "emissiveTexture")];
+    let texture_keys = [
+        ("pbrMetallicRoughness", "baseColorTexture"),
+        ("pbrMetallicRoughness", "metallicRoughnessTexture"),
+        ("", "normalTexture"),
+        ("", "occlusionTexture"),
+        ("", "emissiveTexture"),
+    ];
     let texture_info = |material: &Value, parent: &str, key: &str| -> Value {
-        if parent.is_empty() { material[key]["index"].clone() } else { material[parent][key]["index"].clone() }
+        if parent.is_empty() {
+            material[key]["index"].clone()
+        } else {
+            material[parent][key]["index"].clone()
+        }
     };
     let mut texture_order = Vec::new();
     for &material in &material_order {
@@ -233,8 +254,10 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Value {
     for &view in &view_order {
         add(&mut buffer_order, &views[view]["buffer"]);
     }
-    let (accessor_map, material_map, texture_map) = (renumber(&accessor_order), renumber(&material_order), renumber(&texture_order));
-    let (image_map, sampler_map, view_map, buffer_map) = (renumber(&image_order), renumber(&sampler_order), renumber(&view_order), renumber(&buffer_order));
+    let (accessor_map, material_map, texture_map) =
+        (renumber(&accessor_order), renumber(&material_order), renumber(&texture_order));
+    let (image_map, sampler_map, view_map, buffer_map) =
+        (renumber(&image_order), renumber(&sampler_order), renumber(&view_order), renumber(&buffer_order));
     let set = |value: &mut Value, map: &HashMap<usize, usize>| {
         if let Some(at) = value.as_u64() {
             *value = json!(map.get(&(at as usize)).copied().unwrap_or(0));
@@ -256,7 +279,8 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Value {
                     set(mesh, &mesh_map);
                 }
                 if let Some(children) = object.get_mut("children").and_then(Value::as_array_mut) {
-                    children.retain(|child| child.as_u64().is_some_and(|child| node_map.contains_key(&(child as usize))));
+                    children
+                        .retain(|child| child.as_u64().is_some_and(|child| node_map.contains_key(&(child as usize))));
                     children.iter_mut().for_each(|child| set(child, &node_map));
                 }
             }
@@ -299,7 +323,11 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Value {
         .map(|&at| {
             let mut material = materials[at].clone();
             for (parent, key) in texture_keys {
-                let info = if parent.is_empty() { material.get_mut(key) } else { material.get_mut(parent).and_then(|p| p.get_mut(key)) };
+                let info = if parent.is_empty() {
+                    material.get_mut(key)
+                } else {
+                    material.get_mut(parent).and_then(|p| p.get_mut(key))
+                };
                 if let Some(index) = info.and_then(|info| info.get_mut("index")) {
                     set(index, &texture_map);
                 }
@@ -378,7 +406,8 @@ pub fn import_map(
     packs: &[ModelPack],
     textures: &TextureSearch,
 ) -> Result<Imported> {
-    let doc: Value = serde_json::from_slice(gltf).map_err(|error| Error::invalid(format!("the scene's glTF: {error}")))?;
+    let doc: Value =
+        serde_json::from_slice(gltf).map_err(|error| Error::invalid(format!("the scene's glTF: {error}")))?;
     let original_map = mapfile::parse(original)?;
     let roots: Vec<usize> = doc["scenes"][doc["scene"].as_u64().unwrap_or(0) as usize]["nodes"]
         .as_array()
@@ -396,7 +425,9 @@ pub fn import_map(
             root_index = Some(at);
             break;
         }
-        pending.extend(node["children"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|child| child as usize));
+        pending.extend(
+            node["children"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|child| child as usize),
+        );
     }
     let Some(root_index) = root_index else {
         return Err(Error::invalid("the scene has no map root (a node whose extras.c2.role is \"map\")"));
@@ -440,7 +471,9 @@ pub fn import_map(
         }
         let sub = subtree(&doc, model_roots_here);
         let text = serde_json::to_string(&sub).map_err(|error| Error::invalid(error.to_string()))?;
-        let given = from_gltf::load_gltf(text.as_bytes(), &|path| read_cached(path).map_err(|error| Error::invalid(error.to_string())))?;
+        let given = from_gltf::load_gltf(text.as_bytes(), &|path| {
+            read_cached(path).map_err(|error| Error::invalid(error.to_string()))
+        })?;
         let Some((kind, data)) = find_model(packs, &model) else {
             // made in the scene: a new model of every mesh under its first piece
             let kind = new_model_kind(c2["kind"].as_str().unwrap_or(""), &model);
@@ -464,7 +497,8 @@ pub fn import_map(
         match textures.find(&name) {
             // the first of the name is a render target, which the export showed as its stand-in
             // (d01f01's d01b17, which d01b01 has with pixels)
-            Some((_, first)) if first.no_image && crate::textures::same_pixels(&png, &crate::to_gltf::placeholder_png(&name))? => {}
+            Some((_, first))
+                if first.no_image && crate::textures::same_pixels(&png, &crate::to_gltf::placeholder_png(&name))? => {}
             Some(_) => {
                 // changed when it is none of the disc's pictures of the name (several maps have
                 // their own under one name; a render target has no pixels to change)
@@ -513,7 +547,9 @@ mod tests {
                         .unwrap()
                         .flatten()
                         .filter(|member| member.path().is_file())
-                        .map(|member| (member.file_name().to_string_lossy().into_owned(), std::fs::read(member.path()).unwrap()))
+                        .map(|member| {
+                            (member.file_name().to_string_lossy().into_owned(), std::fs::read(member.path()).unwrap())
+                        })
                         .collect();
                     let pack_name = path.file_name().unwrap().to_string_lossy().trim_end_matches(".d").to_string();
                     packs.push(ModelPack::new(&pack_name, members));

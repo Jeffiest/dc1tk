@@ -209,8 +209,7 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
 
     // message files: the text built into each place, with the first (the one exported) as the
     // reference
-    let fonts =
-        text::Fonts { english_table: text::english_table(disc.iter().map(|file| (file.path.as_str(), file.data))) };
+    let fonts = text::Fonts::from_files(disc.iter().map(|file| (file.path.as_str(), file.data)));
     report.message_places = texts.iter().map(|(_, asset)| places(asset).len()).sum();
     let text_problems: Vec<String> = texts
         .par_iter()

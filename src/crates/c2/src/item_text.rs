@@ -62,7 +62,10 @@ pub fn item_messages(
     current: &dyn Fn(&str) -> Result<Vec<u8>>,
     texts: &[ItemText],
 ) -> Result<Vec<(String, Vec<u8>)>> {
-    let fonts = text::Fonts { english_table: disc.read(text::ENGLISH_FONT).ok() };
+    let fonts = text::Fonts {
+        english_table: disc.read(text::ENGLISH_FONT).ok(),
+        korean_table: disc.read(c2_assets::font::KOREAN_TABLE).ok(),
+    };
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
     for language in 0..item_data::LANGUAGE_NAMES.len() {
         let font = fonts.font(text::LANGUAGES[language]);

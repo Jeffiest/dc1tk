@@ -52,7 +52,9 @@ this repository). Map meshes are the MDS format of
 - New maps (section 9): a mod's `"add": {"map:m05x": {"file": ...,
   "like": "m05"}}` builds a map of its own from an edited copy of another's
   scene, with a row in every language's map table, so `--start-at m05x`
-  reaches it. Not yet tried in the game.
+  reaches it (checked in the game). Its own script (`"script"`, section 9.1)
+  and a door into it from an existing map with a way back (section 9.2, the
+  example `new-map-door`) build; not yet tried in the game.
 
 **Not yet:** how the VU program
 combines vertex colour with lighting is untraced; `invent`'s int and float
@@ -771,11 +773,95 @@ place of the like map's title when given. Two mods adding one name are
 refused. `--start-at m05x` (or `"start_at": "m05x"`) counts the new map and
 enters it as a town (`go_to_edit_mode`).
 
-Checked: a copy of `m05` with its 63 trees raised 250 units and two ground
-pictures repainted builds (4 new files, 7 tables), and `c2 map-export m05x`
-from the built image reads it back as made, while `m05` keeps its pictures.
-Not yet tried in the game. Left: the new map's own script (`build` compiles
-only scripts the disc has; a script compiled with `c2 compile` can be given
-as a game file at `map/m/m05/m05x_1.stb` and the like), and a way in from the
-game's own maps (a door point and a program calling `jump_to_map` in an
-existing map's scene and script).
+Checked in the game (`new-map-test.iso`): a copy of `m05` with its 63 trees
+raised 250 units and two ground pictures repainted builds (4 new files, 7
+tables), `c2 map-export m05x` from the built image reads it back as made,
+while `m05` keeps its pictures, and `--start-at m05x` enters it.
+
+### 9.1 A new map's own script
+
+`"script"` on the new map's line names a C file of the mod, a whole map
+script (its `PROGRAM` table, `MAIN`, functions), and `build` compiles it and
+adds it as the map's script:
+
+```json
+"map:m05x": {"file": "maps/m05x/m05.gltf", "like": "m05", "script": "m05x.c"}
+```
+
+`LoadMapScript` (`mapjump.cpp`) loads `GetMapPath(name)` + `.stb` through
+`LoadScript`, which tries `<path>_<LanguageCode>.stb` and then the path
+itself: `map/m/m05/m05x_1.stb` for English, else `map/m/m05/m05x.stb`. The
+script is compiled once for each of the PAL languages (1 to 5, `LANGUAGE`
+set as for a patch of `s51_1.c` to `s51_5.c`); when they all compile alike
+it is one file, `m05x.stb`, which every language falls back to, and otherwise
+`m05x_1.stb` to `m05x_5.stb` and `m05x.stb` compiled as Japanese (what the
+disc's unnumbered scripts are). Each file is a record of `DATA.HD4`. The
+script sees what a patch of its mod sees: the SDK and the tree's headers
+(`#include <disc.h>` for the names of motions and the like), `LANGUAGE`,
+the mod's `NEW_FLAG`, `NEW_PROGRAM` and `NEW_MONSTER_VAR` numbers (those of
+the mods it requires too) and the new maps' numbers (below); its quoted
+includes are looked for from its folder up, then in the mod, the mods
+folder, the tree and the SDK (`"modkit/text.c"`). `mod check` compiles it as
+`build` does.
+
+The engine runs `map_start` (100) when the map loads, unless the way in
+names another program (`jump_to_map(point, map, program)`,
+`go_to_edit_mode(number, program)`); `--start-at m05x:PROGRAM` starts a new
+game at one of its programs, a `NEW_PROGRAM` name included. A script's
+`map_start` places the player (`place_chara`), points the camera
+(`reset_camera`, or `set_camera_pos` and `set_camera_target`) and fades in
+(`fade_in(30)`) itself, as the town scripts do.
+
+### 9.2 A door into it, and a way back
+
+A door is an event point (section 5) of kind `door` in an existing map's
+scene, and a program in that map's script that goes to the new map. The
+engine's door (`CEditEvent`, `editevent.cpp`, edit mode only): the player
+walks to it and presses the action button (flags `[1, 0, 1]`, as every door
+of the disc; the third, 0x100, fades the screen out), it plays the
+door-opening motion and sound, and then
+- with a program (`data.program`, FUNC_EVENT_DATA's third number) above 0, it
+  runs that program of the map's script: the door of a new map calls
+  `jump_to_map(-1, "m05x", map_start); wait;` there;
+- with program 0 it enters `target` as an interior (`go_to_interior`'s way:
+  a sub map loaded beside the town, its 320 placements and texture blocks
+  shared), or leaves the interior when the target is `exit`. A town-sized
+  copy (m05's 245 placements) is not an interior: give it a program.
+
+Add the point in Blender (Add Point, Door, at the 3D cursor) or as JSON in
+the scene (a node under `points` with `extras.c2` `{"role": "point",
+"name": "door_park", "kind": "event", "data": {"kind": "door", "event_no":
+0, "program": 0, "args": [0, 0, 0], "target": "m05x", "flags": [1, 0, 1]}}`
+and the door's translation and rotation; a point taking another's place, a
+closed door's (`close_door`), deletes that one by leaving it out). The map:
+line gives the program by name, so the scene never holds a number build
+picks:
+
+```json
+"replace": {"map:m01": {"file": "maps/m01/m01.gltf", "programs": {"door_park": "ENTER_PARK"}}}
+```
+
+`"programs"` (under `replace` or `add`) sets each named event point's
+program: a number, a `NEW_PROGRAM` name of the chosen mods, or a program the
+headers name (`map_start`); `build` says which number each got. The program
+itself is a patch of the map's script (`#pragma target map m01`,
+`PROGRAM(ENTER_PARK, enter_park);`). Existing points take programs the same
+way: the way back from the example's park is its big tree's point `dun07`
+(program 290, the dungeon menu, in Palm Brinks' script) given the new map's
+own program, which calls `jump_to_map(-1, "m01", BACK_FROM_PARK)`. A program
+named on arrival replaces the town's `map_start`, so `BACK_FROM_PARK` in
+Palm Brinks' patch runs the town's own arrival (`play_map_start_arrival()`:
+music, sounds) and then places the player at the door. Arriving by
+`map_start` instead, a town takes its default spot for a map it does not
+know (Palm Brinks: by the start of the street).
+
+**Map numbers in scripts.** Every chosen mod's patches and new maps'
+scripts see each new map's number as `MAP_<NAME>` (`MAP_M05X`, 189 for the
+first on the PAL disc), for `go_to_edit_mode(MAP_M05X, map_start)` and the
+like; `jump_to_map` and `go_to_interior` take the name too. `build` and `mod
+check` list them (`mod check` without `--disc` numbers them after the PAL
+disc's 189 rows).
+
+The example [new-map-door](../examples/new-map-door/README.md) does all of
+this: a copy of the park m05 with a script of its own, reached through a door
+added in Palm Brinks (m01), and back through the park's tree.

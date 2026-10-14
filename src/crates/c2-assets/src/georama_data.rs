@@ -144,8 +144,11 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
             let copies: Vec<Vec<(usize, usize)>> = std::iter::once(LABELS)
                 .chain((0..LANGUAGES).filter(|&language| language != LABELS))
                 .filter_map(|language| {
-                    let tags =
-                        if language == LABELS { Some(tags) } else { found[language].get(&id).map(|(_, tags, ..)| tags) }?;
+                    let tags = if language == LABELS {
+                        Some(tags)
+                    } else {
+                        found[language].get(&id).map(|(_, tags, ..)| tags)
+                    }?;
                     Some(tags.get("PARTS_MATERIAL").map_or(Vec::new(), |places| {
                         places.iter().map(|&statement| (files[language], statement)).collect()
                     }))
@@ -208,7 +211,9 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
         ..Adding::default()
     });
     let configs = TOWNS * LANGUAGES..TOWNS * LANGUAGES + TOWNS;
-    for (name, tag, records) in [("fixed_parts", "FIX_EPARTS_START", fixed), ("starting_parts", "INIT_EPARTS_START", starting)] {
+    for (name, tag, records) in
+        [("fixed_parts", "FIX_EPARTS_START", fixed), ("starting_parts", "INIT_EPARTS_START", starting)]
+    {
         let counts = count_of(&table, tag, configs.clone());
         table.section(name, &["town", "number"], records);
         table.adding(Adding {
@@ -266,7 +271,14 @@ fn river_sections(scripts: &[Script]) -> Vec<(&'static str, Vec<&'static str>, V
         for (at, statement) in script.statements.iter().enumerate() {
             let place = [(file, at)];
             match statement.tag.as_str() {
-                "WATER_SURFACE_START" => current = Some(keys("surface", Value::from(surfaces.iter().filter(|record: &&Record| record.keys[0].1 == town(number)).count()))),
+                "WATER_SURFACE_START" => {
+                    current = Some(keys(
+                        "surface",
+                        Value::from(
+                            surfaces.iter().filter(|record: &&Record| record.keys[0].1 == town(number)).count(),
+                        ),
+                    ))
+                }
                 "WATER_VERTEX" if args(at) >= 8 => {
                     if let Some(record) = current.as_mut() {
                         record.field("grid", S32, Place::Args { at: place.to_vec(), arg: 0, len: 2 });
@@ -336,14 +348,16 @@ mod tests {
         assert!(table.changes(&edit, "m").unwrap_err().to_string().contains("5 entries"));
         // a new part: a copy of another in every language, with an ID no town uses
         let json = table.to_json();
-        let used: Vec<i64> = json["parts"].as_array().unwrap().iter().map(|part| part["part"].as_i64().unwrap()).collect();
+        let used: Vec<i64> =
+            json["parts"].as_array().unwrap().iter().map(|part| part["part"].as_i64().unwrap()).collect();
         let free = (0..=PART_ID_MOST).find(|id| !used.contains(id)).unwrap();
         let new = json!({"parts": [{"town": first["town"], "part": free, "like": first["part"], "name": {"en": "New Hut", "fr": "Hutte"},
             "comment": "A new hut.", "max": 3}]});
         let (edits, _) = table.changes(&new, "m").unwrap();
         let written = table.apply(&edits).unwrap();
         let again = read(&written).unwrap();
-        let part = again.to_json()["parts"].as_array().unwrap().iter().find(|part| part["part"] == free).unwrap().clone();
+        let part =
+            again.to_json()["parts"].as_array().unwrap().iter().find(|part| part["part"] == free).unwrap().clone();
         assert_eq!((&part["name"], &part["max"], &part["model"]), (&json!("New Hut"), &json!(3), &first["model"]));
         for language in 0..LANGUAGES {
             let text = String::from_utf8_lossy(&written[language]).into_owned();
@@ -353,7 +367,10 @@ mod tests {
                 script.statements[at].values()[0].int()
             };
             assert_eq!(count(&written[language]), count(&files[language]) + 1, "{language}");
-            assert!(text.contains(if language == 2 { "EDIT_PARTS \"Hutte\";" } else { "EDIT_PARTS \"New Hut\";" }), "{language}");
+            assert!(
+                text.contains(if language == 2 { "EDIT_PARTS \"Hutte\";" } else { "EDIT_PARTS \"New Hut\";" }),
+                "{language}"
+            );
             assert!(text.contains(&format!("ID {free};")) || text.contains(&format!("ID {free} ;")), "{language}");
         }
         let refused = |edit: Value| table.changes(&edit, "m").unwrap_err().to_string();
@@ -361,7 +378,8 @@ mod tests {
         assert!(refused(taken).contains("game's own"));
         let high = json!({"parts": [{"town": first["town"], "part": 128, "like": first["part"], "name": "x"}]});
         assert!(refused(high).contains("0 to 127"));
-        let long = json!({"parts": [{"town": first["town"], "part": free, "like": first["part"], "name": "x".repeat(48)}]});
+        let long =
+            json!({"parts": [{"town": first["town"], "part": free, "like": first["part"], "name": "x".repeat(48)}]});
         assert!(refused(long).contains("47 bytes"));
         // a new starting part, counted in INIT_EPARTS_START
         let starts = json["starting_parts"].as_array().unwrap().iter().filter(|part| part["town"] == "g01").count();
@@ -371,7 +389,8 @@ mod tests {
         let config = String::from_utf8_lossy(&written[TOWNS * LANGUAGES]).into_owned();
         assert!(config.contains(&format!("INIT_EPARTS_START {};", starts + 1)), "{config}");
         let again = read(&written).unwrap().to_json();
-        let added = again["starting_parts"].as_array().unwrap().iter().rfind(|part| part["town"] == "g01").unwrap().clone();
+        let added =
+            again["starting_parts"].as_array().unwrap().iter().rfind(|part| part["town"] == "g01").unwrap().clone();
         assert_eq!(added["position"], json!([1.5, 0, 2]));
         // rivers and water read and edit
         assert_eq!(json["rivers"].as_array().unwrap().len(), 16);
