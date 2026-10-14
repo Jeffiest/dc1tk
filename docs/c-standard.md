@@ -200,7 +200,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.8.1 `#if` arithmetic | supported | `preprocessor_if_arithmetic` | C's precedence, 32-bit long |
 | 3.8.1 One `#else`, last | supported | `preprocessor_else_twice` | refused otherwise |
 | 3.8.2 `#include` | supported | `preprocessor_include` | |
-| 3.8.2 A header's macros in `#if` | differs | `preprocessor_header_macros` | a header's constants reach code, not `#if` |
+| 3.8.2 A header's macros in `#if` | supported | `preprocessor_header_macros` | the header read as text for its macros; its constants stay names in code |
 | 3.8.3 Object-like macros | supported | `preprocessor_object_macros` | |
 | 3.8.3 Function-like macros | supported | `preprocessor_function_macros` | |
 | 3.8.3 Defined again differently | supported | `preprocessor_redefinition` | refused |

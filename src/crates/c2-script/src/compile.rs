@@ -934,12 +934,12 @@ pub fn compile_file(path: &std::path::Path, tools: &Toolchain, options: &Options
             &owned
         }
     };
-    let mut program = crate::parse::parse(text)?;
+    let mut headers = tools.headers.clone();
+    headers.extend(crate::definitions::source_headers(path)?);
+    let mut program = crate::parse::parse_source(text, crate::parse::UNNAMED_FILE, &headers)?;
     if let Some(table) = options.table.filter(|_| program.get("asm").is_none() && program["natives"].is_null()) {
         program = program.with("natives", table);
     }
-    let mut headers = tools.headers.clone();
-    headers.extend(crate::definitions::source_headers(path)?);
     let includes = crate::library::read_includes(&program, path, options.overlay, tools.sdk_dir, &[])?;
     let mut program = crate::library::expand(program, &includes, &headers)?;
     if program.get("asm").is_none() && program["natives"].is_null() {

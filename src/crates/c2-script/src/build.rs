@@ -39,9 +39,9 @@ pub fn compiled(
             &owned
         }
     };
-    let program = parse::parse(text)?;
     let mut headers = tools.headers.clone();
     headers.extend(definitions::source_headers(source_path)?);
+    let program = parse::parse_source(text, parse::UNNAMED_FILE, &headers)?;
     let includes = library::read_includes(&program, source_path, overlay, tools.sdk_dir, &[])?;
     let mut program = library::expand(program, &includes, &headers)?;
     if let Some(patched) = patched {

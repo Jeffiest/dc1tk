@@ -888,7 +888,10 @@ pub fn run_tests(
     let numbers = patch_plan(&dirs, tree_dir, consts, true)?.numbers;
     let given: IndexMap<String, i64> =
         dirs.iter().flat_map(|dir| numbers.get(&name_of(dir)).cloned().unwrap_or_default()).collect();
-    let mut program = crate::parse::parse(&c2_py::read_text(&path)?)?;
+    let standing_in = tree_dir.join(TESTS);
+    let mut headers = tools.headers.clone();
+    headers.extend(crate::definitions::source_headers(&standing_in)?);
+    let mut program = crate::parse::parse_source(&c2_py::read_text(&path)?, crate::parse::UNNAMED_FILE, &headers)?;
     if !crate::source::truthy(&program["main"]) {
         let first = program["functions"]
             .as_array()
@@ -898,9 +901,6 @@ pub fn run_tests(
             .map(|function| function["name"].clone());
         program["main"] = first.unwrap_or(Node::Null);
     }
-    let standing_in = tree_dir.join(TESTS);
-    let mut headers = tools.headers.clone();
-    headers.extend(crate::definitions::source_headers(&standing_in)?);
     let includes = crate::library::read_includes(
         &program,
         &standing_in,

@@ -13,11 +13,12 @@
 //! recursion past Python's limit), this fails too, with its own message. An integer literal past
 //! 32 bits is an error, as C has no type for it here.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use c2_py::{ascii_digits, int_base, is_space, repr, split, strip, IntError};
+use indexmap::IndexMap;
 
 use crate::cpp::{self, Macros};
 use crate::node::Node;
@@ -603,10 +604,67 @@ fn number_at(text: &[char], position: usize) -> Option<(String, String, usize)> 
 /// The refusal of double, the one part of C89 this implementation leaves out.
 const NO_DOUBLE: &str = "double is not supported: the VM has 32-bit floats only; use float";
 
+/// The SDK's and definitions' headers by path, when the preprocessor reads them for their macros.
+type Headers<'a> = Option<&'a IndexMap<String, String>>;
+
+/// How deep headers may include headers.
+const INCLUDE_DEPTH: usize = 32;
+
+thread_local! {
+    /// The macros a header leaves defined, by its path, its text and the macros before it.
+    static HEADER_MACROS: RefCell<HashMap<u64, Macros>> = RefCell::new(HashMap::new());
+}
+
+/// The macros after #include <path>: the header read as text, as C reads it, from the macros
+/// before it, so its #defines reach the including file's #if. Its declarations are read apart, as
+/// before (library::expand), and its constants stay names in code, so nothing else changes. The
+/// prelude (c2s.h, for C tools only) and a header the headers do not have (an error later) add
+/// none.
+fn header_macros(path: &str, headers: &IndexMap<String, String>, macros: Macros, depth: usize) -> Parsed<Macros> {
+    let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {
+        return Ok(macros);
+    };
+    if depth > INCLUDE_DEPTH {
+        return Err(Fault::Value(format!("#include <{path}>: headers include each other too deeply")));
+    }
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        (path, text).hash(&mut hasher);
+        let mut defined: Vec<_> = macros.table.iter().collect();
+        defined.sort_by(|a, b| a.0.cmp(b.0));
+        for (name, definition) in defined {
+            (name, &definition.params, &definition.body, macros.constants.contains(name)).hash(&mut hasher);
+        }
+        hasher.finish()
+    };
+    if let Some(found) = HEADER_MACROS.with(|cache| cache.borrow().get(&key).cloned()) {
+        return Ok(found);
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut found = macros;
+    tokenize_with(&chars, &mut found, path, CALLER_FRAMES + 2, Some(headers), depth + 1)
+        .map_err(|fault| Fault::Value(format!("in <{path}>: {}", Error::from(fault))))?;
+    HEADER_MACROS.with(|cache| cache.borrow_mut().insert(key, found.clone()));
+    Ok(found)
+}
+
 /// The tokens of a file. macros are the #defines in force before the first line (a mod patch's
 /// LANGUAGE), which stay constants in code; file is the name __FILE__ gives until a #line names
 /// another. frames: Python frames in use, this function's included.
 fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> Parsed<Vec<Token>> {
+    tokenize_with(source, &mut macros, file, frames, None, 0)
+}
+
+/// tokenize, reading the headers given for their macros; macros ends as the file leaves them.
+fn tokenize_with(
+    source: &[char],
+    macros: &mut Macros,
+    file: &str,
+    frames: usize,
+    headers: Headers,
+    depth: usize,
+) -> Parsed<Vec<Token>> {
     // the text grows and shrinks as macros are replaced in it
     let mut text = cpp::trigraphs(source);
     let mut file = file.to_string();
@@ -628,7 +686,7 @@ fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> P
         let directive = if c == '#' { directive_at(&text, position) } else { None };
         if let Some((word, rest)) = &directive {
             if CONDITIONALS.contains(&word.as_str()) {
-                conditional_directive(word, rest, &mut conditions, &macros, line)?;
+                conditional_directive(word, rest, &mut conditions, macros, line)?;
                 let (end, joined) = directive_end(&text, position);
                 line += joined;
                 position = end;
@@ -676,6 +734,9 @@ fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> P
                     if rest.starts_with('<') && rest.ends_with('>') {
                         token.path = strip(&rest[1..rest.len() - 1]).to_string();
                         token.system = true;
+                        if let Some(headers) = headers {
+                            *macros = header_macros(&token.path, headers, std::mem::take(macros), depth)?;
+                        }
                     } else {
                         let words = asm_words(&rest.chars().collect::<Vec<char>>())?;
                         match words.as_slice() {
@@ -701,7 +762,7 @@ fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> P
                 "error" => return lex_fail(line, format!("#error {}", strip(rest))),
                 "line" => {
                     let expanded =
-                        cpp::expand_text(rest, &macros, true, &[]).or_else(|reason| lex_fail(line, reason))?;
+                        cpp::expand_text(rest, macros, true, &[]).or_else(|reason| lex_fail(line, reason))?;
                     let words = asm_words(&expanded.replace(cpp::PAINT, " ").chars().collect::<Vec<char>>())?;
                     let number = words.first().and_then(Node::as_str).and_then(|word| word.parse::<usize>().ok());
                     let name = words.get(1).map(|word| word.get("string").and_then(Node::as_str));
@@ -794,10 +855,10 @@ fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> P
                 position = after;
                 continue;
             }
-            if !painted && cpp::expandable(&macros, &name, false).is_some() {
+            if !painted && cpp::expandable(macros, &name, false).is_some() {
                 regions.retain(|region| region.end > position);
                 if !cpp::disabled(&regions, &name, position)
-                    && cpp::expand_at(&mut text, position, end, &macros, false, &mut regions)
+                    && cpp::expand_at(&mut text, position, end, macros, false, &mut regions)
                         .or_else(|reason| lex_fail(line, reason))?
                 {
                     continue;
@@ -3236,21 +3297,28 @@ pub fn parse(text: &str) -> Result<Node> {
 /// parse.parse(text, defines): with #defines in force before the first line (a mod patch's
 /// LANGUAGE).
 pub fn parse_with(text: &str, defines: &HashMap<String, String>) -> Result<Node> {
-    Ok(parse_program(text, defines, UNNAMED_FILE)?)
+    Ok(parse_program(text, defines, UNNAMED_FILE, None)?)
 }
 
 /// The program a file's source holds, with its name for __FILE__.
 pub fn parse_file(text: &str, file: &str) -> Result<Node> {
-    Ok(parse_program(text, &HashMap::new(), file)?)
+    Ok(parse_program(text, &HashMap::new(), file, None)?)
 }
 
-fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str) -> Parsed<Node> {
+/// A source file as a compiler reads it: its #include <...> headers (from those given) read as text
+/// for their macros, so a header's #defines reach the file's #if as C has it.
+pub fn parse_source(text: &str, file: &str, headers: &IndexMap<String, String>) -> Result<Node> {
+    Ok(parse_program(text, &HashMap::new(), file, Some(headers))?)
+}
+
+fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, headers: Headers) -> Parsed<Node> {
     let chars: Vec<char> = text.chars().collect();
     let mut macros = Macros::default();
     for (name, value) in defines {
         macros.define(name, cpp::Macro { params: None, body: value.clone() }, true);
     }
-    let mut state = State::new(tokenize(&chars, macros, file, CALLER_FRAMES + 2)?, CALLER_FRAMES + 1);
+    let tokens = tokenize_with(&chars, &mut macros, file, CALLER_FRAMES + 2, headers, 0)?;
+    let mut state = State::new(tokens, CALLER_FRAMES + 1);
     if state.tokens[0].kind == Kind::Assembly {
         return Ok(node!({"kind": "program", "asm": state.tokens[0].text()}));
     }

@@ -200,8 +200,9 @@ to the VM's own instructions:
   arithmetic and `defined`, `#ifdef`, `#elif`, `#undef`, `#error`, `#line`,
   `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__` and `__STDC__`. A
   `#define` whose value is a constant stays a named constant, which is how
-  the decompiler's trees and a header's constants reach code; a header's
-  macros are not seen by the including file's `#if`.
+  the decompiler's trees and a header's constants reach code. `#include <...>`
+  reads the header as text for its macros too, so they reach the including
+  file's `#if`.
 - Errors name the line.
 
 `double` is refused (the VM's floats are 32 bits); use `float`.

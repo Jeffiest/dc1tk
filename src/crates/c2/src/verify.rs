@@ -114,7 +114,7 @@ fn check_source(
     let program = &model.programs[path];
     let result = (|| -> c2_script::Result<(String, c2_script::node::Node, Vec<u8>)> {
         let text = source::text(&model.script_program(program, path)?)?;
-        let parsed = parse::parse(&text)?;
+        let parsed = parse::parse_source(&text, parse::UNNAMED_FILE, headers)?;
         let rebuilt = compile::compile_program(&library::expand(parsed.clone(), texts, headers)?, tables)?;
         Ok((text, parsed, rebuilt))
     })();
