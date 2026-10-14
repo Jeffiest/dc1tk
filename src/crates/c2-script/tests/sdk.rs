@@ -226,6 +226,20 @@ fn declarations_print_as_c() {
     );
 }
 
+#[test]
+fn void_pointers_are_out_parameters_of_any_type() {
+    // clang passes int * and float * to void * but not to any *; both read as an out any
+    let native = "extern void get_random(any range, void *value, OPTIONAL(any *other)) NATIVE(1013);\n";
+    let header = parse::parse(native).unwrap()["declarations"].clone();
+    let params = header["natives"][0]["params"].as_array().unwrap();
+    assert!(params[1].py_eq(&node!({"name": "value", "type": "any", "out": true, "optional": false})));
+    assert!(params[2].py_eq(&node!({"name": "other", "type": "any", "out": true, "optional": true})));
+    assert_eq!(
+        source::native_declaration(&header["natives"][0]).unwrap(),
+        "extern void get_random(any range, void *value, OPTIONAL(void *other)) NATIVE(1013);"
+    );
+}
+
 const CONSTANT_HEADER: &str = "#include <c2s.h>
 #pragma natives event
 
@@ -269,6 +283,30 @@ fn constant_build(text: &str) -> Vec<u8> {
 fn constants_compile_to_their_literals() {
     let literal = CONSTANTS.replace("PI * 2.0", "3.1415927 * 2.0").replace("MOTION_LOOP | MOTION_ONCE", "4 | 2");
     assert_eq!(constant_build(CONSTANTS), constant_build(&literal));
+}
+
+#[test]
+fn a_constant_declared_twice_is_refused() {
+    let content = |members: &str| {
+        let pal = format!("enum base_se_pal {{\n    SE_STEP_CARPET_L = 8,\n{members}}};\n#define SIDE 1\n");
+        let mut headers = constant_headers();
+        headers.insert("pal.h".into(), pal);
+        sdk::header_context("event", &headers, tables(), &["pal.h".into()], &|text| parse::parse(text))
+    };
+    let error = content("    SE_STEP_CARPET_L = 42,\n").unwrap_err().to_string();
+    assert!(error.contains("SE_STEP_CARPET_L is declared twice (= 8 in enum base_se_pal, then = 42 in enum base_se_pal)"));
+    // also against a member of another enum or a #define, and a #define given another value
+    assert!(content("};\nenum other_se_pal {\n    SE_STEP_CARPET_L = 8,\n").is_err());
+    assert!(content("    SIDE = 1,\n").is_err());
+    assert!(content("};\n#define SIDE 2\nenum x {\n").is_err());
+    // a #define repeated with its own value is valid C
+    assert!(content("};\n#define SIDE 1\nenum x {\n").is_ok());
+    assert!(content("    SE_STEP_CARPET_ON_STONE_L = 42,\n").is_ok());
+    // a compile reads the same declarations
+    let script = "#include <event.h>\n#include <twice.h>\nMAIN(f);\nvoid f(void)\n{\n}\n";
+    let mut headers = constant_headers();
+    headers.insert("twice.h".into(), "enum a { A = 1 };\nenum b { A = 2 };\n".into());
+    assert!(build_with(script, &headers).unwrap_err().to_string().contains("A is declared twice"));
 }
 
 #[test]

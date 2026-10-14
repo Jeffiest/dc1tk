@@ -2802,7 +2802,7 @@ extern void set_camera_goal_pos(float x, float y, float z) NATIVE(526);
 // kind; 12 writes hit x, y, z, hit; 13 adds kind; 15 writes hit x, y, z, the normalized reflection
 // direction x, y, z, then hit; 16 adds kind.
 // Original name: _CHK_INTERSECTION_POINT.
-extern void check_line_hit(int ignore_mask, float from_x, float from_y, float from_z, float to_x, float to_y, float to_z, int check_boxes, any *result1, OPTIONAL(any *result2, any *result3, any *result4, any *result5, any *result6, any *result7, any *result8)) NATIVE(527);
+extern void check_line_hit(int ignore_mask, float from_x, float from_y, float from_z, float to_x, float to_y, float to_z, int check_boxes, void *result1, OPTIONAL(void *result2, void *result3, void *result4, void *result5, void *result6, void *result7, void *result8)) NATIVE(527);
 
 // Sets the world point the active follow camera looks at and trails. The camera moves toward it as
 // it steps, with the follow offset added on top.
@@ -2990,7 +2990,7 @@ extern void set_menu_value(enum menu_set_command command, OPTIONAL(any arg1, any
 // &total) the scoop totals; 6 (&count, &status) Donny's shop lineup count and status; 7 (confirm,
 // &done) steps the Geostone announcement and gives 1 when it has ended.
 // Original name: _GET_MENU_ETC.
-extern void get_menu_value(enum menu_get_command command, any value, OPTIONAL(any *value2)) NATIVE(564);
+extern void get_menu_value(enum menu_get_command command, any value, OPTIONAL(void *value2)) NATIVE(564);
 
 // Checks one town analysis entry. analysis_id is town * 100 + entry, with towns counted from 1,
 // and the result is whether all of the entry's conditions hold.
@@ -3063,7 +3063,7 @@ extern int get_quest_state(enum quest_get_command command, int quest) NATIVE(577
 // kind; 13 writes hit x, y, z, hit; 14 adds kind; 16 writes hit x, y, z, reflection x, y, z, hit;
 // 17 adds kind.
 // Original name: _CHK_INTERSECTION_POINT_PIPE.
-extern void check_pipe_hit(int ignore_mask, float from_x, float from_y, float from_z, float to_x, float to_y, float to_z, float radius, int check_boxes, any *result1, OPTIONAL(any *result2, any *result3, any *result4, any *result5, any *result6, any *result7, any *result8)) NATIVE(578);
+extern void check_pipe_hit(int ignore_mask, float from_x, float from_y, float from_z, float to_x, float to_y, float to_z, float radius, int check_boxes, void *result1, OPTIONAL(void *result2, void *result3, void *result4, void *result5, void *result6, void *result7, void *result8)) NATIVE(578);
 
 // Returns the number of the interior map the player last left, or -1 while still inside an
 // interior.
@@ -3080,7 +3080,7 @@ extern void set_event_data(enum event_data_field field, int value) NATIVE(581);
 // seconds, hundredths, and 1 when under 7261 frames, or -1 into value1 if it was never started. 2
 // (frames) sets the time limit; 3 (x, y, style) sets the screen position and display style.
 // Original name: _STOPWATCH.
-extern void run_stopwatch(enum stopwatch_command command, OPTIONAL(any *value1, any *value2, any *value3, int *value4)) NATIVE(582);
+extern void run_stopwatch(enum stopwatch_command command, OPTIONAL(void *value1, void *value2, void *value3, int *value4)) NATIVE(582);
 
 // Asks the event loop to act on the town's edit event: 0 sets a scene map flag and restarts it, 1
 // resets it.
@@ -3743,7 +3743,7 @@ extern void set_sphida_safe_zone(int level) NATIVE(774);
 // float the shot scripts read, and safe_level is the gauge safe zone width. Fails for other
 // numbers.
 // Original name: _SPHIDA_GET_CULB_DEF.
-extern void get_sphida_club_stats(int club_no, float *power, float *extra, int *safe_level) NATIVE(775);
+extern void get_sphida_club_stats(int club_no, float *power, float *extra, void *safe_level) NATIVE(775);
 
 // Sets the spin mark on the sphida ball panel, x across and y down, each from -1.0 to 1.0. Fails
 // when no sphida game exists.
@@ -3873,7 +3873,7 @@ extern void wrap_angle(float *angle) NATIVE(1012);
 // Reads a random number from 0 up to but not including range into result. A float range gives a
 // float; an int range gives an int.
 // Original name: _GET_RAND.
-extern void get_random(any range, any *result) NATIVE(1013);
+extern void get_random(any range, void *result) NATIVE(1013);
 
 // Returns the distance from point p to the segment from a to b, or -1.0 when p projects outside
 // the segment.
@@ -3992,7 +3992,7 @@ extern void set_chara_scene_type(chara_slot chara, enum scene_chara_type type) N
 // out, x, y, z with three), 12 scale x, y, z, 13 character slot, 14 character number, 15 game
 // object number.
 // Original name: _GET_EVENT_DATA.
-extern void get_event_data(enum event_data_field field, any *value, OPTIONAL(any *value2, any *value3, any *value4)) NATIVE(1035);
+extern void get_event_data(enum event_data_field field, void *value, OPTIONAL(void *value2, void *value3, void *value4)) NATIVE(1035);
 
 // Stores the previous floor number of the current dungeon in the save data.
 // Original name: _DNG_SET_PREV_FLOOR.
@@ -4061,7 +4061,7 @@ extern void load_chara_skin(enum memory_stack stack_no, any pack, string info_na
 // the 7th receives the index of the polygon hit or -1; with 10 arguments the 7th to 9th receive
 // the hit position and the 10th the polygon index.
 // Original name: _CHK_CAMERA_COL.
-extern void check_camera_collision(float from_x, float from_y, float from_z, float to_x, float to_y, float to_z, any *hit_or_hit_x, OPTIONAL(float *hit_y, float *hit_z, int *hit)) NATIVE(1049);
+extern void check_camera_collision(float from_x, float from_y, float from_z, float to_x, float to_y, float to_z, void *hit_or_hit_x, OPTIONAL(float *hit_y, float *hit_z, int *hit)) NATIVE(1049);
 
 // Finds the map parts nearest x, y, z within radius and looks up the named function point on it.
 // found receives 1 and the point's world position goes into the out variables, or found receives 0

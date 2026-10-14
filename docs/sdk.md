@@ -33,7 +33,9 @@ static inline void start_turning_to_target(float *angle, float turn_speed)
   compiler as `&variable` when the result is assigned. Pointer parameters
   are out parameters. `OPTIONAL(...)` lists trailing arguments a call may
   leave out and `...` an open-ended list. `any` accepts int, float, string
-  or a pointer. Parameter types are documentation: the compiler does not
+  or a pointer, and `void *` is an out parameter that takes an int or a
+  float address alike (C has no implicit conversion between `int *` and
+  `float *`, or to a pointer to `any`). Parameter types are documentation: the compiler does not
   enforce them, because retail scripts call some natives with arguments the
   engine rejects.
 - `NATIVE(B, N)` records that the game's scripts call native `B + N` as base
@@ -63,7 +65,9 @@ engine reads, the header follows the call and the doc comment keeps the
 engine's view:
 
 - A parameter that some call passes a pointer to, or a value where the
-  native writes through a pointer, or a string for a number, is `any`.
+  native writes through a pointer, or a string for a number, is `any`. An
+  out parameter that some calls pass an int address and others a float
+  address is `void *`.
 - Parameters after the fewest arguments any call passes are `OPTIONAL`;
   extra arguments some call passes become `OPTIONAL(any extraN)`.
 - A native with a result also takes `...`, because some calls pass the

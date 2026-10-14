@@ -138,7 +138,7 @@ enum se_bank {
 // motion sound triggers and sword trails, and drops whatever it holds and any pending impulse or
 // knockback. Arguments are ignored.
 // Original name: _INIT_SCRIPT.
-extern void reset_action_setup(OPTIONAL(any *ignored)) NATIVE(0);
+extern void reset_action_setup(OPTIONAL(void *ignored)) NATIVE(0);
 
 // Stores a 16-bit value on the character that the action script keeps for its own use between
 // program runs, such as a combo step counter. It starts at 0.
@@ -469,7 +469,7 @@ extern void play_motion(string motion_name, OPTIONAL(float speed, enum motion_fl
 // Writes 1.0 into a float out parameter when the current motion has reached its last frame (or
 // none is set), otherwise 0.0. chara_name checks that linked model part instead.
 // Original name: _CHECK_MOS_END.
-extern void is_motion_done(float *is_done, OPTIONAL(string chara_name)) NATIVE(131);
+extern void is_motion_done(void *is_done, OPTIONAL(string chara_name)) NATIVE(131);
 
 // Writes how far the current motion has played into a float out parameter, from 0.0 at the start
 // to 1.0 at the end (0.0 while blending in). chara_name reads that linked model part instead.

@@ -235,8 +235,42 @@ fn numbered_groups(found: &IndexMap<String, i64>) -> HashMap<i64, i64> {
     found.iter().filter_map(|(key, value)| Some((key.parse::<i64>().ok()?, *value))).collect()
 }
 
+/// Refuses a constant declared twice: an enum member whose name another enum member or a #define
+/// already has (C rejects it, and a number could print as either), or a #define with two values.
+pub fn check_constants(constants: &[Node]) -> Result<()> {
+    let shown = |declared: &Node| {
+        let value = &declared["value"];
+        let value = match value.kind() {
+            "int" => value["value"].as_i64().map_or_else(String::new, |number| number.to_string()),
+            "string" => format!("{:?}", value["value"].as_str().unwrap_or_default()),
+            kind => kind.to_string(),
+        };
+        match declared["enum"].as_str() {
+            Some(enumeration) => format!("= {value} in enum {enumeration}"),
+            None => format!("#define {value}"),
+        }
+    };
+    let mut first: HashMap<&str, &Node> = HashMap::new();
+    for declared in constants {
+        let name = text(declared, "name");
+        let Some(earlier) = first.insert(name, declared) else {
+            continue;
+        };
+        let member = |node: &Node| node["enum"].as_str().is_some();
+        if member(earlier) || member(declared) || earlier["value"] != declared["value"] {
+            return Err(Error::invalid(format!(
+                "{name} is declared twice ({}, then {}); give one of them another name",
+                shown(earlier),
+                shown(declared)
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// The context of a set of declarations for a native table.
 pub fn context(declarations: &Declarations, table: &str, tables: &BTreeMap<String, Table>) -> Result<Context> {
+    check_constants(&declarations.constants)?;
     let rows = tables.get(table);
     let original_by_number: IndexMap<i64, String> =
         rows.map(|rows| rows.natives.iter().map(|row| (row.no as i64, row.name.clone())).collect()).unwrap_or_default();

@@ -2167,6 +2167,10 @@ fn typed_parameter(state: &mut State) -> Parsed<Node> {
         state.take();
         enumeration = Some(state.name()?);
         kind = "int".to_string();
+    } else if state.at("void", 0) && state.at("*", 1) {
+        // an out parameter that takes a pointer to anything: any *, as C reads int * and float *
+        state.take();
+        kind = "any".to_string();
     } else if state.peek(0).kind == Kind::Name && state.kinds.contains_key(state.peek(0).text()) {
         let name = state.take().text().to_string();
         kind = state.kinds[&name].clone();
