@@ -1,10 +1,14 @@
 // 3.5.4.1 Pointer declarators: pointers with static storage
-// planned: step 5: global pointers are not supported
+// expect: 12
 int x;
+int y = 5;
 int *where;
+int *nowhere = 0;
+int *start = &y;
 
 int test(void)
 {
     where = &x;
-    return 0;
+    *where = 7;
+    return x + *start + (nowhere == 0) - 1;
 }

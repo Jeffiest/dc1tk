@@ -179,7 +179,7 @@ fn string_variables_hold_strings() {
 #[test]
 fn errors_name_the_line() {
     fails("void f(void)\n{\n    wait;\n    nope = 1;\n}\n", "line 9: unknown variable nope");
-    fails("int g[2];\n", "global arrays are not supported");
+    fails("int g[2];\nint f(void)\n{\n    return g + 1 == g;\n}\n", "line 9: comparing two pointers is not supported");
     fails("int h;\nint g = h;\nvoid f(void)\n{\n}\n", "the value of global g must be a constant expression, not h");
     fails(
         "#define TWICE(x) ((x) * 2)\nvoid f(void)\n{\n    TWICE(1, 2);\n}\n",

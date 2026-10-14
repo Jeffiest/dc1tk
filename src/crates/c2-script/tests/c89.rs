@@ -127,6 +127,8 @@ programs! {
     conversions_assignment,
     conversions_void,
     conversions_null_pointer,
+    conversions_pointer_integer,
+    conversions_incompatible_pointers,
     // 3.3 expressions and 3.4 constant expressions
     expressions_primary,
     expressions_array_subscript,
@@ -142,6 +144,8 @@ programs! {
     expressions_multiplicative,
     expressions_additive,
     expressions_pointer_arithmetic,
+    expressions_pointer_comparison,
+    expressions_pointer_difference,
     expressions_shift,
     expressions_relational,
     expressions_equality,
@@ -205,6 +209,7 @@ programs! {
     functions_many_parameters,
     functions_varargs,
     functions_return_pointer,
+    functions_struct_arguments,
     // 3.8 preprocessing directives
     preprocessor_object_macros,
     preprocessor_function_macros,

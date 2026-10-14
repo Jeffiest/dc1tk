@@ -32,22 +32,53 @@ fn text<'a>(node: &'a Node, key: &str) -> &'a str {
 }
 
 /// The first part of an initialiser that is not a constant expression (C 3.4): a variable, a
-/// call, an assignment or an address.
-fn not_constant<'a>(node: &'a Node, found: &Context, variables: &HashSet<&str>) -> Option<&'a Node> {
+/// call, an assignment, an address of something but a global (or a function, a function pointer's
+/// value).
+fn not_constant<'a>(
+    node: &'a Node,
+    found: &Context,
+    variables: &HashSet<&str>,
+    functions: &HashSet<&str>,
+) -> Option<&'a Node> {
+    let not_constant = |node: &'a Node| not_constant(node, found, variables, functions);
     match node.kind() {
         "int" | "float" | "string" => None,
+        "var" if functions.contains(text(node, "name")) && !variables.contains(text(node, "name")) => None,
         "var" => {
             let name = text(node, "name");
             (variables.contains(name) || !found.constants.contains_key(name)).then_some(node)
         }
-        "unary" | "cast" => not_constant(&node["operand"], found, variables),
-        "binary" | "logical" => {
-            not_constant(&node["left"], found, variables).or_else(|| not_constant(&node["right"], found, variables))
+        // an address constant: of a global, a member or element of one at constant offsets
+        "addr" if !address_constant(&node["target"], variables, functions) => Some(node),
+        "addr" => index_constant(&node["target"]).and_then(not_constant),
+        "unary" | "cast" => not_constant(&node["operand"]),
+        "binary" | "logical" => not_constant(&node["left"]).or_else(|| not_constant(&node["right"])),
+        "ternary" => {
+            not_constant(&node["cond"]).or_else(|| not_constant(&node["then"])).or_else(|| not_constant(&node["else"]))
         }
-        "ternary" => not_constant(&node["cond"], found, variables)
-            .or_else(|| not_constant(&node["then"], found, variables))
-            .or_else(|| not_constant(&node["else"], found, variables)),
         _ => Some(node),
+    }
+}
+
+/// Whether an address is a constant one: of a global or function, or a member or element of a
+/// global (whose indexes index_constant checks).
+fn address_constant(target: &Node, variables: &HashSet<&str>, functions: &HashSet<&str>) -> bool {
+    match target.kind() {
+        "var" => variables.contains(text(target, "name")) || functions.contains(text(target, "name")),
+        "member" if target["arrow"] != Node::Bool(true) => address_constant(&target["object"], variables, functions),
+        "subscript" => address_constant(&target["array"], variables, functions),
+        "index" => variables.contains(text(target, "name")),
+        _ => false,
+    }
+}
+
+/// The index in an address constant's target, which must be a constant too.
+fn index_constant(target: &Node) -> Option<&Node> {
+    match target.kind() {
+        "subscript" => Some(&target["index"]),
+        "index" => Some(&target["index"]),
+        "member" => index_constant(&target["object"]),
+        _ => None,
     }
 }
 
@@ -64,32 +95,50 @@ fn shown(node: &Node) -> String {
 /// function calls first, once per load.
 pub fn initialised_globals(program: &Node, found: &Context) -> Result<Node> {
     let globals = list(program, "globals");
-    if !globals.iter().any(|global| global.get("init").is_some() || global.get("const").is_some()) {
+    let given = |global: &Node| global.get("init").is_some() || global.get("inits").is_some();
+    if !globals.iter().any(|global| given(global) || global.get("const").is_some()) {
         return Ok(program.clone());
     }
     let names: HashSet<&str> = globals.iter().map(|global| text(global, "name")).collect();
+    let functions: HashSet<&str> = list(program, "functions").iter().map(|function| text(function, "name")).collect();
     let mut body = Vec::new();
     let mut plain = Vec::new();
     for global in globals {
         let mut entry = global.clone();
         if let Some(map) = entry.as_object_mut() {
             map.remove("init");
+            map.remove("inits");
             map.remove("const");
             map.remove("std");
         }
         plain.push(entry);
-        let Some(value) = global.get("init") else {
-            continue;
+        // a scalar's value, or the slots an array's or struct's list gives
+        let values: Vec<(Node, &Node)> = match global.get("init") {
+            Some(value) => vec![(node!({"kind": "var", "name": text(global, "name")}), value)],
+            None => list(global, "inits")
+                .iter()
+                .map(|slot| {
+                    let target = node!({
+                        "kind": "field",
+                        "name": text(global, "name"),
+                        "offset": slot["offset"].clone(),
+                        "type": slot["type"].clone(),
+                        "ctype": slot["ctype"].clone(),
+                    });
+                    (target, &slot["value"])
+                })
+                .collect(),
         };
-        if let Some(part) = not_constant(value, found, &names) {
-            return Err(Error::invalid(format!(
-                "the value of global {} must be a constant expression, not {}",
-                text(global, "name"),
-                shown(part)
-            )));
+        for (target, value) in values {
+            if let Some(part) = not_constant(value, found, &names, &functions) {
+                return Err(Error::invalid(format!(
+                    "the value of global {} must be a constant expression, not {}",
+                    text(global, "name"),
+                    shown(part)
+                )));
+            }
+            body.push(node!({"kind": "expr", "expr": {"kind": "assign", "target": target, "value": value.clone()}}));
         }
-        let target = node!({"kind": "var", "name": text(global, "name")});
-        body.push(node!({"kind": "expr", "expr": {"kind": "assign", "target": target, "value": value.clone()}}));
     }
     if body.is_empty() {
         return Ok(program.clone().with("globals", plain));
@@ -139,8 +188,8 @@ pub fn initialised_globals(program: &Node, found: &Context) -> Result<Node> {
     }
     functions.push(initialise);
     let program = program.clone().with("globals", plain).with("functions", functions);
-    let count = list(&program, "globals").len();
-    let declared = program["global_num"].as_i64().unwrap_or(0) as usize;
+    let count: i64 = list(&program, "globals").iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
+    let declared = program["global_num"].as_i64().unwrap_or(0);
     Ok(program.with("global_num", count.max(declared)))
 }
 
@@ -394,8 +443,18 @@ impl Types<'_> {
             },
             "index" => {
                 let (index, _) = self.expression(&node["index"])?;
-                let kind = self.variable(text(node, "name")).map_or("any".into(), |(kind, _)| kind);
+                let kind = match node["type"].as_str() {
+                    Some(kind) => kind.to_string(),
+                    None => self.variable(text(node, "name")).map_or("any".into(), |(kind, _)| kind),
+                };
                 (node.clone().with("index", index), kind)
+            }
+            // a slot of C's other types (composite.rs), of the type it says
+            "field" => (node.clone(), text(node, "type").to_string()),
+            "at" => {
+                let (pointer, _) = self.expression(&node["pointer"])?;
+                let (index, _) = self.expression(&node["index"])?;
+                (node.clone().with("pointer", pointer).with("index", index), text(node, "type").to_string())
             }
             "deref" => {
                 let kind = self.variable(text(&node["operand"], "name")).map_or("any".into(), |(kind, _)| kind);

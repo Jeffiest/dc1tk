@@ -1,7 +1,11 @@
 // 3.1.4 String literals: wide strings
-// planned: step 5: wide string literals are not supported yet
-// L"..." is an array of wchar_t, which needs arrays as values.
+// expect: 15
+// L"..." is an array of wchar_t holding each character's Shift-JIS code, then 0.
+#include <stddef.h>
+
 int test(void)
 {
-    return L"ab"[1] == 98;
+    wchar_t s[] = L"ab";
+
+    return (L"ab"[1] == 98) + (s[0] == L'a') * 2 + (sizeof s == 6) * 4 + (s[2] == 0) * 8;
 }

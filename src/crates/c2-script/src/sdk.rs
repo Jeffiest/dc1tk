@@ -794,6 +794,7 @@ pub fn resolve(program: &Node, tables: &BTreeMap<String, Table>) -> Result<Node>
     let declarations = program.get("declarations").map(Declarations::of).unwrap_or_default();
     let mut found = context(&declarations, text(program, "natives"), tables)?;
     let program = &crate::lower::initialised_globals(program, &found)?;
+    let program = &crate::composite::lower(program, &declarations.kinds, &found)?;
     let program = &crate::lower::integer_types(program, &declarations.kinds, &found)?;
     let global_names: HashSet<String> =
         list(program, "globals").iter().map(|declared| text(declared, "name").to_string()).collect();

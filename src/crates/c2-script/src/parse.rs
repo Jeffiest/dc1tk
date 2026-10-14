@@ -2,8 +2,9 @@
 //! #if/#ifdef/#ifndef/#elif/#else/#endif, #define/#undef and macros, #include, #pragma, #line,
 //! #error, asm blocks; see cpp.rs), and the recursive-descent parser that turns a file into a
 //! program tree, as parse.py did, key for key, for the forms the decompiler writes. C89's other
-//! forms parse to trees of forms the compiler has, or to the few it lowers (lower.rs); see
-//! docs/c-standard.md.
+//! forms parse to trees of forms the compiler has, or to the ones it lowers (lower.rs, and
+//! composite.rs for C's pointers and composite types, which declarations give their C types,
+//! ctype.rs); see docs/c-standard.md.
 //!
 //! Where parse.py keeps a #pragma's words as asm.tokenize gives them, a plain word is a string and
 //! a quoted one {"string": text}.
@@ -21,6 +22,7 @@ use c2_py::{ascii_digits, int_base, is_space, repr, split, strip, IntError};
 use indexmap::IndexMap;
 
 use crate::cpp::{self, Macros};
+use crate::ctype::{self, Composite, Structs, Ty};
 use crate::node::Node;
 use crate::{asm, stb, Error, Result};
 
@@ -65,9 +67,9 @@ const BUILTINS: [&str; 2] = ["sin", "cos"];
 /// What a mod patch's #pragma target can pick scripts by.
 pub const TARGET_KINDS: [&str; 4] = ["map", "script", "monster", "library"];
 const LONG_OPERATORS: [&str; 3] = ["...", "<<=", ">>="];
-const OPERATORS: [&str; 18] =
-    ["==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "++", "--", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="];
-const SINGLES: &str = "(){}[],;=<>+-*/%&|!^~?:";
+const OPERATORS: [&str; 19] =
+    ["==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "++", "--", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "->"];
+const SINGLES: &str = "(){}[],;=<>+-*/%&|!^~?:.";
 const NOTE: &str = "note:";
 
 fn precedence(op: &str) -> Option<u32> {
@@ -323,6 +325,8 @@ struct Token {
     system: bool,
     /// An asm block's lines.
     lines: Vec<String>,
+    /// A string literal written L"...".
+    wide: bool,
 }
 
 impl Token {
@@ -337,6 +341,7 @@ impl Token {
             path: String::new(),
             system: false,
             lines: Vec::new(),
+            wide: false,
         }
     }
 
@@ -841,7 +846,12 @@ fn tokenize_with(
             tokens.push(Token::new(Kind::Int, line, Some(value.to_string())));
             position += 1 + end;
         } else if c == 'L' && text.get(position + 1) == Some(&'"') {
-            return lex_fail(line, "wide string literals are not supported yet: a string is the VM's");
+            // a wide string: an array of wchar_t, each a character's Shift-JIS code
+            let (value, end) = read_string(&text, position + 1, line)?;
+            let mut token = Token::new(Kind::Str, line, Some(value));
+            token.wide = true;
+            tokens.push(token);
+            position = end;
         } else if c == cpp::PAINT || c.is_ascii_alphabetic() || c == '_' {
             // a painted name is one a macro's own replacement held, which is never expanded
             let painted = c == cpp::PAINT;
@@ -978,6 +988,16 @@ struct State {
     overflow: Cell<bool>,
     /// #pragma std c89 has been read: the functions and globals after it get C's semantics.
     strict: bool,
+    /// The structs and unions declared so far, by tag.
+    structs: Structs,
+    /// typedefs of types beyond the scalars (pointers, structs, arrays, functions).
+    types: HashMap<String, Ty>,
+    /// Unnamed structs so far, for their tags.
+    anonymous: usize,
+    /// The typedefs of the headers included so far, read when the headers are given (parse_source):
+    /// what a type's size and slots need. They are not type words here, as a script's names may
+    /// be the same (sdk::resolve reads the headers' kinds for the rest).
+    header_kinds: HashMap<String, String>,
 }
 
 impl State {
@@ -996,6 +1016,11 @@ impl State {
             depth,
             overflow: Cell::new(false),
             strict: false,
+            structs: Structs::new(),
+            // what <stdarg.h>'s va_list stands for: a pointer into a variadic call's arguments
+            types: HashMap::from([("__va_list".to_string(), ctype::pointer(ctype::int()))]),
+            anonymous: 0,
+            header_kinds: HashMap::new(),
         }
     }
 
@@ -1020,6 +1045,11 @@ impl State {
     fn storage_name(&self, name: &str) -> String {
         let blocks = self.scope.as_ref().map_or(&[][..], |scope| scope.blocks.as_slice());
         blocks.iter().rev().find_map(|block| block.get(name)).cloned().unwrap_or_else(|| name.to_string())
+    }
+
+    /// A scalar type's base: a typedef's (this file's or a header's), or the name.
+    fn base_kind(&self, kind: &str) -> String {
+        self.kinds.get(kind).or_else(|| self.header_kinds.get(kind)).cloned().unwrap_or_else(|| kind.to_string())
     }
 
     /// Opens a block of declarations, in a function.
@@ -1172,19 +1202,31 @@ fn primary(state: &mut State) -> Parsed<Node> {
     state.framed(|state| {
         let token = state.take();
         match token.kind {
+            Kind::Int | Kind::Float if state.at("[", 0) => {
+                // 1[a] is a[1]
+                let number = literal(state, &token)?;
+                return postfix_operators(state, number);
+            }
             Kind::Int | Kind::Float => return literal(state, &token),
             Kind::Str => {
                 // adjacent string literals are one
                 let mut text = token.text().to_string();
                 while state.peek(0).kind == Kind::Str {
-                    text.push_str(state.take().text());
+                    let next = state.take();
+                    if next.wide != token.wide {
+                        return state.fail("a wide string literal cannot be joined to a plain one");
+                    }
+                    text.push_str(next.text());
+                }
+                if token.wide {
+                    return postfix_operators(state, wide_string(state, &text)?);
                 }
                 return Ok(node!({"kind": "string", "text": text}));
             }
             Kind::Op if token.text() == "(" => {
                 let node = expression(state)?;
                 state.expect(")")?;
-                return Ok(node);
+                return postfix_operators(state, node);
             }
             Kind::Name => {}
             _ => {
@@ -1201,16 +1243,136 @@ fn primary(state: &mut State) -> Parsed<Node> {
             return Ok(node!({"kind": "builtin", "name": name, "operand": operand}));
         }
         if state.at("(", 0) {
-            return Ok(node!({"kind": "call", "name": name, "args": arguments(state)?}));
+            match name {
+                "__offsetof" => return offsetof(state),
+                "__va_arg" => return va_arg(state),
+                "__va_start" => return va_start(state),
+                _ => {}
+            }
+            let storage = state.storage_name(name);
+            if state.variable(&storage).is_some() {
+                // a call through a function pointer
+                let callee = node!({"kind": "var", "name": storage});
+                let call = node!({"kind": "call_ptr", "callee": callee, "args": arguments(state)?});
+                return postfix_operators(state, call);
+            }
+            let call = node!({"kind": "call", "name": name, "args": arguments(state)?});
+            return postfix_operators(state, call);
         }
         let node = named(state, name)?;
-        if state.at("++", 0) || state.at("--", 0) {
+        postfix_operators(state, node)
+    })
+}
+
+/// The postfix operators after a primary expression: s.m, p->m, a[i] (of any expression), a call
+/// through a function pointer, x++ and x--.
+fn postfix_operators(state: &mut State, mut node: Node) -> Parsed<Node> {
+    loop {
+        if state.at(".", 0) || state.at("->", 0) {
+            let arrow = state.take().text() == "->";
+            let name = state.name()?;
+            node = node!({"kind": "member", "object": node, "name": name, "arrow": arrow});
+        } else if state.at("[", 0) {
+            state.take();
+            let index = expression(state)?;
+            state.expect("]")?;
+            node = node!({"kind": "subscript", "array": node, "index": index});
+        } else if state.at("(", 0) {
+            let args = arguments(state)?;
+            node = node!({"kind": "call_ptr", "callee": node, "args": args});
+        } else if state.at("++", 0) || state.at("--", 0) {
+            if !is_target(&node) {
+                return state.fail("++ and -- need a variable");
+            }
             let op = state.take();
             writable(state, &node)?;
-            return Ok(postfix(state, node, op.text()));
+            node = postfix(state, node, op.text());
+        } else {
+            return Ok(node);
         }
-        Ok(node)
-    })
+    }
+}
+
+/// L"...": the characters' Shift-JIS codes, then 0, as an array of wchar_t (composite.rs gives it
+/// storage).
+fn wide_string(state: &State, text: &str) -> Parsed<Node> {
+    let mut codes = Vec::new();
+    for character in text.chars() {
+        let code = if (character as u32) < 0x80 {
+            character as u32
+        } else {
+            match c2_disc::text::encode(&character.to_string()) {
+                Some(bytes) => bytes.iter().fold(0u32, |code, byte| code << 8 | u32::from(*byte)),
+                // an escape's own value
+                None if (character as u32) < 0x100 => character as u32,
+                None => return state.fail(format!("{character:?} has no Shift-JIS code")),
+            }
+        };
+        codes.push(Node::from(code as i64));
+    }
+    codes.push(Node::from(0));
+    Ok(node!({"kind": "wide", "codes": codes}))
+}
+
+/// offsetof(type, member) from <stddef.h>: the member's offset in C's bytes, a size_t constant. The
+/// member may be a path (a.b[2].c).
+fn offsetof(state: &mut State) -> Parsed<Node> {
+    state.expect("(")?;
+    let mut ty = abstract_type(state)?;
+    state.expect(",")?;
+    let mut bytes = 0;
+    loop {
+        let name = state.name()?;
+        let Ty::Struct(tag) = &ty else {
+            return state.fail(format!("offsetof needs a struct or union, not {}", ty.shown()));
+        };
+        let Some((_, offset, member)) = ctype::member(&state.structs, tag, &name) else {
+            return state.fail(format!("{} has no member {name}", ty.shown()));
+        };
+        bytes += offset;
+        ty = member;
+        while state.at("[", 0) {
+            state.take();
+            let index = constant_expression(state)?;
+            state.expect("]")?;
+            let Ty::Array(of, _) = &ty else {
+                return state.fail(format!("{name} is not an array"));
+            };
+            bytes += index * of.bytes(&state.structs);
+            ty = (**of).clone();
+        }
+        if !state.at(".", 0) {
+            break;
+        }
+        state.take();
+    }
+    state.expect(")")?;
+    Ok(size_literal(bytes))
+}
+
+/// va_arg(ap, type) from <stdarg.h>: the next of a variadic function's other arguments.
+fn va_arg(state: &mut State) -> Parsed<Node> {
+    state.expect("(")?;
+    let list = assignment(state)?;
+    state.expect(",")?;
+    let ty = abstract_type(state)?;
+    state.expect(")")?;
+    Ok(node!({"kind": "va_arg", "list": list, "ctype": ty.to_node()}))
+}
+
+/// va_start(ap, last) from <stdarg.h>: ap at the first of the arguments after last, which must be
+/// the function's last parameter.
+fn va_start(state: &mut State) -> Parsed<Node> {
+    state.expect("(")?;
+    let list = assignment(state)?;
+    state.expect(",")?;
+    let last = state.name()?;
+    state.expect(")")?;
+    let params = state.scope.as_ref().map_or(&[][..], |scope| scope.params.as_slice());
+    if params.last().is_none_or(|param| param["name"] != *last) {
+        return state.fail(format!("va_start names the last parameter before the ..., not {last}"));
+    }
+    Ok(node!({"kind": "va_start", "list": list}))
 }
 
 /// A variable, or an element of an array, by the name code wrote: x, a[i], m[i][j].
@@ -1219,6 +1381,17 @@ fn named(state: &mut State, name: &str) -> Parsed<Node> {
     let name = state.storage_name(name);
     if !state.at("[", 0) {
         return Ok(node!({"kind": "var", "name": name}));
+    }
+    if state.variable(&name).is_some_and(|entry| entry.get("ctype").is_some()) {
+        // a variable of C's other types: each [] subscripts what the one before gave
+        let mut node = node!({"kind": "var", "name": name});
+        while state.at("[", 0) {
+            state.take();
+            let index = expression(state)?;
+            state.expect("]")?;
+            node = node!({"kind": "subscript", "array": node, "index": index});
+        }
+        return Ok(node);
     }
     let mut indices = Vec::new();
     while state.at("[", 0) {
@@ -1310,7 +1483,7 @@ fn pointer_cast_ahead(state: &State) -> bool {
 }
 
 fn is_target(node: &Node) -> bool {
-    matches!(node.kind(), "var" | "index" | "deref")
+    matches!(node.kind(), "var" | "index" | "deref" | "member" | "subscript")
 }
 
 /// The variable an assignment target writes: x, a[i] or *p.
@@ -1359,8 +1532,9 @@ fn type_word(state: &State, text: &str) -> bool {
     STORAGE.contains(&text)
         || QUALIFIERS.contains(&text)
         || INTEGER_WORDS.contains(&text)
-        || ["float", "string", "void", "enum"].contains(&text)
+        || ["float", "string", "void", "enum", "struct", "union"].contains(&text)
         || state.kinds.contains_key(text)
+        || state.types.contains_key(text)
 }
 
 /// What a declaration's specifiers say: the type, the storage class, and the qualifiers.
@@ -1370,6 +1544,8 @@ struct Spec {
     storage: Option<String>,
     constant: bool,
     volatile: bool,
+    /// A struct or union, or a typedef of a type beyond the scalars.
+    ty: Option<Ty>,
 }
 
 /// The type the integer keywords of a declaration name, as C 3.5.2 lists their combinations.
@@ -1423,6 +1599,16 @@ fn specifiers(state: &mut State, header_kinds: bool) -> Parsed<Spec> {
         } else if base.is_none() && words.is_empty() {
             if ["float", "string", "void"].contains(&text.as_str()) || state.kinds.contains_key(&text) {
                 base = Some(text);
+            } else if text == "struct" || text == "union" {
+                state.take();
+                let tag = struct_specifier(state, text == "union")?;
+                base = Some(format!("{text} {tag}"));
+                spec.ty = Some(Ty::Struct(tag));
+                any = true;
+                continue;
+            } else if let Some(ty) = state.types.get(&text).cloned() {
+                spec.ty = Some(ty);
+                base = Some(text);
             } else if text == "enum" {
                 state.take();
                 let name = if state.at("{", 0) { None } else { Some(state.name()?) };
@@ -1461,29 +1647,240 @@ fn specifiers(state: &mut State, header_kinds: bool) -> Parsed<Spec> {
     Ok(spec)
 }
 
-/// A type name in a cast or sizeof: specifiers, then *s and [N]s. The type, how many pointers,
-/// and the array sizes.
-fn type_name_of(state: &mut State) -> Parsed<(Spec, usize, Vec<i64>)> {
+/// struct TAG { members } or union TAG { ... } after its keyword (or TAG alone, naming one): the
+/// tag, a made-up one for an unnamed struct. A member takes whole slots, so bit-fields are refused.
+fn struct_specifier(state: &mut State, union: bool) -> Parsed<String> {
+    let word = if union { "union" } else { "struct" };
+    let tag = if state.peek(0).kind == Kind::Name {
+        state.name()?
+    } else if state.at("{", 0) {
+        state.anonymous += 1;
+        format!("__anonymous_{}", state.anonymous)
+    } else {
+        let found = state.shown(state.peek(0))?;
+        return state.fail(format!("expected the name of a {word}, found {found}"));
+    };
+    let other = if union { "struct" } else { "union" };
+    if state.structs.get(&tag).is_some_and(|known| known.union != union) {
+        return state.fail(format!("{tag} is a {other}, not a {word}"));
+    }
+    if !state.at("{", 0) {
+        // declared here, defined (or not) elsewhere: an incomplete type until then
+        state.structs.entry(tag.clone()).or_insert(Composite { union, members: Vec::new() });
+        return Ok(tag);
+    }
+    state.take();
+    let mut members: Vec<(String, Ty)> = Vec::new();
+    while !state.at("}", 0) {
+        let spec = specifiers(state, true)?;
+        if spec.storage.is_some() {
+            return state.fail(format!("a member of {word} {tag} has no storage class"));
+        }
+        let base = base_ty(state, &spec)?;
+        loop {
+            let (name, ty) = declarator(state, base.clone())?;
+            if name.is_empty() {
+                return state.fail(format!("a member of {word} {tag} needs a name"));
+            }
+            if state.at(":", 0) {
+                return state.fail("bit-fields are not supported: every member takes a slot of its own");
+            }
+            if members.iter().any(|(known, _)| *known == name) {
+                return state.fail(format!("{word} {tag} has two members named {name}"));
+            }
+            complete(state, &name, &ty)?;
+            members.push((name, ty));
+            if !state.at(",", 0) {
+                break;
+            }
+            state.take();
+        }
+        state.expect(";")?;
+    }
+    state.expect("}")?;
+    if members.is_empty() {
+        return state.fail(format!("{word} {tag} needs a member"));
+    }
+    let composite = Composite { union, members };
+    if state.structs.get(&tag).is_some_and(|known| !known.members.is_empty() && *known != composite) {
+        return state.fail(format!("{word} {tag} is defined twice"));
+    }
+    state.structs.insert(tag.clone(), composite);
+    Ok(tag)
+}
+
+/// Refuses an object of a type with no size: void, a function, a struct not defined, an array
+/// whose size nothing gave.
+fn complete(state: &State, name: &str, ty: &Ty) -> Parsed<()> {
+    match ty {
+        Ty::Void => state.fail(format!("{name} cannot be void")),
+        Ty::Function(..) => state.fail(format!("{name} is a function; declare functions at file scope")),
+        Ty::Struct(tag) if state.structs.get(tag).is_none_or(|found| found.members.is_empty()) => {
+            state.fail(format!("{name} is of {}, which is not defined", ty.shown()))
+        }
+        Ty::Array(_, -1) => state.fail(format!("{name}[] needs a size or a list of values")),
+        Ty::Array(of, _) => complete(state, name, of),
+        _ => Ok(()),
+    }
+}
+
+/// The type specifiers give: a struct or typedef'd type as it is, void, or a scalar by its base
+/// type (a typedef's, int for an enum; a header's value kind as it is named).
+fn base_ty(state: &State, spec: &Spec) -> Parsed<Ty> {
+    if let Some(ty) = &spec.ty {
+        return Ok(ty.clone());
+    }
+    Ok(match spec.kind.as_str() {
+        "void" => Ty::Void,
+        kind if kind.starts_with("enum ") => ctype::int(),
+        kind => Ty::Scalar(state.base_kind(kind)),
+    })
+}
+
+/// A declarator, as C 3.5.4 reads one: *s (with their qualifiers), a name or a declarator in
+/// parentheses, then [N]s and (parameters). The name ("" in a type name) and the type it gives
+/// the name, built from base inside out: int *a[3] is an array of pointers, int (*f)(int) a pointer
+/// to a function.
+fn declarator(state: &mut State, base: Ty) -> Parsed<(String, Ty)> {
+    let mut ty = base;
+    while state.at("*", 0) {
+        state.take();
+        while state.at("const", 0) || state.at("volatile", 0) {
+            state.take();
+        }
+        ty = ctype::pointer(ty);
+    }
+    let nested = state.at("(", 0)
+        && (state.at("*", 1)
+            || state.at("(", 1)
+            || state.at("[", 1)
+            || (state.token(1).kind == Kind::Name && !type_word(state, state.token(1).text())));
+    if nested {
+        // what follows the parentheses applies first: read it, then the declarator inside
+        state.take();
+        let inner = state.pos;
+        let mut depth = 1;
+        while depth > 0 {
+            if state.peek(0).kind == Kind::Eof {
+                return state.fail("expected ')'");
+            }
+            let token = state.take();
+            if token.kind == Kind::Op {
+                depth += match token.text() {
+                    "(" => 1,
+                    ")" => -1,
+                    _ => 0,
+                };
+            }
+        }
+        let ty = suffixes(state, ty)?;
+        let end = state.pos;
+        state.pos = inner;
+        let (name, ty) = declarator(state, ty)?;
+        state.expect(")")?;
+        state.pos = end;
+        return Ok((name, ty));
+    }
+    let named = state.peek(0).kind == Kind::Name && !type_word(state, state.peek(0).text());
+    let name = if named { state.name()? } else { String::new() };
+    Ok((name, suffixes(state, ty)?))
+}
+
+/// The [N]s and (parameters) after a declarator's name, applied to ty from the last in.
+fn suffixes(state: &mut State, ty: Ty) -> Parsed<Ty> {
+    let mut found: Vec<std::result::Result<i64, (Vec<Ty>, bool)>> = Vec::new();
+    loop {
+        if state.at("[", 0) {
+            state.take();
+            let size = if state.at("]", 0) { -1 } else { constant_expression(state)? };
+            state.expect("]")?;
+            if size == 0 || size < -1 || (size == -1 && !found.is_empty()) {
+                return state.fail("an array needs a size of at least 1");
+            }
+            found.push(Ok(size));
+        } else if state.at("(", 0) {
+            state.take();
+            found.push(Err(parameter_types(state)?));
+        } else {
+            break;
+        }
+    }
+    let mut ty = ty;
+    for suffix in found.into_iter().rev() {
+        ty = match suffix {
+            Ok(size) => Ty::Array(Box::new(ty), size),
+            Err((params, variadic)) => Ty::Function(Box::new(ty), params, variadic),
+        };
+    }
+    Ok(ty)
+}
+
+/// A parameter's type as the function sees it: an array is a pointer to its first element, a
+/// function a pointer to it.
+fn adjusted(ty: Ty) -> Ty {
+    match ty {
+        Ty::Array(of, _) => Ty::Pointer(of),
+        function @ Ty::Function(..) => ctype::pointer(function),
+        other => other,
+    }
+}
+
+/// The parameter types of a function type, after its (: names allowed and ignored.
+fn parameter_types(state: &mut State) -> Parsed<(Vec<Ty>, bool)> {
+    let mut params = Vec::new();
+    let mut variadic = false;
+    if !no_parameters(state) {
+        loop {
+            if state.at("...", 0) {
+                state.take();
+                variadic = true;
+                break;
+            }
+            let spec = specifiers(state, true)?;
+            let base = base_ty(state, &spec)?;
+            let (_, ty) = declarator(state, base)?;
+            params.push(adjusted(ty));
+            if !state.at(",", 0) {
+                break;
+            }
+            state.take();
+        }
+    }
+    state.expect(")")?;
+    Ok((params, variadic))
+}
+
+/// Whether the declarator ahead needs C's full declarators (declarator), not the forms the
+/// decompiler writes (x, *x, x[N]...): a struct or typedef'd type, void *, pointers to pointers,
+/// parentheses, an array of pointers.
+fn complex_ahead(state: &State, spec: &Spec) -> bool {
+    if spec.ty.is_some() {
+        return true;
+    }
+    let mut offset = 0;
+    let mut stars = 0;
+    while state.at("*", offset) || state.at("const", offset) || state.at("volatile", offset) {
+        stars += usize::from(state.at("*", offset));
+        offset += 1;
+    }
+    (spec.kind == "void" && stars > 0)
+        || stars > 1
+        || state.at("(", offset)
+        || (stars == 1 && state.token(offset).kind == Kind::Name && state.at("[", offset + 1))
+}
+
+/// A type name in a cast, sizeof or offsetof: specifiers and an abstract declarator.
+fn abstract_type(state: &mut State) -> Parsed<Ty> {
     let spec = specifiers(state, false)?;
     if spec.storage.is_some() {
         return state.fail("a type name has no storage class");
     }
-    let mut pointers = 0;
-    while state.at("*", 0) {
-        state.take();
-        pointers += 1;
-        while state.at("const", 0) || state.at("volatile", 0) {
-            state.take();
-        }
+    let base = base_ty(state, &spec)?;
+    let (name, ty) = declarator(state, base)?;
+    if !name.is_empty() {
+        return state.fail(format!("a type name has no name, found {name}"));
     }
-    let mut dims = Vec::new();
-    while state.at("[", 0) {
-        state.take();
-        let size = constant_expression(state)?;
-        state.expect("]")?;
-        dims.push(size);
-    }
-    Ok((spec, pointers, dims))
+    Ok(ty)
 }
 
 /// An integer constant expression (an array size): numbers, this file's integer #defines and enum
@@ -1501,8 +1898,8 @@ fn constant_expression(state: &mut State) -> Parsed<i64> {
 /// The bytes a value of a type (or a typedef of one) takes: the VM's slot holds 32 bits, and char and
 /// short are C's 1 and 2.
 fn type_size(state: &State, kind: &str) -> i64 {
-    let kind = state.kinds.get(kind).map_or(kind, String::as_str);
-    match kind {
+    let kind = state.base_kind(kind);
+    match kind.as_str() {
         "char" | "unsigned char" => 1,
         "short" | "unsigned short" => 2,
         _ => 4,
@@ -1521,8 +1918,58 @@ fn elements(state: &State, entry: &Node) -> Parsed<i64> {
     }
 }
 
+/// The type of a variable's declaration: its own C type, or one its plain fields give.
+fn entry_type(state: &State, entry: &Node) -> Ty {
+    if let Some(ctype) = entry.get("ctype") {
+        return Ty::from_node(ctype);
+    }
+    let kind = field(entry, "type");
+    let scalar = Ty::Scalar(state.kinds.get(kind).cloned().unwrap_or_else(|| kind.to_string()));
+    if entry.get("pointer").is_some() || entry["array"] == Node::Bool(true) {
+        return ctype::pointer(scalar);
+    }
+    match elements(state, entry) {
+        Ok(count) if !entry["size"].is_null() => Ty::Array(Box::new(scalar), count),
+        _ => scalar,
+    }
+}
+
+/// The type of an expression of C's other types that sizeof is given (None for the forms the
+/// compiler had before, whose sizes size_of works out as it did).
+fn static_type(state: &State, node: &Node) -> Option<Ty> {
+    let typed = |name: &str| state.variable(name).filter(|entry| entry.get("ctype").is_some());
+    match node.kind() {
+        "var" => typed(field(node, "name")).map(|entry| entry_type(state, &entry)),
+        "deref" => static_type(state, &node["operand"]).and_then(|ty| ty.target().cloned()),
+        "subscript" => {
+            let array = static_type(state, &node["array"])
+                .or_else(|| state.variable(field(&node["array"], "name")).map(|entry| entry_type(state, &entry)))?;
+            array.target().cloned()
+        }
+        "member" => {
+            let object = static_type(state, &node["object"])
+                .or_else(|| state.variable(field(&node["object"], "name")).map(|entry| entry_type(state, &entry)))?;
+            let object = if node["arrow"] == Node::Bool(true) { object.target()?.clone() } else { object };
+            let Ty::Struct(tag) = object else {
+                return None;
+            };
+            ctype::member(&state.structs, &tag, field(node, "name")).map(|(_, _, ty)| ty)
+        }
+        "addr" => static_type(state, &node["target"]).map(ctype::pointer),
+        "wide" => {
+            let count = node["codes"].as_array().map_or(1, Vec::len) as i64;
+            Some(Ty::Array(Box::new(Ty::Scalar("unsigned short".into())), count))
+        }
+        "cast" => node.get("ctype").map(Ty::from_node),
+        _ => None,
+    }
+}
+
 /// What sizeof gives for an expression, which it does not evaluate.
 fn size_of(state: &State, node: &Node) -> Parsed<i64> {
+    if let Some(ty) = static_type(state, node) {
+        return Ok(ty.bytes(&state.structs));
+    }
     let entry = |name: &str| state.variable(name);
     Ok(match node.kind() {
         "string" => match stb::encode_string(field(node, "text")) {
@@ -1532,6 +1979,8 @@ fn size_of(state: &State, node: &Node) -> Parsed<i64> {
         "var" => match entry(field(node, "name")) {
             Some(found) if found.get("pointer").is_some() || found["array"] == Node::Bool(true) => 4,
             Some(found) => elements(state, &found)? * type_size(state, field(&found, "type")),
+            // sizeof(wchar_t): a header's typedef, which reads as a name here
+            None if state.header_kinds.contains_key(field(node, "name")) => type_size(state, field(node, "name")),
             None => 4,
         },
         "index" => entry(field(node, "name")).map_or(4, |found| type_size(state, field(&found, "type"))),
@@ -1619,9 +2068,6 @@ fn unary(state: &mut State) -> Parsed<Node> {
             state.take();
             state.take();
             let operand = unary(state)?;
-            if operand.kind() != "addr" {
-                return state.fail("a pointer cast takes an address (&x)");
-            }
             return Ok(node!({"kind": "cast", "type": format!("{kind} *"), "operand": operand}));
         }
         if state.at("(", 0) && starts_type(state, 1) {
@@ -1637,13 +2083,15 @@ fn sizeof(state: &mut State) -> Parsed<Node> {
     state.take();
     if state.at("(", 0) && starts_type(state, 1) {
         state.take();
-        let (spec, pointers, dims) = type_name_of(state)?;
+        let ty = abstract_type(state)?;
         state.expect(")")?;
-        if spec.kind == "void" && pointers == 0 {
-            return state.fail("sizeof(void)");
+        match &ty {
+            Ty::Void => return state.fail("sizeof(void)"),
+            Ty::Function(..) => return state.fail("sizeof a function"),
+            Ty::Struct(_) => complete(state, "sizeof", &ty)?,
+            _ => {}
         }
-        let element = if pointers > 0 { 4 } else { type_size(state, &spec.kind) };
-        return Ok(size_literal(element * dims.iter().product::<i64>()));
+        return Ok(size_literal(ty.bytes(&state.structs)));
     }
     let operand = unary(state)?;
     Ok(size_literal(size_of(state, &operand)?))
@@ -1653,21 +2101,21 @@ fn sizeof(state: &mut State) -> Parsed<Node> {
 #[inline(never)]
 fn cast(state: &mut State) -> Parsed<Node> {
     state.take();
-    let (spec, pointers, dims) = type_name_of(state)?;
+    let ty = abstract_type(state)?;
     state.expect(")")?;
-    if !dims.is_empty() {
-        return state.fail("a cast cannot give an array");
-    }
     let operand = unary(state)?;
-    if pointers > 0 {
-        if operand.kind() != "addr" {
-            return state.fail("a pointer cast takes an address (&x)");
+    match &ty {
+        Ty::Array(..) => state.fail("a cast cannot give an array"),
+        Ty::Struct(_) => state.fail("a cast cannot give a struct"),
+        Ty::Function(..) => state.fail("a cast cannot give a function"),
+        // the VM's pointers are values of their own: the cast passes the value as it is, and its
+        // type is the compiler's (composite.rs)
+        Ty::Pointer(to) => {
+            Ok(node!({"kind": "cast", "type": format!("{} *", to.shown()), "operand": operand, "ctype": ty.to_node()}))
         }
-        return Ok(node!({"kind": "cast", "type": format!("{} *", spec.kind), "operand": operand}));
+        Ty::Void => Ok(node!({"kind": "cast", "type": "void", "operand": operand})),
+        Ty::Scalar(kind) => Ok(node!({"kind": "cast", "type": kind.as_str(), "operand": operand})),
     }
-    let kind = state.kinds.get(&spec.kind).cloned().unwrap_or(spec.kind);
-    let kind = if kind.starts_with("enum ") { "int".to_string() } else { kind };
-    Ok(node!({"kind": "cast", "type": kind, "operand": operand}))
 }
 
 /// &x; a register variable has no address.
@@ -2140,6 +2588,9 @@ struct Declared {
     pointer: bool,
     /// int *const p: the pointer itself is const.
     pointer_const: bool,
+    /// The type, for a declarator of C's other types (complex_ahead); the fields above are the
+    /// plain forms'.
+    ty: Option<Ty>,
 }
 
 impl Declared {
@@ -2164,11 +2615,31 @@ fn pointer_part(state: &mut State) -> Parsed<(bool, bool)> {
     Ok((pointer, constant))
 }
 
-fn declarators(state: &mut State) -> Parsed<Vec<Declared>> {
+fn declarators(state: &mut State, spec: &Spec) -> Parsed<Vec<Declared>> {
     state.framed(|state| {
         let mut found = Vec::new();
         loop {
             let line = state.line();
+            if complex_ahead(state, spec) {
+                let base = base_ty(state, spec)?;
+                let (name, ty) = declarator(state, base)?;
+                if name.is_empty() {
+                    let found = state.shown(state.peek(0))?;
+                    return state.fail(format!("expected a name, found {found}"));
+                }
+                let mut init = None;
+                if state.at("=", 0) {
+                    state.take();
+                    init = Some(initializer(state)?);
+                }
+                let (pointer, pointer_const, dims) = (false, false, Vec::new());
+                found.push(Declared { name, dims, init, line, pointer, pointer_const, ty: Some(ty) });
+                if !state.at(",", 0) {
+                    break;
+                }
+                state.take();
+                continue;
+            }
             let (pointer, pointer_const) = pointer_part(state)?;
             let name = state.name()?;
             let mut dims = Vec::new();
@@ -2189,7 +2660,7 @@ fn declarators(state: &mut State) -> Parsed<Vec<Declared>> {
             if matches!(init, Some(Init::List(_))) && dims.is_empty() && pointer {
                 return state.fail(format!("too many values for {name}"));
             }
-            found.push(Declared { name, dims, init, line, pointer, pointer_const });
+            found.push(Declared { name, dims, init, line, pointer, pointer_const, ty: None });
             if !state.at(",", 0) {
                 break;
             }
@@ -2212,7 +2683,8 @@ fn declaration_ahead(state: &State) -> bool {
     }
     let following = state.peek(1);
     if TYPES.contains(&token.text()) {
-        return following.kind == Kind::Name || (following.kind == Kind::Op && following.text() == "*");
+        // int (*f)(int): a declarator in parentheses
+        return following.kind == Kind::Name || (following.kind == Kind::Op && ["*", "("].contains(&following.text()));
     }
     if starts_type(state, 0) {
         return true;
@@ -2392,13 +2864,19 @@ fn declaration(state: &mut State) -> Parsed<Vec<Node>> {
         }
         // a typedef of this function's stands for its type
         let kind = state.kinds.get(&spec.kind).filter(|_| local_kind(state, &spec.kind)).cloned().unwrap_or(spec.kind.clone());
-        if kind == "void" || kind == "any" {
+        if kind == "any" || (kind == "void" && !complex_ahead(state, &spec)) {
             return state.fail(format!("unknown type {kind}"));
         }
         let mut statements = Vec::new();
-        for declared in declarators(state)? {
+        for declared in declarators(state, &spec)? {
             if spec.storage.as_deref() == Some("extern") {
                 // names a global this file declares
+                continue;
+            }
+            let static_aggregate = spec.storage.as_deref() == Some("static") && (declared.pointer || !declared.dims.is_empty());
+            let wide = matches!(&declared.init, Some(Init::Value(value)) if value.kind() == "wide");
+            if declared.ty.is_some() || static_aggregate || wide {
+                statements.extend(typed_local(state, &spec, declared, &kind)?);
                 continue;
             }
             let line = declared.line;
@@ -2407,7 +2885,8 @@ fn declaration(state: &mut State) -> Parsed<Vec<Node>> {
                 [] => declared.size().node()?,
                 dims => int_node(dims.iter().product::<i64>() as i128)?,
             };
-            let storage = storage_for(state, &declared.name, &kind, &size, spec.storage.as_deref() == Some("static"))?;
+            let is_static = spec.storage.as_deref() == Some("static");
+            let storage = storage_for(state, &declared.name, &kind, &size, &Node::Null, is_static)?;
             if spec.storage.as_deref() == Some("static") {
                 static_local(state, &declared, &storage, &kind, &spec)?;
                 continue;
@@ -2457,14 +2936,352 @@ fn declaration(state: &mut State) -> Parsed<Vec<Node>> {
     })
 }
 
+/// A declaration's type when its declarator has the plain fields only (a static or global array
+/// or pointer, an array a wide string fills).
+fn plain_type(state: &State, declared: &Declared, kind: &str) -> Parsed<Ty> {
+    let kind = state.base_kind(kind);
+    let scalar = if kind.starts_with("enum ") { ctype::int() } else { Ty::Scalar(kind) };
+    if declared.pointer {
+        return Ok(ctype::pointer(scalar));
+    }
+    let mut ty = scalar;
+    for size in declared.dims.iter().rev() {
+        let size = match size {
+            Size::Number(size) => *size as i64,
+            Size::Named(name) => match state.constants.get(name).or_else(|| state.enumerators.get(name)) {
+                Some(size) => *size as i64,
+                None => {
+                    return state.fail(format!("{}: size {name} must be a constant this file defines", declared.name))
+                }
+            },
+            Size::None => -1,
+        };
+        ty = Ty::Array(Box::new(ty), size);
+    }
+    Ok(ty)
+}
+
+/// An array's open size ([]) given by its initializer: as many elements as the list fills, or the
+/// string's characters and its 0.
+fn sized_by(state: &State, ty: Ty, init: &Option<Init>) -> Parsed<Ty> {
+    let Ty::Array(of, -1) = &ty else {
+        return Ok(ty);
+    };
+    let count = match init {
+        Some(Init::List(items)) => {
+            let mut values = std::collections::BTreeMap::new();
+            fill_typed(state, &ty, items, &mut 0, 0, &mut values)?
+        }
+        Some(Init::Value(node)) if node.kind() == "wide" => node["codes"].as_array().map_or(1, Vec::len) as i64,
+        Some(Init::Value(node)) if node.kind() == "string" => {
+            stb::encode_string(field(node, "text")).or_else(|error| state.fail(error))?.len() as i64 + 1
+        }
+        _ => return Ok(ty),
+    };
+    Ok(Ty::Array(of.clone(), count))
+}
+
+/// Puts an initializer list's values into a value of a type, from slot base, reading items from at
+/// with C's brace elision; gives how many elements of an array it filled (-1 size: all it can).
+fn fill_typed(
+    state: &State,
+    ty: &Ty,
+    items: &[Init],
+    at: &mut usize,
+    base: i64,
+    out: &mut std::collections::BTreeMap<i64, Node>,
+) -> Parsed<i64> {
+    let structs = &state.structs;
+    let one = |item: &Init| -> Parsed<Node> {
+        match item {
+            Init::Value(node) => Ok(node.clone()),
+            Init::List(inner) => match inner.as_slice() {
+                [Init::Value(node)] => Ok(node.clone()),
+                _ => state.fail("a scalar takes one value"),
+            },
+        }
+    };
+    // what one element (or member) of ty is, and where it starts
+    let parts: Vec<(Ty, i64)> = match ty {
+        Ty::Array(of, size) => {
+            let step = of.slots(structs);
+            // an open size takes at most an element per value
+            let count = if *size < 0 { items.len() as i64 } else { *size };
+            (0..count).map(|index| ((**of).clone(), base + index * step)).collect()
+        }
+        Ty::Struct(tag) => {
+            let Some(found) = structs.get(tag) else {
+                return state.fail(format!("{} is not defined", ty.shown()));
+            };
+            let mut offset = base;
+            let mut parts = Vec::new();
+            for (_, member) in &found.members {
+                parts.push((member.clone(), offset));
+                if found.union {
+                    // a union's initializer sets its first member
+                    break;
+                }
+                offset += member.slots(structs);
+            }
+            parts
+        }
+        _ => {
+            let Some(item) = items.get(*at) else {
+                return Ok(0);
+            };
+            out.insert(base, one(item)?);
+            *at += 1;
+            return Ok(1);
+        }
+    };
+    let characters =
+        |of: &Ty| matches!(of, Ty::Scalar(kind) if kind.contains("char") || kind.contains("short") || kind == "int");
+    let mut filled = 0;
+    for (part, offset) in parts {
+        if *at >= items.len() {
+            break;
+        }
+        match (&part, &items[*at]) {
+            // a string or wide string for an array of characters
+            (Ty::Array(of, length), Init::Value(node))
+                if matches!(node.kind(), "string" | "wide") && characters(of) =>
+            {
+                let codes: Vec<Node> = if node.kind() == "wide" {
+                    let codes = node["codes"].as_array().map_or(&[][..], Vec::as_slice);
+                    codes.iter().map(|code| node!({"kind": "int", "value": code.clone()})).collect()
+                } else {
+                    string_elements(state, field(node, "text"), &of.slot_kind())?
+                };
+                let fits = if *length >= 0 && codes.len() as i64 == length + 1 { codes.len() - 1 } else { codes.len() };
+                if *length >= 0 && fits as i64 > *length {
+                    return state.fail("the string is longer than the array");
+                }
+                for (index, code) in codes.into_iter().take(fits).enumerate() {
+                    out.insert(offset + index as i64, code);
+                }
+                *at += 1;
+            }
+            (part, Init::List(inner)) if part.is_aggregate() => {
+                let mut inner_at = 0;
+                fill_typed(state, part, inner, &mut inner_at, offset, out)?;
+                if inner_at < inner.len() {
+                    return state.fail("too many values in a brace");
+                }
+                *at += 1;
+            }
+            (part, _) if part.is_aggregate() => {
+                fill_typed(state, part, items, at, offset, out)?;
+            }
+            (_, item) => {
+                out.insert(offset, one(item)?);
+                *at += 1;
+            }
+        }
+        filled += 1;
+    }
+    Ok(filled)
+}
+
+/// The values an initializer gives an object of a type, by slot: every scalar slot, those it
+/// leaves out 0, as C sets them (only the given ones for a global, whose slots start at 0).
+fn initial_values(state: &State, name: &str, ty: &Ty, init: &Init, every: bool) -> Parsed<Vec<(i64, Ty, Node)>> {
+    let mut values = std::collections::BTreeMap::new();
+    match init {
+        Init::List(items) => {
+            let mut at = 0;
+            fill_typed(state, ty, items, &mut at, 0, &mut values)?;
+            if at < items.len() {
+                return state.fail(format!("too many values for {name}"));
+            }
+        }
+        Init::Value(node) if matches!(node.kind(), "string" | "wide") && matches!(ty, Ty::Array(..)) => {
+            // char s[] = "...": the array is the string's one place
+            let whole = Ty::Array(Box::new(ty.clone()), 1);
+            fill_typed(state, &whole, std::slice::from_ref(init), &mut 0, 0, &mut values)?;
+        }
+        Init::Value(_) => return state.fail(format!("{name} takes a list of values")),
+    }
+    let mut slots = Vec::new();
+    ctype::scalar_slots(ty, &state.structs, 0, &mut slots);
+    let mut found = Vec::new();
+    for (slot, scalar) in slots {
+        match values.remove(&slot) {
+            Some(value) => found.push((slot, scalar, value)),
+            None if every => {
+                let zero = zero(&scalar.slot_kind());
+                found.push((slot, scalar, zero));
+            }
+            None => {}
+        }
+    }
+    Ok(found)
+}
+
+/// A slot of an aggregate's storage at a constant offset (composite.rs reads it), with its type.
+fn slot_field(storage: &str, slot: i64, ty: &Ty) -> Node {
+    node!({"kind": "field", "name": storage, "offset": slot, "type": ty.slot_kind(), "ctype": ty.to_node()})
+}
+
+/// The fields a local's or global's declaration has for a type of C's: its storage (slots, and
+/// whether the slot holds a pointer the VM indexes through) for compile.rs, and the type itself.
+fn typed_entry(state: &State, name: &str, ty: &Ty) -> Node {
+    let ctype = ty.to_node();
+    match ty {
+        Ty::Array(..) | Ty::Struct(_) => {
+            node!({"name": name, "type": "int", "size": ty.slots(&state.structs), "ctype": ctype})
+        }
+        Ty::Pointer(to) if ty.is_pointer() => {
+            let kind = if matches!(**to, Ty::Scalar(_)) { to.slot_kind() } else { "int".into() };
+            node!({"name": name, "type": kind, "size": null, "pointer": true, "ctype": ctype})
+        }
+        _ => node!({"name": name, "type": ty.slot_kind(), "size": null, "ctype": ctype}),
+    }
+}
+
+/// A local of C's other types (a struct, a pointer to a pointer, a function pointer...) or a
+/// static array or pointer: its slots, and assignments for its initializer. A static one is a
+/// hidden global, as for static scalars.
+fn typed_local(state: &mut State, spec: &Spec, declared: Declared, kind: &str) -> Parsed<Vec<Node>> {
+    let ty = match &declared.ty {
+        Some(ty) => ty.clone(),
+        None => plain_type(state, &declared, kind)?,
+    };
+    let ty = sized_by(state, ty, &declared.init)?;
+    complete(state, &declared.name, &ty)?;
+    let is_static = spec.storage.as_deref() == Some("static");
+    let entry = typed_entry(state, "", &ty);
+    let storage =
+        storage_for(state, &declared.name, field(&entry, "type"), &entry["size"], &entry["ctype"], is_static)?;
+    let entry = entry.with("name", storage.as_str());
+    if is_static {
+        let mut global = entry.clone();
+        if let Some(map) = global.as_object_mut() {
+            map.remove("pointer");
+        }
+        let global = global_values(state, global, &declared, &ty)?;
+        state.statics.push(global.clone());
+        state.scope.as_mut().unwrap().statics.insert(storage, global);
+        return Ok(Vec::new());
+    }
+    let scope = state.scope.as_mut().unwrap();
+    if !scope.locals.contains(&entry) {
+        scope.locals.push(entry);
+    }
+    let line = declared.line;
+    let assign = |target: Node, value: Node| node!({"kind": "expr", "expr": {"kind": "assign", "target": target, "value": value}, "line": line});
+    let Some(init) = &declared.init else {
+        return Ok(Vec::new());
+    };
+    let variable = node!({"kind": "var", "name": &storage});
+    match (&ty, init) {
+        (Ty::Array(..), _) | (Ty::Struct(_), Init::List(_)) => {
+            let values = initial_values(state, &declared.name, &ty, init, true)?;
+            Ok(values.into_iter().map(|(slot, ty, value)| assign(slot_field(&storage, slot, &ty), value)).collect())
+        }
+        // a scalar or pointer, or a struct from another (copied, composite.rs)
+        (_, Init::Value(value)) => Ok(vec![assign(variable, value.clone())]),
+        (_, Init::List(items)) => match items.as_slice() {
+            [Init::Value(value)] => Ok(vec![assign(variable, value.clone())]),
+            _ => state.fail(format!("too many values for {}", declared.name)),
+        },
+    }
+}
+
+/// A global of C's other types: an array (its slots one after another), a pointer, a struct, a
+/// function pointer. Its initializer is set once per load, as a scalar's.
+fn typed_global(state: &mut State, program: &mut Node, spec: &Spec, declared: Declared) -> Parsed<()> {
+    let ty = match &declared.ty {
+        Some(ty) => ty.clone(),
+        None => plain_type(state, &declared, &spec.kind)?,
+    };
+    if let Ty::Function(..) = ty {
+        // a function's prototype written as a declarator
+        return Ok(());
+    }
+    let ty = sized_by(state, ty, &declared.init)?;
+    complete(state, &declared.name, &ty)?;
+    let mut entry = typed_entry(state, &declared.name, &ty);
+    if let Some(map) = entry.as_object_mut() {
+        map.remove("pointer");
+    }
+    let mut entry = global_values(state, entry, &declared, &ty)?;
+    if spec.constant {
+        entry["const"] = Node::Bool(true);
+    }
+    let globals = program["globals"].as_array_mut().unwrap();
+    match globals.iter_mut().find(|global| global["name"] == *declared.name) {
+        Some(existing) if existing["ctype"] == entry["ctype"] => {
+            let given = |entry: &Node| entry.get("init").is_some() || entry.get("inits").is_some();
+            if given(&entry) {
+                if given(existing) {
+                    return state.fail(format!("{} is given a value twice", declared.name));
+                }
+                *existing = entry.clone();
+            }
+        }
+        Some(_) => return state.fail(format!("{} is declared again with another type", declared.name)),
+        None => globals.push(entry.clone()),
+    }
+    state.globals.insert(declared.name.clone(), entry);
+    Ok(())
+}
+
+/// A global's (or static local's hidden global's) initializer, as its "init" (a scalar's value) or
+/// "inits" (each slot an aggregate's list gives), set once per load (lower.rs).
+fn global_values(state: &State, mut entry: Node, declared: &Declared, ty: &Ty) -> Parsed<Node> {
+    let Some(init) = &declared.init else {
+        return Ok(entry);
+    };
+    if ty.is_aggregate() {
+        let values = initial_values(state, &declared.name, ty, init, false)?;
+        let inits: Vec<Node> = values
+            .into_iter()
+            .map(|(slot, ty, value)| node!({"offset": slot, "type": ty.slot_kind(), "ctype": ty.to_node(), "value": value}))
+            .collect();
+        entry["inits"] = Node::List(inits);
+    } else {
+        entry["init"] = match init {
+            Init::Value(value) => value.clone(),
+            Init::List(items) => match items.as_slice() {
+                [Init::Value(value)] => value.clone(),
+                _ => return state.fail(format!("too many values for {}", declared.name)),
+            },
+        };
+    }
+    if state.strict {
+        entry["std"] = Node::from("c89");
+    }
+    Ok(entry)
+}
+
 /// Whether a typedef name is one a function declared, which a declaration reads as its base type
 /// (a file's typedefs reach sdk.resolve through the program's kinds).
 fn local_kind(state: &State, name: &str) -> bool {
     state.scope.as_ref().is_some_and(|scope| scope.typedefs.iter().any(|known| known == name))
 }
 
+/// typedef of a type beyond the scalars (a struct, a pointer, an array, a function): the name
+/// stands for the type from here on. false, reading nothing, for a scalar's typedef.
+fn typed_typedef(state: &mut State, spec: &Spec) -> Parsed<bool> {
+    let plain = spec.ty.is_none() && state.peek(0).kind == Kind::Name && state.at(";", 1);
+    if plain {
+        return Ok(false);
+    }
+    let base = base_ty(state, spec)?;
+    let (name, ty) = declarator(state, base)?;
+    if name.is_empty() {
+        return state.fail("a typedef needs a name");
+    }
+    state.expect(";")?;
+    state.types.insert(name, ty);
+    Ok(true)
+}
+
 /// typedef inside a function: the name stands for the type in the declarations after it.
 fn local_typedef(state: &mut State, spec: &Spec) -> Parsed<Vec<Node>> {
+    if typed_typedef(state, spec)? {
+        return Ok(Vec::new());
+    }
     let base = base_type(state, &spec.kind)?;
     let name = state.name()?;
     state.expect(";")?;
@@ -2486,7 +3303,14 @@ fn base_type(state: &State, kind: &str) -> Parsed<String> {
 /// The name a local declared in the innermost block is held under: its own, or, where that would
 /// share a slot with a variable it must not (one it hides, one of another type, a static), its name
 /// numbered. A static local's is the hidden global's. Refuses a name declared twice in a block.
-fn storage_for(state: &mut State, name: &str, kind: &str, size: &Node, is_static: bool) -> Parsed<String> {
+fn storage_for(
+    state: &mut State,
+    name: &str,
+    kind: &str,
+    size: &Node,
+    ctype: &Node,
+    is_static: bool,
+) -> Parsed<String> {
     let scope = state.scope.as_ref().unwrap();
     let innermost = scope.blocks.len() - 1;
     if scope.blocks[innermost].contains_key(name) {
@@ -2504,7 +3328,9 @@ fn storage_for(state: &mut State, name: &str, kind: &str, size: &Node, is_static
     let reusable = !is_static
         && !visible
         && !scope.params.iter().any(|param| param["name"] == *name)
-        && scope.locals.iter().any(|local| local["name"] == *name && local["type"] == *kind && local["size"] == *size);
+        && scope.locals.iter().any(|local| {
+            local["name"] == *name && local["type"] == *kind && local["size"] == *size && local["ctype"] == *ctype
+        });
     let storage = if is_static {
         let mut hidden = format!("__static_{}_{}", scope.function, name);
         let mut count = 2;
@@ -2569,9 +3395,10 @@ fn no_parameters(state: &mut State) -> bool {
 
 /// A function's parameters, and whether they are a K&R identifier list (int f(a, b) int a; ...),
 /// whose types the declarations after the ) give. A prototype's parameters may go unnamed.
-fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool)> {
+fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool, bool)> {
     state.expect("(")?;
     let mut params = Vec::new();
+    let mut variadic = false;
     let identifiers = state.token(0).kind == Kind::Name
         && !starts_type(state, 0)
         && state.token(1).kind == Kind::Op
@@ -2585,12 +3412,22 @@ fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool)> {
             state.take();
         }
         state.expect(")")?;
-        return Ok((params, true));
+        return Ok((params, true, false));
     }
     if !no_parameters(state) {
         loop {
-            // void *p: a pointer parameter the function never reads, so of no element type
-            let spec = if state.at("void", 0) && state.at("*", 1) {
+            if state.at("...", 0) && !params.is_empty() {
+                // the arguments after the named ones, which <stdarg.h> reads
+                state.take();
+                variadic = true;
+                break;
+            }
+            let typed = state.at("void", 0) && state.at("*", 1) && state.at("*", 2);
+            let void_pointer = !typed && state.at("void", 0) && state.at("*", 1);
+            let spec = if typed {
+                specifiers(state, true)?
+            } else if void_pointer {
+                // void *p: a pointer parameter the function never reads, so of no element type
                 state.take();
                 Spec { kind: "void".to_string(), ..Spec::default() }
             } else {
@@ -2602,6 +3439,14 @@ fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool)> {
             let pointer_ahead = state.at("*", 0);
             if spec.kind == "any" || (spec.kind == "void" && !pointer_ahead) {
                 return state.fail(format!("unknown type {}", spec.kind));
+            }
+            if typed || (!void_pointer && complex_ahead(state, &spec)) {
+                params.push(typed_parameter_entry(state, &spec)?);
+                if !state.at(",", 0) {
+                    break;
+                }
+                state.take();
+                continue;
             }
             let (pointer, pointer_const) = if spec.kind == "void" && pointer_ahead {
                 state.take();
@@ -2649,7 +3494,21 @@ fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool)> {
         }
     }
     state.expect(")")?;
-    Ok((params, false))
+    Ok((params, false, variadic))
+}
+
+/// A parameter of C's other types: a pointer to a pointer or a struct, a struct (passed by value,
+/// composite.rs), a function pointer; an array or function declared as one is its pointer.
+fn typed_parameter_entry(state: &mut State, spec: &Spec) -> Parsed<Node> {
+    let base = base_ty(state, spec)?;
+    let (name, ty) = declarator(state, base)?;
+    let ty = adjusted(ty);
+    if let Ty::Struct(_) = &ty {
+        complete(state, &name, &ty)?;
+    }
+    let entry = typed_entry(state, &name, &ty);
+    let pointer = entry.get("pointer").is_some();
+    Ok(node!({"name": name, "type": entry["type"].clone(), "array": pointer, "ctype": entry["ctype"].clone()}))
 }
 
 /// The declarations of a K&R definition's parameters, between its ) and its {.
@@ -2659,7 +3518,10 @@ fn identifier_types(state: &mut State, params: &mut [Node]) -> Parsed<()> {
         if spec.storage.as_ref().is_some_and(|storage| storage != "register") {
             return state.fail("a parameter's only storage class is register");
         }
-        for declared in declarators(state)? {
+        for declared in declarators(state, &spec)? {
+            if declared.ty.is_some() {
+                return state.fail(format!("{}: an old-style parameter list takes plain types", declared.name));
+            }
             let Some(param) = params.iter_mut().find(|param| param["name"] == *declared.name) else {
                 return state.fail(format!("{} is not a parameter", declared.name));
             };
@@ -2693,12 +3555,13 @@ fn function_definition(
     returns: &str,
     name: &str,
     doc: Option<&str>,
+    returns_ty: Option<Ty>,
 ) -> Parsed<Option<Node>> {
     if name.starts_with('_') {
         state.pos -= 1;
         return state.fail("function names cannot start with _, which marks natives");
     }
-    let (mut params, identifiers) = parameters(state)?;
+    let (mut params, identifiers, variadic) = parameters(state)?;
     if state.at(";", 0) {
         // a prototype: calls are checked against the definition
         state.take();
@@ -2739,6 +3602,12 @@ fn function_definition(
     if pending.every_frame {
         function["every_frame"] = Node::Bool(true);
     }
+    if variadic {
+        function["variadic"] = Node::Bool(true);
+    }
+    if let Some(returns) = returns_ty {
+        function["ctype_returns"] = returns.to_node();
+    }
     if state.strict {
         function["std"] = Node::from("c89");
     }
@@ -2765,27 +3634,35 @@ fn top_declaration(state: &mut State, program: &mut Node, pending: &Pending, doc
         state.take();
         return Ok(false);
     }
-    if state.peek(0).kind == Kind::Name && state.at("(", 1) {
+    // a function returning a pointer: its *s, then its name and (
+    let stars = (0..).take_while(|offset| state.at("*", *offset)).count();
+    if state.peek(stars).kind == Kind::Name && state.at("(", stars + 1) {
+        let mut returns_ty = spec.ty.clone();
+        if stars > 0 {
+            let mut ty = base_ty(state, &spec)?;
+            for _ in 0..stars {
+                state.take();
+                ty = ctype::pointer(ty);
+            }
+            returns_ty = Some(ty);
+        }
+        let returns = if returns_ty.is_some() { "int".to_string() } else { spec.kind.clone() };
         let name = state.name()?;
-        let function = state.framed(|state| function_definition(state, pending, &spec.kind, &name, doc))?;
+        let function =
+            state.framed(|state| function_definition(state, pending, &returns, &name, doc, returns_ty.clone()))?;
         let Some(function) = function else {
             return Ok(false);
         };
         program["functions"].as_array_mut().unwrap().push(function);
         return Ok(true);
     }
-    if state.at("*", 0) && state.at("(", 2) {
-        return state.fail("functions that return pointers are not supported yet");
-    }
-    if spec.kind == "void" {
+    if spec.kind == "void" && !complex_ahead(state, &spec) {
         return state.fail("variables cannot be void");
     }
-    for declared in declarators(state)? {
-        if declared.size() != &Size::None {
-            return state.fail("global arrays are not supported: the script VM cannot index a global");
-        }
-        if declared.pointer {
-            return state.fail("global pointers are not supported: the script VM cannot index through a global");
+    for declared in declarators(state, &spec)? {
+        if declared.ty.is_some() || declared.size() != &Size::None || declared.pointer {
+            typed_global(state, program, &spec, declared)?;
+            continue;
         }
         let mut entry = node!({"name": &declared.name, "type": &spec.kind});
         match declared.init {
@@ -3329,6 +4206,41 @@ pub fn parse_source(text: &str, file: &str, headers: &IndexMap<String, String>) 
 }
 
 fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, headers: Headers) -> Parsed<Node> {
+    Ok(parse_state(text, defines, file, headers)?.0)
+}
+
+thread_local! {
+    /// The typedefs a header (and those it includes) declares, by its path and text.
+    static HEADER_KINDS: RefCell<HashMap<u64, HashMap<String, String>>> = RefCell::new(HashMap::new());
+}
+
+/// The typedefs of a header and of those it includes, for State::header_kinds.
+fn header_kinds(path: &str, headers: &IndexMap<String, String>) -> Parsed<HashMap<String, String>> {
+    let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {
+        return Ok(HashMap::new());
+    };
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        (path, text).hash(&mut hasher);
+        hasher.finish()
+    };
+    if let Some(found) = HEADER_KINDS.with(|cache| cache.borrow().get(&key).cloned()) {
+        return Ok(found);
+    }
+    let (_, found) = parse_state(text, &HashMap::new(), path, Some(headers))
+        .map_err(|fault| Fault::Value(format!("in <{path}>: {}", Error::from(fault))))?;
+    HEADER_KINDS.with(|cache| cache.borrow_mut().insert(key, found.clone()));
+    Ok(found)
+}
+
+/// A file's program, and the typedefs it knows at its end (its own and its headers').
+fn parse_state(
+    text: &str,
+    defines: &HashMap<String, String>,
+    file: &str,
+    headers: Headers,
+) -> Parsed<(Node, HashMap<String, String>)> {
     let chars: Vec<char> = text.chars().collect();
     let mut macros = Macros::default();
     for (name, value) in defines {
@@ -3337,7 +4249,7 @@ fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, head
     let tokens = tokenize_with(&chars, &mut macros, file, CALLER_FRAMES + 2, headers, 0)?;
     let mut state = State::new(tokens, CALLER_FRAMES + 1);
     if state.tokens[0].kind == Kind::Assembly {
-        return Ok(node!({"kind": "program", "asm": state.tokens[0].text()}));
+        return Ok((node!({"kind": "program", "asm": state.tokens[0].text()}), HashMap::new()));
     }
     let header_padding = "00".repeat(stb::HEADER_SIZE - stb::HEADER_FIELDS_SIZE);
     let mut program = node!({
@@ -3369,11 +4281,17 @@ fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, head
                 let function = asm_function(&mut state, &token)?;
                 program["functions"].as_array_mut().unwrap().push(function);
             }
-            Kind::Include => program["functions"].as_array_mut().unwrap().push(node!({
-                "kind": "include",
-                "path": &token.path,
-                "system": token.system,
-            })),
+            Kind::Include => {
+                if let Some(headers) = headers.filter(|_| token.system) {
+                    let found = header_kinds(&token.path, headers)?;
+                    state.header_kinds.extend(found);
+                }
+                program["functions"].as_array_mut().unwrap().push(node!({
+                    "kind": "include",
+                    "path": &token.path,
+                    "system": token.system,
+                }))
+            }
             Kind::Assembly => return state.fail("#pragma assembly must start the file"),
             Kind::Define => definition(&mut state, &token, &mut program)?,
             _ if word == "enum" && (state.at("{", 0) || state.at("{", 1)) && enum_alone(&state) => {
@@ -3402,11 +4320,11 @@ fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, head
                     type_name(&mut state, &NATIVE_TYPES)?
                 } else {
                     let spec = specifiers(&mut state, false)?;
+                    if typed_typedef(&mut state, &spec)? {
+                        continue;
+                    }
                     base_type(&state, &spec.kind)?
                 };
-                if state.at("*", 0) {
-                    return state.fail("pointer typedefs are not supported yet");
-                }
                 let name = state.name()?;
                 state.expect(";")?;
                 program["declarations"]["kinds"][name.as_str()] = Node::from(&base);
@@ -3440,9 +4358,16 @@ fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, head
     // static locals' hidden globals
     program["globals"].as_array_mut().unwrap().extend(std::mem::take(&mut state.statics));
     if program["global_num"].is_null() {
-        program["global_num"] = Node::from(program["globals"].as_array().unwrap().len());
+        let slots: i64 =
+            program["globals"].as_array().unwrap().iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
+        program["global_num"] = Node::from(slots);
     }
-    Ok(with_own_padding(program))
+    if !state.structs.is_empty() {
+        program["structs"] = ctype::structs_node(&state.structs);
+    }
+    let mut kinds = std::mem::take(&mut state.header_kinds);
+    kinds.extend(state.kinds.clone());
+    Ok((with_own_padding(program), kinds))
 }
 
 /// Functions take the padding #pragma padding_of gave them by name; padding_of keeps the rest.
