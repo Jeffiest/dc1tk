@@ -390,4 +390,20 @@ mod tests {
         let other = im3::write_png(2, 1, PngMode::Rgb, &[1, 2, 3, 4, 5, 7], &[], &[]).unwrap();
         assert!(!same_pixels(&rgb, &other).unwrap());
     }
+
+    #[test]
+    fn every_picture_of_a_name_is_searched() {
+        let file = |colour: u8| {
+            let mut image = Image::new("shared", Format::Ct32, 8, 8);
+            image.pixels = Some([colour, 0, 0, 0x80].repeat(64));
+            im3::write(&[image], None).unwrap()
+        };
+        let search = crate::to_gltf::TextureSearch::new(&[("a.img".into(), file(10)), ("b.img".into(), file(200))]).unwrap();
+        let pngs = search.pngs_named("shared").unwrap();
+        assert_eq!(pngs.len(), 2, "both maps' pictures of the name");
+        assert!(!same_pixels(&pngs[0], &pngs[1]).unwrap());
+        // the first is the one a lookup by name finds
+        assert_eq!(search.png("shared").unwrap().unwrap(), pngs[0]);
+        assert!(search.pngs_named("missing").unwrap().is_empty());
+    }
 }

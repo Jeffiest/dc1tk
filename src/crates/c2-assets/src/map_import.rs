@@ -463,11 +463,15 @@ pub fn import_map(
         let png = read_cached(&uri).map_err(|error| Error::invalid(format!("picture {name}: {error}")))?;
         match textures.find(&name) {
             Some(_) => {
-                // a render target has no pixels to change
-                if let Some(old) = textures.png(&name)? {
-                    if !crate::textures::same_pixels(&old, &png)? {
-                        out.textures.push(TextureEdit { name, png, new: false });
-                    }
+                // changed when it is none of the disc's pictures of the name (several maps have
+                // their own under one name; a render target has no pixels to change)
+                let pictures = textures.pngs_named(&name)?;
+                let mut unchanged = pictures.is_empty();
+                for old in &pictures {
+                    unchanged = unchanged || crate::textures::same_pixels(old, &png)?;
+                }
+                if !unchanged {
+                    out.textures.push(TextureEdit { name, png, new: false });
                 }
             }
             // the exporter's stand-in for a picture the disc lacks is not a picture to add

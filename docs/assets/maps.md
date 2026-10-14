@@ -498,8 +498,14 @@ and gives what to write; `c2 build` does so for each `"map:NAME":
   drawn. A pack holds at most 0x1FF models.
 - **Pictures:** each picture a material shows (its `extras.texture`, else the
   image's name, else its file's stem) is compared by pixels with the disc's.
-  A changed one goes back into the `.img` that holds it (the map's own
-  `.ipk` first, then other maps', which then show it changed too); one the
+  It counts as changed only when it matches none of the disc's pictures of
+  its name: several maps have different pictures under one name, and which
+  the game shows depends on what it has loaded (m05's `.map` names only
+  `e05.img`, yet it shows `light01` of `map/cmn` and Palm Brinks'
+  `e01g01_06`). Export and build search the texture packs in one order,
+  whatever the disc's form: the map's own, then `map/cmn`, then the rest by
+  path. A changed one goes back into the first `.img` that holds it (other
+  maps then show it changed too); one the
   disc lacks goes at the end of the map's own first `.img`, in the format of
   its first picture, its sides powers of two up to 1024. The exporter's
   placeholder for a missing picture is not a picture to add.

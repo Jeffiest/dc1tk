@@ -98,20 +98,28 @@ fn images_of(disc: &Disc, ipk: &Option<String>) -> Result<Vec<(String, Vec<u8>)>
     }
 }
 
-/// Texture files to look pictures up in: the map's own first, then every other map's (a few
-/// maps use pictures of shared or paired maps).
-fn texture_search(disc: &Disc, own: &mapedit::MapFiles) -> Result<TextureSearch> {
-    let mut files = images_of(disc, &own.ipk)?;
-    let others: Vec<&Entry> = disc
+/// The texture packs to look pictures up in, in one order whatever form the disc is in (an
+/// image or an extracted folder): the map's own first, then the shared ones (map/cmn), then every
+/// other map's by path. A few maps use pictures of shared or paired maps, and several maps have
+/// pictures of the same name.
+fn texture_packs(disc: &Disc, own: &mapedit::MapFiles) -> Vec<String> {
+    let mut others: Vec<String> = disc
         .entries()
         .iter()
-        .filter(|entry| entry.path.to_lowercase().starts_with("map/") && entry.path.to_lowercase().ends_with(".ipk"))
-        .filter(|entry| Some(&entry.path) != own.ipk.as_ref())
+        .map(|entry| entry.path.clone())
+        .filter(|path| path.to_lowercase().starts_with("map/") && path.to_lowercase().ends_with(".ipk"))
+        .filter(|path| Some(path) != own.ipk.as_ref())
         .collect();
-    let more: Vec<Vec<(String, Vec<u8>)>> =
-        others.par_iter().map(|entry| images_of(disc, &Some(entry.path.clone()))).collect::<Result<_>>()?;
-    files.extend(more.into_iter().flatten());
-    Ok(TextureSearch::new(&files)?)
+    others.sort_by_key(|path| (!path.to_lowercase().starts_with("map/cmn/"), path.to_lowercase()));
+    own.ipk.iter().cloned().chain(others).collect()
+}
+
+/// Texture files to look pictures up in, from texture_packs.
+fn texture_search(disc: &Disc, own: &mapedit::MapFiles) -> Result<TextureSearch> {
+    let packs = texture_packs(disc, own);
+    let files: Vec<Vec<(String, Vec<u8>)>> =
+        packs.par_iter().map(|path| images_of(disc, &Some(path.clone()))).collect::<Result<_>>()?;
+    Ok(TextureSearch::new(&files.into_iter().flatten().collect::<Vec<_>>())?)
 }
 
 /// Exports one map; returns the report line.
@@ -338,14 +346,7 @@ fn with_pictures(
     current: &dyn Fn(&str) -> Result<Vec<u8>>,
 ) -> Result<Vec<Rewritten>> {
     // texture packs in search order: the map's own, then every other map's
-    let mut packs: Vec<String> = own.ipk.iter().cloned().collect();
-    packs.extend(
-        disc.entries()
-            .iter()
-            .map(|entry| entry.path.clone())
-            .filter(|path| path.to_lowercase().starts_with("map/") && path.to_lowercase().ends_with(".ipk"))
-            .filter(|path| Some(path) != own.ipk.as_ref()),
-    );
+    let packs = texture_packs(disc, own);
     // (pack, texture file) -> (file name, PNG) of its changed pictures
     let mut changed: BTreeMap<(String, String), Pngs> = BTreeMap::new();
     let mut added: Pngs = Vec::new();

@@ -597,6 +597,29 @@ impl TextureSearch {
         self.pngs.lock().unwrap().insert(i, png.clone());
         Ok(Some(png))
     }
+
+    /// The PNGs of every picture of this name with pixels, in search order: several maps' texture
+    /// files hold different pictures under one name, and which the game shows depends on what it
+    /// has loaded.
+    pub fn pngs_named(&self, name: &str) -> Result<Vec<Vec<u8>>> {
+        let mut out = Vec::new();
+        for (i, (_, image)) in self.pictures.iter().enumerate() {
+            if image.name != name || image.no_image {
+                continue;
+            }
+            let cached = self.pngs.lock().unwrap().get(&i).cloned();
+            let png = match cached {
+                Some(png) => png,
+                None => {
+                    let png = im3::to_png(image, true)?;
+                    self.pngs.lock().unwrap().insert(i, png.clone());
+                    png
+                }
+            };
+            out.push(png);
+        }
+        Ok(out)
+    }
 }
 
 const REPEAT: i64 = 10497;
