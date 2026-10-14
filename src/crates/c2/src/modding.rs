@@ -28,7 +28,8 @@ pub struct BuildArgs {
     /// Test image only: a new game goes straight to this map and program, as in s51:story_50.
     #[arg(long, value_name = "MAP:PROGRAM")]
     start_at: Option<String>,
-    /// Layer this mod over the tree; repeat for several, which may not change the same file.
+    /// Layer this mod over the tree; repeat for several, which may not change the same file. The
+    /// mods each requires are layered in too, and "requires" and "after" set the order.
     #[arg(long = "mod", value_name = "NAME")]
     mod_names: Vec<String>,
     /// The folder that holds the mods.
@@ -99,7 +100,7 @@ pub enum ModCommand {
     Apply {
         /// The source tree to apply them to.
         source: PathBuf,
-        /// Mods to apply, in order.
+        /// Mods to apply, in order (with the mods they require, ordered by requires and after).
         #[arg(required = true)]
         names: Vec<String>,
         /// Replace files edited in the tree too.
@@ -207,8 +208,19 @@ fn default_constants(tree_dir: &Path) -> Result<IndexMap<String, i64>> {
     Ok(index::constants(index::tree_headers(tree_dir, &defs, &files::root().join("sdk"))?.values()))
 }
 
+/// The chosen mods with the mods they require, in the order they are applied ("requires" and
+/// "after" in their mod.json); says which were added and the order when it is not the one given.
 fn mod_folders(mods_dir: &Path, names: &[String]) -> Result<Vec<PathBuf>> {
-    Ok(names.iter().map(|name| mods::folder(mods_dir, name)).collect::<c2_script::Result<_>>()?)
+    let found = mods::chosen(mods_dir, names)?;
+    for (added, by) in &found.added {
+        println!("mod {by} requires {added}, so it is built in too");
+    }
+    let order: Vec<String> =
+        found.dirs.iter().map(|dir| dir.file_name().unwrap_or_default().to_string_lossy().into_owned()).collect();
+    if order != names {
+        println!("mods applied in this order: {}", order.join(", "));
+    }
+    Ok(found.dirs)
 }
 
 fn shown(path: &Path) -> String {
@@ -434,7 +446,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let (files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files)?;
     for item in &map_changes {
-        println!("replaced: {} (map:{}; mod {}, {} bytes, was {})", item.path, item.map, item.module, item.new, item.old);
+        println!(
+            "replaced: {} (map:{}; mod {}, {} bytes, was {})",
+            item.path, item.map, item.module, item.new, item.old
+        );
     }
     let written = rebuild::write_disc(&args.iso, &args.output, &files)?;
     for item in &written.placed {
@@ -522,6 +537,15 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             let tables = common.tables()?;
             let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
             let mod_dirs = mod_folders(mods_dir, names)?;
+            for mod_dir in &mod_dirs {
+                let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
+                for (key, word) in [("requires", "requires"), ("after", "is built after")] {
+                    let named = mods::named(mod_dir, key)?;
+                    if !named.is_empty() {
+                        println!("{name}: {word} {}", named.join(", "));
+                    }
+                }
+            }
             let (raw, raw_clashes) = discfiles::collect(&mod_dirs)?;
             if !raw_clashes.is_empty() {
                 bail!(discfiles::clash_text(&raw_clashes));

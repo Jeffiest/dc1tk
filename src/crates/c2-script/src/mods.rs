@@ -20,8 +20,13 @@
 //! "replace", with the files anywhere in the mod (replace). Mods made before that keep game files
 //! under disc/, laid out as extract lays the disc out (discfiles); mod migrate turns them into
 //! replace lines. "title" and "version" in mod.json are shown by mod list.
+//!
+//! "requires" in mod.json names mods a mod is built with: choosing it chooses them too, and it is
+//! applied after them and sees their numbers, so it can include their libraries and headers and
+//! chain onto their overrides. "after" names mods it is applied after when they are chosen too.
+//! chosen puts the mods in that order, keeping the order given where neither says.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -82,6 +87,113 @@ pub fn exists(mod_dir: &Path) -> bool {
         || sources(mod_dir).is_ok_and(|found| !found.is_empty())
 }
 
+/// What mod.json's key ("requires" or "after") names: mod names, in the order written.
+pub fn named(mod_dir: &Path, key: &str) -> Result<Vec<String>> {
+    let found = entries(mod_dir)?;
+    let wrong = || Error::invalid(format!("{}: \"{key}\" is a list of mod names", mod_dir.join(INDEX).display()));
+    match &found[key] {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(items) => items.iter().map(|item| item.as_str().map(str::to_string).ok_or_else(wrong)).collect(),
+        _ => Err(wrong()),
+    }
+}
+
+/// The chosen mods in the order they are applied, with the mods they require: dirs, and the mods
+/// added because a chosen mod requires them, as (added, required by).
+pub struct Chosen {
+    pub dirs: Vec<PathBuf>,
+    pub added: Vec<(String, String)>,
+}
+
+/// The mods named, with every mod they require (and those require) added, ordered so that each
+/// comes after the mods it requires and the chosen mods its "after" names. Where neither says,
+/// the order given is kept, added mods after the chosen ones. A requirement missing from the mods
+/// folder, or a cycle, is an error naming the mods.
+pub fn chosen(mods_dir: &Path, names: &[String]) -> Result<Chosen> {
+    let mut order: Vec<String> = Vec::new();
+    let mut added = Vec::new();
+    let mut needs: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
+    let mut pending: std::collections::VecDeque<(String, Option<String>)> =
+        names.iter().map(|name| (name.clone(), None)).collect();
+    while let Some((name, by)) = pending.pop_front() {
+        if needs.contains_key(&name) {
+            continue;
+        }
+        let dir = folder(mods_dir, &name)?;
+        if !exists(&dir) {
+            return Err(Error::invalid(match &by {
+                Some(by) => format!("mod {by} requires {name}, which is not in {}", mods_dir.display()),
+                None => format!("no mod at {}", dir.display()),
+            }));
+        }
+        let requires = named(&dir, "requires")?;
+        let after = named(&dir, "after")?;
+        pending.extend(requires.iter().map(|required| (required.clone(), Some(name.clone()))));
+        if let Some(by) = by {
+            added.push((name.clone(), by));
+        }
+        order.push(name.clone());
+        needs.insert(name, (requires, after));
+    }
+    // each mod's predecessors among those chosen: what it requires, and what its "after" names
+    let before: HashMap<&String, Vec<&String>> = order
+        .iter()
+        .map(|name| {
+            let (requires, after) = &needs[name];
+            (name, order.iter().filter(|other| requires.contains(other) || after.contains(other)).collect())
+        })
+        .collect();
+    let mut placed: Vec<String> = Vec::new();
+    while placed.len() < order.len() {
+        let ready =
+            order.iter().find(|name| !placed.contains(name) && before[name].iter().all(|other| placed.contains(other)));
+        match ready {
+            Some(name) => placed.push(name.clone()),
+            None => {
+                // every mod left waits on another left: follow them round to a cycle
+                let mut walk: Vec<&String> = vec![order.iter().find(|name| !placed.contains(name)).unwrap()];
+                loop {
+                    let last = walk[walk.len() - 1];
+                    let next = *before[last].iter().find(|other| !placed.contains(other)).unwrap();
+                    if let Some(start) = walk.iter().position(|name| *name == next) {
+                        let cycle: Vec<String> = walk[start..]
+                            .iter()
+                            .enumerate()
+                            .map(|(at, name)| format!("{name} after {}", walk[start..].get(at + 1).unwrap_or(&next)))
+                            .collect();
+                        return Err(Error::invalid(format!(
+                            "the mods' \"requires\" and \"after\" go round in a cycle ({}); change one of their mod.json",
+                            cycle.join(", ")
+                        )));
+                    }
+                    walk.push(next);
+                }
+            }
+        }
+    }
+    let dirs = placed.iter().map(|name| folder(mods_dir, name)).collect::<Result<_>>()?;
+    Ok(Chosen { dirs, added })
+}
+
+/// The mods a mod requires, directly or through the mods they require, among those given.
+fn required_among(mod_dirs: &[PathBuf]) -> Result<HashMap<String, Vec<String>>> {
+    let given: HashMap<String, Vec<String>> =
+        mod_dirs.iter().map(|dir| Ok((name_of(dir), named(dir, "requires")?))).collect::<Result<_>>()?;
+    let mut result = HashMap::new();
+    for name in given.keys() {
+        let mut found: Vec<String> = Vec::new();
+        let mut pending = given[name].clone();
+        while let Some(next) = pending.pop() {
+            if next != *name && !found.contains(&next) && given.contains_key(&next) {
+                pending.extend(given[&next].iter().cloned());
+                found.push(next);
+            }
+        }
+        result.insert(name.clone(), found);
+    }
+    Ok(result)
+}
+
 /// The mod's own source files, outside files/: its patches, the libraries and headers they
 /// include, and tests.c. [(path, text)] in path order.
 pub fn sources(mod_dir: &Path) -> Result<Vec<(PathBuf, String)>> {
@@ -110,14 +222,17 @@ pub fn sources(mod_dir: &Path) -> Result<Vec<(PathBuf, String)>> {
 
 /// The chosen mods' patches and numbers (patches::plan), with numbers kept in the mods folder's
 /// numbers.json when lock is true. No mod is given a number any mod in the folder writes by hand,
-/// chosen or not, so building them together later cannot clash.
+/// chosen or not, so building them together later cannot clash. A mod's patches see the numbers of
+/// the mods it requires too.
 pub fn patch_plan(mod_dirs: &[PathBuf], tree_dir: &Path, consts: &IndexMap<String, i64>, lock: bool) -> Result<Plan> {
     let mut mod_list = Vec::new();
+    let mut required = required_among(mod_dirs)?;
     for mod_dir in mod_dirs {
         mod_list.push(ModTexts {
             name: name_of(mod_dir),
             texts: sources(mod_dir)?,
             written: contents(mod_dir, tree_dir)?.into_values().collect(),
+            requires: required.remove(&name_of(mod_dir)).unwrap_or_default(),
         });
     }
     let parent = mod_dirs.first().map(|first| first.parent().map(Path::to_path_buf).unwrap_or_default());
@@ -613,8 +728,8 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         let texts = contents(mod_dir, tree_dir)?;
         let found = entries(mod_dir)?;
         let own = sources(mod_dir)?;
-        let (_, mine) =
-            patches::located(&[ModTexts { name: name.clone(), texts: own.clone(), written: Vec::new() }], tree_dir)?;
+        let module = ModTexts { name: name.clone(), texts: own.clone(), written: Vec::new(), requires: Vec::new() };
+        let (_, mine) = patches::located(&[module], tree_dir)?;
         let mut counted = format!("{} file{}", texts.len(), if texts.len() == 1 { "" } else { "s" });
         if !mine.is_empty() {
             counted = format!("{} patch{}, {}", mine.len(), if mine.len() == 1 { "" } else { "es" }, counted);
@@ -623,6 +738,23 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         let about: Vec<&str> = ["title", "version"].iter().filter_map(|key| found[*key].as_str()).collect();
         if !about.is_empty() {
             lines.push(format!("    {}", about.join(" ")));
+        }
+        for (key, word) in [("requires", "requires"), ("after", "built after")] {
+            let names = named(mod_dir, key)?;
+            if !names.is_empty() {
+                let missing: Vec<&String> =
+                    names.iter().filter(|other| !mods.iter().any(|dir| name_of(dir) == **other)).collect();
+                let note = if missing.is_empty() || key == "after" {
+                    String::new()
+                } else {
+                    format!(
+                        " (not in {}: {})",
+                        mods_dir.display(),
+                        missing.iter().map(|name| name.as_str()).collect::<Vec<_>>().join(", ")
+                    )
+                };
+                lines.push(format!("    {word} {}{note}", names.join(", ")));
+            }
         }
         lines.extend(mine.iter().map(|patch| format!("    patch {}", patches::summary(patch))));
         for (kind, names) in numbers::requests(own.iter().map(|(_, text)| text)) {
@@ -679,6 +811,11 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         let sorted: BTreeMap<&String, &Vec<String>> = clashes.iter().collect();
         lines.extend(sorted.iter().map(|(path, names)| format!("  {}: {}", path, names.join(", "))));
     }
+    let all: Vec<String> = mods.iter().map(|dir| name_of(dir)).collect();
+    if let Err(error) = chosen(mods_dir, &all) {
+        lines.push(String::new());
+        lines.push(error.to_string());
+    }
     Ok(lines.join("\n"))
 }
 
@@ -695,7 +832,8 @@ pub struct TestResult {
 /// Runs a mod's tests: the test_ functions of its tests.c (int, no parameters), compiled with the
 /// mod layered over the tree and run in the script interpreter (vm), where natives do nothing and
 /// controller input is whatever the test passes in. A test passes when it returns nonzero. tests.c
-/// can include the mod's own libraries and use its NEW_FLAG and kin names.
+/// can include the mod's own libraries and use its NEW_FLAG and kin names, and those of the mods it
+/// requires, which are layered in before it.
 pub fn run_tests(
     mod_dir: &Path,
     tree_dir: &Path,
@@ -710,11 +848,14 @@ pub fn run_tests(
             TESTS
         )));
     }
-    let (texts, _) = overlay(&[mod_dir.to_path_buf()], tree_dir, consts)?;
-    let given = patch_plan(&[mod_dir.to_path_buf()], tree_dir, consts, true)?
-        .numbers
-        .remove(&name_of(mod_dir))
-        .unwrap_or_default();
+    let name = name_of(mod_dir);
+    let mods_dir = mod_dir.parent().map(Path::to_path_buf).unwrap_or_default();
+    let dirs = chosen(&mods_dir, std::slice::from_ref(&name))?.dirs;
+    let (texts, _) = overlay(&dirs, tree_dir, consts)?;
+    // the mods it requires come first, and their numbers before its own
+    let numbers = patch_plan(&dirs, tree_dir, consts, true)?.numbers;
+    let given: IndexMap<String, i64> =
+        dirs.iter().flat_map(|dir| numbers.get(&name_of(dir)).cloned().unwrap_or_default()).collect();
     let mut program = crate::parse::parse(&c2_py::read_text(&path)?)?;
     if !crate::source::truthy(&program["main"]) {
         let first = program["functions"]
@@ -728,8 +869,13 @@ pub fn run_tests(
     let standing_in = tree_dir.join(TESTS);
     let mut headers = tools.headers.clone();
     headers.extend(crate::definitions::source_headers(&standing_in)?);
-    let includes =
-        crate::library::read_includes(&program, &standing_in, Some(&texts), tools.sdk_dir, &[mod_dir.to_path_buf()])?;
+    let includes = crate::library::read_includes(
+        &program,
+        &standing_in,
+        Some(&texts),
+        tools.sdk_dir,
+        &[mod_dir.to_path_buf(), mods_dir],
+    )?;
     let mut program = crate::library::expand(program, &includes, &headers)?;
     let constants = &mut program["declarations"]["constants"];
     if let Some(list) = constants.as_array_mut() {

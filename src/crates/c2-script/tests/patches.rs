@@ -345,3 +345,67 @@ fn build_compiles_patched_scripts_and_override_starts_a_patch() {
         .unwrap()
         .contains("patch t01.c: 1 script; overrides helper"));
 }
+
+fn names_of(dirs: &[PathBuf]) -> Vec<String> {
+    dirs.iter().map(|dir| dir.file_name().unwrap().to_string_lossy().into_owned()).collect()
+}
+
+#[test]
+fn required_mods_are_added_and_every_mod_comes_after_those_it_names() {
+    let folder = TempDir::new("patches-requires");
+    let (root, dirs) = setup(
+        folder.path(),
+        &[
+            ("a", &[("mod.json", "{\"requires\": [\"b\"]}")]),
+            ("b", &[("mod.json", "{\"after\": [\"c\", \"unknown\"]}")]),
+            ("c", &[("p.c", "NEW_FLAG(C);\n")]),
+        ],
+    );
+    let mods_dir = dirs[0].parent().unwrap();
+    let found = mods::chosen(mods_dir, &strings(&["a", "c"])).unwrap();
+    assert_eq!(names_of(&found.dirs), strings(&["c", "b", "a"]));
+    assert_eq!(found.added, [("b".to_string(), "a".to_string())]);
+    // after orders only mods that are chosen
+    assert_eq!(names_of(&mods::chosen(mods_dir, &strings(&["a"])).unwrap().dirs), strings(&["b", "a"]));
+    let listed = mods::listing(mods_dir, &root, &IndexMap::new()).unwrap();
+    assert!(listed.contains("a  (0 files)\n    requires b\n"), "{listed}");
+    assert!(listed.contains("    built after c, unknown\n"), "{listed}");
+    write(&dirs[2], "mod.json", "{\"requires\": [\"a\"]}");
+    fails(mods::chosen(mods_dir, &strings(&["c"])), "(c after a, a after b, b after c)");
+    assert!(mods::listing(mods_dir, &root, &IndexMap::new()).unwrap().contains("go round in a cycle"));
+    write(&dirs[2], "mod.json", "{\"requires\": [\"gone\"]}");
+    fails(mods::chosen(mods_dir, &strings(&["c"])), "mod c requires gone, which is not in");
+    write(&dirs[2], "mod.json", "{\"requires\": \"a\"}");
+    fails(mods::chosen(mods_dir, &strings(&["c"])), "\"requires\" is a list of mod names");
+}
+
+#[test]
+fn a_mod_uses_the_library_numbers_and_overrides_of_the_mods_it_requires() {
+    let base_patch = "#pragma target map s17\n#include \"names.h\"\n\n#pragma override\nvoid greet(void)\n{\n    print(\"base\");\n    original();\n}\n";
+    let patch = "#pragma target map s17\n#include \"base/names.h\"\n#include \"base/value.c\"\n\nNEW_FLAG(OWN);\n\n\
+                 #pragma override\nvoid greet(void)\n{\n    print(\"top\", SHARED, OWN, base_value());\n    original();\n}\n";
+    let folder = TempDir::new("patches-requires-use");
+    let (root, dirs) = setup(
+        folder.path(),
+        &[
+            ("top", &[("mod.json", "{\"requires\": [\"base\"]}"), ("p.c", patch)]),
+            (
+                "base",
+                &[
+                    ("names.h", "NEW_FLAG(SHARED);\n"),
+                    ("value.c", "int base_value(void)\n{\n    return SHARED + 1;\n}\n"),
+                    ("p.c", base_patch),
+                ],
+            ),
+        ],
+    );
+    let chosen = mods::chosen(dirs[0].parent().unwrap(), &strings(&["top"])).unwrap();
+    assert_eq!(names_of(&chosen.dirs), strings(&["base", "top"]));
+    let plan = plan_of(&chosen.dirs, &root).unwrap();
+    assert_eq!(plan.numbers, given(&[("base", &[("SHARED", 1024)]), ("top", &[("OWN", 1025)])]));
+    // the later mod's override runs first, and it sees the flag the mod it requires was given
+    assert_eq!(
+        run(&program_of(&root, &plan, "map/s/s17_valley/s17_1.c").unwrap(), "start"),
+        strings(&["top 1024 1025 1025", "base", "hello"])
+    );
+}

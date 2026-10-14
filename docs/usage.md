@@ -249,6 +249,16 @@ void start_castle_battle(void)
   (`LANGUAGE_ENGLISH` for `s51_1.c` to `LANGUAGE_SPANISH` for `s51_5.c`;
   -1 for scripts that are not language variants), for `#if` and in code, so
   one patch can carry every language's text.
+- **Mods that build on mods.** `"requires": ["base"]` in `mod.json` names
+  mods this one needs: choosing it chooses them too (`build` says so), and
+  it is applied after them. Its files see their numbers, so it can include
+  their headers and libraries by the mod's folder
+  (`#include "base/names.h"`, then use `BASE_SEEN`), and its overrides wrap
+  theirs (the later mod's runs first; `original()` runs the earlier one).
+  A required mod missing from the mods folder is an error. `"after":
+  ["other"]` only orders: when `other` is chosen too, this mod is applied
+  after it. Where neither says, mods are applied in the order given; a
+  cycle is an error naming the mods.
 
 The commands:
 
@@ -259,12 +269,14 @@ The commands:
   the script's headers, and writes the mod's `compile_flags.txt` for your
   editor.
 - `mod check SOURCE NAME...` compiles every script the mods change, as
-  `build` would but without a disc, and prints the numbers they were given.
+  `build` would but without a disc, and prints the mods it added for
+  `requires`, the order they apply in, and the numbers they were given.
 - `build --mod NAME` (repeat it for several) merges each patch into its
   targets after their libraries are included, and lists each mod's patches
   and numbers. The tree is not changed.
 - `mod list SOURCE` lists every mod: its patches, what they override and
-  add, its numbers, and its whole files (below).
+  add, what it requires and is built after, its numbers, and its whole
+  files (below).
 - `mod test SOURCE NAME` runs the mod's tests (below).
 
 **Whole files.** A mod can also replace or add whole files, under

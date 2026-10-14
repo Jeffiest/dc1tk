@@ -227,6 +227,26 @@ copy of a library first:
 c2 fork extracted/scripts lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
 ```
 
+## Mods that build on mods
+
+A mod can keep code, flags and program numbers for others to use: a
+`captions` mod with `captions.h` (`NEW_FLAG(CAPTIONS_ON);`) and a library
+`show.c`. Another mod names it in its `mod.json`, `{"requires":
+["captions"]}`, and includes its files by its folder:
+
+```c
+#pragma target map s17
+#include <event.h>
+#include "captions/captions.h"
+#include "captions/show.c"
+```
+
+Building that mod builds `captions` in too, first: the flag has the number
+`captions` was given, and where both override one function, this mod's
+override runs first and its `original()` runs the one from `captions`.
+`"after": ["other"]` orders two mods without either needing the other (see
+[usage](usage.md#mods)).
+
 ## A pattern: a caption every five seconds during a fight
 
 `sdk/modkit/` ships this pattern ready to use: `modkit_caption` and

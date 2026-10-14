@@ -210,12 +210,13 @@ impl Scripts {
     }
 }
 
-/// A mod's files for planning: its name, {path: text} of its own source files (in path order) and
-/// texts of its other files.
+/// A mod's files for planning: its name, {path: text} of its own source files (in path order),
+/// texts of its other files, and the mods it requires (mods::chosen), whose numbers it sees.
 pub struct ModTexts {
     pub name: String,
     pub texts: Vec<(PathBuf, String)>,
     pub written: Vec<String>,
+    pub requires: Vec<String>,
 }
 
 pub struct Patch {
@@ -287,8 +288,16 @@ pub fn plan(
         }
         given = found;
     }
+    let requires: HashMap<&str, &[String]> =
+        mod_list.iter().map(|module| (module.name.as_str(), module.requires.as_slice())).collect();
     for patch in &mut patches {
-        patch.numbers = given.get(&patch.module).cloned().unwrap_or_default();
+        // the numbers of the mods it requires, then its own, which win where a name is in both
+        let mut numbers = IndexMap::new();
+        for module in requires.get(patch.module.as_str()).copied().unwrap_or_default().iter().rev() {
+            numbers.extend(given.get(module).into_iter().flatten().map(|(name, value)| (name.clone(), *value)));
+        }
+        numbers.extend(given.get(&patch.module).into_iter().flatten().map(|(name, value)| (name.clone(), *value)));
+        patch.numbers = numbers;
     }
     Ok(Plan { scripts, patches, numbers: given })
 }
