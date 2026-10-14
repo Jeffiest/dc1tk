@@ -697,11 +697,30 @@ character pack; packs inside packs work the same way).
   at new frames with its KEY moved, and a new action as a new KEY after the
   last (a copy named `walk.001` takes the copied KEY's speed, others 1.00,
   the speed Blender plays it at). A KEY's `step` scales its speed in the
-  game: it plays at 30 × step frames a second. Vertex, material-fade and
-  visibility keys are not in the glTF; a rebuilt motion keeps those of the
-  motion it came from. Deleting an action changes nothing, and motion sets
-  other than 0 are not exported. See [the model formats](assets/models.md)
-  (sections 3 and 7.3).
+  game: it plays at 30 × step frames a second. Deleting an action takes its
+  KEY out of `info.cfg`, with its sound cues and the frames no other KEY
+  plays (scripts that play motions by number then count the later ones one
+  lower; deleting every action deletes none). Motion sets other than 0 are
+  actions too, named `3:bow` for KEY `bow` of `MOTION 3`; a new action named
+  `3:curtsy` joins set 3.
+
+  Vertex animation (cloth, flags, faces), material fades and colours and
+  visibility are shape keys of the mesh, animated with the actions: a
+  vertex-animated mesh has a shape key `c2_frame_<f>` per motion frame
+  (keyed 1 on its frame), and `c2_fade_<k>` (0 opaque, 1 invisible),
+  `c2_red_<k>`/`c2_green_<k>`/`c2_blue_<k>` and `c2_visible` (below 1
+  hidden) hold the values of material k's fade and colour and of the
+  frame's visibility as their shape key values; they move nothing. Edit
+  the shapes or key the values like any shape key.
+
+  A pack of motions alone, with no model of its own
+  (`chara/c01_fishing.chr`, the event packs of Max's and Monica's motions
+  such as `event/e200/e209/e209_mints.chr`), exports the same way on the
+  model of the character it is loaded onto (Max's `chara/c01_base.chr`,
+  Monica's `chara/c02_base.chr`, or the event's model beside it), to see
+  the motions on; `build` writes back its motions alone (the model, skin
+  and pictures there are the other pack's). See
+  [the model formats](assets/models.md) (sections 3, 6 and 7.3).
 
   **New characters.** A `file:` line with `like` naming a character's model
   makes a pack of a character of your own from a glTF: its own skeleton
