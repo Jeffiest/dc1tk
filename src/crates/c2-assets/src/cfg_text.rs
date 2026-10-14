@@ -323,6 +323,40 @@ pub enum To {
     /// The new texts of the arguments from `arg` up to the last this many (a list inside a
     /// statement: DATASET's materials), written without spaces; the arguments after keep theirs.
     Span(Vec<Vec<u8>>, usize),
+    /// New statements, written as they are (each with the line break before it), after the
+    /// statement: a record a mod adds. Several after one statement keep the order given; the
+    /// edit's `what` names the record, and two giving one record different texts are refused.
+    Insert(Vec<u8>),
+}
+
+/// SPI_STACK_SIZE: the arguments one statement may have; PushStack drops the rest.
+pub const ARGS_MOST: usize = 64;
+
+/// The text of a new statement: a line break, the tag and the arguments' texts.
+pub fn statement_text(tag: &str, args: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = b"\r\n".to_vec();
+    out.extend_from_slice(tag.as_bytes());
+    for (number, arg) in args.iter().enumerate() {
+        out.push(if number == 0 { b' ' } else { b',' });
+        out.extend_from_slice(arg);
+    }
+    out.push(b';');
+    out
+}
+
+/// The text of a run of statements of a script, `from` to `to` (inclusive), as new statements:
+/// the line break before the first stands for whatever was before it (a comment naming the
+/// record it was copied from), the rest kept as they are.
+pub fn block_text(statements: &[Statement]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (number, statement) in statements.iter().enumerate() {
+        let mut copy = statement.clone();
+        if number == 0 {
+            copy.before = b"\r\n".to_vec();
+        }
+        copy.write_into(&mut out);
+    }
+    out
 }
 
 /// The scripts with the edits made. Edits that agree are made once; two that give one argument
@@ -333,10 +367,36 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
     let mut scripts = scripts.to_vec();
     let mut done: std::collections::BTreeMap<(usize, usize, usize), &Edit> = std::collections::BTreeMap::new();
     let mut lists = Vec::new();
+    // new statements by (file, statement after), each record once
+    let mut inserted: std::collections::BTreeMap<(usize, usize), Vec<&Edit>> = std::collections::BTreeMap::new();
+    let mut records: std::collections::BTreeMap<(usize, &str), &Edit> = std::collections::BTreeMap::new();
     for edit in edits {
+        if let To::Insert(_) = edit.to {
+            if edit.statement >= scripts[edit.file].statements.len() {
+                bail!("{}: the file has no statement {} to add after", edit.what, edit.statement);
+            }
+            match records.get(&(edit.file, edit.what.as_str())) {
+                Some(other) if other.to != edit.to || other.statement != edit.statement => {
+                    bail!("{} is given two ways, by mod {} and mod {}", edit.what, other.module, edit.module)
+                }
+                Some(_) => {}
+                None => {
+                    if let To::Insert(text) = &edit.to {
+                        for statement in Script::parse(text)?.statements {
+                            if statement.args().len() > ARGS_MOST {
+                                bail!("{}: {} arguments; the engine reads at most {ARGS_MOST} a statement", edit.what, statement.args().len());
+                            }
+                        }
+                    }
+                    records.insert((edit.file, edit.what.as_str()), edit);
+                    inserted.entry((edit.file, edit.statement)).or_default().push(edit);
+                }
+            }
+            continue;
+        }
         let slot = match edit.to {
             To::Arg(_) => edit.arg,
-            To::Rest(_) | To::Span(..) => usize::MAX,
+            To::Rest(_) | To::Span(..) | To::Insert(_) => usize::MAX,
         };
         if let Some(other) = done.get(&(edit.file, edit.statement, slot)) {
             if other.to != edit.to || other.arg != edit.arg {
@@ -383,15 +443,43 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
                 let Some(end) = counted.checked_sub(*tail).filter(|&end| end >= edit.arg) else {
                     bail!("{}: the statement has only {counted} arguments", edit.what);
                 };
+                let before = statement.pieces.get(edit.arg).map(|piece| piece.before.clone());
                 let kept = statement.pieces.split_off(end);
                 statement.pieces.truncate(edit.arg);
-                statement.pieces.extend(pieces(texts));
+                let mut new = pieces(texts);
+                if let (Some(first), Some(before)) = (new.first_mut(), before) {
+                    first.before = before;
+                }
+                statement.pieces.extend(new);
                 statement.pieces.extend(kept);
             }
-            To::Arg(_) => unreachable!(),
+            To::Arg(_) | To::Insert(_) => unreachable!(),
+        }
+        // a first argument written right after the tag would join it
+        if let Some(first) = statement.pieces.first_mut() {
+            if first.before.is_empty() && !first.text.is_empty() {
+                first.before = b" ".to_vec();
+            }
+        }
+        if statement.args().len() > ARGS_MOST {
+            bail!("{}: {} arguments; the engine reads at most {ARGS_MOST} a statement", edit.what, statement.args().len());
         }
     }
-    Ok(scripts.iter().map(Script::write).collect())
+    let mut out = Vec::new();
+    for (file, script) in scripts.iter().enumerate() {
+        let mut data = Vec::new();
+        for (at, statement) in script.statements.iter().enumerate() {
+            statement.write_into(&mut data);
+            for edit in inserted.get(&(file, at)).into_iter().flatten() {
+                if let To::Insert(text) = &edit.to {
+                    data.extend_from_slice(text);
+                }
+            }
+        }
+        data.extend_from_slice(&script.tail);
+        out.push(data);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -476,6 +564,36 @@ mod tests {
             apply_edits(&[script], &[edit(2, 1, To::Arg(b"1".to_vec()), "a"), edit(2, 1, To::Arg(b"2".to_vec()), "b")])
                 .unwrap_err()
                 .to_string();
+        assert!(error.contains("mod a and mod b"), "{error}");
+    }
+
+    #[test]
+    fn inserts_add_statements_once_and_clash_by_record() {
+        let script = Script::parse(b"WEPNUM 1;\r\nWEP 1,2;\r\nWEP_BUILD 0;\r\n// end\r\n").unwrap();
+        let edit = |statement: usize, to: To, what: &str, module: &str| Edit {
+            file: 0,
+            statement,
+            arg: 0,
+            to,
+            what: what.into(),
+            module: module.into(),
+        };
+        let block = block_text(&script.statements[1..3]);
+        assert_eq!(block, b"\r\nWEP 1,2;\r\nWEP_BUILD 0;");
+        let new = To::Insert(statement_text("WEP", &[b"3".to_vec(), b"4".to_vec()]));
+        let edits = [
+            edit(2, new.clone(), "weapon 1", "a"),
+            edit(2, new.clone(), "weapon 1", "b"),
+            edit(2, To::Insert(block.clone()), "weapon 2", "a"),
+            edit(0, To::Arg(b"3".to_vec()), "count", "a"),
+        ];
+        let written = apply_edits(std::slice::from_ref(&script), &edits).unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&written[0]),
+            "WEPNUM 3;\r\nWEP 1,2;\r\nWEP_BUILD 0;\r\nWEP 3,4;\r\nWEP 1,2;\r\nWEP_BUILD 0;\r\n// end\r\n"
+        );
+        let clash = [edit(2, new, "weapon 1", "a"), edit(2, To::Insert(block), "weapon 1", "b")];
+        let error = apply_edits(&[script], &clash).unwrap_err().to_string();
         assert!(error.contains("mod a and mod b"), "{error}");
     }
 

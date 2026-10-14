@@ -113,6 +113,7 @@ pub fn floors(files: &[Vec<u8>]) -> Result<Table> {
                 entry: vec![("monster", S16), ("talk", S16)],
                 count: (0, MONSTERS_MOST),
                 per_line: 0,
+                grow: false,
             },
         );
         records.push(record);

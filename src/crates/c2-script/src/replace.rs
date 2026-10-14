@@ -77,8 +77,23 @@ pub const DATA: &str = "data:";
 /// What a music: line's MIDI file may be called.
 const MIDI_SUFFIXES: [&str; 3] = [".mid", ".midi", ".rmi"];
 /// The tables a data: line can name.
-pub const DATA_TABLES: [&str; 10] =
-    ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters", "layouts"];
+pub const DATA_TABLES: [&str; 15] = [
+    "items",
+    "shops",
+    "monsters",
+    "inventions",
+    "georama",
+    "medals",
+    "floors",
+    "fishing",
+    "characters",
+    "layouts",
+    "requests",
+    "townspeople",
+    "gifts",
+    "spheda",
+    "breeding",
+];
 
 /// One line of a mod's replace or add.
 #[derive(Clone, Debug, PartialEq, Eq)]

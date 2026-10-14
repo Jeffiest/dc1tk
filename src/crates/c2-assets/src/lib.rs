@@ -41,6 +41,7 @@ pub mod text;
 pub mod textures;
 pub mod to_gltf;
 pub mod tree;
+pub mod town_data;
 pub mod tree_check;
 
 /// What went wrong, as the Python's exception message says it.

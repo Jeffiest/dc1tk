@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use c2_assets::cfg_text::Edit;
 use c2_assets::data_table::{self, Table as DataTable};
 use c2_assets::dungeon_layout::{self, Layouts};
-use c2_assets::item_data::{self, Items};
+use c2_assets::item_data::{self, ItemText, Items};
 use c2_assets::monster_data::{self, Monsters, Patch};
 use c2_assets::shop_data::{self, Shops};
 use c2_assets::{exe_tables, game_data};
@@ -36,8 +36,9 @@ pub fn executable(iso_path: &Path) -> Result<Vec<u8>> {
     fs::read(&path).with_context(|| format!("cannot read {}", path.display()))
 }
 
+/// The item tables and every language's item names.
 fn item_paths() -> Vec<String> {
-    item_data::FILES.iter().map(|file| format!("{}/{file}", item_data::FOLDER)).collect()
+    item_data::FILES.iter().chain(&item_data::NAME_FILES).map(|file| format!("{}/{file}", item_data::FOLDER)).collect()
 }
 
 fn shop_paths() -> Vec<String> {
@@ -78,8 +79,7 @@ fn load(table: &str, elf: &[u8], current: &dyn Fn(&str) -> Result<Vec<u8>>) -> R
     Ok(match table {
         "items" => {
             let paths = item_paths();
-            let names = current(&names_path()).ok();
-            let items = Items::read(&read_all(&paths)?, names.as_deref())?;
+            let items = Items::read(&read_all(&paths)?, None)?;
             Table::Items(items, paths, exe_tables::spectrumise(elf)?)
         }
         "shops" => {
@@ -161,19 +161,41 @@ impl Table {
         }
     }
 
-    /// The edits of the table's cfg files and the patches of the executable a mod's table makes.
-    fn changes(&self, given: &Value, module: &str) -> Result<(Vec<Edit>, Vec<Patch>)> {
+    /// The edits of the table's cfg files, the patches of the executable and the item messages
+    /// the mods' tables make, (mod, table) in order: records several mods add are counted
+    /// together.
+    fn changes(&self, given: &[(String, Value)]) -> Result<(Vec<Edit>, Vec<Patch>, Vec<ItemText>)> {
+        let mut patches = Vec::new();
         Ok(match self {
             Table::Items(items, _, spectrum) => {
-                let (given, extra) = split_items(given);
-                (items.changes(&given, module)?, spectrum.changes(&extra, module)?.1)
+                let mut tables = Vec::new();
+                for (module, table) in given {
+                    let (table, extra) = split_items(table);
+                    patches.extend(spectrum.changes(&extra, module).with_context(|| format!("mod {module}"))?.1);
+                    tables.push((module.clone(), table));
+                }
+                let (edits, texts) = items.changes_all(&tables)?;
+                (edits, patches, texts)
             }
             Table::Shops(shops, _, donny) => {
-                let (given, extra) = split_shops(given);
-                (shops.changes(&given, module)?, donny.changes(&extra, module)?.1)
+                let mut tables = Vec::new();
+                for (module, table) in given {
+                    let (table, extra) = split_shops(table);
+                    patches.extend(donny.changes(&extra, module).with_context(|| format!("mod {module}"))?.1);
+                    tables.push((module.clone(), table));
+                }
+                (shops.changes_all(&tables)?, patches, Vec::new())
             }
-            Table::Monsters(monsters) => (Vec::new(), monsters.changes(given, module)?),
-            Table::Data(table, _) => table.changes(given, module)?,
+            Table::Monsters(monsters) => {
+                for (module, table) in given {
+                    patches.extend(monsters.changes(table, module).with_context(|| format!("mod {module}"))?);
+                }
+                (Vec::new(), patches, Vec::new())
+            }
+            Table::Data(table, _) => {
+                let (edits, patches) = table.changes_all(given)?;
+                (edits, patches, Vec::new())
+            }
             Table::Layouts(_) => bail!("layouts are changed by apply_layouts"),
         })
     }
@@ -294,18 +316,17 @@ pub fn apply_data(
             changes.push(change);
             continue;
         }
-        let mut edits: Vec<Edit> = Vec::new();
-        let mut patched = false;
+        let mut given = Vec::new();
         for line in &mine {
-            let (found, found_patches) = loaded
-                .changes(&read_table(line)?, &line.module)
-                .with_context(|| format!("{} (mod {})", line.key, line.module))?;
-            change.changed.extend(found.iter().map(|edit| (edit.module.clone(), edit.what.clone())));
-            change.changed.extend(found_patches.iter().map(|patch| (patch.module.clone(), patch.what.clone())));
-            patched |= !found_patches.is_empty();
-            edits.extend(found);
-            patches.extend(found_patches);
+            given.push((line.module.clone(), read_table(line)?));
         }
+        let (edits, found_patches, texts) =
+            loaded.changes(&given).with_context(|| format!("data:{table} ({})", modules_of(&mine)))?;
+        change.changed.extend(edits.iter().map(|edit| (edit.module.clone(), edit.what.clone())));
+        change.changed.extend(found_patches.iter().map(|patch| (patch.module.clone(), patch.what.clone())));
+        change.changed.extend(texts.iter().map(|text| (text.module.clone(), text.what.clone())));
+        let patched = !found_patches.is_empty();
+        patches.extend(found_patches);
         // every file of the table, each member put back into its pack
         let (written, paths) = loaded.apply(&edits)?;
         let mut rewritten: Vec<(String, Vec<u8>)> = Vec::new();
@@ -327,10 +348,33 @@ pub fn apply_data(
             change.files.push((monster_data::EXECUTABLE.to_string(), elf.len(), elf.len()));
         }
         out.extend(rewritten);
+        if !texts.is_empty() {
+            let current = |path: &str| -> Result<Vec<u8>> {
+                match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
+                    Some((_, data)) => Ok(data.clone()),
+                    None => disc.read(path),
+                }
+            };
+            let written = crate::item_text::item_messages(&disc, &current, &texts)?;
+            for (top, data) in &written {
+                change.files.push((top.clone(), data.len(), current(top)?.len()));
+            }
+            out.extend(written);
+        }
         changes.push(change);
     }
     let executable_out = if patches.is_empty() { None } else { Some(data_table::apply_patches(&elf, &patches)?) };
     Ok((out, executable_out, changes))
+}
+
+fn modules_of(lines: &[&Line]) -> String {
+    let mut modules: Vec<&str> = Vec::new();
+    for line in lines {
+        if !modules.contains(&line.module.as_str()) {
+            modules.push(&line.module);
+        }
+    }
+    format!("mod {}", modules.join(", mod "))
 }
 
 /// The data files that read back from the built image other than as written.

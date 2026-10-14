@@ -13,7 +13,7 @@
 
 use serde_json::Value;
 
-use crate::data_table::{self, Kind, Place, Record, Table, S16, S8, U8};
+use crate::data_table::{self, Adding, Kind, Place, Record, Table, S16, S8, U8};
 use crate::Result;
 
 /// The menu folders by language that hold copies.
@@ -22,6 +22,11 @@ pub const LANGUAGES: usize = 6;
 pub const SCOOP_TABLE: u32 = 0x352DE0;
 pub const SCOOPS: usize = 53;
 pub const SCOOP_RECORD: usize = 0x14;
+/// The recipes the inventions menu holds: MenuInventInit gives InventTeigiStack 0x210 16-byte
+/// units, _INVENT_DATATABLESET allocates 0x24 bytes a recipe, and the allocation reaching the end
+/// fails (CheckItemTable's 0x400 units hold 454).
+pub const RECIPES_MOST: usize = 234;
+const RECIPES_WHY: &str = "the inventions menu's 0x2100-byte table, InventTeigiStack";
 /// MakeItemNeeds holds four materials (HowMuchZairyouMakeItem).
 pub const MATERIALS_MOST: usize = 4;
 
@@ -68,11 +73,16 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
         );
         record.arg("unknown_10", S16, &at, count - 5);
         record.arg("scale", Kind::Float, &at, count - 4);
-        record.field("position", Kind::Float, Place::Args { at, arg: count - 3, len: 3 });
+        record.field("position", Kind::Float, Place::Args { at: at.clone(), arg: count - 3, len: 3 });
+        record.block = at.iter().map(|&(file, statement)| (file, statement, statement)).collect();
         recipes.push(record);
     }
     let mut table = Table::new("an invention table", scripts, elf.to_vec());
     table.section("recipes", &["recipe"], recipes);
+    let counts = (0..table.scripts.len())
+        .filter_map(|file| data_table::tagged(&table.scripts[file], "DATATABLESET").last().map(|&at| (file, at, 0)))
+        .collect();
+    table.adding(Adding { counts, most: RECIPES_MOST, why: RECIPES_WHY, place: Some("recipe"), ..Adding::default() });
     let start = data_table::elf_offset(elf, SCOOP_TABLE, SCOOPS * SCOOP_RECORD, "scoop table")?;
     let mut scoops = Vec::new();
     for number in 0..SCOOPS {
@@ -115,6 +125,24 @@ mod tests {
             assert_eq!(again["recipes"][0]["materials"], json!([{"item": 210, "count": 1}]), "copy {file}");
             assert_eq!(again["recipes"][0]["scale"], 2);
         }
+        // a new recipe in every copy, counted, and the most refused past
+        let new = json!({"recipes": [{"recipe": recipes, "like": 0, "item": 300, "ideas": [1, 2, 3]}]});
+        let (edits, _) = table.changes(&new, "m").unwrap();
+        let written = table.apply(&edits).unwrap();
+        let materials = table.to_json()["recipes"][0]["materials"].clone();
+        for data in &written {
+            let again = read(&vec![data.clone(); paths().len()], &elf).unwrap();
+            let json = again.to_json();
+            assert_eq!(json["recipes"][recipes]["item"], 300);
+            assert_eq!(json["recipes"][recipes]["ideas"], json!([1, 2, 3]));
+            assert_eq!(json["recipes"][recipes]["materials"], materials);
+            assert!(String::from_utf8_lossy(data).contains(&format!("DATATABLESET {};", recipes + 1)));
+        }
+        let error = table.changes(&json!({"recipes": [{"recipe": recipes + 1, "like": 0}]}), "m").unwrap_err();
+        assert!(error.to_string().contains(&format!("is the next one, {recipes}")), "{error}");
+        let many: Vec<Value> = (recipes..=RECIPES_MOST).map(|recipe| json!({"recipe": recipe, "like": 0})).collect();
+        let error = table.changes(&json!({ "recipes": many }), "m").unwrap_err();
+        assert!(error.to_string().contains("InventTeigiStack"), "{error}");
         eprintln!("{recipes} recipes in {} copies and {SCOOPS} scoops round-trip", files.len());
     }
 }

@@ -4,8 +4,8 @@
 //! CShopMenu::InitEnd (menushop.cpp) reads `menu/shopusa<chapter>.cfg` (`menu/shoplst<chapter>.cfg`
 //! when the language is Japanese), the chapter clamped to 1..8, with the tags `PRICE item, buy,
 //! sell;` (CShop::price, by item number) and `SHOP id, item, ...;` (the goods of the shop the
-//! event script opened, by its id; at most 64). A later statement for one item or shop fills it
-//! again, so it wins.
+//! event script opened, by its id; at most 63, the id one of a statement's 64 arguments). A later
+//! statement for one item or shop fills it again, so it wins.
 //!
 //! The JSON gives each price and shop list once when every chapter has the same, and as a list of
 //! eight (chapters 1 to 8) when they differ; a mod may give either for any record. An edit goes
@@ -21,8 +21,9 @@ use crate::{bail, Result};
 
 pub const FOLDER: &str = "menu";
 pub const CHAPTERS: usize = 8;
-/// SHOP_ITEM_MAX: the goods one shop can list.
-pub const SHOP_ITEM_MAX: usize = 64;
+/// The goods one shop can list: SHOP_ITEM_MAX is 64, but a statement holds at most
+/// cfg_text::ARGS_MOST (64) arguments and the first is the shop id.
+pub const SHOP_ITEM_MAX: usize = 63;
 /// CShop::price has a slot for each item number below this; PRICE does not check.
 pub const PRICE_SLOTS: i64 = 0x200;
 
@@ -193,6 +194,53 @@ impl Shops {
     /// The edits a mod's table makes: only values that differ from these shops'. Prices and shops
     /// are named by `item` and `shop`; `name`, `names` and `currency` are labels.
     pub fn changes(&self, table: &Value, module: &str) -> Result<Vec<Edit>> {
+        self.changes_all(&[(module.to_string(), table.clone())])
+    }
+
+    /// The edits every mod's table makes, in order. A price for an item the lists lack is a new
+    /// PRICE line in every file (its `buy` and `sell` both given), and a shop they lack a new SHOP
+    /// line; a shop may list an item any of the mods prices.
+    pub fn changes_all(&self, tables: &[(String, Value)]) -> Result<Vec<Edit>> {
+        let mut priced = std::collections::BTreeSet::new();
+        for (_, table) in tables {
+            for record in table.get("prices").and_then(Value::as_array).into_iter().flatten() {
+                if let Some(item) = record.get("item").and_then(Value::as_i64) {
+                    if !self.prices.contains_key(&(item as i32)) {
+                        priced.insert(item as i32);
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for (module, table) in tables {
+            out.extend(self.changes_with(table, module, &priced).map_err(|error| {
+                crate::Error::invalid(format!("mod {module}: {error}"))
+            })?);
+        }
+        Ok(out)
+    }
+
+    /// The text of a new PRICE or SHOP line, added after the file's last line of that tag.
+    fn added(&self, file: usize, tag: &str, args: Vec<Vec<u8>>, what: String, module: &str) -> Result<Edit> {
+        let Some(after) = self.scripts[file].statements.iter().rposition(|statement| statement.tag == tag) else {
+            bail!("{what}: {} has no {tag} line to add one after", files()[file]);
+        };
+        Ok(Edit {
+            file,
+            statement: after,
+            arg: 0,
+            to: To::Insert(cfg_text::statement_text(tag, &args)),
+            what,
+            module: module.to_string(),
+        })
+    }
+
+    fn changes_with(
+        &self,
+        table: &Value,
+        module: &str,
+        priced: &std::collections::BTreeSet<i32>,
+    ) -> Result<Vec<Edit>> {
         let Some(object) = table.as_object() else {
             bail!("a shop table is {{\"prices\": [...], \"shops\": [...]}}, as mod asset writes it");
         };
@@ -222,7 +270,35 @@ impl Shops {
                 bail!("each price names its item: {{\"item\": 11, \"buy\": 450}}");
             };
             let Some(places) = self.prices.get(&(item as i32)) else {
-                bail!("item {item} has no price in the shop lists");
+                // a new price: a PRICE line in every file
+                if !(1..PRICE_SLOTS).contains(&item) {
+                    bail!("price of item {item}: CShop::price has items 1 to {}", PRICE_SLOTS - 1);
+                }
+                let what = format!("new price of item {item}");
+                for key in record.keys() {
+                    if !["item", "name", "buy", "sell"].contains(&key.as_str()) {
+                        bail!("{what}: \"{key}\" is not a field (buy, sell)");
+                    }
+                }
+                let (Some(buy), Some(sell)) = (record.get("buy"), record.get("sell")) else {
+                    bail!("{what}: a new price gives \"buy\" and \"sell\"");
+                };
+                let buys = Self::chapters(buy, &format!("{what} buy"), false)?;
+                let sells = Self::chapters(sell, &format!("{what} sell"), false)?;
+                for chapter in 0..CHAPTERS {
+                    let mut args = vec![cfg_text::int_text(item)];
+                    for (key, value) in [("buy", buys[chapter]), ("sell", sells[chapter])] {
+                        let Some(number) = value.as_i64().filter(|number| (0..=i32::MAX as i64).contains(number))
+                        else {
+                            bail!("{what} {key} is a whole number from 0");
+                        };
+                        args.push(cfg_text::int_text(number));
+                    }
+                    for file in [chapter, chapter + CHAPTERS].into_iter().filter(|&file| file < files) {
+                        out.push(self.added(file, "PRICE", args.clone(), what.clone(), module)?);
+                    }
+                }
+                continue;
             };
             for (key, value) in record {
                 let arg = match key.as_str() {
@@ -267,8 +343,16 @@ impl Shops {
             let Some(shop) = record.get("shop").and_then(Value::as_i64) else {
                 bail!("each shop names its id: {{\"shop\": 0, \"items\": [...]}}");
             };
-            let Some(places) = self.shops.get(&(shop as i32)) else {
-                bail!("shop {shop}: the shop lists have no such shop");
+            let none = vec![None; files];
+            let places = match self.shops.get(&(shop as i32)) {
+                Some(places) => places,
+                None if (0..=i16::MAX as i64).contains(&shop) => {
+                    if !record.contains_key("items") {
+                        bail!("new shop {shop}: a new shop gives its \"items\"");
+                    }
+                    &none
+                }
+                None => bail!("shop {shop}: a shop number is 0 to {} (CShop::shop_id)", i16::MAX),
             };
             for (key, value) in record {
                 match key.as_str() {
@@ -286,7 +370,9 @@ impl Shops {
                         let Some(number) = item.as_i64().filter(|number| (1..PRICE_SLOTS).contains(number)) else {
                             bail!("{what}: {item} is not an item number");
                         };
-                        if !self.prices.get(&(number as i32)).is_some_and(|places| places[chapter].is_some()) {
+                        if !self.prices.get(&(number as i32)).is_some_and(|places| places[chapter].is_some())
+                            && !priced.contains(&(number as i32))
+                        {
                             bail!(
                                 "{what}: item {number} has no price in chapter {}; give it one under \"prices\"",
                                 chapter + 1
@@ -304,6 +390,11 @@ impl Shops {
                     }
                     for file in [chapter, chapter + CHAPTERS].into_iter().filter(|&file| file < files) {
                         let Some(at) = places[file] else {
+                            // a shop the file lacks: a SHOP line of its own
+                            let mut args = vec![cfg_text::int_text(shop)];
+                            args.extend(numbers.iter().map(|&number| cfg_text::int_text(number as i64)));
+                            let what = format!("new shop {shop} (chapter {})", chapter + 1);
+                            out.push(self.added(file, "SHOP", args, what, module)?);
                             continue;
                         };
                         let old: Vec<i32> = self.values(file, at)[1..].iter().map(Arg::int).collect();
@@ -383,10 +474,36 @@ mod tests {
         assert!(String::from_utf8_lossy(&files[CHAPTERS + 2]).contains("PRICE 11,450,3;"));
         let refused = |edit: Value| shops.changes(&edit, "m").unwrap_err().to_string();
         assert!(refused(json!({"shops": [{"shop": 0, "items": [99]}]})).contains("no price"));
-        assert!(refused(json!({"shops": [{"shop": 5, "items": []}]})).contains("no such shop"));
+        assert!(refused(json!({"shops": [{"shop": 5}]})).contains("gives its \"items\""));
+        assert!(refused(json!({"shops": [{"shop": 40000, "items": []}]})).contains("shop number"));
+        assert!(refused(json!({"prices": [{"item": 429, "buy": 1}]})).contains("\"buy\" and \"sell\""));
+        assert!(refused(json!({"prices": [{"item": 512, "buy": 1, "sell": 0}]})).contains("1 to 511"));
+    }
+
+    #[test]
+    fn new_prices_and_shops_are_new_lines() {
+        let shops = Shops::read(&sample(), None).unwrap();
+        let price = json!({"prices": [{"item": 429, "buy": 1, "sell": 0}]});
+        let sold = json!({"shops": [{"shop": 0, "items": [1, 429]}, {"shop": 40, "items": [429]}]});
+        // the price in one mod, the goods in another
+        let edits = shops.changes_all(&[("a".into(), price.clone()), ("b".into(), sold)]).unwrap();
+        let files = shops.apply(&edits).unwrap();
+        for file in &files {
+            let text = String::from_utf8_lossy(file);
+            assert!(text.contains("PRICE 12,640,320;\r\nPRICE 429,1,0;\r\n//shop\r\nSHOP 0,1,429;\r\nSHOP 33;\r\nSHOP 40,429;\r\n"), "{text}");
+        }
+        let again = Shops::read(&files, None).unwrap().to_json();
+        assert_eq!(again["shops"][2], json!({"shop": 40, "currency": "money", "items": [429]}));
+        // one price given twice alike is one line; given two ways, refused
+        let twice = shops.changes_all(&[("a".into(), price.clone()), ("b".into(), price)]).unwrap();
+        assert_eq!(String::from_utf8_lossy(&shops.apply(&twice).unwrap()[0]).matches("PRICE 429").count(), 1);
+        let other = json!({"prices": [{"item": 429, "buy": 2, "sell": 0}]});
+        let clash = shops.changes_all(&[("a".into(), json!({"prices": [{"item": 429, "buy": 1, "sell": 0}]})), ("b".into(), other)]);
+        assert!(shops.apply(&clash.unwrap()).unwrap_err().to_string().contains("mod a and mod b"));
+        let refused = |edit: Value| shops.changes(&edit, "m").unwrap_err().to_string();
         assert!(refused(json!({"prices": [{"item": 11, "buy": [1, 2]}]})).contains("list of 8"));
         assert!(refused(json!({"prices": [{"item": 11, "buy": -1}]})).contains("from 0"));
-        assert!(refused(json!({"shops": [{"shop": 0, "items": vec![1; 65]}]})).contains("at most 64"));
+        assert!(refused(json!({"shops": [{"shop": 0, "items": vec![1; 64]}]})).contains("at most 63"));
     }
 
     /// The shop lists of an extracted disc (C2S_CORPUS) round-trip, and their JSON changes nothing.
