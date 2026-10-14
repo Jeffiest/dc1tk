@@ -75,7 +75,8 @@ the node tree, then:
   N", outside the map, never exported). A world of your own is kept;
 - turns the 3D view to Material Preview with the scene's world and lights
   (the light set's, so the preview looks like the game rather than a studio)
-  and frames the map's placements;
+  and frames where the map is played (its trigger points), leaving nothing
+  selected;
 - shows the pieces the game draws at the hour in the Map panel (noon to
   start): towns hold day and night versions of pieces (`PIECE_TIME`), and
   showing both at once covers the town. Untick the clock for every piece.

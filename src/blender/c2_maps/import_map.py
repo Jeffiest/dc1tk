@@ -318,32 +318,44 @@ def postprocess(context, gltf_path, new_objects, log=None):
                 region = next((region for region in area.regions if region.type == "WINDOW"), None)
                 if region is not None and roots:
                     frame_map(context, area, region, roots)
+    # the importer leaves the whole map selected
+    for obj in context.selected_objects:
+        obj.select_set(False)
+    if roots:
+        context.view_layer.objects.active = roots[0]
     return roots, warnings
 
 
 def frame_map(context, area, region, roots):
-    """Point the view at the map's placements (not the far backdrops around some maps)."""
-    places = [obj for root in roots for obj in c2data.placements(root)] or list(roots)
-    selected = list(context.selected_objects)
-    active = context.view_layer.objects.active
-    try:
-        for obj in selected:
-            obj.select_set(False)
-        for obj in places:
-            if obj.name in context.view_layer.objects:
-                obj.select_set(True)
-        with context.temp_override(area=area, region=region):
-            bpy.ops.view3d.view_selected()
-    except (RuntimeError, AttributeError, TypeError):
-        pass
-    finally:
-        for obj in places:
-            if obj.name in context.view_layer.objects:
-                obj.select_set(False)
-        for obj in selected:
-            if obj.name in context.view_layer.objects:
-                obj.select_set(True)
-        context.view_layer.objects.active = active
+    """Point the view down at where the map is played: the middle of its trigger points (spawns,
+    doors, talk points), or of its placements' meshes, leaving out the far tenth on each side
+    (the ground planes and backdrops some maps have far out)."""
+    import math
+
+    from mathutils import Euler, Vector
+
+    spots = [obj.matrix_world.translation.copy() for root in roots for obj in c2data.points(root)]
+    if len(spots) < 2:
+        spots = [
+            obj.matrix_world @ (sum((Vector(corner) for corner in obj.bound_box), Vector()) / 8.0)
+            for root in roots
+            for obj in c2data.descendants(root)
+            if obj.type == "MESH" and not c2data.is_collision_mesh(obj)
+        ]
+    if not spots:
+        return
+    low, high = [], []
+    for axis in range(3):
+        values = sorted(spot[axis] for spot in spots)
+        cut = len(values) // 10
+        low.append(values[cut])
+        high.append(values[len(values) - 1 - cut])
+    low, high = Vector(low), Vector(high)
+    view = area.spaces.active.region_3d
+    view.view_location = (low + high) / 2.0
+    view.view_distance = max((high - low).length, 300.0) * 1.1
+    view.view_rotation = Euler((math.radians(55.0), 0.0, math.radians(30.0))).to_quaternion()
+    view.view_perspective = "PERSP"
 
 
 def import_gltf(context, path):
