@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use build_common::{disc_for, fails, make_tree, map, read, recorded, sdk_dir, strings, tables, write, TempDir, Tools};
 use c2_script::node::Node;
 use c2_script::patches::{self, Plan, Scripts, Target};
+use c2_script::renames::{self, Followed};
 use c2_script::vm::{self, Machine, Value};
-use c2_script::{build, definitions, library, mods, numbers, parse, pathnames, sdk, Result};
+use c2_script::{build, definitions, editor, library, mods, numbers, parse, pathnames, sdk, Result};
 use indexmap::IndexMap;
 
 // A map in two languages and a monster, sharing a library, as the decompiler lays them out.
@@ -344,4 +345,161 @@ fn build_compiles_patched_scripts_and_override_starts_a_patch() {
     assert!(mods::listing(&mods_dir, &root, &IndexMap::new())
         .unwrap()
         .contains("patch t01.c: 1 script; overrides helper"));
+}
+
+#[test]
+fn editors_get_a_header_of_the_targets_declarations_that_build_never_reads() {
+    let patch =
+        "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    visits = visits + 1;\n    talk();\n}\n";
+    let folder = TempDir::new("patches-editor");
+    let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch), ("lib.c", "void mine(void)\n{\n}\n")])]);
+    write(&root, "map/s/s17_valley/s17_1.c", &MAP.replace("void talk(void)", "// Talks.\nvoid talk(void)"));
+    let before = plan_of(&dirs, &root).unwrap();
+    let tools = Tools::new();
+    let written = editor::write(&dirs[0], &root, &tools.toolchain(), &sdk_dir(), &[]).unwrap();
+    assert_eq!(written, [dirs[0].join(editor::FOLDER).join("p.h")]);
+    let header = read(&written[0]);
+    for line in [
+        "//   map/s/s17_valley/s17_1.c (#pragma target map s17)\n",
+        "//   PROGRAM(500, talk);\n",
+        "extern int visits;\n",
+        "void greet(void);\n",
+        "// Talks.\nvoid talk(void);\n",
+    ] {
+        assert!(header.contains(line), "{line}\n{header}");
+    }
+    let commands: serde_json::Value = serde_json::from_str(&read(&dirs[0].join(editor::COMMANDS))).unwrap();
+    let arguments = |file: &str| -> Vec<String> {
+        let entry = commands.as_array().unwrap().iter().find(|entry| entry["file"].as_str().unwrap().ends_with(file));
+        entry.unwrap()["arguments"].as_array().unwrap().iter().map(|item| item.as_str().unwrap().to_string()).collect()
+    };
+    let (patched, library) = (arguments("/p.c"), arguments("/lib.c"));
+    let at = patched.iter().rposition(|item| item == "-include").unwrap();
+    assert!(patched[at + 1].ends_with("/m/.editor/p.h"), "{patched:?}");
+    assert!(library.iter().all(|item| !item.ends_with(".h") || item.ends_with("c2s.h")), "{library:?}");
+    // the header is not one of the mod's sources, so what build merges is as it was
+    assert!(mods::sources(&dirs[0]).unwrap().iter().all(|(path, _)| path.extension().unwrap() == "c"));
+    let after = plan_of(&dirs, &root).unwrap();
+    assert_eq!(after.patches.iter().map(|patch| &patch.text).collect::<Vec<_>>(), [patch]);
+    assert_eq!(
+        program_of(&root, &after, "map/s/s17_valley/s17_1.c").unwrap(),
+        program_of(&root, &before, "map/s/s17_valley/s17_1.c").unwrap()
+    );
+}
+
+fn compiled_with(root: &Path, plan: &Plan, script: &str, tools: &Tools) -> Vec<u8> {
+    let patched = build::Patched { tree: root, relative: script, patches: plan.for_script(script).unwrap() };
+    build::compiled(&root.join(script), &tools.toolchain(), None, None, None, Some(&patched)).unwrap()
+}
+
+#[test]
+fn an_override_follows_its_function_when_a_new_decompile_renames_it() {
+    let patch = "#pragma target map s17\n\nvoid twice(void)\n{\n    greet();\n}\n\n\
+                 #pragma override\nvoid greet(void)\n{\n    print(\"hi\");\n    original();\n}\n";
+    let folder = TempDir::new("patches-renamed");
+    let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch)])]);
+    let tools = Tools::new();
+    let script = "map/s/s17_valley/s17_1.c";
+    let mut plan = plan_of(&dirs, &root).unwrap();
+    // the first check records the fingerprint of the function the patch overrides
+    let found = renames::follow(&dirs, &mut plan, &root, &tools.toolchain(), &IndexMap::new()).unwrap();
+    assert!(found.followed.is_empty() && found.notes.is_empty());
+    let recorded = renames::read_lock(&dirs[0]).unwrap();
+    let print = recorded["p.c"]["greet"].clone();
+    assert_eq!(renames::script_prints(&root, script, &tools.toolchain(), &IndexMap::new()).unwrap()["greet"], print);
+    let before = compiled_with(&root, &plan, script, &tools);
+    // a later decompile names the library's function salute
+    for path in ["map/s/s17_valley/s17_1.c", "map/s/s17_valley/s17_2.c", "lib/map/s/s17/greet.c"] {
+        write(&root, path, &read(&root.join(path)).replace("greet(", "salute("));
+    }
+    fails(program_of(&root, &plan_of(&dirs, &root).unwrap(), script), "the script has no function greet");
+    let mut plan = plan_of(&dirs, &root).unwrap();
+    let found = renames::follow(&dirs, &mut plan, &root, &tools.toolchain(), &IndexMap::new()).unwrap();
+    let followed = Followed { module: "m".into(), patch: "p.c".into(), old: "greet".into(), new: "salute".into() };
+    assert_eq!(found.followed, [followed]);
+    assert_eq!(run(&program_of(&root, &plan, script).unwrap(), "twice"), strings(&["hi", "hello"]));
+    assert_eq!(run(&program_of(&root, &plan, script).unwrap(), "start"), strings(&["hi", "hello"]));
+    // names are not in the bytes: the patched script compiles as it did before the rename
+    assert_eq!(compiled_with(&root, &plan, script, &tools), before);
+    // when two functions have the code, the patch must say which
+    let library = read(&root.join("lib/map/s/s17/greet.c"));
+    write(&root, "lib/map/s/s17/greet.c", &format!("{library}\n{}", library.replace("salute(", "wave(")));
+    let mut ambiguous = plan_of(&dirs, &root).unwrap();
+    let noted = renames::follow(&dirs, &mut ambiguous, &root, &tools.toolchain(), &IndexMap::new()).unwrap();
+    assert!(noted.followed.is_empty());
+    assert!(noted.notes[0].contains("has no greet; its code is in salute, wave"), "{:?}", noted.notes);
+    write(&root, "lib/map/s/s17/greet.c", &library);
+    // rename writes the new name into the mod, with its fingerprint
+    assert_eq!(renames::rename(&dirs[0], &found.followed).unwrap(), [dirs[0].join("p.c")]);
+    assert_eq!(read(&dirs[0].join("p.c")), patch.replace("greet", "salute"));
+    assert_eq!(renames::read_lock(&dirs[0]).unwrap()["p.c"]["salute"], print);
+    let mut plan = plan_of(&dirs, &root).unwrap();
+    assert!(renames::follow(&dirs, &mut plan, &root, &tools.toolchain(), &IndexMap::new())
+        .unwrap()
+        .followed
+        .is_empty());
+}
+
+fn names_of(dirs: &[PathBuf]) -> Vec<String> {
+    dirs.iter().map(|dir| dir.file_name().unwrap().to_string_lossy().into_owned()).collect()
+}
+
+#[test]
+fn required_mods_are_added_and_every_mod_comes_after_those_it_names() {
+    let folder = TempDir::new("patches-requires");
+    let (root, dirs) = setup(
+        folder.path(),
+        &[
+            ("a", &[("mod.json", "{\"requires\": [\"b\"]}")]),
+            ("b", &[("mod.json", "{\"after\": [\"c\", \"unknown\"]}")]),
+            ("c", &[("p.c", "NEW_FLAG(C);\n")]),
+        ],
+    );
+    let mods_dir = dirs[0].parent().unwrap();
+    let found = mods::chosen(mods_dir, &strings(&["a", "c"])).unwrap();
+    assert_eq!(names_of(&found.dirs), strings(&["c", "b", "a"]));
+    assert_eq!(found.added, [("b".to_string(), "a".to_string())]);
+    // after orders only mods that are chosen
+    assert_eq!(names_of(&mods::chosen(mods_dir, &strings(&["a"])).unwrap().dirs), strings(&["b", "a"]));
+    let listed = mods::listing(mods_dir, &root, &IndexMap::new()).unwrap();
+    assert!(listed.contains("a  (0 files)\n    requires b\n"), "{listed}");
+    assert!(listed.contains("    built after c, unknown\n"), "{listed}");
+    write(&dirs[2], "mod.json", "{\"requires\": [\"a\"]}");
+    fails(mods::chosen(mods_dir, &strings(&["c"])), "(c after a, a after b, b after c)");
+    assert!(mods::listing(mods_dir, &root, &IndexMap::new()).unwrap().contains("go round in a cycle"));
+    write(&dirs[2], "mod.json", "{\"requires\": [\"gone\"]}");
+    fails(mods::chosen(mods_dir, &strings(&["c"])), "mod c requires gone, which is not in");
+    write(&dirs[2], "mod.json", "{\"requires\": \"a\"}");
+    fails(mods::chosen(mods_dir, &strings(&["c"])), "\"requires\" is a list of mod names");
+}
+
+#[test]
+fn a_mod_uses_the_library_numbers_and_overrides_of_the_mods_it_requires() {
+    let base_patch = "#pragma target map s17\n#include \"names.h\"\n\n#pragma override\nvoid greet(void)\n{\n    print(\"base\");\n    original();\n}\n";
+    let patch = "#pragma target map s17\n#include \"base/names.h\"\n#include \"base/value.c\"\n\nNEW_FLAG(OWN);\n\n\
+                 #pragma override\nvoid greet(void)\n{\n    print(\"top\", SHARED, OWN, base_value());\n    original();\n}\n";
+    let folder = TempDir::new("patches-requires-use");
+    let (root, dirs) = setup(
+        folder.path(),
+        &[
+            ("top", &[("mod.json", "{\"requires\": [\"base\"]}"), ("p.c", patch)]),
+            (
+                "base",
+                &[
+                    ("names.h", "NEW_FLAG(SHARED);\n"),
+                    ("value.c", "int base_value(void)\n{\n    return SHARED + 1;\n}\n"),
+                    ("p.c", base_patch),
+                ],
+            ),
+        ],
+    );
+    let chosen = mods::chosen(dirs[0].parent().unwrap(), &strings(&["top"])).unwrap();
+    assert_eq!(names_of(&chosen.dirs), strings(&["base", "top"]));
+    let plan = plan_of(&chosen.dirs, &root).unwrap();
+    assert_eq!(plan.numbers, given(&[("base", &[("SHARED", 1024)]), ("top", &[("OWN", 1025)])]));
+    // the later mod's override runs first, and it sees the flag the mod it requires was given
+    assert_eq!(
+        run(&program_of(&root, &plan, "map/s/s17_valley/s17_1.c").unwrap(), "start"),
+        strings(&["top 1024 1025 1025", "base", "hello"])
+    );
 }

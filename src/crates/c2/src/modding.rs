@@ -11,7 +11,9 @@ use indexmap::IndexMap;
 
 use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
-use c2_script::{build, definitions, discfiles, index, migrate, mods, patches, replace, sdk, startat, tree};
+use c2_script::{
+    build, definitions, discfiles, editor, index, migrate, mods, patches, renames, replace, sdk, startat, tree,
+};
 
 use crate::Common;
 use crate::{asset_tree, files};
@@ -29,7 +31,8 @@ pub struct BuildArgs {
     /// to a map at map_start, as in m05.
     #[arg(long, value_name = "MAP[:PROGRAM]")]
     start_at: Option<String>,
-    /// Layer this mod over the tree; repeat for several, which may not change the same file.
+    /// Layer this mod over the tree; repeat for several, which may not change the same file. The
+    /// mods each requires are layered in too, and "requires" and "after" set the order.
     #[arg(long = "mod", value_name = "NAME")]
     mod_names: Vec<String>,
     /// The folder that holds the mods.
@@ -100,7 +103,7 @@ pub enum ModCommand {
     Apply {
         /// The source tree to apply them to.
         source: PathBuf,
-        /// Mods to apply, in order.
+        /// Mods to apply, in order (with the mods they require, ordered by requires and after).
         #[arg(required = true)]
         names: Vec<String>,
         /// Replace files edited in the tree too.
@@ -130,6 +133,18 @@ pub enum ModCommand {
         /// Patch every script that includes a library (lib/...).
         #[arg(long)]
         library: Option<String>,
+        #[arg(long, default_value = "mods")]
+        mods: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
+    /// Write the editor headers of a mod's patches (the declarations of the scripts they target)
+    /// and the mod's compile_commands.json, so clangd knows the targets' functions and globals.
+    Header {
+        /// The decompiled source tree.
+        source: PathBuf,
+        /// The mod's name.
+        name: String,
         #[arg(long, default_value = "mods")]
         mods: PathBuf,
         #[command(flatten)]
@@ -169,6 +184,10 @@ pub enum ModCommand {
         /// change one place.
         #[arg(long)]
         disc: Option<PathBuf>,
+        /// Write the new names of overridden functions the tree has renamed (found by their
+        /// fingerprints) into the mods' files.
+        #[arg(long)]
+        rename: bool,
         #[command(flatten)]
         common: Common,
     },
@@ -208,12 +227,48 @@ fn default_constants(tree_dir: &Path) -> Result<IndexMap<String, i64>> {
     Ok(index::constants(index::tree_headers(tree_dir, &defs, &files::root().join("sdk"))?.values()))
 }
 
+/// The chosen mods with the mods they require, in the order they are applied ("requires" and
+/// "after" in their mod.json); says which were added and the order when it is not the one given.
 fn mod_folders(mods_dir: &Path, names: &[String]) -> Result<Vec<PathBuf>> {
-    Ok(names.iter().map(|name| mods::folder(mods_dir, name)).collect::<c2_script::Result<_>>()?)
+    let found = mods::chosen(mods_dir, names)?;
+    for (added, by) in &found.added {
+        println!("mod {by} requires {added}, so it is built in too");
+    }
+    let order: Vec<String> =
+        found.dirs.iter().map(|dir| dir.file_name().unwrap_or_default().to_string_lossy().into_owned()).collect();
+    if order != names {
+        println!("mods applied in this order: {}", order.join(", "));
+    }
+    Ok(found.dirs)
 }
 
 fn shown(path: &Path) -> String {
     path.display().to_string()
+}
+
+/// The headers of a patch mod's targets and its compile_commands.json (editor), for clangd.
+/// Returns the headers.
+fn write_editor_files(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Result<Vec<PathBuf>> {
+    let defs = common.definitions()?;
+    let sdk_dir = common.sdk_dir();
+    let headers = sdk::header_texts(&defs, &sdk_dir)?;
+    let tables = common.tables()?;
+    let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    Ok(editor::write(mod_dir, tree_dir, &tools, &sdk_dir, &defs.sets)?)
+}
+
+/// The fingerprints of the functions a mod's patches override, kept in its renames::LOCK so build
+/// finds them when a later decompile renames them.
+fn record_fingerprints(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Result<()> {
+    let defs = common.definitions()?;
+    let sdk_dir = common.sdk_dir();
+    let headers = sdk::header_texts(&defs, &sdk_dir)?;
+    let tables = common.tables()?;
+    let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    let dirs = [mod_dir.to_path_buf()];
+    let mut plan = mods::patch_plan(&dirs, tree_dir, &default_constants(tree_dir)?, false)?;
+    renames::follow(&dirs, &mut plan, tree_dir, &tools, &IndexMap::new())?;
+    Ok(())
 }
 
 /// The places and changes of the chosen mods' asset ids, and the templates of the game files they
@@ -390,6 +445,13 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let headers = sdk::header_texts(&defs, &sdk_dir)?;
     let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    let following = renames::follow(&mod_dirs, &mut plan, &args.source, &tools, &overrides)?;
+    for followed in &following.followed {
+        println!("note: {}; c2 mod check --rename writes the new name into the mod", renames::describe(followed));
+    }
+    for note in &following.notes {
+        println!("note: {note}");
+    }
     let found = build::changes(&args.source, &args.iso, &tools, &overrides, args.full, Some(&plan))?;
     match &found.all_because {
         Some(why) => println!("compiled all {} scripts: {}", found.compiled, why),
@@ -447,7 +509,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let (files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files)?;
     for item in &map_changes {
-        println!("replaced: {} (map:{}; mod {}, {} bytes, was {})", item.path, item.map, item.module, item.new, item.old);
+        println!(
+            "replaced: {} (map:{}; mod {}, {} bytes, was {})",
+            item.path, item.map, item.module, item.new, item.old
+        );
     }
     let written = rebuild::write_disc(&args.iso, &args.output, &files)?;
     for item in &written.placed {
@@ -528,13 +593,22 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             println!("{} files applied to {}", applied.len(), shown(source));
             Ok(ExitCode::SUCCESS)
         }
-        ModCommand::Check { source, names, mods: mods_dir, disc, common } => {
+        ModCommand::Check { source, names, mods: mods_dir, disc, rename, common } => {
             let defs = common.definitions()?;
             let sdk_dir = common.sdk_dir();
             let headers = sdk::header_texts(&defs, &sdk_dir)?;
             let tables = common.tables()?;
             let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
             let mod_dirs = mod_folders(mods_dir, names)?;
+            for mod_dir in &mod_dirs {
+                let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
+                for (key, word) in [("requires", "requires"), ("after", "is built after")] {
+                    let named = mods::named(mod_dir, key)?;
+                    if !named.is_empty() {
+                        println!("{name}: {word} {}", named.join(", "));
+                    }
+                }
+            }
             let (raw, raw_clashes) = discfiles::collect(&mod_dirs)?;
             if !raw_clashes.is_empty() {
                 bail!(discfiles::clash_text(&raw_clashes));
@@ -591,6 +665,21 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 for (constant, number) in sorted {
                     println!("{name}: {constant} = {number}");
                 }
+            }
+            for followed in &result.following.followed {
+                println!("{}", renames::describe(followed));
+            }
+            for note in &result.following.notes {
+                println!("note: {note}");
+            }
+            if *rename {
+                for mod_dir in &mod_dirs {
+                    for path in renames::rename(mod_dir, &result.following.followed)? {
+                        println!("renamed in {}", shown(&path));
+                    }
+                }
+            } else if !result.following.followed.is_empty() {
+                println!("--rename writes the new names into the mods");
             }
             for (path, error) in &result.errors {
                 println!("error: {path}: {error}");
@@ -685,7 +774,25 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 result.scripts.len(),
                 if result.scripts.len() == 1 { "" } else { "s" }
             );
-            mods::write_patch_flags(&mod_dir, source, &common.sdk_dir(), &common.definitions()?.sets)?;
+            write_editor_files(&mod_dir, source, common)?;
+            record_fingerprints(&mod_dir, source, common)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        ModCommand::Header { source, name, mods: mods_dir, common } => {
+            let mod_dir = mods::folder(mods_dir, name)?;
+            if !mods::exists(&mod_dir) {
+                bail!("no mod at {}", shown(&mod_dir));
+            }
+            let written = write_editor_files(&mod_dir, source, common)?;
+            for path in &written {
+                println!("{}", shown(path));
+            }
+            println!(
+                "{} header{} and {} written; editors with clangd read the patches with their targets' declarations",
+                written.len(),
+                if written.len() == 1 { "" } else { "s" },
+                shown(&mod_dir.join(editor::COMMANDS))
+            );
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::New { source, name, files: paths, mods: mods_dir, common } => {

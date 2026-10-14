@@ -227,6 +227,26 @@ copy of a library first:
 c2 fork extracted/scripts lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
 ```
 
+## Mods that build on mods
+
+A mod can keep code, flags and program numbers for others to use: a
+`captions` mod with `captions.h` (`NEW_FLAG(CAPTIONS_ON);`) and a library
+`show.c`. Another mod names it in its `mod.json`, `{"requires":
+["captions"]}`, and includes its files by its folder:
+
+```c
+#pragma target map s17
+#include <event.h>
+#include "captions/captions.h"
+#include "captions/show.c"
+```
+
+Building that mod builds `captions` in too, first: the flag has the number
+`captions` was given, and where both override one function, this mod's
+override runs first and its `original()` runs the one from `captions`.
+`"after": ["other"]` orders two mods without either needing the other (see
+[usage](usage.md#mods)).
+
 ## A pattern: a caption every five seconds during a fight
 
 `sdk/modkit/` ships this pattern ready to use: `modkit_caption` and
@@ -372,7 +392,10 @@ patch holding just that function, and
 `c2 build extracted/scripts dc2.iso -o modded.iso --mod castle --mod another`
 merges the chosen mods into the scripts they target. A patch holds only what it changes, so a fresh tree,
 decompiled after a tools update, takes the same mods, and several mods can
-change one script. (`mod new` copies whole files into a mod instead; `mod
+change one script. Better definitions can rename a function a patch
+overrides; the mod keeps the function's fingerprint, so `build` still finds
+it and says its new name, and `c2 mod check extracted/scripts castle
+--rename` puts the new name in the patch. (`mod new` copies whole files into a mod instead; `mod
 list` marks a copied file whose decompiler version has changed since, to
 compare.) See [usage](usage.md#mods).
 
@@ -388,7 +411,16 @@ checkout and decompile again (or edit the file).
 Scripts parse without errors. What clang still warns about are argument
 mismatches in the retail scripts themselves. Library files show errors for
 names their including scripts declare (a library can use the globals and
-functions of the scripts that include it), which is expected, and so do a
-mod's patches for the functions of the scripts they target.
-`mod override` writes a `compile_flags.txt` into the mod's folder, so its
-patches get the SDK, the tree's headers and the mod's own libraries.
+functions of the scripts that include it), which is expected.
+
+A patch uses the functions and globals of the scripts it targets without
+declaring them, since `build` merges it into them. `mod override` (and
+`c2 mod header extracted/scripts NAME` at any time) writes a header of each
+patch's target into the mod's hidden `.editor/` folder, and a
+`compile_commands.json` that has clangd read each patch with the SDK, the
+tree's headers, the mods folder (for `#include "base/names.h"` from a mod
+it requires) and its target's header first. The patch then shows no false
+errors, and hover shows the doc comments of the target's functions.
+Write them again after decompiling again, as the target's names can change.
+A patch whose `#pragma target` lines pick several scripts gets the
+declarations of one script per line.

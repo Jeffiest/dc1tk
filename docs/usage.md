@@ -231,6 +231,13 @@ void start_castle_battle(void)
   from a library: no fork needed. `original(...)` inside it calls the
   function it replaced. Two mods can override the same function when the
   later one calls `original()`; when neither does, `build` names both.
+  The function's fingerprint (its code's, as the definitions name functions
+  by) is kept in the mod's `fingerprints.json`, written by `mod override`,
+  `mod check` and `build`. When a later decompile renames the function,
+  `build` and `mod check` find it by fingerprint, say the new name and
+  build the override as if the patch said it; `mod check --rename` writes
+  the new name into the mod's files. If the code is in several functions
+  of the script, they name them and you choose.
 - **`#pragma every_frame`** before a function without parameters calls it
   before every `wait;` in the target, so it runs once a frame whatever the
   script is waiting in: a monster keeping a timer, say. It must not wait.
@@ -255,6 +262,16 @@ void start_castle_battle(void)
   (`LANGUAGE_ENGLISH` for `s51_1.c` to `LANGUAGE_SPANISH` for `s51_5.c`;
   -1 for scripts that are not language variants), for `#if` and in code, so
   one patch can carry every language's text.
+- **Mods that build on mods.** `"requires": ["base"]` in `mod.json` names
+  mods this one needs: choosing it chooses them too (`build` says so), and
+  it is applied after them. Its files see their numbers, so it can include
+  their headers and libraries by the mod's folder
+  (`#include "base/names.h"`, then use `BASE_SEEN`), and its overrides wrap
+  theirs (the later mod's runs first; `original()` runs the earlier one).
+  A required mod missing from the mods folder is an error. `"after":
+  ["other"]` only orders: when `other` is chosen too, this mod is applied
+  after it. Where neither says, mods are applied in the order given; a
+  cycle is an error naming the mods.
 
 The commands:
 
@@ -262,15 +279,26 @@ The commands:
   `--monster`, `--library`) starts a patch, or adds to one: it copies the
   functions from the target (the English variant of a map) into
   `mods/NAME/s51.c`, each after `#pragma override`, with the target line and
-  the script's headers, and writes the mod's `compile_flags.txt` for your
-  editor.
+  the script's headers, and writes the editor files `mod header` writes.
+- `mod header SOURCE NAME` writes, for each patch, a header of what its
+  target declares (`mods/NAME/.editor/s51.h`: the script's functions with
+  their signatures and doc comments, those of its libraries, its globals
+  and its `PROGRAM` table), and the mod's `compile_commands.json`, which
+  gives each patch the tree's flags and its header, so clangd knows the
+  target's names in the patch. Only editors read them: the patch is not
+  changed, and builds are the same with them or without. Run it again after
+  decompiling again.
 - `mod check SOURCE NAME...` compiles every script the mods change, as
-  `build` would but without a disc, and prints the numbers they were given.
+  `build` would but without a disc, and prints the mods it added for
+  `requires`, the order they apply in, the numbers they were given, and
+  overridden functions the tree has renamed (`--rename` writes the new
+  names into the mods).
 - `build --mod NAME` (repeat it for several) merges each patch into its
   targets after their libraries are included, and lists each mod's patches
   and numbers. The tree is not changed.
 - `mod list SOURCE` lists every mod: its patches, what they override and
-  add, its numbers, and its whole files (below).
+  add, what it requires and is built after, its numbers, and its whole
+  files (below).
 - `mod test SOURCE NAME` runs the mod's tests (below).
 
 **Whole files.** A mod can also replace or add whole files, under

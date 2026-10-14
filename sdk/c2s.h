@@ -27,7 +27,7 @@ float c2s_cos(float angle);
 #define NEW_PROGRAM(name) enum { name = 9000 }
 #define NEW_MONSTER_VAR(name) enum { name = 8 }
 int c2s_original(int unused, ...);
-#define original(...) c2s_original(0, ##__VA_ARGS__)
+#define original(...) c2s_original(0 __VA_OPT__(,) __VA_ARGS__)
 #define LANGUAGE_JAPANESE 0
 #define LANGUAGE_ENGLISH 1
 #define LANGUAGE_FRENCH 2
