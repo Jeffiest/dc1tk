@@ -229,16 +229,22 @@ enum Command {
         #[command(subcommand)]
         command: defs::DefsCommand,
     },
-    /// Save flags the scripts and engine use, and which are free.
+    /// Save flags (or save counters) the scripts and engine use, and which are free.
     Flags {
         /// A decompiled source tree.
         source: PathBuf,
-        /// List every used flag with its name and users.
+        /// List every used flag (or counter) with its name and users.
         #[arg(long)]
         used: bool,
         /// Show every use of this flag.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "counter")]
         flag: Option<i64>,
+        /// The 16-bit save counters (get_counter, set_counter) instead of the flags.
+        #[arg(long)]
+        counters: bool,
+        /// Show every use of this save counter.
+        #[arg(long)]
+        counter: Option<i64>,
         #[command(flatten)]
         common: Common,
     },
@@ -546,12 +552,13 @@ fn run_compile_tree(tree: &Path, extracted: &Path, common: &Common) -> Result<Ex
     Ok(if wrong == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) })
 }
 
-fn run_flags(source: &Path, used: bool, flag: Option<i64>, common: &Common) -> Result<ExitCode> {
+/// The flags, or the counters when counters is set: a summary, the used list, or one number's uses.
+fn run_flags(source: &Path, used: bool, counters: bool, number: Option<i64>, common: &Common) -> Result<ExitCode> {
     use c2_script::{flags, index};
     let defs = common.definitions()?;
     let consts = index::constants(index::tree_headers(source, &defs, &common.sdk_dir())?.values());
-    let found = flags::scan(source, &consts)?;
-    let text = match flag {
+    let found = if counters { flags::scan_counters(source, &consts)? } else { flags::scan(source, &consts)? };
+    let text = match number {
         Some(number) => flags::who(&found, number, &consts),
         None if used => flags::used_list(&found, &consts),
         None => flags::summary(&found),
@@ -753,7 +760,9 @@ fn run(command: &Command) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Defs { command } => defs::run(command),
-        Command::Flags { source, used, flag, common } => run_flags(source, *used, *flag, common),
+        Command::Flags { source, used, flag, counters, counter, common } => {
+            run_flags(source, *used, *counters || counter.is_some(), flag.or(*counter), common)
+        }
         Command::Xref(args) => xref::run_xref(args),
         Command::Maps(args) => xref::run_maps(args),
         Command::Map(args) => xref::run_map(args),

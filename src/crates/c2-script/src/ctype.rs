@@ -11,7 +11,13 @@
 //! A type is held in the tree as a node: a scalar or void as its name ("int", "float", "string",
 //! "unsigned char", a value kind), {"pointer": T}, {"array": T, "size": N}, {"struct": TAG}, and
 //! {"function": RETURNS, "params": [T...], "variadic": bool}. A program's structs and unions are
-//! its "structs": {TAG: {"union": bool, "members": [{"name": NAME, "type": T}...]}}.
+//! its "structs": {TAG: {"union": bool, "members": [{"name": NAME, "type": T}...]}}; a bit-field
+//! member also has "bits": [OFFSET, WIDTH].
+//!
+//! Bit-fields share an int slot, from its lowest bit: a bit-field that does not fit in the bits the
+//! slot has left (or follows a member that is not one, or a :0) starts the next slot. A 32-bit one
+//! is a whole slot, an ordinary member of its type. composite.rs reads one as (slot & mask) >> offset
+//! and writes the slot with the field's bits replaced.
 
 use indexmap::IndexMap;
 
@@ -37,6 +43,125 @@ pub enum Ty {
 pub struct Composite {
     pub union: bool,
     pub members: Vec<(String, Ty)>,
+    /// Where each member's bits are in its slot when it is a bit-field: empty when none is, else one
+    /// for each member.
+    pub bits: Vec<Option<Bits>>,
+}
+
+/// A bit-field's place in its slot: its lowest bit, and how many bits it has (1 to 31).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bits {
+    pub offset: i64,
+    pub width: i64,
+}
+
+impl Bits {
+    /// The slot's bits that are the field's.
+    pub fn mask(self) -> i64 {
+        (((1i64 << self.width) - 1) << self.offset) as i32 as i64
+    }
+}
+
+fn int_node(value: i64) -> Node {
+    node!({"kind": "int", "value": value as i32 as i64})
+}
+
+/// An int literal's value (not an unsigned one).
+fn literal(node: &Node) -> Option<i64> {
+    (node.kind() == "int" && node.get("unsigned").is_none()).then(|| node["value"].as_i64()).flatten()
+}
+
+/// left op right on ints, folded when both are literals.
+fn int_op(op: &str, left: Node, right: Node) -> Node {
+    if let (Some(a), Some(b)) = (literal(&left), literal(&right)) {
+        let (a, b) = (a as i32, b as i32);
+        let folded = match op {
+            "&" => Some(a & b),
+            "|" => Some(a | b),
+            "^" => Some(a ^ b),
+            "-" => Some(a.wrapping_sub(b)),
+            "<<" => Some(a.wrapping_shl(b as u32)),
+            // the VM's >> divides, rounding toward zero
+            ">>" => Some(a.wrapping_div(1 << b)),
+            _ => None,
+        };
+        if let Some(value) = folded {
+            return int_node(i64::from(value));
+        }
+    }
+    node!({"kind": "binary", "op": op, "left": left, "right": right})
+}
+
+/// A value as an int: a literal as it is, anything else converted (a float's value is truncated).
+fn as_int(value: Node) -> Node {
+    if literal(&value).is_some() {
+        return value;
+    }
+    node!({"kind": "cast", "type": "int", "operand": value})
+}
+
+impl Bits {
+    /// A value put in the field's bits of an otherwise empty slot: (value << offset) & mask.
+    pub fn packed(self, value: Node) -> Node {
+        let shifted = match self.offset {
+            0 => as_int(value),
+            offset => int_op("<<", as_int(value), int_node(offset)),
+        };
+        int_op("&", shifted, int_node(self.mask()))
+    }
+
+    /// Two slots' worth of bits put together (fields that share a slot).
+    pub fn joined(left: Node, right: Node) -> Node {
+        int_op("|", left, right)
+    }
+
+    /// The slot with the field's bits replaced by packed's: (slot & ~mask) | packed.
+    pub fn stored(self, slot: Node, packed: Node) -> Node {
+        int_op("|", int_op("&", slot, int_node(!self.mask())), packed)
+    }
+
+    /// The field's value from its slot's: (slot & mask) >> offset, and for a signed field its top bit
+    /// spread up ((v ^ top) - top). The bits below the field are 0, so the VM's >> (a division) is
+    /// exact; a field that reaches bit 31 comes out spread already, and an unsigned one is masked.
+    pub fn read(self, slot: Node, signed: bool) -> Node {
+        let mut value = int_op("&", slot, int_node(self.mask()));
+        if self.offset > 0 {
+            value = int_op(">>", value, int_node(self.offset));
+        }
+        let top_bit = self.offset + self.width == 32;
+        if signed && !top_bit {
+            let top = int_node(1 << (self.width - 1));
+            value = int_op("-", int_op("^", value, top.clone()), top);
+        } else if !signed && top_bit && self.offset > 0 {
+            value = int_op("&", value, int_node((1 << self.width) - 1));
+        }
+        value
+    }
+}
+
+impl Composite {
+    pub fn new(union: bool, members: Vec<(String, Ty)>) -> Composite {
+        Composite { union, members, bits: Vec::new() }
+    }
+
+    /// The bits of the member at, when it is a bit-field.
+    pub fn bits_of(&self, at: usize) -> Option<Bits> {
+        self.bits.get(at).copied().flatten()
+    }
+
+    /// The slots and bytes the member at takes in a struct: a bit-field that starts its slot takes
+    /// the slot (an int's 4 bytes), one that shares it none.
+    pub fn takes(&self, at: usize, structs: &Structs) -> (i64, i64, i64) {
+        match self.bits_of(at) {
+            Some(bits) if bits.offset > 0 => (0, 0, 4),
+            Some(_) => (1, 4, 4),
+            None => {
+                let ty = &self.members[at].1;
+                let (bytes, align) = ty.layout(structs);
+                (ty.slots(structs), bytes, align)
+            }
+        }
+    }
 }
 
 pub type Structs = IndexMap<String, Composite>;
@@ -118,7 +243,7 @@ impl Ty {
             Ty::Array(of, size) => of.slots(structs) * (*size).max(0),
             Ty::Struct(tag) => match structs.get(tag) {
                 Some(found) => {
-                    let sizes = found.members.iter().map(|(_, ty)| ty.slots(structs));
+                    let sizes = (0..found.members.len()).map(|at| found.takes(at, structs).0);
                     if found.union {
                         sizes.max().unwrap_or(0)
                     } else {
@@ -148,8 +273,8 @@ impl Ty {
                     return (0, 1);
                 };
                 let (mut size, mut align) = (0, 1);
-                for (_, ty) in &found.members {
-                    let (bytes, member_align) = ty.layout(structs);
+                for at in 0..found.members.len() {
+                    let (_, bytes, member_align) = found.takes(at, structs);
                     align = align.max(member_align);
                     if found.union {
                         size = size.max(bytes);
@@ -189,7 +314,7 @@ impl Ty {
             Ty::Array(of, size) if *size >= 0 => format!("{}[{size}]", of.shown()),
             Ty::Array(of, _) => format!("{}[]", of.shown()),
             Ty::Struct(tag) if tag.starts_with("__anonymous") => "an unnamed struct".into(),
-            Ty::Struct(tag) => format!("struct {tag}"),
+            Ty::Struct(tag) => format!("struct {}", tag_shown(tag)),
             Ty::Function(returns, params, variadic) => {
                 let mut shown: Vec<String> = params.iter().map(Ty::shown).collect();
                 if *variadic {
@@ -201,6 +326,15 @@ impl Ty {
     }
 }
 
+/// A tag as the source wrote it: a block's own struct's tag (T#key_n, see parse.rs) is T, and an
+/// unnamed struct's made-up one "(unnamed)".
+pub fn tag_shown(tag: &str) -> &str {
+    if tag.starts_with("__anonymous") {
+        return "(unnamed)";
+    }
+    tag.split('#').next().unwrap_or(tag)
+}
+
 /// value rounded up to a multiple of align.
 fn aligned(value: i64, align: i64) -> i64 {
     (value + align - 1) / align * align
@@ -208,18 +342,30 @@ fn aligned(value: i64, align: i64) -> i64 {
 
 /// A member of a struct or union: its offset in slots and in bytes, and its type.
 pub fn member(structs: &Structs, tag: &str, name: &str) -> Option<(i64, i64, Ty)> {
+    member_bits(structs, tag, name).map(|(slots, bytes, ty, _)| (slots, bytes, ty))
+}
+
+/// member, and the member's bits when it is a bit-field (its offsets are its slot's).
+pub fn member_bits(structs: &Structs, tag: &str, name: &str) -> Option<(i64, i64, Ty, Option<Bits>)> {
     let found = structs.get(tag)?;
     let (mut slots, mut bytes) = (0, 0);
-    for (member, ty) in &found.members {
-        let (size, align) = ty.layout(structs);
-        if !found.union {
+    for (at, (member, ty)) in found.members.iter().enumerate() {
+        let (taken, size, align) = found.takes(at, structs);
+        let bits = found.bits_of(at);
+        if !found.union && taken > 0 {
             bytes = aligned(bytes, align);
         }
-        if member == name {
-            return Some((slots, bytes, ty.clone()));
+        if member == name && !name.is_empty() {
+            // a bit-field that shares its slot is in the slot the last one started
+            let shared = bits.is_some_and(|bits| bits.offset > 0) && !found.union;
+            return Some(if shared {
+                (slots - 1, bytes - 4, ty.clone(), bits)
+            } else {
+                (slots, bytes, ty.clone(), bits)
+            });
         }
         if !found.union {
-            slots += ty.slots(structs);
+            slots += taken;
             bytes += size;
         }
     }
@@ -241,8 +387,13 @@ pub fn scalar_slots(ty: &Ty, structs: &Structs, base: i64, out: &mut Vec<(i64, T
                 return;
             };
             let mut at = base;
-            for (_, member) in &found.members {
-                scalar_slots(member, structs, at, out);
+            for (index, (_, member)) in found.members.iter().enumerate() {
+                match found.bits_of(index) {
+                    // a slot of bit-fields is an int; the fields that share it add nothing
+                    Some(bits) if bits.offset > 0 => continue,
+                    Some(_) => out.push((at, int())),
+                    None => scalar_slots(member, structs, at, out),
+                }
                 if found.union {
                     let end = base + ty.slots(structs);
                     for rest in at + member.slots(structs)..end {
@@ -250,7 +401,7 @@ pub fn scalar_slots(ty: &Ty, structs: &Structs, base: i64, out: &mut Vec<(i64, T
                     }
                     return;
                 }
-                at += member.slots(structs);
+                at += found.takes(index, structs).0;
             }
         }
         other => out.push((base, other.clone())),
@@ -262,13 +413,20 @@ pub fn structs_of(program: &Node) -> Structs {
     let mut found = Structs::new();
     if let Some(map) = program.get("structs").and_then(Node::as_object) {
         for (tag, composite) in map.iter() {
-            let members = composite["members"].as_array().map_or(Vec::new(), |members| {
-                members
-                    .iter()
-                    .map(|member| (member["name"].as_str().unwrap_or("").to_string(), Ty::from_node(&member["type"])))
-                    .collect()
-            });
-            found.insert(tag.to_string(), Composite { union: composite["union"] == Node::Bool(true), members });
+            let listed = composite["members"].as_array().map_or(&[][..], Vec::as_slice);
+            let members = listed
+                .iter()
+                .map(|member| (member["name"].as_str().unwrap_or("").to_string(), Ty::from_node(&member["type"])))
+                .collect();
+            let bits: Vec<Option<Bits>> = listed
+                .iter()
+                .map(|member| {
+                    let pair = member.get("bits")?.as_array()?;
+                    Some(Bits { offset: pair.first()?.as_i64()?, width: pair.get(1)?.as_i64()? })
+                })
+                .collect();
+            let bits = if bits.iter().any(Option::is_some) { bits } else { Vec::new() };
+            found.insert(tag.to_string(), Composite { union: composite["union"] == Node::Bool(true), members, bits });
         }
     }
     found
@@ -278,8 +436,18 @@ pub fn structs_of(program: &Node) -> Structs {
 pub fn structs_node(structs: &Structs) -> Node {
     let mut map = Map::new();
     for (tag, composite) in structs {
-        let members: Vec<Node> =
-            composite.members.iter().map(|(name, ty)| node!({"name": name.as_str(), "type": ty.to_node()})).collect();
+        let members: Vec<Node> = composite
+            .members
+            .iter()
+            .enumerate()
+            .map(|(at, (name, ty))| {
+                let member = node!({"name": name.as_str(), "type": ty.to_node()});
+                match composite.bits_of(at) {
+                    Some(bits) => member.with("bits", node!([bits.offset, bits.width])),
+                    None => member,
+                }
+            })
+            .collect();
         map.insert(tag.clone(), node!({"union": composite.union, "members": members}));
     }
     Node::Map(map)
@@ -292,21 +460,21 @@ mod tests {
     #[test]
     fn layouts_follow_cs_alignment_and_slots_count_members() {
         let mut structs = Structs::new();
-        let pair = Composite {
-            union: false,
-            members: vec![
+        let pair = Composite::new(
+            false,
+            vec![
                 ("c".into(), Ty::Scalar("char".into())),
                 ("i".into(), int()),
                 ("s".into(), Ty::Scalar("short".into())),
             ],
-        };
+        );
         structs.insert("pair".into(), pair);
         structs.insert(
             "value".into(),
-            Composite {
-                union: true,
-                members: vec![("f".into(), Ty::Scalar("float".into())), ("a".into(), Ty::Array(Box::new(int()), 3))],
-            },
+            Composite::new(
+                true,
+                vec![("f".into(), Ty::Scalar("float".into())), ("a".into(), Ty::Array(Box::new(int()), 3))],
+            ),
         );
         let pair = Ty::Struct("pair".into());
         assert_eq!((pair.bytes(&structs), pair.slots(&structs)), (12, 3));
@@ -319,5 +487,35 @@ mod tests {
         assert_eq!(slots, vec![(0, Ty::Scalar("float".into())), (1, int()), (2, int())]);
         let node = Ty::Function(Box::new(pointer(pair.clone())), vec![int()], true).to_node();
         assert_eq!(Ty::from_node(&node), Ty::Function(Box::new(pointer(pair)), vec![int()], true));
+    }
+
+    #[test]
+    fn bit_fields_share_slots_and_keep_their_bits_in_the_tree() {
+        let unsigned = Ty::Scalar("unsigned int".into());
+        let mut flags = Composite::new(
+            false,
+            vec![("a".into(), unsigned.clone()), ("b".into(), int()), ("c".into(), int()), ("d".into(), unsigned)],
+        );
+        flags.bits = vec![
+            Some(Bits { offset: 0, width: 3 }),
+            Some(Bits { offset: 3, width: 29 }),
+            None,
+            Some(Bits { offset: 0, width: 1 }),
+        ];
+        let mut structs = Structs::new();
+        structs.insert("flags".into(), flags);
+        let ty = Ty::Struct("flags".into());
+        assert_eq!((ty.bytes(&structs), ty.slots(&structs)), (12, 3));
+        assert_eq!(member_bits(&structs, "flags", "b"), Some((0, 0, int(), Some(Bits { offset: 3, width: 29 }))));
+        assert_eq!(member_bits(&structs, "flags", "c").map(|(slots, bytes, ..)| (slots, bytes)), Some((1, 4)));
+        assert_eq!(member_bits(&structs, "flags", "d").map(|(slots, ..)| slots), Some(2));
+        let mut slots = Vec::new();
+        scalar_slots(&ty, &structs, 0, &mut slots);
+        assert_eq!(slots.iter().map(|(slot, _)| *slot).collect::<Vec<_>>(), vec![0, 1, 2]);
+        let program = node!({"structs": structs_node(&structs)});
+        assert_eq!(structs_of(&program), structs);
+        // a field that reaches bit 31 comes out of the VM's >> spread already
+        assert_eq!(Bits { offset: 3, width: 29 }.mask(), -8);
+        assert_eq!(Bits { offset: 0, width: 3 }.packed(node!({"kind": "int", "value": 9}))["value"], Node::Int(1));
     }
 }
