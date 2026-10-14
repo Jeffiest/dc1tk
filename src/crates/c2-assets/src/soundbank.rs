@@ -1744,6 +1744,41 @@ impl Bank {
     }
 }
 
+/// A small bank for tests: a placeholder entry 0 that plays a silent sample, then one entry for
+/// each rate (a short saw wave played at it), entry 1 at the given volume.
+#[cfg(test)]
+pub(crate) fn test_bank(rates: &[i64], volume: i64) -> Vec<u8> {
+    let vag = encode_adpcm(&[0; 28], None, true).unwrap();
+    let mut hd = Hd {
+        version: vec![0, 0, 2, 0],
+        se_timbre_addr: u32::MAX,
+        head_reserved: vec![0xFF; 24],
+        body_size: vag.len() as u32,
+        vags: vec![Record::new(
+            LayoutKind::VagInfo,
+            &[("offset", 0), ("rate", 22050), ("attribute", 0), ("reserved", 0xFF)],
+        )],
+        samples: vec![Some(Record::new(LayoutKind::Sample, DEFAULT_SAMPLE))],
+        sample_sets: vec![Some(SampleSet { samples: vec![0], vel_curve: 0, vel_limit_low: 1, vel_limit_high: 127 })],
+        programs: vec![Some(Program {
+            record: Record::new(LayoutKind::Program, DEFAULT_PROGRAM),
+            splits: vec![Record::new(LayoutKind::Split, DEFAULT_SPLIT)],
+        })],
+    };
+    let members = [
+        ("x.hd".to_string(), hd.build(vag.len()).unwrap()),
+        ("x.bd".to_string(), vag),
+        ("x.cfg".to_string(), b"SP\tx\t0\t0\r\n0\t-\t-\t0\tKeyOn\t0\t60\t\r\nEND\r\n".to_vec()),
+        ("x.vol".to_string(), b"END\n".to_vec()),
+    ];
+    let mut bank = Bank::from_bytes(&crate::models::write_pack(&members).unwrap()).unwrap();
+    for (at, &rate) in rates.iter().enumerate() {
+        let sound = Sound { rate, samples: (0..280).map(|n| (n % 40) * 500 - 10000).collect(), loop_start: None };
+        bank.add_entry(&sound, "A", "B", if at == 0 { volume } else { 100 }, 60).unwrap();
+    }
+    bank.build().unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

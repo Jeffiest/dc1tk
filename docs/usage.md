@@ -332,7 +332,14 @@ The commands:
   `build` would but without a disc, and prints the mods it added for
   `requires`, the order they apply in, the numbers they were given, and
   overridden functions the tree has renamed (`--rename` writes the new
-  names into the mods).
+  names into the mods). With `--disc ISO` it also looks up the files the
+  mods' scripts load by name (`load_chara`, `load_sound`,
+  `load_message_file`, `load_image`, `start_background_load`, ... with a
+  string path, in the directory the function's `change_dir` set) and the
+  member a character pack is loaded by (`info.cfg`), and warns about any the
+  disc and the mods' own files do not have; such a load fails only in the
+  game. Loads the tree's own script makes too are left out (the game has a
+  few that fail).
 - `build --mod NAME` (repeat it for several) merges each patch into its
   targets after their libraries are included, and lists each mod's patches
   and numbers. The tree is not changed.
@@ -403,6 +410,13 @@ model pack from a glTF, in the format of the disc's file `like` names (see
 lines. Two mods replacing one asset are refused. The rules are in
 [the design](design.md), "Mods by name".
 
+A sound reaches every copy of its bank: where a menu pack holds a version
+of a bank that differs from `snd2/sp/`'s only in parts the entry does not
+use (its volumes), the entry is one sound with both places, and a bank's
+folder (`bank:SP_001`) reaches them too. An added sound's name
+(`sound:SE_MOD_BEEP`) is a constant the mod's patches use, holding the
+entry's number.
+
 **Game files.** A mod can replace models, textures, sounds and any other
 file on the disc. It keeps them under `mods/NAME/disc/`, laid out as
 `extract` lays the disc out: a file at its path in `DATA.DAT`
@@ -463,7 +477,11 @@ character pack; packs inside packs work the same way).
   single sound (`001.wav`). Replace the ones you want with any WAV (any
   rate up to 48000 Hz, mixed to mono; a `smpl` loop makes it loop), and add
   entries by numbering on from the last (`005_beep.wav`, the name after the
-  number goes into the bank's table). An entry that plays a sequence (a
+  number goes into the bank's table). A WAV with a name gives the mod's
+  patches a constant for its entry, named as `pal.h` names the game's
+  sounds: `005_beep.wav` in `sp_004.snd.wav/` is `SE_SP_004_BEEP` (5), so a
+  patch can `play_se(bank, SE_SP_004_BEEP)`; `build` and `mod check` list
+  them, and refuse a name `pal.h` gives another entry. An entry that plays a sequence (a
   short tune of the bank's instruments) is not exported; a WAV given for it
   replaces the tune with that one sound. A changed entry overwrites its
   samples when no other entry plays them, so the bank stays the same size
@@ -555,8 +573,23 @@ character pack; packs inside packs work the same way).
   as triangle lists rather than the game's strips: the model grows a few
   percent (Monica's pack by 4%). Max's and Monica's
   clothes are separate costume packs (`mainchr/c01fuku1.chr` and the like):
-  their own packs hold the skeleton and motions. Importing from glTF is new
-  and not yet tried in the game. See [the model formats](assets/models.md).
+  their own packs hold the skeleton and motions.
+
+  Motions come back too: every KEY of the pack's motion set 0 is an
+  animation (an action in Blender) of its name, one key per motion frame at
+  30 frames a second. Set Blender's frame rate to 30 (Output Properties,
+  Format) before importing, or it resamples them. `build` writes into the
+  pack's `.mot` and `info.cfg` only the animations that differ from the
+  export by more than a round trip moves them: an edited motion over its own
+  frames, a longer or shorter one (or one whose frames another KEY shares)
+  at new frames with its KEY moved, and a new action as a new KEY after the
+  last (a copy named `walk.001` takes the copied KEY's speed, others 1.00,
+  the speed Blender plays it at). A KEY's `step` scales its speed in the
+  game: it plays at 30 × step frames a second. Vertex, material-fade and
+  visibility keys are not in the glTF; a rebuilt motion keeps those of the
+  motion it came from. Deleting an action changes nothing, and motion sets
+  other than 0 are not exported. See [the model formats](assets/models.md)
+  (sections 3 and 7.3).
 
 **Additions.** The older way to add to a script without copying it, kept for
 mods that use it: its `mod.json` can list additions, applied when it is

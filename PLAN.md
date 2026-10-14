@@ -176,6 +176,39 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    predicted to overflow the field SPU region by 1,392 bytes in s01 (set
    1600 with EV_100_155), not observed.
 
+## Next: standard C
+
+Make the script compiler a conforming C89/C90 freestanding implementation
+(the whole language, and `<float.h>`, `<limits.h>`, `<stdarg.h>` and
+`<stddef.h>`; no hosted library), for code people write: decompiled retail
+code keeps compiling to its own bytes. What the compiler lacks today
+([language](docs/language.md)), in the order to do it:
+
+1. **A conformance suite.** A test of every C89 feature, each passing,
+   failing to compile, or compiling with different behaviour, so progress is
+   measured.
+2. **Cheap features:** `goto` and labels, `sizeof`, the comma operator,
+   unary `+`, `const`/`volatile`/`register`/`auto`, `static` locals (kept
+   between calls), initialised globals, multi-dimensional local arrays, K&R
+   function definitions, macros with parameters with `#` and `##`, `#error`,
+   `#line`, `__FILE__`/`__LINE__`/`__STDC__`, and full `#if` arithmetic.
+3. **Integer types:** `char`, `short`, `long`, `signed` and `unsigned` with
+   C's widths, wrap-around and conversions, emulated on the VM's ints.
+4. **C's semantics in a strict mode** (`#pragma std c89` or a mod option):
+   assignment converts to the variable's type (the VM stores the value's own
+   type), `&&`/`||` give 0 or 1, and natives in conditions run only when C
+   would evaluate them (lowered to branches). Retail code keeps its meaning.
+5. **Composite types, lowered to what the VM has:** structs and unions as
+   their members' slots, global arrays and global pointers (the VM has no
+   indexed access to globals: generated accessors), pointer arithmetic and
+   pointers to pointers, function pointers (an index and a generated
+   dispatch), and user-defined varargs with `<stdarg.h>`.
+6. **`double` is left out on purpose.** C89 asks for about 10 significant
+   digits and the VM's floats are 32-bit, so code that uses `double` or
+   `long double` is refused with a clear error rather than given 32-bit
+   doubles; the implementation documents this as its one departure. The
+   `string` type stays as an extension.
+
 ## Next: modding
 
 Done: mods that need mods (`requires`, `after`), editor headers for patches
@@ -215,28 +248,32 @@ scripts (see [usage](docs/usage.md#mods) and [the formats](docs/assets/)):
 Unedited exports build back to the disc's own bytes in every case. Still to
 do:
 
-1. **Sounds in the game.** A test mod in Monica's first fight (recoloured
-   PNG textures, a bigger head from glTF, green soldiers, two event sounds
-   as WAV) showed every change in PCSX2 but the sounds: the old ones were
-   heard. The bank on the disc is the new one (one copy, the one sound set
-   800 names), its rows 4 and 13 are KeyOn rows of new programs, and the
-   engine's cfg reader and IOP upload read it as written. Likely the test
-   sounds: the crash was a 40-140 Hz boom, near silent on TV speakers, and
-   the original's glass layer, shared with entry 6, still plays; the chime
-   was at the fade. Rebuild with loud mid-range sounds; if the old ones are
-   still heard, read the engine's sound table over PINE once event 50 has
-   loaded (`PortInfo` 0x3F6540, port 4) to see what the rows became.
+1. **Sounds in the game** (fixed where c2 was wrong, being tried). The game
+   reads the copy `build` rewrites (`DATA.HD4`'s first match); the event 50
+   test's sounds were most likely too quiet (a 40-140 Hz boom at volume 44)
+   or masked by an unchanged shared glass sample. A real gap was fixed: banks
+   whose copies differ (the menu packs' `SP_001`-`SP_003`, the two `SY_000`,
+   `BG_193`) were separate assets, so a sound reached only one copy; a sound
+   now reaches every version of its bank. `sound-test.iso` has loud test
+   tones on the title menu and in event 50.
 2. **Memory** (done, see "Now: the rest of the game" item 4). The sound-set
    puzzle is settled: a set's event bank never loads with that set's own
    field banks; a script's `load_sound(set)` adds only the event bank to the
    set already loaded.
-3. **Names for a mod's new sounds.** New bank entries are used by number;
-   generate names for them (`SE_SP_004_BEEP`) as `disc.h` names the game's,
-   and have `mod check` check the pack paths and member names scripts load.
-4. **Motions from glTF.** Export writes every motion as an animation, but
-   build does not read animations back yet: decode the remaining channels
-   (per-vertex, material alpha, visibility), confirm the frame rate, and
-   write `.mot` keys and `info.cfg` `KEY` ranges from glTF animations.
+3. **Names for a mod's new sounds** (done). `005_beep.wav` in
+   `sp_004.snd.wav/` gives a mod's patches `SE_SP_004_BEEP = 5`; `mod check
+   --disc` checks the files and pack members scripts load.
+4. **Motions from glTF** (done, being tried). Build reads glTF animations
+   back into `.mot` keys and `info.cfg` `KEY`s: unedited exports and Blender
+   round trips change nothing, an edited motion is written in place (or
+   moved to the timeline's end when its length or shared frames change), and
+   a new action becomes a new `KEY`. Set Blender to 30 fps before importing.
+   Left: vertex, material alpha/colour and visibility lists go out to glTF
+   only as carried data (morph targets, `KHR_animation_pointer`,
+   `KHR_node_visibility` would expose them), motion sets 1-7 and motion-only
+   packs are not exported, deleting an action keeps its `KEY`, and a Blender
+   round trip still rebuilds every character mesh (map models compare by
+   value; characters should too).
 5. **New characters.** A model is rebuilt on the disc model's skeleton; a
    wholly new character needs a new pack, an `info.cfg` and a skeleton of
    its own from glTF, and cloth (`.clo`) left out or carried over.
