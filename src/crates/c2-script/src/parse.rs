@@ -219,6 +219,8 @@ struct Block {
     on: bool,
     taken: bool,
     line: usize,
+    /// whether its #else has been read, after which only #endif may come
+    otherwise: bool,
 }
 
 /// The value of an #if or #elif condition, as C works it out (cpp::condition).
@@ -242,12 +244,15 @@ fn conditional_directive(
         } else {
             compiling && (macros.defined(name) == (word == "ifdef"))
         };
-        conditions.push(Block { parent: compiling, on: chosen, taken: chosen || !compiling, line });
+        conditions.push(Block { parent: compiling, on: chosen, taken: chosen || !compiling, line, otherwise: false });
         return Ok(());
     }
     let Some(block) = conditions.last_mut() else {
         return lex_fail(line, format!("#{word} without #if"));
     };
+    if block.otherwise && word != "endif" {
+        return lex_fail(line, format!("#{word} after #else"));
+    }
     match word {
         "elif" => {
             block.on = block.parent && !block.taken && condition_value(rest, macros, line)?;
@@ -256,6 +261,7 @@ fn conditional_directive(
         "else" => {
             block.on = block.parent && !block.taken;
             block.taken = true;
+            block.otherwise = true;
         }
         _ => {
             conditions.pop();
@@ -643,6 +649,13 @@ fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> P
                     if cpp::PREDEFINED.contains(&name.as_str()) || name == "defined" {
                         return lex_fail(line, format!("{name} cannot be #defined"));
                     }
+                    let same = |old: &cpp::Macro| {
+                        let spaced = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+                        old.params == definition.params && spaced(&old.body) == spaced(&definition.body)
+                    };
+                    if macros.table.get(&name).is_some_and(|old| !same(old)) {
+                        return lex_fail(line, format!("{name} is #defined again differently; #undef it first"));
+                    }
                     if definition.params.is_some() {
                         macros.define(&name, definition, false);
                     } else {
@@ -753,6 +766,21 @@ fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> P
             let (value, end) = read_char(&text, position, line)?;
             tokens.push(Token::new(Kind::Int, line, Some(value.to_string())));
             position = end;
+        } else if c == 'L' && text.get(position + 1) == Some(&'\'') {
+            // a wide character: its Shift-JIS code, which wchar_t holds
+            let (value, end) =
+                cpp::character_constant(&text[position + 1..]).or_else(|reason| lex_fail(line, reason))?;
+            let value = match char::from_u32(value).filter(|_| text[position + 2] != '\\') {
+                Some(character) => c2_disc::text::encode(&character.to_string())
+                    .ok_or_else(|| Fault::Value(format!("line {line}: {character:?} has no Shift-JIS code")))?
+                    .iter()
+                    .fold(0u32, |code, byte| code << 8 | u32::from(*byte)),
+                None => value,
+            };
+            tokens.push(Token::new(Kind::Int, line, Some(value.to_string())));
+            position += 1 + end;
+        } else if c == 'L' && text.get(position + 1) == Some(&'"') {
+            return lex_fail(line, "wide string literals are not supported yet: a string is the VM's");
         } else if c == cpp::PAINT || c.is_ascii_alphabetic() || c == '_' {
             // a painted name is one a macro's own replacement held, which is never expanded
             let painted = c == cpp::PAINT;
@@ -1406,9 +1434,10 @@ fn constant_expression(state: &mut State) -> Parsed<i64> {
     }
 }
 
-/// The bytes a value of a type takes: the VM's slot holds 32 bits, and char and short are C's 1
-/// and 2.
-fn type_size(kind: &str) -> i64 {
+/// The bytes a value of a type (or a typedef of one) takes: the VM's slot holds 32 bits, and char and
+/// short are C's 1 and 2.
+fn type_size(state: &State, kind: &str) -> i64 {
+    let kind = state.kinds.get(kind).map_or(kind, String::as_str);
     match kind {
         "char" | "unsigned char" => 1,
         "short" | "unsigned short" => 2,
@@ -1438,18 +1467,18 @@ fn size_of(state: &State, node: &Node) -> Parsed<i64> {
         },
         "var" => match entry(field(node, "name")) {
             Some(found) if found.get("pointer").is_some() || found["array"] == Node::Bool(true) => 4,
-            Some(found) => elements(state, &found)? * type_size(field(&found, "type")),
+            Some(found) => elements(state, &found)? * type_size(state, field(&found, "type")),
             None => 4,
         },
-        "index" => entry(field(node, "name")).map_or(4, |found| type_size(field(&found, "type"))),
-        "deref" => entry(field(&node["operand"], "name")).map_or(4, |found| type_size(field(&found, "type"))),
+        "index" => entry(field(node, "name")).map_or(4, |found| type_size(state, field(&found, "type"))),
+        "deref" => entry(field(&node["operand"], "name")).map_or(4, |found| type_size(state, field(&found, "type"))),
         "addr" if node.get("row").is_some() => {
             let row = node["row"].as_i64().unwrap_or(1);
-            row * entry(field(&node["target"], "name")).map_or(4, |found| type_size(field(&found, "type")))
+            row * entry(field(&node["target"], "name")).map_or(4, |found| type_size(state, field(&found, "type")))
         }
         "cast" if field(node, "type") == "void" => return state.fail("sizeof a void expression"),
         "cast" if field(node, "type").ends_with('*') => 4,
-        "cast" => type_size(field(node, "type")),
+        "cast" => type_size(state, field(node, "type")),
         "assign" | "compound" => size_of(state, &node["target"])?,
         "comma" => size_of(state, &node["right"])?,
         "binary" if node.get("postfix").is_some() => size_of(state, &node["left"])?,
@@ -1549,7 +1578,7 @@ fn sizeof(state: &mut State) -> Parsed<Node> {
         if spec.kind == "void" && pointers == 0 {
             return state.fail("sizeof(void)");
         }
-        let element = if pointers > 0 { 4 } else { type_size(&spec.kind) };
+        let element = if pointers > 0 { 4 } else { type_size(state, &spec.kind) };
         return Ok(size_literal(element * dims.iter().product::<i64>()));
     }
     let operand = unary(state)?;
@@ -1807,10 +1836,22 @@ fn switch(state: &mut State) -> Parsed<Node> {
         state.expect(")")?;
         state.expect("{")?;
         let mut cases: Vec<Node> = Vec::new();
+        // the case values known here, which C allows once each
+        let mut numbers: Vec<i64> = Vec::new();
         while !state.at("}", 0) {
             if state.at("case", 0) {
                 state.take();
-                cases.push(node!({"value": ternary(state)?, "default": false, "body": []}));
+                let value = ternary(state)?;
+                let found = |name: &str| {
+                    state.constants.get(name).or_else(|| state.enumerators.get(name)).map(|value| *value as i64)
+                };
+                if let Some((number, _)) = folded(&value, &found) {
+                    if numbers.contains(&number) {
+                        return state.fail(format!("case {number} is in the switch twice"));
+                    }
+                    numbers.push(number);
+                }
+                cases.push(node!({"value": value, "default": false, "body": []}));
                 state.expect(":")?;
             } else if state.at("default", 0) {
                 state.take();
@@ -2242,6 +2283,9 @@ fn array_values(state: &State, declared: &Declared, kind: &str) -> Parsed<(Vec<i
         }
     }
     let Some(init) = &declared.init else {
+        if dims.iter().any(|size| *size <= 0) {
+            return state.fail(format!("{} needs a size of at least 1", declared.name));
+        }
         return Ok((dims, Vec::new()));
     };
     let mut out = std::collections::BTreeMap::new();
@@ -2260,6 +2304,9 @@ fn array_values(state: &State, declared: &Declared, kind: &str) -> Parsed<(Vec<i
     };
     if dims[0] < 0 {
         dims[0] = rows;
+    }
+    if dims.iter().any(|size| *size <= 0) {
+        return state.fail(format!("{} needs a size of at least 1", declared.name));
     }
     let total: i64 = dims.iter().product();
     let values = (0..total).map(|offset| (offset, out.remove(&offset).unwrap_or_else(|| zero(kind)))).collect();

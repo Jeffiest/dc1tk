@@ -344,6 +344,10 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
             state.place_label(label);
         }
         "compound" => compound(state, node)?,
+        "narrow" => {
+            expression(state, &node["operand"])?;
+            narrow(state, text(node, "type"));
+        }
         "via" => {
             state.emit("push 0");
             state.emit(format!("load {} {}", pointer_modes(text(node, "type")), int(&node["slot"])?));
@@ -365,6 +369,27 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
     Ok(())
 }
 
+/// A value wrapped to the width of a narrow integer type: masked for an unsigned one, and for a
+/// signed one offset into the unsigned range, masked and offset back.
+fn narrow(state: &mut State, kind: &str) {
+    let (mask, offset) = match kind {
+        "char" => (255, Some(128)),
+        "unsigned char" => (255, None),
+        "short" => (65535, Some(32768)),
+        _ => (65535, None),
+    };
+    if let Some(offset) = offset {
+        state.emit(format!("push {offset}"));
+        state.emit("add");
+    }
+    state.emit(format!("push {mask}"));
+    state.emit("and");
+    if let Some(offset) = offset {
+        state.emit(format!("push {offset}"));
+        state.emit("sub");
+    }
+}
+
 /// target op= value. A variable compiles as target = target op value. An element's address is
 /// worked out once, into a hidden local, and the element is read and written through it, so an
 /// index with side effects (a[i++] += 1) runs them once.
@@ -376,6 +401,9 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
             state,
             &node!({"kind": "binary", "op": node["op"].clone(), "left": target.clone(), "right": node["value"].clone()}),
         )?;
+        if let Some(kind) = node["narrow"].as_str() {
+            narrow(state, kind);
+        }
         state.emit("store");
         return Ok(());
     }
@@ -393,6 +421,9 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
         state,
         &node!({"kind": "binary", "op": node["op"].clone(), "left": via, "right": node["value"].clone()}),
     )?;
+    if let Some(kind) = node["narrow"].as_str() {
+        narrow(state, kind);
+    }
     state.emit("store");
     Ok(())
 }
@@ -425,10 +456,18 @@ fn shift(state: &mut State, node: &Node) -> Result<()> {
     let op = if node["op"] == "<<" { "mul" } else { "div" };
     let count = &node["right"];
     if count.kind() == "int" {
+        let shift = u32::try_from(int(&count["value"])?).ok().filter(|shift| *shift < 32);
+        let shift = shift.ok_or_else(|| Error::invalid("a shift count out of range (0 to 31)"))?;
         expression(state, &node["left"])?;
-        let power = u32::try_from(int(&count["value"])?).ok().and_then(|shift| 1i128.checked_shl(shift));
-        let power = power.ok_or_else(|| Error::invalid("a shift count out of range"))?;
-        state.emit(format!("push {power}"));
+        if shift == 31 && op == "div" {
+            // only -2^31 divided by 2^31, which an int cannot hold, is not 0
+            state.emit("push -2147483648");
+            state.emit("cmp eq");
+            state.emit("neg");
+            return Ok(());
+        }
+        // 2^31 as an int is -2^31, which multiplies the same in 32 bits
+        state.emit(format!("push {}", (1i64 << shift) as i32));
         state.emit(op);
         return Ok(());
     }

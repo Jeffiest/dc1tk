@@ -261,9 +261,11 @@ impl<'a> Machine<'a> {
                     } else if let Ok(value) = word(1).parse::<i128>() {
                         Value::Int(value)
                     } else {
-                        Value::Float(c2_py::parse_float(word(1)).ok_or_else(|| {
+                        // a constant is a 32-bit float, as the assembler writes it
+                        let value = c2_py::parse_float(word(1)).ok_or_else(|| {
                             Error::invalid(format!("could not convert string to float: '{}'", word(1)))
-                        })?)
+                        })?;
+                        Value::Float(value as f32 as f64)
                     };
                     stack.push(value);
                 }
