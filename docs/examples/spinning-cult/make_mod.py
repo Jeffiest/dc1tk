@@ -14,10 +14,9 @@ C2 and ISO default to build/release/c2.exe and pal.iso in the repository.
 
 The Fish Room is built by the fish-room example's make_mod.py (the room, the fish turning, the
 door), and then, as one would in Blender with the c2_maps add-on:
-- three Invent boxes round the fish, one enabled at a time: the first photo gives the idea
-  "Turning" (251), the next "More Turning" (252), the last "Endless Turning" (253);
-- a checkerboard of touch triggers over the floor, which run the script that moves the fish on
-  to its next idea after a photo;
+- three Invent boxes round the fish, turning with it, each seen from a third of the way round:
+  a photo gives "Turning" (251), "More Turning" (252) or "Endless Turning" (253), by where the
+  fish is in its turn;
 - a second light set, red, for the ending.
 
 Palm Brinks gets the door point door_fish where the closed house door door10 was (as the fish-room
@@ -39,6 +38,7 @@ Nothing of the game's is in this folder: the scenes and the icon sheet come from
 import copy
 import importlib.util
 import json
+import math
 import os
 import shutil
 import struct
@@ -55,7 +55,6 @@ OWN_FILES = ("mod.json", "cult.h", "speech.h", "m01.c", "fishroom.c")
 DATA_FILES = ("items.json", "inventions.json")
 
 IDEAS = (251, 252, 253)  # Turning, More Turning, Endless Turning
-CELL = 450.0  # the touch triggers' spacing on the floor: a board of 4 by 4
 TOWN_DARK_LIGHT = 8
 GYROS = 429  # the item
 ICON_SHEET, ICON_CELL = 1, 191  # itemicon's cell 191: the game's "reserved" mark, no item's icon
@@ -181,36 +180,31 @@ def extend_room(fish_room):
         from c2_maps import c2data
 
         centre = fish_room.game(0, fish_room.FISH_HEIGHT, 0)
-        # the photos: three boxes round the fish, one idea each, only the first enabled; the
-        # script moves the fish on to the next once Max has a photo of one. The camera looks only
-        # at the invent points of placements that are drawn (CMap::InScreenFunc walks the
-        # placements), so the boxes go in the turning fish's placement, not the map's own points.
+        # the photos: three boxes round the fish, one idea each, every one seen only from within 60
+        # degrees of its own side (an invent point's angle) and turned a third of a turn from the
+        # next, so from wherever the camera is exactly one faces it. The fish's turning point turns
+        # the whole placement (its piece "") rather than its piece, so the boxes, which a
+        # placement's points hang from, turn with the fish: which idea a photo gives depends on
+        # where the fish is in its turn. The camera looks only at the invent points of placements
+        # that are drawn (CMap::InScreenFunc walks the placements), so the boxes go in the fish's
+        # placement, not the map's own points.
+        spin = next(child for child in _fish_placement.children if c2data.role(child) == "point")
+        data = c2data.get(spin)
+        data["data"]["piece"] = ""
+        data["data"].pop("frame", None)
+        c2data.put(spin, data)
         piece = next(child for child in _fish_placement.children if c2data.role(child) == "piece")
-        for number, idea_id in enumerate(IDEAS, 1):
+        for number, idea_id in enumerate(IDEAS):
             fish_room.select_only([piece])
-            idea = fish_room.add_point("INVENT", "fish_idea_%d" % number, centre, in_placement=True)
+            idea = fish_room.add_point("INVENT", "fish_idea_%d" % (number + 1), centre, in_placement=True)
+            idea.rotation_euler = (0.0, 0.0, math.radians(120.0 * number))
             data = c2data.get(idea)
-            data["enable"] = 1 if number == 1 else 0
             data["data"]["id"] = idea_id
             data["data"]["min"] = [-260.0, -140.0, -140.0]
             data["data"]["max"] = [260.0, 140.0, 140.0]
             data["data"]["unknown_float"] = 1600.0
+            data["data"]["angle"] = 60.0
             c2data.put(idea, data)
-        # a checkerboard of touch triggers over the floor: walking into one runs a program that
-        # never waits (the player keeps control), which moves the fish's idea on after a photo and
-        # swaps which colour of the board is armed, so standing still never fires one again
-        half = fish_room.ROOM_HALF - CELL / 2
-        count = int(2 * half / CELL) + 1
-        for row in range(count):
-            for column in range(count):
-                colour = "a" if (row + column) % 2 == 0 else "b"
-                fish_room.select_only([root])
-                at = fish_room.game(-half + column * CELL, 0, -half + row * CELL)
-                cell = fish_room.add_point("EVENT", "turn_%s%d" % (colour, row * count + column), at, in_placement=False)
-                cell.scale = (CELL * 0.6, CELL * 0.6, 60.0)
-                data = c2data.get(cell)
-                data["enable"] = 1 if colour == "a" else 0
-                c2data.put(cell, data)
         # light sets: the dark room fades into black fog; set 1 is the ending's red
         data = c2data.get(root)
         sets = data["map"]["settings"]["light_sets"]

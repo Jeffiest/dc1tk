@@ -15,8 +15,6 @@
 PROGRAM(map_start, arrive_in_room);
 PROGRAM(talk_or_dungeon_start, talk_in_room);
 PROGRAM(LEAVE_FISH_ROOM, leave_room);
-PROGRAM(STEP_ON_A, step_on_a);
-PROGRAM(STEP_ON_B, step_on_b);
 MAIN(do_nothing);
 
 #define GILL 40
@@ -70,63 +68,6 @@ struct ring_place ring[CONVERT_COUNT] = {
     {"chara/p01_22a.chr", -216.5, 125.0, murmur_fournet},
 };
 
-// --- the fish's ideas ---------------------------------------------------------------------------
-
-// The floor's touch triggers (make_mod.py), a checkerboard: walking into an armed one runs
-// step_on_a or step_on_b, which never wait, so the player keeps walking.
-string cells_a[8] = {"turn_a0", "turn_a2", "turn_a5", "turn_a7", "turn_a8", "turn_a10", "turn_a13", "turn_a15"};
-string cells_b[8] = {"turn_b1", "turn_b3", "turn_b4", "turn_b6", "turn_b9", "turn_b11", "turn_b12", "turn_b14"};
-
-// Arms one colour of the board and disarms the other, so the cell the player stands on never
-// fires again until they have walked onto the other colour.
-static void arm_cells(int arm_b)
-{
-    int cell;
-
-    for (cell = 0; cell < 8; cell++) {
-        set_func_point_enabled("", cells_a[cell], arm_b == 0);
-        set_func_point_enabled("", cells_b[cell], arm_b != 0);
-    }
-}
-
-// The fish gives one idea at a time: the box of the first Max has no photo of yet.
-static void arm_fish_idea(int ideas)
-{
-    set_func_point_enabled("fr_fish", "fish_idea_1", ideas == 0);
-    set_func_point_enabled("fr_fish", "fish_idea_2", ideas == 1);
-    set_func_point_enabled("fr_fish", "fish_idea_3", ideas >= 2);
-}
-
-// After a photo: once Max has a photo of the fish's idea, it moves on to the next.
-static void check_photos(void)
-{
-    union cult_state state;
-    int photos = 0;
-
-    state = read_cult();
-    if (state.bits.ideas >= IDEA_COUNT) {
-        return;
-    }
-    count_photos_of(IDEA_ROTATION + state.bits.ideas, PHOTO_SUBJECT_IDEA, &photos);
-    if (photos > 0) {
-        state.bits.ideas = state.bits.ideas + 1;
-        write_cult(state);
-        arm_fish_idea(state.bits.ideas);
-    }
-}
-
-void step_on_a(void)
-{
-    check_photos();
-    arm_cells(1);
-}
-
-void step_on_b(void)
-{
-    check_photos();
-    arm_cells(0);
-}
-
 static void place_player_at_door(void)
 {
     place_chara(CHARA_PLAYER, 0.0, 0.0, ROOM_ARRIVE_Z, 3.14);
@@ -171,8 +112,6 @@ void arrive_in_room(void)
     allow_bgm_load();
     load_bgm(MUSIC_TURNING);
     play_bgm(0);
-    arm_fish_idea(state.bits.ideas);
-    arm_cells(0);
     load_gill();
     if (state.bits.turned == ALL_TURNED) {
         load_ring();
@@ -227,11 +166,18 @@ static void meet_gill(void)
 }
 
 // What Gill would say while Max has no gŷros: the likeness, then the shape.
-static void gill_hints(int ideas)
+static void gill_hints(void)
 {
+    int turning = 0;
+    int more = 0;
+    int endless = 0;
+
+    count_photos_of(IDEA_TURNING, PHOTO_SUBJECT_IDEA, &turning);
+    count_photos_of(IDEA_TURNING + 1, PHOTO_SUBJECT_IDEA, &more);
+    count_photos_of(IDEA_TURNING + 2, PHOTO_SUBJECT_IDEA, &endless);
     gill_turns_round();
-    if (ideas < IDEA_COUNT) {
-        say(GILL, "Its likeness.\nTake it.");
+    if (turning == 0 || more == 0 || endless == 0) {
+        say(GILL, "Its likeness.\nAll of it. Watch it turn.");
     } else {
         say(GILL, "Yes. You have it now.");
         say(GILL, "Give it a shape they can hold.\nSomething that turns.");
@@ -287,7 +233,7 @@ static void turn_with_us(void)
     get_chara_pos(CHARA_PLAYER, &px, &py, &pz);
     // the fish: its turning point off, turned from here on by this script
     set_func_point_enabled("fr_fish", "fish_spin", 0);
-    bind_handle_map_part(0, "fr_fish", "fr_fish-m");
+    bind_handle_map_part(0, "fr_fish");
     get_handle_rot(0, &x, &y, &z);
     set_camera_pos(px + 45.0, py + 26.0, pz - 50.0);
     set_camera_target(px, py + 18.0, pz);
@@ -340,7 +286,7 @@ void talk_in_room(void)
     } else if (state.bits.stage == STAGE_NONE) {
         meet_gill();
     } else if (get_item_count(ITEM_GYROS) == 0) {
-        gill_hints(state.bits.ideas);
+        gill_hints();
     } else if (state.bits.stage == STAGE_MET) {
         gill_turns_round();
         say(GILL, "Yes.\nThat is its shape.");
