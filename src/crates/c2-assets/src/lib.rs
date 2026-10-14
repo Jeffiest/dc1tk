@@ -42,6 +42,7 @@ pub mod sounds;
 pub mod text;
 pub mod textures;
 pub mod to_gltf;
+pub mod town_data;
 pub mod tree;
 pub mod tree_check;
 

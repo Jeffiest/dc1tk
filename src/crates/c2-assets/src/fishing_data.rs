@@ -20,13 +20,15 @@
 use serde_json::Value;
 
 use crate::cfg_text::Arg;
-use crate::data_table::{self, Kind, Place, Record, Table, B8, S16, S32};
+use crate::data_table::{self, Adding, Kind, Place, Record, Table, B8, S16, S32};
 use crate::Result;
 
 pub const LANGUAGES: usize = 7;
-/// kFishPlaceMaxFish. FISH reads its arguments unchecked, so a spot keeps the number of FISH
-/// lines it has (an emptied line would add a fish of whatever the stack held).
+/// kFishPlaceMaxFish. FISH reads its arguments unchecked, so a spot keeps at least the FISH lines
+/// it has (an emptied line would add a fish of whatever the stack held); more are added up to this.
 pub const SPOT_FISH_MOST: usize = 8;
+/// No array bounds the spots (FISH_MAP_NUM allocates them); this keeps a mod within reason.
+pub const SPOTS_MOST: usize = 256;
 pub const SPECIES_TABLE: u32 = 0x361A50;
 pub const SPECIES: usize = 19;
 pub const SPECIES_RECORD: usize = 0x54;
@@ -88,10 +90,12 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
                     Place::Lines {
                         copies: vec![fish.iter().map(|&at| (0, at)).collect()],
                         entry: vec![("fish", S32), ("rate", Kind::Float), ("wait_bias", Kind::Float)],
-                        count: (fish.len(), fish.len().min(SPOT_FISH_MOST)),
+                        count: (fish.len().min(SPOT_FISH_MOST), SPOT_FISH_MOST),
                         per_line: 1,
+                        grow: true,
                     },
                 );
+                record.block = vec![(0, head[0].1, at)];
                 spots.push(record);
             }
             _ => {}
@@ -190,6 +194,16 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     }
     let mut table = Table::new("a fishing table", scripts, elf.to_vec());
     table.section("spots", &["spot"], spots);
+    // FISH_MAP_NUM allocates the spots (FISH_PLACE_MAP, 0x88 each, from the scene's stack); a
+    // block past it is dropped
+    let counts = data_table::tagged(&table.scripts[0], "FISH_MAP_NUM").last().map(|&at| vec![(0, at, 0)]);
+    table.adding(Adding {
+        counts: counts.unwrap_or_default(),
+        most: SPOTS_MOST,
+        why: "the spots FISH_MAP_NUM allocates from the scene's stack, a size not fixed",
+        place: Some("spot"),
+        ..Adding::default()
+    });
     table.section("race_fish", &["class", "number"], race_fish);
     table.section("prize_groups", &["contest", "group"], groups);
     table.section("prizes", &["contest", "group", "prize"], prizes);
@@ -257,6 +271,25 @@ mod tests {
         let edit = json!({"race_fish": [{"class": 0, "number": 0, "power": 99}],
             "spots": [{"spot": 0, "fish": [{"fish": 3, "rate": 1, "wait_bias": 0}]}]});
         assert!(table.changes(&edit, "m").unwrap_err().to_string().contains("1 entries"));
+        // more fish in a spot are new FISH lines, up to eight; a new spot copies another
+        let had = table.to_json()["spots"][0]["fish"].as_array().unwrap().len();
+        let mut more = table.to_json()["spots"][0]["fish"].clone();
+        while more.as_array().unwrap().len() < SPOT_FISH_MOST {
+            more.as_array_mut().unwrap().push(json!({"fish": 5, "rate": 2.5, "wait_bias": 0}));
+        }
+        let spots = counts[0];
+        let edit = json!({"spots": [{"spot": 0, "fish": more}, {"spot": spots, "like": 0, "map": 99}]});
+        let (edits, _) = table.changes(&edit, "m").unwrap();
+        let written = table.apply(&edits).unwrap();
+        let again = read(&written, &elf).unwrap().to_json();
+        assert_eq!(again["spots"][0]["fish"], more);
+        assert_eq!(again["spots"][spots]["map"], 99);
+        assert_eq!(again["spots"][spots]["fish"], table.to_json()["spots"][0]["fish"]);
+        assert!(String::from_utf8_lossy(&written[0]).contains(&format!("FISH_MAP_NUM  {} ;", spots + 1)));
+        assert!(had < SPOT_FISH_MOST);
+        more.as_array_mut().unwrap().push(json!({"fish": 5, "rate": 2.5, "wait_bias": 0}));
+        let error = table.changes(&json!({"spots": [{"spot": 0, "fish": more}]}), "m").unwrap_err();
+        assert!(error.to_string().contains("9 entries"), "{error}");
         let fish = json!([{"fish": 3, "rate": 1, "wait_bias": 0}, {"fish": 3, "rate": 1, "wait_bias": 0},
             {"fish": 4, "rate": 1, "wait_bias": 0}, {"fish": 8, "rate": 1, "wait_bias": 0}, {"fish": 17, "rate": 0.5, "wait_bias": 0}]);
         let edit = json!({"race_fish": [{"class": 0, "number": 0, "power": 99}], "spots": [{"spot": 0, "fish": fish}]});

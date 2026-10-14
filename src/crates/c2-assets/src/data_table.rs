@@ -56,7 +56,15 @@ pub enum Place {
     /// read). A changed list fills them in order: with `per_line` 0 each but the last as many
     /// entries as it had and the last the rest; otherwise `per_line` entries a statement (the
     /// engine reads no more), statements left over emptied. No statement is added.
-    Lines { copies: Vec<Vec<(usize, usize)>>, entry: Vec<(&'static str, Kind)>, count: (usize, usize), per_line: usize },
+    /// With `grow`, a list past the room of the lines adds lines of the last one's tag after it,
+    /// `per_line` entries each.
+    Lines {
+        copies: Vec<Vec<(usize, usize)>>,
+        entry: Vec<(&'static str, Kind)>,
+        count: (usize, usize),
+        per_line: usize,
+        grow: bool,
+    },
     /// `len` values of `size` bytes from `offset` in the executable's file.
     Bytes { offset: usize, size: usize, len: usize },
 }
@@ -75,6 +83,32 @@ pub struct Record {
     pub keys: Vec<(String, Value)>,
     pub labels: Vec<(String, Value)>,
     pub fields: Vec<Field>,
+    /// The statements the record is, in each copy: (file, first, last). A record a mod adds is
+    /// a copy of these from the record it is `like`.
+    pub block: Vec<(usize, usize, usize)>,
+}
+
+/// How a section takes new records ([`Section::adding`]): each a copy of the statements of the
+/// record it is `like`, put after the section's last record in each of that record's files.
+#[derive(Clone, Debug, Default)]
+pub struct Adding {
+    /// Arguments that count the records, raised by those added to their file: (file, statement,
+    /// argument).
+    pub counts: Vec<(usize, usize, usize)>,
+    /// The most records a file (a set of copies) holds, and what holds them.
+    pub most: usize,
+    pub why: &'static str,
+    /// The key that is a record's place among its file's records (new ones continue from the
+    /// last); the other keys are written into the copy at (key, tag, argument), or, when not
+    /// there either, are the like record's own (a town).
+    pub place: Option<&'static str>,
+    pub key_args: Vec<(&'static str, &'static str, usize, Kind)>,
+    /// Labels a new record gives, written at (label, tag, argument) as the text of each copy's
+    /// language (at most the last number of bytes once converted): one string, or {"en": ...,
+    /// "fr": ...}.
+    pub label_args: Vec<(&'static str, &'static str, usize, usize)>,
+    /// The language of each file that has one (file, LanguageCode), for the labels' text.
+    pub languages: Vec<(usize, usize)>,
 }
 
 impl Record {
@@ -149,6 +183,8 @@ pub struct Section {
     /// The names of the keys every record of the section has.
     pub keys: Vec<String>,
     pub records: Vec<Record>,
+    /// How the section takes new records, when it does.
+    pub adding: Option<Adding>,
 }
 
 /// The table: the scripts and executable it reads, and its sections.
@@ -159,6 +195,12 @@ pub struct Table {
     pub scripts: Vec<Script>,
     pub elf: Vec<u8>,
     pub sections: Vec<Section>,
+    /// Files the engine reads into a buffer of a size: (file, most bytes, the buffer). A file an
+    /// edit grows past it is refused.
+    pub limits: Vec<(usize, usize, &'static str)>,
+    /// Where the engine copies every string argument of a file, each in 16-byte units, into a
+    /// heap of this many units that refuses the allocation reaching its end: (units, the heap).
+    pub string_units: Option<(usize, &'static str)>,
 }
 
 /// Whether two values are the same to the engine (an int and the float of it are).
@@ -176,6 +218,16 @@ fn same(old: &Value, new: &Value) -> bool {
     }
 }
 
+/// The JSON number of a float argument: as float_value, a whole one with its ".0" (a float
+/// in the script, as it is written).
+fn float_arg_value(value: f32) -> Value {
+    let mut text = format!("{value}");
+    if value.is_finite() && !text.contains('.') && !text.contains('e') {
+        text.push_str(".0");
+    }
+    serde_json::from_str(&text).unwrap_or(Value::Null)
+}
+
 /// The JSON number of an f32: the shortest text that reads back as the same f32.
 pub fn float_value(value: f32) -> Value {
     serde_json::from_str(&format!("{value}")).unwrap_or(Value::Null)
@@ -185,7 +237,7 @@ fn arg_value(arg: Arg, kind: Kind) -> Value {
     match kind {
         Kind::Int(..) => Value::from(arg.int()),
         Kind::Float => match arg {
-            Arg::Float(value) => float_value(value),
+            Arg::Float(value) => float_arg_value(value),
             other => Value::from(other.int()),
         },
         Kind::Text(_) => match arg {
@@ -336,7 +388,7 @@ fn entry_texts(
 
 impl Table {
     pub fn new(what: &str, scripts: Vec<Script>, elf: Vec<u8>) -> Table {
-        Table { what: what.to_string(), scripts, elf, sections: Vec::new() }
+        Table { what: what.to_string(), scripts, elf, sections: Vec::new(), limits: Vec::new(), string_units: None }
     }
 
     /// Adds a section of records with these keys.
@@ -345,7 +397,15 @@ impl Table {
             name: name.to_string(),
             keys: keys.iter().map(|key| key.to_string()).collect(),
             records,
+            adding: None,
         });
+    }
+
+    /// Lets the last section added take new records.
+    pub fn adding(&mut self, adding: Adding) {
+        if let Some(section) = self.sections.last_mut() {
+            section.adding = Some(adding);
+        }
     }
 
     fn args(&self, file: usize, statement: usize) -> &[cfg_text::Piece] {
@@ -420,8 +480,41 @@ impl Table {
         Value::Object(top)
     }
 
-    /// The edits and patches a mod's table makes: only values that differ from these.
+    /// The edits and patches a mod's table makes: only values that differ from these (see
+    /// [`Table::changes_all`]).
     pub fn changes(&self, table: &Value, module: &str) -> Result<(Vec<Edit>, Vec<Patch>)> {
+        self.changes_all(&[(module.to_string(), table.clone())])
+    }
+
+    /// The edits and patches every mod's table makes, (mod, table) in order: only values that
+    /// differ from these. A record with keys the section lacks is a new record, where the section
+    /// takes them ([`Adding`]): a copy of the record its `like` names (that record's keys: a
+    /// number, or an object of them), with the fields given. Records several mods add are
+    /// counted together; one record added two ways is refused.
+    pub fn changes_all(&self, tables: &[(String, Value)]) -> Result<(Vec<Edit>, Vec<Patch>)> {
+        let mut edits = Vec::new();
+        let mut patches = Vec::new();
+        let mut added: Vec<Vec<Added>> = vec![Vec::new(); self.sections.len()];
+        for (module, table) in tables {
+            self.changes_of(table, module, &mut edits, &mut patches, &mut added)
+                .map_err(|error| crate::Error::invalid(format!("mod {module}: {error}")))?;
+        }
+        for (number, records) in added.iter().enumerate() {
+            if !records.is_empty() {
+                self.additions(&self.sections[number], records, &mut edits)?;
+            }
+        }
+        Ok((edits, patches))
+    }
+
+    fn changes_of<'a>(
+        &self,
+        table: &'a Value,
+        module: &'a str,
+        edits: &mut Vec<Edit>,
+        patches: &mut Vec<Patch>,
+        added: &mut [Vec<Added<'a>>],
+    ) -> Result<()> {
         let names: Vec<&str> = self.sections.iter().map(|section| section.name.as_str()).collect();
         let Some(object) = table.as_object() else {
             bail!(
@@ -430,12 +523,11 @@ impl Table {
                 names.iter().map(|name| format!("\"{name}\": [...]")).collect::<Vec<_>>().join(", ")
             );
         };
-        let mut edits = Vec::new();
-        let mut patches = Vec::new();
         for (key, list) in object {
-            let Some(section) = self.sections.iter().find(|section| &section.name == key) else {
+            let Some(number) = self.sections.iter().position(|section| &section.name == key) else {
                 bail!("{} has {}, not \"{key}\"", self.what, names.join(", "));
             };
+            let section = &self.sections[number];
             let Some(list) = list.as_array() else {
                 bail!("\"{key}\" is a list of records");
             };
@@ -456,15 +548,33 @@ impl Table {
                     .rev()
                     .find(|record| record.keys.iter().zip(&wanted).all(|((_, have), want)| same(have, want)))
                 else {
-                    let keys: Vec<String> = section
-                        .keys
-                        .iter()
-                        .zip(&wanted)
-                        .map(|(name, value)| format!("{name} {}", shown(value)))
-                        .collect();
-                    bail!("{key}: no record with {}", keys.join(", "));
+                    let keys = keys_text(&section.keys, &wanted.iter().copied().cloned().collect::<Vec<_>>());
+                    if section.adding.is_none() {
+                        bail!("{key}: no record with {keys} (the {key} the game has are edited, not added to)");
+                    }
+                    if !given.contains_key("like") {
+                        bail!(
+                            "{key}: no record with {keys}; a new one names the record it is like (\"like\": its {})",
+                            section.keys.join(" and ")
+                        );
+                    }
+                    let values: Vec<Value> = wanted.into_iter().cloned().collect();
+                    match added[number].iter().find(|known| known.keys == values) {
+                        Some(known) if known.given != given => {
+                            bail!(
+                                "{key}: new record {keys} is given two ways, by mod {} and mod {module}",
+                                known.module
+                            )
+                        }
+                        Some(_) => {}
+                        None => added[number].push(Added { keys: values, module, given }),
+                    }
+                    continue;
                 };
                 let label = record.label_text(key);
+                if given.contains_key("like") {
+                    bail!("{label} is the game's own; \"like\" makes a new record from it");
+                }
                 let mut flat = Vec::new();
                 for (name, value) in given {
                     if section.keys.contains(name) {
@@ -480,11 +590,226 @@ impl Table {
                 }
                 for (name, value) in flat {
                     let field = record.fields.iter().find(|field| field.name == name).unwrap();
-                    self.field_changes(field, value, &format!("{label} {name}"), module, &mut edits, &mut patches)?;
+                    self.field_changes(field, value, &format!("{label} {name}"), module, edits, patches)?;
                 }
             }
         }
-        Ok((edits, patches))
+        Ok(())
+    }
+
+    /// The record a new one's `like` names: an object of the keys, or the last key's value (the
+    /// other keys the new record's own: another part of its town).
+    fn like_of<'a>(&self, section: &'a Section, like: &Value, keys: &[Value], label: &str) -> Result<&'a Record> {
+        let wanted: Vec<Value> = match like {
+            Value::Object(object) => {
+                section.keys.iter().map(|key| object.get(key).cloned().unwrap_or(Value::Null)).collect()
+            }
+            value => {
+                let mut wanted = keys.to_vec();
+                *wanted.last_mut().expect("a section has keys") = value.clone();
+                wanted
+            }
+        };
+        section
+            .records
+            .iter()
+            .rev()
+            .find(|record| record.keys.iter().zip(&wanted).all(|((_, have), want)| same(have, want)))
+            .filter(|record| !record.block.is_empty())
+            .ok_or_else(|| crate::Error::invalid(format!("{label}: like {like}: no such record to copy")))
+    }
+
+    /// The new records of a section: each a copy of its like record's statements with its keys,
+    /// labels and the fields given, after the section's last record in each file; the files'
+    /// counts raised.
+    fn additions(&self, section: &Section, records: &[Added], edits: &mut Vec<Edit>) -> Result<()> {
+        let adding = section.adding.as_ref().expect("a section that takes records");
+        let name = &section.name;
+        let first_file = |record: &Record| record.block.first().map_or(usize::MAX, |&(file, ..)| file);
+        let place_at = adding.place.and_then(|place| section.keys.iter().position(|key| key == place));
+        let mut new: Vec<(&Added, &Record, String)> = Vec::new();
+        for added in records {
+            let label = format!("{name} {} (new)", keys_text(&section.keys, &added.keys));
+            let like = self.like_of(section, &added.given["like"], &added.keys, &label)?;
+            new.push((added, like, label));
+        }
+        // places continue from the last, in order
+        new.sort_by_key(|(added, ..)| place_at.map_or(0, |at| added.keys[at].as_i64().unwrap_or(0)));
+        // a record's group: its first file and the keys a new record takes from the one it is like
+        // (its town), which its place counts in and new ones go after
+        let group = |record: &Record| -> String {
+            let kept: Vec<String> = record
+                .keys
+                .iter()
+                .filter(|(key, _)| {
+                    Some(key.as_str()) != adding.place && !adding.key_args.iter().any(|(known, ..)| known == key)
+                })
+                .map(|(_, value)| shown(value))
+                .collect();
+            format!("{} {}", first_file(record), kept.join(" "))
+        };
+        let mut added_to: BTreeMap<String, usize> = BTreeMap::new();
+        for &(added, like, ref label) in &new {
+            let had = section.records.iter().filter(|record| group(record) == group(like)).count();
+            let count = added_to.entry(group(like)).or_insert(0);
+            *count += 1;
+            if had + *count > adding.most {
+                bail!("{label}: {} {name} in its file; the game holds {} ({})", had + *count, adding.most, adding.why);
+            }
+            // keys: the place, written ones, or the like record's own
+            let mut key_texts: Vec<(&str, usize, Vec<u8>)> = Vec::new();
+            for ((key, value), (_, like_value)) in section.keys.iter().zip(&added.keys).zip(&like.keys) {
+                if Some(key.as_str()) == adding.place {
+                    let wanted = (had + *count - 1) as i64;
+                    if value.as_i64() != Some(wanted) {
+                        bail!("{label}: a new record's {key} is the next one, {wanted}");
+                    }
+                    // a place the statements also hold (a request's number)
+                    if let Some(&(_, tag, arg, kind)) = adding.key_args.iter().find(|(known, ..)| known == key) {
+                        key_texts.push((tag, arg, value_text(kind, value, &format!("{label} {key}"))?));
+                    }
+                } else if let Some(&(_, tag, arg, kind)) = adding.key_args.iter().find(|(known, ..)| known == key) {
+                    key_texts.push((tag, arg, value_text(kind, value, &format!("{label} {key}"))?));
+                } else if !same(value, like_value) {
+                    bail!("{label}: a new record has the {key} of the record it is like ({})", shown(like_value));
+                }
+            }
+            // the copy: the like record's statements in each of its files
+            let mut scripts = Vec::new();
+            for &(file, first, last) in &like.block {
+                let mut statements = self.scripts[file].statements[first..=last].to_vec();
+                statements[0].before = b"\r\n".to_vec();
+                let language = adding.languages.iter().find(|(known, _)| *known == file).map(|&(_, language)| language);
+                for statement in statements.iter_mut() {
+                    for (tag, arg, text) in &key_texts {
+                        if statement.tag == *tag {
+                            set_piece(statement, *arg, text.clone(), label)?;
+                        }
+                    }
+                    for &(label_name, tag, arg, most) in &adding.label_args {
+                        if statement.tag != tag {
+                            continue;
+                        }
+                        let Some(value) = added.given.get(label_name) else {
+                            continue;
+                        };
+                        let text = label_in(value, language, label_name, label)?;
+                        let Some(bytes) = crate::item_data::name_bytes(&text, language.unwrap_or(1)) else {
+                            bail!("{label}: {label_name} {text:?} has characters the game's text cannot hold");
+                        };
+                        if crate::item_data::converted_len(&bytes, language.unwrap_or(1)) > most {
+                            bail!("{label}: {label_name} {text:?} is longer than the {most} bytes the game keeps");
+                        }
+                        set_piece(statement, arg, cfg_text::str_text(&bytes), label)?;
+                    }
+                }
+                scripts.push(Script { statements, tail: Vec::new() });
+            }
+            // the like record's fields, moved onto the copy
+            let moved = |&(file, statement): &(usize, usize)| -> Option<(usize, usize)> {
+                like.block
+                    .iter()
+                    .position(|&(known, first, last)| known == file && (first..=last).contains(&statement))
+                    .map(|copy| (copy, statement - like.block[copy].1))
+            };
+            let copy = Table::new(&self.what, scripts, Vec::new());
+            let mut fields = Vec::new();
+            for field in &like.fields {
+                let place = match &field.place {
+                    Place::Args { at, arg, len } => {
+                        Place::Args { at: at.iter().filter_map(moved).collect(), arg: *arg, len: *len }
+                    }
+                    Place::List { at, arg, tail, entry, count } => Place::List {
+                        at: at.iter().filter_map(moved).collect(),
+                        arg: *arg,
+                        tail: *tail,
+                        entry: entry.clone(),
+                        count: *count,
+                    },
+                    Place::Lines { copies, entry, count, per_line, grow } => Place::Lines {
+                        copies: copies
+                            .iter()
+                            .map(|lines| lines.iter().filter_map(moved).collect::<Vec<_>>())
+                            .filter(|lines| !lines.is_empty())
+                            .collect(),
+                        entry: entry.clone(),
+                        count: *count,
+                        per_line: *per_line,
+                        grow: *grow,
+                    },
+                    Place::Bytes { .. } => continue,
+                };
+                fields.push(Field { name: field.name.clone(), kind: field.kind, place, fixed: None });
+            }
+            let moved_record = Record { fields, ..Record::default() };
+            let mut flat = Vec::new();
+            for (key, value) in added.given.iter() {
+                if section.keys.contains(key)
+                    || key == "like"
+                    || adding.label_args.iter().any(|(known, ..)| known == key)
+                {
+                    continue;
+                }
+                if like.labels.iter().any(|(known, _)| known == key) {
+                    bail!("{label}: \"{key}\" is text the copy keeps from the record it is like");
+                }
+                flatten(&moved_record, key, value, &mut flat, label)?;
+            }
+            let mut copy_edits = Vec::new();
+            let mut unused = Vec::new();
+            for (field_name, value) in flat {
+                let field = moved_record.fields.iter().find(|field| field.name == field_name).unwrap();
+                let outside = match &field.place {
+                    Place::Args { at, .. } | Place::List { at, .. } => at.is_empty(),
+                    Place::Lines { copies, .. } => copies.is_empty(),
+                    Place::Bytes { .. } => true,
+                };
+                if outside {
+                    bail!("{label} {field_name}: the record it is like keeps it outside its statements");
+                }
+                let what = format!("{label} {field_name}");
+                copy.field_changes(field, value, &what, added.module, &mut copy_edits, &mut unused)?;
+            }
+            let texts = cfg_text::apply_edits(&copy.scripts, &copy_edits)?;
+            for (&(file, ..), text) in like.block.iter().zip(texts) {
+                let after = section
+                    .records
+                    .iter()
+                    .filter(|record| group(record) == group(like))
+                    .flat_map(|record| &record.block)
+                    .filter(|(known, ..)| *known == file)
+                    .map(|&(_, _, last)| last)
+                    .max()
+                    .expect("the like record's own file");
+                edits.push(Edit {
+                    file,
+                    statement: after,
+                    arg: 0,
+                    to: To::Insert(text),
+                    what: label.clone(),
+                    module: added.module.to_string(),
+                });
+            }
+        }
+        // the counts of the files records were added to
+        for &(file, statement, arg) in &adding.counts {
+            let more = new.iter().filter(|(_, like, _)| like.block.iter().any(|&(known, ..)| known == file)).count();
+            if more == 0 {
+                continue;
+            }
+            let Some(piece) = self.args(file, statement).get(arg) else {
+                bail!("{name}: the count statement has no argument {arg}");
+            };
+            edits.push(Edit {
+                file,
+                statement,
+                arg,
+                to: To::Arg(cfg_text::int_text(piece.value().int() as i64 + more as i64)),
+                what: format!("{name} count (file {file})"),
+                module: "build".to_string(),
+            });
+        }
+        Ok(())
     }
 
     fn field_changes(
@@ -548,10 +873,10 @@ impl Table {
                     edits.push(edit(file, statement, *arg, To::Span(texts.clone(), *tail), what.to_string()));
                 }
             }
-            Place::Lines { copies, entry, count, per_line } => {
+            Place::Lines { copies, entry, count, per_line, grow } => {
                 let texts = entry_texts(entry, *count, value, what)?;
                 for at in copies {
-                    let room = if *per_line == 0 { usize::MAX } else { at.len() * per_line };
+                    let room = if *per_line == 0 || *grow { usize::MAX } else { at.len() * per_line };
                     if at.is_empty() || texts.len() / entry.len() > room {
                         bail!(
                             "{what}: {} entries; the file has {} lines of {per_line} for them (lines are not added)",
@@ -575,6 +900,13 @@ impl Table {
                             continue;
                         }
                         edits.push(edit(file, statement, 0, To::Rest(mine.to_vec()), what.to_string()));
+                    }
+                    // what the lines had no room for: new lines of the last one's tag after it
+                    let &(file, last) = at.last().expect("lines");
+                    let tag = self.scripts[file].statements[last].tag.clone();
+                    for (number, chunk) in rest.chunks((*per_line).max(1) * entry.len()).enumerate() {
+                        let text = cfg_text::statement_text(&tag, chunk);
+                        edits.push(edit(file, last, 0, To::Insert(text), format!("{what} (new line {})", number + 1)));
                     }
                 }
             }
@@ -604,7 +936,28 @@ impl Table {
 
     /// The scripts with the edits made.
     pub fn apply(&self, edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
-        cfg_text::apply_edits(&self.scripts, edits)
+        let written = cfg_text::apply_edits(&self.scripts, edits)?;
+        for &(file, most, why) in &self.limits {
+            if written[file].len() > most && written[file] != self.scripts[file].write() {
+                bail!(
+                    "{} file {file} would be {} bytes; the game reads it into {most} ({why})",
+                    self.what,
+                    written[file].len()
+                );
+            }
+        }
+        if let Some((most, why)) = self.string_units {
+            for (file, data) in written.iter().enumerate() {
+                if *data == self.scripts[file].write() {
+                    continue;
+                }
+                let units = string_units(&Script::parse(data)?);
+                if units >= most {
+                    bail!("{} file {file}: its strings take {units} of the {most} 16-byte units of {why}", self.what);
+                }
+            }
+        }
+        Ok(written)
     }
 
     pub fn write(&self) -> Vec<Vec<u8>> {
@@ -679,6 +1032,56 @@ impl Table {
         }
         wrong
     }
+}
+
+/// A record a mod adds: its keys, the mod and what it gives.
+#[derive(Clone, Debug)]
+struct Added<'a> {
+    keys: Vec<Value>,
+    module: &'a str,
+    given: &'a Map<String, Value>,
+}
+
+fn keys_text(names: &[String], values: &[Value]) -> String {
+    names.iter().zip(values).map(|(name, value)| format!("{name} {}", shown(value))).collect::<Vec<_>>().join(", ")
+}
+
+/// A label's text in a copy's language: one string, or {"en": ..., "fr": ...} (English for a
+/// language not given).
+fn label_in(value: &Value, language: Option<usize>, name: &str, what: &str) -> Result<String> {
+    match (value, language) {
+        (Value::String(text), _) => Ok(text.clone()),
+        (Value::Object(by_language), language) => {
+            let short = crate::item_data::LANGUAGE_NAMES[language.unwrap_or(1)];
+            match by_language.get(short).or_else(|| by_language.get("en")) {
+                Some(Value::String(text)) => Ok(text.clone()),
+                _ => bail!("{what}: \"{name}\" has no text for {short} (nor en)"),
+            }
+        }
+        _ => bail!("{what}: \"{name}\" is a string or {{\"en\": ..., \"fr\": ...}}"),
+    }
+}
+
+/// The 16-byte units a script's string arguments take, each copied whole with its NUL.
+pub fn string_units(script: &Script) -> usize {
+    script
+        .statements
+        .iter()
+        .flat_map(|statement| statement.values())
+        .filter_map(|value| match value {
+            Arg::Str(text) => Some((text.len() + 16) / 16),
+            _ => None,
+        })
+        .sum()
+}
+
+/// Gives a statement's argument new text.
+fn set_piece(statement: &mut cfg_text::Statement, arg: usize, text: Vec<u8>, what: &str) -> Result<()> {
+    let Some(piece) = statement.pieces.get(arg) else {
+        bail!("{what}: the copied {} has no argument {arg}", statement.tag);
+    };
+    statement.pieces[arg] = piece.with_text(text);
+    Ok(())
 }
 
 /// Puts a value at a dotted name (`a.b` into `{"a": {"b": ...}}`).
@@ -807,6 +1210,7 @@ mod tests {
                 entry: vec![("id", S16), ("param", S16)],
                 count: (0, 32),
                 per_line: 0,
+                grow: false,
             },
         );
         floor.bytes("elf.value", S16, 4, 1).bytes("elf.rate", Kind::Float, 8, 1);

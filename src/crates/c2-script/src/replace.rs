@@ -81,7 +81,7 @@ pub const DATA: &str = "data:";
 const MIDI_SUFFIXES: [&str; 3] = [".mid", ".midi", ".rmi"];
 /// The tables a data: line can name, in the order build applies them (parts before layouts, whose
 /// cells name the parts).
-pub const DATA_TABLES: [&str; 12] = [
+pub const DATA_TABLES: [&str; 17] = [
     "items",
     "shops",
     "monsters",
@@ -94,6 +94,11 @@ pub const DATA_TABLES: [&str; 12] = [
     "parts",
     "layouts",
     "chests",
+    "requests",
+    "townspeople",
+    "gifts",
+    "spheda",
+    "breeding",
 ];
 
 /// One line of a mod's replace or add.

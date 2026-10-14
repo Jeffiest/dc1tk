@@ -175,8 +175,8 @@ pub enum ModCommand {
         /// text:en/shopname, music:BG_000_000), each copied in its common format with its line
         /// added to mod.json; data tables (data:items, data:shops, data:monsters, data:inventions,
         /// data:georama, data:medals, data:floors, data:fishing, data:characters, data:parts,
-        /// data:layouts, data:chests) as
-        /// JSON; or files as extract lays them out (snd2/sp/sp_000.snd,
+        /// data:layouts, data:chests, data:requests, data:townspeople, data:gifts, data:spheda,
+        /// data:breeding) as JSON; or files as extract lays them out (snd2/sp/sp_000.snd,
         /// chara/c01_base.chr.d/c01b.img), copied into disc/.
         #[arg(required = true)]
         paths: Vec<String>,
