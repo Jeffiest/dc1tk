@@ -738,10 +738,17 @@ character pack; packs inside packs work the same way).
   motion set, and what named the template's own frames and motions dropped
   (sequences, sound cues, cloth, effects, attach points and outlines on
   frames the new model lacks). A skinned model needs an action (its motion
-  set carries the bind pose). No cloth: a `.clo` names a model's frames and
-  particles. Load it with `load_chara` and play an action with
-  `set_chara_motion(slot, "wave")`; see
-  [the example](examples/new-character/README.md).
+  set carries the bind pose). Actions can fade, colour, hide and show
+  meshes too, with the shape keys an export writes for them: `c2_fade_<k>`
+  (0 opaque, 1 invisible), `c2_red_<k>`/`c2_green_<k>`/`c2_blue_<k>` and
+  `c2_visible` (below 1 hidden), shape keys that move nothing, their
+  values keyed in the action (a mesh's rest values: 0, its material's
+  colour, 1). Not vertex animation (`c2_frame_<f>`). No cloth: a `.clo`
+  names a model's frames and particles. Load it with `load_chara` and play
+  an action with `set_chara_motion(slot, "wave")`; see
+  [the example](examples/new-character/README.md), and
+  [Brother Gill](examples/spinning-cult/README.md), whose `vanish` fades
+  him out.
 
   ```json
   "add": {"file:mods/newchr/newchr.chr": {"file": "model/newchr.gltf", "like": "model:p01_01a"}}

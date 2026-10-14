@@ -1,0 +1,11 @@
+{
+ "title": "The Spinning Cult",
+ "version": "0.1.0",
+ "start_at": "s17:GILL_TEST",
+ "add": {
+  "file:mods/gill/gill.chr": {
+   "file": "model/gill.gltf",
+   "like": "model:p01_01a"
+  }
+ }
+}

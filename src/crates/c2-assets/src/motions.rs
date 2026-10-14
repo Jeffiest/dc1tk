@@ -1550,33 +1550,55 @@ pub struct NewMotion {
 }
 
 /// The motion of a model made from a glTF alone (from_gltf::new_model, whose frames the glTF's
-/// nodes are named after): every animation that moves a frame becomes a KEY, in glTF order, on
-/// one timeline from frame 1 (motion r of an animation at frame start + r, r/30 s into it; step
-/// `extras.step`, else 1.00, the speed Blender plays it at). A frame's channel any animation
-/// moves off its node's rest gets a key list with a key every frame from 0 (the rest) to the
-/// last, the rest where an animation leaves it; channels no animation moves get none, so their
-/// frames hold the model's own matrices. None when no animation moves anything.
+/// nodes are named after): every animation that moves a frame, or fades, colours, hides or shows
+/// a mesh, becomes a KEY, in glTF order, on one timeline from frame 1 (motion r of an animation at
+/// frame start + r, r/30 s into it; step `extras.step`, else 1.00, the speed Blender plays it at).
+/// A channel any animation moves off its rest gets a key list with a key every frame from 0 (the
+/// rest) to the last, the rest where an animation leaves it; channels no animation moves get
+/// none, so their frames hold the model's own matrices and materials. The rests: a node's
+/// rotation, scale and translation; a material's own fade and colour; shown. Fades, colours and
+/// visibility are the carrier shape keys of the frames' meshes (`c2_fade_<k>`, `c2_red_<k>`,
+/// `c2_green_<k>`, `c2_blue_<k>`, `c2_visible`, `c2_visible_51`; to_gltf::Target), as an export
+/// writes them; a frame's lists run material, rotation, scale, translation, visibility. Vertex
+/// animation (`c2_frame_<f>` shape keys) is refused. None when no animation moves anything.
 pub fn new_motion(given: &Gltf, model: &Mds) -> Result<Option<NewMotion>> {
     let motions = read(given, model, &HashMap::new(), &TargetNames { ids: &[], primary: 0 })?;
-    let rest = |frame: usize, kind: i32| -> Vec4 {
+    let rest = |(frame, kind, target): Channel| -> Option<Vec4> {
+        if !is_trs(kind) {
+            return channel_rest(model, (frame, kind, target));
+        }
         let rest = motions.rest.get(frame).copied().flatten();
         let kind = kind as usize;
-        rest.map_or([[0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0, 0.0], [0.0; 4]][kind], |rest| rest[kind])
+        Some(rest.map_or([[0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0, 0.0], [0.0; 4]][kind], |rest| rest[kind]))
     };
-    let moves = |a: &Animation, (frame, kind, _): Channel| {
-        is_trs(kind)
-            && (0..=a.frames().max(0)).any(|r| {
-                motions
-                    .value(a, (frame, kind, 0), r as f64 / FPS)
-                    .is_some_and(|value| !close(kind, &rest(frame, kind), &value))
-            })
+    let moves = |a: &Animation, channel: Channel| -> Result<bool> {
+        let (frame, kind, _) = channel;
+        let Some(at_rest) = rest(channel) else {
+            return Ok(false);
+        };
+        let moved = (0..=a.frames().max(0))
+            .any(|r| motions.value(a, channel, r as f64 / FPS).is_some_and(|value| !close(kind, &at_rest, &value)));
+        if moved && kind == VERTEX {
+            bail!(
+                "motion {}: the mesh of {} has vertex animation (c2_frame_ shape keys), which a new character \
+                 cannot have",
+                a.name,
+                model.nodes[frame].name
+            );
+        }
+        Ok(moved && kind != VERTEX)
     };
     // the animations that move something, at their frames, and the channels they move
     let mut placed: Vec<(&Animation, i64, i64)> = Vec::new();
     let mut channels: BTreeSet<Channel> = BTreeSet::new();
     let mut start = 1;
     for a in &motions.animations {
-        let moved: Vec<Channel> = a.curves.keys().copied().filter(|&channel| moves(a, channel)).collect();
+        let mut moved: Vec<Channel> = Vec::new();
+        for &channel in a.curves.keys() {
+            if moves(a, channel)? {
+                moved.push(channel);
+            }
+        }
         if moved.is_empty() {
             continue;
         }
@@ -1595,15 +1617,29 @@ pub fn new_motion(given: &Gltf, model: &Mds) -> Result<Option<NewMotion>> {
     let Some(&(_, _, last)) = placed.last() else {
         return Ok(None);
     };
-    // a frame's lists in rotation, scale, translation order, frames in order
+    // frames in order, a frame's lists as the disc's run: its materials' fades and colours, then
+    // rotation, scale, translation, then visibility
+    let rank = |kind: i32| match kind {
+        FADE | COLOUR => 0,
+        kind if is_trs(kind) => 1 + kind,
+        _ => 4,
+    };
+    let mut channels: Vec<Channel> = channels.into_iter().collect();
+    channels.sort_by_key(|&(frame, kind, target)| (frame, rank(kind), kind, target));
     let mut lists = Vec::with_capacity(channels.len());
-    for (frame, kind, _) in channels {
-        let mut track = Track { original: KeyList::new(frame as i32, 0, kind, Vec::new()), keys: None, new: true };
-        track.set(0, engine_key(kind, &rest(frame, kind)));
+    for channel in channels {
+        let (frame, kind, target) = channel;
+        let at_rest = rest(channel).unwrap_or_default();
+        let mut track = Track { original: KeyList::new(frame as i32, target, kind, Vec::new()), keys: None, new: true };
+        track.set(0, engine_key(kind, &at_rest));
         for &(a, s, e) in &placed {
             for f in s..=e {
-                let value =
-                    motions.value(a, (frame, kind, 0), (f - s) as f64 / FPS).unwrap_or_else(|| rest(frame, kind));
+                let mut value = motions.value(a, channel, (f - s) as f64 / FPS).unwrap_or(at_rest);
+                // the engine hides below 1: a shown frame read a hair under it (a 32-bit key time
+                // a hair past the frame's) stays shown
+                if matches!(kind, VISIBLE | VISIBLE_CHILDREN) && (value[0] - 1.0).abs() <= VALUE_TOLERANCE {
+                    value[0] = 1.0;
+                }
                 track.set(f, engine_key(kind, &value));
             }
         }
