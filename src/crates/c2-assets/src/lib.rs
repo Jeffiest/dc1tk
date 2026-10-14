@@ -4,11 +4,18 @@
 //! to_gltf.py, from_gltf.py, models.py) do.
 
 pub mod cfg_text;
+pub mod data_table;
+pub mod dungeon_data;
+pub mod exe_tables;
+pub mod fishing_data;
 pub mod folder;
+pub mod georama_data;
 pub mod from_gltf;
+pub mod game_data;
 pub mod ids;
 pub mod im3;
 pub mod info_cfg;
+pub mod invention_data;
 pub mod item_data;
 pub mod json;
 pub mod map_edit;

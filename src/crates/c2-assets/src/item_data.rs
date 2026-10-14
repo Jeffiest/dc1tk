@@ -580,6 +580,18 @@ pub fn json_text(value: &Value) -> String {
 fn write_value(value: &Value, indent: usize, out: &mut String) {
     let pad = |depth: usize| "  ".repeat(depth);
     match value {
+        // a small entry of a list ({"item": 210, "count": 5}) on one line
+        Value::Object(map)
+            if indent > 2 && map.len() <= 3 && map.values().all(|item| !item.is_object() && !item.is_array()) =>
+        {
+            let members: Vec<String> = map
+                .iter()
+                .map(|(key, item)| {
+                    format!("{}: {}", serde_json::to_string(key).unwrap(), serde_json::to_string(item).unwrap())
+                })
+                .collect();
+            out.push_str(&format!("{{{}}}", members.join(", ")));
+        }
         Value::Object(map) if !map.is_empty() => {
             out.push_str("{\n");
             for (number, (key, item)) in map.iter().enumerate() {

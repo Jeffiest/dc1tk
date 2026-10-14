@@ -110,7 +110,7 @@ const SPECS: [Spec; 41] = [
     one("elements.beast", 0x78, Kind::I16),
     one("elements.scale", 0x7A, Kind::I16),
     many("attack_kind_rates", 0x7C, Kind::I16, 12),
-    one("unknown_94", 0x94, Kind::U32),
+    one("reaction_flags", 0x94, Kind::U32),
     one("flags", 0x98, Kind::U32),
     one("companion", 0x9C, Kind::I32),
     many("drops", 0xA0, Kind::I16, 2),
