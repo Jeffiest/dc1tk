@@ -13,6 +13,7 @@ pub mod decompiler;
 pub mod definitions;
 pub mod disc;
 pub mod discfiles;
+pub mod editor;
 pub mod fingerprint;
 pub mod flags;
 pub mod index;

@@ -403,7 +403,16 @@ checkout and decompile again (or edit the file).
 Scripts parse without errors. What clang still warns about are argument
 mismatches in the retail scripts themselves. Library files show errors for
 names their including scripts declare (a library can use the globals and
-functions of the scripts that include it), which is expected, and so do a
-mod's patches for the functions of the scripts they target.
-`mod override` writes a `compile_flags.txt` into the mod's folder, so its
-patches get the SDK, the tree's headers and the mod's own libraries.
+functions of the scripts that include it), which is expected.
+
+A patch uses the functions and globals of the scripts it targets without
+declaring them, since `build` merges it into them. `mod override` (and
+`c2 mod header extracted/scripts NAME` at any time) writes a header of each
+patch's target into the mod's hidden `.editor/` folder, and a
+`compile_commands.json` that has clangd read each patch with the SDK, the
+tree's headers, the mods folder (for `#include "base/names.h"` from a mod
+it requires) and its target's header first. The patch then shows no false
+errors, and hover shows the doc comments of the target's functions.
+Write them again after decompiling again, as the target's names can change.
+A patch whose `#pragma target` lines pick several scripts gets the
+declarations of one script per line.

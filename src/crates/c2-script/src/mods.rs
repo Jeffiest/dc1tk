@@ -331,16 +331,6 @@ pub fn override_functions(
     Ok(Overridden { path, added, scripts: chosen })
 }
 
-/// compile_flags.txt in the mod's own folder, so an editor reads its patches with the SDK, the
-/// mod's libraries and the tree's.
-pub fn write_patch_flags(mod_dir: &Path, tree_dir: &Path, sdk_dir: &Path, definition_sets: &[PathBuf]) -> Result<()> {
-    c2_py::write_text(
-        &mod_dir.join(source::EDITOR_FLAGS),
-        &source::editor_flags(sdk_dir, definition_sets, Some(tree_dir)),
-    )?;
-    Ok(())
-}
-
 pub struct Checked {
     pub compiled: usize,
     pub errors: Vec<(String, String)>,

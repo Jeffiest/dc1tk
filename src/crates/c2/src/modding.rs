@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 
 use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
-use c2_script::{build, definitions, discfiles, index, migrate, mods, patches, replace, sdk, startat, tree};
+use c2_script::{build, definitions, discfiles, editor, index, migrate, mods, patches, replace, sdk, startat, tree};
 
 use crate::Common;
 use crate::{asset_tree, files};
@@ -135,6 +135,18 @@ pub enum ModCommand {
         #[command(flatten)]
         common: Common,
     },
+    /// Write the editor headers of a mod's patches (the declarations of the scripts they target)
+    /// and the mod's compile_commands.json, so clangd knows the targets' functions and globals.
+    Header {
+        /// The decompiled source tree.
+        source: PathBuf,
+        /// The mod's name.
+        name: String,
+        #[arg(long, default_value = "mods")]
+        mods: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
     /// Copy game assets off the disc (models, textures, sounds) into a mod, to replace them there.
     Asset {
         /// The disc image.
@@ -225,6 +237,17 @@ fn mod_folders(mods_dir: &Path, names: &[String]) -> Result<Vec<PathBuf>> {
 
 fn shown(path: &Path) -> String {
     path.display().to_string()
+}
+
+/// The headers of a patch mod's targets and its compile_commands.json (editor), for clangd.
+/// Returns the headers.
+fn write_editor_files(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Result<Vec<PathBuf>> {
+    let defs = common.definitions()?;
+    let sdk_dir = common.sdk_dir();
+    let headers = sdk::header_texts(&defs, &sdk_dir)?;
+    let tables = common.tables()?;
+    let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    Ok(editor::write(mod_dir, tree_dir, &tools, &sdk_dir, &defs.sets)?)
 }
 
 /// The places and changes of the chosen mods' asset ids, and the templates of the game files they
@@ -696,7 +719,24 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 result.scripts.len(),
                 if result.scripts.len() == 1 { "" } else { "s" }
             );
-            mods::write_patch_flags(&mod_dir, source, &common.sdk_dir(), &common.definitions()?.sets)?;
+            write_editor_files(&mod_dir, source, common)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        ModCommand::Header { source, name, mods: mods_dir, common } => {
+            let mod_dir = mods::folder(mods_dir, name)?;
+            if !mods::exists(&mod_dir) {
+                bail!("no mod at {}", shown(&mod_dir));
+            }
+            let written = write_editor_files(&mod_dir, source, common)?;
+            for path in &written {
+                println!("{}", shown(path));
+            }
+            println!(
+                "{} header{} and {} written; editors with clangd read the patches with their targets' declarations",
+                written.len(),
+                if written.len() == 1 { "" } else { "s" },
+                shown(&mod_dir.join(editor::COMMANDS))
+            );
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::New { source, name, files: paths, mods: mods_dir, common } => {

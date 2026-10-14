@@ -266,8 +266,15 @@ The commands:
   `--monster`, `--library`) starts a patch, or adds to one: it copies the
   functions from the target (the English variant of a map) into
   `mods/NAME/s51.c`, each after `#pragma override`, with the target line and
-  the script's headers, and writes the mod's `compile_flags.txt` for your
-  editor.
+  the script's headers, and writes the editor files `mod header` writes.
+- `mod header SOURCE NAME` writes, for each patch, a header of what its
+  target declares (`mods/NAME/.editor/s51.h`: the script's functions with
+  their signatures and doc comments, those of its libraries, its globals
+  and its `PROGRAM` table), and the mod's `compile_commands.json`, which
+  gives each patch the tree's flags and its header, so clangd knows the
+  target's names in the patch. Only editors read them: the patch is not
+  changed, and builds are the same with them or without. Run it again after
+  decompiling again.
 - `mod check SOURCE NAME...` compiles every script the mods change, as
   `build` would but without a disc, and prints the mods it added for
   `requires`, the order they apply in, and the numbers they were given.

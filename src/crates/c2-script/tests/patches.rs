@@ -10,7 +10,7 @@ use build_common::{disc_for, fails, make_tree, map, read, recorded, sdk_dir, str
 use c2_script::node::Node;
 use c2_script::patches::{self, Plan, Scripts, Target};
 use c2_script::vm::{self, Machine, Value};
-use c2_script::{build, definitions, library, mods, numbers, parse, pathnames, sdk, Result};
+use c2_script::{build, definitions, editor, library, mods, numbers, parse, pathnames, sdk, Result};
 use indexmap::IndexMap;
 
 // A map in two languages and a monster, sharing a library, as the decompiler lays them out.
@@ -344,6 +344,46 @@ fn build_compiles_patched_scripts_and_override_starts_a_patch() {
     assert!(mods::listing(&mods_dir, &root, &IndexMap::new())
         .unwrap()
         .contains("patch t01.c: 1 script; overrides helper"));
+}
+
+#[test]
+fn editors_get_a_header_of_the_targets_declarations_that_build_never_reads() {
+    let patch =
+        "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    visits = visits + 1;\n    talk();\n}\n";
+    let folder = TempDir::new("patches-editor");
+    let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch), ("lib.c", "void mine(void)\n{\n}\n")])]);
+    write(&root, "map/s/s17_valley/s17_1.c", &MAP.replace("void talk(void)", "// Talks.\nvoid talk(void)"));
+    let before = plan_of(&dirs, &root).unwrap();
+    let tools = Tools::new();
+    let written = editor::write(&dirs[0], &root, &tools.toolchain(), &sdk_dir(), &[]).unwrap();
+    assert_eq!(written, [dirs[0].join(editor::FOLDER).join("p.h")]);
+    let header = read(&written[0]);
+    for line in [
+        "//   map/s/s17_valley/s17_1.c (#pragma target map s17)\n",
+        "//   PROGRAM(500, talk);\n",
+        "extern int visits;\n",
+        "void greet(void);\n",
+        "// Talks.\nvoid talk(void);\n",
+    ] {
+        assert!(header.contains(line), "{line}\n{header}");
+    }
+    let commands: serde_json::Value = serde_json::from_str(&read(&dirs[0].join(editor::COMMANDS))).unwrap();
+    let arguments = |file: &str| -> Vec<String> {
+        let entry = commands.as_array().unwrap().iter().find(|entry| entry["file"].as_str().unwrap().ends_with(file));
+        entry.unwrap()["arguments"].as_array().unwrap().iter().map(|item| item.as_str().unwrap().to_string()).collect()
+    };
+    let (patched, library) = (arguments("/p.c"), arguments("/lib.c"));
+    let at = patched.iter().rposition(|item| item == "-include").unwrap();
+    assert!(patched[at + 1].ends_with("/m/.editor/p.h"), "{patched:?}");
+    assert!(library.iter().all(|item| !item.ends_with(".h") || item.ends_with("c2s.h")), "{library:?}");
+    // the header is not one of the mod's sources, so what build merges is as it was
+    assert!(mods::sources(&dirs[0]).unwrap().iter().all(|(path, _)| path.extension().unwrap() == "c"));
+    let after = plan_of(&dirs, &root).unwrap();
+    assert_eq!(after.patches.iter().map(|patch| &patch.text).collect::<Vec<_>>(), [patch]);
+    assert_eq!(
+        program_of(&root, &after, "map/s/s17_valley/s17_1.c").unwrap(),
+        program_of(&root, &before, "map/s/s17_valley/s17_1.c").unwrap()
+    );
 }
 
 fn names_of(dirs: &[PathBuf]) -> Vec<String> {
