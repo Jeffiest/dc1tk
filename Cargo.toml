@@ -21,7 +21,7 @@ mimalloc = { version = "0.1", default-features = false }
 rayon = "1"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 sha1_smol = { version = "1", features = ["std"] }
 sha2 = "0.10"
 thiserror = "1"

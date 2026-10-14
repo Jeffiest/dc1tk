@@ -11,6 +11,7 @@ pub mod info_cfg;
 pub mod json;
 pub mod map_edit;
 pub mod map_export;
+pub mod map_import;
 pub mod map_scene;
 pub mod map_transform;
 pub mod mapfile;
