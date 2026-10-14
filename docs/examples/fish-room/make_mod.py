@@ -325,7 +325,9 @@ def make_door():
     door = Builder("door")
     z = ROOM_HALF - 1.5  # just in front of the wall
     w, top = DOOR_WIDTH / 2, DOOR_HEIGHT
-    door.quad_uv([game(w, 0, z), game(w, top, z), game(-w, top, z), game(-w, 0, z)], door_m, game(0, 0, -1))
+    # seen from the room (looking +Z), +X is on the left: the picture's u runs to -X, v up
+    corners = ((0, 0), (0, 1), (1, 1), (1, 0))
+    door.quad_uv([game(w, 0, z), game(w, top, z), game(-w, top, z), game(-w, 0, z)], door_m, game(0, 0, -1), corners)
     # the frame: three bars standing out of the wall
     def bar(x0, x1, y0, y1):
         front = z - 4.0

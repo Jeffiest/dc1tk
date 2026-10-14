@@ -143,7 +143,7 @@ was checked in the game. Left over:
   [fish-room](docs/examples/fish-room/) example clears a copy of `m07`,
   models a room, a door and a giant fish in Blender (New Model from
   Selection), spins the fish with a Piece animation point and plays a tune
-  of its own (`fish-room.iso`, being tried in the game).
+  of its own (checked in the game: `fish-room.iso`).
 - **Dungeon floors** (done). Layouts are `data:layouts`, the part kinds
   `data:parts` (entries renamed in place; the table cannot grow, entry 276
   is free), chest items `data:chests`; the parts edit in Blender
@@ -173,7 +173,7 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    glyphs, the order worked out from the font pictures) and Korean (the
    disc's table) read as text; English takes 32 accented letters, drawn into
    its font by the build; build warns of lines wider than the disc's.
-   Being tried: `text-music-test.iso`.
+   Checked in the game: accented shop names (`text-music-test.iso`).
 3. **Game data** (done). Where every kind lives is in
    [data](docs/assets/data.md); each is a `data:` id in `mod.json`, JSON with
    only the changed fields, merged field by field across mods: `data:items`
@@ -190,8 +190,8 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    spots, requests, townspeople) are added `"like"` an existing one, up to
    the engine's limits, which build checks; an item's name and description
    are part of `data:items`. Checked in the game: shop prices; the patched
-   executable boots. Being tried: a new weapon sold in Palm Brinks
-   (`new-item-test.iso`). Not addable: monster kinds, rows of executable
+   executable boots; a new weapon sold in Palm Brinks, its name,
+   description and attack (`new-item-test.iso`). Not addable: monster kinds, rows of executable
    tables, request conditions (code).
 4. **Memory budgets** (done). [memory](docs/assets/memory.md) gives each
    budget from the engine (read buffer, map and loading-screen limits,
@@ -329,7 +329,8 @@ do:
    instruments to hear it). A tune can bring new instruments made from
    WAVs (`"instruments"`), and a mod can add a music file of its own
    (`"add": {"music:BG_200": {"like": "BG_193", ...}}`, played with
-   `load_bgm(200)`). Left: the IOP sequencer is not decompiled (loop and
+   `load_bgm(200)`); both checked in the game (`text-music-test.iso`,
+   `fish-room.iso`). Left: the IOP sequencer is not decompiled (loop and
    tempo defaults read from the data); instruments with velocity layers.
 
 ## Next: names and docs
