@@ -503,7 +503,10 @@ character pack; packs inside packs work the same way).
   any sequencer with the SoundFont loaded to hear it as the game plays it,
   edit it, or replace it with your own tune (format 0 or 1, any tempo and
   division). Program numbers are the bank's instruments, not General MIDI's:
-  give every channel a program change to one the bank has. The loop is
+  give every channel a program change to one the bank has. `build` lays the
+  tune out as the game's are (channel 1 keeps the loop, so its notes move to
+  a free channel; each channel is given volume, expression, pan and bend
+  before its first note, which comes after them). The loop is
   between the markers `loopStart` and `loopEnd` (move them to move it); a
   tune without them loops whole where the game's did. Unedited files build
   back to the disc's own bytes. See [music and ambient loops](assets/music.md).
