@@ -41,7 +41,9 @@ pub fn compiled(
     };
     let mut headers = tools.headers.clone();
     headers.extend(definitions::source_headers(source_path)?);
-    let program = parse::parse_source(text, parse::UNNAMED_FILE, &headers)?;
+    let libraries = library::include_texts(text, source_path, overlay, tools.sdk_dir, &[])?;
+    let defines = std::collections::HashMap::new();
+    let program = parse::parse_source_with(text, parse::UNNAMED_FILE, &defines, &headers, &libraries)?;
     let includes = library::read_includes(&program, source_path, overlay, tools.sdk_dir, &[])?;
     let mut program = library::expand(program, &includes, &headers)?;
     if let Some(patched) = patched {

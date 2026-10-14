@@ -283,6 +283,12 @@ void start_castle_battle(void)
   is refused, since the patch most likely meant to override it; a name
   another mod adds too is renamed for one of them, so mods never need to
   agree on names. A mod's libraries can declare globals of their own.
+  A patch is C as any script is ([the standard](c-standard.md)): its
+  structs, unions, enums and typedefs (its libraries' too), global arrays
+  and structs with values, function pointers, variadic functions, `static`
+  functions and locals, and `#pragma std c89` for C's semantics in the
+  patch's functions all carry into the target; the SDK headers' macros
+  reach its `#if`. A struct the target defines otherwise is refused.
 - **`PROGRAM` lines** add programs. To change a program the script has,
   override its function.
 - **`NEW_FLAG(name)`, `NEW_PROGRAM(name)` and `NEW_MONSTER_VAR(name)`**, in

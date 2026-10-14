@@ -891,7 +891,12 @@ pub fn run_tests(
     let standing_in = tree_dir.join(TESTS);
     let mut headers = tools.headers.clone();
     headers.extend(crate::definitions::source_headers(&standing_in)?);
-    let mut program = crate::parse::parse_source(&c2_py::read_text(&path)?, crate::parse::UNNAMED_FILE, &headers)?;
+    let text = c2_py::read_text(&path)?;
+    let extra = [mod_dir.to_path_buf(), mods_dir.clone()];
+    let libraries = crate::library::include_texts(&text, &standing_in, Some(&texts), tools.sdk_dir, &extra)?;
+    let defines = std::collections::HashMap::new();
+    let mut program =
+        crate::parse::parse_source_with(&text, crate::parse::UNNAMED_FILE, &defines, &headers, &libraries)?;
     if !crate::source::truthy(&program["main"]) {
         let first = program["functions"]
             .as_array()

@@ -968,7 +968,10 @@ pub fn compile_file(path: &std::path::Path, tools: &Toolchain, options: &Options
     };
     let mut headers = tools.headers.clone();
     headers.extend(crate::definitions::source_headers(path)?);
-    let mut program = crate::parse::parse_source(text, crate::parse::UNNAMED_FILE, &headers)?;
+    let libraries = crate::library::include_texts(text, path, options.overlay, tools.sdk_dir, &[])?;
+    let defines = std::collections::HashMap::new();
+    let mut program =
+        crate::parse::parse_source_with(text, crate::parse::UNNAMED_FILE, &defines, &headers, &libraries)?;
     if let Some(table) = options.table.filter(|_| program.get("asm").is_none() && program["natives"].is_null()) {
         program = program.with("natives", table);
     }

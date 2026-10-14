@@ -173,6 +173,66 @@ fn mods_adding_the_same_names_each_keep_their_own() {
     assert_eq!(machine.printed, strings(&["1", "10", "2"]));
 }
 
+/// A patch in standard C: its structs, unions, enums and typedefs, #pragma std c89, static
+/// functions, a header's macros and typedef sizes, varargs, function pointers, global arrays with
+/// values and static locals all carry into the script it is merged into.
+const C_PATCH: &str = "#pragma target map s17\n#pragma std c89\n\n#include <limits.h>\n#include <stddef.h>\n#include <stdarg.h>\n#include \"shapes.c\"\n\n\
+                       union cell {\n    int i;\n    float f;\n};\n\nenum mode {\n    MODE_ADD,\n    MODE_MUL\n};\n\ntypedef int (*operation)(int, int);\n\n\
+                       int table[4] = {1, 2, 3, 4};\nstruct point corners[2];\nint passed;\n\n\
+                       static int add(int a, int b)\n{\n    return a + b;\n}\n\nstatic int mul(int a, int b)\n{\n    return a * b;\n}\n\n\
+                       operation operations[2] = {add, mul};\n\n\
+                       static int sum(int count, ...)\n{\n    va_list ap;\n    int total = 0;\n\n    va_start(ap, count);\n    while (count-- > 0) {\n        total += va_arg(ap, int);\n    }\n    va_end(ap);\n    return total;\n}\n\n\
+                       static int next(void)\n{\n    static int id;\n\n    return ++id;\n}\n\n\
+                       static void check(int ok)\n{\n    passed = passed * 2 + (ok != 0);\n}\n\n\
+                       PROGRAM(9000, checks);\n\n\
+                       void checks(void)\n{\n    int i;\n    int total = 0;\n    int truncated;\n    union cell c;\n    struct point p = moved(corners[1], 3);\n    struct point *q = &corners[0];\n\n\
+                       \x20   for (i = 0; i < 4; i++) {\n        total += table[i];\n    }\n    check(total == 10);\n\
+                       \x20   check(p.x == 3 && p.y == 3);\n    q->y = 7;\n    check(corners[0].y == 7);\n\
+                       \x20   check(operations[MODE_MUL](3, 4) == 12 && operations[MODE_ADD](3, 4) == 7);\n\
+                       \x20   check(sum(3, 1, 2, 3) == 6);\n    next();\n    check(next() == 2);\n    truncated = 2.75;\n    check(truncated == 2 && (5 && 7) == 1);\n\
+                       \x20   c.f = 1.5;\n    check(c.f == 1.5 && sizeof c == 4);\n\
+                       #if INT_MAX > 0\n    check(sizeof(wchar_t) == 2 && offsetof(struct point, y) == 4);\n#else\n    check(0);\n#endif\n\
+                       \x20   print(passed);\n}\n";
+const SHAPES: &str = "struct point {\n    int x;\n    int y;\n};\n\nstruct point moved(struct point p, int by)\n{\n    p.x += by;\n    p.y += by;\n    return p;\n}\n";
+
+fn program_with_headers(root: &Path, plan: &Plan, script: &str) -> Result<Node> {
+    let headers = sdk::load_texts(&sdk_dir())?;
+    let path = root.join(script);
+    let program = parse::parse_source(&read(&path), "script.c", &headers)?;
+    let includes = library::read_includes(&program, &path, None, &sdk_dir(), &[])?;
+    let program = library::expand(program, &includes, &headers)?;
+    let found = plan.for_script(script).unwrap_or_default();
+    patches::applied(program, &found, script, root, &headers, None, &sdk_dir())
+}
+
+#[test]
+fn a_patch_in_standard_c_carries_every_feature_into_the_script() {
+    let folder = TempDir::new("patches-standard-c");
+    let (root, dirs) = setup(folder.path(), &[("c", &[("c.c", C_PATCH), ("shapes.c", SHAPES)])]);
+    let program = program_with_headers(&root, &plan_of(&dirs, &root).unwrap(), "map/s/s17_valley/s17_1.c").unwrap();
+    // the script's global stays first; the patch's arrays and structs take slots after it
+    assert_eq!(program["globals"][0]["name"], "visits");
+    // resolving adds the flag the initialised globals need
+    let resolved = sdk::resolve(&program, &tables()).unwrap();
+    let table = vm::table_of(&program, &tables()).unwrap();
+    let mut machine = Machine::new(&table, machine_globals(&resolved));
+    machine.run("checks", Vec::new()).unwrap();
+    assert_eq!(machine.printed, strings(&["511"]));
+    // a second mod with the same names keeps its own, and its function pointers follow them
+    let second = C_PATCH.replace("PROGRAM(9000, checks)", "PROGRAM(9001, checks)");
+    let (root, dirs) = setup(
+        &folder.path().join("two"),
+        &[("c", &[("c.c", C_PATCH), ("shapes.c", SHAPES)]), ("d", &[("c.c", &second), ("shapes.c", SHAPES)])],
+    );
+    let program = program_with_headers(&root, &plan_of(&dirs, &root).unwrap(), "map/s/s17_valley/s17_1.c").unwrap();
+    let table = vm::table_of(&program, &tables()).unwrap();
+    let mut machine = Machine::new(&table, machine_globals(&sdk::resolve(&program, &tables()).unwrap()));
+    for name in ["checks", "checks_d"] {
+        machine.run(name, Vec::new()).unwrap();
+    }
+    assert_eq!(machine.printed, strings(&["511", "511"]));
+}
+
 #[test]
 fn every_frame_functions_run_before_each_wait() {
     let patch = "#pragma target map s17\n\n#pragma every_frame\nvoid tick(void)\n{\n    print(\"tick\");\n}\n";
