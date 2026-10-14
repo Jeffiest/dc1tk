@@ -1,4 +1,4 @@
-"""Importing a map's glTF scene: running `c2 map export`, Blender's glTF importer with the
+"""Importing a map's glTF scene: running `c2 map-export`, Blender's glTF importer with the
 options the scene needs, then making it workable (collision hidden and coloured, point boxes,
 point lights)."""
 
@@ -356,7 +356,7 @@ def report_result(operator, roots, warnings):
 
 
 class C2_OT_import_gltf(bpy.types.Operator, ImportHelper):
-    """Import a map scene that c2 map export wrote (keeps every extras.c2, hides collision)"""
+    """Import a map scene that c2 map-export wrote (keeps every extras.c2, hides collision)"""
 
     bl_idname = "c2.import_map_gltf"
     bl_label = "Import Dark Chronicle Map (.gltf)"
@@ -375,7 +375,7 @@ class C2_OT_import_gltf(bpy.types.Operator, ImportHelper):
 
 
 class C2_OT_import_map(runner.C2_OT_run_job):
-    """Export a map with c2 map export, then import it"""
+    """Export a map with c2 map-export, then import it"""
 
     bl_idname = "c2.import_map"
     bl_label = "Import Dark Chronicle Map (c2)"
@@ -414,11 +414,11 @@ class C2_OT_import_map(runner.C2_OT_run_job):
         os.makedirs(folder, exist_ok=True)
         # Split the template first, so a folder with spaces stays one argument.
         args = [part.format(name=name, out=folder) for part in settings.export_args.split()]
-        return ("c2 map export", c2 + args, prefs.working_dir(settings))
+        return ("c2 map-export", c2 + args, prefs.working_dir(settings))
 
     def finish(self, context, job):
         if job.returncode != 0:
-            self.report({"ERROR"}, "c2 map export failed (exit %s); see the text \"%s\"" % (job.returncode, runner.TEXT_NAME))
+            self.report({"ERROR"}, "c2 map-export failed (exit %s); see the text \"%s\"" % (job.returncode, runner.TEXT_NAME))
             return {"CANCELLED"}
         path = find_export(self.folder(context), self.map_name)
         if path is None:
@@ -439,7 +439,7 @@ class C2_OT_import_map(runner.C2_OT_run_job):
 
 def menu_import(self, context):
     self.layout.operator(C2_OT_import_gltf.bl_idname, text="Dark Chronicle map (.gltf)")
-    self.layout.operator(C2_OT_import_map.bl_idname, text="Dark Chronicle map (c2 map export)")
+    self.layout.operator(C2_OT_import_map.bl_idname, text="Dark Chronicle map (c2 map-export)")
 
 
 classes = (C2_OT_import_gltf, C2_OT_import_map)

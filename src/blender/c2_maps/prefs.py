@@ -27,7 +27,7 @@ class C2Preferences(bpy.types.AddonPreferences):
     export_args: StringProperty(
         name="Map export arguments",
         description="c2's arguments to export a map; {name} is the map, {out} the folder",
-        default="map export {name} -o {out}",
+        default="map-export {name} -o {out}",
     )
     maps_dir: StringProperty(
         name="Exported maps",
@@ -80,7 +80,7 @@ class _Defaults:
 
     repo_dir = ""
     c2_path = ""
-    export_args = "map export {name} -o {out}"
+    export_args = "map-export {name} -o {out}"
     maps_dir = ""
     mod_dir = ""
     source_dir = ""

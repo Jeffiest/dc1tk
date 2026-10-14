@@ -1,4 +1,4 @@
-"""Writes a tiny map scene that follows docs/assets/maps.md section 8, as `c2 map export` would:
+"""Writes a tiny map scene that follows docs/assets/maps.md section 8, as `c2 map-export` would:
 two placements of one template (a model piece, a collision piece and a camera-collision piece,
 and a template point), the map's own points (a door, a point light with a KHR light, a sound
 emitter, an invent box, and two points whose data is a raw argument list), a fixed camera, and

@@ -3,7 +3,7 @@
     blender --background --factory-startup --python src/blender/tests/test_addon.py
 
 Enables the add-on from src/blender, writes the synthetic map of make_test_map.py, imports it
-(through a stand-in c2 on Windows, which copies the map as `c2 map export` would, otherwise
+(through a stand-in c2 on Windows, which copies the map as `c2 map-export` would, otherwise
 from the file), edits fields, adds points, duplicates a placement, paints collision, validates,
 exports into a mod and checks the written glTF: every node and extras.c2 of the source is kept
 (edited values changed as expected), transforms are unchanged, the new nodes carry valid extras,
@@ -122,15 +122,15 @@ def enable_addon():
 
 
 def write_fake_c2(folder, source_dir):
-    """A stand-in for c2 on Windows: `map export NAME -o DIR` copies the test map into DIR,
+    """A stand-in for c2 on Windows: `map-export NAME -o DIR` copies the test map into DIR,
     anything else echoes its arguments."""
     path = os.path.join(folder, "fake_c2.bat")
     with open(path, "w", newline="\r\n") as handle:
         handle.write(
             "@echo off\n"
-            'if "%~1"=="map" (\n'
-            '  xcopy /E /I /Y /Q "' + source_dir + '" "%~5" >nul\n'
-            "  echo exported %~3 to %~5\n"
+            'if "%~1"=="map-export" (\n'
+            '  xcopy /E /I /Y /Q "' + source_dir + '" "%~4" >nul\n'
+            "  echo exported %~2 to %~4\n"
             "  exit /b 0\n"
             ")\n"
             "echo c2 %*\n"

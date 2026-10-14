@@ -1,4 +1,4 @@
-"""Dark Chronicle maps: import a map exported by `c2 map export`, edit its placements, trigger
+"""Dark Chronicle maps: import a map exported by `c2 map-export`, edit its placements, trigger
 points and collision, check it, and export it into a mod (docs/assets/maps.md, section 8)."""
 
 bl_info = {

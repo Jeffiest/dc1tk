@@ -1,6 +1,6 @@
 # c2_maps: a Blender add-on for Dark Chronicle maps
 
-`c2_maps` imports a map that `c2 map export NAME` wrote as a glTF scene, lets
+`c2_maps` imports a map that `c2 map-export NAME` wrote as a glTF scene, lets
 you edit its placements, trigger points, collision and settings, checks it
 against the game's limits, and exports it into a mod that `c2 build` turns
 into a disc image. The scene's conventions (node names, `extras.c2`,
@@ -34,7 +34,7 @@ Preferences:
 |---|---|
 | c2 repository | the repository around the add-on, when linked |
 | c2 executable | `build/release/c2.exe` (`c2` elsewhere), else `c2.bat` / `./c2` in the repository |
-| map export arguments | `map export {name} -o {out}` |
+| map export arguments | `map-export {name} -o {out}` |
 | exported maps | `extracted/maps` in the repository |
 | mod folder, source tree, retail and output disc images | for Export and Build; the source tree defaults to `extracted/scripts` |
 
@@ -44,7 +44,7 @@ Everything is in the 3D viewport's sidebar (N), tab **Dark Chronicle**, and
 in File, Import.
 
 **Import.** Type the map's name (`s17`) and press Import: the add-on runs
-`c2 map export s17 -o extracted/maps/s17` and imports the result. File,
+`c2 map-export s17 -o extracted/maps/s17` and imports the result. File,
 Import, "Dark Chronicle map (.gltf)" imports a scene exported before. The
 import keeps every custom property (`extras.c2`), merges no vertices and keeps
 the node tree, then:
