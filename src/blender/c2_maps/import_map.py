@@ -309,7 +309,41 @@ def postprocess(context, gltf_path, new_objects, log=None):
                     if space.type == "VIEW_3D":
                         space.clip_start = 1.0
                         space.clip_end = max(space.clip_end, 100000.0)
+                        # the map as the game draws and lights it, in view
+                        shading = space.shading
+                        if shading.type in ("SOLID", "WIREFRAME"):
+                            shading.type = "MATERIAL"
+                        shading.use_scene_world = True
+                        shading.use_scene_lights = True
+                region = next((region for region in area.regions if region.type == "WINDOW"), None)
+                if region is not None and roots:
+                    frame_map(context, area, region, roots)
     return roots, warnings
+
+
+def frame_map(context, area, region, roots):
+    """Point the view at the map's placements (not the far backdrops around some maps)."""
+    places = [obj for root in roots for obj in c2data.placements(root)] or list(roots)
+    selected = list(context.selected_objects)
+    active = context.view_layer.objects.active
+    try:
+        for obj in selected:
+            obj.select_set(False)
+        for obj in places:
+            if obj.name in context.view_layer.objects:
+                obj.select_set(True)
+        with context.temp_override(area=area, region=region):
+            bpy.ops.view3d.view_selected()
+    except (RuntimeError, AttributeError, TypeError):
+        pass
+    finally:
+        for obj in places:
+            if obj.name in context.view_layer.objects:
+                obj.select_set(False)
+        for obj in selected:
+            if obj.name in context.view_layer.objects:
+                obj.select_set(True)
+        context.view_layer.objects.active = active
 
 
 def import_gltf(context, path):

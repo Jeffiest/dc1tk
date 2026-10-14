@@ -73,6 +73,9 @@ the node tree, then:
   a world "c2 NAME" with its background colour behind everything and its
   ambient colour around, and its directional lights as suns ("c2 light NAME
   N", outside the map, never exported). A world of your own is kept;
+- turns the 3D view to Material Preview with the scene's world and lights
+  (the light set's, so the preview looks like the game rather than a studio)
+  and frames the map's placements;
 - shows the pieces the game draws at the hour in the Map panel (noon to
   start): towns hold day and night versions of pieces (`PIECE_TIME`), and
   showing both at once covers the town. Untick the clock for every piece.
