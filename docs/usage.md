@@ -187,7 +187,14 @@ map table, a town, a street or an interior, is entered as the game leaves a
 dungeon for a town, with `go_to_edit_mode(map number, program)`: `--start-at
 m05` opens m05 (map 14) at `map_start`, though m05 has no scripts of its own, and `--start-at m05:PROGRAM` runs one of a town's programs. `build`
 prints which way it warps; a town takes no `/SCRIPT`, as the game loads its own.
-The scene starts with a new game's party. `"start_at"` in `mod.json` takes the
+The scene starts with a new game's party. A town start puts Max in control
+(a new game starts as Monica), standing at the town's default arrival spot (the
+warp says the player came from Palm Brinks, or from its station when the
+target is Palm Brinks), at a new game's time of day and story progress, with
+the town's default music and ambient sounds: New Game skips the next music
+load for its opening scene, so the warp calls `allow_bgm_load()` first, or the
+town would load its sounds but no music. A mod's replacement of the town's tune
+(`music:BG_000_000` for Palm Brinks' streets) is what plays. `"start_at"` in `mod.json` takes the
 same forms. See [the modding guide](modding.md#trying-a-change-quickly).
 
 ### Mods
