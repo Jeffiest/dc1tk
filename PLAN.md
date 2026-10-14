@@ -154,15 +154,19 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    of that language. Japanese and Korean beyond ASCII show as `{XXXX}` (no
    table on the disc gives their glyphs); the English font has no accented
    letters. Not yet tried in the game.
-3. **Game data** (located, partly editable). Where every kind lives is in
-   [data](docs/assets/data.md). Editable through `mod.json` (`data:items`,
-   `data:shops`, `data:monsters`, JSON with only the changed fields): item
-   and weapon tables (`menu/cfg7`), prices and shop goods per chapter, and
-   monster stats (a table in `SCES_511.90`, patched in place). Not yet tried
-   in the game. Still to make editable: inventions, Georama parts, fishing,
-   floor medals and monster placement (plain cfg, the same way), and the
-   other executable tables (spectrumization, character growth, Donny's
-   shop, fish); adding new items or shops; the remaining unknown fields.
+3. **Game data** (done). Where every kind lives is in
+   [data](docs/assets/data.md); each is a `data:` id in `mod.json`, JSON with
+   only the changed fields, merged field by field across mods: `data:items`
+   (item and weapon tables, spectrumising), `data:shops` (prices, goods per
+   chapter, Donny's shop), `data:monsters` (stats in `SCES_511.90`, patched
+   in place), `data:inventions` (recipes, scoops), `data:georama` (parts,
+   fixed and starting parts), `data:medals`, `data:floors` (monsters per
+   floor), `data:fishing` and `data:characters` (starting HP and equipment,
+   weapon level-ups, Monica's forms, badges). Fields are named where the
+   engine reads them; the rest are shown to be unread. Left: adding records
+   (new items, shops, recipes, parts), Georama requests (mostly code), rivers,
+   townspeople (`npc*.cfg`) and a few executable tables (`gift_item_tbl`,
+   `GolfClubDef`, `aquafish_mixTable`). Being tried in the game.
 4. **Memory budgets** (done). [memory](docs/assets/memory.md) gives each
    budget from the engine (read buffer, map and loading-screen limits,
    script buffer, placements, texture blocks, GS memory, character stacks,
