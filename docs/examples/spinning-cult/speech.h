@@ -1,11 +1,12 @@
-// Mod spinning-cult: the Fish Room's speech and camera helpers. Lines show in the window at the top
-// of the screen (modkit's, the slot the game uses for hints), which shows in any map and is never
-// cut off by the screen's edge, as a bubble from a character at the edge of the picture is.
+// Mod spinning-cult: the Fish Room's speech and camera helpers.
 
-// Shows a line until the player presses (X) or (O). Who speaks is for the reader: the line says so.
+// Brother Gill's lines: he looks as if he speaks, and waits, but nothing is heard. The game holds
+// until the player presses (X) or (O), as for a line; the text is what he would say, for the
+// reader of this script only.
 static void say(int speaker, string text)
 {
-    modkit_say(text);
+    modkit_wait(20);
+    modkit_wait_for_confirm();
 }
 
 // Stands chara facing the point (x, z).

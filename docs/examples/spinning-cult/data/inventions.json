@@ -6,8 +6,8 @@
    "item": 429,
    "ideas": [
     251,
-    9,
-    17
+    252,
+    253
    ],
    "materials": [
     {
@@ -20,12 +20,32 @@
  "ideas": [
   {
    "idea": 251,
-   "name": "Endless Turning",
+   "name": "Rotation",
+   "names": {
+    "fr": "Rotation",
+    "de": "Drehung",
+    "it": "Rotazione",
+    "es": "Rotación"
+   }
+  },
+  {
+   "idea": 252,
+   "name": "More Rotation",
+   "names": {
+    "fr": "Plus de rotation",
+    "de": "Mehr Drehung",
+    "it": "Più rotazione",
+    "es": "Más rotación"
+   }
+  },
+  {
+   "idea": 253,
+   "name": "Endless Rotation",
    "names": {
     "fr": "Rotation sans fin",
-    "de": "Endloses Drehen",
-    "it": "Giro infinito",
-    "es": "Giro sin fin"
+    "de": "Endlose Drehung",
+    "it": "Rotazione infinita",
+    "es": "Rotación sin fin"
    }
   }
  ]

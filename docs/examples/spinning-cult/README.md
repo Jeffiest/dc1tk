@@ -29,9 +29,11 @@ c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
   nothing, played held). mod.json makes him a new pack, `mods/gill/gill.chr`.
 - `make_mod.py` builds the Fish Room with the fish-room example's
   `make_mod.py`, then adds: a second fish, awake, its pupils grown huge,
-  hidden until the ending and turned to the player by a Piece animation point
-  in "look at the player" mode; an Invent box round the fish, so a photo of
-  it gives the new idea "Endless Turning" (251); black fog, and a red light
+  three Invent boxes round the fish, one enabled at a time, so photos of it
+  give the new ideas "Rotation", "More Rotation" and "Endless Rotation" (251
+  to 253) in turn, and a checkerboard of touch triggers on the floor whose
+  programs move the fish on to its next idea after a photo (they never wait,
+  and each colour disarms itself, so walking never stops); black fog, and a red light
   set for the ending. Palm Brinks gets the door and a ninth light set, dark
   with a dried-blood fog. It writes the music (`compose_turned.py`) and copies
   this folder's scripts and data into `mods/spinning-cult`.
@@ -70,13 +72,17 @@ A new game starts in Palm Brinks (the first arrival moves the story on to
 when the town's people are out, and enters again).
 
 1. Go through the house door near the start of the street (the Fish Room's).
-   Talk to the robed figure under the fish. He gives you a Camera, a
+   Talk to the robed figure under the fish. He turns his head, then himself,
+   and seems to speak, but you hear nothing. You receive a Camera, a
    notebook, a photo album and a Scrap of Metal.
-2. Put the Camera in one of Max's active item slots (Items menu), and take a
-   photo of the fish: the idea "Endless Turning".
-3. In Palm Brinks, photograph a Flag and a Post.
-4. Invent: Endless Turning, Flag and Post make the Whirligig (Invention
-   menu); make it from the Scrap of Metal. Show it to Gill.
-5. Talk to Parn, Sheriff Blinkhorn, Giles, Aegira and Fournet with the
-   Whirligig. Each one turns. After the third, the town goes dark.
-6. When all five have turned, go back into the Fish Room.
+2. Put the Camera in one of Max's active item slots (Items menu) and
+   photograph the fish: the idea "Rotation". Walk a few steps (the floor's
+   hidden triggers move the fish on to its next idea once you hold a photo of
+   this one), photograph it again: "More Rotation"; and once more: "Endless
+   Rotation".
+3. Invent: Rotation, More Rotation and Endless Rotation make the gŷros
+   (Invention menu); make it from the Scrap of Metal. Show it to Gill.
+4. Talk to Parn, Sheriff Blinkhorn, Giles, Aegira and Fournet with the gŷros.
+   Each one turns. After the third, the town goes dark.
+5. When all five have turned, go back into the Fish Room: they turn round the
+   fish. Talk to Gill.

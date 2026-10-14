@@ -7,6 +7,8 @@
 NEW_PROGRAM(ENTER_FISH_ROOM);     // m01: the new door's program (mod.json gives it to point door_fish)
 NEW_PROGRAM(BACK_FROM_FISH_ROOM); // m01: arriving from the Fish Room, in front of that door
 NEW_PROGRAM(LEAVE_FISH_ROOM);     // fishroom: the room's door (point door_out, by "programs")
+NEW_PROGRAM(STEP_ON_A);         // fishroom: the floor's touch triggers turn_a*, by "programs"
+NEW_PROGRAM(STEP_ON_B);         // fishroom: and turn_b*
 
 NEW_COUNTER(CULT_COUNTER);
 
@@ -21,6 +23,7 @@ struct cult_bits {
     unsigned int town_shown : 1;  // the door was shown on the first arrival
     unsigned int dark : 1;        // Palm Brinks has gone dark (three turned)
     unsigned int count : 3;       // how many have turned
+    unsigned int ideas : 2;       // how many of the fish's ideas Max has photographed
 };
 
 // The same fields as plain bits, for Palm Brinks' script, which has little room (a map's script
@@ -57,8 +60,10 @@ static void write_cult(union cult_state state)
 
 // The new item the invention makes (mod.json's data:items and data:inventions).
 #define ITEM_GYROS 429
-// The new idea the fish gives when photographed (mod.json's ideas; the Fish Room's invent box).
-#define IDEA_ENDLESS_TURNING 251
+// The fish's ideas, one photo each, in this order (mod.json's ideas; the Fish Room's invent boxes
+// fish_idea_1 to fish_idea_3).
+#define IDEA_ROTATION 251
+#define IDEA_COUNT 3
 
 // Where make_mod.py puts Palm Brinks' new door: the closed door ("door10") of the house nearest to
 // where Palm Brinks puts the player, whose point it takes over. Its front faces -Z.

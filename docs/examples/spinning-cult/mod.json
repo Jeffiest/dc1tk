@@ -3,7 +3,12 @@
  "version": "1.0.0",
  "start_at": "m01",
  "replace": {
-  "map:m01": {"file": "maps/m01/m01.gltf", "programs": {"door_fish": "ENTER_FISH_ROOM"}},
+  "map:m01": {
+   "file": "maps/m01/m01.gltf",
+   "programs": {
+    "door_fish": "ENTER_FISH_ROOM"
+   }
+  },
   "data:items": "data/items.json",
   "data:inventions": "data/inventions.json"
  },
@@ -13,19 +18,56 @@
    "like": "m07",
    "title": "The Fish Room",
    "script": "fishroom.c",
-   "programs": {"door_out": "LEAVE_FISH_ROOM"}
+   "programs": {
+    "door_out": "LEAVE_FISH_ROOM",
+    "turn_a0": "STEP_ON_A",
+    "turn_a2": "STEP_ON_A",
+    "turn_a5": "STEP_ON_A",
+    "turn_a7": "STEP_ON_A",
+    "turn_a8": "STEP_ON_A",
+    "turn_a10": "STEP_ON_A",
+    "turn_a13": "STEP_ON_A",
+    "turn_a15": "STEP_ON_A",
+    "turn_b1": "STEP_ON_B",
+    "turn_b3": "STEP_ON_B",
+    "turn_b4": "STEP_ON_B",
+    "turn_b6": "STEP_ON_B",
+    "turn_b9": "STEP_ON_B",
+    "turn_b11": "STEP_ON_B",
+    "turn_b12": "STEP_ON_B",
+    "turn_b14": "STEP_ON_B"
+   }
   },
   "music:BG_201": {
    "like": "BG_193",
    "file": "music/turning.mid",
    "instruments": {
-    "100": {"file": "music/musicbox.wav", "root": 84},
-    "101": {"file": "music/drone.wav", "root": 36, "loop": true},
-    "102": {"file": "music/choir.wav", "root": 60},
-    "103": {"file": "music/bell.wav", "root": 36},
-    "104": {"file": "music/whisper.wav", "root": 60}
+    "100": {
+     "file": "music/musicbox.wav",
+     "root": 84
+    },
+    "101": {
+     "file": "music/drone.wav",
+     "root": 36,
+     "loop": true
+    },
+    "102": {
+     "file": "music/choir.wav",
+     "root": 60
+    },
+    "103": {
+     "file": "music/bell.wav",
+     "root": 36
+    },
+    "104": {
+     "file": "music/whisper.wav",
+     "root": 60
+    }
    }
   },
-  "file:mods/gill/gill.chr": {"file": "model/gill.gltf", "like": "model:p01_01a"}
+  "file:mods/gill/gill.chr": {
+   "file": "model/gill.gltf",
+   "like": "model:p01_01a"
+  }
  }
 }
