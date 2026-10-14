@@ -436,6 +436,7 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
         }
     }
     let mut added_to: HashMap<String, usize> = HashMap::new();
+    let at = index.at();
     for module in modules {
         let mine: Vec<&Line> =
             lines.iter().filter(|line| line.module == module && !line.is_file() && !line.is_map() && !line.is_data()).collect();
@@ -518,10 +519,29 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                             count as i64 - 1
                         )));
                     }
+                    // each entry at every place its sound has: copies of the bank in other packs
+                    // whose entry plays alike are the same sound (tree::bank_sounds)
+                    let mut done: Vec<(String, usize)> = Vec::new();
                     for (place, _) in places {
                         for (number, _, path) in &wavs {
-                            let given = Given { number: *number, name: None, path: path.clone(), volume: None };
-                            resolved.edits.push(edit(place, Change::Entry(given)));
+                            let key = (Kind::Sound, place.display().to_lowercase(), Some(*number));
+                            let reached: Vec<Place> = match at.get(&key).and_then(|id| index.assets.get(id)) {
+                                Some(sound) => sound
+                                    .places
+                                    .iter()
+                                    .filter(|(_, entry)| *entry == Some(*number))
+                                    .map(|(place, _)| place.clone())
+                                    .collect(),
+                                None => vec![place.clone()],
+                            };
+                            for place in reached {
+                                if done.contains(&(place.display().to_lowercase(), *number)) {
+                                    continue;
+                                }
+                                done.push((place.display().to_lowercase(), *number));
+                                let given = Given { number: *number, name: None, path: path.clone(), volume: None };
+                                resolved.edits.push(edit(&place, Change::Entry(given)));
+                            }
                         }
                     }
                 }
@@ -965,4 +985,82 @@ pub fn key_clashes(mod_dirs: &[PathBuf]) -> Result<BTreeMap<String, Vec<String>>
         }
     }
     Ok(owners.into_iter().filter(|(_, modules)| modules.len() > 1).collect())
+}
+
+/// The constant a sound entry a mod's WAV gives is known by: SE_, the bank's name and the name
+/// after the WAV's number, in capitals, as the game's sounds are named (`005_beep.wav` in bank
+/// sp_004: SE_SP_004_BEEP). None for a WAV without a name (005.wav) or a name of no letters or
+/// digits.
+pub fn wav_constant(bank: &str, label: &str) -> Option<String> {
+    crate::disc::identifier(label, &format!("SE_{}", bank.to_uppercase()))
+}
+
+/// The constants a mod's folders of WAVs give its patches: each WAV named after its number and a
+/// name, in a bank's folder under disc/ or of a file: line (the folders that can add entries),
+/// {name: entry number}. Two WAVs giving one name two numbers are refused.
+pub fn wav_constants(mod_dir: &Path) -> Result<IndexMap<String, i64>> {
+    let mut found: IndexMap<String, i64> = IndexMap::new();
+    for (target, source) in discfiles::game_files(mod_dir)? {
+        if !source.is_dir() || !target.to_lowercase().ends_with(".snd") {
+            continue;
+        }
+        let file = target.rsplit('/').next().unwrap_or(&target);
+        let bank = &file[..file.len() - 4];
+        for (number, label, path) in sounds::numbered(&source)? {
+            let Some(name) = label.as_deref().and_then(|label| wav_constant(bank, label)) else {
+                continue;
+            };
+            match found.get(&name) {
+                Some(&known) if known != number as i64 => {
+                    return Err(Error::invalid(format!(
+                        "{}: {} names entry {number} {name}, which another WAV gives entry {known}",
+                        name_of(mod_dir),
+                        name_of(&path)
+                    )));
+                }
+                _ => {
+                    found.insert(name, number as i64);
+                }
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// The sound constants each chosen mod's patches see, {mod: {name: entry number}}: the entries
+/// its add lines make (added, from resolve) and the names of its WAVs (wav_constants). A name the
+/// game's headers (consts) give another value is refused; one they give the same value is left to
+/// them.
+pub fn sound_constants(
+    mod_dirs: &[PathBuf],
+    consts: &IndexMap<String, i64>,
+    added: &BTreeMap<String, IndexMap<String, i64>>,
+) -> Result<BTreeMap<String, IndexMap<String, i64>>> {
+    let mut out = added.clone();
+    for mod_dir in mod_dirs {
+        let module = name_of(mod_dir);
+        for (name, number) in wav_constants(mod_dir)? {
+            match consts.get(&name) {
+                Some(&known) if known == number => continue,
+                Some(&known) => {
+                    return Err(Error::invalid(format!(
+                        "{module}: a WAV names entry {number} {name}, which the game's headers give {known}; name it otherwise"
+                    )));
+                }
+                None => {}
+            }
+            let mine = out.entry(module.clone()).or_default();
+            match mine.get(&name) {
+                Some(&known) if known != number => {
+                    return Err(Error::invalid(format!(
+                        "{module}: {name} is entry {number} by a WAV's name and {known} by an add line"
+                    )));
+                }
+                _ => {
+                    mine.insert(name, number);
+                }
+            }
+        }
+    }
+    Ok(out)
 }
