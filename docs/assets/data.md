@@ -27,6 +27,22 @@ run time). Addresses below are the symbols of `config/pal/main.symbols.txt`.
   chapter, in the 16 shop lists. `shop_data.rs`.
 - **Monsters** (`data:monsters`, section 4): the 343 monster kinds' stats,
   patched in place into `SCES_511.90`. `monster_data.rs`.
+- **Spectrumising** (in `data:items`, each item's `spectrumise`: `slot`,
+  `value`) and **Donny's shop** (in `data:shops`, `donny`: `row`, `item`,
+  `level`), executable tables (section 9). `exe_tables.rs`.
+- **Inventions** (`data:inventions`, section 5): `recipes` (all 19 copies of
+  `inv6.lst` in step) and `scoops` (executable). `invention_data.rs`.
+- **Georama** (`data:georama`, section 6): `parts` of every town, in every
+  language's `.gpi`; `fixed_parts` and `starting_parts`. `georama_data.rs`.
+- **Floor medals** (`data:medals`, section 8) and **monster placement**
+  (`data:floors`, section 4): `floors` by `dungeon` and `floor`.
+  `dungeon_data.rs`.
+- **Fishing** (`data:fishing`, section 7): `spots`, `race_fish`,
+  `prize_groups`, `prizes`, and from the executable `species` and
+  `race_kinds`. `fishing_data.rs`.
+- **Characters** (`data:characters`, section 9): `characters` (starting HP
+  and equipment), `weapon_level_up`, `monster_forms`, `badges`, all executable
+  tables. `exe_tables.rs`.
 
 A table holds one record per item, price, shop or monster, named by its
 number; a mod keeps only the records and fields it changes (an unedited full
@@ -36,19 +52,37 @@ hold, fields a record does not have, item names (text, not data) and the
 numbers that tie records together (`list`, a ridepod part's `kind`) are
 refused when the mod is read.
 
+The kinds after the first three share `c2-assets`' `data_table.rs`: each
+section is a list of records named by their keys (`{"dungeon": 0, "floor":
+3}`, `{"town": "g01", "part": 1}`), with labels (names, which are text; given
+back unchanged or left out) and fields; `a.b` fields are nested objects. A
+field is one argument or several, a list inside a statement (a recipe's
+materials, a length the mod may change within the engine's limits), a list
+over several statements (a floor's `FL` lines, a part's `PARTS_MATERIAL`
+lines: filled in order, emptied when the list is shorter, never added to), or
+bytes of the executable. A field kept in several files (the copies of
+`inv6.lst`, each language's `.gpi` and `rfd`) is read from the first (the
+English file where languages differ) and written to every copy. `build` patches
+the executable once with every table's changes.
+
 **Settled (engine code and whole-corpus checks):** every cfg script the tables
 come from is read by `c2-assets`' `cfg_text.rs` (statements with the spaces,
 line breaks and comments around every argument) and written back byte for
 byte; an edit replaces only the arguments it changes. `cargo test --release
 corpus` with `C2S_CORPUS` set checks all three versions of the item tables
-(`menu/cfg5`, `cfg6`, `cfg7`: 1,260 records), the 16 shop lists and the
-monster table: every field's text or bytes are the ones its value writes, and
-each exported table applied back changes nothing. A build with all three
-tables edited reads back as edited from the image.
+(`menu/cfg5`, `cfg6`, `cfg7`: 1,260 records), the 16 shop lists, the monster
+table and every kind above (136 recipes in 19 copies, 53 scoops, 218 Georama
+parts with 5 fixed and 29 starting parts, 161 floors' medals, 129 floors'
+monsters, 22 fishing spots, 216 race fish in 7 languages, 22 prize groups, 18
+species and race kinds, the character tables): every field's text or bytes
+are the ones its value writes, and each exported table applied back changes
+nothing. A build with every table edited reads back as edited from the image
+(packs holding `inv6.lst` rebuilt around it).
 
-**Not yet:** tried in the game. Located but not editable (sections 5-9):
-inventions, Georama, fishing, floor medals, character tables and the other ELF
-tables.
+**Not yet:** tried in the game. Adding records (new items, shops, recipes,
+parts, spots; lines a list does not have), and the tables still only located:
+Georama requests (`geo*.cfg`, mostly code), townspeople (`npc*.cfg`),
+`gift_item_tbl`, `GolfClubDef`, `aquafish_mixTable`, idea names (text).
 
 ## 1. Where each kind of data lives
 
@@ -62,26 +96,29 @@ tables.
 | fish for breeding and racing | `menu/cfg7/fishdat.cfg` | cfg `FISH` | 18 | `data:items` |
 | guard table (read, never used) | `menu/cfg7/grddat.cfg` | cfg `GRD` | 34 | no |
 | item names, per language | `menu/cfg7/comdatmes0..6.cfg` | cfg `MES_SYS` | 423-428 | no (text) |
-| spectrumising: what each item adds to an attachment | ELF `etcitem_spectol_table` 0x339820 | s8 {slot, value} × 425 | 425 | no |
+| spectrumising: what each item adds to an attachment | ELF `etcitem_spectol_table` 0x339820 | s8 {slot, value} × 425 | 425 | `data:items` (`spectrumise`) |
 | prices and shop goods, by chapter | `menu/shopusa1..8.cfg`, `menu/shoplst1..8.cfg` | cfg `PRICE`, `SHOP` | 428 prices, 38 shops per file | `data:shops` |
-| Donny's shop | ELF `dony_shoplist` 0x358620 | {s16 item, s8 level} × 7 | 7 | no |
+| Donny's shop | ELF `dony_shoplist` 0x358620 | {s16 item, s8 level} × 7 | 7 | `data:shops` (`donny`) |
 | monster stats, drops, rates | ELF `base_monster_define` 0x341DA0 | `BASE_MONSTER_TBL` 0xB8 × 344 | 343 | `data:monsters` |
 | monster names, per language | `dungeon/cfg_file/mosdata0..6.cfg` | cfg `NAME` | 343 | no (text) |
-| which monsters each floor has | `dungeon/cfg_file/mos_place0..6.cfg` | cfg `FLS`/`FL`/`FLE` | 6-31 floors per dungeon | no |
-| invention recipes | `menu/inv6.lst` and its copies in the menu packs | cfg `DATASET` | 136 | no |
+| which monsters each floor has | `dungeon/cfg_file/mos_place0..6.cfg` | cfg `FLS`/`FL`/`FLE` | 6-31 floors per dungeon | `data:floors` |
+| invention recipes | `menu/inv6.lst` and its copies in the menu packs | cfg `DATASET` | 136 | `data:inventions` |
 | idea and scoop names | `menu/<lang>/neta2.lst` | cfg `PIC_NAME` | 294 | no (text) |
-| scoops | ELF `scoop_table` 0x352DE0 and `menu/<lang>/scoop.pac` `scoop.cfg` | `SCOOP_DATA` 0x14 × 53; cfg `STR` | 53 | no |
-| Georama parts (materials, culture points) | `map/g/gNN/gNN<lang>.gpi` | cfg `EDIT_PARTS` blocks | 13-56 per town | no |
-| Georama fixed and starting parts, rivers | `map/g/gNN/gNN.cfg` | cfg `FIX_EPARTS`, `INIT_EPARTS` | per town | no |
+| scoops | ELF `scoop_table` 0x352DE0 and `menu/<lang>/scoop.pac` `scoop.cfg` | `SCOOP_DATA` 0x14 × 53; cfg `STR` | 53 | `data:inventions` (flag, slot; the text is text) |
+| Georama parts (materials, culture points) | `map/g/gNN/gNN<lang>.gpi` | cfg `EDIT_PARTS` blocks | 13-56 per town | `data:georama` |
+| Georama fixed and starting parts, rivers | `map/g/gNN/gNN.cfg` | cfg `FIX_EPARTS`, `INIT_EPARTS` | per town | `data:georama` (not the rivers) |
 | Georama requests and conditions | `geo0..6.cfg` | cfg `GEO_ANALYZE` | 5 towns, 98 conditions, 49 requests | no (checks are code) |
-| fish species (sizes, baits, times) | ELF `FishParam` 0x361A50 | `FISH_PARAM` 0x54 × 19 | 18 | no |
-| fishing spots | `sg/fish/fishing.cfg` | cfg `FISH_MAP` blocks | 22 maps, 110 fish | no |
-| fish race opponents | `sg/gyo/rfd0..6.cfg` | cfg `NUM`/`DAT` | 4 classes, 216 fish | no |
-| fish race and tournament prizes | `gyop.cfg`, `uofp.cfg` | cfg `GRP`/`PRIZE` | 12, 10 | no |
-| floor medals (time, fishing, Spheda, practice) | `menu/dngmap/dflr0..6.cfg` | cfg `RF_INFO`, `RF_INFO2` | 9-39 floors per dungeon | no |
-| Max's and Monica's starting HP | ELF `lifetbl_2854` 0x37C790 | f32 × 2 | 2 | no |
-| Monica's monster forms' attack and defence | ELF `mos_henge_param` 0x339D70 | 0x1C × 57 | 57 | no |
-| monster badge evolutions | ELF `monster_progress_tbl` 0x358C90 | s16 [19][5] | 19 | no |
+| fish species (sizes, baits, times) | ELF `FishParam` 0x361A50 | `FISH_PARAM` 0x54 × 19 | 18 | `data:fishing` |
+| fishing spots | `sg/fish/fishing.cfg` | cfg `FISH_MAP` blocks | 22 maps, 110 fish | `data:fishing` |
+| fish race opponents | `sg/gyo/rfd0..6.cfg` | cfg `NUM`/`DAT` | 4 classes, 216 fish | `data:fishing` |
+| fish race and tournament prizes | `gyop.cfg`, `uofp.cfg` | cfg `GRP`/`PRIZE` | 12, 10 | `data:fishing` |
+| floor medals (time, fishing, Spheda, practice) | `menu/dngmap/dflr0..6.cfg` | cfg `RF_INFO`, `RF_INFO2` | 9-39 floors per dungeon | `data:medals` |
+| Max's and Monica's starting HP | ELF `lifetbl_2854` 0x37C790 | f32 × 2 | 2 | `data:characters` |
+| Monica's monster forms' attack and defence | ELF `mos_henge_param` 0x339D70 | 0x1C × 57 | 57 | `data:characters` |
+| monster badge evolutions | ELF `monster_progress_tbl` 0x358C90 | s16 [19][5] | 19 | `data:characters` |
+| fish race kinds (percent of each race figure, affinity) | ELF `fish_data` 0x3630C0 | `grFISH_DATA` 0x1C × 18 | 18 | `data:fishing` |
+| WHP a weapon gains at a level-up | ELF `htbl_1662` 0x33A490 | s8 [10] | 10 | `data:characters` |
+| starting equipment, by language | ELF `weptbl_4503` 0x33A510 | s16 [2][10] | 2 × 2 × 5 | `data:characters` |
 | townspeople (abilities, costs) | `npc0..6.cfg` | cfg `NPC_INFO` | 177 | no |
 
 `menu/cfg5` and `menu/cfg6` are older versions of the item tables, and
@@ -90,7 +127,8 @@ tables.
 `edit.cfg` and the `.gpi` files without a language digit are leftovers no code
 names. Character and weapon growth is code, not data: defence starts at 4 or
 8 (`CUserDataManager::Initialize`), a weapon's ABS to level grows by half of
-itself per level, its WHP by a random 0-9 from `htbl_1662` (0x33A490).
+itself per level, its WHP by one of the ten values of `htbl_1662` (0x33A490),
+picked at random.
 
 ## 2. Items: `menu/cfg7`
 
@@ -161,12 +199,16 @@ follows: 0 body (`defence`, then a string nothing reads, `label`), 1 arm
 (`whp`, `attack`, `durability`, the eight attributes, `attack_type`,
 `label`), 2 legs (`unknown_4`, `attack_type`), 3 energy pack (`energy`).
 `capacity` is the energy the part uses, `file_no` its joint and sound files.
+The legs' `unknown_4` goes into the part's `unk_4` and from there
+(`CopyDataRoboPart`) into the owned part at +0x36, which nothing reads.
 
 ### 2.6 Fish: `FISH item, size, unknown_4, power, speed, speed, speed, stamina[, unknown_10];`
 
 Into `CDataBreedFish` (0x14): `size` is a float (the standard size), the rest
 s16; power, the three speeds and stamina are a bred fish's race parameters
-(`CopyDataFish`).
+(`CopyDataFish`). `unknown_4` and `unknown_10` are stored and never read
+(the readers, `CopyDataFish`, `SetFishAdjustScale`, `sgInitGyoRace` and
+`CItemSelect::KeyStep`, take the size and the five race parameters only).
 
 ### 2.7 Guards and names
 
@@ -221,12 +263,12 @@ monster scripts can change some values after that (`_SET_DEF_RATE`,
 | 0x34 | `script` | char[16] | `dungeon/monster/<script>.stb`, the AI |
 | 0x44 | `gift_type` | s16 | row of `gift_item_tbl` (0x351660) |
 | 0x48 | `sound_bank` | s32 | `snd2/mon/EN_%03d.snd`, 0 or less none |
-| 0x4C | `unknown_4c` | s32 | copied, not read |
+| 0x4C | `unknown_4c` | s32 | copied into the placed monster (+0x10E0), never read |
 | 0x50 | `hp` | s32 | life |
 | 0x54 | `family` | s8 | 0-10 (Beast, Windup, Aquatic, ...; 9 Undead); also the badge it can drop |
 | 0x56 | `abs` | u16 | ABS given (`_SET_DEAD_OFF`) |
 | 0x58 | `money` | u16 | money given (`_SET_DEAD_START`) |
-| 0x5A | `unknown_5a` | s16 | copied, not read |
+| 0x5A | `unknown_5a` | s16 | copied into the placed monster (+0x10EE and +0x1322), never read |
 | 0x5C | `weapon_wear` | f32 | WHP a melee hit takes off the weapon |
 | 0x60 | `rage_hits` | s16 | hits before rage (-1 for bosses) |
 | 0x62 | `guard_rate` | s8 | chance in 100 to guard |
@@ -238,7 +280,7 @@ monster scripts can change some values after that (`_SET_DEF_RATE`,
 | 0x6B | `sword_after_images` | s8 | sword after-image objects of the model |
 | 0x6C | `elements` | s16 × 8 | damage % per attribute, flame to scale (the book lists 50 or more as a weakness) |
 | 0x7C | `attack_kind_rates` | s16 [12] | damage % per attack kind (`vs_attk_index`, 0x351620) |
-| 0x94 | `unknown_94` | u32 | copied, not read |
+| 0x94 | `reaction_flags` | u32 | how hits move it (`CheckDamage`): 0x1 never staggers, 0x4 is never knocked over |
 | 0x98 | `flags` | u32 | bit 0: cannot be lifted |
 | 0x9C | `companion` | s32 | monster loaded with this one, -1 none |
 | 0xA0 | `drops` | s16 [2] | item drops (1 in 6; the second 1 in 5 of those) |
@@ -260,7 +302,15 @@ Which monsters a floor has: `dungeon/cfg_file/mos_place<dungeon>.cfg`,
 `CMonsterLocateInfo`, 32 slots, unchecked) and `FLE;`, read by
 `LoadMonsterFile` (0x293BB0, `dng_event.cpp`) for the current floor;
 `AutoSetMonster` places up to 24. Event scripts can also load and place one
-kind (bosses, fixed floors).
+kind (bosses, fixed floors). `FLS`'s count is read and dropped. The second of
+each pair goes into the placed monster's `locate_param`: the talk number, -1
+for a monster that cannot be talked to (`CheckMonsterTolk`); talking starts
+event 1150 with it (`IsEventRun`, read back by `_GET_MONSTER_TALK_DATA`).
+
+In the JSON (`data:floors`) each floor's last block is a record named by
+`dungeon` and `floor`, with `monsters`, a list of `{"monster", "talk"}` (at
+most 32). A changed list fills the floor's `FL` lines in order, the last
+taking the rest; lines left over become `FL;`, which adds nothing.
 
 ## 5. Inventions, ideas and scoops
 
@@ -282,6 +332,18 @@ info slot, text pointer) with texts from `scoop.cfg` (`STR id, "text";`).
 `invent.cfg`, `inv_com.cfg`, `item.cfg` and `item_com.cfg` are menu layouts
 and command scripts, not data.
 
+`_INVENT_DATASET` takes m as (arguments - 9) / 2 and fills nothing for a
+statement without a material; the arguments after the materials are the
+unknown (into `unk_10`, which nothing reads), the scale (0x20) and the
+position (0x14). `HowMuchZairyouMakeItem` lists at most four materials. In
+the JSON (`data:inventions`): `recipes`, named by `recipe` (the place in the
+file, from 0; two recipes may make one item), with `item`, `ideas` [3],
+`materials` (1 to 4 `{"item", "count"}`; the count is a byte), `unknown_10`,
+`scale` and `position` [3]; an edit goes into all 19 copies, the packs
+rebuilt around them. `scoops`, named by `scoop` (the id), with `flag` (the
+menu flag that makes the scoop known, `KnowScoop`) and `info` (its slot in
+`CScoopDataManager::info`, the saved state).
+
 ## 6. Georama
 
 Per town `gNN` (g01 to g05) and language digit: `map/g/gNN/gNN<lang>.gpi`,
@@ -302,6 +364,18 @@ condition is met is code (`AnalyzeSharlot`, `AnalyzeStera`, ... in
 `editanalyze.cpp`, with distances and thresholds as literals), so the
 conditions themselves are not data.
 
+In the JSON (`data:georama`): `parts`, named by `town` (`"g01"`) and `part`
+(its `ID`), labelled with the English `name`, with `model` (`PARTS_NAME`),
+`attribute`, `materials` (`{"item", "count"}`, one per `PARTS_MATERIAL`
+line: a part keeps at most the lines it has, emptied lines read as none),
+`culture_points` [2], `weight`, `geostone`, `max`, `paint_colours`,
+`paint_used`, `type`, `place_eps`, `map` and `polyn`; each is read from the
+English file and written into all seven languages' (the Japanese file differs
+in three parts' culture points; the English values are shown). The comment is
+text and left out. `fixed_parts` and `starting_parts`, named by `town` and
+`number` (the place in the list), with `part`, `position` [3] and `angle`.
+The rivers and water are not in the table.
+
 ## 7. Fishing
 
 Species: `FishParam` (0x361A50, `FISH_PARAM` 0x54 × 19, row 0 none): name and
@@ -312,10 +386,28 @@ points per size, pull, s16 [18] bait liking (0 never to 3 best; baits by
 `FISH_PLACE kind, "name", 5 floats;` (an area), `FISH fish, rate,
 wait_bias;` (up to 8), `FISH_MAP_END;`. Races: base stats in `fish_data`
 (0x3630C0, 18 × 0x1C), opponents in `sg/gyo/rfd<lang>.cfg` (`NUM class,
-count;`, `DAT item, "name", bonus, power, speed × 3, stamina, size;`). Prizes:
-`gyop.cfg` (races) and `uofp.cfg` (tournament), `GRP count, weights;` and
-`PRIZE percent, item, count, item, count, item, count;` (`LoadFishPrize`).
+count;`, `DAT item, "name", colour, power, speed × 3, stamina, size;`, the
+colour the owned fish's `color_no`). Prizes: `gyop.cfg` (the fish race) and
+`uofp.cfg` (the tournament), `GRP count, values;` and `count` × `PRIZE value,
+item, count, item, count, item, count;` (`LoadFishPrize`), first to third
+place. `RefreshFishPrize` picks a group (race class i: group 3i plus the
+class's win count, at most 2; tournament: the tournament count) and takes its
+first `PRIZE` only; neither `GRP`'s values nor `PRIZE`'s first are read.
 Aquarium breeding: `aquafish_mixTable` (0x3535A0, s8 [171][3]).
+
+In the JSON (`data:fishing`): `spots` (named by `spot`, the place in the
+file: `map`, `exclusive`, `area`, `area_values` [5], `fish`: `{"fish", "rate",
+"wait_bias"}` per `FISH` line; `FISH` reads its arguments unchecked, so a spot
+keeps its number of fish), `race_fish` (by `class` and `number`, the English
+`name` a label: `item`, `colour`, `power`, `speed` [3], `stamina`, `size`;
+written into all seven languages' `rfd`), `prize_groups` (by `contest`,
+`"race"` or `"tournament"`, and `group`: `count`, fixed, and `values`),
+`prizes` (by `contest`, `group` and `prize`: `unread` and `places`, three
+`{"item", "count"}`), `species` (by `fish`, the `FishParam` row: `item`,
+`base_size`, `min_size`, `max_size`, `unknown_18` (nothing reads it; mostly
+above `max_size`), `weight_rate`, `point_rate`, `pull_rate`, `bait_liking`
+[18], `time_liking` [4]) and `race_kinds` (by `row`: `item`, fixed, `power`,
+`stamina`, `speed` [3] in percent, `affinity`).
 
 ## 8. Floor medals: `menu/dngmap/dflr<dungeon>.cfg`
 
@@ -329,20 +421,38 @@ Monica, 2 Max), Spheda, and the Spheda prizes. `RF_INFO2 floor, type,
 param;`: the practice medal ("defeat with ..."), checked by `IsClearPractice`
 against the floor's kill bits (type 0 a time limit, 1-4 a kill kind, 5 no
 healing). 9, 16, 25, 21, 23, 28 and 39 floors in dungeons 0 to 6.
+`_ROOM_FLOOR_INFO` stores s8 geostone, s32 time, s8 fishing (below zero the
+record is a most, above zero a least), s16 record, s8 seal, s8 Spheda, and
+each prize as s16 item and s8 count; `_ROOM_FLOOR_INFO2` s8 type and s32
+param.
+
+In the JSON (`data:medals`): `floors`, named by `dungeon` and `floor`, with
+`geostone`, `fast_time`, `fishing`, `fishing_record`, `seal`, `spheda`,
+`spheda_prizes` (three `{"item", "count"}`), `practice_type` and
+`practice_param`.
 
 ## 9. Characters and other executable tables
 
 | symbol | address | file offset | layout | what |
 |---|---|---|---|---|
-| `lifetbl_2854` | 0x37C790 | 0x27C810 | f32 [2] | Max's and Monica's starting HP |
+| `lifetbl_2854` | 0x37C790 | 0x27C810 | f32 [2] | Max's and Monica's starting HP (`CUserDataManager::Initialize` sets both the HP and its most) |
 | `mos_henge_param` | 0x339D70 | 0x239DF0 | 0x1C × 57: s16 monster, s16 attack, s16 defence, effect names | Monica's monster forms (`GetMonsterHengeParam`) |
-| `monster_progress_tbl` | 0x358C90 | 0x258D10 | s16 [19][5] | a badge and its four forms |
+| `monster_progress_tbl` | 0x358C90 | 0x258D10 | s16 [19][5] | a badge and the form at each of its four levels: a row is one path of growth |
 | `htbl_1662` | 0x33A490 | 0x23A510 | s8 [10] | WHP gained per level-up, picked at random |
-| `weptbl_4503` | 0x33A510 | 0x23A590 | s16 [2][2][5] | starting weapons |
-| `etcitem_spectol_table` | 0x339820 | 0x2398A0 | s8 {slot, value} × 425 | spectrumising, by item number |
-| `dony_shoplist` | 0x358620 | 0x2586A0 | {s16 item, s8 level} × 7 | Donny's shop |
+| `weptbl_4503` | 0x33A510 | 0x23A590 | s16 [2][2][5] | starting equipment by language (0 Japanese, 1 the others) and character (`GetCharaDefaultWeapon`) |
+| `etcitem_spectol_table` | 0x339820 | 0x2398A0 | s8 {slot, value} × 425 | spectrumising, by item number (`SetItemSpectolPoint`) |
+| `dony_shoplist` | 0x358620 | 0x2586A0 | {s16 item, s8 level} × 7, then an end | Donny's shop (`GetDonyShopLineUp`) |
 | `gift_item_tbl` | 0x351660 | 0x2516E0 | s16 [3] rows | gifts that win a monster's badge |
 | `GolfClubDef` | 0x361340 | 0x2613C0 | 0xC × 7 | Spheda clubs |
 
-These are plain `.data` tables too; patching them the way `data:monsters`
-does would be the same work per table.
+The first seven are editable, patched in place like `data:monsters`
+(`exe_tables.rs`). Spectrumising is each item's `spectrumise` in `data:items`
+(items 1 to 425): `slot` 0-7 an attribute (flame to scale), 10 attack, 11
+durability, any other nothing; `value` the points, times the item's count or
+level. Donny's shop is `donny` in `data:shops`: `row`, `item` (1 to 511; 0
+or less would end the list) and `level` (Donny's invention level must be
+above it). `data:characters` has `characters` (by `character`, `"max"` or
+`"monica"`: `starting_hp`, `starting_equipment` [5] and
+`starting_equipment_japanese` [5]), `weapon_level_up` (one record:
+`whp_gain` [10]), `monster_forms` (by `monster`: `attack`, `defence`) and
+`badges` (by `row`: `badge`, `forms` [4]).

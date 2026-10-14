@@ -422,15 +422,27 @@ character pack; packs inside packs work the same way).
   one value or a list of eight for chapters 1 to 8) and
   `data/monsters.json` (each monster kind's HP, attack, defence, ABS,
   money, drops, element and attack-kind rates, model and AI script), with
-  their `"data:..."` lines. Keep only the records and fields you change,
-  each record with its `item`, `shop` or `id`:
+  their `"data:..."` lines. Items also carry what each one adds when
+  spectrumised (`spectrumise`), shops Donny's goods (`donny`). The rest:
+  `data:inventions` (recipes: ideas, materials; scoops), `data:georama`
+  (each town's parts: materials, culture points, counts; fixed and starting
+  parts), `data:medals` (each floor's fastest time, fishing record, seal,
+  Spheda prizes, practice medal), `data:floors` (each floor's monsters),
+  `data:fishing` (spots, race opponents, prizes, fish species and race
+  kinds) and `data:characters` (starting HP and equipment, WHP gained at a
+  weapon level-up, Monica's monster forms, badge growth). Keep only the
+  records and fields you change, each record with the keys that name it
+  (`item`, `shop`, `id`, `recipe`, `dungeon` and `floor`, ...):
   `{"items": [{"item": 1, "weapon": {"attack": 50}}]}`. `build` writes only
   the values that change: items into `menu/cfg7`, shops into all sixteen
-  shop lists, monsters into the boot executable `SCES_511.90`, patched in
-  place. Several mods' tables merge; two giving one value different numbers
-  are refused, as are values the game's field cannot hold. Names are labels
-  (they are text). What each field means is in
-  [game data](assets/data.md).
+  shop lists, a value kept in several files (the 19 copies of `inv6.lst`,
+  each language's Georama parts and race fish) into every one, and the
+  executable tables into the boot executable `SCES_511.90`, patched in
+  place. Lists keep within what the game reads (a recipe's 1 to 4
+  materials, a floor's 32 monsters) and lines are never added. Several mods'
+  tables merge; two giving one value different numbers are refused, as are
+  values the game's field cannot hold. Names are labels (they are text).
+  What each field means is in [game data](assets/data.md).
 - **Character models as glTF.** A character pack (`.chr`) holds a model,
   its skin weights, bind pose, motions and textures. `mod asset ISO NAME
   chara/c02a.chr --as gltf` writes a folder `c02a.chr.gltf/` with
