@@ -23,7 +23,7 @@ shows, and its row below says the same (a test checks that):
 - **planned**: it does not compile yet (or fails when run); the step given makes it work;
 - **limit**: refused by design.
 
-Today: 120 programs, 116 supported (102 giving C's result, 14 giving C's diagnostic) and 4 at
+Today: 121 programs, 117 supported (103 giving C's result, 14 giving C's diagnostic) and 4 at
 the limit (`double` twice, and comparing or subtracting two pointers); none differ or are
 planned. `src/crates/c2-script/tests/composite.rs` runs larger programs that use the composite
 types together.
@@ -94,6 +94,10 @@ C89 leaves these to the implementation and asks it to say what it does.
   functions' addresses; functions that take `...` or a struct, or return one, have none.
 - **Variable arguments** after `...` are passed as they are: a `char` or `short` as an int, a
   `float` as a float (there is no `double`), so `va_arg` reads `int` and `float`.
+- **String literals** are the VM's strings, the values natives and `string` variables take. A
+  literal that is subscripted or dereferenced, or stored in, passed as or returned as a `char`
+  pointer, is an array of its characters and a 0 instead, as C has it, kept for as long as the
+  script runs (`char *p = "abc";`); `char s[] = "abc";` fills an array of its own.
 - **Wide strings** are arrays of `wchar_t` holding each character's Shift-JIS code, then 0.
 
 ## The features
@@ -111,6 +115,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.1.3.4 Character constants | supported | `lexical_character_constants` | every escape, octal and hex |
 | 3.1.3.4 Wide characters | supported | `lexical_wide_characters` | Shift-JIS codes |
 | 3.1.4 String literals | supported | `lexical_string_literals` | adjacent literals are one |
+| 3.1.4 String literals as arrays | supported | `lexical_string_literal_arrays` | the VM's string, but an array of `char` (a hidden global) where C needs one |
 | 3.1.4 Wide strings | supported | `lexical_wide_strings` | a hidden local array of the codes, set before the statement |
 | 3.1.9 Comments | supported | `lexical_comments` | `//` too, as an extension |
 | 5.2.1.1 Trigraphs | supported | `lexical_trigraphs` | not in comments, whose text the definitions keep |
@@ -336,7 +341,9 @@ before come out as they went in, so retail scripts keep their bytes.
 - **Variadic functions** take a hidden last parameter, `__va`, pointing at a hidden array in the
   caller's frame that holds the arguments after the named ones; `<stdarg.h>`'s `va_list` is a
   pointer into it, `va_start` sets it from `__va` and `va_arg` steps it.
-- **Wide strings** become a hidden local array of their codes, set before the statement.
+- **String literals as arrays and wide strings** become a hidden global array of their codes,
+  set before the statement that uses it (the literal's storage lasts the program, so a function
+  may return it).
 - **In strict mode** C's diagnostics for assigning an integer to a pointer or a pointer to an
   integer, and for pointers to different types, are given (for assignment, initializers,
   arguments and returns).

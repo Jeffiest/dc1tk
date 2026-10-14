@@ -1221,7 +1221,12 @@ fn primary(state: &mut State) -> Parsed<Node> {
                 if token.wide {
                     return postfix_operators(state, wide_string(state, &text)?);
                 }
-                return Ok(node!({"kind": "string", "text": text}));
+                let string = node!({"kind": "string", "text": text});
+                if state.at("[", 0) {
+                    // "abc"[1]: the literal as an array
+                    return postfix_operators(state, string);
+                }
+                return Ok(string);
             }
             Kind::Op if token.text() == "(" => {
                 let node = expression(state)?;
@@ -2654,7 +2659,7 @@ fn declarators(state: &mut State, spec: &Spec) -> Parsed<Vec<Declared>> {
                 state.take();
                 init = Some(initializer(state)?);
             }
-            if dims.first() == Some(&Size::Number(-1)) && init.is_none() {
+            if dims.first() == Some(&Size::Number(-1)) && init.is_none() && spec.storage.as_deref() != Some("extern") {
                 return state.fail(format!("{name}[] needs a size or a list of values"));
             }
             if matches!(init, Some(Init::List(_))) && dims.is_empty() && pointer {
@@ -3661,6 +3666,11 @@ fn top_declaration(state: &mut State, program: &mut Node, pending: &Pending, doc
     }
     for declared in declarators(state, &spec)? {
         if declared.ty.is_some() || declared.size() != &Size::None || declared.pointer {
+            let open = declared.size() == &Size::Number(-1) || matches!(declared.ty, Some(Ty::Array(_, -1)));
+            if spec.storage.as_deref() == Some("extern") && (open || state.globals.contains_key(&declared.name)) {
+                // extern int table[];: declares a global another declaration defines
+                continue;
+            }
             typed_global(state, program, &spec, declared)?;
             continue;
         }

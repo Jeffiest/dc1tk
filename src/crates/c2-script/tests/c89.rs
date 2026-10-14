@@ -113,6 +113,7 @@ programs! {
     lexical_long_double_constants,
     lexical_character_constants,
     lexical_string_literals,
+    lexical_string_literal_arrays,
     lexical_comments,
     lexical_trigraphs,
     lexical_wide_characters,

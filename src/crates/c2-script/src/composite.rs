@@ -25,7 +25,11 @@
 //! - **Variadic functions** take a hidden last parameter, __va, pointing at a hidden array in the
 //!   caller's frame that holds the arguments after the named ones; va_list is a pointer into it,
 //!   va_arg steps it.
-//! - **Wide strings** (L"...") are a hidden local array of their codes, set before the statement.
+//! - **String literals as arrays**: a string literal is the VM's string, which natives take, but
+//!   one subscripted, dereferenced, or stored in, passed as or returned as a char pointer is an
+//!   array of its characters and a 0, as in C; so is every wide string (L"..."). The array is a
+//!   hidden global (a literal's storage lasts the program), set before the statement that uses
+//!   it.
 //!
 //! In strict mode (#pragma std c89) C's diagnostics for mixing pointers and integers and for
 //! incompatible pointers are given.
@@ -239,6 +243,8 @@ struct Lowering<'a> {
     /// The current function's name, and whether it is written in strict mode.
     function: String,
     strict: bool,
+    /// Hidden globals: the arrays string literals become.
+    literals: Vec<Node>,
 }
 
 /// The program with C's pointers and composite types lowered; one that uses none comes out as
@@ -269,6 +275,7 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
         arities: BTreeSet::new(),
         function: String::new(),
         strict: false,
+        literals: Vec::new(),
     };
     let mut functions = Vec::new();
     for function in list(program, "functions") {
@@ -281,7 +288,20 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
     for arity in lowering.arities.clone() {
         functions.push(lowering.dispatch(arity));
     }
-    Ok(program.clone().with("functions", functions))
+    let mut program = program.clone().with("functions", functions);
+    if !lowering.literals.is_empty() {
+        let mut globals = list(&program, "globals").to_vec();
+        globals.extend(lowering.literals);
+        let slots: i64 = globals.iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
+        let declared = program["global_num"].as_i64().unwrap_or(0);
+        program = program.with("globals", globals).with("global_num", slots.max(declared));
+    }
+    Ok(program)
+}
+
+/// Whether a type is a char's, which a string literal is an array of.
+fn is_char(ty: &Ty, kinds: &Map) -> bool {
+    matches!(ty, Ty::Scalar(name) if matches!(scalar_base(name, kinds).as_str(), "char" | "unsigned char" | "signed char"))
 }
 
 impl Lowering<'_> {
@@ -457,7 +477,7 @@ impl Lowering<'_> {
             self.before.push(node!({"kind": "expr", "expr": copy}));
             return Ok(node.clone().with("value", Node::Null));
         }
-        let value = self.rvalue(&node["value"])?;
+        let value = self.value_for(&node["value"], &returns)?;
         self.assignable(&returns, &value, "returning")?;
         Ok(node.clone().with("value", value.node))
     }
@@ -516,7 +536,7 @@ impl Lowering<'_> {
             "deref" => match self.plain_deref(node) {
                 Some(found) => Ok(found),
                 None => {
-                    let pointer = self.rvalue(&node["operand"])?;
+                    let pointer = self.pointed(&node["operand"])?;
                     self.deref_place(pointer)
                 }
             },
@@ -576,7 +596,7 @@ impl Lowering<'_> {
 
     /// array[index], either way round.
     fn subscript_place(&mut self, array: &Node, index: &Node) -> Result<(Place, Ty)> {
-        let (mut array, mut index) = (self.rvalue(array)?, self.rvalue(index)?);
+        let (mut array, mut index) = (self.pointed(array)?, self.pointed(index)?);
         if array.ty.target().is_none() && index.ty.target().is_some() {
             std::mem::swap(&mut array, &mut index);
         }
@@ -761,10 +781,10 @@ impl Lowering<'_> {
             ),
             "float" => Typed::new(node.clone(), Ty::Scalar("float".into())),
             "string" => Typed::new(node.clone(), Ty::Scalar("string".into())),
-            "wide" => self.wide(node)?,
+            "wide" => self.literal_array(node)?,
             "var" => self.variable(node)?,
             "deref" if self.plain_deref(node).is_none() => {
-                let operand = self.rvalue(&node["operand"])?;
+                let operand = self.pointed(&node["operand"])?;
                 if operand.ty.is_function_pointer() || matches!(operand.ty, Ty::Function(..)) {
                     // *f is the function, which is its pointer again
                     return Ok(operand);
@@ -891,15 +911,44 @@ impl Lowering<'_> {
         Ok(Typed::new(self.address(&place), ctype::pointer(ty)))
     }
 
-    fn wide(&mut self, node: &Node) -> Result<Typed> {
-        let codes = list(node, "codes").to_vec();
-        let short = Ty::Scalar("unsigned short".into());
-        let storage = self.hidden_storage("wide", &Ty::Array(Box::new(short.clone()), codes.len() as i64));
+    /// A string literal as an array (its characters, signed as char is, and a 0) or a wide string
+    /// (its codes and a 0): a hidden global, set before the statement.
+    fn literal_array(&mut self, node: &Node) -> Result<Typed> {
+        let (codes, element): (Vec<i64>, Ty) = if node.kind() == "wide" {
+            let codes = list(node, "codes").iter().filter_map(Node::as_i64).collect();
+            (codes, Ty::Scalar("unsigned short".into()))
+        } else {
+            let mut bytes = crate::stb::encode_string(text(node, "text"))?;
+            bytes.push(0);
+            (bytes.into_iter().map(|byte| byte as i8 as i64).collect(), Ty::Scalar("char".into()))
+        };
+        let name = format!("__literal_{}", self.literals.len());
+        let ty = Ty::Array(Box::new(element), codes.len() as i64);
+        self.literals.push(node!({"name": name.as_str(), "type": "int", "size": codes.len(), "ctype": ty.to_node()}));
+        let variable = Variable { ty: ty.clone(), storage: Storage::Global, name: name.clone(), typed: true };
+        self.globals.insert(name.clone(), variable);
         for (slot, code) in codes.into_iter().enumerate() {
-            let cell = node!({"kind": "field", "name": storage.as_str(), "offset": slot, "type": "int"});
-            self.before.push(node!({"kind": "expr", "expr": assign(cell, node!({"kind": "int", "value": code}))}));
+            let cell = node!({"kind": "field", "name": name.as_str(), "offset": slot, "type": "int"});
+            self.before.push(node!({"kind": "expr", "expr": assign(cell, int_node(code))}));
         }
-        Ok(Typed::new(var(&storage), ctype::pointer(short)))
+        Ok(self.load(&Place::Var(name), ty))
+    }
+
+    /// A value given where a pointer of a type is wanted: a string literal is an array then, when
+    /// the pointer is to char.
+    fn value_for(&mut self, node: &Node, to: &Ty) -> Result<Typed> {
+        if node.kind() == "string" && to.target().is_some_and(|target| is_char(target, self.kinds)) {
+            return self.literal_array(node);
+        }
+        self.rvalue(node)
+    }
+
+    /// A value that is indexed or dereferenced: a string literal is an array then.
+    fn pointed(&mut self, node: &Node) -> Result<Typed> {
+        if node.kind() == "string" {
+            return self.literal_array(node);
+        }
+        self.rvalue(node)
     }
 
     fn assignment(&mut self, node: &Node) -> Result<Typed> {
@@ -907,7 +956,7 @@ impl Lowering<'_> {
         if let Ty::Array(..) = ty {
             return fail("an array cannot be assigned; assign its elements");
         }
-        let value = self.rvalue(&node["value"])?;
+        let value = self.value_for(&node["value"], &ty)?;
         if ty.is_struct() {
             self.same_struct(&ty, &value.ty, "assigning")?;
             return Ok(Typed::new(self.copy(place, value.node, &ty), ty));
@@ -1121,7 +1170,7 @@ impl Lowering<'_> {
             result = Some(storage);
         }
         for (arg, param) in given.iter().zip(&signature.params) {
-            let value = self.rvalue(arg)?;
+            let value = self.value_for(arg, param)?;
             if param.is_struct() || value.ty.is_struct() {
                 // the function copies the struct at the address it is given
                 self.same_struct(param, &value.ty, &format!("passing to {name}"))?;

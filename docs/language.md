@@ -189,7 +189,9 @@ instructions:
   too), as the function's number, called through a function the compiler adds
   that switches on it.
 - Variadic functions (`int sum(int count, ...)`) with `<stdarg.h>`, and wide
-  strings (`L"..."`, arrays of `wchar_t`).
+  strings (`L"..."`, arrays of `wchar_t`). A string literal is the VM's string
+  (what natives and `string` variables take), but one indexed or used as a
+  `char *` (`char *p = "abc";`) is an array of its characters, as in C.
 - `char`, `short`, `long`, `signed` and `unsigned`, with C's widths (char 8
   bits and signed, short 16, int and long 32) and wrap-around, `const`
   (checked), `volatile`, `register`, `auto`, `typedef`, `enum` and `sizeof`

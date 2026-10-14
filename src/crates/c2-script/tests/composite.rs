@@ -11,7 +11,11 @@ const HEAD: &str = "#pragma std c89\n#line 1\n";
 const TRAILER: &str = "\n#pragma natives event\nPROGRAM(100, test);\nMAIN(test);\n";
 
 fn run(text: &str) -> c2_script::Result<Value> {
-    let program = parse::parse_source(&format!("{HEAD}{text}{TRAILER}"), "test.c", sdk_texts())?;
+    run_with(HEAD, text)
+}
+
+fn run_with(head: &str, text: &str) -> c2_script::Result<Value> {
+    let program = parse::parse_source(&format!("{head}{text}{TRAILER}"), "test.c", sdk_texts())?;
     let program = library::expand(program, &common::no_texts(), sdk_texts())?;
     compile::compile_program(&program, tables())?;
     let table = c2_script::vm::table_of(&program, tables())?;
@@ -78,6 +82,37 @@ fn varargs_of_mixed_types_and_nested_calls() {
         "#include <stdarg.h>\n\nint count_floats(int count, ...)\n{\n    va_list ap;\n    int found = 0;\n\n    va_start(ap, count);\n    while (count-- > 0) {\n        if (va_arg(ap, float) > 1.0) {\n            found++;\n        }\n    }\n    va_end(ap);\n    return found;\n}\n\nint sum(int count, ...)\n{\n    va_list ap;\n    int total = 0;\n\n    va_start(ap, count);\n    while (count-- > 0) {\n        total += va_arg(ap, int);\n    }\n    return total;\n}\n\nint test(void)\n{\n    return sum(2, sum(2, 1, 2), 10) * 10 + count_floats(3, 0.5, 2.5, 3.5);\n}\n",
         132,
     );
+}
+
+#[test]
+fn structs_meet_the_other_types() {
+    gives(
+        "struct cell {\n    char small;\n    unsigned short count;\n    float weight;\n    int values[3];\n};\n\nstruct cell made(int base)\n{\n    struct cell c = {0, 0, 1.0, {base, base + 1, base + 2}};\n\n    return c;\n}\n\nint depth(struct cell c, int n)\n{\n    if (n == 0) {\n        return c.values[2];\n    }\n    c.values[2] += 1;\n    return depth(c, n - 1);\n}\n\nint test(void)\n{\n    static struct cell kept = {1, 2};\n    struct cell c = made(10);\n    struct cell *p = &c;\n    int i = 1;\n\n    c.small = 300;\n    c.count = 65535;\n    c.count++;\n    p->values[i]++;\n    p->weight += 1;\n    kept.count += made(5).values[0];\n    return c.small + c.count + c.values[1] * 100 + (int)p->weight * 1000 + depth(c, 3) * 10000 + kept.count * 100000 + (sizeof c.values == 12) * 1000000;\n}\n",
+        44 + 1200 + 2000 + 150000 + 700000 + 1000000,
+    );
+}
+
+#[test]
+fn arrays_of_pointers_and_pointers_to_arrays_elements() {
+    gives(
+        "int first(int *values[], int count)\n{\n    int total = 0;\n    int i;\n\n    for (i = 0; i < count; i++) {\n        total += *values[i];\n        values[i][1] = i;\n    }\n    return total;\n}\n\nint test(void)\n{\n    int a[2] = {1, 2};\n    int b[2] = {30, 40};\n    int *both[2];\n    int *p;\n\n    both[0] = a;\n    both[1] = b + 0;\n    p = both[1] + 1;\n    return first(both, 2) + *p * 100 + a[1] * 10000;\n}\n",
+        31 + 100,
+    );
+}
+
+#[test]
+fn extern_arrays_name_the_definition() {
+    gives(
+        "extern int table[];\nextern struct pair *where;\n\nstruct pair {\n    int a;\n    int b;\n};\n\nint read(int i)\n{\n    return table[i];\n}\n\nint table[3] = {4, 5, 6};\nstruct pair *where;\n\nint test(void)\n{\n    return read(2) + (where == 0);\n}\n",
+        7,
+    );
+}
+
+#[test]
+fn composite_types_work_outside_strict_mode_too() {
+    // the VM's own semantics for the rest: a float stored in an int stays a float
+    let text = "struct pair {\n    int a;\n    int b;\n};\n\nint g[2];\n\nint test(void)\n{\n    struct pair p = {1, 2};\n    struct pair *q = &p;\n    int *r = &g[1];\n\n    *r = 5;\n    q->b = 2.5;\n    return p.a + g[1] + (p.b == 2.5) * 10;\n}\n";
+    assert_eq!(run_with("", text).unwrap(), Value::Int(16));
 }
 
 #[test]
