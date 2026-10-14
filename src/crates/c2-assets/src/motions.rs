@@ -832,6 +832,87 @@ fn insertion_point(lists: &[KeyList], list: &KeyList) -> usize {
     at
 }
 
+/// A new character's motion set: its .mot and its KEYs (name, start, end, step).
+pub struct NewMotion {
+    pub mot: Vec<u8>,
+    pub keys: Vec<(String, i64, i64, f64)>,
+}
+
+/// The motion of a model made from a glTF alone (from_gltf::new_model, whose frames the glTF's
+/// nodes are named after): every animation that moves a frame becomes a KEY, in glTF order, on
+/// one timeline from frame 1 (motion r of an animation at frame start + r, r/30 s into it; step
+/// `extras.step`, else 1.00, the speed Blender plays it at). A frame's channel any animation
+/// moves off its node's rest gets a key list with a key every frame from 0 (the rest) to the
+/// last, the rest where an animation leaves it; channels no animation moves get none, so their
+/// frames hold the model's own matrices. None when no animation moves anything.
+pub fn new_motion(given: &Gltf, model: &Mds) -> Result<Option<NewMotion>> {
+    let motions = read(given, model)?;
+    let rest = |frame: usize, kind: usize| -> Vec4 {
+        let rest = motions.rest.get(frame).copied().flatten();
+        rest.map_or([[0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0, 0.0], [0.0; 4]][kind], |rest| rest[kind])
+    };
+    let moves = |a: &Animation, frame: usize, kind: usize| {
+        (0..=a.frames().max(0)).any(|r| {
+            motions.value(a, frame, kind, r as f64 / FPS).is_some_and(|value| !close(kind, &rest(frame, kind), &value))
+        })
+    };
+    // the animations that move something, at their frames, and the channels they move
+    let mut placed: Vec<(&Animation, i64, i64)> = Vec::new();
+    let mut channels: BTreeSet<(usize, usize)> = BTreeSet::new();
+    let mut start = 1;
+    for a in &motions.animations {
+        let moved: Vec<(usize, usize)> =
+            a.curves.keys().copied().filter(|&(frame, kind)| moves(a, frame, kind)).collect();
+        if moved.is_empty() {
+            continue;
+        }
+        match c2_disc::text::encode(&a.name) {
+            Some(bytes) if !bytes.is_empty() && bytes.len() <= KEY_NAME => {}
+            _ => bail!("motion {}: a KEY name is 1 to {KEY_NAME} bytes of Shift-JIS", a.name),
+        }
+        if placed.iter().any(|(other, _, _)| other.name == a.name) {
+            bail!("two animations are named {}", a.name);
+        }
+        channels.extend(moved);
+        let end = start + a.frames().max(0);
+        placed.push((a, start, end));
+        start = end + 1;
+    }
+    let Some(&(_, _, last)) = placed.last() else {
+        return Ok(None);
+    };
+    // a frame's lists in rotation, scale, translation order, frames in order
+    let mut lists = Vec::with_capacity(channels.len());
+    for (frame, kind) in channels {
+        let mut track =
+            Track { original: KeyList::new(frame as i32, 0, kind as i32, Vec::new()), keys: None, new: true };
+        track.set(0, engine_key(kind, &rest(frame, kind)));
+        for &(a, s, e) in &placed {
+            for f in s..=e {
+                let value = motions.value(a, frame, kind, (f - s) as f64 / FPS).unwrap_or_else(|| rest(frame, kind));
+                track.set(f, engine_key(kind, &value));
+            }
+        }
+        let mut list = track.original;
+        list.keys = track.keys.unwrap_or_default().into_iter().collect();
+        debug_assert_eq!(list.keys.len() as i64, last + 1);
+        lists.push(list);
+    }
+    let keys = placed
+        .iter()
+        .map(|(a, s, e)| {
+            let step = a.extras.as_ref().and_then(|x| x.get("step")).and_then(Value::as_f64).unwrap_or(1.0);
+            (a.name.clone(), *s, *e, step)
+        })
+        .collect();
+    Ok(Some(NewMotion { mot: mot::build(&lists)?, keys }))
+}
+
+/// A KEY line of info.cfg: `KEY "name", start, end, step;`.
+pub fn key_line(name: &str, start: i64, end: i64, step: f64) -> String {
+    format!("KEY \"{}\", {start}, {end}, {};", name.replace('"', "\\\""), step_text(step))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

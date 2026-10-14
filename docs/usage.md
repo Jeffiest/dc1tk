@@ -594,10 +594,14 @@ character pack; packs inside packs work the same way).
   weights per vertex. Changed PNGs, in `textures/` or beside the glTF as
   Blender writes them, go into the pack's textures by picture name;
   textures the model takes from other packs are changed in those.
-  Unedited exports build back to the disc's own bytes. Blender writes every
-  mesh its own way, so after a round trip through it every mesh is rebuilt,
-  as triangle lists rather than the game's strips: the model grows a few
-  percent (Monica's pack by 4%). Max's and Monica's
+  Unedited exports build back to the disc's own bytes, and so do round trips
+  through Blender: meshes are compared with the export's by value (each
+  triangle's corners in its frame's space, their UVs, colours and skin
+  weights, within what Blender's floats and renormalised weights move), so
+  only a mesh you edit is rebuilt, as triangle lists rather than the game's
+  strips (an edited body grows the model a few percent), with its weights as
+  Blender gives them and every other mesh's weights and the bind pose kept.
+  Max's and Monica's
   clothes are separate costume packs (`mainchr/c01fuku1.chr` and the like):
   their own packs hold the skeleton and motions.
 
@@ -616,6 +620,27 @@ character pack; packs inside packs work the same way).
   motion it came from. Deleting an action changes nothing, and motion sets
   other than 0 are not exported. See [the model formats](assets/models.md)
   (sections 3 and 7.3).
+
+  **New characters.** A `file:` line with `like` naming a character's model
+  makes a pack of a character of your own from a glTF: its own skeleton
+  (every node a frame, named as in Blender), its meshes, rigid or skinned
+  (at most 32 bones and 3,198 vertices a skinned mesh, 24 skinned meshes),
+  its pictures and every action as a KEY of its name (`extras.step` or 1.00
+  the speed; Blender's frame rate does not matter here, since actions are
+  read in seconds). The pack holds `NAME.mds`, `.wgt`, `.bbp`, `.mot`,
+  `.img` and an `info.cfg` made from the template's: its size, scale and
+  whole-model outline kept, VERTEX_ANIME naming the skinned meshes, the new
+  motion set, and what named the template's own frames and motions dropped
+  (sequences, sound cues, cloth, effects, attach points and outlines on
+  frames the new model lacks). A skinned model needs an action (its motion
+  set carries the bind pose). No cloth: a `.clo` names a model's frames and
+  particles. Load it with `load_chara` and play an action with
+  `set_chara_motion(slot, "wave")`; see
+  [the example](examples/new-character/README.md).
+
+  ```json
+  "add": {"file:mods/newchr/newchr.chr": {"file": "model/newchr.gltf", "like": "model:p01_01a"}}
+  ```
 
 **Additions.** The older way to add to a script without copying it, kept for
 mods that use it: its `mod.json` can list additions, applied when it is
