@@ -76,3 +76,47 @@ fn warns_when_the_game_never_loads_the_map_that_way() {
     assert_eq!(found.len(), 2);
     assert!(found[1].contains("never loads t01"));
 }
+
+#[test]
+fn a_map_the_game_never_loads_dungeon_style_is_entered_as_a_town_by_its_number() {
+    let folder = TempDir::new("startat-town");
+    let root = make_tree(
+        folder.path(),
+        &[(
+            "map/d/d07/d07_1.c",
+            "void w(void)\n{\n    load_dungeon_map(\"s52\");\n    go_to_edit_mode(14, map_start);\n}\n",
+        )],
+    );
+    let numbers = || Ok(IndexMap::from([("m05".to_string(), 14), ("s52".to_string(), 171)]));
+    let warp = |text: &str| startat::warp(&root, &IndexMap::new(), &startat::parse_start(text).unwrap(), numbers);
+    assert_eq!(warp("s52:500").unwrap(), startat::Warp::Dungeon, "a map loaded dungeon-style stays so");
+    assert_eq!(warp("m05").unwrap(), startat::Warp::Town(14));
+    assert_eq!(warp("t99:500").unwrap(), startat::Warp::Dungeon, "a map with no number keeps the old warp");
+    assert!(warp("m05/other:500").unwrap_err().to_string().contains("runs its own script"));
+    let consts = consts(&[("map_start", 1100)]);
+    let target = startat::parse_start("m05").unwrap();
+    assert!(startat::warp_warnings(&root, &consts, &target, startat::Warp::Town(14)).unwrap().is_empty());
+    let found = startat::warp_warnings(&root, &consts, &target, startat::Warp::Town(10)).unwrap();
+    assert!(found.len() == 1 && found[0].contains("never goes to m05 (map 10) with go_to_edit_mode"));
+}
+
+#[test]
+fn patched_new_game_script_compiles_with_the_town_warp() {
+    let folder = TempDir::new("startat-town-compiles");
+    let root = make_tree(folder.path(), &[("map/d/d01/d01_1.c", NEW_GAME)]);
+    let target = startat::parse_start("m05").unwrap();
+    let overrides = startat::warp_overrides(&root, &target, startat::Warp::Town(14), &IndexMap::new()).unwrap();
+    let tools = Tools::with_headers(sdk::load_texts(&sdk_dir()).unwrap());
+    let data = build::compiled(
+        &root.join("map/d/d01/d01_1.c"),
+        &tools.toolchain(),
+        Some(&overrides["map/d/d01/d01_1.c"]),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let text = asm::disassemble(&stb::read(&data), "event", &tools.tables);
+    assert!(text.contains("push 14") && !text.contains("m05"));
+    assert!(text.contains(&format!("push {}", startat::START_FLAG)));
+}

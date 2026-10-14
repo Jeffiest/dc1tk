@@ -7,21 +7,34 @@
 //! function in front of that program: the first time it runs it sets START_FLAG and warps the way
 //! the game's own story warps out of d01 do (load_dungeon_map, then load_event_script at the
 //! program); after that it hands over to the original floor_start, so later visits to the dungeon
-//! play normally. The warp works for maps the game loads with load_dungeon_map (story scenes and
+//! play normally. That warp works for maps the game loads with load_dungeon_map (story scenes and
 //! dungeon-like maps); xref map NAME shows whether the game ever does.
+//!
+//! Town maps (the georama towns, Palm Brinks's streets, interiors) are not entered that way, and
+//! the dungeon loop a new game runs in ignores jump_to_map: the game leaves a dungeon for a town
+//! with go_to_edit_mode(map number, program), as d07 does for m05 (go_to_edit_mode(14,
+//! map_start)). For a map the game never loads with load_dungeon_map but which has a map number,
+//! the patch warps that way instead. A map's number is its row in the disc's map table
+//! (map/map<language>.cfg, read by LoadMapName and looked up by GetMapName in mapselect.cpp). The
+//! engine loads the town's own script, so the warp shows a town that has none.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::OnceLock;
 
+use c2_disc::archive::Archive;
+use c2_disc::{rebuild, Image};
 use indexmap::IndexMap;
+use regex::bytes::Regex as BytesRegex;
 use regex::Regex;
 
 use crate::index::{self, Folded};
-use crate::{pathnames, sdk, source, Error, Result};
+use crate::{discfiles, pathnames, sdk, source, Error, Result};
 
 pub const START_PROGRAM: &str = "floor_start";
 pub const START_FLAG: i64 = 2047;
+/// The program a target without one starts at: the one a map's arrival runs.
+pub const DEFAULT_PROGRAM: &str = "map_start";
 
 fn new_game_script(path: &str) -> bool {
     static CELL: OnceLock<Regex> = OnceLock::new();
@@ -52,6 +65,100 @@ pub fn parse_target(text: &str) -> Result<Target> {
     })
 }
 
+/// A --start-at or mod.json "start_at" target: what parse_target takes, or MAP (or MAP/SCRIPT)
+/// alone, which starts at DEFAULT_PROGRAM.
+pub fn parse_start(text: &str) -> Result<Target> {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    let bare = CELL.get_or_init(|| Regex::new(r"^([A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)?)\n?$").unwrap());
+    let given = match bare.captures(text) {
+        Some(found) => format!("{}:{DEFAULT_PROGRAM}", &found[1]),
+        None => text.to_string(),
+    };
+    parse_target(&given).map_err(|_| {
+        Error::invalid(
+            "--start-at takes MAP, MAP:PROGRAM or MAP/SCRIPT:PROGRAM, as in m05, s51:story_50 or s06/s06b:500",
+        )
+    })
+}
+
+/// How the patch reaches the target map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Warp {
+    /// load_dungeon_map, then load_event_script at the program.
+    Dungeon,
+    /// go_to_edit_mode with the map's number and the program.
+    Town(i64),
+}
+
+/// The map table's rows by map code: {code: map number}. Each MAP_NAME line is a row, numbered
+/// from 0 in file order, empty ones included (mlMAP_NAME in mapselect.cpp). Codes are read as
+/// bytes, so the names' encoding does not matter.
+pub fn map_numbers(cfg: &[u8]) -> IndexMap<String, i64> {
+    static CELL: OnceLock<BytesRegex> = OnceLock::new();
+    let row = CELL.get_or_init(|| BytesRegex::new(r#"(?m)^[ \t]*MAP_NAME[ \t]+"([^"\r\n]*)""#).unwrap());
+    let mut found = IndexMap::new();
+    for (number, capture) in row.captures_iter(cfg).enumerate() {
+        let code = String::from_utf8_lossy(&capture[1]).into_owned();
+        if !code.is_empty() {
+            found.entry(code).or_insert(number as i64);
+        }
+    }
+    found
+}
+
+/// The map table's path on the disc for a language (0 Japanese, 1 English, ...); every language's
+/// table numbers the maps alike.
+pub fn map_table_path(language: Option<i64>) -> String {
+    format!("map/map{}.cfg", language.unwrap_or(1))
+}
+
+/// map_numbers of a disc image's map table; empty when the image has none.
+pub fn disc_map_numbers(iso: &Path, language: Option<i64>) -> Result<IndexMap<String, i64>> {
+    let image = Image::open(iso)?;
+    let disc = Archive::open(image.bytes())?;
+    let index = discfiles::disc_index(&disc);
+    let (top, members) = discfiles::location(&map_table_path(language));
+    Ok(index
+        .get(&top.to_lowercase())
+        .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &members))
+        .map(map_numbers)
+        .unwrap_or_default())
+}
+
+/// How many calls in the tree load map with load_dungeon_map.
+fn dungeon_loads(tree: &Path, consts: &IndexMap<String, i64>, map: &str) -> Result<usize> {
+    let names = BTreeSet::from(["load_dungeon_map".to_string()]);
+    let wanted = Some(Folded::Text(map.to_string()));
+    Ok(index::calls(tree, &names)?
+        .into_iter()
+        .filter(|call| !call.args.is_empty() && index::value(&call.args[0], consts) == wanted)
+        .count())
+}
+
+/// The way to warp to target: dungeon-style when the game ever loads the map with
+/// load_dungeon_map, as before towns could be targets; otherwise as a town when the map table
+/// (numbers, read only then) has the map; otherwise dungeon-style, which warnings warn about.
+pub fn warp(
+    tree: &Path,
+    consts: &IndexMap<String, i64>,
+    target: &Target,
+    numbers: impl FnOnce() -> Result<IndexMap<String, i64>>,
+) -> Result<Warp> {
+    if dungeon_loads(tree, consts, &target.map)? > 0 {
+        return Ok(Warp::Dungeon);
+    }
+    let Some(&number) = numbers()?.get(&target.map) else {
+        return Ok(Warp::Dungeon);
+    };
+    if target.script != target.map {
+        return Err(Error::invalid(format!(
+            "{} is a town map, which runs its own script: start at {}:{} without /{}",
+            target.map, target.map, target.program, target.script
+        )));
+    }
+    Ok(Warp::Town(number))
+}
+
 pub fn function_text(target: &Target, original: &str) -> String {
     [
         format!(
@@ -80,7 +187,43 @@ pub fn function_text(target: &Target, original: &str) -> String {
     .join("\n")
 }
 
+/// The warp into a town map, as the game's dungeon scripts leave for one (d07's floor start, d01's
+/// start_dungeon_floor). d01 calls set_current_map with the dungeon's own number first, for the
+/// town's way back to it; a new game has no dungeon to go back to, so the warp does not.
+pub fn town_function_text(target: &Target, number: i64, original: &str) -> String {
+    [
+        format!(
+            "// Added by build --start-at: on a new game, goes to town map {} (number {}) at program {}.",
+            target.map, number, target.program
+        ),
+        format!("// Flag {START_FLAG} marks that it has; after that the original {original} runs."),
+        "void start_at_scene(void)".into(),
+        "{".into(),
+        "    int started;".into(),
+        String::new(),
+        format!("    started = get_flag({START_FLAG});"),
+        "    if (started == 0) {".into(),
+        format!("        set_flag({START_FLAG}, 1);"),
+        "        init_event();".into(),
+        "        fade_out(1);".into(),
+        "        wait;".into(),
+        format!("        go_to_edit_mode({number}, {});", target.program),
+        "        wait;".into(),
+        "        return;".into(),
+        "    }".into(),
+        format!("    {original}();"),
+        "}".into(),
+        String::new(),
+    ]
+    .join("\n")
+}
+
 pub fn patched(text: &str, target: &Target) -> Option<String> {
+    patched_with(text, target, Warp::Dungeon)
+}
+
+/// The new-game script with floor_start running the warp first.
+pub fn patched_with(text: &str, target: &Target, warp: Warp) -> Option<String> {
     static PROGRAM: OnceLock<Regex> = OnceLock::new();
     static PRAGMAS: OnceLock<Regex> = OnceLock::new();
     let program = PROGRAM.get_or_init(|| Regex::new(&format!(r"(?m)^PROGRAM\({START_PROGRAM}, (\w+)\);$")).unwrap());
@@ -90,12 +233,26 @@ pub fn patched(text: &str, target: &Target) -> Option<String> {
     let text = format!("{}PROGRAM({START_PROGRAM}, start_at_scene);{}", &text[..whole.start()], &text[whole.end()..]);
     let pragmas = PRAGMAS.get_or_init(|| Regex::new(r"(?m)^#pragma padding_of ").unwrap());
     let at = pragmas.find(&text).map_or(text.len(), |found| found.start());
-    Some(format!("{}{}\n{}", &text[..at], function_text(target, &original), &text[at..]))
+    let function = match warp {
+        Warp::Dungeon => function_text(target, &original),
+        Warp::Town(number) => town_function_text(target, number, &original),
+    };
+    Some(format!("{}{}\n{}", &text[..at], function, &text[at..]))
 }
 
 /// The patched new-game scripts, keyed by tree-relative path, for build to compile in their place.
 /// texts holds mods' versions of tree files, which are patched instead of the tree's.
 pub fn overrides(tree: &Path, target: &Target, texts: &IndexMap<String, String>) -> Result<IndexMap<String, String>> {
+    warp_overrides(tree, target, Warp::Dungeon, texts)
+}
+
+/// overrides, warping the given way.
+pub fn warp_overrides(
+    tree: &Path,
+    target: &Target,
+    warp: Warp,
+    texts: &IndexMap<String, String>,
+) -> Result<IndexMap<String, String>> {
     let mut found = IndexMap::new();
     for relative in sdk::files_under(tree, &source::EXTENSION[1..]) {
         if new_game_script(&pathnames::unnamed(tree, &relative)?) {
@@ -103,7 +260,7 @@ pub fn overrides(tree: &Path, target: &Target, texts: &IndexMap<String, String>)
                 Some(text) => text.clone(),
                 None => c2_py::read_text(&tree.join(&relative))?,
             };
-            let Some(text) = patched(&text, target) else {
+            let Some(text) = patched_with(&text, target, warp) else {
                 return Err(Error::invalid(format!(
                     "{relative} has no PROGRAM({START_PROGRAM}, ...) line to start from"
                 )));
@@ -122,21 +279,37 @@ pub fn overrides(tree: &Path, target: &Target, texts: &IndexMap<String, String>)
 }
 
 pub fn warnings(tree: &Path, consts: &IndexMap<String, i64>, target: &Target) -> Result<Vec<String>> {
+    warp_warnings(tree, consts, target, Warp::Dungeon)
+}
+
+/// What may keep the warp from working: a program the headers do not define, or a map the game
+/// never enters the way the warp does.
+pub fn warp_warnings(tree: &Path, consts: &IndexMap<String, i64>, target: &Target, warp: Warp) -> Result<Vec<String>> {
     let mut lines = Vec::new();
     if index::value(&target.program, consts).is_none() {
         lines.push(format!("program {} is not a number or a program name the headers define", target.program));
     }
-    let names = BTreeSet::from(["load_dungeon_map".to_string()]);
-    let wanted = Some(Folded::Text(target.map.clone()));
-    let loads = index::calls(tree, &names)?
-        .into_iter()
-        .filter(|call| !call.args.is_empty() && index::value(&call.args[0], consts) == wanted)
-        .count();
-    if loads == 0 {
-        lines.push(format!(
+    match warp {
+        Warp::Dungeon if dungeon_loads(tree, consts, &target.map)? == 0 => lines.push(format!(
             "the game never loads {} with load_dungeon_map, so the warp may not work; xref map {} shows how it is entered",
             target.map, target.map
-        ));
+        )),
+        Warp::Town(number) => {
+            let names = BTreeSet::from(["go_to_edit_mode".to_string()]);
+            let wanted = Some(Folded::Int(number.into()));
+            let entries = index::calls(tree, &names)?
+                .into_iter()
+                .filter(|call| !call.args.is_empty() && index::value(&call.args[0], consts) == wanted)
+                .count();
+            if entries == 0 {
+                lines.push(format!(
+                    "the game never goes to {} (map {}) with go_to_edit_mode, so the warp may not work; xref map {} \
+                     shows how it is entered",
+                    target.map, number, target.map
+                ));
+            }
+        }
+        Warp::Dungeon => {}
     }
     Ok(lines)
 }
@@ -144,6 +317,10 @@ pub fn warnings(tree: &Path, consts: &IndexMap<String, i64>, target: &Target) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TABLE: &[u8] = b"MAP_NAME_NUM 4 ;\r\nMAP_NAME \"g01\",\"Sindain\",\"g00/g00\", 1 , 1 , 2000 , 2 ;// 0 \r\n\
+MAP_NAME \"\",\"\",\"\",0,0;// 1 \r\n;MAP_NAME \"x99\",\"commented out\",\"\",0,0;\r\n\
+MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n MAP_NAME \"g01\",\"again\",\"\",0,0;// 3\r\n";
 
     #[test]
     fn targets() {
@@ -153,5 +330,75 @@ mod tests {
         );
         assert_eq!(parse_target("s51:story_50").unwrap().script, "s51");
         assert!(parse_target("s51").is_err());
+    }
+
+    #[test]
+    fn start_targets_may_leave_out_the_program() {
+        assert_eq!(
+            parse_start("m05").unwrap(),
+            Target { map: "m05".into(), script: "m05".into(), program: "map_start".into() }
+        );
+        assert_eq!(parse_start("m05\n").unwrap().program, "map_start");
+        assert_eq!(parse_start("s06/s06b").unwrap().script, "s06b");
+        assert_eq!(parse_start("s51:story_50").unwrap(), parse_target("s51:story_50").unwrap());
+        assert_eq!(parse_start("s06/s06b:500").unwrap(), parse_target("s06/s06b:500").unwrap());
+        for wrong in ["", "m05:", "m05 map_start", "a/b/c"] {
+            assert!(parse_start(wrong).unwrap_err().to_string().contains("MAP, MAP:PROGRAM"), "{wrong:?}");
+        }
+    }
+
+    #[test]
+    fn map_numbers_count_every_row_in_order() {
+        let found = map_numbers(TABLE);
+        assert_eq!(found.into_iter().collect::<Vec<_>>(), [("g01".to_string(), 0), ("m05".to_string(), 2)]);
+    }
+
+    #[test]
+    fn a_town_warp_goes_to_edit_mode_once_then_runs_the_original() {
+        let target = parse_start("m05").unwrap();
+        let text =
+            "PROGRAM(floor_start, setup_floor);\nvoid setup_floor(void)\n{\n}\n#pragma padding_of setup_floor 0\n";
+        let town = patched_with(text, &target, Warp::Town(14)).unwrap();
+        assert!(town.contains("PROGRAM(floor_start, start_at_scene);"));
+        let function = town_function_text(&target, 14, "setup_floor");
+        assert!(town.contains(&function));
+        let body: Vec<&str> = function.lines().skip(8).map(str::trim).collect();
+        assert_eq!(
+            body,
+            [
+                "set_flag(2047, 1);",
+                "init_event();",
+                "fade_out(1);",
+                "wait;",
+                "go_to_edit_mode(14, map_start);",
+                "wait;",
+                "return;",
+                "}",
+                "setup_floor();",
+                "}",
+            ]
+        );
+        // the dungeon warp is what it was
+        assert_eq!(patched_with(text, &target, Warp::Dungeon), patched(text, &target));
+        assert!(patched(text, &target).unwrap().contains("load_dungeon_map(\"m05\");"));
+    }
+
+    #[test]
+    fn the_disc_numbers_m05_14() {
+        // set C2S_CORPUS to an extracted disc (extracted/disc) to read its map tables
+        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
+            return;
+        };
+        let read = |language: i64| {
+            map_numbers(&std::fs::read(Path::new(&corpus).join(map_table_path(Some(language)))).unwrap())
+        };
+        let english = read(1);
+        assert_eq!(english["m05"], 14);
+        assert_eq!(english["g01"], 0);
+        assert_eq!((english["d01e01"], english["d01f01"], english["s51"], english["s71"]), (22, 55, 130, 188));
+        assert_eq!(english.len(), 185);
+        for language in [0, 2, 3, 4, 5, 6] {
+            assert_eq!(read(language), english, "map{language}.cfg numbers the maps differently");
+        }
     }
 }

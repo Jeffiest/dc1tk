@@ -466,6 +466,11 @@ def main():
     quad_check = validate.check(root)
     check(any("bytes" in r[2] for r in quad_check if r[0] == validate.ERROR), "a 32-byte name is an error")
     long_name.name = "point:river"
+    check(not validate.left_out(root), "nothing left out of the export: %s" % validate.left_out(root))
+    loose = bpy.data.objects.new("loose", bpy.data.meshes.new("loose"))
+    context.collection.objects.link(loose)
+    check(any(r[1] == "loose" for r in validate.left_out(root)), "a mesh outside the map is reported as left out")
+    bpy.data.objects.remove(loose)
     # a new picture on the crate made a model: a size a texture file cannot take, then one it can
     crate_obj = bpy.data.objects.get("crate")
     if crate_obj is not None:
