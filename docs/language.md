@@ -207,7 +207,8 @@ to the VM's own instructions:
 
 `double` is refused (the VM's floats are 32 bits); use `float`.
 
-The VM differs from C in ways that matter when writing code:
+The VM differs from C in ways that matter when writing code, unless the code
+asks for C's own semantics with `#pragma std c89` (below):
 
 - **Values keep their type.** Every value on the VM's stack and in a
   variable carries its type, and storing copies it: after `int x; x = 1.5;`,
@@ -219,3 +220,14 @@ The VM differs from C in ways that matter when writing code:
   even on the right of `&&` or `||` or in a branch of `?:`, since natives
   cannot run in the middle of an expression. Write an `if` when a native
   should only run some of the time.
+
+`#pragma std c89` (or `c90`) turns on strict mode for the functions and
+globals after it in the file: a value converts to the type it is stored in,
+passed as or returned as (`int x = 2.5;` gives 2, by `FTOI`; an int stored in
+a float gets `ITOF`), `&&` and `||` give 0 or 1 where their value is used, and
+a native in an operand C may not evaluate (the right of `&&` or `||`, a branch
+of `?:`, the right of a comma) runs only when C would evaluate it, in an `if`
+on a hidden local. Strict code costs a few instructions more where these
+apply; the decompiler never writes the pragma, so retail scripts keep their
+bytes. A library or mod file that wants C's semantics starts with the pragma;
+the conformance suite (see [the standard](c-standard.md)) runs in strict mode.

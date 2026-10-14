@@ -93,7 +93,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.2.1.3 Integer to float | supported | `conversions_int_to_float` | |
 | 3.2.1.3 Unsigned and float | supported | `conversions_unsigned_float` | by value, through the runtime |
 | 3.2.1.5 Usual arithmetic conversions | supported | `conversions_usual_arithmetic` | |
-| 3.2.1.3 Conversion on assignment | differs (step 4) | `conversions_assignment` | `int x = 2.5;` keeps 2.5: the VM stores the value's own type |
+| 3.2.1.3 Conversion on assignment | supported | `conversions_assignment` | strict mode: `FTOI` or `ITOF` where the types differ; arguments, returns and `op=` too |
 | 3.2.2.2 void | supported | `conversions_void` | |
 | 3.2.2.3 Null pointer constants | planned (step 5) | `conversions_null_pointer` | pointers compared as values |
 
@@ -120,13 +120,13 @@ C89 leaves these to the implementation and asks it to say what it does.
 | 3.3.9 Equality operators | supported | `expressions_equality` | |
 | 3.3.10-12 `& ^ \|` | supported | `expressions_bitwise` | |
 | 3.3.13-14 `&&` and `\|\|` | supported | `expressions_logical` | the right side runs only when needed |
-| 3.3.13-14 Their value | differs (step 4) | `expressions_logical_value` | the deciding value, not 0 or 1 |
+| 3.3.13-14 Their value | supported | `expressions_logical_value` | strict mode: `NOT NOT` where the value is used |
 | 3.3.15 `?:` | supported | `expressions_conditional` | |
 | 3.3.16.1 Assignment | supported | `expressions_assignment` | |
 | 3.3.16.2 Compound assignment | supported | `expressions_compound_assignment` | |
 | 3.3.17 Comma operator | supported | `expressions_comma` | |
 | 3.4 Constant expressions | supported | `expressions_constant` | array sizes, enums, cases, `#if` |
-| Natives in conditions | differs (step 4) | | a native in a condition runs before it is tested |
+| Natives in conditions | supported | | strict mode: a native C may not evaluate runs in an `if` (tested in `c_features.rs`) |
 
 ### 3.5 Declarations
 

@@ -976,6 +976,8 @@ struct State {
     /// Whether a call went past Python's recursion limit: everything fails from there, as the
     /// RecursionError would.
     overflow: Cell<bool>,
+    /// #pragma std c89 has been read: the functions and globals after it get C's semantics.
+    strict: bool,
 }
 
 impl State {
@@ -993,6 +995,7 @@ impl State {
             statics: Vec::new(),
             depth,
             overflow: Cell::new(false),
+            strict: false,
         }
     }
 
@@ -2548,6 +2551,9 @@ fn static_local(state: &mut State, declared: &Declared, hidden: &str, kind: &str
     if spec.constant {
         entry["const"] = Node::Bool(true);
     }
+    if state.strict && entry.get("init").is_some() {
+        entry["std"] = Node::from("c89");
+    }
     state.statics.push(entry.clone());
     state.scope.as_mut().unwrap().statics.insert(hidden.to_string(), entry);
     Ok(())
@@ -2733,6 +2739,9 @@ fn function_definition(
     if pending.every_frame {
         function["every_frame"] = Node::Bool(true);
     }
+    if state.strict {
+        function["std"] = Node::from("c89");
+    }
     Ok(Some(function))
 }
 
@@ -2789,6 +2798,9 @@ fn top_declaration(state: &mut State, program: &mut Node, pending: &Pending, doc
         }
         if spec.constant {
             entry["const"] = Node::Bool(true);
+        }
+        if state.strict && entry.get("init").is_some() {
+            entry["std"] = Node::from("c89");
         }
         let globals = program["globals"].as_array_mut().unwrap();
         match globals.iter_mut().find(|global| global["name"] == *declared.name) {
@@ -3262,6 +3274,11 @@ fn pragma(state: &mut State, token: &Token, program: &mut Node, pending: &mut Pe
             pending.override_of = rest.first().map(word).transpose()?;
         }
         "every_frame" => pending.every_frame = true,
+        "std" => match first()?.as_str() {
+            // C's semantics where the VM's differ, for the code after it (docs/c-standard.md)
+            Some("c89" | "c90") => state.strict = true,
+            _ => return state.fail("#pragma std takes c89"),
+        },
         "once" => {}
         // C ignores a pragma it does not know
         _ => {}
