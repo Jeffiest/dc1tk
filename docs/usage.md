@@ -176,11 +176,17 @@ To build one script without a disc,
 
 ### Testing without replaying
 
-`--start-at MAP:PROGRAM` (or `MAP/SCRIPT:PROGRAM`) builds a test image whose
-New Game goes straight to that map and program, as the game's own story warps
-do; the source tree is not changed. It suits maps the game loads with
-`load_dungeon_map`, and the scene starts with a new game's party. See
-[the modding guide](modding.md#trying-a-change-quickly).
+`--start-at MAP:PROGRAM` (or `MAP/SCRIPT:PROGRAM`, or `MAP` alone for its
+`map_start`) builds a test image whose New Game goes straight to that map and
+program, as the game's own warps do; the source tree is not changed. A map the
+game loads with `load_dungeon_map` (story scenes, dungeon-like maps) is loaded
+that way, with `load_event_script` at the program. Any other map in the disc's
+map table, a town, a street or an interior, is entered as the game leaves a
+dungeon for a town, with `go_to_edit_mode(map number, program)`: `--start-at
+m05` opens m05 (map 14) at `map_start`, though m05 has no scripts of its own, and `--start-at m05:PROGRAM` runs one of a town's programs. `build`
+prints which way it warps; a town takes no `/SCRIPT`, as the game loads its own.
+The scene starts with a new game's party. `"start_at"` in `mod.json` takes the
+same forms. See [the modding guide](modding.md#trying-a-change-quickly).
 
 ### Mods
 

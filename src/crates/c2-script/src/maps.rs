@@ -381,7 +381,7 @@ pub fn summary(found: &Catalog) -> String {
         "\"player plays there\": its scripts handle the player dying (a player_dead program), so the game lets the \
          player move and fight there."
             .into(),
-        "Maps used dungeon-style can be a --start-at target.".into(),
+        "Maps used dungeon-style, and towns, can be a --start-at target.".into(),
     ]);
     lines.join("\n")
 }

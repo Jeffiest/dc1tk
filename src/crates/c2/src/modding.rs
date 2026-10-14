@@ -25,8 +25,9 @@ pub struct BuildArgs {
     /// Disc image to write.
     #[arg(short, long)]
     output: PathBuf,
-    /// Test image only: a new game goes straight to this map and program, as in s51:story_50.
-    #[arg(long, value_name = "MAP:PROGRAM")]
+    /// Test image only: a new game goes straight to this map and program, as in s51:story_50, or
+    /// to a map at map_start, as in m05.
+    #[arg(long, value_name = "MAP[:PROGRAM]")]
     start_at: Option<String>,
     /// Layer this mod over the tree; repeat for several, which may not change the same file.
     #[arg(long = "mod", value_name = "NAME")]
@@ -341,24 +342,36 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         }
     }
     if let Some(start_at) = start_at.filter(|start_at| !start_at.is_empty()) {
-        let mut target = startat::parse_target(&start_at)?;
+        let mut target = startat::parse_start(&start_at)?;
         let given: IndexMap<&String, &i64> = plan.numbers.values().flat_map(|found| found.iter()).collect();
         if let Some(number) = given.get(&target.program) {
             // a mod's NEW_PROGRAM name
             target.program = number.to_string();
         }
-        for warning in startat::warnings(&args.source, &consts, &target)? {
+        let language = c2_script::disc::language_code(&defs);
+        let warp = startat::warp(&args.source, &consts, &target, || startat::disc_map_numbers(&args.iso, language))?;
+        for warning in startat::warp_warnings(&args.source, &consts, &target, warp)? {
             println!("warning: {warning}");
         }
-        let patched = startat::overrides(&args.source, &target, &overrides)?;
+        let patched = startat::warp_overrides(&args.source, &target, warp, &overrides)?;
         let mut names: Vec<&String> = patched.keys().collect();
         names.sort();
         let names = names.iter().map(|name| name.as_str()).collect::<Vec<_>>().join(", ");
         overrides.extend(patched);
+        let how = match warp {
+            startat::Warp::Dungeon => format!(
+                "loaded dungeon-style with load_dungeon_map and load_event_script {}/{}.stb",
+                target.map, target.script
+            ),
+            startat::Warp::Town(number) => {
+                format!("entered as a town with go_to_edit_mode({number}, {})", target.program)
+            }
+        };
         println!(
-            "start at: a new game goes to map {} at program {} (patched {}; flag {} marks it done)",
+            "start at: a new game goes to map {} at program {}, {} (patched {}; flag {} marks it done)",
             target.map,
             target.program,
+            how,
             names,
             startat::START_FLAG
         );
