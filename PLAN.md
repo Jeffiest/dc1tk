@@ -121,29 +121,48 @@ See [the design](docs/design.md). In order:
    a replacement reaches every copy on the disc. `mod migrate` converts the
    `disc/` layout.
 
-## Now: editing maps in Blender
+## Done: editing maps in Blender
 
-Goal: open any fixed map in Blender, move, add and delete pieces, placements,
-trigger points (doors, chests, spawn points, events), lights and collision,
-and build the result into a mod. The formats and the glTF conventions are in
-[maps](docs/assets/maps.md) (sections 7 and 8). Phases:
+Any fixed map opens in Blender (`c2 map-export`, the `c2_maps` add-on in
+[src/blender](src/blender/README.md)) as the game draws it, and a mod's
+`"map:NAME"` line builds the edited scene back: placements, pieces and
+trigger points moved, added and deleted, collision painted, meshes and
+pictures edited, new models with collision. All 171 scenes round-trip through
+Blender unchanged. The formats and conventions are in
+[maps](docs/assets/maps.md); the example [map-edit](docs/examples/map-edit/)
+was checked in the game. Left over:
 
-1. `.map` reader and writer in Rust, byte-exact on all 210 files; `c2 map`
-   point labels fixed. Mesh side: whole node names, import matching by
-   `mds_index`, a collision mode, textures from a search path, blend flags.
-2. `c2 map export` (one map or all fixed scenes) to the glTF scene of
-   section 8, with real textures.
-3. Import: `"map:NAME"` lines in `mod.json`, built by `build` (changed
-   `.map`, changed and new meshes, textures), picked up by `mod make`.
-4. A Blender add-on: point panels, adding doors, chests and spawn points,
-   collision colours, one-click import and export through `c2`.
-5. An example mod that edits a map, checked in the game.
+- **Animated map pieces.** `FUNC_ANIME_DATA` is only partly decoded, so the
+  add-on shows its fields raw.
+- **New maps.** A wholly new map needs a map number, the engine's map tables
+  and a way in; only the maps on the disc can be edited.
+- **Dungeon floors.** Random floors are built from parts at run time; their
+  layouts and parts are not editable yet.
 
-Phases 1 to 4 are done, with mesh, texture and new-model edits, the game's
-look in Blender (blend flags, vertex alpha, light sets, hours) and unedited
-round trips through Blender changing nothing on the maps tried. The example
-is [map-edit](docs/examples/map-edit/), checked in the game: the new crate stands
-with its own picture and blocks the player, and the repainted grass shows.
+## Now: the rest of the game
+
+What still cannot be taken apart, edited and put back, in the order to do it:
+
+1. **`--start-at` for towns.** A new game runs in the dungeon loop, where
+   `jump_to_map` does nothing, so `--start-at` only reaches maps the game
+   loads with `load_dungeon_map`. Towns are entered from the dungeon loop
+   with `go_to_edit_mode(map number, program)`, as the game goes to m05 (map
+   14) from the Zelmite Mine; a town with no script of its own (m05) still
+   arrives faded in. Have `--start-at` use it for town maps, finding the map
+   number from the disc's map table, so `--start-at m05` works without a
+   stop in another map's script.
+2. **Menu and system text.** Dialogue in scripts is editable, but 302 `.mes`
+   files hold the rest (menus, item, map and shop names, NPC lines, system
+   messages): `c2` reads them for names and comments but cannot write them.
+   Export them as text, build them back byte for byte, and let mods replace
+   and add lines (an item's name, a translation).
+3. **Game data.** Item and weapon stats, monster stats, shops, inventions and
+   Georama parts are not located yet. Find where each lives (the `.cfg`
+   files, other data files or tables in `SCES_511.90`), then give each an
+   editable form and a `mod.json` id.
+4. **Memory budgets** (also below, under mod assets): measure what models,
+   textures and sound banks may grow to, so `build` can say a mod will not
+   fit instead of the game crashing.
 
 ## Next: modding
 
@@ -285,6 +304,9 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
 
 ## Later
 
+- **Engine code.** Changing the executable itself has been done in another
+  project; it will be brought in here later. Until then mods change scripts
+  and data, not `SCES_511.90`.
 - **Automated emulator test.** A built image has been booted in PCSX2 by
   hand with the two test edits in [docs/usage.md](docs/usage.md) and both
   showed in game. Script that check, so an image is booted and checked
@@ -296,6 +318,7 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
   recording played from boot could.
 - **Other versions.** The NTSC and Japanese discs as definition sets; Dark
   Cloud 1 as a second engine.
+- **Movies.** The `.pss` FMV files replaced from a common video format.
 
 ## Open questions
 
