@@ -15,9 +15,9 @@ The code, in `src/crates/c2-assets/src/`:
 | `mot.rs` | .mot/.wgt key-list files and .bbp tables |
 | `info_cfg.rs` | info.cfg reader (same tokenising rules as `CScriptInterpreter`) |
 | `to_gltf.rs` | character pack or map model -> glTF 2.0 (.gltf + .bin + textures; map options in 6.1) |
-| `from_gltf.rs` | glTF -> MDS + .wgt + .bbp, with the original MDS as a template (section 7) |
+| `from_gltf.rs` | glTF -> MDS + .wgt + .bbp, with the original MDS as a template, or a new model (section 7) |
 | `motions.rs` | glTF animations -> .mot keys and info.cfg `KEY` lines (section 7.3) |
-| `models.rs` | the glTF folders mods use (`mod asset --as gltf`, `build`); map models (`export_map_model`, `build_map_model`) |
+| `models.rs` | the glTF folders mods use (`mod asset --as gltf`, `build`); map models (`export_map_model`, `build_map_model`); new packs (`new_pack`, 7.4) |
 
 Mods use these through `models.rs`: textures come from the pack's own
 `.img` files (not placeholders), only meshes and motions that differ from the
@@ -63,8 +63,9 @@ changes it.
 - The CPU skinning path (`SHADOW_MOTION` and the .wgt given in `MOTION`'s 4th argument) is only
   partly followed. `_MOTION` ignores its 4th argument (sets `entry[2].data = 0`), so the main model
   is skinned only by the VU1 path, from `<model>.wgt`.
-- The importer (`from_gltf.rs`) is experimental. It round-trips our own exports (section 7) but has
-  not been tried on a Blender re-export or in the game.
+- Mesh import (`from_gltf.rs`): our own exports and Blender 5.1 round trips of every character
+  pack change nothing (7.1); an edited mesh has been drawn in the game, a new character
+  (7.4) not yet.
 
 ---
 
@@ -212,7 +213,11 @@ the named frames as `mgCVisualMotionMDT` (VU1 skinning), or as plain `MDT` with 
 Same container as .mot (section 3). Each block is `frame` = the skinned mesh's node index,
 `target` = bone node index, `type` = 20, and keys = (vertex index, weight in percent in value.x).
 Value y/z/w and the key padding are always 0. 310,379 blocks, all type 20. Blocks with 0 keys are
-common (empty headers for every bone).
+common (empty headers for every bone): `CreateVertexWeight` passes over a block of no keys (it
+gives a bone a slot only for a key), and the CPU path's lists of no keys weigh nothing, so they
+can go. A rebuilt mesh's .wgt has blocks with keys alone: Max's `chara/c01_base` `c01b.wgt`, whose
+five skinned meshes are 3-vertex placeholders with 95 blocks each, 464 of them empty, goes from
+15,680 to 832 bytes when all five are rebuilt, every weight kept.
 
 `mgCVisualMotionMDT::CreateVertexWeight` (asm visualmotion, decoded):
 - only blocks whose frame equals this mesh's node index are used;
@@ -461,17 +466,27 @@ c01_base on its own would only give placeholder triangles.
 
 ## 7. Importing back: glTF -> MDS/WGT/BBP
 
-### 7.1 `from_gltf.rs` (experimental)
+### 7.1 `from_gltf.rs`
 
 `from_gltf::import_gltf` takes a glTF, the template .mds and optionally the template .bbp and .wgt,
 and gives the new .mds, .wgt and .bbp; `build` runs it, through `models.rs`, for a mod's glTF
 folder, with only the meshes that differ from the export. It keeps the template's nodes and
 replaces the MDT block of the frame each glTF mesh node stands for (`from_gltf::frames_of`): the
 node's `extras.mds_index` when it has one within the template, otherwise its name (Blender `.001`
-and a skinned node's `_skin` dropped) as a frame's whole name, then as a frame's name without
-flags, the k-th node of a repeated name taking the k-th frame of it. Joints are found the same way.
+and a skinned mesh node's `_skin` dropped; a frame may itself end in `_skin`, as e210a's
+`neck_skin` does) as a frame's whole name, then as a frame's name without flags. The k-th node of
+a repeated name takes the k-th frame of it, counting by Blender's `.NNN` (which numbers names in
+the order it made them, the template's) and then in glTF order (Blender writes children first);
+a name without flags takes every frame of that name in file order, unless the glTF names its nodes
+by whole names, as a map's does, when a frame of the whole name comes first. Blender makes every
+frame of a skinned model a bone and a mesh on one an object of the same name parented to it: a
+rigid mesh node under a node of its name stands for the parent's frame (in a rigid model, objects
+all, for the frame of its name under the parent's). Joints are found the same way.
 Steps:
-- rigid meshes are brought into frame space through the glTF hierarchy;
+- rigid meshes are brought into frame space through the glTF hierarchy: through the node of their
+  frame without a mesh (Blender's bone), or, when the mesh node is its frame's own (an export's),
+  from the glTF's world to the frame's in the template, so a node left where it was changes
+  nothing (before, such a mesh took its frame's local matrix twice) and one moved carries its mesh;
 - skinned meshes are brought from model space into mesh space with inv(bbp[mesh]);
 - joints are matched to template nodes by name, and the bbp of every joint is taken from the IBMs;
 - positions, normals, uvs and colours are deduplicated into separate arrays;
@@ -484,11 +499,23 @@ An unknown mesh name becomes a new node, appended under the root. Its name must 
 `VERTEX_ANIME` if it is skinned. `new_model` drops `extras.mds_index` from the glTF it builds a
 model of, since those indices name another model's frames.
 
-**Which meshes changed** (`from_gltf::changed_meshes(exported, given, template)`): every mesh
-node's transform, skin, accessor values and materials are compared with a fresh export's, mesh by
-`from_gltf::MeshId` (the template frame it stands for, or a new name), and only those that differ
-are passed to the import. So meshes whose frames share a base name (1,488 map files) are told
-apart, and an unedited mesh keeps its bytes.
+**Which meshes changed** is told by value against a fresh export, mesh by `from_gltf::MeshId`
+(the template frame it stands for, or a new name), and only those that differ are passed to the
+import, so meshes whose frames share a base name (1,488 map files) are told apart and an unedited
+mesh keeps its bytes. Every triangle (degenerate ones dropped) must be matched by one of the other
+side's in any corner order, winding kept, within what Blender moves: positions within 0.005 and
+2e-6 of the value, UVs within 0.001, colours within 4/255, the zero UVs, white colours and
+missing alphas Blender adds allowed (`same_geometry`). Characters
+(`changed_character_meshes`, `frame_geometry`): a rigid mesh's corners in its frame's space (as
+the import brings them there, so Blender's bone-parented objects match), a skinned mesh's in
+model space, each corner's skin as (frame, weight) pairs (the joints as the frames they stand for,
+the 4 largest weights normalised and summed by frame) with every weight within 0.01 (Blender
+renormalises), materials by the picture they show. Maps (`changed_geometry`, `mesh_geometry`):
+corners as the mesh node has them, its matrix within 1e-3 (translations as positions), materials
+by name and picture. The inverse bind matrices count as unchanged within 1e-3 (translations
+0.005 and 2e-6 of the value): Blender rests bones at the bind pose and writes their inverses back
+with up to 2e-5 in the rotation and 4e-4 in the translation on Max, which used to rewrite the
+.bbp. Before, characters were compared by accessor bytes, so after Blender every mesh was rebuilt.
 
 **Map models** (`models::build_map_model(given, original, options)`): the same, against an export
 with the same `to_gltf::Options`. With `options.collision` the import runs in collision mode
@@ -509,8 +536,20 @@ triangle's corner positions, normals, uvs and weights to 1e-3 and the winding):
 - c01_base + c01fuku4: 11/14 identical. The 3 that differ are 1-triangle placeholder meshes whose
   three vertices share one position, so the import merges them into a 0-area triangle. Harmless.
 - The rebuilt .mds parses and re-writes byte for byte through `mds.rs`.
-It has not been run in the game or on a Blender re-export, so the Blender-specific parts are
-unexercised: node naming, mesh objects parented to bones, Y-up/Z-up conversion.
+
+Every character pack of the disc (2,663 files) is checked as Blender gives it back (extras
+dropped, rigid meshes of skinned models moved onto child objects, names numbered `.001` on, nodes
+children first): no mesh changes; its first mesh moved changes that mesh alone, and rebuilt it
+leaves every other frame and weight list as it was and its own vertices' weights among the
+original's. Through Blender 5.1 (import at 30 fps, export glTF Separate, `--background
+--factory-startup`), unedited round trips of Max (`chara/c01_base`, and his costume
+`mainchr/c01fuku1`), Monica (`chara/c02_base`), the monsters `e01a` and `e226d` and the villager
+`p01_01a` (Need's mayor) rebuild no mesh and change no member; one mesh's vertices moved (a
+skinned body, or a rigid head part such as `kami`) rebuild that mesh alone, with its weights (the
+same set of per-vertex weights; vertices only degenerate triangles used are dropped) and every
+other mesh's, the bind pose and the motions kept. The monster `e210a`'s round trip rebuilds no mesh
+but moves six KEYs to new frames: Blender gives some leg translations back up to 0.04 off in its
+fast motions, above the motion tolerance (7.3).
 
 ### 7.2 What any importer has to respect
 
@@ -602,6 +641,49 @@ repeated under several parents), `ring_loop`, `denkousekka_h`, `e206_cloth` (ver
 `e616_osmond` (visibility) change no motion; a bone turned in one action changes that bone's list
 over that KEY's frames alone; a duplicated action becomes a new KEY, and a stretched one moves to
 new frames with its KEY.
+
+### 7.4 New characters (`models::new_pack`)
+
+A mod's `file:` line with `like` makes a pack from a glTF alone (`c2-script`'s `discfiles::made`),
+with the pack `like` names as the template for the formats: its info.cfg's other lines, its MDS
+version and its first picture's texture format. Members, in this order:
+
+- `<stem>.img`: each material's base colour image as a picture of the name the material uses (the
+  image's name, else its file's), PNG with sides powers of two, in the template's picture format.
+- `<stem>.mds` (`from_gltf::new_model`): a frame for every glTF node, named as the node (names
+  made distinct; several roots under one frame named `<stem>`), placed by its translation,
+  rotation and scale under its parent; each mesh node's triangles as its frame's mesh. A rigid
+  mesh's vertices are in its frame's space; a skinned mesh's frame (Blender's mesh object, under
+  the armature) has its vertices in its bind space, inv(bbp[mesh]) times the glTF's model-space
+  positions, as `import_gltf` writes any skinned mesh.
+- `<stem>.bbp`: every frame's bind matrix, the frame's world matrix unless the skin's inverse
+  bind matrix differs (2.3); `_MOTION` copies it over the base matrices, which skinning needs.
+- `<stem>.wgt` (with a skin): a type-20 block per (skinned mesh, bone) with keys, at most 4
+  weights a vertex summing to 100 (2.2).
+- `<stem>.mot` (`motions::new_motion`): every animation that moves a frame becomes a KEY, in glTF
+  order, on one timeline from frame 1 (no gaps); a channel any animation moves off its node's rest
+  gets one list of a key every frame from 0 (the rest) to the last, the animation's values over
+  its KEY's frames (sampled at r/30 s, as 7.3 reads them) and the rest over the others'; channels
+  none moves get no list, so their frames keep the model's matrices. A KEY's name is the
+  animation's (1 to 35 bytes of Shift-JIS), its step `extras.step` or 1.00 (30 frames a second);
+  Blender's frame rate does not matter, since glTF keys are in seconds.
+- `info.cfg` (`models::new_info_cfg`): the template's, with NAME, IMG and MODEL naming the new
+  members, `VERTEX_ANIME` naming the skinned meshes' frames just before MODEL (`_MODEL` reads the
+  list), and `MOTION 0, "<stem>.mot", "<stem>.bbp", "<stem>.wgt";` with the KEYs where the
+  template's first motion set was (else at the end). Dropped: the template's motion sets,
+  sequences, sound cues (they name its KEYs), cloth, effects, shadow and LOD models, vertex and
+  shape animation, and the OUTLINE and OBJECT_NAME lines naming frames the new model lacks
+  (`_OBJECT_NAME2` and `_OUTLINE` take a missing frame quietly, but the attach point or outline
+  would be lost anyway); BODY_SIZE, SCALE, POLY_NUM and the whole-model `OUTLINE ""` stay.
+
+Refused: a skinned mesh weighted to more than 32 bones or of more than 3,198 vertices, more than
+24 skinned meshes (`models::skin_problems`, 2.2 and 7.2), and a skin without an animation (no
+motion set, no bind pose). No cloth (`.clo`): it names a model's frames and particles. A pack
+built so reads back the same: its own export has the glTF's meshes, skin weights and motions
+within the 7.1 and 7.3 tolerances, and building the glTF given over it changes nothing (checked
+on a two-bone test glTF and on [the example](../examples/new-character/README.md), a seven-bone
+character made in Blender, whose pack, built into a disc image and copied back out, plays its
+action in Blender as made).
 
 ## 8. Evidence log (research scripts run while the formats were worked out; not in this repository)
 - explore1/2: header/record/layout statistics over all 16,876 .mds (section 1).

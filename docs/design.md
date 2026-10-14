@@ -311,12 +311,17 @@ in `c2-assets`' `ids`).
     `load_chara` asks for): `NAME`, `IMG` and `MODEL` name the new
     members, and what
     belonged to the template's model alone (motion sets with their keys,
-    `VERTEX_ANIME`, `SHAPE_ANIME`, shadow and LOD models) is dropped; the
-    rest (`MATERIAL_ANIME`, `OUTLINE`, `BODY_SIZE`, `SCALE`, comments)
-    stays. Skins are refused: a new model is rigid, its parts placed by
-    their nodes. A static prop's pack is the template to pick:
+    sequences, sound cues, cloth, effects, `VERTEX_ANIME`, `SHAPE_ANIME`,
+    shadow and LOD models, outlines and attach points on frames the new
+    model lacks) is dropped; the rest (`MATERIAL_ANIME`, the whole-model
+    `OUTLINE`, `BODY_SIZE`, `SCALE`, comments) stays. A skinned mesh is
+    skinned as the game's are: the pack gains the `.wgt` and `.bbp`, and
+    `VERTEX_ANIME` names it; the glTF's animations become the `.mot` and
+    `MOTION 0`'s KEYs ([the model formats](assets/models.md) 7.4). A
+    static prop's pack is the template to pick for a prop:
     `model:uki` (`chara/uki.chr`, the fishing float: one picture, one
-    mesh, no motion), or `model:lure01` and `model:hari` like it.
+    mesh, no motion), or `model:lure01` and `model:hari` like it; a
+    villager's (`model:p01_01a`) for a character.
   - Exported again (`mod asset ISO NAME PATH --as png`, `--as gltf`), the
     file gives back its pictures, and its meshes and pictures.
 - **Scripts** stay as they were: `.c` patches with `#pragma target`,

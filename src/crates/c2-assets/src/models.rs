@@ -156,11 +156,12 @@ fn load_from_folder(files: &Folder, name: &str) -> Result<Gltf> {
     })
 }
 
-/// The meshes of the given glTF that differ from the export's, or that the export does not have.
+/// The meshes of the given glTF that differ from the export's, or that the export does not have:
+/// by value (from_gltf::changed_character_meshes), since Blender writes every mesh its own way.
 fn changed_meshes(given: &Path, exported: &Folder, template: &[u8]) -> Result<BTreeSet<MeshId>> {
     let name = given.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let model = crate::mds::parse(template)?;
-    from_gltf::changed_meshes(&load_from_folder(exported, &name)?, &load_from_disk(given)?, &model)
+    from_gltf::changed_character_meshes(&load_from_folder(exported, &name)?, &load_from_disk(given)?, &model)
 }
 
 /// The pack with the model and textures a folder gives in place of the original's.
@@ -354,15 +355,66 @@ fn cfg_tag(line: &str) -> &str {
     &line[..end]
 }
 
-/// A template's info.cfg for a new pack named `stem`: NAME, MODEL and the texture file name the new
-/// pack's members (<stem>.mds, <stem>.img, which IMG 0 loads; no IMG line without pictures), and
-/// what belonged to the template's model alone (motion sets, vertex and shape animation, shadow
-/// and LOD models) dropped. Every other line (outline, size, scale, comments) stays as it is.
-pub fn new_info_cfg(template: &[u8], stem: &str, pictures: bool) -> Result<Vec<u8>> {
+/// What a new pack's info.cfg says of its model (new_info_cfg).
+pub struct NewCfg<'a> {
+    /// The pack's name: its members are <stem>.mds, <stem>.img and so on.
+    pub stem: &'a str,
+    /// Whether the pack has a texture file.
+    pub pictures: bool,
+    /// The model's frames: OUTLINE and OBJECT_NAME lines naming another are dropped.
+    pub frames: &'a [String],
+    /// The skinned meshes' frames, which VERTEX_ANIME names.
+    pub skinned: &'a [String],
+    /// Motion set 0's KEYs (name, start, end, step), when the pack has a motion: MOTION 0 then
+    /// loads <stem>.mot, <stem>.bbp and the skin's <stem>.wgt.
+    pub keys: Option<&'a [(String, i64, i64, f64)]>,
+}
+
+/// Blocks of a template's info.cfg about the template's own model and motions (sequences, sound
+/// cues by KEY name, cloth, effects on its frames, LOD models), dropped from a new pack's: by the
+/// tag that starts each and the one that ends it.
+const MODEL_BLOCKS: [(&str, &str); 6] = [
+    ("MOTION", "MOTION_END"),
+    ("SEQ_START", "SEQ_END"),
+    ("SE_START", "SE_END"),
+    ("CLOTH_START", "CLOTH_END"),
+    ("EFFECT_START", "EFFECT_END"),
+    ("LOD_MODEL_START", "LOD_MODEL_END"),
+];
+
+/// A template's info.cfg for a new pack: NAME, MODEL and the texture file name the new pack's
+/// members (<stem>.mds, <stem>.img, which IMG 0 loads; no IMG line without pictures), what
+/// belonged to the template's model alone dropped (motion sets and their sequences, sound cues,
+/// cloth, effects, vertex and shape animation, shadow and LOD models, outlines and attach points
+/// on frames the new model lacks), VERTEX_ANIME naming the new skinned meshes before MODEL, and
+/// the new motion set where the template's first was (else at the end). Every other line (the
+/// whole-model outline, size, scale, comments) stays as it is.
+pub fn new_info_cfg(template: &[u8], cfg: &NewCfg) -> Result<Vec<u8>> {
+    let stem = cfg.stem;
     let text = c2_disc::text::decode_lossy(template);
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
     let img = format!("IMG 0, \"{stem}.img\";");
-    let (mut out, mut in_motion, mut img_written, mut model_written) = (String::new(), false, false, false);
+    let quoted = |names: &[String]| names.iter().map(|name| format!("\"{name}\"")).collect::<Vec<_>>().join(", ");
+    let motion = cfg.keys.map(|keys| {
+        let mut block =
+            format!("MOTION 0, \"{stem}.mot\", \"{stem}.bbp\", \"{stem}.wgt\";{newline}KEY_START;{newline}");
+        for (name, start, end, step) in keys {
+            block.push_str(&format!("\t{}{newline}", motions::key_line(name, *start, *end, *step)));
+        }
+        block.push_str(&format!("KEY_END;{newline}MOTION_END;{newline}"));
+        block
+    });
+    // whether every frame a line names (its text arguments; "" is the whole model) is the model's
+    let names_known = |line: &str| {
+        let args = c2_disc::text::encode(line).map(|raw| info_cfg::parse(&raw)).unwrap_or_default();
+        args.iter()
+            .flat_map(|(_, args)| args)
+            .filter_map(Arg::as_str)
+            .all(|name| name.is_empty() || cfg.frames.iter().any(|frame| frame == name))
+    };
+    let mut out = String::new();
+    let (mut img_written, mut model_written, mut motion_written) = (false, false, false);
+    let mut inside: Option<&str> = None;
     for line in text.split_inclusive('\n') {
         let tag = cfg_tag(line);
         let ending = if line.ends_with("\r\n") {
@@ -372,25 +424,51 @@ pub fn new_info_cfg(template: &[u8], stem: &str, pictures: bool) -> Result<Vec<u
         } else {
             ""
         };
-        if in_motion {
-            in_motion = tag != "MOTION_END";
+        if let Some(end) = inside {
+            if tag == end {
+                inside = None;
+            }
+            continue;
+        }
+        if let Some((start, end)) = MODEL_BLOCKS.iter().find(|(start, _)| *start == tag) {
+            inside = Some(end);
+            if *start == "MOTION" && !motion_written {
+                out.push_str(motion.as_deref().unwrap_or_default());
+                motion_written = true;
+            }
             continue;
         }
         match tag {
-            "MOTION" => in_motion = true,
-            "SHADOW_MOTION" | "VERTEX_ANIME" | "SHAPE_ANIME" | "SHADOW_MODEL" | "LOD_MODEL" | "KEY_START" | "KEY"
-            | "KEY_END" | "MOTION_END" => {}
+            "SHADOW_MOTION"
+            | "VERTEX_ANIME"
+            | "SHADOW_VERTEX_ANIME"
+            | "SHAPE_ANIME"
+            | "SHADOW_MODEL"
+            | "LOD_MODEL"
+            | "KEY_START"
+            | "KEY"
+            | "KEY_END"
+            | "MOTION_END"
+            | "SEQ"
+            | "SE"
+            | "SELP"
+            | "CLOTH"
+            | "EFFECT" => {}
+            "OUTLINE" | "OBJECT_NAME" | "OBJECT_NAME2" if !names_known(line) => {}
             "NAME" => out.push_str(&format!("NAME \"{stem}\";{ending}")),
             "IMG" => {
-                if pictures && !img_written {
+                if cfg.pictures && !img_written {
                     out.push_str(&format!("{img}{ending}"));
                 }
                 img_written = true;
             }
             "MODEL" => {
-                if pictures && !img_written {
+                if cfg.pictures && !img_written {
                     out.push_str(&format!("{img}{newline}IMG_END;{newline}{newline}"));
                     img_written = true;
+                }
+                if !cfg.skinned.is_empty() {
+                    out.push_str(&format!("VERTEX_ANIME {};{newline}", quoted(cfg.skinned)));
                 }
                 out.push_str(&format!("MODEL \"{stem}.mds\";{ending}"));
                 model_written = true;
@@ -401,6 +479,22 @@ pub fn new_info_cfg(template: &[u8], stem: &str, pictures: bool) -> Result<Vec<u
     if !model_written {
         bail!("the template's cfg names no model");
     }
+    if let Some(motion) = motion.filter(|_| !motion_written) {
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push_str(newline);
+        }
+        out.push_str(newline);
+        out.push_str(&motion);
+    }
+    // the lines dropped leave no runs of blank lines
+    let mut blank = false;
+    out = out
+        .split_inclusive('\n')
+        .filter(|line| {
+            let was = std::mem::replace(&mut blank, line.trim().is_empty());
+            !(was && blank)
+        })
+        .collect();
     c2_disc::text::encode(&out).ok_or_else(|| Error::invalid("the template's cfg is not Shift-JIS text"))
 }
 
@@ -425,12 +519,56 @@ fn gltf_file(source: &Path) -> Result<std::path::PathBuf> {
     }
 }
 
-/// A new character pack named `stem` (its members <stem>.mds, <stem>.img and info.cfg) built from a
-/// glTF, with a template pack (`template_name` is its model's name, for packs whose cfg is named
-/// after them) giving its cfg's other lines, the MDS version and the texture format. The model is
-/// the glTF's nodes and rigid meshes alone (from_gltf::new_model), and the texture file holds each
-/// material's base colour image as a picture of the name the material uses (PNG, sides powers of
-/// two, in the format of the template's first picture).
+/// Most bones a skinned mesh's vertices may be weighted to, and most vertices it may have: one
+/// more and CreateVertexWeight drops its skinning, or _MODEL's 6,400-quadword work buffer
+/// overflows (32 bytes a vertex, plus 2 quadwords).
+pub const SKIN_BONES: usize = 32;
+pub const SKIN_VERTICES: usize = 3198;
+/// Most VERTEX_ANIME names _VERTEX_ANIME keeps.
+pub const SKINNED_MESHES: usize = 24;
+
+/// What breaks the engine's limits on skinned meshes in a model and its .wgt: more than
+/// SKIN_BONES bones or SKIN_VERTICES vertices in one, more than SKINNED_MESHES of them.
+pub fn skin_problems(model: &crate::mds::Mds, wgt: &[crate::mot::KeyList], skinned: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    if skinned.len() > SKINNED_MESHES {
+        out.push(format!("{} skinned meshes; VERTEX_ANIME keeps {SKINNED_MESHES}", skinned.len()));
+    }
+    for (frame, node) in model.nodes.iter().enumerate() {
+        if !skinned.contains(&node.name) {
+            continue;
+        }
+        let bones: BTreeSet<i32> = wgt
+            .iter()
+            .filter(|list| list.frame == frame as i32 && !list.keys.is_empty())
+            .map(|list| list.target)
+            .collect();
+        if bones.len() > SKIN_BONES {
+            out.push(format!(
+                "mesh {} is weighted to {} bones; the game skins {SKIN_BONES} at most",
+                node.name,
+                bones.len()
+            ));
+        }
+        let vertices = node.mdt.as_ref().map_or(0, |mdt| mdt.vertices.len());
+        if vertices > SKIN_VERTICES {
+            out.push(format!(
+                "skinned mesh {} has {vertices} vertices; the game skins {SKIN_VERTICES} at most",
+                node.name
+            ));
+        }
+    }
+    out
+}
+
+/// A new character pack named `stem` built from a glTF, with a template pack (`template_name` is
+/// its model's name, for packs whose cfg is named after them) giving its cfg's other lines, the
+/// MDS version and the texture format. Its members: <stem>.mds, the model (from_gltf::new_model:
+/// a frame for every node, rigid and skinned meshes); <stem>.img, which holds each material's base
+/// colour image as a picture of the name the material uses (PNG, sides powers of two, in the
+/// format of the template's first picture); with a skin <stem>.wgt and <stem>.bbp, and with
+/// animations <stem>.mot (motions::new_motion); and info.cfg (new_info_cfg). No cloth: a .clo
+/// names a model's frames and particles, which a new model does not have.
 pub fn new_pack(source: &Path, template: &[u8], template_name: &str, stem: &str) -> Result<Vec<u8>> {
     let (pack, _) = crate::tree::model_pack(template, template_name);
     let (folder, files) = unpacked(&pack)?;
@@ -458,7 +596,20 @@ pub fn new_pack(source: &Path, template: &[u8], template_name: &str, stem: &str)
         }
         pictures.push((texture, png));
     }
-    let mds = from_gltf::new_model(&mut gltf, version, stem).map_err(wrap)?;
+    let built = from_gltf::new_model(&mut gltf, version, stem).map_err(wrap)?;
+    let model = crate::mds::parse(&built.mds)?;
+    let skin = crate::mot::parse(&built.wgt)?;
+    let problems = skin_problems(&model, &skin, &built.skinned);
+    if !problems.is_empty() {
+        return Err(wrap(Error::invalid(problems.join("; "))));
+    }
+    let motion = crate::motions::new_motion(&gltf, &model).map_err(wrap)?;
+    if motion.is_none() && !built.skinned.is_empty() {
+        // the bind pose comes with a motion set (MOTION 0 loads the .bbp)
+        return Err(wrap(Error::invalid("a skinned model needs an animation that moves a bone")));
+    }
+    let frames: Vec<String> = model.nodes.iter().map(|node| node.name.clone()).collect();
+    let mds = built.mds;
     let mut members = Vec::new();
     if !pictures.is_empty() {
         let info = info_cfg::read(folder.get("info.cfg").unwrap_or_default());
@@ -478,8 +629,21 @@ pub fn new_pack(source: &Path, template: &[u8], template_name: &str, stem: &str)
         members.push((format!("{stem}.img"), built));
     }
     members.push((format!("{stem}.mds"), mds));
-    let cfg = new_info_cfg(folder.get("info.cfg").unwrap_or_default(), stem, !pictures.is_empty())?;
-    members.push(("info.cfg".to_string(), cfg));
+    if let Some(motion) = &motion {
+        members.push((format!("{stem}.bbp"), built.bbp));
+        if !built.skinned.is_empty() {
+            members.push((format!("{stem}.wgt"), built.wgt));
+        }
+        members.push((format!("{stem}.mot"), motion.mot.clone()));
+    }
+    let cfg = NewCfg {
+        stem,
+        pictures: !pictures.is_empty(),
+        frames: &frames,
+        skinned: &built.skinned,
+        keys: motion.as_ref().map(|motion| motion.keys.as_slice()),
+    };
+    members.push(("info.cfg".to_string(), new_info_cfg(folder.get("info.cfg").unwrap_or_default(), &cfg)?));
     write_pack(&members)
 }
 
@@ -716,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_pack_refuses_skins_and_textures_the_game_cannot_wrap() {
+    fn a_new_pack_refuses_textures_the_game_cannot_wrap() {
         let folder = std::env::temp_dir().join(format!("c2-assets-new-pack-refused-{}", std::process::id()));
         let gltf = calc_gltf(&folder);
         let face: Vec<u8> = [9u8, 9, 9, 255].repeat(48 * 16);
@@ -727,11 +891,510 @@ mod tests {
         .unwrap();
         let error = new_pack(&gltf, &prop_template(), "prop", "calc").unwrap_err().to_string();
         assert!(error.contains("powers of two"), "{error}");
-        let text = std::fs::read_to_string(&gltf).unwrap().replace("\"scene\": 0,", "\"skins\": [{\"joints\": [0]}],");
-        std::fs::write(&gltf, text).unwrap();
-        let error = new_pack(&gltf, &prop_template(), "prop", "calc").unwrap_err().to_string();
-        assert!(error.contains("skin"), "{error}");
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    /// Little-endian f32s and u16s for a test glTF's buffer.
+    fn f32s(values: &[f32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    /// A rigged glTF as Blender exports one: bones `hips` (10 up) and `arm` (5 above it) under an
+    /// armature node `Rig` beside the skinned quad `Body` (model space; the lower corners on the
+    /// hips, the upper 70% on the arm), textured, and an animation `wave` turning the arm 90
+    /// degrees about z over a second. With `animated` false, no animation.
+    fn rigged_gltf(folder: &Path, animated: bool) -> std::path::PathBuf {
+        let mut bin = f32s(&[-1.0, 8.0, 0.0, 1.0, 8.0, 0.0, -1.0, 17.0, 0.0, 1.0, 17.0, 0.0]);
+        bin.extend(f32s(&[0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0]));
+        bin.extend([0u16, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0].iter().flat_map(|v| v.to_le_bytes()));
+        bin.extend(f32s(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.7, 0.3, 0.0, 0.0, 0.7, 0.3, 0.0, 0.0]));
+        bin.extend([0u16, 1, 2, 2, 1, 3].iter().flat_map(|v| v.to_le_bytes()));
+        // inverse bind matrices: the bones' world translations undone
+        let mut ibm = Vec::new();
+        for y in [-10.0f32, -15.0] {
+            ibm.extend([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, y, 0.0, 1.0]);
+        }
+        bin.extend(f32s(&ibm));
+        bin.extend(f32s(&[0.0, 1.0]));
+        let half = std::f32::consts::FRAC_PI_4;
+        bin.extend(f32s(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, half.sin(), half.cos()]));
+        let animations = if animated {
+            r#""animations": [{"name": "wave", "channels": [{"sampler": 0, "target": {"node": 1, "path": "rotation"}}],
+              "samplers": [{"input": 6, "output": 7, "interpolation": "LINEAR"}]}],"#
+        } else {
+            ""
+        };
+        let gltf = format!(
+            r#"{{"asset": {{"version": "2.0"}}, "scene": 0, "scenes": [{{"nodes": [3]}}],
+ "nodes": [{{"name": "hips", "translation": [0, 10, 0], "children": [1]}},
+           {{"name": "arm", "translation": [0, 5, 0]}},
+           {{"name": "Body", "mesh": 0, "skin": 0}},
+           {{"name": "Rig", "children": [2, 0]}}],
+ "skins": [{{"inverseBindMatrices": 5, "joints": [0, 1], "name": "Rig"}}],
+ {animations}
+ "meshes": [{{"name": "Body", "primitives": [{{"attributes": {{"POSITION": 0, "TEXCOORD_0": 1, "JOINTS_0": 2, "WEIGHTS_0": 3}}, "indices": 4, "material": 0}}]}}],
+ "materials": [{{"name": "skin", "pbrMetallicRoughness": {{"baseColorTexture": {{"index": 0}}}}}}],
+ "textures": [{{"source": 0}}], "images": [{{"name": "hero_skin", "uri": "hero_skin.png"}}],
+ "accessors": [{{"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3"}},
+               {{"bufferView": 1, "componentType": 5126, "count": 4, "type": "VEC2"}},
+               {{"bufferView": 2, "componentType": 5123, "count": 4, "type": "VEC4"}},
+               {{"bufferView": 3, "componentType": 5126, "count": 4, "type": "VEC4"}},
+               {{"bufferView": 4, "componentType": 5123, "count": 6, "type": "SCALAR"}},
+               {{"bufferView": 5, "componentType": 5126, "count": 2, "type": "MAT4"}},
+               {{"bufferView": 6, "componentType": 5126, "count": 2, "type": "SCALAR"}},
+               {{"bufferView": 7, "componentType": 5126, "count": 2, "type": "VEC4"}}],
+ "bufferViews": [{{"buffer": 0, "byteOffset": 0, "byteLength": 48}}, {{"buffer": 0, "byteOffset": 48, "byteLength": 32}},
+                 {{"buffer": 0, "byteOffset": 80, "byteLength": 32}}, {{"buffer": 0, "byteOffset": 112, "byteLength": 64}},
+                 {{"buffer": 0, "byteOffset": 176, "byteLength": 12}}, {{"buffer": 0, "byteOffset": 188, "byteLength": 128}},
+                 {{"buffer": 0, "byteOffset": 316, "byteLength": 8}}, {{"buffer": 0, "byteOffset": 324, "byteLength": 32}}],
+ "buffers": [{{"uri": "hero.bin", "byteLength": {}}}]}}"#,
+            bin.len()
+        );
+        let _ = std::fs::remove_dir_all(folder);
+        std::fs::create_dir_all(folder).unwrap();
+        std::fs::write(folder.join("hero.bin"), bin).unwrap();
+        let skin: Vec<u8> =
+            (0..256).flat_map(|i| if i % 3 == 0 { [250, 200, 150, 255] } else { [40, 90, 200, 255] }).collect();
+        std::fs::write(
+            folder.join("hero_skin.png"),
+            im3::write_png(16, 16, im3::PngMode::Rgba, &skin, &[], &[]).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(folder.join("hero.gltf"), gltf).unwrap();
+        folder.join("hero.gltf")
+    }
+
+    #[test]
+    fn a_new_character_has_its_own_skeleton_skin_and_motion_and_reads_back_the_same() {
+        let folder = std::env::temp_dir().join(format!("c2-assets-new-character-{}", std::process::id()));
+        let path = rigged_gltf(&folder, true);
+        let built = new_pack(&path, &prop_template(), "prop", "hero").unwrap();
+        let found = members(&built).unwrap();
+        let names: Vec<&str> = found.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["hero.img", "hero.mds", "hero.bbp", "hero.wgt", "hero.mot", "info.cfg"]);
+        let cfg = String::from_utf8(get(&found, "info.cfg").to_vec()).unwrap();
+        assert_eq!(
+            cfg,
+            "v2;\r\n\r\nNAME \"hero\";\r\n\r\nIMG 0, \"hero.img\";\r\nIMG_END;\r\n\r\nMATERIAL_ANIME 0;\r\nVERTEX_ANIME \"Body\";\r\nMODEL \"hero.mds\";\r\nBODY_SIZE 0.00, 0.00, 0.00;\r\n\r\n\
+             MOTION 0, \"hero.mot\", \"hero.bbp\", \"hero.wgt\";\r\nKEY_START;\r\n\tKEY \"wave\", 1, 31, 1.00;\r\nKEY_END;\r\nMOTION_END;\r\n"
+        );
+        // the frames are the glTF's nodes; the skin weighs the quad's corners to the bones
+        let model = crate::mds::parse(get(&found, "hero.mds")).unwrap();
+        let frames: Vec<(&str, i32)> = model.nodes.iter().map(|node| (node.name.as_str(), node.parent)).collect();
+        assert_eq!(frames, [("Rig", -1), ("Body", 0), ("hips", 0), ("arm", 2)]);
+        let weights = crate::mot::parse(get(&found, "hero.wgt")).unwrap();
+        let by_bone: Vec<(i32, i32, usize)> = weights.iter().map(|l| (l.frame, l.target, l.keys.len())).collect();
+        assert_eq!(by_bone, [(1, 2, 4), (1, 3, 2)]);
+        let bind = crate::mot::parse_bbp(get(&found, "hero.bbp")).unwrap();
+        assert_eq!((bind.len(), bind[3][13]), (4, 15.0));
+        // one rotation list, the arm's: the rest at 0 and a key a frame over the KEY's frames
+        let lists = crate::mot::parse(get(&found, "hero.mot")).unwrap();
+        assert_eq!(lists.len(), 1);
+        assert_eq!((lists[0].frame, lists[0].kind, lists[0].keys.len()), (3, 0, 32));
+        let w = lists[0].keys[31].1[0];
+        assert!((w - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-6, "{w}");
+        // read back: the pack's own export has the same meshes, skin and motion as the glTF given
+        let exported = load_from_folder(&folder_of(&export(&built).unwrap()), "hero.gltf").unwrap();
+        let given = load_from_disk(&path).unwrap();
+        assert!(from_gltf::changed_character_meshes(&exported, &given, &model).unwrap().is_empty());
+        let unchanged =
+            crate::motions::build(&exported, &given, &model, get(&found, "hero.mot"), cfg.as_bytes()).unwrap();
+        assert!(unchanged.is_none());
+        // and building the glTF given over the pack changes nothing
+        assert_eq!(build(&folder, &built).unwrap(), built);
+        // a skin needs an animation, which carries the bind pose
+        let path = rigged_gltf(&folder, false);
+        let error = new_pack(&path, &prop_template(), "prop", "hero").unwrap_err().to_string();
+        assert!(error.contains("animation"), "{error}");
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    /// The glTF as Blender's importer and exporter give a character back: extras dropped, every
+    /// rigid mesh of a skinned model moved off its node onto a child node of its name (an object
+    /// parented to its bone), names given twice numbered .001 on in the order the nodes were made
+    /// (a skinned model's bones and objects apart), and the nodes in post-order (children first).
+    pub(crate) fn blender_like(gltf: &Gltf) -> Gltf {
+        use crate::json::Value;
+        let mut json = gltf.json.clone();
+        let strip = |value: &mut Value| {
+            if let Value::Object(items) = value {
+                items.retain(|(key, _)| key != "extras");
+            }
+        };
+        let skinned = json.get("skins").and_then(Value::as_list).is_some_and(|skins| !skins.is_empty());
+        let Some(Value::List(mut nodes)) = json.get("nodes").cloned() else {
+            return Gltf { json, buffers: gltf.buffers.clone() };
+        };
+        nodes.iter_mut().for_each(strip);
+        for key in ["meshes", "materials"] {
+            if let Some(Value::List(list)) = json.get_mut(key) {
+                list.iter_mut().for_each(strip);
+            }
+        }
+        if skinned {
+            for gi in 0..nodes.len() {
+                if nodes[gi].has("mesh") && !nodes[gi].has("skin") {
+                    let mesh = nodes[gi].get("mesh").unwrap().clone();
+                    let name = nodes[gi].get("name").cloned().unwrap_or(Value::Null);
+                    if let Value::Object(items) = &mut nodes[gi] {
+                        items.retain(|(key, _)| key != "mesh");
+                    }
+                    nodes.push(crate::object! {"name" => name, "mesh" => mesh});
+                    let child = Value::Int(nodes.len() as i64 - 1);
+                    match nodes[gi].get_mut("children") {
+                        Some(Value::List(children)) => children.push(child),
+                        _ => nodes[gi].set("children", Value::List(vec![child])),
+                    }
+                }
+            }
+        }
+        let mut seen: BTreeMap<(bool, String), usize> = BTreeMap::new();
+        for node in nodes.iter_mut() {
+            let Some(name) = node.get("name").and_then(Value::as_str).map(str::to_string) else {
+                continue;
+            };
+            // a skinned model's nodes are bones, named apart from objects; a rigid one's all objects
+            let count = seen.entry((skinned && node.has("mesh"), name.clone())).or_insert(0);
+            if *count > 0 {
+                node.set("name", Value::Str(format!("{name}.{:03}", *count)));
+            }
+            *count += 1;
+        }
+        // post-order from the scene's roots
+        let children = |node: &Value| -> Vec<usize> {
+            node.get("children")
+                .and_then(Value::as_list)
+                .map_or(Vec::new(), |list| list.iter().filter_map(|c| c.as_int()).map(|c| c as usize).collect())
+        };
+        let roots: Vec<usize> = json.get("scenes").and_then(Value::as_list).unwrap()[0]
+            .get("nodes")
+            .unwrap()
+            .as_list()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_int().unwrap() as usize)
+            .collect();
+        let mut order = Vec::new();
+        fn visit(at: usize, nodes: &[Value], children: &dyn Fn(&Value) -> Vec<usize>, order: &mut Vec<usize>) {
+            for c in children(&nodes[at]) {
+                visit(c, nodes, children, order);
+            }
+            order.push(at);
+        }
+        for root in roots {
+            visit(root, &nodes, &children, &mut order);
+        }
+        let mut new_of = vec![0i64; nodes.len()];
+        for (new, &old) in order.iter().enumerate() {
+            new_of[old] = new as i64;
+        }
+        let renumber = |value: &mut Value| {
+            if let Some(old) = value.as_int() {
+                *value = Value::Int(new_of[old as usize]);
+            }
+        };
+        let mut reordered: Vec<Value> = order.iter().map(|&old| nodes[old].clone()).collect();
+        for node in reordered.iter_mut() {
+            if let Some(Value::List(list)) = node.get_mut("children") {
+                list.iter_mut().for_each(renumber);
+            }
+        }
+        json.set("nodes", Value::List(reordered));
+        if let Some(Value::List(scenes)) = json.get_mut("scenes") {
+            for scene in scenes {
+                if let Some(Value::List(list)) = scene.get_mut("nodes") {
+                    list.iter_mut().for_each(renumber);
+                }
+            }
+        }
+        if let Some(Value::List(skins)) = json.get_mut("skins") {
+            for skin in skins {
+                if let Some(Value::List(list)) = skin.get_mut("joints") {
+                    list.iter_mut().for_each(renumber);
+                }
+                if let Some(skeleton) = skin.get_mut("skeleton") {
+                    renumber(skeleton);
+                }
+            }
+        }
+        if let Some(Value::List(animations)) = json.get_mut("animations") {
+            for animation in animations {
+                if let Some(Value::List(channels)) = animation.get_mut("channels") {
+                    for channel in channels {
+                        if let Some(node) = channel.get_mut("target").and_then(|t| t.get_mut("node")) {
+                            renumber(node);
+                        }
+                    }
+                }
+            }
+        }
+        Gltf { json, buffers: gltf.buffers.clone() }
+    }
+
+    /// Changes each value of an attribute of the meshes of the nodes named `name` in place.
+    pub(crate) fn edit_attribute(gltf: &mut Gltf, name: &str, attribute: &str, edit: &dyn Fn(&mut [f32])) {
+        use crate::json::Value;
+        let j = gltf.json.clone();
+        let at = |list: &str, i: &Value| from_gltf::index(j.get(list).unwrap(), i).unwrap().clone();
+        let nodes = j.get("nodes").unwrap().as_list().unwrap();
+        for node in nodes.iter().filter(|n| n.get("name").and_then(Value::as_str) == Some(name) && n.has("mesh")) {
+            let mesh = at("meshes", node.get("mesh").unwrap());
+            for primitive in mesh.get("primitives").unwrap().as_list().unwrap() {
+                let accessor = at("accessors", primitive.get("attributes").unwrap().get(attribute).unwrap());
+                let view = at("bufferViews", accessor.get("bufferView").unwrap());
+                let base = view.get("byteOffset").and_then(|v| v.as_int()).unwrap_or(0) as usize;
+                let n = match accessor.get("type").unwrap().as_str().unwrap() {
+                    "VEC2" => 2,
+                    "VEC3" => 3,
+                    _ => 4,
+                };
+                for k in 0..accessor.get("count").unwrap().as_int().unwrap() as usize {
+                    let bytes = &mut gltf.buffers[0][base + 4 * n * k..base + 4 * n * (k + 1)];
+                    let mut values: Vec<f32> =
+                        bytes.chunks(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+                    edit(&mut values);
+                    bytes.copy_from_slice(&f32s(&values));
+                }
+            }
+        }
+    }
+
+    /// A character pack: bones root and hip (10 up), a skinned quad `skin` (its lower corners on the
+    /// root, the upper 40% root and 60% hip, and an empty weight block for the hat's bone as the
+    /// disc's files have), and a rigid triangle `hat` on frame `hat` 5 above the hip.
+    fn character_pack() -> Vec<u8> {
+        let mut model = Mds::new();
+        model.nodes.push(Node::new("root", -1));
+        let mut hip = Node::new("hip", 0);
+        hip.matrix[13] = 10.0;
+        model.nodes.push(hip);
+        let mut skin = quad(0.0, "body01");
+        skin.vertices = vec![[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [0.0, 12.0, 0.0, 1.0], [1.0, 12.0, 0.0, 1.0]];
+        model.nodes.push(Node { mdt: Some(skin), ..Node::new("skin", 0) });
+        let mut hat = Node { mdt: Some(quad(0.0, "body01")), ..Node::new("hat", 1) };
+        hat.matrix[13] = 5.0;
+        model.nodes.push(hat);
+        let wgt = crate::mot::build(&[
+            crate::mot::KeyList::new(
+                2,
+                0,
+                20,
+                vec![
+                    (0, [100.0, 0.0, 0.0, 0.0]),
+                    (1, [100.0, 0.0, 0.0, 0.0]),
+                    (2, [40.0, 0.0, 0.0, 0.0]),
+                    (3, [40.0, 0.0, 0.0, 0.0]),
+                ],
+            ),
+            crate::mot::KeyList::new(2, 1, 20, vec![(2, [60.0, 0.0, 0.0, 0.0]), (3, [60.0, 0.0, 0.0, 0.0])]),
+            crate::mot::KeyList::new(2, 3, 20, Vec::new()),
+        ])
+        .unwrap();
+        let mut bind = model.world_matrices().unwrap();
+        bind[1][13] = 9.5; // the bind pose differs from the rest, as the disc's often do
+        let mut picture = im3::Image::new("body01", im3::Format::Ct32, 8, 8);
+        picture.pixels = Some([200, 100, 50, 0x80].repeat(64));
+        let cfg = "v2;\nVERTEX_ANIME \"skin\";\nMODEL \"c.mds\";\nMOTION 0, \"\", \"c.bbp\", \"c.wgt\";\nMOTION_END;\n";
+        pack(&[
+            ("info.cfg", cfg.as_bytes()),
+            ("c.mds", &mds::build(&model).unwrap()),
+            ("c.wgt", &wgt),
+            ("c.bbp", &crate::mot::build_bbp(&bind).unwrap()),
+            ("c.img", &im3::write(&[picture], None).unwrap()),
+        ])
+    }
+
+    /// Every character pack of an extracted disc (C2S_CORPUS) whose model exports: its export as
+    /// Blender gives it back (blender_like) changes no mesh; one mesh moved changes that mesh
+    /// alone, and rebuilt it leaves every other frame and weight as they were and keeps its own
+    /// vertices' weights.
+    #[test]
+    fn corpus_characters_compare_by_value() {
+        use rayon::prelude::*;
+        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
+            return;
+        };
+        let packs: Vec<std::path::PathBuf> = crate::files_under(Path::new(&corpus))
+            .unwrap()
+            .into_iter()
+            .filter(|path| path.extension().is_some_and(|e| e.eq_ignore_ascii_case("chr")))
+            .collect();
+        let check = |path: &std::path::PathBuf| -> std::result::Result<bool, String> {
+            let fail = |what: String| format!("{}: {what}", path.display());
+            let data = std::fs::read(path).unwrap();
+            let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+            let (pack, _) = crate::tree::model_pack(&data, &stem);
+            let Ok(files) = export(&pack) else {
+                return Ok(false);
+            };
+            let (source, names) = unpacked(&pack).unwrap();
+            let template = source.get(&names.model).unwrap();
+            let model = mds::parse(template).unwrap();
+            let exported = load_from_folder(&folder_of(&files), &format!("{}.gltf", names.stem)).unwrap();
+            let blender = blender_like(&exported);
+            let changed =
+                from_gltf::changed_character_meshes(&exported, &blender, &model).map_err(|e| fail(e.to_string()))?;
+            if !changed.is_empty() {
+                let named: Vec<&str> = changed
+                    .iter()
+                    .map(|id| match id {
+                        MeshId::Frame(f) => model.nodes[*f].name.as_str(),
+                        MeshId::New(name) => name.as_str(),
+                    })
+                    .collect();
+                return Err(fail(format!("unedited, changed {named:?}")));
+            }
+            // the first mesh with a triangle, moved
+            let geometry = from_gltf::frame_geometry(&blender, &model).unwrap();
+            let ids = from_gltf::mesh_ids(&blender.json, &model).unwrap();
+            let Some((gi, id)) = ids.into_iter().find(|(_, id)| geometry.get(id).is_some_and(|g| !g.groups.is_empty()))
+            else {
+                return Ok(true);
+            };
+            let node_name = blender.json.get("nodes").unwrap().as_list().unwrap()[gi]
+                .get("name")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string();
+            let mut moved = blender_like(&exported);
+            edit_attribute(&mut moved, &node_name, "POSITION", &|p| p[0] += 3.0);
+            let changed = from_gltf::changed_character_meshes(&exported, &moved, &model).unwrap();
+            if changed != BTreeSet::from([id.clone()]) {
+                return Err(fail(format!("{node_name} moved, changed {changed:?}")));
+            }
+            let pose = names.pose.as_str().and_then(|name| source.get(name));
+            let weights = source.get(&names.weights).filter(|w| !w.is_empty());
+            let built = from_gltf::import_gltf(&moved, template, pose, weights, Some(&changed))
+                .map_err(|e| fail(e.to_string()))?;
+            let MeshId::Frame(frame) = id else {
+                return Err(fail(format!("{node_name} stands for no frame")));
+            };
+            let rebuilt = mds::parse(&built.mds).unwrap();
+            for (i, node) in model.nodes.iter().enumerate() {
+                if i != frame && rebuilt.nodes[i] != *node {
+                    return Err(fail(format!("{node_name} moved, frame {} changed", node.name)));
+                }
+            }
+            if let Some(weights) = weights {
+                let (old, new) = (crate::mot::parse(weights).unwrap(), crate::mot::parse(&built.wgt).unwrap());
+                let others = |lists: &[crate::mot::KeyList]| -> Vec<crate::mot::KeyList> {
+                    lists.iter().filter(|l| l.frame != frame as i32 && !l.keys.is_empty()).cloned().collect()
+                };
+                if others(&old) != others(&new) {
+                    return Err(fail(format!("{node_name} moved, other meshes' weights changed")));
+                }
+                // its vertices' skins, rounded to a tenth of a percent: those rebuilt are the original's
+                let vertices = model.nodes[frame].mdt.as_ref().map_or(0, |t| t.vertices.len());
+                let skins = |lists: &[crate::mot::KeyList], count: usize| -> BTreeSet<Vec<(i64, i64)>> {
+                    to_gltf::vertex_weights(lists, frame, count)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|mut skin| {
+                            skin.sort_by_key(|(bone, _)| *bone);
+                            skin.into_iter().map(|(bone, w)| (bone, (w * 1000.0).round() as i64)).collect()
+                        })
+                        .collect()
+                };
+                let count = rebuilt.nodes[frame].mdt.as_ref().map_or(0, |t| t.vertices.len());
+                let (before, after) = (skins(&old, vertices), skins(&new, count));
+                if !after.is_subset(&before) {
+                    return Err(fail(format!("{node_name} moved, its weights changed: {after:?} not in {before:?}")));
+                }
+            }
+            Ok(true)
+        };
+        let results: Vec<std::result::Result<bool, String>> = packs.par_iter().map(check).collect();
+        let failures: Vec<&String> = results.iter().filter_map(|r| r.as_ref().err()).collect();
+        let checked = results.iter().filter(|r| matches!(r, Ok(true))).count();
+        assert!(
+            failures.is_empty(),
+            "{} of {} packs: {:#?}",
+            failures.len(),
+            checked + failures.len(),
+            &failures[..failures.len().min(20)]
+        );
+        assert!(checked > 1500, "{checked} packs checked");
+    }
+
+    /// The folder of a glTF: the export's files with the glTF and its buffer replaced.
+    fn folder_with(exported: &[(String, Vec<u8>)], gltf: &Gltf, name: &str) -> std::path::PathBuf {
+        let mut files: Vec<(String, Vec<u8>)> = exported.to_vec();
+        for (path, content) in files.iter_mut() {
+            if *path == "c.gltf" {
+                *content = crate::json::dumps_compact(&gltf.json).into_bytes();
+            } else if *path == "c.bin" {
+                *content = gltf.buffers[0].clone();
+            }
+        }
+        written(&files, name)
+    }
+
+    #[test]
+    fn a_character_through_blender_rebuilds_only_the_mesh_edited_with_its_weights() {
+        let pack = character_pack();
+        let exported = export(&pack).unwrap();
+        let blender = blender_like(&load_from_folder(&folder_of(&exported), "c.gltf").unwrap());
+        // unedited: the same pack, bind pose, empty weight blocks and all
+        let folder = folder_with(&exported, &blender, "blender-unedited");
+        assert_eq!(build(&folder, &pack).unwrap(), pack);
+        std::fs::remove_dir_all(folder).unwrap();
+        // weights renormalised by a hair: still the same
+        let mut renormalised = blender_like(&load_from_folder(&folder_of(&exported), "c.gltf").unwrap());
+        edit_attribute(&mut renormalised, "skin_skin", "WEIGHTS_0", &|w| {
+            let total: f32 = w.iter().map(|x| x * 1.003).sum();
+            w.iter_mut().for_each(|x| *x = *x * 1.003 / total);
+        });
+        let folder = folder_with(&exported, &renormalised, "blender-renormalised");
+        assert_eq!(build(&folder, &pack).unwrap(), pack);
+        std::fs::remove_dir_all(folder).unwrap();
+        let original = mds::parse(rebuild::read_member(&pack, &["c.mds".to_string()]).unwrap()).unwrap();
+        let weights_of =
+            |built: &[u8]| crate::mot::parse(rebuild::read_member(built, &["c.wgt".to_string()]).unwrap()).unwrap();
+        // the hat moved: the hat alone is rebuilt, in its frame's space
+        let mut moved = blender_like(&load_from_folder(&folder_of(&exported), "c.gltf").unwrap());
+        edit_attribute(&mut moved, "hat", "POSITION", &|p| p[0] += 2.0);
+        let folder = folder_with(&exported, &moved, "blender-hat");
+        let built = build(&folder, &pack).unwrap();
+        std::fs::remove_dir_all(folder).unwrap();
+        let model = mds::parse(rebuild::read_member(&built, &["c.mds".to_string()]).unwrap()).unwrap();
+        assert_eq!(&model.nodes[..3], &original.nodes[..3]);
+        let xs: BTreeSet<i64> =
+            model.nodes[3].mdt.as_ref().unwrap().vertices.iter().map(|v| v[0].round() as i64).collect();
+        assert_eq!(xs, BTreeSet::from([2, 3]));
+        assert_eq!(weights_of(&built), weights_of(&pack));
+        // a weight painted: the skin alone is rebuilt, its weights as given, the empty block gone
+        let mut painted = blender_like(&load_from_folder(&folder_of(&exported), "c.gltf").unwrap());
+        edit_attribute(&mut painted, "skin_skin", "WEIGHTS_0", &|w| {
+            if (w[0] - 0.4).abs() < 1e-3 {
+                w[0] = 0.2;
+                w[1] = 0.8;
+            }
+        });
+        let folder = folder_with(&exported, &painted, "blender-painted");
+        let built = build(&folder, &pack).unwrap();
+        std::fs::remove_dir_all(folder).unwrap();
+        let model = mds::parse(rebuild::read_member(&built, &["c.mds".to_string()]).unwrap()).unwrap();
+        assert_eq!(model.nodes[3], original.nodes[3]);
+        let mut skins: Vec<(i64, Vec<(i32, i64)>)> = Vec::new();
+        let mesh = model.nodes[2].mdt.as_ref().unwrap();
+        for (v, vertex) in mesh.vertices.iter().enumerate() {
+            let mut skin: Vec<(i32, i64)> = weights_of(&built)
+                .iter()
+                .flat_map(|l| l.keys.iter().filter(|k| k.0 == v as i64).map(move |k| (l.target, k.1[0].round() as i64)))
+                .collect();
+            skin.sort();
+            skins.push((vertex[1].round() as i64, skin));
+        }
+        skins.sort();
+        assert_eq!(
+            skins,
+            [(0, vec![(0, 100)]), (0, vec![(0, 100)]), (12, vec![(0, 20), (1, 80)]), (12, vec![(0, 20), (1, 80)])]
+        );
+        assert!(weights_of(&built).iter().all(|l| !l.keys.is_empty()));
+        // the bind pose kept
+        let bbp = ["c.bbp".to_string()];
+        assert_eq!(rebuild::read_member(&built, &bbp), rebuild::read_member(&pack, &bbp));
     }
 
     /// A quad of two triangles at x offset `x`, as a strip, textured with material 0.

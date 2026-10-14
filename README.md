@@ -135,7 +135,9 @@ c2 play modded.iso
   without sharing the scripts.
 - [Example mod](docs/examples/calculator/calculator.c): a calculator with its
   own model, screen and sounds (`c2 build extracted/scripts dc2.iso -o
-  calculator.iso --mod calculator --mods docs/examples`).
+  calculator.iso --mod calculator --mods docs/examples`), and
+  [a character of its own](docs/examples/new-character/README.md), rigged
+  and animated in Blender.
 - [The script format](docs/format.md), [assembly](docs/assembly.md) and
   [how the tools work](docs/internals.md).
 

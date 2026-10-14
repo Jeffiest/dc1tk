@@ -203,8 +203,13 @@ lines that say which of the disc's files to make them like:
   each material's base colour PNG as a picture of the pack (sides powers
   of two), its texture named after the image. `model:uki`, the fishing
   float, is a static prop's pack: its `info.cfg` names the new
-  `calc.img` and `calc.mds`, with no motion. Skinned meshes are refused;
-  parent the parts to nodes instead.
+  `calc.img` and `calc.mds`, with no motion. A rigged character works too:
+  its armature becomes the pack's skeleton, its skinned meshes are skinned
+  as the game's are and its actions become motions `set_chara_motion`
+  plays by name; take a character's model as the template
+  (`model:p01_01a`, a villager). See
+  [the new-character example](examples/new-character/README.md) and
+  [usage](usage.md#mods), "New characters".
 - `build` lists them as new files; `c2 mod asset built.iso NAME
   mods/calculator/ui.img --as png` (or `calc.chr --as gltf`) copies them
   back out of a built image to check. The rules are in [the
