@@ -141,7 +141,7 @@ these codes, which the engine's message layout reads (`nd_meswin.cpp`,
 | --- | --- |
 | `\n` | a new line |
 | `<page>` | a page break: the window waits for the button before the rest |
-| `[Number1]` ... `[Number16]` | a number set with `set_message_value(window, slot, value)`; negative numbers and 0 show |
+| `[Number1]` ... `[Number16]` | a number set with `set_message_value(window, slot, value)` *before* the text is shown: `show_message` lays the numbers out at once, so a value set after it shows 0 (checked in the game); negative numbers and 0 show |
 | `[文字列１]` ... `[文字列１６]` | text set with `set_message_string(window, slot, text)`; the slot is in full-width digits |
 | `[アイテム１]` ... | an item's name, set with `set_message_item(window, slot, item)` |
 | `(O)` `(X)` `(A)` `(#)` | the circle, cross, triangle and square buttons |

@@ -2,7 +2,7 @@
 //
 // Text is shown at once, without the game's button prompt, in the top slot the game uses for its
 // hints. It can hold the codes the game's own text uses: [Number1] to [Number16] for numbers set
-// with set_message_value, button icons such as (X), (O), [r1] and [select], \n for a new line, and
+// with set_message_value before the text is shown (showing it lays the numbers out), button icons such as (X), (O), [r1] and [select], \n for a new line, and
 // <page> for a page break (see docs/modding.md, "Message text"). Window 0 is the event window,
 // which stays on screen after an event ends until closed (see the modding guide).
 

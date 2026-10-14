@@ -220,7 +220,9 @@ code keeps compiling to its own bytes. What the compiler lacks today
    wide strings, string literals as `char` arrays; all of it works in mod
    patches. Conformance: 117 of 121 programs supported; refused: comparing
    or subtracting two pointers (the VM gives no address as a number) and
-   `double`. Being tried in the game (`c-test.iso`, 12 checks on screen).
+   `double`. Checked in the game: a mod patch's 12 checks (global arrays,
+   structs, pointers, function pointers, varargs, strict conversion, static
+   locals, unsigned, switch and goto) all pass on the PS2.
 6. **`double` is left out on purpose.** C89 asks for about 10 significant
    digits and the VM's floats are 32-bit, so code that uses `double` or
    `long double` is refused with a clear error rather than given 32-bit
@@ -283,7 +285,7 @@ do:
    back into `.mot` keys and `info.cfg` `KEY`s: unedited exports and Blender
    round trips change nothing, an edited motion is written in place (or
    moved to the timeline's end when its length or shared frames change), and
-   a new action becomes a new `KEY`. Set Blender to 30 fps before importing.
+   a new action becomes a new `KEY`. Checked in the game (Max's idle). Set Blender to 30 fps before importing.
    Left: vertex, material alpha/colour and visibility lists go out to glTF
    only as carried data (morph targets, `KHR_animation_pointer`,
    `KHR_node_visibility` would expose them), motion sets 1-7 and motion-only
