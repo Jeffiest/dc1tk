@@ -662,6 +662,19 @@ fn override_starts_a_wrapper_of_a_native_with_its_parameters() {
     assert!(after.contains("call place_monster_wrapper_m_7") && after.contains("call place_monster_wrapper_m_1"));
 }
 
+#[test]
+fn a_patch_that_adds_no_global_keeps_the_scripts_count() {
+    let patch = "#pragma target monster golem\n\n#pragma override\nvoid start(void)\n{\n    print(\"roar\");\n}\n";
+    let folder = TempDir::new("patches-global-count");
+    let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch)])]);
+    // some act scripts count no globals at all: the compiler's 0xCCCCCCCC fill
+    let script = "dungeon/monster/e33a_golem.c";
+    write(&root, script, &MONSTER.replace("PROGRAM(0", "#pragma globals -858993460\n\nPROGRAM(0"));
+    let tools = Tools::new();
+    let unpatched = build::compiled(&root.join(script), &tools.toolchain(), None, None, None, None).unwrap();
+    assert_eq!(compiled_with(&root, &plan_of(&dirs, &root).unwrap(), script, &tools), unpatched);
+}
+
 /// What each script compiles to with the mods as the folder holds them now.
 fn mod_bytes(dirs: &[PathBuf], root: &Path, tools: &Tools, scripts: &[&str]) -> Vec<Vec<u8>> {
     let (texts, _) = mods::overlay(dirs, root, &IndexMap::new()).unwrap();

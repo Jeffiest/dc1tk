@@ -815,9 +815,12 @@ pub fn merged(
         globals.push(node!({"name": format!("unnamed_global_{}", globals.len()), "type": "int"}));
     }
     done.added.extend(added_globals.iter().map(|declared| text(declared, "name").to_string()));
+    // a patch that adds no global leaves the count as the script has it, which in some scripts
+    // is no count at all (0xCCCCCCCC, the compiler's fill)
+    let count = if added_globals.is_empty() { program["global_num"].clone() } else { Node::Null };
     globals.extend(added_globals);
     done.libraries.extend(libraries);
-    let count = globals.len();
+    let count = if count.is_null() { Node::from(globals.len() as i64) } else { count };
     functions.extend(appended);
     let natives = if truthy(&program["natives"]) { program["natives"].clone() } else { patch["natives"].clone() };
     Ok(program
@@ -825,7 +828,7 @@ pub fn merged(
         .with("functions", functions)
         .with("programs", programs)
         .with("globals", globals)
-        .with("global_num", count as i64)
+        .with("global_num", count)
         .with("declarations", merged_declarations(&program["declarations"], &patch["declarations"]))
         .with("natives", natives))
 }
