@@ -49,6 +49,7 @@ c2 disassemble <script.stb>                      text assembly, for debugging
 c2 assemble <script.asm> -o <script.stb>
 c2 defs learn <source> <definition set>
 c2 defs rename <definition set> OLD NEW --in extracted/scripts   rename a flag or other constant
+c2 defs migrate extracted/scripts mods/my-mod                    give an older tree or mod the set's renames
 c2 defs disc extracted/disc <definition set>     record which disc a set is for
 c2 natives <ChronicleTwo checkout>
 ```
@@ -810,6 +811,14 @@ or mod given with `--in`, keeping unedited files unedited:
 
 ```
 c2 defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
+```
+
+The set records each rename in `renamed.json`. A tree or mod made before
+a rename still says the old name and stops compiling (the error notes the
+new name); `defs migrate` gives it every recorded rename:
+
+```
+c2 defs migrate extracted/scripts mods/my-mod
 ```
 
 ## Checking a C toolchain can read the output

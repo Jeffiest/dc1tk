@@ -886,8 +886,8 @@ pub const FONT_W: i32 = 15;
 
 /// The widths of the icons FD00 to FD31 (GaijiDataTbl, font.cpp's data).
 const ICON_WIDTHS: [i32; 50] = [
-    86, 110, 32, 32, 32, 32, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 26, 26, 26, 26, 26, 66, 56, 40, 22, 0, 0, 0,
-    0, 0, 0, 12, 16, 8, 10, 10, 26, 26, 26, 28, 28, 16, 16, 16, 26, 28, 28, 16,
+    86, 110, 32, 32, 32, 32, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 26, 26, 26, 26, 26, 66, 56, 40, 22, 0, 0,
+    0, 0, 0, 0, 12, 16, 8, 10, 10, 26, 26, 26, 28, 28, 16, 16, 16, 26, 28, 28, 16,
 ];
 
 /// How far each line of a message moves the pen, in pixels, as ClsMes::MakeMesWinTbl lays it out
@@ -957,7 +957,9 @@ pub fn width_warnings(text: &str, reference: &[u8], path: &str, fonts: &Fonts) -
             let what = format!("{path} @{id} line {}: {width} pixels wide", line + 1);
             if width > file_widest {
                 out.push(format!("{what}, wider than any line of the file on the disc ({file_widest}); the game cuts it off or draws it past its window"));
-            } else if let Some(own) = own.map(widest).filter(|&own| !grows_with_text(&located.name) && width > own + FONT_W) {
+            } else if let Some(own) =
+                own.map(widest).filter(|&own| !grows_with_text(&located.name) && width > own + FONT_W)
+            {
                 out.push(format!("{what}, the disc's text {own}; a menu's window or column may cut it off"));
             }
         }
@@ -1365,7 +1367,9 @@ pub(crate) mod tests {
         };
         let mut pages = Vec::new();
         for page in 0..4 {
-            pages.push(font::Page::read(&std::fs::read(root.join(format!("meswin/FontTex_{page}.tm2"))).unwrap()).unwrap());
+            pages.push(
+                font::Page::read(&std::fs::read(root.join(format!("meswin/FontTex_{page}.tm2"))).unwrap()).unwrap(),
+            );
         }
         for glyph in 94..2432 {
             let (page, at) = (glyph / 0x260, glyph % 0x260);

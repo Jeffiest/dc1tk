@@ -57,7 +57,10 @@ fn count_pattern() -> &'static Regex {
 fn count(cfg: &[u8]) -> Result<(usize, std::ops::Range<usize>)> {
     let found = count_pattern().captures(cfg).ok_or_else(|| Error::invalid("the map table has no MAP_NAME_NUM"))?;
     let digits = found.get(1).unwrap();
-    let number = std::str::from_utf8(digits.as_bytes()).unwrap().parse().map_err(|_| Error::invalid("MAP_NAME_NUM is too large"))?;
+    let number = std::str::from_utf8(digits.as_bytes())
+        .unwrap()
+        .parse()
+        .map_err(|_| Error::invalid("MAP_NAME_NUM is too large"))?;
     Ok((number, digits.range()))
 }
 
@@ -91,7 +94,9 @@ pub fn with_new_maps(cfg: &[u8], maps: &[NewMap]) -> Result<(Vec<u8>, Vec<i64>)>
     }
     let mut numbers = Vec::new();
     for (at, map) in maps.iter().enumerate() {
-        if rows.iter().any(|(name, _)| name.eq_ignore_ascii_case(map.name.as_bytes())) || maps[..at].iter().any(|known| known.name == map.name) {
+        if rows.iter().any(|(name, _)| name.eq_ignore_ascii_case(map.name.as_bytes()))
+            || maps[..at].iter().any(|known| known.name == map.name)
+        {
             return Err(Error::invalid(format!("the map table already has a map {}", map.name)));
         }
         let Some((_, like)) = rows.iter().find(|(name, _)| name.as_slice() == map.like.as_bytes()) else {
@@ -227,7 +232,8 @@ MAP_NAME \"\",\"\",\"\",0,0;// 1 \r\nMAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\
             return;
         };
         for language in LANGUAGES {
-            let cfg = std::fs::read(std::path::Path::new(&corpus).join(startat::map_table_path(Some(language)))).unwrap();
+            let cfg =
+                std::fs::read(std::path::Path::new(&corpus).join(startat::map_table_path(Some(language)))).unwrap();
             assert!(buffer_use(&cfg).unwrap() < BUFFER / 2, "map{language}.cfg");
             let maps = [NewMap { name: "m05x".into(), like: "m05".into(), title: None }];
             let (table, numbers) = with_new_maps(&cfg, &maps).unwrap();

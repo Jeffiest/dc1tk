@@ -1677,7 +1677,10 @@ mod tests {
         assert_eq!(event.program, Num::Int(500));
         assert_eq!(points[2].data, PointData::None);
         let PointData::Anime(anime) = &template.points.as_ref().unwrap()[1].data else { panic!() };
-        assert_eq!((anime.drives, anime.mode, anime.step[1], anime.flags), (Num::Int(2), Num::Int(1), Num::Float(0.02), None));
+        assert_eq!(
+            (anime.drives, anime.mode, anime.step[1], anime.flags),
+            (Num::Int(2), Num::Int(1), Num::Float(0.02), None)
+        );
         assert_eq!(map.cameras.as_ref().unwrap()[0].rects[0].max[2], Num::Float(95.3663));
     }
 

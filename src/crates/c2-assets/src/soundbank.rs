@@ -1696,7 +1696,9 @@ impl Bank {
                 let sample = split
                     .as_ref()
                     .and_then(|split| self.hd.sample_sets.get(split.get("sample_set") as usize).cloned().flatten())
-                    .and_then(|set| set.samples.first().and_then(|&at| self.hd.samples.get(at as usize).cloned().flatten()));
+                    .and_then(|set| {
+                        set.samples.first().and_then(|&at| self.hd.samples.get(at as usize).cloned().flatten())
+                    });
                 Some((program.record.clone(), split, sample))
             }
             None => None,

@@ -1,5 +1,5 @@
 //! c2 defs: learn a definition set from edited source, report how much of a disc it names, list
-//! what it leaves unnamed, rename a constant of its headers, and record which disc it is for.
+//! what it leaves unnamed, rename a constant of its headers, bring trees made before a rename up to date, and record which disc it is for.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -55,6 +55,15 @@ pub enum DefsCommand {
         #[command(flatten)]
         common: Common,
     },
+    /// Give decompiled trees and mods made before a definition set renamed constants the new
+    /// names (every rename the sets record in renamed.json).
+    Migrate {
+        /// Decompiled trees or mod folders.
+        #[arg(required = true)]
+        folders: Vec<PathBuf>,
+        #[command(flatten)]
+        common: Common,
+    },
     /// Record which disc a definition set is for: its scripts' hashes.
     Disc {
         extracted: PathBuf,
@@ -105,6 +114,17 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
             for (folder, changed) in &renamed.folders {
                 println!(
                     "{} file{} renamed in {}",
+                    changed.len(),
+                    if changed.len() == 1 { "" } else { "s" },
+                    files::python_path(&folder.to_string_lossy())
+                );
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        DefsCommand::Migrate { folders, common } => {
+            for (folder, changed) in constants::migrate(&common.def_sets(), folders)? {
+                println!(
+                    "{} file{} given new names in {}",
                     changed.len(),
                     if changed.len() == 1 { "" } else { "s" },
                     files::python_path(&folder.to_string_lossy())

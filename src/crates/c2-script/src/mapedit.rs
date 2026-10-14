@@ -25,7 +25,9 @@ pub struct MapFiles {
 pub fn rule_folder(name: &str) -> String {
     let lower = name.to_lowercase();
     let chars: Vec<char> = lower.chars().collect();
-    let part = |from: usize, to: usize| chars.get(from..to.min(chars.len())).map(|slice| slice.iter().collect::<String>()).unwrap_or_default();
+    let part = |from: usize, to: usize| {
+        chars.get(from..to.min(chars.len())).map(|slice| slice.iter().collect::<String>()).unwrap_or_default()
+    };
     let mut folder = format!("map/{}/{}", part(0, 1), part(0, 3));
     let rest = if chars.len() >= 6 { part(3, 6) } else { String::new() };
     if !rest.is_empty() {
@@ -39,14 +41,17 @@ pub fn rule_folder(name: &str) -> String {
 /// where the rule never reaches) when exactly one .map of that name is on the disc.
 pub fn map_files(entries: &[Entry], name: &str) -> Result<MapFiles> {
     let lower = |text: &str| text.to_lowercase();
-    let has = |path: &str| entries.iter().find(|entry| lower(&entry.path) == lower(path)).map(|entry| entry.path.clone());
+    let has =
+        |path: &str| entries.iter().find(|entry| lower(&entry.path) == lower(path)).map(|entry| entry.path.clone());
     let file_name = format!("{}.map", lower(name));
     let ruled = format!("{}/{}", rule_folder(name), file_name);
     let map = match has(&ruled) {
         Some(path) => path,
         None => {
-            let found: Vec<&Entry> =
-                entries.iter().filter(|entry| lower(&entry.path).rsplit('/').next() == Some(file_name.as_str())).collect();
+            let found: Vec<&Entry> = entries
+                .iter()
+                .filter(|entry| lower(&entry.path).rsplit('/').next() == Some(file_name.as_str()))
+                .collect();
             match found.as_slice() {
                 [one] => one.path.clone(),
                 [] => return Err(Error::invalid(format!("the disc has no map {name}"))),
@@ -95,7 +100,10 @@ mod tests {
             entry("map/d/d06/b01/m07.map"),
         ];
         let s17 = map_files(&entries, "S17").unwrap();
-        assert_eq!((s17.map.as_str(), s17.mpk.as_deref(), s17.efp.as_deref()), ("map/s/s17/s17.map", Some("map/s/s17/s17.mpk"), None));
+        assert_eq!(
+            (s17.map.as_str(), s17.mpk.as_deref(), s17.efp.as_deref()),
+            ("map/s/s17/s17.map", Some("map/s/s17/s17.mpk"), None)
+        );
         assert_eq!(map_files(&entries, "i03h02").unwrap().map, "map/i/i03/h02/i03h02.map");
         assert_eq!(map_files(&entries, "m07").unwrap().folder, "map/d/d06/b01");
         assert!(map_files(&entries, "x99").is_err());

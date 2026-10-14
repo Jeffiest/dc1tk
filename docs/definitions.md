@@ -246,9 +246,20 @@ Each `--in` folder, a decompiled tree or a mod, gets the same renames in
 its source; a tree's files that held no edits stay unedited for `changes`
 and `mod save`. A fresh decompile then prints the new name everywhere, and
 every script compiles to the same bytes. The new name must not be declared
-anywhere yet. Renaming by hand works too, as long as the header and every
-use change together: a tree whose source still says the old name no longer
-compiles.
+anywhere yet.
+
+The set lists every rename in `renamed.json`, old name to new, so trees and
+mods made before one, which still say the old name, can catch up: building
+or checking them stops with `unknown variable FLAG_S17_E308_SEEN` and a note
+of its new name, and
+
+```
+c2 defs migrate extracted/scripts mods/my-mod
+```
+
+gives each folder every rename the set records, in order, keeping unedited
+files unedited. Renaming by hand works too, but then the rename is not in
+`renamed.json`, and trees made before it have to be fixed by hand.
 
 ### Libraries
 

@@ -12,8 +12,8 @@ use anyhow::{bail, Context, Result};
 use serde_json::{Map, Value};
 
 use c2_assets::cfg_text::Edit;
-use c2_assets::data_table::{self, Table as DataTable};
 use c2_assets::chest_data::{self, Chests};
+use c2_assets::data_table::{self, Table as DataTable};
 use c2_assets::dungeon_layout::{self, Layouts};
 use c2_assets::item_data::{self, Items};
 use c2_assets::monster_data::{self, Monsters, Patch};
@@ -276,7 +276,11 @@ pub fn apply_data(
             }
         };
         // the layouts name parts as a data:parts line of the build names them
-        let renamed = if table == "layouts" && !patches.is_empty() { Some(data_table::apply_patches(&elf, &patches)?) } else { None };
+        let renamed = if table == "layouts" && !patches.is_empty() {
+            Some(data_table::apply_patches(&elf, &patches)?)
+        } else {
+            None
+        };
         let loaded = load(table, renamed.as_deref().unwrap_or(&elf), &current)?;
         let mut change = DataChange { table: table.to_string(), changed: Vec::new(), files: Vec::new() };
         if let Table::Layouts(layouts) = &loaded {

@@ -697,7 +697,8 @@ pub fn build_with_instruments(
             if zones.len() == 1 { "" } else { "s" }
         ));
     }
-    let Some(index) = bank.pack.find("sq").into_iter().find(|&index| bank.pack.members[index].name.eq_ignore_ascii_case(sequence))
+    let Some(index) =
+        bank.pack.find("sq").into_iter().find(|&index| bank.pack.members[index].name.eq_ignore_ascii_case(sequence))
     else {
         bail!("the bank has no sequence {sequence}");
     };
@@ -709,7 +710,10 @@ pub fn build_with_instruments(
         let all: BTreeSet<usize> = (0..bank.vag_data.len()).collect();
         let size = bank.samples_size();
         crate::sounds::free_unused(&mut bank, &all)?;
-        notes.push(format!("music memory: {} bytes of samples nothing plays any more cut to stubs", size - bank.samples_size()));
+        notes.push(format!(
+            "music memory: {} bytes of samples nothing plays any more cut to stubs",
+            size - bank.samples_size()
+        ));
     } else {
         crate::sounds::free_unused(&mut bank, &old_vags)?;
     }
@@ -723,7 +727,10 @@ pub fn build_with_instruments(
         );
     }
     if let Some(region) = region {
-        notes.push(format!("music memory: samples {before:#X} -> {after:#X} bytes of {region:#X}, {:#X} free", region - after - 16));
+        notes.push(format!(
+            "music memory: samples {before:#X} -> {after:#X} bytes of {region:#X}, {:#X} free",
+            region - after - 16
+        ));
     }
     Ok((bank.build()?, notes))
 }
@@ -1050,11 +1057,13 @@ mod tests {
         let instrument =
             Instrument { program: 100, zones: vec![zone(&low, 0, 59, 48), zone(&high, 60, 127, 60)], like: Some(1) };
         let (built, notes) =
-            build_with_instruments(&tune_playing(100), &original, "x_000.sq", &[instrument], Some(MUSIC_REGION)).unwrap();
+            build_with_instruments(&tune_playing(100), &original, "x_000.sq", &[instrument], Some(MUSIC_REGION))
+                .unwrap();
         assert!(notes[0].starts_with("instrument: program 100 added (2 samples)"), "{notes:?}");
         let bank = Bank::from_bytes(&built).unwrap();
         let program = bank.hd.programs[100].as_ref().unwrap();
-        let ranges: Vec<(i64, i64)> = program.splits.iter().map(|s| (s.get("range_low"), s.get("range_high"))).collect();
+        let ranges: Vec<(i64, i64)> =
+            program.splits.iter().map(|s| (s.get("range_low"), s.get("range_high"))).collect();
         assert_eq!(ranges, [(0, 59), (60, 127)]);
         let voices = bank.resolve(100, 67, 90);
         assert_eq!(voices.len(), 1);

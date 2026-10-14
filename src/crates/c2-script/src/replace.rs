@@ -50,8 +50,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use c2_assets::ids::{self, Index};
 use c2_assets::font;
+use c2_assets::ids::{self, Index};
 use c2_assets::im3;
 use c2_assets::soundbank::Bank;
 use c2_assets::sounds::{self, Given};
@@ -82,8 +82,18 @@ const MIDI_SUFFIXES: [&str; 3] = [".mid", ".midi", ".rmi"];
 /// The tables a data: line can name, in the order build applies them (parts before layouts, whose
 /// cells name the parts).
 pub const DATA_TABLES: [&str; 12] = [
-    "items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters", "parts",
-    "layouts", "chests",
+    "items",
+    "shops",
+    "monsters",
+    "inventions",
+    "georama",
+    "medals",
+    "floors",
+    "fishing",
+    "characters",
+    "parts",
+    "layouts",
+    "chests",
 ];
 
 /// One line of a mod's replace or add.
@@ -205,14 +215,8 @@ fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::
         let mut instrument = music::Instrument { program, zones: Vec::new(), like: None };
         for sample in samples {
             let fail = |message: &str| line.fail(format!("instrument {number}: {message}"));
-            let mut zone = music::InstrumentZone {
-                path: PathBuf::new(),
-                low: 0,
-                high: 127,
-                root: 60,
-                looped: None,
-                volume: 128,
-            };
+            let mut zone =
+                music::InstrumentZone { path: PathBuf::new(), low: 0, high: 127, root: 60, looped: None, volume: 128 };
             let file = match sample {
                 Value::String(file) => file.clone(),
                 Value::Object(fields) => {
@@ -221,19 +225,29 @@ fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::
                         match field.as_str() {
                             "file" => {}
                             "keys" => {
-                                let keys: Option<Vec<u8>> = value
-                                    .as_array()
-                                    .filter(|keys| keys.len() == 2)
-                                    .map(|keys| keys.iter().filter_map(|key| key.as_u64().filter(|&k| k <= 127)).map(|k| k as u8).collect());
+                                let keys: Option<Vec<u8>> =
+                                    value.as_array().filter(|keys| keys.len() == 2).map(|keys| {
+                                        keys.iter()
+                                            .filter_map(|key| key.as_u64().filter(|&k| k <= 127))
+                                            .map(|k| k as u8)
+                                            .collect()
+                                    });
                                 match keys {
-                                    Some(keys) if keys.len() == 2 && keys[0] <= keys[1] => (zone.low, zone.high) = (keys[0], keys[1]),
+                                    Some(keys) if keys.len() == 2 && keys[0] <= keys[1] => {
+                                        (zone.low, zone.high) = (keys[0], keys[1])
+                                    }
                                     _ => return Err(fail("\"keys\" is [lowest, highest], 0 to 127")),
                                 }
                             }
                             "root" => zone.root = number(127).ok_or_else(|| fail("\"root\" is a key, 0 to 127"))?,
                             "volume" => zone.volume = number(128).ok_or_else(|| fail("\"volume\" is 0 to 128"))?,
-                            "loop" => zone.looped = Some(value.as_bool().ok_or_else(|| fail("\"loop\" is true or false"))?),
-                            "like" => instrument.like = Some(number(127).ok_or_else(|| fail("\"like\" is a program, 0 to 127"))?),
+                            "loop" => {
+                                zone.looped = Some(value.as_bool().ok_or_else(|| fail("\"loop\" is true or false"))?)
+                            }
+                            "like" => {
+                                instrument.like =
+                                    Some(number(127).ok_or_else(|| fail("\"like\" is a program, 0 to 127"))?)
+                            }
                             other => return Err(fail(&format!("unknown field \"{other}\""))),
                         }
                     }
@@ -348,12 +362,14 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
                 line.script = Some(path);
             }
             "programs" if line.is_map() => {
-                let listed = value
-                    .as_object()
-                    .ok_or_else(|| line.fail("\"programs\" gives event points programs: {\"door_park\": \"ENTER_PARK\"}"))?;
+                let listed = value.as_object().ok_or_else(|| {
+                    line.fail("\"programs\" gives event points programs: {\"door_park\": \"ENTER_PARK\"}")
+                })?;
                 for (point, program) in listed {
                     if program.as_i64().is_none() && !program.as_str().is_some_and(is_identifier) {
-                        return Err(line.fail(format!("\"programs\": {point}'s program is a number or a program's name")));
+                        return Err(
+                            line.fail(format!("\"programs\": {point}'s program is a number or a program's name"))
+                        );
                     }
                     line.programs.push((point.clone(), program.clone()));
                 }
@@ -377,10 +393,15 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     }
     if line.is_data() {
         if add || !DATA_TABLES.contains(&line.data_table().as_str()) {
-            return Err(line.fail(format!("a data: line replaces one of the tables {}", DATA_TABLES.map(|table| format!("data:{table}")).join(", "))));
+            return Err(line.fail(format!(
+                "a data: line replaces one of the tables {}",
+                DATA_TABLES.map(|table| format!("data:{table}")).join(", ")
+            )));
         }
         if !(line.file.is_file() && suffix_is(&line.file, ".json")) {
-            return Err(line.fail(format!("{} is not a .json file (mod asset ISO NAME {} writes one)", line.shown, line.key)));
+            return Err(
+                line.fail(format!("{} is not a .json file (mod asset ISO NAME {} writes one)", line.shown, line.key))
+            );
         }
         return Ok(line);
     }
@@ -539,7 +560,10 @@ pub fn raw_files(mod_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
 
 /// Whether any of the lines names an id, so that the build needs the disc's index.
 pub fn needs_index(lines: &[Line]) -> bool {
-    lines.iter().any(|line| (!line.is_file() && !line.is_map() && !line.is_data()) || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some()))
+    lines.iter().any(|line| {
+        (!line.is_file() && !line.is_map() && !line.is_data())
+            || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some())
+    })
 }
 
 /// What one line does at one place.
@@ -613,8 +637,10 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
     let mut added_to: HashMap<String, usize> = HashMap::new();
     let at = index.at();
     for module in modules {
-        let mine: Vec<&Line> =
-            lines.iter().filter(|line| line.module == module && !line.is_file() && !line.is_map() && !line.is_data()).collect();
+        let mine: Vec<&Line> = lines
+            .iter()
+            .filter(|line| line.module == module && !line.is_file() && !line.is_map() && !line.is_data())
+            .collect();
         // each id by the line that gives it: an exact id wins over a pattern
         let mut chosen: BTreeMap<String, (&Line, bool)> = BTreeMap::new();
         for line in mine.iter().filter(|line| !line.add) {
@@ -959,20 +985,21 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
                     .get(&reference.path.to_lowercase())
                     .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
                     .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
-                let built =
-                    text::build(&written, &old, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?;
-                let widths =
-                    text::width_warnings(&written, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?;
+                let built = text::build(&written, &old, original, &place.display(), &fonts)
+                    .map_err(|error| fail(error.into()))?;
+                let widths = text::width_warnings(&written, original, &place.display(), &fonts)
+                    .map_err(|error| fail(error.into()))?;
                 warnings.extend(widths.into_iter().map(|warning| (shown.clone(), format!("warning: {warning}"))));
-                let english = text::locate(&place.display()).is_some_and(|found| found.language == text::Language::English);
+                let english =
+                    text::locate(&place.display()).is_some_and(|found| found.language == text::Language::English);
                 if english && built != old {
                     // a debug menu's leftover Japanese has glyph numbers there already: only the
                     // messages the mod changed count
                     let before = text::Mes::parse(&old).map_err(|error| fail(error.into()))?;
                     let mes = text::Mes::parse(&built).map_err(|error| fail(error.into()))?;
-                    english_extra |= mes
-                        .messages()
-                        .any(|(id, codes)| before.get(id) != Some(codes) && font::uses_english_extra(codes.iter().copied()));
+                    english_extra |= mes.messages().any(|(id, codes)| {
+                        before.get(id) != Some(codes) && font::uses_english_extra(codes.iter().copied())
+                    });
                 }
                 built
             }

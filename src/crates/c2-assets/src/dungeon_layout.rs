@@ -128,11 +128,12 @@ pub fn parts_table(elf: &[u8]) -> Result<crate::data_table::Table> {
         if let Some(why) = name_found_by_the_engine(number) {
             record.fixed(why);
         }
-        record
-            .bytes("kind", S16, at + 4, 1)
-            .bytes("link", U8, at + 6, 1)
-            .bytes("entrance", U8, at + 7, 1)
-            .bytes("unread_tiles", S16, at + 8, 8);
+        record.bytes("kind", S16, at + 4, 1).bytes("link", U8, at + 6, 1).bytes("entrance", U8, at + 7, 1).bytes(
+            "unread_tiles",
+            S16,
+            at + 8,
+            8,
+        );
         parts.push(record);
     }
     table.section("parts", &["part"], parts);
@@ -730,14 +731,19 @@ mod tests {
         let table = parts_table(&elf).unwrap();
         assert_eq!(table.check(), Vec::<String>::new());
         let json = table.to_json();
-        assert_eq!(json["parts"][80], json!({"part": 80, "name": "door00", "kind": 10, "link": 15, "entrance": 1,
-            "unread_tiles": [42, 42, 40, 42, 42, 42, 42, 42]}));
-        assert_eq!((json["parts"][276]["name"].clone(), json["minimap"][0]["map"].clone()), (json!(""), json!("d01f01")));
+        assert_eq!(
+            json["parts"][80],
+            json!({"part": 80, "name": "door00", "kind": 10, "link": 15, "entrance": 1,
+            "unread_tiles": [42, 42, 40, 42, 42, 42, 42, 42]})
+        );
+        assert_eq!(
+            (json["parts"][276]["name"].clone(), json["minimap"][0]["map"].clone()),
+            (json!(""), json!("d01f01"))
+        );
         assert_eq!(json["minimap"][17]["map"], "d07f01");
         assert_eq!(json["minimap"][0]["tiles"][276], 0);
-        let (edits, patches) = table
-            .changes(&json!({"parts": [{"part": 276, "name": "newp00", "kind": 4, "link": 15}]}), "m")
-            .unwrap();
+        let (edits, patches) =
+            table.changes(&json!({"parts": [{"part": 276, "name": "newp00", "kind": 4, "link": 15}]}), "m").unwrap();
         assert!(edits.is_empty() && patches.len() == 3);
         let patched = crate::data_table::apply_patches(&elf, &patches).unwrap();
         let parts = super::parts(&patched).unwrap();

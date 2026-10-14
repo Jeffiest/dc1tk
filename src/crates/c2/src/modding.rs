@@ -447,7 +447,8 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     if !new_maps.is_empty() {
         let numbers = c2_script::maptable::disc_numbers_with(&args.iso, language, &new_maps)?;
         let constants = c2_script::mapscript::map_constants(&new_maps, &numbers);
-        let by_mod = mod_dirs.iter().map(|dir| (dir.file_name().unwrap().to_string_lossy().into_owned(), constants.clone()));
+        let by_mod =
+            mod_dirs.iter().map(|dir| (dir.file_name().unwrap().to_string_lossy().into_owned(), constants.clone()));
         with_added(&mut plan, &by_mod.collect());
     }
     for mod_dir in &mod_dirs {
@@ -608,7 +609,12 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     let (mut files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files, &program_of)?;
     for built in c2_script::mapscript::build_all(&all_lines, &mod_dirs, &args.source, &tools, &plan.numbers)? {
         for (path, data) in built.files {
-            println!("added: {path} (map:{}'s script; mod {}, {} bytes, a new file)", built.map, built.module, data.len());
+            println!(
+                "added: {path} (map:{}'s script; mod {}, {} bytes, a new file)",
+                built.map,
+                built.module,
+                data.len()
+            );
             files.insert(path, data);
         }
     }
@@ -667,7 +673,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     println!(
         "{} scripts changed, {} game files replaced or added, {} disc files rewritten, written to {}",
         found.scripts.len(),
-        replaced.len() + changed.len() + map_changes.len() + data_changes.iter().map(|change| change.files.len()).sum::<usize>(),
+        replaced.len()
+            + changed.len()
+            + map_changes.len()
+            + data_changes.iter().map(|change| change.files.len()).sum::<usize>(),
         files.len(),
         shown(&args.output)
     );
@@ -808,7 +817,9 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             let new_maps = c2_script::maptable::new_maps(&lines)?;
             if !new_maps.is_empty() {
                 let numbers = match disc.as_ref().filter(|disc| disc.is_file()) {
-                    Some(disc) => c2_script::maptable::disc_numbers_with(disc, c2_script::disc::language_code(&defs), &new_maps)?,
+                    Some(disc) => {
+                        c2_script::maptable::disc_numbers_with(disc, c2_script::disc::language_code(&defs), &new_maps)?
+                    }
                     None => c2_script::maptable::assumed_numbers(&new_maps),
                 };
                 let constants = c2_script::mapscript::map_constants(&new_maps, &numbers);
@@ -817,14 +828,20 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 }
                 for mod_dir in &mod_dirs {
                     let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
-                    added.entry(name).or_default().extend(constants.iter().map(|(name, number)| (name.clone(), *number)));
+                    added
+                        .entry(name)
+                        .or_default()
+                        .extend(constants.iter().map(|(name, number)| (name.clone(), *number)));
                 }
             }
             let mut result = mods::check_with(&mod_dirs, source, &tools, &consts, &added)?;
             // the new maps' own scripts, with the numbers their mods' patches see
             let mut numbers = result.numbers.clone();
             for (name, found) in &added {
-                numbers.entry(name.clone()).or_default().extend(found.iter().map(|(name, number)| (name.clone(), *number)));
+                numbers
+                    .entry(name.clone())
+                    .or_default()
+                    .extend(found.iter().map(|(name, number)| (name.clone(), *number)));
             }
             for script in c2_script::mapscript::scripts(&lines) {
                 match c2_script::mapscript::build_one(&script, &mod_dirs, source, &tools, &numbers) {
@@ -859,6 +876,13 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             }
             for (path, error) in &result.errors {
                 println!("error: {path}: {error}");
+            }
+            if let Some(hint) = crate::files::rename_hint(
+                &common.def_sets(),
+                result.errors.iter().map(|(_, error)| error.as_str()),
+                source,
+            ) {
+                println!("{hint}");
             }
             match disc {
                 Some(disc) => {
@@ -920,7 +944,10 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 paths.iter().cloned().partition(|path| path.to_lowercase().starts_with(replace::DATA));
             for (id, file, written) in crate::data_cmd::copy_out(iso, &mod_dir, &tables)? {
                 if written {
-                    println!("{}: {id}; edit it there and keep only what you change, and build writes it", shown(&file));
+                    println!(
+                        "{}: {id}; edit it there and keep only what you change, and build writes it",
+                        shown(&file)
+                    );
                 } else {
                     println!("{}: {id} is in the mod already; left as it is", shown(&file));
                 }

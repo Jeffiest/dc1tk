@@ -17,7 +17,7 @@ use crate::{bail, Result};
 /// The characters of Japanese glyphs 94 on (glyph 94 is the full-width space).
 pub const JAPANESE: &str = concat!(
     "　、。，．・：？！々ー―／～…‥’“”（）〔〕「」『』【】＋－±", // 94
-    "×＞°％＆＠★○●□■△※→←↑↓♪０１２３４５６７８９ＡＢＣＤ", // 126
+    "×＞°％＆＠★○●□■△※→←↑↓♪０１２３４５６７８９ＡＢＣＤ",        // 126
     "ＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊ", // 158
     "ｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚぁあぃいぅうぇえぉおかがきぎくぐ", // 190
     "けげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはば", // 222
@@ -73,7 +73,7 @@ pub const JAPANESE: &str = concat!(
     "様洋溶用羊葉要遥陽養抑欲浴翌翼羅裸来頼雷絡落乱卵嵐覧利履理裏里離", // 1822
     "陸律率立略流留硫竜龍侶慮旅了両料涼療良量力緑淋臨輪隣鱗涙類令例冷", // 1854
     "励礼零霊麗暦歴列烈裂恋練蓮連呂炉路露労廊浪牢狼老郎六録論和話歪惑", // 1886
-    "枠鷲湾腕儚剝哺嗅懺掟棍殲毯狡猾璧甦竈絆絨綺繚罠蛛袂騙", // 1918
+    "枠鷲湾腕儚剝哺嗅懺掟棍殲毯狡猾璧甦竈絆絨綺繚罠蛛袂騙",      // 1918
 );
 
 /// Japanese glyphs 0 to 1943: ASCII without the backslash, then JAPANESE.
@@ -179,7 +179,10 @@ impl Page {
         let (colours, image_type) = (u16_at(data, 30), data[35]);
         let (width, height) = (u16_at(data, 36), u16_at(data, 38));
         let start = 16 + header_size;
-        if image_type != 4 || colours != 16 || image_size != width * height / 2 || start + image_size + clut_size > data.len()
+        if image_type != 4
+            || colours != 16
+            || image_size != width * height / 2
+            || start + image_size + clut_size > data.len()
         {
             bail!("a font page is a 4-bit picture with 16 colours");
         }

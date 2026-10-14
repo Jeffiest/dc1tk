@@ -125,11 +125,16 @@ pub fn reconcile(original: &Value, edited: &Value) -> Value {
             _ => edited.clone(),
         },
         (Value::Object(a), Value::Object(b)) => Value::Object(
-            b.iter().map(|(key, value)| (key.clone(), a.get(key).map_or(value.clone(), |old| reconcile(old, value)))).collect(),
+            b.iter()
+                .map(|(key, value)| (key.clone(), a.get(key).map_or(value.clone(), |old| reconcile(old, value))))
+                .collect(),
         ),
-        (Value::Array(a), Value::Array(b)) => {
-            Value::Array(b.iter().enumerate().map(|(at, value)| a.get(at).map_or(value.clone(), |old| reconcile(old, value))).collect())
-        }
+        (Value::Array(a), Value::Array(b)) => Value::Array(
+            b.iter()
+                .enumerate()
+                .map(|(at, value)| a.get(at).map_or(value.clone(), |old| reconcile(old, value)))
+                .collect(),
+        ),
         _ => edited.clone(),
     }
 }
@@ -415,8 +420,12 @@ fn template_previews(map: &MapFile, kind_of: &dyn Fn(&str) -> String) -> Vec<Sce
         };
         let (x, z) = ((column % PREVIEW_ROW) as i32, (row + column / PREVIEW_ROW) as i32);
         let pos = [Num::Int(x * PREVIEW_SPACING), Num::Int(0), Num::Int(z * PREVIEW_SPACING)];
-        let mut children: Vec<SceneNode> =
-            template.pieces.iter().enumerate().map(|(order, piece)| piece_node(piece, order, &kind_of(&piece.model))).collect();
+        let mut children: Vec<SceneNode> = template
+            .pieces
+            .iter()
+            .enumerate()
+            .map(|(order, piece)| piece_node(piece, order, &kind_of(&piece.model)))
+            .collect();
         children.extend(template.points.iter().flatten().enumerate().map(|(order, point)| point_node(point, order)));
         out.push(SceneNode {
             name: format!("place:{}", template.name),
@@ -444,8 +453,15 @@ pub fn build_scene(map: &MapFile, map_name: &str, kind_of: &dyn Fn(&str) -> Stri
         let template = templates.get(placement.template.as_str()).map(|&at| &map.templates[at]);
         let mut children: Vec<SceneNode> = Vec::new();
         if let Some(template) = template {
-            children.extend(template.pieces.iter().enumerate().map(|(order, piece)| piece_node(piece, order, &kind_of(&piece.model))));
-            children.extend(template.points.iter().flatten().enumerate().map(|(order, point)| point_node(point, order)));
+            children.extend(
+                template
+                    .pieces
+                    .iter()
+                    .enumerate()
+                    .map(|(order, piece)| piece_node(piece, order, &kind_of(&piece.model))),
+            );
+            children
+                .extend(template.points.iter().flatten().enumerate().map(|(order, point)| point_node(point, order)));
         }
         placements.push(SceneNode {
             name: format!("place:{}", placement.name),
@@ -579,7 +595,11 @@ fn read_piece(node: &SceneNode, original: Option<&Piece>) -> Result<Piece> {
         value => return Err(Error::invalid(format!("{what}: materials {value} is not a list"))),
     };
     Ok(Piece {
-        model: c2["model"].as_str().map(str::to_string).or_else(|| original.map(|p| p.model.clone())).unwrap_or_default(),
+        model: c2["model"]
+            .as_str()
+            .map(str::to_string)
+            .or_else(|| original.map(|p| p.model.clone()))
+            .unwrap_or_default(),
         show: match &c2["show"] {
             Value::Null => original.map_or(Num::Int(1), |p| p.show),
             value => num_from(value, original.map(|p| p.show), &what)?,
@@ -602,7 +622,9 @@ fn read_piece(node: &SceneNode, original: Option<&Piece>) -> Result<Piece> {
 fn original_of<'a, T>(list: &'a [T], node: &SceneNode, name_of: impl Fn(&T) -> &str) -> Option<&'a T> {
     let name = node.exact_name();
     let at = node.c2()["order"].as_u64().map(|order| order as usize);
-    at.and_then(|at| list.get(at)).filter(|item| name_of(item) == name).or_else(|| list.iter().find(|item| name_of(item) == name))
+    at.and_then(|at| list.get(at))
+        .filter(|item| name_of(item) == name)
+        .or_else(|| list.iter().find(|item| name_of(item) == name))
 }
 
 /// The edited scene as a `SceneEdit` against the original map.
@@ -649,7 +671,8 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
         let name = node.exact_name();
         let what = format!("placement {name}");
         let preview = c2["preview"].as_bool().unwrap_or(false);
-        let slot = c2["slot"].as_u64().map(|slot| slot as usize).filter(|&slot| slot < original.placements.len() && !preview);
+        let slot =
+            c2["slot"].as_u64().map(|slot| slot as usize).filter(|&slot| slot < original.placements.len() && !preview);
         let old = slot.map(|slot| &original.placements[slot]);
         let template_name = c2["template"].as_str().map(str::to_string).or_else(|| old.map(|p| p.template.clone()));
         let template_name = template_name.ok_or_else(|| Error::invalid(format!("{what}: no template")))?;
@@ -666,7 +689,11 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
                 value => Some(nums_from(value, old.and_then(|p| p.far_clip.as_ref()), &what)?),
             },
             template: template_name,
-            group: c2["group"].as_str().map(str::to_string).or_else(|| old.map(|p| p.group.clone())).unwrap_or_default(),
+            group: c2["group"]
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| old.map(|p| p.group.clone()))
+                .unwrap_or_default(),
             pos,
             rot,
             scale,
@@ -692,7 +719,8 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
     }
 
     let old_points = original.points.as_deref().unwrap_or(&[]);
-    let point_nodes: Vec<&SceneNode> = group("points").map(|group| ordered(&group.children, "point")).unwrap_or_default();
+    let point_nodes: Vec<&SceneNode> =
+        group("points").map(|group| ordered(&group.children, "point")).unwrap_or_default();
     let points = if point_nodes.is_empty() && original.points.is_none() {
         None
     } else {
@@ -712,7 +740,14 @@ mod tests {
     use crate::{map_edit, mapfile};
 
     fn kind_of(model: &str) -> String {
-        if model.contains("-a") { "collision" } else if model.contains("-c") { "camera" } else { "model" }.into()
+        if model.contains("-a") {
+            "collision"
+        } else if model.contains("-c") {
+            "camera"
+        } else {
+            "model"
+        }
+        .into()
     }
 
     /// Every map of an extracted disc (C2S_CORPUS) goes to a scene and back unchanged, also after
@@ -756,7 +791,9 @@ mod tests {
         let c2 = &mut node.extras["c2"];
         if c2["kind"] == "anime" {
             let data = c2["data"].as_object_mut().unwrap();
-            for (new, old) in [("drives", "kind"), ("mode", "unknown_int"), ("start", "v0"), ("step", "v1"), ("end", "v2")] {
+            for (new, old) in
+                [("drives", "kind"), ("mode", "unknown_int"), ("start", "v0"), ("step", "v1"), ("end", "v2")]
+            {
                 let value = data.remove(new).unwrap();
                 data.insert(old.into(), value);
             }
@@ -837,7 +874,9 @@ mod tests {
             col_type: None,
             time: [Num::Int(0); 2],
         };
-        for (name, model) in [("way00", "w00-m.mds"), ("way01", "w01-a.mds"), ("room00", "r00-m.mds"), ("way00", "x.mds")] {
+        for (name, model) in
+            [("way00", "w00-m.mds"), ("way01", "w01-a.mds"), ("room00", "r00-m.mds"), ("way00", "x.mds")]
+        {
             map.templates.push(crate::mapfile::Template {
                 name: name.into(),
                 far_clip: None,
@@ -853,7 +892,11 @@ mod tests {
             previews.iter().map(|node| (node.exact_name(), node.trs.as_ref().unwrap().translation)).collect();
         assert_eq!(
             shown,
-            [("way00".into(), [0.0, 0.0, 0.0]), ("way01".into(), [480.0, 0.0, 0.0]), ("room00".into(), [0.0, 0.0, 480.0])]
+            [
+                ("way00".into(), [0.0, 0.0, 0.0]),
+                ("way01".into(), [480.0, 0.0, 0.0]),
+                ("room00".into(), [0.0, 0.0, 480.0])
+            ]
         );
         blenderish(&mut scene, 0);
         let edit = read_scene(&scene, &map).unwrap();
@@ -871,9 +914,21 @@ mod tests {
 
     #[test]
     fn names_come_from_extras_or_lose_their_suffix() {
-        let node = SceneNode { name: "piece:door-m.004".into(), trs: None, extras: json!({"c2": {"role": "piece"}}), children: vec![], model: None };
+        let node = SceneNode {
+            name: "piece:door-m.004".into(),
+            trs: None,
+            extras: json!({"c2": {"role": "piece"}}),
+            children: vec![],
+            model: None,
+        };
         assert_eq!(node.exact_name(), "door-m");
-        let node = SceneNode { name: "piece:x.001".into(), trs: None, extras: json!({"c2": {"name": "x.y"}}), children: vec![], model: None };
+        let node = SceneNode {
+            name: "piece:x.001".into(),
+            trs: None,
+            extras: json!({"c2": {"name": "x.y"}}),
+            children: vec![],
+            model: None,
+        };
         assert_eq!(node.exact_name(), "x.y");
     }
 }

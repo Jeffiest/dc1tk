@@ -489,7 +489,8 @@ fn a_music_line_gives_instruments_by_program() {
     write(&mod_dir.join("t.mid"), b"");
     write(&mod_dir.join("a.wav"), b"");
     write(&mod_dir.join("b.wav"), b"");
-    let music = |instruments: Value| json!({"replace": {"music:BG_000_000": {"file": "t.mid", "instruments": instruments}}});
+    let music =
+        |instruments: Value| json!({"replace": {"music:BG_000_000": {"file": "t.mid", "instruments": instruments}}});
     let case = |body: Value, words: &str| {
         mod_json(&mod_dir, body);
         fails(replace::lines(&mod_dir), words);

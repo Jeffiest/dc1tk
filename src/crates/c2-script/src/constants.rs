@@ -113,7 +113,6 @@ pub fn rename(
         _ => None,
     };
     let quoted = variables.as_ref().map(|(from, _)| Regex::new(&format!(r#""{}""#, regex::escape(from))).unwrap());
-    let variable_word = variables.as_ref().map(|(from, _)| word(from));
     let mut renamed = Renamed::default();
     for path in own {
         let file = include.join(path);
@@ -122,7 +121,11 @@ pub fn rename(
         }
     }
     for path in files_under(set, &["json", "md"]) {
-        if path.starts_with("include/") || path.starts_with("strings/") || path == crate::definitions::DISC {
+        if path.starts_with("include/")
+            || path.starts_with("strings/")
+            || path == crate::definitions::DISC
+            || path == RENAMED
+        {
             continue;
         }
         let file = set.join(&path);
@@ -139,6 +142,22 @@ pub fn rename(
             renamed.set_files.push(file);
         }
     }
+    renamed.folders = rename_in_folders(old, new, folders)?;
+    record(set, old, new)?;
+    renamed.set_files.push(set.join(RENAMED));
+    Ok(renamed)
+}
+
+/// Renames a constant's uses in decompiled trees and mods, and the variables named after it, and
+/// records again a tree's files that held no edits: (folder, files changed) per folder.
+pub fn rename_in_folders(old: &str, new: &str, folders: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<String>)>> {
+    let old_word = word(old);
+    let variables = match (subject(old), subject(new)) {
+        (Some(from), Some(to)) if from != to => Some((from, to)),
+        _ => None,
+    };
+    let variable_word = variables.as_ref().map(|(from, _)| word(from));
+    let mut done = Vec::new();
     for folder in folders {
         let unedited: Vec<String> = match tree::status(folder)? {
             Some(status) => {
@@ -164,9 +183,70 @@ pub fn rename(
         if !rerecord.is_empty() {
             tree::record(folder, &rerecord, None, &[])?;
         }
-        renamed.folders.push((folder.clone(), changed));
+        done.push((folder.clone(), changed));
     }
-    Ok(renamed)
+    Ok(done)
+}
+
+/// The file of a definition set that lists the constants renamed in it, old name to new, in the
+/// order they were renamed, so trees and mods made before can follow (migrate).
+pub const RENAMED: &str = "renamed.json";
+
+/// The renames a definition set records, oldest first.
+pub fn renamed(set: &Path) -> Result<Vec<(String, String)>> {
+    let path = set.join(RENAMED);
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let map: IndexMap<String, String> = serde_json::from_str(&fs::read_to_string(&path)?)
+        .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?;
+    Ok(map.into_iter().collect())
+}
+
+/// Adds old -> new to the set's list of renames.
+fn record(set: &Path, old: &str, new: &str) -> Result<()> {
+    let mut map: IndexMap<String, String> = renamed(set)?.into_iter().collect();
+    map.shift_remove(old);
+    map.insert(old.to_string(), new.to_string());
+    let mut text = serde_json::to_string_pretty(&map).map_err(|error| Error::invalid(error.to_string()))?;
+    text.push('\n');
+    fs::write(set.join(RENAMED), text)?;
+    Ok(())
+}
+
+/// The name a constant has now, when one of the sets renamed it (following a chain of renames).
+pub fn renamed_to(sets: &[PathBuf], name: &str) -> Option<String> {
+    let renames: Vec<(String, String)> = sets.iter().flat_map(|set| renamed(set).unwrap_or_default()).collect();
+    let mut current = name.to_string();
+    let mut moved = false;
+    for (old, new) in &renames {
+        if *old == current {
+            current = new.clone();
+            moved = true;
+        }
+    }
+    moved.then_some(current)
+}
+
+/// Gives trees and mods made before the sets' renames the new names: every recorded rename, in
+/// order. (folder, files changed) per folder, a file listed once.
+pub fn migrate(sets: &[PathBuf], folders: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<String>)>> {
+    let mut changed: Vec<(PathBuf, Vec<String>)> = folders.iter().map(|folder| (folder.clone(), Vec::new())).collect();
+    for set in sets {
+        for (old, new) in renamed(set)? {
+            for (index, (_, files)) in rename_in_folders(&old, &new, folders)?.into_iter().enumerate() {
+                for file in files {
+                    if !changed[index].1.contains(&file) {
+                        changed[index].1.push(file);
+                    }
+                }
+            }
+        }
+    }
+    for (_, files) in &mut changed {
+        files.sort();
+    }
+    Ok(changed)
 }
 
 /// Replaces a variable's name in source, leaving a call to a function of that name alone.
