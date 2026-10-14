@@ -383,20 +383,21 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
 
 ## Next: what numbers mean
 
-1. **The last sound effects.** 97% of the entries passed to `play_se`
-   and its kin (8,611 of 8,858) print as names: the system, base and
-   battle banks, the 210 banks scripts load, followed through copies,
-   branches, globals, calls and helpers' out-parameters, and into library
-   code when every script that includes it passes the same bank. About
-   180 of the rest read the event port the engine filled with the battle
-   music in dungeons (`EV_200_000` entry 0, see
-   [the sound notes](definitions/pal/notes/sounds.md)); the others are
-   helpers whose callers pass different banks.
-2. **Villager slots.** Slots each map folder's scripts always load with
-   one character are named per folder in `disc.h` (`CHARA_I01_H01_STEVE`),
-   as are the engine's fixed slots (`CHARA_PLAYER`). Villager slots change
-   with the story and stay numbers; scripts find villagers by id (see
-   [the character notes](definitions/pal/notes/characters.md)).
+1. **The last sound effects** (done). 8,846 of 8,858 entries passed to
+   `play_se` and its kin print as names (from 8,611): the event port is
+   followed through calls and into the events the engine starts (the
+   map's resting bank), and entry 0 of the dungeon's battle music is
+   `SE_EVENT_PORT_BATTLE_MUSIC` where the bank cannot be followed. The 12
+   left are in two helpers nothing calls ([the sound
+   notes](definitions/pal/notes/sounds.md)).
+2. **Villager and character slots** (done). 28,354 slot arguments print
+   as names (from 17,259): villagers from the engine's tables
+   (`npc_place4.cfg`, `place.cfg`, `npc.cfg`) where a slot always holds
+   one (`CHARA_I01_H01_CEDRIC`), and a slot a function loads a character
+   into named after it for the rest of the function (`CHARA_S27_PAW`).
+   Left as numbers: slots loaded in one function and used in another,
+   shared townsfolk models, villager slots whose occupant changes by
+   chapter ([the character notes](definitions/pal/notes/characters.md)).
 
 ## Later
 
