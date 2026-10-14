@@ -33,6 +33,7 @@ c2 mod migrate dc2.iso castle                    turn a mod's disc/ folder into 
 c2 play modded.iso                               boot an image in PCSX2 (or build ... --play)
 c2 maps extracted/scripts                        every map: town or dungeon-style, playable or not
 c2 map extracted/scripts s17                     one map: programs, free numbers, trigger points, positions
+c2 map-export s17                                a map as a glTF scene for Blender (extracted/maps/s17)
 c2 xref extracted/scripts event 510 --map s51    what defines, starts and requests an event
 c2 xref extracted/scripts map s51                how the game enters a map
 c2 xref extracted/scripts monster golem          a monster's model, AI script and users
@@ -367,6 +368,18 @@ character pack; packs inside packs work the same way).
   back to the disc's own bytes. Keep a bank's sample data near its original
   size: sound memory is shared between banks, and how much is free where a
   bank loads is not yet known. See [the sound bank format](assets/sounds.md).
+- **Maps in Blender.** `c2 map-export s17` writes the map as one glTF scene
+  (`extracted/maps/s17/`): placements, pieces with their meshes, trigger
+  points, lights, cameras, collision and textures. The
+  [c2_maps add-on](../src/blender/README.md) imports it as the game draws it;
+  move and add placements, doors, chests, spawn points and lights, paint
+  collision, edit meshes and textures, model new objects, and export into a
+  mod, which gets the line `"map:s17": "maps/s17/s17.gltf"` under `replace`.
+  `build` writes the `.map` again, rebuilds the models whose meshes changed,
+  adds new models to the map's model pack and pictures to its textures.
+  Unedited scenes change nothing. An example is
+  [map-edit](examples/map-edit/); the formats are in
+  [maps](assets/maps.md).
 - **Character models as glTF.** A character pack (`.chr`) holds a model,
   its skin weights, bind pose, motions and textures. `mod asset ISO NAME
   chara/c02a.chr --as gltf` writes a folder `c02a.chr.gltf/` with

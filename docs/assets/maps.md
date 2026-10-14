@@ -31,9 +31,18 @@ this repository). Map meshes are the MDS format of
   flags as material settings, collision attributes as material names. Every map
   `.mds` exports, and its unedited glTF builds back byte for byte.
 
-**Not yet written:** the scene exporter and importer (section 7 is the plan);
-`FUNC_ANIME_DATA` is only partly decoded; the map memory budget is unmeasured;
-how the VU program combines vertex colour with lighting is untraced.
+- The scene: `c2 map-export NAME` writes a map as one glTF scene (section 8)
+  and a mod's `"map:NAME"` line builds an edited scene back into the disc
+  (section 7.2): the `.map`, the meshes that changed, new models and
+  pictures. Unedited scenes of the corpus change nothing; edits made in
+  Blender 5.1 (points moved and added, meshes moved, collision painted, a
+  new model, a texture tinted and a new picture) build and read back as
+  made.
+
+**Not yet:** tried in the game (an example mod is in
+`docs/examples/map-edit`); `FUNC_ANIME_DATA` is only partly decoded; the map
+memory budget is unmeasured; how the VU program combines vertex colour with
+lighting is untraced.
 
 ## 1. Files of a map
 
@@ -447,6 +456,50 @@ rebuilds just the frames using it, which decode to the new attribute.
 `s/s17` (5 files, 158 meshes) and the town `m/m05` (Palm Brinks, 33 files)
 export and build back the same way; with every map's `.img` searched, m05
 lacks only `e05g01_01` and s17 nothing.
+
+### 7.2 A scene built into a mod (written)
+
+`c2_assets::map_import::import_map(gltf, read, map, packs, textures)` takes
+an edited scene and the map's files as the disc (or an earlier mod) has them,
+and gives what to write; `c2 build` does so for each `"map:NAME":
+"maps/NAME/NAME.gltf"` line of a chosen mod (`c2/src/map_cmd.rs`):
+
+- **The `.map`:** the scene tree is read back (`map_scene::read_scene`,
+  section 8.1) and the map rebuilt (`map_edit::rebuild`): a template is
+  changed when every placement of it agrees, and a placement that differs
+  gets a template of its own (`NAME_2`); deleted placements are kept hidden
+  (`show 0`, as scripts address them by slot) and new ones appended. The
+  file is replaced only when its bytes differ.
+- **Meshes:** each model is taken from the first piece placing it and
+  rebuilt with `models::build_map_model` when its meshes differ from an
+  export **by value** (`from_gltf::changed_geometry`): matrices within 1e-3,
+  every triangle matched in any corner order, positions within 0.005, UVs
+  within 0.001, colours within 4/255, triangles grouped by material and the
+  picture it shows. Blender splits and reorders vertices, recomputes normals,
+  adds float noise and moves colours a step, so comparing bytes would rebuild
+  every mesh. Blender also writes some meshes' colours without alpha, and
+  gives every primitive of a mesh with colours a colour (white where there
+  was none); neither counts as a change, and a rebuilt mesh takes each
+  corner's missing alpha from the nearest vertex of the mesh it replaces,
+  keeping the fades. Placement and piece transforms compare within 1e-4,
+  positions within 0.005: Blender keeps world matrices in 32 bits, so pieces
+  of placements thousands of units out come back moved by a few thousandths.
+  An unedited scene of s17, m01, m05, m06, m08, f01, f04, i01h01, i03h02, s07,
+  s19, s33, s44, s56 and s69, imported and exported by the add-on in
+  Blender 5.1, changes nothing.
+- **New models:** a piece naming a model no pack has, with meshes under it,
+  is built from them (`models::new_map_model`: a root frame named after the
+  model, a frame per mesh, vertices where the objects were put) and added to
+  the map's first `.pcp` (`NAME_0.pcp`) with an `info.cfg` entry giving its
+  TYPE: from the piece's `kind`, else `-a` collision, `-c` camera, else
+  drawn. A pack holds at most 0x1FF models.
+- **Pictures:** each picture a material shows (its `extras.texture`, else the
+  image's name, else its file's stem) is compared by pixels with the disc's.
+  A changed one goes back into the `.img` that holds it (the map's own
+  `.ipk` first, then other maps', which then show it changed too); one the
+  disc lacks goes at the end of the map's own first `.img`, in the format of
+  its first picture, its sides powers of two up to 1024. The exporter's
+  placeholder for a missing picture is not a picture to add.
 
 ## 8. The glTF scene (conventions shared by the exporter, the importer and the Blender add-on)
 

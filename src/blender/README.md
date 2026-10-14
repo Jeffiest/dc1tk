@@ -1,7 +1,8 @@
 # c2_maps: a Blender add-on for Dark Chronicle maps
 
-`c2_maps` imports a map that `c2 map-export NAME` wrote as a glTF scene, lets
-you edit its placements, trigger points, collision and settings, checks it
+`c2_maps` imports a map that `c2 map-export NAME` wrote as a glTF scene, shows
+it as the game draws it, lets you edit its placements, trigger points,
+collision, settings, meshes and textures and model new objects, checks it
 against the game's limits, and exports it into a mod that `c2 build` turns
 into a disc image. The scene's conventions (node names, `extras.c2`,
 collision material names) are in [the map formats](../../docs/assets/maps.md),
@@ -60,7 +61,22 @@ the node tree, then:
   their data's min-max box drawn in the viewport, sounds as spheres of their
   near distance;
 - makes point lights (`plight`) Blender point lights, with the glTF light's
-  range as the light's custom distance.
+  range as the light's custom distance;
+- draws the materials as the game does (Material Preview and Rendered): the
+  picture times the vertex colour, alpha from both (the fades painted into
+  terrain), additive glows (waterfalls, light shafts) and subtractive ones,
+  unlit meshes, and alpha tests that still blend (soft shadows). The draw
+  flags come from the model's frame names (the material's `frame_flags`).
+  Blender's own material stays in each node tree, unlinked; the export links
+  it back while it writes, so what is written is the same;
+- lights the scene as the map's active light set does (Rendered and F12):
+  a world "c2 NAME" with its background colour behind everything and its
+  ambient colour around, and its directional lights as suns ("c2 light NAME
+  N", outside the map, never exported). A world of your own is kept;
+- shows the pieces the game draws at the hour in the Map panel (noon to
+  start): towns hold day and night versions of pieces (`PIECE_TIME`), and
+  showing both at once covers the town. Untick the clock for every piece.
+  Hidden collision is left out of renders too.
 
 **Edit.** Select something; the Selected panel shows what it is and its
 fields, which write straight into `extras.c2`:
@@ -80,7 +96,16 @@ fog, background colours, time, sky...) the same way.
 
 Move, turn and scale with Blender's tools as usual. Edit meshes as usual
 too: a mesh is shared by every piece that places the same model, as in the
-game.
+game. Building rebuilds only the models whose meshes you changed (Blender's
+own rewriting of untouched meshes is allowed for), and a rebuilt mesh keeps
+the vertex alpha fades Blender leaves out.
+
+**Textures.** Paint on a map picture (Texture Paint, or edit the PNG in
+`textures/` and reload it), or give a material another of the map's
+pictures or a new image: building puts a changed picture back into the
+texture file that holds it, and a picture the disc lacks into the map's own,
+named by the image (31 Latin-1 characters at most, sides powers of two up to
+1024).
 
 **Add.** Points at the 3D cursor: a position (`point`, for spawns and
 doors), door, treasure chest, event trigger, point light, sound emitter,
@@ -90,6 +115,14 @@ the map's own `points`. Names are made unique within their parent and kept
 to 31 bytes. Duplicate Placement copies a placement with its pieces and
 points (meshes shared) under a new name (`house01_2`); with no slot it is
 appended after the map's placements.
+
+**New models.** Model something (any meshes, with any of the map's pictures
+or new images), select it and press New Model from Selection: it becomes a
+new placement (`MAP_NAME`, at the meshes' centre) with a piece of a new model
+(`MAP_NAME-m.mds`) holding the meshes where you put them, and, unless you
+untick it, a collision copy (`-a`, triangulated, area 6) so the player cannot
+walk through it, and if you tick it a camera collision copy (`-c`). Building
+adds the models to the map's model pack with their `info.cfg` entries.
 
 **Collision.** Show collision, select a collision mesh, go into Edit Mode,
 select faces, set ground, foot sound, area and mask in the Add panel's
@@ -128,12 +161,14 @@ placements of a template with a model, a collision and a camera-collision
 piece and a point; a door, a point light with a KHR light, a sound, an
 invent box, and two points whose data is a raw argument list; a fixed camera;
 map settings), imports it (on Windows through a stand-in for `c2 map
-export`), edits fields, adds a point of every kind, duplicates a placement,
-paints a collision face, validates, draws every panel with a checking
-stand-in layout, exports into a mod and checks the written glTF: every node
-and `extras.c2` of the source kept (edited ones as edited), transforms
-unchanged, the new nodes with valid extras, `mod.json` updated; then runs
-`c2 build` through the stand-in. `make_test_map.py OUT_DIR` also runs on its
+export`), checks the game look, the light set's world and suns and the hour
+filter, edits fields, adds a point of every kind, duplicates a placement,
+makes a new model from a mesh, paints a collision face, validates, draws
+every panel with a checking stand-in layout, exports into a mod and checks
+the written glTF: every node and `extras.c2` of the source kept (edited ones
+as edited), transforms unchanged, the new nodes with valid extras, the look
+back after the export, `mod.json` updated; then runs `c2 build` through the
+stand-in. `make_test_map.py OUT_DIR` also runs on its
 own with any Python 3.
 
 ## What Blender does to the scene
@@ -149,4 +184,11 @@ Worth knowing when reading an exported scene:
   back as JSON on export.
 - The exporter writes children in name order and adds `NORMAL` to
   collision meshes; placement order is kept by `slot`.
-- Textures are written again as PNG by Blender's exporter.
+- It keeps world matrices in 32 bits, so pieces of placements thousands of
+  units out come back moved by a few thousandths; the importer takes
+  positions within 0.005 as unmoved.
+- It writes some meshes' colours without alpha, and gives every primitive of
+  a mesh with colours a colour (white where there was none); neither counts
+  as an edit.
+- Textures it has not changed are copied as they are; changed ones are
+  written again as PNG and compared by pixels.

@@ -149,7 +149,7 @@ def main():
         source = json.load(handle)
 
     c2_maps, through_prefs = enable_addon()
-    from c2_maps import c2data, edit, export_mod, prefs, schema, validate  # noqa: F401
+    from c2_maps import c2data, edit, export_mod, import_map, prefs, schema, validate  # noqa: F401
 
     print("Blender", bpy.app.version_string, "- add-on enabled through preferences:", through_prefs)
     settings_prefs = prefs.get()
@@ -203,6 +203,33 @@ def main():
     )
     water = bpy.data.materials["col_ground0_foot5_area1_mask12"]
     check(tuple(round(c, 2) for c in water.diffuse_color[:3]) == (0.15, 0.35, 0.95), "water area coloured blue")
+
+    # The game look: map materials draw as the game does, collision stays out of renders, the
+    # light set lights the scene, and pieces show by the hour.
+    from c2_maps import look  # noqa: E402
+
+    wall = bpy.data.materials.get("house_wall")
+    check(wall is not None and wall.get(look.FLAG) == 1, "the map material has the game look")
+    if wall is not None:
+        surface = look._output(wall.node_tree).inputs["Surface"]
+        check(surface.is_linked and surface.links[0].from_node.name == look.SHADER, "the look shader draws it")
+    collections = import_map.collision_collections(context, root, create=False)
+    check(all(c is not None and c.hide_render for c in collections.values()), "hidden collision is not rendered")
+    check(context.scene.world is not None and context.scene.world.name == "c2 t01", "the light set's world")
+    check(any(obj.name.startswith("c2 light t01 ") for obj in bpy.data.objects), "the light set's suns")
+    check(not any(c2data.map_root(obj) for obj in bpy.data.objects if obj.name.startswith("c2 light ")), "suns outside the map")
+    check(look.shown_at([5, 20], 12) and not look.shown_at([5, 20], 22), "a day piece shows at noon, not at night")
+    check(look.shown_at([20, 5], 22) and not look.shown_at([20, 5], 12), "a night piece across midnight")
+    check(look.shown_at([0, 0], 3) and look.shown_at(None, 3), "pieces without hours always show")
+    some_piece = next(obj for obj in c2data.descendants(root) if c2data.role(obj) == "piece")
+    c2data.assign(some_piece, ("time",), [20, 5])
+    check(look.show_hour(context, 12) == 1, "one piece hidden at noon")
+    check(all(obj.hide_render for obj in c2data.descendants(some_piece)), "its nodes hidden from renders")
+    c2data.assign(some_piece, ("time",), [0, 0])
+    check(look.show_hour(context, 12) == 0, "and shown again")
+    for obj in c2data.descendants(some_piece):
+        if c2data.is_collision_mesh(obj):
+            obj.hide_set(True)
 
     door = bpy.data.objects["point:exit"]
     check(door.type == "EMPTY" and door.empty_display_type == "CUBE", "door is a cube empty")
@@ -426,6 +453,9 @@ def main():
     check(mod.get("name") == "testmod" and mod.get("add") == {"x": 1}, "mod.json keeps its other keys")
     check(mod["replace"] == {"texture:abc": "a.png", "map:t01": "maps/t01/t01.gltf"}, "mod.json line: %s" % mod["replace"])
     check(not floor.visible_get(), "collision still hidden after the export")
+    if wall is not None:
+        surface = look._output(wall.node_tree).inputs["Surface"]
+        check(surface.links[0].from_node.name == look.SHADER, "the look is back after the export")
 
     with open(out_path, encoding="utf-8") as handle:
         out = json.load(handle)

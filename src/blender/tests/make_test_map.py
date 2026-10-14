@@ -62,8 +62,11 @@ class Builder:
         )
         return len(self.accessors) - 1
 
-    def material(self, name, colour=(0.8, 0.8, 0.8, 1.0)):
-        self.materials.append({"name": name, "pbrMetallicRoughness": {"baseColorFactor": list(colour)}})
+    def material(self, name, colour=(0.8, 0.8, 0.8, 1.0), extras=None):
+        material = {"name": name, "pbrMetallicRoughness": {"baseColorFactor": list(colour)}}
+        if extras:
+            material["extras"] = extras
+        self.materials.append(material)
         return len(self.materials) - 1
 
     def mesh(self, name, primitives):
@@ -101,7 +104,10 @@ def box_mesh(b):
             positions.append([float(x) for x in corner])
             normals.append(n)
             colours.append([0.7, 0.7, 0.7, 1.0] if corner[1] > 0 else [0.47, 0.47, 0.47, 1.0])
-    material = b.material("house_wall")
+    material = b.material(
+        "house_wall",
+        extras={"mdt_diffuse": [1.0, 1.0, 1.0, 1.0], "texture": "house_wall", "frame_flags": {"mds_flags": "n1", "lit": True}},
+    )
     return b.mesh(
         "house-m.mds",
         [

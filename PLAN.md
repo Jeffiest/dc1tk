@@ -139,6 +139,11 @@ and build the result into a mod. The formats and the glTF conventions are in
    collision colours, one-click import and export through `c2`.
 5. An example mod that edits a map, checked in the game.
 
+Phases 1 to 4 are done, with mesh, texture and new-model edits, the game's
+look in Blender (blend flags, vertex alpha, light sets, hours) and unedited
+round trips through Blender changing nothing on the maps tried. The example
+is [map-edit](docs/examples/map-edit/); it is waiting to be tried in the game.
+
 ## Next: modding
 
 - **Overrides that survive renames.** A patch overrides a function by name,

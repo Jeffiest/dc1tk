@@ -14,12 +14,12 @@ bl_info = {
 if "bpy" in locals():
     import importlib
 
-    for _module in (schema, c2data, prefs, props, runner, import_map, edit, validate, export_mod, overlay, ui):  # noqa: F821
+    for _module in (schema, c2data, look, prefs, props, runner, import_map, edit, validate, export_mod, overlay, ui):  # noqa: F821
         importlib.reload(_module)
 
 import bpy  # noqa: E402
 
-from . import schema, c2data, prefs, props, runner, import_map, edit, validate, export_mod, overlay, ui  # noqa: E402
+from . import schema, c2data, look, prefs, props, runner, import_map, edit, validate, export_mod, overlay, ui  # noqa: E402
 
 _modules = (prefs, props, import_map, edit, validate, export_mod, overlay, ui)
 

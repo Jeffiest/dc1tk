@@ -275,6 +275,12 @@ def data_prop_name(kind, field):
     return "d_%s_%s" % (kind, field.key)
 
 
+def _show_hour(self, context):
+    from . import look
+
+    look.show_hour(context, self.hour, self.by_hour)
+
+
 class C2Settings(bpy.types.PropertyGroup):
     """Values of the panels and of the operators' last use (not saved with the file)."""
 
@@ -295,6 +301,21 @@ class C2Settings(bpy.types.PropertyGroup):
     paint_mask: IntProperty(name="Ignore mask", min=0, max=255, default=0)
     show_raw: BoolProperty(name="All values", description="Show every value of extras.c2", default=False)
     show_boxes: BoolProperty(name="Invent boxes", description="Draw invent points' boxes (data min, max)", default=True)
+    hour: IntProperty(
+        name="Hour",
+        description="The time of day to show the map at: pieces with hours (towns' day and night "
+        "versions) show only when the game draws them",
+        min=0,
+        max=23,
+        default=12,
+        update=_show_hour,
+    )
+    by_hour: BoolProperty(
+        name="By hour",
+        description="Show only the pieces the game draws at the hour; off shows every piece",
+        default=True,
+        update=_show_hour,
+    )
 
     # Placement.
     place_name: node_name("placement")

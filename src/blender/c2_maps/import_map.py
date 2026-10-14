@@ -10,7 +10,7 @@ import bpy
 from bpy.props import StringProperty
 from bpy_extras.io_utils import ImportHelper
 
-from . import c2data, prefs, runner, schema
+from . import c2data, look, prefs, runner, schema
 
 
 def operator_kwargs(operator, wanted):
@@ -98,6 +98,8 @@ def set_collision_visible(context, root, kind, visible):
     layer = find_layer_collection(context.view_layer.layer_collection, collection)
     if layer is not None:
         layer.hide_viewport = not visible
+    # renders (F12) show what the viewport does, so hidden collision does not cover the map
+    collection.hide_render = not visible
     return True
 
 
@@ -270,6 +272,15 @@ def postprocess(context, gltf_path, new_objects, log=None):
                 obj.empty_display_size = 20.0
             elif role == "group" and obj.type == "EMPTY":
                 obj.empty_display_size = 5.0
+
+        materials = {slot.material for obj in c2data.descendants(root) if obj.type == "MESH" for slot in obj.material_slots}
+        look.apply_all([material for material in materials if material is not None])
+        look.map_world(context, root)
+        if hasattr(context.window_manager, "c2_maps"):
+            settings = context.window_manager.c2_maps
+            look.show_hour(context, settings.hour, settings.by_hour, [root])
+        else:
+            look.show_hour(context, 12, True, [root])
 
         for obj in c2data.points(root):
             if c2data.lookup(obj, ("kind",)) == "plight":

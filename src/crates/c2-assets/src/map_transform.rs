@@ -85,9 +85,17 @@ pub fn to_trs(pos: &[Num; 3], rot: &[Num; 3], scale: &[Num; 3]) -> Trs {
 }
 
 /// Whether two matrices are the same transform, within what float32 files and glTF's floats
-/// lose: 1e-4 of the larger of 1 and the values compared.
+/// lose: 1e-4 of the larger of 1 and the values compared (5e-3 for positions).
 pub fn same(a: &Matrix, b: &Matrix) -> bool {
-    a.iter().flatten().zip(b.iter().flatten()).all(|(x, y)| (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1.0))
+    (0..4).all(|row| {
+        (0..4).all(|column| {
+            let (x, y) = (a[row][column], b[row][column]);
+            // Blender keeps world matrices in 32 bits, so a piece of a placement thousands of
+            // units out comes back moved by up to a few thousandths
+            let tolerance = if column == 3 && row < 3 { 5e-3 } else { 1e-4 };
+            (x - y).abs() <= tolerance * x.abs().max(y.abs()).max(1.0)
+        })
+    })
 }
 
 /// Euler angles (x, y, z in radians) of a rotation matrix R = Rz·Ry·Rx.

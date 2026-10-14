@@ -207,6 +207,11 @@ class C2_PT_main(_Panel, bpy.types.Panel):
         row.prop(settings, "collision_colour", text="")
         row.operator(edit.C2_OT_recolour_collision.bl_idname, text="", icon="COLOR")
         box.prop(settings, "show_boxes")
+        row = box.row(align=True)
+        row.prop(settings, "by_hour", text="", icon="TIME")
+        sub = row.row(align=True)
+        sub.enabled = settings.by_hour
+        sub.prop(settings, "hour")
         counts = box.column(align=True)
         counts.label(text="%d placements, %d points" % (len(c2data.placements(root)), len(c2data.points(root))))
 

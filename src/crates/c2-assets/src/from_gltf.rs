@@ -870,18 +870,27 @@ fn same_geometry(a: &Geometry, b: &Geometry) -> bool {
     if a.groups.keys().ne(b.groups.keys()) {
         return false;
     }
-    // Blender writes vertex colours without alpha: a corner that lost only its alpha compares on
-    // the rest
+    // Blender writes some vertex colours without alpha, and gives every primitive of a mesh with
+    // colours a colour, white where it had none: a corner that lost only its alpha, or gained
+    // only a white colour, compares on the rest
     let corner_close = |x: &[f64], y: &[f64]| -> bool {
-        x.len().abs_diff(y.len()) <= 1
-            && x.iter().zip(y).enumerate().all(|(at, (p, q))| {
-                let tolerance = match at {
-                    0..=2 => 0.005,
-                    3 | 4 if x.len().max(y.len()) == 5 || x.len().max(y.len()) == 9 => 0.001,
-                    _ => 4.0 / 255.0,
-                };
-                close(*p, *q, tolerance)
-            })
+        let (short, long) = if x.len() <= y.len() { (x, y) } else { (y, x) };
+        let extra = &long[short.len()..];
+        let fits = match extra.len() {
+            0 | 1 => true,
+            3 | 4 => extra.iter().all(|value| (value - 1.0).abs() <= 4.0 / 255.0),
+            _ => false,
+        };
+        // positions, then UVs when there are (lengths 5, 8 and 9), then colour
+        let uvs = matches!(long.len(), 5 | 8 | 9);
+        fits && short.iter().zip(long).enumerate().all(|(at, (p, q))| {
+            let tolerance = match at {
+                0..=2 => 0.005,
+                3 | 4 if uvs => 0.001,
+                _ => 4.0 / 255.0,
+            };
+            close(*p, *q, tolerance)
+        })
     };
     let tri_close = |x: &[Vec<f64>; 3], y: &[Vec<f64>; 3]| -> bool {
         (0..3).any(|r| (0..3).all(|k| corner_close(&x[k], &y[(k + r) % 3])))

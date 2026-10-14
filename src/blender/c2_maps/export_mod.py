@@ -7,7 +7,7 @@ from collections import OrderedDict
 
 import bpy
 
-from . import c2data, import_map, prefs, runner, schema
+from . import c2data, import_map, look, prefs, runner, schema
 
 
 def export_kwargs(path):
@@ -223,7 +223,7 @@ def export_map(context, root, mod_dir):
     if context.mode != "OBJECT" and context.active_object is not None:
         bpy.ops.object.mode_set(mode="OBJECT")
     objects = c2data.descendants(root)
-    with _Visible(context, objects):
+    with _Visible(context, objects), look.for_export():
         result = bpy.ops.export_scene.gltf(**export_kwargs(path))
     if "FINISHED" not in result:
         raise RuntimeError("Blender's glTF exporter failed")
