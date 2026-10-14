@@ -19,6 +19,9 @@
 //! }
 //! ```
 //!
+//! `"data:items": "data/items.json"` (also data:shops, data:monsters) edits a table of game data
+//! as JSON (docs/assets/data.md); c2's data_cmd builds those, merging several mods' tables.
+//!
 //! A replacement reaches every place the disc has the asset (ids::Index lists them); "only" keeps
 //! the places under the given disc paths. A model is a glTF file with its buffer beside it (its
 //! textures change through their own ids), or a folder as `mod asset` writes it (the
@@ -57,6 +60,10 @@ pub const ADD: &str = "add";
 pub const FILE: &str = "file:";
 /// A map edited as a glTF scene (docs/assets/maps.md section 8): `"map:s17": "maps/s17/s17.gltf"`.
 pub const MAP: &str = "map:";
+/// A table of game data edited as JSON (docs/assets/data.md): `"data:items": "data/items.json"`.
+pub const DATA: &str = "data:";
+/// The tables a data: line can name.
+pub const DATA_TABLES: [&str; 3] = ["items", "shops", "monsters"];
 
 /// One line of a mod's replace or add.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,6 +89,15 @@ impl Line {
 
     pub fn is_map(&self) -> bool {
         self.key.starts_with(MAP)
+    }
+
+    pub fn is_data(&self) -> bool {
+        self.key.get(..DATA.len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case(DATA))
+    }
+
+    /// The table a data: line edits (items).
+    pub fn data_table(&self) -> String {
+        self.key[DATA.len()..].trim().to_lowercase()
     }
 
     /// The map a map: line edits (s17).
@@ -150,9 +166,10 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         like: None,
     };
     let kind = ids::kind_of(key);
-    if kind.is_none() && !line.is_file() && !line.is_map() {
+    if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
         return Err(line.fail(
-            "a key is an asset id (texture:, model:, sound:, bank:), file: and a disc path, or map: and a map's name",
+            "a key is an asset id (texture:, model:, sound:, bank:), file: and a disc path, map: and a map's name, \
+             or data: and a table (data:items, data:shops, data:monsters)",
         ));
     }
     let options = match value {
@@ -166,7 +183,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     for (option, value) in &options {
         match option.as_str() {
             "file" => line.shown = value.as_str().ok_or_else(|| line.fail("\"file\" is a path"))?.to_string(),
-            "only" if !add && !line.is_file() => {
+            "only" if !add && !line.is_file() && !line.is_data() => {
                 line.only = match value {
                     Value::String(place) => vec![place.clone()],
                     Value::Array(places) => places
@@ -207,6 +224,15 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     line.file = line.shown.split(['/', '\\']).fold(mod_dir.to_path_buf(), |path, part| path.join(part));
     if !line.file.exists() {
         return Err(line.fail(format!("{} is not in the mod's folder", line.shown)));
+    }
+    if line.is_data() {
+        if add || !DATA_TABLES.contains(&line.data_table().as_str()) {
+            return Err(line.fail(format!("a data: line replaces one of the tables {}", DATA_TABLES.map(|table| format!("data:{table}")).join(", "))));
+        }
+        if !(line.file.is_file() && suffix_is(&line.file, ".json")) {
+            return Err(line.fail(format!("{} is not a .json file (mod asset ISO NAME {} writes one)", line.shown, line.key)));
+        }
+        return Ok(line);
     }
     if line.is_map() {
         let name = line.map_name();
@@ -343,7 +369,7 @@ pub fn raw_files(mod_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
 
 /// Whether any of the lines names an id, so that the build needs the disc's index.
 pub fn needs_index(lines: &[Line]) -> bool {
-    lines.iter().any(|line| (!line.is_file() && !line.is_map()) || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some()))
+    lines.iter().any(|line| (!line.is_file() && !line.is_map() && !line.is_data()) || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some()))
 }
 
 /// What one line does at one place.
@@ -412,7 +438,7 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
     let mut added_to: HashMap<String, usize> = HashMap::new();
     for module in modules {
         let mine: Vec<&Line> =
-            lines.iter().filter(|line| line.module == module && !line.is_file() && !line.is_map()).collect();
+            lines.iter().filter(|line| line.module == module && !line.is_file() && !line.is_map() && !line.is_data()).collect();
         // each id by the line that gives it: an exact id wins over a pattern
         let mut chosen: BTreeMap<String, (&Line, bool)> = BTreeMap::new();
         for line in mine.iter().filter(|line| !line.add) {
@@ -929,7 +955,8 @@ pub fn described(mod_dir: &Path) -> Result<Vec<String>> {
 pub fn key_clashes(mod_dirs: &[PathBuf]) -> Result<BTreeMap<String, Vec<String>>> {
     let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for line in all_lines(mod_dirs)? {
-        if line.is_file() || ids::is_pattern(&line.key) {
+        // data: tables merge field by field; build refuses two values for one field
+        if line.is_file() || line.is_data() || ids::is_pattern(&line.key) {
             continue;
         }
         let modules = owners.entry(line.key.to_lowercase()).or_default();

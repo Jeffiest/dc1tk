@@ -3,6 +3,7 @@
 
 mod asset_tree;
 mod assets;
+mod data_cmd;
 mod defs;
 mod files;
 mod map_cmd;
