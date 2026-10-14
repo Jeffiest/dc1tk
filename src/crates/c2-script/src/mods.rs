@@ -8,6 +8,7 @@
 //! replaces or adds, and INDEX, what is known about each file: the hash of the decompiler's
 //! version it was made from and its path without readable names. Edit a mod's files where they are
 //! (the folder has its own compile_flags.txt), or edit the tree and save the changes into a mod.
+//! mod slim turns such copies of the tree's files into patches of what they change (slim).
 //!
 //! build --mod NAME layers mods over the tree without changing it: each mod file stands in for the
 //! tree's, libraries included, and two chosen mods may not change the same file. A mod can also
@@ -267,12 +268,15 @@ pub struct Overridden {
 
 /// Starts or extends a patch of the mod: copies functions of the scripts --map/--script/... picks
 /// (from the English one of a map's languages) into NAME.c in the mod, each after #pragma override.
+/// A name the script has no function of but a header it includes declares a native of (headers,
+/// by name) gets a wrapper of the native (patches::native_wrapper).
 pub fn override_functions(
     tree_dir: &Path,
     mod_dir: &Path,
     kind: &str,
     value: &str,
     functions: &[String],
+    headers: &IndexMap<String, String>,
 ) -> Result<Overridden> {
     let scripts = Scripts::new(tree_dir)?;
     let chosen: Vec<String> =
@@ -286,7 +290,22 @@ pub fn override_functions(
         .unwrap_or(&chosen[0])
         .clone();
     let mut found = patches::function_texts(tree_dir, &model, functions)?;
-    let missing: Vec<&str> = functions.iter().filter(|name| !found.contains_key(*name)).map(String::as_str).collect();
+    let model_text = c2_py::read_text(&tree_dir.join(&model))?;
+    let included: Vec<String> = Regex::new(r"(?m)^#include\s*<([^>]+)>")
+        .unwrap()
+        .captures_iter(&model_text)
+        .map(|capture| capture[1].to_string())
+        .collect();
+    let wrappers: IndexMap<String, String> = functions
+        .iter()
+        .filter(|name| !found.contains_key(*name))
+        .filter_map(|name| Some((name.clone(), patches::native_wrapper(headers, &included, name)?)))
+        .collect();
+    let missing: Vec<&str> = functions
+        .iter()
+        .filter(|name| !found.contains_key(*name) && !wrappers.contains_key(*name))
+        .map(String::as_str)
+        .collect();
     if !missing.is_empty() {
         return Err(Error::invalid(format!("{} has no function {}", model, missing.join(", "))));
     }
@@ -304,7 +323,7 @@ pub fn override_functions(
         for path in &variants {
             copies.push((path, patches::function_texts(tree_dir, path, functions)?));
         }
-        for name in functions {
+        for name in functions.iter().filter(|name| !wrappers.contains_key(*name)) {
             let mut texts = BTreeMap::from([(patches::language_of(&scripts.plain[&model]), found[name].clone())]);
             for (path, copy) in &copies {
                 if let Some(text) = copy.get(name) {
@@ -322,15 +341,23 @@ pub fn override_functions(
     let mut text = if path.is_file() {
         c2_py::read_text(&path)?
     } else {
-        patches::patch_header(&name_of(mod_dir), kind, value, &c2_py::read_text(&tree_dir.join(&model))?)
+        patches::patch_header(&name_of(mod_dir), kind, value, &model_text)
     };
     let added: Vec<String> = functions
         .iter()
-        .filter(|name| !Regex::new(&format!(r"(?m)^\w+\s+{}\s*\(", regex::escape(name))).unwrap().is_match(&text))
+        .filter(|name| {
+            let name = regex::escape(name);
+            let had = format!(r"(?m)^\w+\s+{name}\s*\(|^#[ \t]*pragma[ \t]+override[ \t]+{name}\b");
+            !Regex::new(&had).unwrap().is_match(&text)
+        })
         .cloned()
         .collect();
     for name in &added {
-        text = format!("{}\n\n#pragma override\n{}\n", text.trim_end_matches('\n'), found[name].trim_end_matches('\n'));
+        let piece = match wrappers.get(name) {
+            Some(wrapper) => wrapper.clone(),
+            None => format!("#pragma override\n{}", found[name]),
+        };
+        text = format!("{}\n\n{}\n", text.trim_end_matches('\n'), piece.trim_end_matches('\n'));
     }
     c2_py::write_text(&path, &text)?;
     Ok(Overridden { path, added, scripts: chosen })

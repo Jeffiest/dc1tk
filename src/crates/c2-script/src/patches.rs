@@ -12,6 +12,10 @@
 //! - A function after #pragma override replaces the script's function of that name for that script
 //!   alone; original(...) inside it calls the function it replaced. Several mods can override one
 //!   function when the later ones call original(): the last mod's runs first.
+//! - #pragma override NATIVE before a function (of any name) wraps the native: every call the
+//!   script makes to it, by its SDK name, calls the function instead, and original(...) inside it
+//!   calls the native. Only those calls change, and the wrappers go at the end of the script
+//!   (with_wrappers). Wrappers from several mods chain as overrides do.
 //! - Other functions and globals are added. A name the script already has is refused (the patch
 //!   most likely meant to override it); a name another mod adds as well is renamed for this one, so
 //!   mods never need to agree on names. A patch's libraries can declare globals of their own.
@@ -403,6 +407,9 @@ pub fn prepared(
                     if let Some(to) = follow.get(name) {
                         out["name"] = to.as_str().into();
                     }
+                    if let Some(to) = function["override_of"].as_str().and_then(|of| follow.get(of)) {
+                        out["override_of"] = to.as_str().into();
+                    }
                 }
                 out
             })
@@ -520,7 +527,7 @@ fn joined(
         .with("unused_strings", Node::List(Vec::new()))
         .with("mod", module);
     if let Some(map) = out.as_object_mut() {
-        for key in ["override", "every_frame", "library"] {
+        for key in ["override", "override_of", "every_frame", "library"] {
             map.remove(key);
         }
     }
@@ -554,6 +561,9 @@ pub struct Done {
     libraries: HashMap<String, Brought>,
     overrides: HashMap<String, Vec<String>>,
     every_frame: Vec<String>,
+    /// {native: the functions that wrap it, the first mod's first}, joined but not yet placed:
+    /// with_wrappers places them once every patch is in.
+    wrappers: IndexMap<String, Vec<Node>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -627,6 +637,27 @@ pub fn merged(
             taken.insert(calls.get(name).cloned().unwrap_or_else(|| name.to_string()));
         }
     }
+    // an override of a native the script has no function of wraps it, under a name of its own; a
+    // wrapper named otherwise than the native can be called by its name too
+    let natives: HashMap<&str, &Node> = list(&program["declarations"], "natives")
+        .iter()
+        .chain(list(&patch["declarations"], "natives"))
+        .map(|declared| (text(declared, "name"), declared))
+        .collect();
+    let overridden_name =
+        |function: &Node| function["override_of"].as_str().unwrap_or(text(function, "name")).to_string();
+    let mut wrapper_names: HashMap<String, String> = HashMap::new();
+    for function in mine.iter().filter(|function| is_override(function)) {
+        let (name, target) = (text(function, "name"), overridden_name(function));
+        if function_names.contains(&target) || !natives.contains_key(target.as_str()) {
+            continue;
+        }
+        let fresh = fresh_name(&format!("{}_{}", name, mod_identifier(module)), &mut taken);
+        if name != target {
+            calls.insert(name.to_string(), fresh.clone());
+        }
+        wrapper_names.insert(name.to_string(), fresh);
+    }
     let mut added_globals = Vec::new();
     for declared in list(patch, "globals") {
         let name = text(declared, "name").to_string();
@@ -681,6 +712,34 @@ pub fn merged(
             done.added.insert(calls.get(name).cloned().unwrap_or_else(|| name.to_string()));
             continue;
         }
+        let target = overridden_name(function);
+        let chains = names::callees(&function["body"]).iter().any(|callee| callee == ORIGINAL);
+        if let Some(fresh) = wrapper_names.get(name) {
+            wraps(natives[target.as_str()], function, &target)?;
+            let earlier = done.overrides.get(&target).cloned().unwrap_or_default();
+            if !earlier.is_empty() && !chains {
+                return Err(Error::invalid(format!(
+                    "{} replaces native {}, which mod {} wraps too; call original() in one of them to run both",
+                    module,
+                    target,
+                    earlier.join(", ")
+                )));
+            }
+            let wrapper = joined(function, consts, &calls, &variables, &all_globals, module, Some(ORIGINAL))?;
+            done.wrappers.entry(target.clone()).or_default().push(wrapper.with("name", fresh.as_str()));
+            done.overrides.entry(target).or_default().push(module.to_string());
+            continue;
+        }
+        if target != name {
+            let what = if position.contains_key(&target) {
+                format!("{target} is the script's function, so call the override {target}")
+            } else {
+                format!("the script has no function {target} and knows no native {target}")
+            };
+            return Err(Error::invalid(format!(
+                "#pragma override {target} before {name}: only the wrapper of a native can have a name of its own; {what}"
+            )));
+        }
         let Some(&at) = position.get(name) else {
             let mut known: Vec<String> = position.keys().cloned().collect();
             known.sort();
@@ -703,7 +762,6 @@ pub fn merged(
             )));
         }
         let earlier = done.overrides.get(name).cloned().unwrap_or_default();
-        let chains = names::callees(&function["body"]).iter().any(|callee| callee == ORIGINAL);
         if !earlier.is_empty() && !chains {
             return Err(Error::invalid(format!(
                 "{} replaces {}, which mod {} overrides too; call original() in one of them to run both",
@@ -814,7 +872,223 @@ pub fn applied(
         program =
             step.map_err(|error| Error::invalid(format!("{} (mod {}): {}", patch.file_name(), patch.module, error)))?;
     }
-    with_frame_calls(program, &done.every_frame)
+    with_frame_calls(with_wrappers(program, &done.wrappers)?, &done.every_frame)
+}
+
+/// The arguments a native takes: how many a call must give, how many it names, and whether it
+/// takes more (...).
+fn native_shape(native: &Node) -> (usize, usize, bool) {
+    let params: Vec<&Node> = list(native, "params").iter().filter(|param| !truthy(&param["result"])).collect();
+    (params.iter().filter(|param| !truthy(&param["optional"])).count(), params.len(), truthy(&native["variadic"]))
+}
+
+/// Refuses a wrapper that cannot stand in for its native: one taking fewer parameters than a call
+/// must give or more than the native names, or returning a value when the native has none (or the
+/// other way round).
+fn wraps(native: &Node, function: &Node, target: &str) -> Result<()> {
+    let name = text(function, "name");
+    let count = list(function, "params").len();
+    let (required, total, variadic) = native_shape(native);
+    if count < required || (count > total && !variadic) {
+        let range = match (variadic, required == total) {
+            (true, _) => format!("{required} or more"),
+            (false, true) => required.to_string(),
+            (false, false) => format!("{required} to {total}"),
+        };
+        return Err(Error::invalid(format!(
+            "{name} wraps native {target}, which takes {range} arguments, but {name} takes {count} parameters"
+        )));
+    }
+    let returns = text(function, "returns") != "void";
+    if returns != sdk::has_result(native) {
+        return Err(Error::invalid(if returns {
+            format!("native {target} returns nothing, so its wrapper {name} is void")
+        } else {
+            format!("native {target} returns a value, so its wrapper {name} returns one too")
+        }));
+    }
+    Ok(())
+}
+
+/// Every call the script makes to a wrapped native, by its SDK name, made to the last mod's
+/// wrapper instead; the call's AT or DIRECT form goes, as the wrapper calls the native as the SDK
+/// declares it. Only those calls change, so the rest of the script compiles as it did, and the
+/// wrappers go at its end. A native's optional arguments are left out by some calls, and a script
+/// function takes a fixed number, so a wrapper is placed once for each number of arguments the
+/// calls give: the copy for a call of k arguments takes the wrapper's first k parameters, has the
+/// others as locals set to 0, and passes original() on to the next wrapper (the native, for the
+/// first mod's) with no more than k. A wrapper's own calls to its native reach the native.
+fn with_wrappers(program: Node, wrappers: &IndexMap<String, Vec<Node>>) -> Result<Node> {
+    if wrappers.is_empty() {
+        return Ok(program);
+    }
+    let mut taken: HashSet<String> = list(&program, "functions")
+        .iter()
+        .chain(list(&program, "globals"))
+        .chain(wrappers.values().flatten())
+        .map(|declared| text(declared, "name").to_string())
+        .collect();
+    taken.extend(wrappers.keys().cloned());
+    let mut wrapping = Wrapping { wrappers, made: HashMap::new(), taken, placed: Vec::new() };
+    let mut functions = Vec::new();
+    for function in list(&program, "functions") {
+        if function.kind() == "function" {
+            functions.push(function.clone().with("body", wrapping.routed(&function["body"], None)?));
+        } else {
+            functions.push(function.clone());
+        }
+    }
+    // a wrapper named otherwise than its native can be called by its name, with all its parameters
+    let whole: HashMap<&str, (&str, usize, usize)> = wrappers
+        .iter()
+        .flat_map(|(native, chain)| {
+            chain
+                .iter()
+                .enumerate()
+                .map(move |(at, wrapper)| (text(wrapper, "name"), (native.as_str(), at, list(wrapper, "params").len())))
+        })
+        .collect();
+    let mut seen = 0;
+    loop {
+        let callers: Vec<Node> = functions.iter().chain(&wrapping.placed).skip(seen).cloned().collect();
+        if callers.is_empty() {
+            break;
+        }
+        seen += callers.len();
+        for caller in &callers {
+            for callee in names::callees(&caller["body"]) {
+                if let Some(&(native, at, count)) = whole.get(callee.as_str()) {
+                    wrapping.copy(native, at, count)?;
+                }
+            }
+        }
+    }
+    functions.extend(wrapping.placed);
+    Ok(program.with("functions", functions))
+}
+
+/// The wrappers placed so far, by native, place in the chain and number of arguments.
+struct Wrapping<'a> {
+    wrappers: &'a IndexMap<String, Vec<Node>>,
+    made: HashMap<(String, usize, usize), String>,
+    taken: HashSet<String>,
+    placed: Vec<Node>,
+}
+
+impl Wrapping<'_> {
+    /// The wrapper at place at in native's chain as a function of count parameters, placed when
+    /// it is not yet.
+    fn copy(&mut self, native: &str, at: usize, count: usize) -> Result<String> {
+        let key = (native.to_string(), at, count);
+        if let Some(name) = self.made.get(&key) {
+            return Ok(name.clone());
+        }
+        let wrappers = self.wrappers;
+        let wrapper = &wrappers[native][at];
+        let (whole, params) = (text(wrapper, "name"), list(wrapper, "params"));
+        if count > params.len() {
+            return Err(Error::invalid(format!(
+                "the script calls {native} with {count} arguments, but mod {}'s wrapper of it takes {}; give it the \
+                 native's parameters",
+                text(wrapper, "mod"),
+                params.len()
+            )));
+        }
+        let name = if count == params.len() {
+            whole.to_string()
+        } else {
+            fresh_name(&format!("{whole}_{count}"), &mut self.taken)
+        };
+        self.made.insert(key, name.clone());
+        let mut locals: Vec<Node> = Vec::new();
+        let mut body: Vec<Node> = Vec::new();
+        for param in &params[count..] {
+            let param_name = text(param, "name");
+            if truthy(&param["array"]) {
+                return Err(Error::invalid(format!(
+                    "a call to {native} leaves out {param_name}, which mod {}'s wrapper takes as a pointer",
+                    text(wrapper, "mod")
+                )));
+            }
+            let zero = match text(param, "type") {
+                "float" => node!({"kind": "float", "bits": 0}),
+                "string" => node!({"kind": "string", "text": ""}),
+                _ => int_node(0),
+            };
+            locals.push(node!({"name": param_name, "type": param["type"].clone(), "size": null}));
+            body.push(node!({"kind": "expr", "expr": {"kind": "assign", "target": {"kind": "var", "name": param_name}, "value": zero}}));
+        }
+        let passed = self.passed_on(&wrapper["body"], native, at, count)?;
+        body.extend(self.routed(&passed, Some(native))?.as_array().cloned().unwrap_or_default());
+        locals.extend(list(wrapper, "locals").iter().cloned());
+        self.placed.push(
+            wrapper
+                .clone()
+                .with("name", name.as_str())
+                .with("params", params[..count].to_vec())
+                .with("locals", locals)
+                .with("body", body),
+        );
+        Ok(name)
+    }
+
+    /// The wrapper's body with each original(...) a call of the next wrapper in, or of the native,
+    /// with no more than count arguments.
+    fn passed_on(&mut self, node: &Node, native: &str, at: usize, count: usize) -> Result<Node> {
+        Ok(match node {
+            Node::List(items) => {
+                Node::List(items.iter().map(|item| self.passed_on(item, native, at, count)).collect::<Result<_>>()?)
+            }
+            Node::Map(map) => {
+                let mut out = Map::with_capacity(map.len());
+                for (key, value) in map.entries() {
+                    out.insert(key.clone(), self.passed_on(value, native, at, count)?);
+                }
+                let mut out = Node::Map(out);
+                if node.kind() == "call" && text(node, "name") == ORIGINAL {
+                    let mut args = list(&out, "args").to_vec();
+                    args.truncate(count);
+                    let to = if at == 0 { native.to_string() } else { self.copy(native, at - 1, args.len())? };
+                    out = out.with("name", to).with("args", args);
+                }
+                out
+            }
+            other => other.clone(),
+        })
+    }
+
+    /// node with every call of a wrapped native (but own, whose wrappers call it) made to its last
+    /// wrapper, as a function of as many parameters as the call gives arguments.
+    fn routed(&mut self, node: &Node, own: Option<&str>) -> Result<Node> {
+        let wrappers = self.wrappers;
+        let wrapped = |name: &str| wrappers.contains_key(name) && own != Some(name);
+        Ok(match node {
+            Node::List(items) => Node::List(items.iter().map(|item| self.routed(item, own)).collect::<Result<_>>()?),
+            Node::Map(map) => {
+                let direct = match node["expr"].kind() {
+                    "call" => text(&node["expr"], "name"),
+                    "assign" if node["expr"]["value"].kind() == "call" => text(&node["expr"]["value"], "name"),
+                    _ => "",
+                };
+                let drop_form = node.kind() == "expr" && wrapped(direct);
+                let mut out = Map::with_capacity(map.len());
+                for (key, value) in map.entries() {
+                    if !(drop_form && key == "at") {
+                        out.insert(key.clone(), self.routed(value, own)?);
+                    }
+                }
+                let mut out = Node::Map(out);
+                let name = text(node, "name");
+                if node.kind() == "call" && wrapped(name) {
+                    let last = wrappers[name].len() - 1;
+                    let to = self.copy(name, last, list(node, "args").len())?;
+                    out = out.with("name", to);
+                }
+                out
+            }
+            other => other.clone(),
+        })
+    }
 }
 
 /// A call to each #pragma every_frame function before every wait; in the script, so it runs once
@@ -927,6 +1201,46 @@ pub fn function_texts(tree: &Path, script: &str, wanted: &[String]) -> Result<In
     Ok(found)
 }
 
+/// A wrapper of a native to start a patch with (mod override): the native's declaration in the
+/// first of the headers named (by their names in headers) that has it, as a function after
+/// #pragma override NAME that takes the native's parameters and passes them on with original().
+/// It is named NAME_wrapper, since C tools would take a function of the native's name with other
+/// parameters for a second declaration of it. None when no header declares the native.
+pub fn native_wrapper(headers: &IndexMap<String, String>, included: &[String], name: &str) -> Option<String> {
+    let declaration = Regex::new(&format!(
+        r"(?m)((?:^//[^\n]*\n)*)^extern\s+(\w+)\s+{}\s*\(([^;]*)\)\s*NATIVE\([^)]*\)\s*;",
+        regex::escape(name)
+    ))
+    .unwrap();
+    let found = included.iter().filter_map(|header| headers.get(header)).find_map(|text| {
+        declaration
+            .captures(&text.replace('\r', ""))
+            .map(|found| (found[1].to_string(), found[2].to_string(), found[3].to_string()))
+    })?;
+    let (doc, returns, params) = found;
+    let params: Vec<String> = params
+        .replace("OPTIONAL(", "")
+        .replace(')', "")
+        .split(',')
+        .map(|param| c2_py::strip(param).to_string())
+        .filter(|param| !param.is_empty() && param != "..." && param != "void")
+        .map(|param| match param.strip_prefix("any ") {
+            Some(rest) => format!("int {rest}"),
+            None => param,
+        })
+        .collect();
+    let names: Vec<&str> =
+        params.iter().map(|param| param.rsplit(|c: char| c.is_whitespace() || c == '*').next().unwrap_or("")).collect();
+    let returns = if returns == "any" { "int".to_string() } else { returns };
+    let call = format!("original({})", names.join(", "));
+    let body = if returns == "void" { format!("    {call};") } else { format!("    return {call};") };
+    Some(format!(
+        "// Wraps native {name}: every call the scripts make to it runs this instead, and original()\n\
+         // runs the native.\n{doc}#pragma override {name}\n{returns} {name}_wrapper({})\n{{\n{body}\n}}\n",
+        if params.is_empty() { "void".to_string() } else { params.join(", ") }
+    ))
+}
+
 fn language_name(language: i64) -> &'static str {
     LANGUAGES.iter().find(|(_, value)| *value == language).map_or("", |(name, _)| name)
 }
@@ -992,15 +1306,17 @@ pub fn patch_header(module: &str, kind: &str, value: &str, script_text: &str) ->
 
 fn overrides_pattern() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"#[ \t]*pragma[ \t]+override\s+(?:\w+\s+)*?(\w+)\s*\(")
+    regex(&CELL, r"#[ \t]*pragma[ \t]+override(?:[ \t]+(\w+))?[ \t]*\r?\n\s*(?:\w+\s+)*?(\w+)\s*\(")
 }
 
-/// The functions a patch's text overrides, in order, each once.
+/// The functions (and natives) a patch's text overrides, in order, each once: the name after
+/// #pragma override, else the function's.
 pub fn overridden(patch_text: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     for capture in overrides_pattern().captures_iter(&index::without_comments(patch_text)) {
-        if !found.iter().any(|name| *name == capture[1]) {
-            found.push(capture[1].to_string());
+        let name = capture.get(1).or(capture.get(2)).map_or("", |name| name.as_str());
+        if !found.iter().any(|known| known == name) {
+            found.push(name.to_string());
         }
     }
     found
@@ -1010,13 +1326,12 @@ pub fn overridden(patch_text: &str) -> Vec<String> {
 pub fn summary(patch: &Patch) -> String {
     static EVERY_FRAME: OnceLock<Regex> = OnceLock::new();
     static PROGRAMS: OnceLock<Regex> = OnceLock::new();
-    let overrides = overrides_pattern();
     let every_frame = regex(&EVERY_FRAME, r"#[ \t]*pragma[ \t]+every_frame\s+(?:\w+\s+)*?(\w+)\s*\(");
     let programs = regex(&PROGRAMS, r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*(\w+)\s*\);");
     let text = index::without_comments(&patch.text);
     let first =
         |pattern: &Regex| -> Vec<String> { pattern.captures_iter(&text).map(|found| found[1].to_string()).collect() };
-    let (overridden, every, added) = (first(overrides), first(every_frame), first(programs));
+    let (overridden, every, added) = (overridden(&patch.text), first(every_frame), first(programs));
     let count = patch.scripts.len();
     let mut parts = vec![format!("{} script{}", count, if count == 1 { "" } else { "s" })];
     if !overridden.is_empty() {

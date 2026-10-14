@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
 use c2_script::{
-    build, definitions, discfiles, editor, index, memory, migrate, mods, patches, renames, replace, sdk, startat,
+    build, definitions, discfiles, editor, index, memory, migrate, mods, patches, renames, replace, sdk, slim, startat,
     tree,
 };
 
@@ -82,6 +82,19 @@ pub enum ModCommand {
         #[command(flatten)]
         common: Common,
     },
+    /// Turn a mod's whole files (copies of the tree's scripts and libraries) into patches of the
+    /// functions, globals and programs they change or add, where the mod then builds to the same
+    /// bytes, and remove the copies.
+    Slim {
+        /// The decompiled source tree.
+        source: PathBuf,
+        /// The mod's name.
+        name: String,
+        #[arg(long, default_value = "mods")]
+        mods: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
     /// List the mods, their files, and mods that change the same file.
     List {
         /// The decompiled source tree.
@@ -119,7 +132,7 @@ pub enum ModCommand {
         source: PathBuf,
         /// The mod's name.
         name: String,
-        /// Functions to override, as the script names them.
+        /// Functions to override, as the script names them, or natives to wrap (place_monster).
         #[arg(required = true)]
         functions: Vec<String>,
         /// Patch every language of a map's script (s51).
@@ -811,7 +824,8 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             if kinds.len() != 1 {
                 bail!("give one of --map, --script, --monster and --library: the scripts to patch");
             }
-            let result = mods::override_functions(source, &mod_dir, kinds[0].0, kinds[0].1, functions)?;
+            let headers = sdk::header_texts(&common.definitions()?, &common.sdk_dir())?;
+            let result = mods::override_functions(source, &mod_dir, kinds[0].0, kinds[0].1, functions, &headers)?;
             let added =
                 if result.added.is_empty() { "already overrides them".to_string() } else { result.added.join(", ") };
             println!("{}: {}", shown(&result.path), added);
@@ -846,6 +860,36 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             let copied = mods::new(source, &mod_dir, paths)?;
             println!("{} files copied into {}; edit them there", copied.len(), shown(&mod_dir.join(mods::FILES)));
             mods::write_editor_flags(&mod_dir, source, &common.sdk_dir(), &common.definitions()?.sets)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        ModCommand::Slim { source, name, mods: mods_dir, common } => {
+            let mod_dir = mods::folder(mods_dir, name)?;
+            if !mods::exists(&mod_dir) {
+                bail!("no mod at {}", shown(&mod_dir));
+            }
+            let defs = common.definitions()?;
+            let sdk_dir = common.sdk_dir();
+            let headers = sdk::header_texts(&defs, &sdk_dir)?;
+            let tables = common.tables()?;
+            let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+            let outcome = slim::slim(mods_dir, name, source, &tools, &default_constants(source)?)?;
+            for slimmed in &outcome.slimmed {
+                println!("{}", slim::describe(slimmed, &mod_dir));
+            }
+            for (file, reason) in &outcome.kept {
+                println!("{file}: kept, since {reason}");
+            }
+            if outcome.slimmed.iter().any(|slimmed| slimmed.patch.is_some()) {
+                write_editor_files(&mod_dir, source, common)?;
+                record_fingerprints(&mod_dir, source, common)?;
+            }
+            let patched = outcome.slimmed.iter().filter(|slimmed| slimmed.patch.is_some()).count();
+            println!(
+                "{patched} made patches, {} the same as the tree's, {} kept; every script they reach builds to the \
+                 same bytes as before",
+                outcome.slimmed.len() - patched,
+                outcome.kept.len()
+            );
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Save { source, name, mods: mods_dir, common } => {
