@@ -6,6 +6,7 @@
 pub mod cfg_text;
 pub mod data_table;
 pub mod folder;
+pub mod georama_data;
 pub mod from_gltf;
 pub mod ids;
 pub mod im3;
