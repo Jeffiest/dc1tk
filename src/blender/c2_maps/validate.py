@@ -177,6 +177,11 @@ def check_point(found, obj, data):
         target, problem = c2data.anime_target(obj)
         if target is None:
             found.append((WARNING, obj.name, "The animation moves nothing: %s" % problem))
+    if kind == "invent" and c2data.placement_of(obj) is None:
+        # CMap::InScreenFunc looks only at the points of the placements it draws
+        found.append(
+            (WARNING, obj.name, "An invent box among the map's own points is never photographed: put it in a placement")
+        )
     if kind == "event":
         target = c2data.data_field(obj, schema.DATA_FIELDS["event"][4])
         if isinstance(target, str) and schema.name_bytes(target) > schema.TARGET_LIMIT:

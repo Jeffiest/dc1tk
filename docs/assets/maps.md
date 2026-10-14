@@ -363,7 +363,7 @@ start > end past midnight, equal always).
 | kind | count | data line | used for |
 |---|---|---|---|
 | `pos` | 3,614 | none | positions scripts and doors look up by name: `point`/`pointN` (3,439, inside door and entrance templates), `kaifuku` (136, recovery spots), `npc_pos`, `gcamp` (camps) |
-| `invent` | 3,018 | `FUNC_INVENT_DATA id, min xyz, max xyz, int, float, angle_degrees` | a box with an id; by its name and the game, probably a photo subject for inventing ideas (not confirmed) |
+| `invent` | 3,018 | `FUNC_INVENT_DATA id, min xyz, max xyz, int, float, angle_degrees` | a photo subject: a photo whose line of sight hits the box (min and max from the point, in its frame) gives idea `id` (below 1000; from 1000 a scoop). The float is how far the line reaches (400 when 0), the angle limits it to within that many degrees of the point's back axis. Only the points of drawn placements are looked at (`CMap::InScreenFunc`, `CMapParts::InScreenFunc`): every disc one is in a placement, and one among the map's own points is never photographed |
 | `event` | 2,653 | `FUNC_EVENT_DATA` kind, event_no, program, 3 ints, target (15 chars), flags (action button, item, 0x100) | doors (1,250), events (1,157), treasure boxes `t_box` (122), `close_door`, `book`, `ed_door`, ladders `lddr_b`/`lddr_t`: the program is the map script's `PROGRAM` number it runs |
 | `flare` | 2,631 | `FUNC_FIRE_DATA r,g,b,draw[,int,int]` | lens flares (all-zero colour means 128,90,38) |
 | `plight` | 2,098 | `FUNC_PLIGHT_DATA power, r,g,b (0-511), mode, 4 ints, flicker type, depth, period` | point lights |

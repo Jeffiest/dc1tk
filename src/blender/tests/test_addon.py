@@ -496,6 +496,11 @@ def main():
     results = validate.check(root)
     check(any("Unknown point kind" in r[2] for r in results), "unknown kind reported")
     check(any(r[1] == "Empty" and "No extras.c2" in r[2] for r in results), "missing extras reported")
+    # an invent box among the map's own points: the camera never looks at it
+    bad["c2"] = {"role": "point", "kind": "invent", "enable": 1, "flag": [0, 0, 0, 0],
+                 "data": {"id": 251, "min": [-1, -1, -1], "max": [1, 1, 1], "unknown_int": 0, "unknown_float": 0, "angle": 0}}
+    results = validate.check(root)
+    check(any(r[1] == "point:bad" and "never photographed" in r[2] for r in results), "a map's own invent box is reported")
     bpy.data.objects.remove(bad)
     bpy.data.objects.remove(bare)
 

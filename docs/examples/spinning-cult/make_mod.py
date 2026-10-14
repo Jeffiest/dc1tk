@@ -74,9 +74,11 @@ def extend_room(fish_room):
         data["data"]["step"] = [0.0, 0.0, 0.0]
         data["data"]["end"] = [25.0, 360.0, 0.0]
         c2data.put(look, data)
-        # the photo: a box round the fish, seen from anywhere in the room
-        fish_room.select_only([root])
-        idea = fish_room.add_point("INVENT", "fish_idea", centre, in_placement=False)
+        # the photo: a box round the fish, seen from anywhere in the room. The camera looks only at
+        # the invent points of placements that are drawn (CMap::InScreenFunc walks the
+        # placements), so the box goes in the turning fish's placement, not the map's own points.
+        fish_room.select_only([next(child for child in _fish_placement.children if c2data.role(child) == "piece")])
+        idea = fish_room.add_point("INVENT", "fish_idea", centre, in_placement=True)
         data = c2data.get(idea)
         data["data"]["id"] = IDEA_ENDLESS_TURNING
         data["data"]["min"] = [-260.0, -140.0, -140.0]
