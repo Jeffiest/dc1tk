@@ -50,6 +50,10 @@ def is_stringified(obj):
 
 def put(obj, data):
     obj[KEY] = data
+    # what the viewport draws from the data (invent boxes) is worked out again
+    from . import overlay
+
+    overlay.invalidate()
 
 
 def role(obj):
