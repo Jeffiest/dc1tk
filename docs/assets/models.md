@@ -776,13 +776,19 @@ version and its first picture's texture format. Members, in this order:
   bind matrix differs (2.3); `_MOTION` copies it over the base matrices, which skinning needs.
 - `<stem>.wgt` (with a skin): a type-20 block per (skinned mesh, bone) with keys, at most 4
   weights a vertex summing to 100 (2.2).
-- `<stem>.mot` (`motions::new_motion`): every animation that moves a frame becomes a KEY, in glTF
-  order, on one timeline from frame 1 (no gaps); a channel any animation moves off its node's rest
-  gets one list of a key every frame from 0 (the rest) to the last, the animation's values over
-  its KEY's frames (sampled at r/30 s, as 7.3 reads them) and the rest over the others'; channels
-  none moves get no list, so their frames keep the model's matrices. A KEY's name is the
-  animation's (1 to 35 bytes of Shift-JIS), its step `extras.step` or 1.00 (30 frames a second);
-  Blender's frame rate does not matter, since glTF keys are in seconds.
+- `<stem>.mot` (`motions::new_motion`): every animation that moves a frame, or fades, colours,
+  hides or shows a mesh, becomes a KEY, in glTF order, on one timeline from frame 1 (no gaps); a
+  channel any animation moves off its rest gets one list of a key every frame from 0 (the rest) to
+  the last, the animation's values over its KEY's frames (sampled at r/30 s, as 7.3 reads them)
+  and the rest over the others'; channels none moves get no list, so their frames keep the
+  model's matrices and materials. The fades, colours and visibility are the carrier shape keys of
+  6 (`c2_fade_<k>`, `c2_red_<k>`/`c2_green_<k>`/`c2_blue_<k>`, `c2_visible`, `c2_visible_51`),
+  read from the meshes' morph weights as 7.3 reads them, their rests the material's own fade and
+  colour and shown (a visibility read within 1e-3 of 1 is written 1, since the engine hides below
+  1 and a 32-bit key time lands a hair past its frame's); a frame's lists run material, rotation,
+  scale, translation, visibility. A KEY's name is the animation's (1 to 35 bytes of Shift-JIS),
+  its step `extras.step` or 1.00 (30 frames a second); Blender's frame rate does not matter,
+  since glTF keys are in seconds.
 - `info.cfg` (`models::new_info_cfg`): the template's, with NAME, IMG and MODEL naming the new
   members, `VERTEX_ANIME` naming the skinned meshes' frames just before MODEL (`_MODEL` reads the
   list), and `MOTION 0, "<stem>.mot", "<stem>.bbp", "<stem>.wgt";` with the KEYs where the
@@ -794,12 +800,15 @@ version and its first picture's texture format. Members, in this order:
 
 Refused: a skinned mesh weighted to more than 32 bones or of more than 3,198 vertices, more than
 24 skinned meshes (`models::skin_problems`, 2.2 and 7.2), and a skin without an animation (no
-motion set, no bind pose). No cloth (`.clo`): it names a model's frames and particles. A pack
-built so reads back the same: its own export has the glTF's meshes, skin weights and motions
-within the 7.1 and 7.3 tolerances, and building the glTF given over it changes nothing (checked
-on a two-bone test glTF and on [the example](../examples/new-character/README.md), a seven-bone
-character made in Blender, whose pack, built into a disc image and copied back out, plays its
-action in Blender as made).
+motion set, no bind pose), and vertex animation (an animation driving `c2_frame_<f>` shape keys).
+No cloth (`.clo`): it names a model's frames and particles. A pack built so reads back the same:
+its own export has the glTF's meshes, skin weights and motions within the 7.1 and 7.3
+tolerances, and building the glTF given over it changes nothing (checked on a two-bone test glTF,
+with and without a fading and hiding action, on [the example](../examples/new-character/README.md),
+a seven-bone character made in Blender, whose pack, built into a disc image and copied back out,
+plays its action in Blender as made, and on [Brother Gill](../examples/spinning-cult/README.md),
+eighteen bones, a skinned and a rigid mesh and six actions, one of them fading both meshes out
+and hiding them, which come back through the pack's export and Blender's importer as made).
 
 ## 8. Evidence log (research scripts run while the formats were worked out; not in this repository)
 - explore1/2: header/record/layout statistics over all 16,876 .mds (section 1).

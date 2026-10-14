@@ -1136,6 +1136,14 @@ mod tests {
     /// hips, the upper 70% on the arm), textured, and an animation `wave` turning the arm 90
     /// degrees about z over a second. With `animated` false, no animation.
     fn rigged_gltf(folder: &Path, animated: bool) -> std::path::PathBuf {
+        rigged_gltf_with(folder, animated, false)
+    }
+
+    /// `rigged_gltf`, with `vanishing` the quad's carriers `c2_fade_0` and `c2_visible` (shape keys
+    /// that move nothing, at rest 0 and 1) and a second animation `vanish` driving them over a
+    /// second: the fade 0, 0.5, 1 and the visibility 1, a float's hair under 1 (shown), 0 at 0,
+    /// 0.5 and 1 s.
+    fn rigged_gltf_with(folder: &Path, animated: bool, vanishing: bool) -> std::path::PathBuf {
         let mut bin = f32s(&[-1.0, 8.0, 0.0, 1.0, 8.0, 0.0, -1.0, 17.0, 0.0, 1.0, 17.0, 0.0]);
         bin.extend(f32s(&[0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0]));
         bin.extend([0u16, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0].iter().flat_map(|v| v.to_le_bytes()));
@@ -1150,11 +1158,31 @@ mod tests {
         bin.extend(f32s(&[0.0, 1.0]));
         let half = std::f32::consts::FRAC_PI_4;
         bin.extend(f32s(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, half.sin(), half.cos()]));
-        let animations = if animated {
-            r#""animations": [{"name": "wave", "channels": [{"sampler": 0, "target": {"node": 1, "path": "rotation"}}],
-              "samplers": [{"input": 6, "output": 7, "interpolation": "LINEAR"}]}],"#
+        let wave = r#"{"name": "wave", "channels": [{"sampler": 0, "target": {"node": 1, "path": "rotation"}}],
+              "samplers": [{"input": 6, "output": 7, "interpolation": "LINEAR"}]}"#;
+        let vanish = r#"{"name": "vanish", "channels": [{"sampler": 0, "target": {"node": 2, "path": "weights"}}],
+              "samplers": [{"input": 9, "output": 10, "interpolation": "LINEAR"}]}"#;
+        let animations = match (animated, vanishing) {
+            (true, true) => format!(r#""animations": [{wave}, {vanish}],"#),
+            (true, false) => format!(r#""animations": [{wave}],"#),
+            (false, true) => format!(r#""animations": [{vanish}],"#),
+            (false, false) => String::new(),
+        };
+        let (morph, targets, accessors, views) = if vanishing {
+            bin.extend(f32s(&[0.0; 12]));
+            bin.extend(f32s(&[0.0, 0.5, 1.0]));
+            bin.extend(f32s(&[0.0, 1.0, 0.5, 0.9999999, 1.0, 0.0]));
+            (
+                r#""weights": [0, 1], "extras": {"targetNames": ["c2_fade_0", "c2_visible"]}, "#,
+                r#", "targets": [{"POSITION": 8}, {"POSITION": 8}]"#,
+                r#", {"bufferView": 8, "componentType": 5126, "count": 4, "type": "VEC3"},
+               {"bufferView": 9, "componentType": 5126, "count": 3, "type": "SCALAR"},
+               {"bufferView": 10, "componentType": 5126, "count": 6, "type": "SCALAR"}"#,
+                r#", {"buffer": 0, "byteOffset": 356, "byteLength": 48}, {"buffer": 0, "byteOffset": 404, "byteLength": 12},
+                 {"buffer": 0, "byteOffset": 416, "byteLength": 24}"#,
+            )
         } else {
-            ""
+            ("", "", "", "")
         };
         let gltf = format!(
             r#"{{"asset": {{"version": "2.0"}}, "scene": 0, "scenes": [{{"nodes": [3]}}],
@@ -1164,7 +1192,7 @@ mod tests {
            {{"name": "Rig", "children": [2, 0]}}],
  "skins": [{{"inverseBindMatrices": 5, "joints": [0, 1], "name": "Rig"}}],
  {animations}
- "meshes": [{{"name": "Body", "primitives": [{{"attributes": {{"POSITION": 0, "TEXCOORD_0": 1, "JOINTS_0": 2, "WEIGHTS_0": 3}}, "indices": 4, "material": 0}}]}}],
+ "meshes": [{{"name": "Body", {morph}"primitives": [{{"attributes": {{"POSITION": 0, "TEXCOORD_0": 1, "JOINTS_0": 2, "WEIGHTS_0": 3}}, "indices": 4, "material": 0{targets}}}]}}],
  "materials": [{{"name": "skin", "pbrMetallicRoughness": {{"baseColorTexture": {{"index": 0}}}}}}],
  "textures": [{{"source": 0}}], "images": [{{"name": "hero_skin", "uri": "hero_skin.png"}}],
  "accessors": [{{"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3"}},
@@ -1174,11 +1202,11 @@ mod tests {
                {{"bufferView": 4, "componentType": 5123, "count": 6, "type": "SCALAR"}},
                {{"bufferView": 5, "componentType": 5126, "count": 2, "type": "MAT4"}},
                {{"bufferView": 6, "componentType": 5126, "count": 2, "type": "SCALAR"}},
-               {{"bufferView": 7, "componentType": 5126, "count": 2, "type": "VEC4"}}],
+               {{"bufferView": 7, "componentType": 5126, "count": 2, "type": "VEC4"}}{accessors}],
  "bufferViews": [{{"buffer": 0, "byteOffset": 0, "byteLength": 48}}, {{"buffer": 0, "byteOffset": 48, "byteLength": 32}},
                  {{"buffer": 0, "byteOffset": 80, "byteLength": 32}}, {{"buffer": 0, "byteOffset": 112, "byteLength": 64}},
                  {{"buffer": 0, "byteOffset": 176, "byteLength": 12}}, {{"buffer": 0, "byteOffset": 188, "byteLength": 128}},
-                 {{"buffer": 0, "byteOffset": 316, "byteLength": 8}}, {{"buffer": 0, "byteOffset": 324, "byteLength": 32}}],
+                 {{"buffer": 0, "byteOffset": 316, "byteLength": 8}}, {{"buffer": 0, "byteOffset": 324, "byteLength": 32}}{views}],
  "buffers": [{{"uri": "hero.bin", "byteLength": {}}}]}}"#,
             bin.len()
         );
@@ -1238,6 +1266,55 @@ mod tests {
         let path = rigged_gltf(&folder, false);
         let error = new_pack(&path, &prop_template(), "prop", "hero").unwrap_err().to_string();
         assert!(error.contains("animation"), "{error}");
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_new_character_fades_and_hides_its_meshes_with_their_carrier_shape_keys() {
+        let folder = std::env::temp_dir().join(format!("c2-assets-new-character-fade-{}", std::process::id()));
+        let path = rigged_gltf_with(&folder, true, true);
+        let built = new_pack(&path, &prop_template(), "prop", "hero").unwrap();
+        let found = members(&built).unwrap();
+        let cfg = String::from_utf8(get(&found, "info.cfg").to_vec()).unwrap();
+        assert!(
+            cfg.contains("KEY_START;\r\n\tKEY \"wave\", 1, 31, 1.00;\r\n\tKEY \"vanish\", 32, 62, 1.00;\r\nKEY_END;"),
+            "{cfg}"
+        );
+        // the body's material fade and visibility before the arm's rotation, keyed every frame
+        let lists = crate::mot::parse(get(&found, "hero.mot")).unwrap();
+        let kinds: Vec<(i32, i32, i32, usize)> =
+            lists.iter().map(|l| (l.frame, l.kind, l.target, l.keys.len())).collect();
+        assert_eq!(kinds, [(1, 40, 0, 63), (1, 50, 0, 63), (3, 0, 0, 63)]);
+        let at = |list: &crate::mot::KeyList, frame: i64| list.keys.iter().find(|(f, _)| *f == frame).unwrap().1[0];
+        let (fade, shown) = (&lists[0], &lists[1]);
+        // at rest and over wave: opaque and shown; vanish fades to invisible and hides at its end
+        // (shown exactly while the glTF holds it within a float's noise of 1: the engine hides
+        // below 1)
+        for frame in [0, 1, 20, 31] {
+            assert_eq!((at(fade, frame), at(shown, frame)), (0.0, 1.0), "frame {frame}");
+        }
+        assert!((at(fade, 32 + 15) - 0.5).abs() < 1e-6 && at(shown, 32 + 15) == 1.0);
+        assert!((at(fade, 62) - 1.0).abs() < 1e-6 && at(shown, 62).abs() < 1e-6);
+        assert!(at(shown, 61) > 0.0 && at(shown, 61) < 1.0);
+        // read back: the pack's export carries them as the same shape keys and motions
+        let exported = load_from_folder(&folder_of(&export(&built).unwrap()), "hero.gltf").unwrap();
+        let names = |gltf: &Gltf| -> Vec<String> {
+            let meshes = gltf.json.get("meshes").unwrap().as_list().unwrap();
+            let names = meshes[0].get("extras").and_then(|e| e.get("targetNames")).and_then(|n| n.as_list());
+            names.into_iter().flatten().filter_map(|n| n.as_str().map(str::to_string)).collect()
+        };
+        assert_eq!(names(&exported), ["c2_fade_0", "c2_visible"]);
+        let given = load_from_disk(&path).unwrap();
+        let model = crate::mds::parse(get(&found, "hero.mds")).unwrap();
+        let member = |name: &str| found.iter().find(|(n, _)| n == name).map(|(_, data)| data.clone());
+        let unchanged = crate::motions::build(&exported, &given, &model, &member, cfg.as_bytes(), None).unwrap();
+        assert!(unchanged.is_none());
+        assert_eq!(build(&folder, &built).unwrap(), built);
+        // a fade alone makes a KEY too
+        let path = rigged_gltf_with(&folder, false, true);
+        let built = new_pack(&path, &prop_template(), "prop", "hero").unwrap();
+        let cfg = String::from_utf8(get(&members(&built).unwrap(), "info.cfg").to_vec()).unwrap();
+        assert!(cfg.contains("KEY_START;\r\n\tKEY \"vanish\", 1, 31, 1.00;\r\nKEY_END;"), "{cfg}");
         std::fs::remove_dir_all(folder).unwrap();
     }
 
