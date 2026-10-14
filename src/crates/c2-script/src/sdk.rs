@@ -696,7 +696,8 @@ const BASE_TYPES: [&str; 3] = ["int", "float", "string"];
 /// type, int for an enum; the kind stays on it, for the decompiler's types.
 fn typed(variable: &Node, kinds: &Map) -> Result<Node> {
     let kind = text(variable, "type");
-    if BASE_TYPES.contains(&kind) {
+    // void *p: a pointer parameter the function never reads through
+    if BASE_TYPES.contains(&kind) || (kind == "void" && truthy(&variable["array"])) {
         return Ok(variable.clone());
     }
     let base = if kind.starts_with("enum ") { Some("int") } else { kinds.get(kind).and_then(Node::as_str) };
@@ -1001,9 +1002,15 @@ fn named_args(args: &[Node], params: &[Node], found: &Context) -> Vec<Node> {
                     .filter(|value| truthy(value))
                     .or_else(|| param.get("kind").filter(|value| truthy(value)))
             });
-            match kind {
-                Some(kind) => named_literal(arg, &py_str(kind), found),
-                None => arg.clone(),
+            let enumeration = param.and_then(|param| param.get("enum")).filter(|value| truthy(value));
+            match (kind, enumeration) {
+                // an address where the native takes an enum (a call written for an older native
+                // table): C needs the conversion written out; it compiles to nothing
+                (_, Some(enumeration)) if arg.kind() == "addr" => {
+                    node!({"kind": "cast", "type": format!("enum {}", py_str(enumeration)), "operand": arg.clone()})
+                }
+                (Some(kind), _) => named_literal(arg, &py_str(kind), found),
+                (None, _) => arg.clone(),
             }
         })
         .collect()

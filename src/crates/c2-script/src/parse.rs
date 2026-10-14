@@ -1514,6 +1514,15 @@ fn cast_ahead(state: &State) -> bool {
         && state.at(")", 2)
 }
 
+fn pointer_cast_ahead(state: &State) -> bool {
+    state.leaf(3);
+    state.at("(", 0)
+        && state.peek(1).kind == Kind::Name
+        && CAST_TYPES.contains(&state.peek(1).text())
+        && state.at("*", 2)
+        && state.at(")", 3)
+}
+
 fn is_target(node: &Node) -> bool {
     matches!(node.kind(), "var" | "index" | "deref")
 }
@@ -1558,6 +1567,30 @@ fn unary(state: &mut State) -> Parsed<Node> {
             let kind = state.take();
             state.take();
             return Ok(node!({"kind": "cast", "type": kind.text(), "operand": unary(state)?}));
+        }
+        if state.at("(", 0) && state.at("enum", 1) && state.peek(2).kind == Kind::Name && state.at(")", 3) {
+            // (enum flags)&x passes x's address where a native takes an enum, as it is
+            state.take();
+            state.take();
+            let kind = format!("enum {}", state.take().text());
+            state.take();
+            let operand = unary(state)?;
+            if operand.kind() != "addr" {
+                return state.fail("a cast to an enum takes an address (&x)");
+            }
+            return Ok(node!({"kind": "cast", "type": kind, "operand": operand}));
+        }
+        if pointer_cast_ahead(state) {
+            // (int *)&x passes x's address as it is: C's view of a pointer of another type
+            state.take();
+            let kind = state.take().text().to_string();
+            state.take();
+            state.take();
+            let operand = unary(state)?;
+            if operand.kind() != "addr" {
+                return state.fail("a pointer cast takes an address (&x)");
+            }
+            return Ok(node!({"kind": "cast", "type": format!("{kind} *"), "operand": operand}));
         }
         primary(state)
     })
@@ -2082,7 +2115,13 @@ fn parameters(state: &mut State) -> Parsed<Vec<Node>> {
     let mut params = Vec::new();
     if !no_parameters(state) {
         loop {
-            let kind = variable_type(state)?;
+            // void *p: a pointer parameter the function never reads, so of no element type
+            let kind = if state.at("void", 0) && state.at("*", 1) {
+                state.take();
+                "void".to_string()
+            } else {
+                variable_type(state)?
+            };
             let pointer = state.at("*", 0);
             if pointer {
                 state.take();

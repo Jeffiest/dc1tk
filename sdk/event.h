@@ -1566,7 +1566,7 @@ extern void set_map_light(int light_no) NATIVE(48);
 // Sets the texture animations used for lip sync on an actor: talk_anim is the moving mouth,
 // idle_anim (optional) the closed mouth. trigger_lip_sync_anim then switches between them.
 // Original name: _SET_PAKU_ANIM.
-extern void set_lip_sync_anim(int actor, string talk_anim, OPTIONAL(string idle_anim)) NATIVE(49);
+extern void set_lip_sync_anim(int actor, any talk_anim, OPTIONAL(string idle_anim)) NATIVE(49);
 
 // Clears the lip sync texture animation setup.
 // Original name: _RESET_PAKU_ANIM.
@@ -2583,7 +2583,7 @@ extern void delay_actor_texture_anim(int actor, OPTIONAL(int frames)) NATIVE(470
 // of the actor's texture animations; with on = 1 it plays the named animation, such as a face or
 // eye-blink loop.
 // Original name: _OBJS_TEX_ANIME.
-extern void set_actor_texture_anim(int actor, int on, OPTIONAL(string anim_name)) NATIVE(471);
+extern void set_actor_texture_anim(int actor, any on, OPTIONAL(string anim_name)) NATIVE(471);
 
 // Queues holding the actor's motion track until its motion sequence reaches its trigger state
 // (status 3).

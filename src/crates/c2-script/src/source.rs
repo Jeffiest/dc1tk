@@ -264,6 +264,9 @@ pub fn block(statements: &[Node], depth: usize) -> Result<Vec<String>> {
 }
 
 fn parameter(param: &Node) -> String {
+    if truthy(&param["array"]) && param["type"] == "void" {
+        return format!("void *{}", py_str(&param["name"]));
+    }
     let array = if truthy(&param["array"]) { "[]" } else { "" };
     format!("{} {}{}", first_or(param, "kind", "type"), py_str(&param["name"]), array)
 }

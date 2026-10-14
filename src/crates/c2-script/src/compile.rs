@@ -204,6 +204,7 @@ fn scalar_mode(symbol: &Symbol, name: &str) -> Result<&'static str> {
 fn indexed_mode(symbol: &Symbol, name: &str) -> Result<&'static str> {
     match symbol.scope {
         Scope::Array => Ok(array_modes(&symbol.kind)),
+        Scope::Pointer if symbol.kind == "void" => fail(format!("{name} is a void pointer; give it int or float")),
         Scope::Pointer => Ok(pointer_modes(&symbol.kind)),
         _ => fail(format!("{name} is not an array")),
     }
@@ -288,6 +289,9 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
             match text(node, "type") {
                 "float" => state.emit("itof"),
                 "int" => state.emit("ftoi"),
+                // a pointer cast, or an address cast to an enum, passes the address unchanged
+                "int *" | "float *" => {}
+                other if other.starts_with("enum ") && node["operand"].kind() == "addr" => {}
                 other => return fail(format!("unknown cast to {other}")),
             }
         }
