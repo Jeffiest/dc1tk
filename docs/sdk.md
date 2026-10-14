@@ -75,8 +75,10 @@ engine's view:
   out. The decompiler still writes `x = get_random_float(range);` wherever
   the call has the usual shape.
 - An enum or value-kind parameter stays typed even where one call misuses
-  it, since the type is what names the constants; the decompiler prints
-  such a call as it is.
+  it, since the type is what names the constants; where such a call passes
+  an address, the decompiler writes it cast to the enum
+  (`check_pause_flags((enum pause_flags)&rot_x, &rot_y, &rot_z)`), which
+  compiles to the same bytes.
 - A helper folds only where each argument's pointer-ness matches the
   helper's parameter type, so helpers never hide a mismatch.
 

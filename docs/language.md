@@ -101,7 +101,10 @@ This is a made-up script. For a whole mod, see the
 [calculator example](examples/calculator/calculator.c).
 
 - Types are `int`, `float` and `string`, with `int x[4]` for a local array
-  and `int x[]` or `int *x` for an array or variable passed by pointer. A
+  and `int x[]` or `int *x` for an array or variable passed by pointer
+  (`void *x` for one the function never reads through: the decompiler types
+  such a parameter from what its callers pass, and writes `void *` where
+  they pass both ints and floats). A
   variable can also be declared with a value kind or enum from the headers
   (`bgm_file track;`, `enum se_bank bank;`): it is the kind's base type,
   and the definitions remember it, so the decompiler prints the numbers it
@@ -117,7 +120,10 @@ This is a made-up script. For a whole mod, see the
 - Statements and expressions are C: `if`/`else`, `while`, `break`,
   `continue`, `return`, assignment as an expression, `&&`, `||`, `!`, `&`,
   `|`, comparisons, `+ - * / %`, `&x`, `x[i]`, casts `(int)x` and `(float)x`,
-  and calls. `wait;`, `end;` and `skip_end;` are statements; `print(...)`,
+  and calls. `(int *)&x`, `(float *)&x` and `(enum flags)&x` pass the
+  address as it is: they compile to nothing and only tell C tools that a
+  retail call passes a float's address where an int pointer is read, or an
+  address where a native takes an enum. `wait;`, `end;` and `skip_end;` are statements; `print(...)`,
   `sin(x)` and `cos(x)` are built in. `-1` compiles to the constant 1
   followed by `NEG`, which is what the original compiler emitted for all
   231,222 negative literals on the disc.

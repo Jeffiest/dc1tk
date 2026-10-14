@@ -240,3 +240,52 @@ fn libraries_json_names_the_globals_a_library_uses() {
         assert_eq!(compiled_with(&text, &found), data);
     }
 }
+
+/// Three scripts sharing a helper whose pointer parameter it never reads, each passing the
+/// address of a variable of the given type.
+fn unused_pointer_corpus(folder: &Path, types: [&str; 3]) -> (PathBuf, Vec<String>) {
+    let mut paths = Vec::new();
+    for (number, kind) in types.iter().enumerate() {
+        let text = format!(
+            "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{{\n    wait;\n}}\n\nvoid talk(void)\n{{\n    {kind} value;\n\n    keep(&value);\n}}\n"
+        );
+        let path = format!("map/m{number}.stb");
+        write(&folder.join(&path), compiled(&text));
+        paths.push(path);
+    }
+    (folder.to_path_buf(), paths)
+}
+
+#[test]
+fn an_unused_pointer_parameter_takes_what_every_caller_passes() {
+    for (types, wanted) in [(["float", "float", "float"], "(float a0[])"), (["float", "int", "float"], "(void *a0)")] {
+        let folder = TempDir::new();
+        let (root, paths) = unused_pointer_corpus(folder.path(), types);
+        let model = model(&root, &paths, &Definitions::empty());
+        let found = model.library_texts().unwrap();
+        let library = found.values().next().unwrap();
+        assert!(library.contains(wanted), "{library}");
+        for path in &paths {
+            let (data, text) = script_source(&root, path, &model);
+            assert_eq!(compiled_with(&text, &found), data, "{path}");
+        }
+    }
+}
+
+#[test]
+fn addresses_passed_for_a_pointer_of_another_type_are_cast() {
+    let text = "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{\n    wait;\n}\n\nvoid measure(int out[])\n{\n    out[0] = 5;\n}\n\nvoid talk(void)\n{\n    float distance;\n    int count;\n\n    measure(&distance);\n    keep(&distance);\n    keep(&count);\n}\n";
+    let data = compiled(text);
+    let shown = source::text(&decompile::decompile(&stb::read(&data), "event", tables())).unwrap();
+    // measure reads an int through the pointer, so the float's address is cast; keep reads
+    // nothing, and its callers disagree
+    assert!(shown.contains("(int a0[])"), "{shown}");
+    assert!(shown.contains("(void *a0)"), "{shown}");
+    assert!(shown.contains("((int *)&v0);"), "{shown}");
+    assert_eq!(compiled(&shown), data);
+    // a void * parameter cannot be read through
+    let read = text.replace("void keep(int unused[])\n{\n    wait;", "void keep(void *unused)\n{\n    unused[0] = 1;");
+    let error = compile::compile_program(&parse::parse(&read).unwrap(), tables()).unwrap_err().to_string();
+    assert!(error.contains("void pointer"), "{error}");
+    assert!(parse::parse(&text.replace("measure(&distance)", "measure((int *)distance)")).is_err());
+}

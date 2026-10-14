@@ -168,7 +168,7 @@ extern void set_move_speed(float speed) NATIVE(5);
 // one cycle holds, frames is the cycle length (0 turns it off), and repeats is how many more
 // cycles follow (-1 repeats forever, default 0).
 // Original name: _SET_PALLET.
-extern void flash_chara_color(int red, int green, OPTIONAL(int blue, int pulses, int frames, int repeats)) NATIVE(30);
+extern void flash_chara_color(int red, any green, OPTIONAL(int blue, int pulses, int frames, int repeats)) NATIVE(30);
 
 // Returns the item number equipped in an equipment slot of the active character.
 // Original name: _CHECK_EQUIP.
@@ -177,7 +177,7 @@ extern int get_equip_item(enum equip_slot slot, ...) NATIVE(31);
 // Shakes the dungeon camera with the given strength, fading linearly to nothing over the given
 // number of frames.
 // Original name: _CAMERA_QUAKE.
-extern void shake_camera(float power, int frames, OPTIONAL(any extra3, any extra4, any extra5, any extra6)) NATIVE(32);
+extern void shake_camera(float power, any frames, OPTIONAL(any extra3, any extra4, any extra5, any extra6)) NATIVE(32);
 
 // Returns the dungeon pause flags ANDed with mask, so it is nonzero when any of those flags is
 // set. For example 8192 (0x2000) is set while weapons are hidden.

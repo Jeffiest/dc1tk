@@ -757,6 +757,169 @@ fn valued_calls(node: &Node, out: &mut Vec<String>) {
     }
 }
 
+/// Whether a statement or expression reads, writes or takes the address of a variable.
+fn mentions(node: &Node, name: &str) -> bool {
+    match node {
+        Node::List(items) => items.iter().any(|item| mentions(item, name)),
+        Node::Map(object) => {
+            (matches!(kind(node), "var" | "index") && node["name"] == *name)
+                || object.values().any(|value| mentions(value, name))
+        }
+        _ => false,
+    }
+}
+
+/// The positions of a function's pointer parameters its body never uses. Nothing in the bytecode
+/// gives them an element type (the function record only says they are pointers), so it comes from
+/// what callers pass.
+pub fn unused_pointer_params(function: &Node) -> Vec<usize> {
+    if kind(function) != "function" {
+        return Vec::new();
+    }
+    let body = function.get("body").unwrap_or(&Node::Null);
+    list_of(function, "params")
+        .iter()
+        .enumerate()
+        .filter(|(_, param)| param["array"] == node!(true) && !mentions(body, param["name"].as_str().unwrap_or("")))
+        .map(|(position, _)| position)
+        .collect()
+}
+
+fn list_of<'a>(node: &'a Node, key: &str) -> &'a [Node] {
+    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+
+/// The type of each variable a function sees: its parameters and locals over the globals.
+fn variable_types(function: &Node, globals: &[Node]) -> HashMap<String, String> {
+    let declared = globals.iter().chain(list_of(function, "params")).chain(list_of(function, "locals"));
+    declared
+        .filter_map(|variable| Some((variable["name"].as_str()?.to_string(), variable["type"].as_str()?.to_string())))
+        .collect()
+}
+
+/// The element type of an address argument (&x, &a[i]), from the variable's declaration.
+fn address_type(arg: &Node, types: &HashMap<String, String>) -> Option<String> {
+    if kind(arg) != "addr" || !matches!(kind(&arg["target"]), "var" | "index") {
+        return None;
+    }
+    types.get(arg["target"]["name"].as_str()?).filter(|found| matches!(found.as_str(), "int" | "float")).cloned()
+}
+
+fn calls_in<'a>(node: &'a Node, out: &mut Vec<&'a Node>) {
+    match node {
+        Node::List(items) => items.iter().for_each(|item| calls_in(item, out)),
+        Node::Map(object) => {
+            if kind(node) == "call" {
+                out.push(node);
+            }
+            object.values().for_each(|value| calls_in(value, out));
+        }
+        _ => {}
+    }
+}
+
+/// The element types a program's calls pass for each unused pointer parameter, by callee name and
+/// position.
+pub fn pointer_evidence(functions: &[Node], globals: &[Node]) -> BTreeMap<(String, usize), BTreeSet<String>> {
+    let unused: HashMap<&str, Vec<usize>> = functions
+        .iter()
+        .map(|function| (function["name"].as_str().unwrap_or(""), unused_pointer_params(function)))
+        .filter(|(_, positions)| !positions.is_empty())
+        .collect();
+    let mut found: BTreeMap<(String, usize), BTreeSet<String>> = BTreeMap::new();
+    for function in functions.iter().filter(|function| kind(function) == "function") {
+        let types = variable_types(function, globals);
+        let mut calls = Vec::new();
+        calls_in(function.get("body").unwrap_or(&Node::Null), &mut calls);
+        for call in calls {
+            let callee = call["name"].as_str().unwrap_or("");
+            let Some(positions) = unused.get(callee) else {
+                continue;
+            };
+            for &position in positions {
+                if let Some(element) = list_of(call, "args").get(position).and_then(|arg| address_type(arg, &types)) {
+                    found.entry((callee.to_string(), position)).or_default().insert(element);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The type an unused pointer parameter takes from what its callers pass: theirs when they agree,
+/// void (printed void *) when they do not; None without callers.
+pub fn passed_type(passed: &BTreeSet<String>) -> Option<&str> {
+    match passed.len() {
+        0 => None,
+        1 => passed.iter().next().map(String::as_str),
+        _ => Some("void"),
+    }
+}
+
+/// Wraps address arguments whose variable's type differs from the int or float pointer parameter
+/// they are passed for in a pointer cast ((int *)&distance). The bytecode passes the address as
+/// it is; the cast only says so in C.
+fn cast_addresses(node: &mut Node, params: &HashMap<String, Vec<Option<String>>>, types: &HashMap<String, String>) {
+    match node {
+        Node::List(items) => items.iter_mut().for_each(|item| cast_addresses(item, params, types)),
+        Node::Map(object) => {
+            object.iter_mut().for_each(|(_, value)| cast_addresses(value, params, types));
+            if kind(node) != "call" {
+                return;
+            }
+            let Some(expected) = node["name"].as_str().and_then(|name| params.get(name)).cloned() else {
+                return;
+            };
+            let Some(args) = node.as_object_mut().and_then(|call| call.get_mut("args")).and_then(Node::as_array_mut)
+            else {
+                return;
+            };
+            for (arg, expected) in args.iter_mut().zip(expected) {
+                let (Some(expected), Some(passed)) = (expected, address_type(arg, types)) else {
+                    continue;
+                };
+                if passed != expected {
+                    *arg = node!({"kind": "cast", "type": format!("{expected} *"), "operand": arg.clone()});
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Types the program's unused pointer parameters from their callers, and casts the addresses calls
+/// pass for a pointer of another type.
+fn type_pointer_params(functions: &mut [Node], globals: &[Node]) {
+    for ((callee, position), passed) in pointer_evidence(functions, globals) {
+        let Some(element) = passed_type(&passed) else {
+            continue;
+        };
+        if let Some(function) = functions.iter_mut().find(|function| function["name"] == *callee.as_str()) {
+            function["params"][position]["type"] = node!(element);
+        }
+    }
+    let params: HashMap<String, Vec<Option<String>>> = functions
+        .iter()
+        .filter(|function| kind(function) == "function")
+        .map(|function| {
+            let types = list_of(function, "params")
+                .iter()
+                .map(|param| {
+                    let element = param["type"].as_str().filter(|found| matches!(*found, "int" | "float"));
+                    element.filter(|_| param["array"] == node!(true)).map(str::to_string)
+                })
+                .collect();
+            (function["name"].as_str().unwrap_or("").to_string(), types)
+        })
+        .collect();
+    for function in functions.iter_mut().filter(|function| kind(function) == "function") {
+        let types = variable_types(function, globals);
+        if let Some(body) = function.as_object_mut().and_then(|object| object.get_mut("body")) {
+            cast_addresses(body, &params, &types);
+        }
+    }
+}
+
 fn fallback(function: &Function, context: &Context, reason: String) -> Node {
     let functions: HashSet<i64> = context.functions.keys().copied().collect();
     let lines = asm::function_text(function, context.code, &functions, &context.native_table, &context.functions);
@@ -952,6 +1115,7 @@ pub fn decompile(script: &Script, table: &str, tables: &BTreeMap<String, Table>)
         &Node::List(functions.iter().map(|function| function.get("body").cloned().unwrap_or(node!([]))).collect()),
         &mut used,
     );
+    type_pointer_params(&mut functions, &globals);
     for function in &mut functions {
         if function.get("returns") == Some(&node!("void"))
             && used.contains(&function["name"].as_str().unwrap().to_string())

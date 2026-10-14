@@ -612,6 +612,8 @@ pub fn model_for(
     let mut script_prints = IndexMap::new();
     let mut slot_loads = slots::Survey::new();
     let mut asset_strings = BTreeSet::new();
+    // what every script's calls pass for each unused pointer parameter, by callee fingerprint
+    let mut pointer_types: HashMap<(String, usize), BTreeSet<String>> = HashMap::new();
     for (path, program) in &programs {
         let table = natives::table_for(path, &defs.tables);
         let context = contexts.get(table).and_then(Option::as_ref);
@@ -629,6 +631,13 @@ pub fn model_for(
                 .collect(),
         );
         if program.get("asm").is_none() {
+            let prints = names::fingerprints(program);
+            let passed = decompile::pointer_evidence(list(program, "functions"), list(program, "globals"));
+            for ((callee, position), types) in passed {
+                if let Some(Some(print)) = prints.get(&callee) {
+                    pointer_types.entry((print.clone(), position)).or_default().extend(types);
+                }
+            }
             let bodies: Node = list(program, "functions")
                 .iter()
                 .map(|function| function.get("body").cloned().unwrap_or(Node::List(vec![])))
@@ -663,6 +672,16 @@ pub fn model_for(
                         shapes.insert(fingerprint, updated);
                     }
                 }
+            }
+        }
+    }
+    // a shared function's unused pointer parameters take what all its callers pass, so the one
+    // library file agrees with every script that includes it
+    for (print, shape) in shapes.iter_mut() {
+        for position in decompile::unused_pointer_params(shape) {
+            let passed = pointer_types.get(&(print.clone(), position));
+            if let Some(element) = passed.and_then(decompile::passed_type) {
+                shape["params"][position]["type"] = Node::from(element);
             }
         }
     }

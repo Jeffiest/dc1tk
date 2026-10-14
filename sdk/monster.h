@@ -625,7 +625,7 @@ extern float get_active_monster_dist(int monster) NATIVE(99);
 // 24 to 47 (24 plus the active slot), as get_monster_handle and get_monster_in_range give them.
 // Fails unless both arguments are given.
 // Original name: _GET_ACTIVE_MONS_ANGLE.
-extern void get_active_monster_yaw(int monster, OPTIONAL(any yaw, any extra3)) NATIVE(100);
+extern void get_active_monster_yaw(any monster, OPTIONAL(any yaw, any extra3)) NATIVE(100);
 
 // Writes the rotation that faces this monster toward the point x, y, z into rot_x (pitch), rot_y
 // (yaw) and rot_z (0), in radians. Fails unless all six arguments are given.
@@ -659,7 +659,7 @@ extern int get_monster_in_range(float range, int rank) NATIVE(70, 35);
 // x, y, z. monster is a handle (24 to 47) or -1 for this monster. If the entry frame is missing
 // the monster's own position is written.
 // Original name: _GET_ENTRY_OBJ_POS.
-extern void get_entry_object_pos(int monster, OPTIONAL(int entry, float *x, float *y, float *z)) NATIVE(100, 6);
+extern void get_entry_object_pos(any monster, OPTIONAL(int entry, float *x, float *y, float *z)) NATIVE(100, 6);
 
 // Casts a ray from the from point to the to point and returns how far it gets before hitting map
 // collision (the full length when nothing is hit).
@@ -926,7 +926,7 @@ extern void reset_motion(void) NATIVE(180);
 // per step; -1 keeps the current speed. flags: 1 pause, 2 hold on the last frame instead of
 // looping, 4 restart without blending.
 // Original name: _SET_MOS.
-extern void set_motion(string motion_name, OPTIONAL(float speed, enum motion_flags flags)) NATIVE(180, 2);
+extern void set_motion(any motion_name, OPTIONAL(float speed, enum motion_flags flags)) NATIVE(180, 2);
 
 // Reads 1 into is_done when the motion of this monster, or of its named chained part, reaches its
 // last frame within two steps or no motion plays.

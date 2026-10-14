@@ -310,6 +310,19 @@ fn a_constant_declared_twice_is_refused() {
 }
 
 #[test]
+fn an_address_passed_for_an_enum_is_cast_to_it() {
+    let cast = CONSTANTS.replace("set_actor_motion(0, \"walk\", 6);", "set_actor_motion(0, \"walk\", (enum motion_flags)&angle);");
+    let loose = constant_headers()["event.h"].replace("enum motion_flags flags", "any flags");
+    let plain = cast.replace("(enum motion_flags)&angle", "&angle");
+    // the cast compiles to nothing: the same bytes as passing the address where any is taken
+    assert_eq!(constant_build(&cast), build_with(&plain, &texts(&[("event.h", &loose)])).unwrap());
+    let text = shown(&constant_build(&cast), "event", &constant_headers(), false);
+    assert!(text.contains("    set_actor_motion(0, \"walk\", (enum motion_flags)&v0);\n"), "{text}");
+    assert_eq!(constant_build(&text), constant_build(&cast));
+    assert!(build_with(&cast.replace("&angle);", "angle);"), &constant_headers()).is_err());
+}
+
+#[test]
 fn decompiler_names_only_enum_typed_literals() {
     let text = shown(&constant_build(CONSTANTS), "event", &constant_headers(), false);
     assert!(text.contains("    set_actor_motion(0, \"walk\", MOTION_LOOP | MOTION_ONCE);\n"));
