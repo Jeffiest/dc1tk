@@ -163,9 +163,14 @@ def check_point(found, obj, data):
     if schema.DATA_FIELDS[kind] and point_data is None:
         found.append((WARNING, obj.name, "A %s point without data" % kind))
     elif isinstance(point_data, dict):
+        point_data = schema.upgrade_data(kind, point_data)
         missing = [f.key for f in schema.DATA_FIELDS[kind] if not f.optional and f.key not in point_data]
         if missing:
             found.append((WARNING, obj.name, "Missing %s data: %s" % (kind, ", ".join(missing))))
+    if kind == "anime":
+        target, problem = c2data.anime_target(obj)
+        if target is None:
+            found.append((WARNING, obj.name, "The animation moves nothing: %s" % problem))
     if kind == "event":
         target = c2data.data_field(obj, schema.DATA_FIELDS["event"][4])
         if isinstance(target, str) and schema.name_bytes(target) > schema.TARGET_LIMIT:

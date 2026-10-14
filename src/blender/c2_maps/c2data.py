@@ -231,6 +231,12 @@ def data_field(obj, field):
         return field.default
     if hasattr(data, "keys"):
         value = data.get(field.key)
+        if value is None and field.old is not None:
+            key, index = (field.old, None) if isinstance(field.old, str) else field.old
+            value = data.get(key)
+            if value is not None and index is not None:
+                value = list(to_py(value))
+                value = value[index] if index < len(value) else None
         if value is None:
             return field.default
         if field.size > 1:
@@ -261,4 +267,93 @@ def set_data_field(obj, field, value):
             data[field.pos] = value
         assign(obj, ("data",), data)
         return
-    assign(obj, ("data", field.key), list(value) if field.size > 1 else value)
+    value = list(value) if field.size > 1 else value
+    if data is not None and field.old is not None:
+        # a field still under its old name: every field of the point takes its new name
+        data = to_py(data)
+        upgraded = schema.upgrade_data(lookup(obj, ("kind",)), data)
+        if upgraded != data:
+            upgraded[field.key] = value
+            assign(obj, ("data",), upgraded)
+            return
+    assign(obj, ("data", field.key), value)
+
+
+# What an anime point moves (docs/assets/maps.md section 5.1).
+
+
+def exact_name(obj, role=None):
+    """The game's name of a node: extras.c2.name, else its name without prefix and suffix."""
+    name = lookup(obj, ("name",))
+    return name if isinstance(name, str) else schema.game_name(obj.name, role)
+
+
+def frame_base(name):
+    """A model node's name as the engine compares it (`StrCmp`, mg_frame.cpp:948): up to `--`."""
+    return name.split("--", 1)[0]
+
+
+def placements_by_name(root):
+    """{name: placement} of a map, from its `placements` group when it has one (Blender finds an
+    object's children by going through every object, so walking the whole tree is slow)."""
+    found = {}
+    if root is None:
+        return found
+    group = group_node(root, "placements")
+    candidates = group.children if group is not None else placements(root)
+    for obj in candidates:
+        if role(obj) != "placement":
+            continue
+        found.setdefault(exact_name(obj, "placement"), obj)
+    return found
+
+
+def model_nodes(piece):
+    """{name up to `--`: the first model node of that name (lowest mds_index)} under a piece."""
+    found = {}
+    below = piece.children_recursive if hasattr(piece, "children_recursive") else descendants(piece)[1:]
+    nodes = [node for node in below if role(node) == "mds"]
+    nodes.sort(key=lambda node: (lookup(node, ("mds_index",), 1 << 30), node.name))
+    for node in nodes:
+        found.setdefault(frame_base(exact_name(node)), node)
+    return found
+
+
+def anime_target(obj, by_name=None, nodes_of=None):
+    """(object, problem): the placement, piece or model node an anime point moves, as
+    `CObjAnime::AssignFuncAnime` finds it: a template's point its own placement, a map's own
+    point the placement it names; then the piece by name and the first model node (lowest
+    mds_index) whose name matches up to `--`. The object is None when something is missing.
+    `by_name` (placements_by_name) and `nodes_of` (a dict filled with model_nodes by piece)
+    save work over many points."""
+    fields = {field.key: field for field in schema.DATA_FIELDS["anime"]}
+    placement = placement_of(obj)
+    if placement is None:
+        name = data_field(obj, fields["placement"])
+        if by_name is None:
+            by_name = placements_by_name(map_root(obj))
+        placement = by_name.get(name)
+        if placement is None:
+            return None, "no placement %r" % name
+    piece_name = data_field(obj, fields["piece"])
+    if not piece_name:
+        return placement, None
+    piece = next(
+        (child for child in placement.children if role(child) == "piece" and exact_name(child, "piece") == piece_name),
+        None,
+    )
+    if piece is None:
+        return None, "no piece %r in %s" % (piece_name, placement.name)
+    frame_name = data_field(obj, fields["frame"])
+    if not frame_name:
+        return piece, None
+    if nodes_of is None:
+        nodes = model_nodes(piece)
+    else:
+        nodes = nodes_of.get(piece.name)
+        if nodes is None:
+            nodes = nodes_of[piece.name] = model_nodes(piece)
+    node = nodes.get(frame_base(frame_name))
+    if node is None:
+        return None, "no model node %r in %s" % (frame_name, piece.name)
+    return node, None

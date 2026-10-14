@@ -50,6 +50,21 @@ def place_at(obj, parent, world):
     obj.matrix_world = world
 
 
+def anime_names(obj):
+    """An anime point's placement, piece and frame naming what `obj` is in (a model node, a
+    piece or a placement), so the new point moves it."""
+    names = {}
+    placement = c2data.placement_of(obj)
+    if placement is not None:
+        names["placement"] = c2data.exact_name(placement, "placement")
+    piece = c2data.piece_of(obj)
+    if piece is not None:
+        names["piece"] = c2data.exact_name(piece, "piece")
+        if c2data.role(obj) == "mds":
+            names["frame"] = c2data.exact_name(obj)
+    return names
+
+
 class C2_OT_add_point(bpy.types.Operator):
     """Add a trigger point at the 3D cursor, under the selected placement or the map's points"""
 
@@ -78,6 +93,8 @@ class C2_OT_add_point(bpy.types.Operator):
         root = c2data.current_map_root(context)
         preset = next(p for p in schema.POINT_PRESETS if p[0] == self.preset)
         _, _, kind, overrides, scale, base = preset
+        if kind == "anime":
+            overrides = dict(overrides, **anime_names(context.active_object))
         placement = c2data.placement_of(context.active_object) if self.in_placement else None
         parent = placement if placement is not None else ensure_group(root, "points", context)
         # Scripts find points by placement and name, so a name is unique within its parent.

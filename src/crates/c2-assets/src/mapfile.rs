@@ -516,16 +516,33 @@ pub struct SoundData {
     pub end: [Num; 3],
 }
 
-/// `FUNC_ANIME_DATA "placement","piece","frame",kind,int, 3 vectors[, 2 shorts]` (partly decoded).
+/// `FUNC_ANIME_DATA "placement","piece","frame",drives,mode, start xyz, step xyz, end xyz[,uniform,relative]`
+/// (`mapFUNC_ANIME_DATA`, mapload.cpp:1257): a value of a placement, piece or model node that
+/// `CObjAnime::Step` changes every frame (docs/assets/maps.md section 5.1).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AnimeData {
+    /// The placement a map's own point moves (`MAP_PARTS` name); a template's points move the
+    /// placement that copies them and ignore it.
     pub placement: String,
+    /// The `PIECE_NAME` moved; empty moves the whole placement.
     pub piece: String,
+    /// The piece's model node moved (compared up to `--`); empty moves the whole piece.
     pub frame: String,
-    pub kind: Num,
-    pub int_param: Num,
-    pub vectors: [[Num; 3]; 3],
-    pub extra: Option<[Num; 2]>,
+    /// 1 position, 2 rotation (degrees), 3 scale, 4 colour (unlit, 0-255), 5 alpha (0-1).
+    #[serde(alias = "kind")]
+    pub drives: Num,
+    /// 0 hold, 1 loop, 2 stop at the end, 3 repeat, 4 ping-pong, 5 there and back once, 6 look
+    /// at the player, 7 random, 8 minute hand, 9 hour hand, 10 by the hour.
+    #[serde(alias = "int_param")]
+    pub mode: Num,
+    pub start: [Num; 3],
+    /// Added every frame; in mode 10, start hour, end hour and fade hours.
+    pub step: [Num; 3],
+    pub end: [Num; 3],
+    /// `[uniform, relative]` when the line has them: y and z follow x; a position is in the
+    /// piece's own space (with no frame, the piece moves by it every frame).
+    #[serde(alias = "extra")]
+    pub flags: Option<[Num; 2]>,
 }
 
 // ---------- reading ----------
@@ -1190,10 +1207,12 @@ fn point(head: &Stmt, stmts: &mut Stmts) -> Result<Point> {
                     placement: stmt.string(0)?,
                     piece: stmt.string(1)?,
                     frame: stmt.string(2)?,
-                    kind: stmt.num(3)?,
-                    int_param: stmt.num(4)?,
-                    vectors: [stmt.nums(5)?, stmt.nums(8)?, stmt.nums(11)?],
-                    extra: stmt.optional(14)?,
+                    drives: stmt.num(3)?,
+                    mode: stmt.num(4)?,
+                    start: stmt.nums(5)?,
+                    step: stmt.nums(8)?,
+                    end: stmt.nums(11)?,
+                    flags: stmt.optional(14)?,
                 })
             }
             _ => return Err(stmt.error("not expected in FUNC_DATA")),
@@ -1349,9 +1368,9 @@ impl Writer {
                 }
                 PointData::Anime(data) => {
                     let args = [W::S(&data.placement), W::S(&data.piece), W::S(&data.frame)].into_iter();
-                    let args = args.chain(nums([data.kind, data.int_param]));
-                    let args = args.chain(data.vectors.into_iter().flat_map(nums));
-                    self.line(&inner, "FUNC_ANIME_DATA", args.chain(data.extra.into_iter().flat_map(nums)))?;
+                    let args = args.chain(nums([data.drives, data.mode]));
+                    let args = args.chain([data.start, data.step, data.end].into_iter().flat_map(nums));
+                    self.line(&inner, "FUNC_ANIME_DATA", args.chain(data.flags.into_iter().flat_map(nums)))?;
                 }
             }
             let place = nums(point.pos).chain(nums(point.rot)).chain(nums(point.scale));
@@ -1658,7 +1677,7 @@ mod tests {
         assert_eq!(event.program, Num::Int(500));
         assert_eq!(points[2].data, PointData::None);
         let PointData::Anime(anime) = &template.points.as_ref().unwrap()[1].data else { panic!() };
-        assert_eq!(anime.extra, None);
+        assert_eq!((anime.drives, anime.mode, anime.step[1], anime.flags), (Num::Int(2), Num::Int(1), Num::Float(0.02), None));
         assert_eq!(map.cameras.as_ref().unwrap()[0].rects[0].max[2], Num::Float(95.3663));
     }
 

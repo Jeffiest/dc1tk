@@ -50,23 +50,54 @@ EVENT_DEFAULT_SIZE = {
 
 class Field:
     """A field of a point's `data`: its key when `data` is a dict, or its position (and size)
-    when `data` is the raw argument list of the FUNC_<KIND>_DATA line."""
+    when `data` is the raw argument list of the FUNC_<KIND>_DATA line.
 
-    def __init__(self, key, label, kind, size=1, pos=0, labels=None, default=None, optional=False):
+    `choices` are (value, identifier, label, description) of an int the panel shows as a menu
+    (a value not among them shows as the first); `old` is where scenes exported before the field
+    had its name kept it: a key, or (key, index) of an element of a list."""
+
+    def __init__(self, key, label, kind, size=1, pos=0, labels=None, default=None, optional=False, choices=None, old=None):
         self.key = key
         self.label = label
-        self.kind = kind  # "int", "float" or "str"
+        self.kind = kind  # "int", "float", "str" or "flag" (an int 0 or 1)
         self.size = size
         self.pos = pos
         self.labels = labels  # one per element of a vector
         self.optional = optional
+        self.choices = choices
+        self.old = old
         if default is None:
-            zero = {"int": 0, "float": 0.0, "str": ""}[kind]
+            zero = {"int": 0, "flag": 0, "float": 0.0, "str": ""}[kind]
             default = zero if size == 1 else [zero] * size
         self.default = default
 
 
 F = Field
+
+# FUNC_ANIME_DATA (docs/assets/maps.md section 5.1): what a point changes every frame and how.
+# Values the engine does not know act as 0 in both.
+ANIME_DRIVES = (
+    (0, "NOTHING", "Nothing", "Changes nothing"),
+    (1, "POSITION", "Position", "Position in the parent's space, game units"),
+    (2, "ROTATION", "Rotation", "Rotation in degrees (Euler XYZ)"),
+    (3, "SCALE", "Scale", "Scale along each axis"),
+    (4, "COLOUR", "Colour", "Draws the model node unlit in this colour, 0-255 (frames only)"),
+    (5, "ALPHA", "Alpha", "Alpha factor, 0-1, in the first number (frames only)"),
+)
+ANIME_MODES = (
+    (0, "HOLD", "Hold", "Holds the start value"),
+    (1, "LOOP", "Loop", "Adds the step every frame, without end"),
+    (2, "STOP", "Stop at the end", "Adds the step until the end value, then holds it"),
+    (3, "REPEAT", "Repeat", "Adds the step until the end value, then starts again at the start value"),
+    (4, "PINGPONG", "Ping-pong", "Moves by the step from the start value to the end value and back, without end"),
+    (5, "ONCE", "There and back once", "Moves by the step to the end value and back to the start value, then stops"),
+    (6, "LOOK", "Look at the player", "Turns about Y and X to face the player, kept between start and end (rotation only)"),
+    (7, "RANDOM", "Random", "A new random value between start and end every frame"),
+    (8, "MINUTE", "Minute hand", "Turns about Y once an hour of the game's clock (-360 degrees an hour)"),
+    (9, "HOUR", "Hour hand", "Turns about Y once in twelve hours of the game's clock"),
+    (10, "BY_HOUR", "By the hour", "The end value within the step's hours, the start value outside, blended over its fade hours"),
+)
+_XYZ = ("X", "Y", "Z")
 _FIRE = [
     F("color", "Colour", "int", 3, 0, ("R", "G", "B"), [128, 90, 38]),
     F("draw", "Draw", "int", 1, 3),
@@ -116,15 +147,68 @@ DATA_FIELDS = {
     "anime": [
         F("placement", "Placement", "str", 1, 0),
         F("piece", "Piece", "str", 1, 1),
-        F("frame", "Frame", "str", 1, 2),
-        F("kind", "Kind", "int", 1, 3),
-        F("unknown_int", "Int", "int", 1, 4),
-        F("v0", "Vector 1", "float", 3, 5),
-        F("v1", "Vector 2", "float", 3, 8),
-        F("v2", "Vector 3", "float", 3, 11),
-        F("extra", "Shorts", "int", 2, 14, optional=True),
+        F("frame", "Model node", "str", 1, 2),
+        F("drives", "Drives", "int", 1, 3, default=2, choices=ANIME_DRIVES, old="kind"),
+        F("mode", "Mode", "int", 1, 4, default=1, choices=ANIME_MODES, old="unknown_int"),
+        F("start", "Start", "float", 3, 5, _XYZ, old="v0"),
+        F("step", "Step (per frame)", "float", 3, 8, _XYZ, [0.0, 1.0, 0.0], old="v1"),
+        F("end", "End", "float", 3, 11, _XYZ, old="v2"),
+        F("uniform", "Uniform (Y and Z follow X)", "flag", 1, 14, optional=True, old=("extra", 0)),
+        F("relative", "Relative (in the piece's own space)", "flag", 1, 15, optional=True, old=("extra", 1)),
     ],
 }
+
+
+def upgrade_data(kind, data):
+    """A point's `data` dict with the names of fields that scenes exported before they had them
+    used (anime's kind, unknown_int, v0, v1, v2 and extra) turned into today's."""
+    fields = [field for field in DATA_FIELDS.get(kind, []) if field.old is not None]
+    if not isinstance(data, dict) or not fields:
+        return data
+    data = dict(data)
+    olds = set()
+    for field in fields:
+        key, index = (field.old, None) if isinstance(field.old, str) else field.old
+        olds.add(key)
+        if field.key in data or key not in data:
+            continue
+        value = data[key]
+        if index is not None:
+            value = value[index] if isinstance(value, (list, tuple)) and index < len(value) else None
+        if value is not None:
+            data[field.key] = value
+    for key in olds:
+        data.pop(key, None)
+    return data
+
+
+def anime_vectors(drives, mode):
+    """{key: (label, element labels)} of the vectors an anime point's mode reads (section 5.1);
+    the ones it leaves out do nothing."""
+    unit = {1: "units", 2: "degrees", 4: "0-255"}.get(drives)
+    elements = ("R", "G", "B") if drives == 4 else ("Alpha", "-", "-") if drives == 5 else _XYZ
+
+    def label(text):
+        return "%s (%s)" % (text, unit) if unit else text
+
+    if mode in (1, 2, 3, 4, 5):
+        found = {"start": (label("Start"), elements), "step": (label("Step per frame"), elements)}
+        if mode != 1:
+            found["end"] = (label("End"), elements)
+        return found
+    if mode == 6:
+        return {"start": (label("Lowest"), ("Pitch X", "Yaw Y", "Z")), "end": (label("Highest"), ("Pitch X", "Yaw Y", "Z"))}
+    if mode == 7:
+        return {"start": (label("Lowest"), elements), "end": (label("Highest"), elements)}
+    if mode in (8, 9):
+        return {"start": (label("Start (Y follows the clock)"), elements)}
+    if mode == 10:
+        return {
+            "start": (label("Outside the hours"), elements),
+            "step": ("Hours", ("From", "To", "Fade")),
+            "end": (label("Within the hours"), elements),
+        }
+    return {"start": (label("Value"), elements)}
 
 KIND_LABELS = {
     "pos": "Position",
@@ -171,6 +255,8 @@ POINT_PRESETS = (
     ("EFFECT", "Effect", "effect", {}, 1.0, "effect"),
     ("FIRE", "Fire", "fire", {}, 1.0, "fire"),
     ("FLARE", "Lens flare", "flare", {}, 1.0, "flare"),
+    # turns about Y, a degree a frame; the add operator fills in what the active object is
+    ("ANIME", "Piece animation", "anime", {"uniform": 0, "relative": 0}, 1.0, "anime"),
 )
 
 # Collision materials carry their attributes in the name (section 4.3 and 8).
