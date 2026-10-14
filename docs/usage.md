@@ -603,7 +603,15 @@ character pack; packs inside packs work the same way).
   Blender gives them and every other mesh's weights and the bind pose kept.
   Max's and Monica's
   clothes are separate costume packs (`mainchr/c01fuku1.chr` and the like):
-  their own packs hold the skeleton and motions.
+  their own packs hold the skeleton and motions, one for towns and one per
+  weapon model in dungeons. In towns and event scenes Max is
+  `chara/c01_base.chr` (`model:c01_base`); in dungeons
+  `mainchr/c01_base2.chr` to `c01_base4.chr` (`model:c01_base2` to
+  `model:c01_base4`), whichever his weapon picks. Monica is
+  `chara/c02_base.chr` and `mainchr/c02_base0.chr` to `c02_base3.chr`. Each
+  has its own motion timeline, so a change to how they move is exported,
+  edited and given for every one of them (see
+  [the model formats](assets/models.md), 2.6).
 
   Motions come back too: every KEY of the pack's motion set 0 is an
   animation (an action in Blender) of its name, one key per motion frame at

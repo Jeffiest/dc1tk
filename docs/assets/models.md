@@ -256,6 +256,28 @@ real meshes are in costume packs (`mainchr/c01fuku1.chr.d`: `c01f.mds`/`.wgt`/`.
 then swaps every costume visual onto the base frame with the same name. c01f's skeleton bbp
 matches c01b's bbp for every bone (difference 0.000). Only R_te/L_te differ.
 
+### 2.6 Which pack Max and Monica come from
+
+`SetupMainUnit` (charasetup.cpp:100) loads the player's skeleton-and-motion pack from the name
+`GetMainCharaModelName(chara, name, alternate)` (userdata.cpp:1114, in asm) gives:
+- **towns** (`EditInit` passes edit mode 1): `chara/c01_base.chr` (Max), `chara/c02_base.chr`
+  (Monica), `"%s.chr"` under `chara/`;
+- **dungeons** (`InitDungeonMain`, the event native `_DNG_SETUP_MAIN_UNIT`: edit mode 0):
+  `mainchr/c01_baseN.chr` / `mainchr/c02_baseN.chr`, `"%s%d.chr"` under `mainchr/`, N the model
+  number of the equipped weapon (`CGameDataUsed::GetModelNo`, 0 to 3), plus 2 for Max: Max uses
+  c01_base2 to c01_base4, Monica c02_base0 to c02_base3. The menus' character view picks between the
+  two the same way (`MenuItemCharaDataLoad`).
+
+Event scenes load Max's town pack themselves (`load_party_member(0, "chara/c01_base.chr", ...)`,
+449 calls). Nothing in the engine or the scripts names `mainchr/c01_base.chr`,
+`mainchr/c01_base0`/`1`, `chara/c01_base_f.chr`, `chara/_c01_base.chr`, `chara/__c01_base.chr` or
+`dungeon/chara/c01_base.chr` (`dungeon/chara` holds motion packs added to the player:
+`c01b_win`, `c01b_miss`, `c01_gio`). Each pack has its own `.mot` and KEY frames (Max's idle
+`立ち` is frames 95-97 in `chara/c01_base`, 362-364 in `mainchr/c01_base2`), so a change to how Max
+moves is made in each pack: the town one and the three dungeon ones, each from its own export.
+The costumes, weapons and hats are shared (`mainchr/c01fuku1.chr` and the like, loaded with
+`LoadSkin`/`LoadPack` in both).
+
 ## 3. .mot motions (key-list file)
 
 Parser: `CreateAnimeDataEX` (src/gameutil.cpp:807). Player: `MotionProc` (gameutil.cpp:102).
