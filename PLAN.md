@@ -127,13 +127,12 @@ Any fixed map opens in Blender (`c2 map-export`, the `c2_maps` add-on in
 [src/blender](src/blender/README.md)) as the game draws it, and a mod's
 `"map:NAME"` line builds the edited scene back: placements, pieces and
 trigger points moved, added and deleted, collision painted, meshes and
-pictures edited, new models with collision. All 171 scenes round-trip through
+pictures edited, new models with collision, animated pieces (`FUNC_ANIME_DATA`,
+decoded: what moves, how and when) shown and edited. All 171 scenes round-trip through
 Blender unchanged. The formats and conventions are in
 [maps](docs/assets/maps.md); the example [map-edit](docs/examples/map-edit/)
 was checked in the game. Left over:
 
-- **Animated map pieces.** `FUNC_ANIME_DATA` is only partly decoded, so the
-  add-on shows its fields raw.
 - **New maps.** A wholly new map needs a map number, the engine's map tables
   and a way in; only the maps on the disc can be edited.
 - **Dungeon floors.** Random floors are built from parts at run time; their
@@ -143,14 +142,11 @@ was checked in the game. Left over:
 
 What still cannot be taken apart, edited and put back, in the order to do it:
 
-1. **`--start-at` for towns.** A new game runs in the dungeon loop, where
-   `jump_to_map` does nothing, so `--start-at` only reaches maps the game
-   loads with `load_dungeon_map`. Towns are entered from the dungeon loop
-   with `go_to_edit_mode(map number, program)`, as the game goes to m05 (map
-   14) from the Zelmite Mine; a town with no script of its own (m05) still
-   arrives faded in. Have `--start-at` use it for town maps, finding the map
-   number from the disc's map table, so `--start-at m05` works without a
-   stop in another map's script.
+1. **`--start-at` for towns** (done). A new game runs in the dungeon loop,
+   where `jump_to_map` does nothing; towns are entered with
+   `go_to_edit_mode(number, program)`, the number from the disc's
+   `map/map<language>.cfg`. `--start-at m05` (or `"start_at": "m05"`) starts
+   a new game in a town, scripts of its own or not.
 2. **Menu and system text.** Dialogue in scripts is editable, but 302 `.mes`
    files hold the rest (menus, item, map and shop names, NPC lines, system
    messages): `c2` reads them for names and comments but cannot write them.
