@@ -1,12 +1,16 @@
-"""Makes the spinning-cult mod's maps and music: the Fish Room of the fish-room example with what
-the cult needs, Palm Brinks with the door and a dark light set, and the cult's tune, written into
-mods/spinning-cult with this folder's mod.json, scripts and Brother Gill's model:
+"""Makes the spinning-cult mod's maps, music and icon: the Fish Room of the fish-room example with
+what the cult needs, Palm Brinks with the door and a dark light set, the cult's tune, and the gyros'
+icon in the menus' icon sheet, written into mods/spinning-cult with this folder's mod.json, scripts,
+data and models (Brother Gill's and the gyros'):
 
     c2 map-export m01
     c2 map-export m07
     blender --background --python docs/examples/spinning-cult/make_gill.py
-    blender --background --python docs/examples/spinning-cult/make_mod.py
+    blender --background --python docs/examples/spinning-cult/make_gyros.py
+    blender --background --python docs/examples/spinning-cult/make_mod.py [-- C2 ISO]
     blender --background --python docs/examples/spinning-cult/make_villagers.py
+
+C2 and ISO default to build/release/c2.exe and pal.iso in the repository.
 
 The Fish Room is built by the fish-room example's make_mod.py (the room, the fish turning, the
 door), and then, as one would in Blender with the c2_maps add-on:
@@ -20,7 +24,16 @@ Palm Brinks gets the door point door_fish where the closed house door door10 was
 example's) and a ninth light set, dark with a dried-blood fog, that the town goes to once three
 have turned.
 
-Nothing of the game's is in this folder: the scenes come from your own disc.
+The icon: the menus draw an item's icon from the icon sheets in img/allitem.img and the menu packs'
+copies of it (texture:itemicon, 8 by 24 cells of 32x32 sharing one 256-colour palette), cell `icon`
+of sheet `icon_sheet`. Cell 191 of the item sheet is the game's own placeholder, a "reserved" mark
+no item points at. This script exports the sheet from your disc (c2 mod asset), draws
+model/gyros_icon.png (made by make_gyros.py) into that cell in the sheet's own colours (each pixel
+the nearest of the palette's opaque colours, the clear ones its clear colour) and writes it as
+textures/itemicon.png with the same palette, so build changes those 1,024 pixels and nothing else;
+data/items.json points the gyros (item 429) at it.
+
+Nothing of the game's is in this folder: the scenes and the icon sheet come from your own disc.
 """
 
 import copy
@@ -28,7 +41,11 @@ import importlib.util
 import json
 import os
 import shutil
+import struct
+import subprocess
 import sys
+import tempfile
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -40,6 +57,112 @@ DATA_FILES = ("items.json", "inventions.json")
 IDEAS = (251, 252, 253)  # Turning, More Turning, Endless Turning
 CELL = 450.0  # the touch triggers' spacing on the floor: a board of 4 by 4
 TOWN_DARK_LIGHT = 8
+GYROS = 429  # the item
+ICON_SHEET, ICON_CELL = 1, 191  # itemicon's cell 191: the game's "reserved" mark, no item's icon
+
+
+def arguments():
+    given = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    c2 = given[0] if len(given) > 0 else os.path.join(REPO, "build", "release", "c2.exe")
+    iso = given[1] if len(given) > 1 else os.path.join(REPO, "pal.iso")
+    return os.path.abspath(c2), os.path.abspath(iso)
+
+
+def png_chunks(data):
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    at, chunks = 8, []
+    while at < len(data):
+        size, kind = struct.unpack(">I4s", data[at:at + 8])
+        chunks.append((kind, data[at + 8:at + 8 + size]))
+        at += 12 + size
+    return chunks
+
+
+def png_rows(chunks):
+    """The PNG's rows, unfiltered, as bytearrays; its width, height and bytes a pixel (8-bit only)."""
+    width, height, depth, colour, _, _, interlace = struct.unpack(">IIBBBBB", dict(chunks)[b"IHDR"])
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[colour]
+    if depth != 8 or interlace:
+        raise ValueError("only 8-bit PNGs without interlacing")
+    raw = zlib.decompress(b"".join(body for kind, body in chunks if kind == b"IDAT"))
+    bpp, stride, rows, prev = channels, width * channels, [], bytearray(width * channels)
+    for y in range(height):
+        start = y * (stride + 1)
+        kind, line = raw[start], bytearray(raw[start + 1:start + 1 + stride])
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b, c = prev[i], prev[i - bpp] if i >= bpp else 0
+            if kind == 1:
+                line[i] = (line[i] + a) & 0xFF
+            elif kind == 2:
+                line[i] = (line[i] + b) & 0xFF
+            elif kind == 3:
+                line[i] = (line[i] + (a + b) // 2) & 0xFF
+            elif kind == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xFF
+        rows.append(line)
+        prev = line
+    return rows, width, height, channels
+
+
+def place_icon(c2, iso, target):
+    """The disc's item icon sheet with the gyros' icon in cell ICON_CELL, written to target."""
+    with open(os.path.join(HERE, "model", "gyros_icon.png"), "rb") as file:
+        icon_rows, w, h, channels = png_rows(png_chunks(file.read()))
+    if (w, h, channels) != (32, 32, 4):
+        raise SystemExit("model/gyros_icon.png should be 32x32 RGBA: make it with make_gyros.py")
+    with tempfile.TemporaryDirectory() as folder:
+        subprocess.run([c2, "mod", "asset", iso, "sheet", "texture:itemicon", "data:items", "--mods", folder], check=True)
+        with open(os.path.join(folder, "sheet", "textures", "itemicon.png"), "rb") as file:
+            sheet = file.read()
+        with open(os.path.join(folder, "sheet", "data", "items.json"), encoding="utf-8") as file:
+            items = json.load(file)["items"]
+    taken = [i["item"] for i in items if (i["icon_sheet"], i["icon"]) == (ICON_SHEET, ICON_CELL) and i["item"] != GYROS]
+    if taken:
+        raise SystemExit("the disc's items %s already use icon %d of sheet %d" % (taken, ICON_CELL, ICON_SHEET))
+    chunks = png_chunks(sheet)
+    rows, width, height, channels = png_rows(chunks)
+    found = dict(chunks)
+    if channels != 1 or b"PLTE" not in found or (width, height) != (256, 768):
+        raise SystemExit("the icon sheet is not the 256x768 paletted picture expected")
+    plte, trns = found[b"PLTE"], found.get(b"tRNS", b"")
+    palette = [tuple(plte[3 * i:3 * i + 3]) for i in range(len(plte) // 3)]
+    alphas = list(trns) + [255] * (len(palette) - len(trns))
+    opaque = [i for i, a in enumerate(alphas) if a == 255]
+    used = [0] * len(palette)
+    for row in rows:
+        for i in row:
+            used[i] += 1
+    clear = max((i for i, a in enumerate(alphas) if a == 0), key=lambda i: used[i])
+    cache = {}
+
+    def nearest(rgb):
+        # weighted by how the eye sees each primary
+        if rgb not in cache:
+            r, g, b = rgb
+            cache[rgb] = min(opaque, key=lambda i: 0.3 * (palette[i][0] - r) ** 2 + 0.59 * (palette[i][1] - g) ** 2
+                             + 0.11 * (palette[i][2] - b) ** 2)
+        return cache[rgb]
+
+    x0, y0 = (ICON_CELL % 8) * 32, (ICON_CELL // 8) * 32
+    for y in range(32):
+        for x in range(32):
+            r, g, b, a = icon_rows[y][4 * x:4 * x + 4]
+            rows[y0 + y][x0 + x] = nearest((r, g, b)) if a >= 128 else clear
+    data = zlib.compress(b"".join(b"\x00" + bytes(row) for row in rows), 9)
+    out = [b"\x89PNG\r\n\x1a\n"]
+    for kind, body in chunks:
+        if kind == b"IDAT":
+            if data is None:
+                continue
+            body, data = data, None
+        out.append(struct.pack(">I4s", len(body), kind) + body + struct.pack(">I", zlib.crc32(kind + body)))
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "wb") as file:
+        file.write(b"".join(out))
 
 
 def load_fish_room():
@@ -143,12 +266,16 @@ def main():
     gill = os.path.join(HERE, "model", "gill.gltf")
     if not os.path.isfile(gill):
         raise SystemExit("make Brother Gill first: blender --background --python %s" % os.path.join(HERE, "make_gill.py"))
+    for name in ("gyros.gltf", "gyros_item.gltf", "gyros_icon.png"):
+        if not os.path.isfile(os.path.join(HERE, "model", name)):
+            raise SystemExit("make the gyros first: blender --background --python %s" % os.path.join(HERE, "make_gyros.py"))
+    c2, iso = arguments()
     sys.path.insert(0, os.path.join(REPO, "src", "blender"))
     import addon_utils
     import bpy
 
     fish_room = load_fish_room()
-    for folder in ("maps", "music", "model", "data"):
+    for folder in ("maps", "music", "model", "data", "textures"):
         if os.path.isdir(os.path.join(MOD, folder)):
             shutil.rmtree(os.path.join(MOD, folder))
     os.makedirs(os.path.join(MOD, "data"), exist_ok=True)
@@ -170,6 +297,7 @@ def main():
     for name in DATA_FILES:
         shutil.copyfile(os.path.join(HERE, "data", name), os.path.join(MOD, "data", name))
     shutil.copytree(os.path.join(HERE, "model"), os.path.join(MOD, "model"))
+    place_icon(c2, iso, os.path.join(MOD, "textures", "itemicon.png"))
     shutil.copytree(os.path.join(MAPS, "m01"), os.path.join(MOD, "maps", "m01"))
     fish_room.add_town_door(os.path.join(MOD, "maps", "m01", "m01.gltf"))
     darken_town(os.path.join(MOD, "maps", "m01", "m01.gltf"))

@@ -8,8 +8,9 @@ Whirligig, and everyone he shows it to begins to turn. When five have turned,
 the fish stops, and looks at him.
 
 Nothing of the game's is in this folder: the maps come from your own disc,
-the townspeople's new motions are added to your own disc's models, and Brother
-Gill, the room, the fish, the pictures and the music are made here.
+the townspeople's new motions are added to your own disc's models, the
+gyroscope's icon is drawn into your own disc's icon sheet, and Brother Gill,
+the gyroscope, the room, the fish, the pictures and the music are made here.
 
 ## Making it
 
@@ -17,6 +18,7 @@ Gill, the room, the fish, the pictures and the music are made here.
 c2 map-export m01
 c2 map-export m07
 blender --background --python docs/examples/spinning-cult/make_gill.py
+blender --background --python docs/examples/spinning-cult/make_gyros.py
 blender --background --python docs/examples/spinning-cult/make_mod.py
 blender --background --python docs/examples/spinning-cult/make_villagers.py
 c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
@@ -27,6 +29,28 @@ c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
   unlit eyes, eighteen bones, and six motions: `idle`, `beckon`, `raise`,
   `spin`, `turn_head` (too far, too slowly) and `vanish` (a material fade to
   nothing, played held). mod.json makes him a new pack, `mods/gill/gill.chr`.
+- `make_gyros.py` makes the gyros, the cult's gyroscope (made by code): a
+  dark rotor with a blood-red spiral and a pale fish's eye on each face,
+  spinning on its axle inside three gimbal rings of tarnished, notched brass,
+  thorns on the outer ring, on an iron stand; about 7 units tall (Max is 26).
+  Three things, in `model/`:
+  - `gyros_item.gltf`, item 429's model, standing still: mod.json makes it
+    `item/gyros.chr` like the Treasure Chest Key's (`model:takaraky`), and
+    `data/items.json` gives the item `"model": "gyros"`. The menus look for
+    an item's model at `item/` + `model` + `.chr`. Like the game's item
+    models it has no motion: the menus that show one never start a motion
+    (they turn the whole model instead).
+  - `gyros.gltf`, the same gyroscope as a character pack, `mods/gyros/gyros.chr`
+    (like Brother Gill's): five bones (stand, outer, middle, inner, rotor) with
+    each part a rigid mesh on its bone, and one motion, `spin` (4 seconds,
+    looping): the rotor spins twelve turns, the outer ring makes one slow turn,
+    the middle and inner rings rock on their pins. A map script stands it in
+    a scene: `load_chara(MEMORY_STACK_EVENT, "mods/gyros/gyros.chr",
+    "info.cfg", slot)`, then place it (in front of Max, say) and
+    `set_chara_motion(slot, "spin")`.
+  - `gyros_icon.png`, the item's 32x32 menu icon, drawn flat (the outer ring,
+    the inner ring crossing the rotor's red eye, the stand) and outlined in
+    near-black as the game's icons are.
 - `make_mod.py` builds the Fish Room with the fish-room example's
   `make_mod.py`, then adds: a second fish, awake, its pupils grown huge,
   three Invent boxes round the fish, one enabled at a time, so photos of it
@@ -35,8 +59,15 @@ c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
   programs move the fish on to its next idea after a photo (they never wait,
   and each colour disarms itself, so walking never stops); black fog, and a red light
   set for the ending. Palm Brinks gets the door and a ninth light set, dark
-  with a dried-blood fog. It writes the music (`compose_turned.py`) and copies
-  this folder's scripts and data into `mods/spinning-cult`.
+  with a dried-blood fog. It writes the music (`compose_turned.py`), copies
+  this folder's scripts, data and `model/` into `mods/spinning-cult`, and
+  puts the gyros' icon in the menus' item icon sheet: it exports the sheet
+  from your disc (`c2 mod asset ISO ... texture:itemicon`; C2 and ISO after
+  `--`, by default `build/release/c2.exe` and `pal.iso`), draws
+  `gyros_icon.png` into cell 191, the game's own "reserved" placeholder that no
+  item points at, in the sheet's own 256 colours, and writes
+  `textures/itemicon.png` (`"texture:itemicon"` in mod.json), so build
+  changes that cell and nothing else of the sheet.
 - `make_villagers.py` exports five townspeople from your disc (Parn, Sheriff
   Blinkhorn, Giles, Aegira and Fournet), adds two motions to each in
   Blender, `spin` (arms limp, face tilted up, a slow turn on the spot) and
@@ -47,8 +78,11 @@ c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
   deep bell and the odd whisper, all five instruments synthesized; a music
   file of the mod's own (`BG_201`).
 - `data/items.json` adds the Whirligig (item 429, a key item like the
-  Treasure Chest Key); `data/inventions.json` adds the idea Endless Turning
-  and the recipe: Endless Turning, Flag and Post, from one Scrap of Metal.
+  Treasure Chest Key, with its own icon, cell 191 of sheet 1, and model,
+  `gyros`); `data/inventions.json` adds the idea Endless Turning and the
+  recipe: Endless Turning, Flag and Post, from one Scrap of Metal, its card
+  showing the gyros at scale 1.5, position (-10.6, 1.75, 0) (the Treasure
+  Chest Key's card is 1.52 at (-10.82, 2.05, 0) for a key 4.5 tall).
 
 ## The scripts
 

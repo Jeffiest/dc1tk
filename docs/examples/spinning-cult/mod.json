@@ -10,7 +10,8 @@
    }
   },
   "data:items": "data/items.json",
-  "data:inventions": "data/inventions.json"
+  "data:inventions": "data/inventions.json",
+  "texture:itemicon": "textures/itemicon.png"
  },
  "add": {
   "map:fishroom": {
@@ -68,6 +69,14 @@
   "file:mods/gill/gill.chr": {
    "file": "model/gill.gltf",
    "like": "model:p01_01a"
+  },
+  "file:mods/gyros/gyros.chr": {
+   "file": "model/gyros.gltf",
+   "like": "model:p01_01a"
+  },
+  "file:item/gyros.chr": {
+   "file": "model/gyros_item.gltf",
+   "like": "model:takaraky"
   }
  }
 }
