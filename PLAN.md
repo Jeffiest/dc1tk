@@ -209,15 +209,18 @@ code keeps compiling to its own bytes. What the compiler lacks today
    `unsigned` with biased comparisons and a small runtime for `/`, `%`, `>>`
    and float conversions, added only when used; `<limits.h>`, `<stddef.h>`,
    `<float.h>`. Retail bytes are unchanged (`c2 verify` OK).
-4. **C's semantics in a strict mode** (`#pragma std c89` or a mod option):
-   assignment converts to the variable's type (the VM stores the value's own
-   type), `&&`/`||` give 0 or 1, and natives in conditions run only when C
-   would evaluate them (lowered to branches). Retail code keeps its meaning.
-5. **Composite types, lowered to what the VM has:** structs and unions as
-   their members' slots, global arrays and global pointers (the VM has no
-   indexed access to globals: generated accessors), pointer arithmetic and
-   pointers to pointers, function pointers (an index and a generated
-   dispatch), and user-defined varargs with `<stdarg.h>`.
+4. **Strict mode** (done): `#pragma std c89` per file (a patch too) gives
+   C's conversions on stores, arguments and returns, `&&`/`||` as 0 or 1,
+   natives evaluated only where C would, and C's pointer diagnostics;
+   headers are read as text, so their macros reach `#if`.
+5. **Composite types** (done): structs and unions (slots at constant
+   offsets, copied, passed and returned by value), pointer arithmetic,
+   pointers to pointers, global and static arrays and pointers, function
+   pointers (a generated dispatch), varargs with `<stdarg.h>`, `offsetof`,
+   wide strings, string literals as `char` arrays; all of it works in mod
+   patches. Conformance: 117 of 121 programs supported; refused: comparing
+   or subtracting two pointers (the VM gives no address as a number) and
+   `double`. Being tried in the game (`c-test.iso`, 12 checks on screen).
 6. **`double` is left out on purpose.** C89 asks for about 10 significant
    digits and the VM's floats are 32-bit, so code that uses `double` or
    `long double` is refused with a clear error rather than given 32-bit
