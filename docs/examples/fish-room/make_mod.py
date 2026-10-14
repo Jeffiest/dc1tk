@@ -240,15 +240,28 @@ def slab(builder, outline, thickness, made, uv_of, y=0.0):
     builder.faces(points, faces, made, uv_of)
 
 
-def make_fish(centre):
+FISH_MATERIALS = {}
+
+
+def fish_materials():
+    """The fish's materials, made once: a second fish shares them (and so its pictures)."""
+    if not FISH_MATERIALS:
+        FISH_MATERIALS.update(
+            body=material(picture("fr_body", 128, 64, body_colour)),
+            fin=material(picture("fr_fin", 32, 32, fin_colour)),
+            white=material(picture("fr_eye", 16, 16, flat((0.97, 0.97, 0.94)))),
+            pupil=material(picture("fr_pupil", 16, 16, flat((0.02, 0.02, 0.02)))),
+            mouth=material(picture("fr_mouth", 16, 16, flat((0.25, 0.06, 0.08)))),
+        )
+    return FISH_MATERIALS
+
+
+def make_fish(centre, name="fish", pupil=4.5):
     """The fish, facing +X, its centre at centre (Blender coordinates). About 420 long."""
-    body_m = material(picture("fr_body", 128, 64, body_colour))
-    fin_m = material(picture("fr_fin", 32, 32, fin_colour))
-    white_m = material(picture("fr_eye", 16, 16, flat((0.97, 0.97, 0.94))))
-    pupil_m = material(picture("fr_pupil", 16, 16, flat((0.02, 0.02, 0.02))))
-    mouth_m = material(picture("fr_mouth", 16, 16, flat((0.25, 0.06, 0.08))))
+    made = fish_materials()
+    body_m, fin_m, white_m, pupil_m, mouth_m = (made[k] for k in ("body", "fin", "white", "pupil", "mouth"))
     length, thick, tall = 210.0, 58.0, 95.0
-    fish = Builder("fish")
+    fish = Builder(name)
 
     def taper(x):
         t = max(0.0, -x / length)
@@ -284,7 +297,7 @@ def make_fish(centre):
         white_at = (cx + eye_x, cy + side * (surface - 4.0), cz + eye_z)
         ellipsoid(fish, white_at, (27.0, 11.0, 27.0), white_m, lambda co, _l: (0.5, 0.5), 16, 8)
         pupil_at = (cx + eye_x, cy + side * (surface + 6.0), cz + eye_z)
-        ellipsoid(fish, pupil_at, (4.5, 2.0, 4.5), pupil_m, lambda co, _l: (0.5, 0.5), 10, 6)
+        ellipsoid(fish, pupil_at, (pupil, 2.0, pupil), pupil_m, lambda co, _l: (0.5, 0.5), 10, 6)
     # the slack mouth: a dark oval, a little open, at the front of the head
     ellipsoid(fish, (cx + length - 6.0, cy, cz - 18.0), (8.0, 26.0, 9.0), mouth_m, lambda co, _l: (0.5, 0.5), 14, 7)
     return fish.object(Vector(centre))
@@ -390,7 +403,9 @@ def add_point(preset, name, at, in_placement):
     return bpy.context.active_object
 
 
-def build_room():
+def build_room(mod=MOD, then=None):
+    """Builds the room in Blender and exports it into mod; then(root, fish placement), when
+    given, adds more to the scene before the export."""
     from c2_maps import c2data
 
     scene = os.path.join(MAPS, "m07", "m07.gltf")
@@ -413,7 +428,9 @@ def build_room():
     data = c2data.get(door)
     data["data"]["target"] = "m01"
     c2data.put(door, data)
-    result = bpy.ops.c2.export_mod(mod_dir=MOD, validate=True)
+    if then is not None:
+        then(root, fish_placement)
+    result = bpy.ops.c2.export_mod(mod_dir=mod, validate=True)
     if "FINISHED" not in result:
         raise SystemExit("the export failed")
 
@@ -484,4 +501,5 @@ def main():
     print("  c2 build extracted/scripts YOUR.iso -o fish-room.iso --mod fish-room")
 
 
-main()
+if __name__ == "__main__":
+    main()

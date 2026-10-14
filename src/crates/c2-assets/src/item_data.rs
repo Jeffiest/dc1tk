@@ -973,7 +973,7 @@ impl Items {
             }
             if item > exe_spectrum_items() && attribute & 2 != 0 && !matches!(like_family, 2 | 3) {
                 bail!(
-                    "{label}: spectrumising an item reads etcitem_spectol_table, which has items 1 to {}; clear attribute bit 2 or use a number up to {}",
+                    "{label}: spectrumising an item reads etcitem_spectol_table, which has items 1 to {}; clear the attribute's 2 (spectrumisable) or use a number up to {}",
                     exe_spectrum_items(),
                     exe_spectrum_items()
                 );
