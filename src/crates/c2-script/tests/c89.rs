@@ -235,6 +235,7 @@ programs! {
     preprocessor_predefined,
     preprocessor_include,
     preprocessor_header_macros,
+    preprocessor_header_constants,
     // 4.1 the freestanding headers
     library_limits,
     library_float,
