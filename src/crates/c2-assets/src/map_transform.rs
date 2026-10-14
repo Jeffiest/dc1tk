@@ -85,15 +85,19 @@ pub fn to_trs(pos: &[Num; 3], rot: &[Num; 3], scale: &[Num; 3]) -> Trs {
 }
 
 /// Whether two matrices are the same transform, within what float32 files and glTF's floats
-/// lose: 1e-4 of the larger of 1 and the values compared (5e-3 for positions).
+/// lose: 1e-4 of the larger of 1 and the values compared; positions within 5e-3 and 2e-6 of them.
 pub fn same(a: &Matrix, b: &Matrix) -> bool {
     (0..4).all(|row| {
         (0..4).all(|column| {
             let (x, y) = (a[row][column], b[row][column]);
             // Blender keeps world matrices in 32 bits, so a piece of a placement thousands of
             // units out comes back moved by up to a few thousandths
-            let tolerance = if column == 3 && row < 3 { 5e-3 } else { 1e-4 };
-            (x - y).abs() <= tolerance * x.abs().max(y.abs()).max(1.0)
+            if column == 3 && row < 3 {
+                // positions absolutely, so a move far out is still a move
+                (x - y).abs() <= 5e-3 + 2e-6 * x.abs().max(y.abs())
+            } else {
+                (x - y).abs() <= 1e-4 * x.abs().max(y.abs()).max(1.0)
+            }
         })
     })
 }
@@ -166,5 +170,13 @@ mod tests {
         trs.translation[0] = 12.5;
         let (p, r, s) = from_trs(&trs, Some((&pos, &rot, &scale)));
         assert_eq!((p[0], r, s), (Num::from(12.5f32), rot, scale));
+    }
+
+    #[test]
+    fn a_move_far_out_is_a_move_and_float_noise_is_not() {
+        let at = |x: f32| matrix(&nums([x, 0.0, 3000.0]), &nums([0.0; 3]), &nums([1.0; 3]));
+        assert!(same(&at(-4557.0), &at(-4557.003)), "32-bit noise far out");
+        assert!(!same(&at(-4557.0), &at(-4556.0)), "a move of one unit far out");
+        assert!(!same(&at(0.0), &at(0.01)), "a move of a hundredth near the origin");
     }
 }

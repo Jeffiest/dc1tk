@@ -478,15 +478,15 @@ and gives what to write; `c2 build` does so for each `"map:NAME":
   picture it shows. Blender splits and reorders vertices, recomputes normals,
   adds float noise and moves colours a step, so comparing bytes would rebuild
   every mesh. Blender also writes some meshes' colours without alpha, and
-  gives every primitive of a mesh with colours a colour (white where there
-  was none); neither counts as a change, and a rebuilt mesh takes each
+  gives every primitive of a mesh what any of them has (UVs of 0, white
+  colours); none of that counts as a change, and a rebuilt mesh takes each
   corner's missing alpha from the nearest vertex of the mesh it replaces,
-  keeping the fades. Placement and piece transforms compare within 1e-4,
-  positions within 0.005: Blender keeps world matrices in 32 bits, so pieces
-  of placements thousands of units out come back moved by a few thousandths.
-  An unedited scene of s17, m01, m05, m06, m08, f01, f04, i01h01, i03h02, s07,
-  s19, s33, s44, s56 and s69, imported and exported by the add-on in
-  Blender 5.1, changes nothing.
+  keeping the fades. Positions (vertices, and mesh, placement and piece
+  translations) compare within 0.005 and 2e-6 of their value, absolutely, so
+  a move far from the origin is still seen: Blender keeps world matrices in
+  32 bits, which moves things thousands of units out by a few thousandths.
+  Every one of the 171 scenes `c2 map-export --all` writes, imported and
+  exported unedited by the add-on in Blender 5.1, changes nothing.
 - **New models:** a piece naming a model no pack has, with meshes under it,
   is built from them (`models::new_map_model`: a root frame named after the
   model, a frame per mesh, vertices where the objects were put) and added to

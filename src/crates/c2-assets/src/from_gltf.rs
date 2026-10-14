@@ -750,8 +750,14 @@ pub fn mesh_contents(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, String
     Ok(out)
 }
 
-/// A mesh as values: its node's matrix and, per material (by name, without a `.NNN` suffix, and the picture it shows), its
-/// triangles' corners (position, then first UVs and colour when it has them).
+/// Where a corner's values are in Geometry's lists: position, UVs, colour.
+const UV: usize = 3;
+const COLOUR: usize = 5;
+const CORNER: usize = 9;
+
+/// A mesh as values: its node's matrix and, per material (by name, without a `.NNN` suffix, and
+/// the picture it shows), its triangles' corners: position (0-2), first UVs (3-4) and colour
+/// (5-8), NaN where the primitive has none (and alpha NaN where the colour has none).
 pub struct Geometry {
     pub matrix: Vec<f64>,
     pub groups: BTreeMap<String, Vec<[Vec<f64>; 3]>>,
@@ -827,12 +833,19 @@ pub fn mesh_geometry(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, Geomet
             };
             let (uvs, colors) = (read("TEXCOORD_0")?, read("COLOR_0")?);
             let corner = |at: i64| -> Result<Vec<f64>> {
-                let mut values: Vec<f64> = positions.at(at)?.iter().map(|v| v.f()).collect();
+                let mut values = vec![f64::NAN; CORNER];
+                for (slot, value) in positions.at(at)?.iter().take(3).enumerate() {
+                    values[slot] = value.f();
+                }
                 if let Some(uvs) = &uvs {
-                    values.extend(uvs.at(at)?.iter().map(|v| v.f()));
+                    for (slot, value) in uvs.at(at)?.iter().take(2).enumerate() {
+                        values[UV + slot] = value.f();
+                    }
                 }
                 if let Some(colors) = &colors {
-                    values.extend(colors.at(at)?.iter().map(|v| v.f()));
+                    for (slot, value) in colors.at(at)?.iter().take(4).enumerate() {
+                        values[COLOUR + slot] = value.f();
+                    }
                 }
                 Ok(values)
             };
@@ -859,38 +872,42 @@ pub fn mesh_geometry(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, Geomet
 }
 
 /// Whether two meshes are the same within what another tool's round trip moves: matrices within
-/// 1e-3 (of the larger of 1 and the value), and every triangle of one matched by a triangle of the
-/// other in any corner order (winding kept): positions within 0.005, UVs within 0.001, colours
-/// within 4/255.
+/// 1e-3 (of the larger of 1 and the value; translations within 0.005 and 2e-6 of the value), and
+/// every triangle of one matched by a triangle of the other in any corner order (winding kept):
+/// positions within 0.005 (and 2e-6 of the value), UVs within 0.001, colours within 4/255.
 fn same_geometry(a: &Geometry, b: &Geometry) -> bool {
     let close = |x: f64, y: f64, tolerance: f64| (x - y).abs() <= tolerance * x.abs().max(y.abs()).max(1.0);
-    if a.matrix.len() != b.matrix.len() || !a.matrix.iter().zip(&b.matrix).all(|(x, y)| close(*x, *y, 1e-3)) {
+    // positions are compared absolutely (a few thousandths, and 32-bit precision far out), so a
+    // move far from the origin is still a move
+    let near = |x: f64, y: f64| (x - y).abs() <= 5e-3 + 2e-6 * x.abs().max(y.abs());
+    // column-major: the translation is 12-14, where Blender's 32-bit world matrices leave a few
+    // thousandths on meshes far out
+    let matrix_close = |at: usize, x: f64, y: f64| if (12..15).contains(&at) { near(x, y) } else { close(x, y, 1e-3) };
+    if a.matrix.len() != b.matrix.len() || !a.matrix.iter().zip(&b.matrix).enumerate().all(|(at, (x, y))| matrix_close(at, *x, *y)) {
         return false;
     }
     if a.groups.keys().ne(b.groups.keys()) {
         return false;
     }
-    // Blender writes some vertex colours without alpha, and gives every primitive of a mesh with
-    // colours a colour, white where it had none: a corner that lost only its alpha, or gained
-    // only a white colour, compares on the rest
+    // What Blender adds where a primitive had nothing is no edit: UVs of 0 and white colours (it
+    // gives every primitive of a mesh what any of them has), and colours without alpha.
+    let filler = |values: &[f64], fill: f64| values.iter().all(|value| value.is_nan() || (value - fill).abs() <= 4.0 / 255.0);
     let corner_close = |x: &[f64], y: &[f64]| -> bool {
-        let (short, long) = if x.len() <= y.len() { (x, y) } else { (y, x) };
-        let extra = &long[short.len()..];
-        let fits = match extra.len() {
-            0 | 1 => true,
-            3 | 4 => extra.iter().all(|value| (value - 1.0).abs() <= 4.0 / 255.0),
-            _ => false,
+        let field = |range: std::ops::Range<usize>, fill: f64, tolerance: f64| -> bool {
+            let (p, q) = (&x[range.clone()], &y[range]);
+            match (p.iter().all(|v| v.is_nan()), q.iter().all(|v| v.is_nan())) {
+                (true, true) => true,
+                (true, false) => filler(q, fill),
+                (false, true) => filler(p, fill),
+                // a value only one side has (alpha) compares as missing
+                (false, false) => p.iter().zip(q).all(|(p, q)| p.is_nan() || q.is_nan() || close(*p, *q, tolerance)),
+            }
         };
-        // positions, then UVs when there are (lengths 5, 8 and 9), then colour
-        let uvs = matches!(long.len(), 5 | 8 | 9);
-        fits && short.iter().zip(long).enumerate().all(|(at, (p, q))| {
-            let tolerance = match at {
-                0..=2 => 0.005,
-                3 | 4 if uvs => 0.001,
-                _ => 4.0 / 255.0,
-            };
-            close(*p, *q, tolerance)
-        })
+        x.len() == CORNER
+            && y.len() == CORNER
+            && (0..3).all(|at| near(x[at], y[at]))
+            && field(UV..COLOUR, 0.0, 0.001)
+            && field(COLOUR..CORNER, 1.0, 4.0 / 255.0)
     };
     let tri_close = |x: &[Vec<f64>; 3], y: &[Vec<f64>; 3]| -> bool {
         (0..3).any(|r| (0..3).all(|k| corner_close(&x[k], &y[(k + r) % 3])))
@@ -1474,6 +1491,42 @@ fn world_of(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn corner(position: [f64; 3], uv: Option<[f64; 2]>, colour: Option<[f64; 4]>) -> Vec<f64> {
+        let mut out = vec![f64::NAN; CORNER];
+        out[..3].copy_from_slice(&position);
+        if let Some(uv) = uv {
+            out[UV..COLOUR].copy_from_slice(&uv);
+        }
+        if let Some(colour) = colour {
+            out[COLOUR..].copy_from_slice(&colour);
+        }
+        out
+    }
+
+    fn one_triangle(offset: f64, uv: Option<[f64; 2]>, colour: Option<[f64; 4]>) -> Geometry {
+        let tri = [
+            corner([1549.0 + offset, 488.0, -2122.0], uv, colour),
+            corner([1548.0 + offset, 480.0, -2121.0], uv, colour),
+            corner([1549.0 + offset, 480.0, -2118.0], uv, colour),
+        ];
+        let mut matrix = vec![0.0; 16];
+        for at in [0, 5, 10, 15] {
+            matrix[at] = 1.0;
+        }
+        Geometry { matrix, groups: BTreeMap::from([("m".to_string(), vec![tri])]) }
+    }
+
+    #[test]
+    fn what_blender_adds_is_no_edit_but_a_move_far_out_is() {
+        let original = one_triangle(0.0, None, None);
+        assert!(same_geometry(&original, &one_triangle(0.002, None, None)), "float noise");
+        assert!(same_geometry(&original, &one_triangle(0.0, Some([0.0, 0.0]), Some([1.0, 1.0, 1.0, f64::NAN]))), "zero UVs and white");
+        assert!(!same_geometry(&original, &one_triangle(0.5, None, None)), "half a unit far out");
+        assert!(!same_geometry(&original, &one_triangle(0.0, None, Some([0.5, 0.5, 0.5, 1.0]))), "a painted colour");
+        let faded = one_triangle(0.0, None, Some([0.7, 0.7, 0.7, 0.0]));
+        assert!(same_geometry(&faded, &one_triangle(0.0, None, Some([0.7, 0.7, 0.7, f64::NAN]))), "alpha dropped");
+    }
 
     #[test]
     fn missing_alpha_comes_from_the_nearest_original_vertex() {
