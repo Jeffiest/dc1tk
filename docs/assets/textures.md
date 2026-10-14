@@ -411,7 +411,7 @@ The whole check takes about 100 s on 16 processes.
   engine ignores it, and its meaning is unknown.
 * PSMCT16 and 16- or 24-bit CLUTs never occur. PSMCT16 is implemented
   (A1B5G5R5) but untested. Other CLUT types are rejected.
-* The engine needs about 4 VRAM blocks per palette plus whole pages per
+* The engine needs 4 VRAM blocks per palette plus whole pages per
   texture. Growing a texture can push later textures of the archive into
-  the next block ("texture over"). Whether a given scene tolerates that
-  has not been checked.
+  the next block ("texture over"). How many blocks each load has is in
+  [the memory budgets](memory.md#5-texture-memory-gs), and `build` checks it.

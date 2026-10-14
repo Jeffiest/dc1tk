@@ -473,8 +473,8 @@ Nothing VU-specific: the file is an indexed mesh and the engine batches it. Requ
    diffuse (1,1,1,1), 0x10 (1,1,1,0), power 50 as defaults.
 5. **Layout.** Use `mds::build()` (style A layout). The pack writer must keep members 16-aligned.
 6. **Budget.** Memory comes from fixed character stacks: the MDS visuals and packets are built
-   into `base_stack`, and `_MODEL` uses a 6400-qword work buffer. Larger meshes than the original
-   may overflow. The limits are not measured yet. POLY_NUM in info.cfg may also need updating
+   into `base_stack`, and `_MODEL` uses a 6400-qword work buffer (3,198 vertices a skinned mesh).
+   See [the memory budgets](memory.md#4-character-packs): the party's packs nearly fill theirs. POLY_NUM in info.cfg may also need updating
    (meaning not traced).
 
 ## 8. Evidence log (research scripts run while the formats were worked out; not in this repository)

@@ -12,7 +12,8 @@ use indexmap::IndexMap;
 use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
 use c2_script::{
-    build, definitions, discfiles, editor, index, migrate, mods, patches, renames, replace, sdk, startat, tree,
+    build, definitions, discfiles, editor, index, memory, migrate, mods, patches, renames, replace, sdk, startat,
+    tree,
 };
 
 use crate::Common;
@@ -329,6 +330,27 @@ fn reached_lines(resolved: &replace::Resolved, module: &str) -> Vec<String> {
     out
 }
 
+/// Prints what the loads of the files the build rewrites use of the game's fixed memory
+/// (c2_script::memory, docs/assets/memory.md); true when a budget that is certain is exceeded.
+/// The image is mapped only here, so writing the new image can still clone the original.
+fn memory_check(iso: &Path, files: &discfiles::Files) -> Result<bool> {
+    let image = c2_disc::Image::open(iso)?;
+    let archive = c2_disc::archive::Archive::open(image.bytes())?;
+    let original = memory::Image::new(image.bytes(), &archive);
+    let modded = memory::Overlay::new(&original, files);
+    let changed: Vec<String> = files.keys().cloned().collect();
+    let findings = memory::check(&original, &modded, &changed);
+    for item in &findings {
+        let label = match item.level {
+            memory::Level::Error => "error",
+            memory::Level::Warning => "warning",
+            memory::Level::Note => "memory",
+        };
+        println!("{label}: {}", item.text);
+    }
+    Ok(findings.iter().any(|item| item.level == memory::Level::Error))
+}
+
 pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     let common = &args.common;
     let defs = common.definitions()?;
@@ -482,14 +504,6 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             continue;
         };
         println!("replaced: {} (mod {}, {} bytes, was {})", item.path, item.module, item.data.len(), old);
-        if item.data.len() > old {
-            // models, textures and sounds load into fixed memory the build cannot see
-            println!(
-                "warning: {} grew by {} bytes; if the game runs short of memory where it loads, keep it nearer the original's size",
-                item.path,
-                item.data.len() - old
-            );
-        }
     }
     let (files, changed) = replace::apply(&args.iso, &resolved, &files)?;
     for item in &changed {
@@ -501,13 +515,6 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             item.data.len(),
             item.old
         );
-        if item.data.len() > item.old {
-            println!(
-                "warning: {} grew by {} bytes; if the game runs short of memory where it loads, keep it nearer the original's size",
-                item.place.display(),
-                item.data.len() - item.old
-            );
-        }
     }
     let (files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files)?;
     for item in &map_changes {
@@ -525,6 +532,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             println!("replaced: {path} (data:{}; {new} bytes, was {old})", change.table);
         }
     }
+    let over_budget = memory_check(&args.iso, &files)?;
     let written = rebuild::write_disc(&args.iso, &args.output, &files)?;
     if let Some(executable) = &executable {
         // the monster table: the boot executable patched in place, its size kept
@@ -564,6 +572,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         shown(&args.output)
     );
     if !wrong.is_empty() {
+        return Ok(ExitCode::from(1));
+    }
+    if over_budget {
+        println!("the image was written, but the game will not load it as built: see the errors above (docs/assets/memory.md)");
         return Ok(ExitCode::from(1));
     }
     if args.play {
