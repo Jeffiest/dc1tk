@@ -6,6 +6,7 @@
 pub mod cfg_text;
 pub mod data_table;
 pub mod dungeon_data;
+pub mod dungeon_layout;
 pub mod exe_tables;
 pub mod fishing_data;
 pub mod folder;

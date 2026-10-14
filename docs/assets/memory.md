@@ -101,6 +101,11 @@ the parts pass: 0x140 (320) entries for town maps and interiors (`GetLoadMapInfo
 and 400 for dungeons (`LoadDungeonMapFile`, dng_event). The add map's placements count too. A
 placement past the end is not placed (`NewPlaceParts` returns NULL).
 
+**The map table**, certain. `map/map<language>.cfg` goes into `MapNameBuff`
+(0x8000 bytes, `mapselect.cpp`): 0x1C a row and one more, then the rows'
+strings. The disc's fill 9,241 (Japanese) to 13,807 bytes (Korean); `build`
+refuses new maps' rows past the buffer ([maps](maps.md) section 9).
+
 **Texture blocks**, certain (section 5). The add map's picture files then the map's own are
 entered from block 0, each at the block the last left (`CMap::LoadData`, map.cpp:1506). In town the
 interior's pictures start at block 0x18 and the main map's effects at 0x40; in dungeons the map's

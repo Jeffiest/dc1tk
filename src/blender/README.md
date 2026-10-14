@@ -150,6 +150,14 @@ Collision box, and press "Set selected faces": the faces get the material
 scripts address placements by slot, the build keeps its slot and hides it
 (show 0) rather than removing it.
 
+**Template libraries.** A dungeon floor's map (`d01f01`) places none of its
+parts: the game lays them out at run time. Its import shows each template
+once, in rows by family (`way`, `room`, `door`, ...), as a placement marked
+"Template ..., shown once": edit its pieces, collision and points and the
+export changes the template; the placement itself places nothing, so moving
+it changes nothing (see [dungeons](../../docs/assets/dungeons.md), where
+area 5 floors are where chests and monsters may stand).
+
 **Check.** Validate Map lists errors and warnings (select an entry's object
 with its button; the whole list is in the text "c2 validation"): names over
 31 bytes (cp932), event targets over 15, repeated placement names, more than
@@ -168,7 +176,10 @@ properties, to `maps/NAME/NAME.gltf` in the mod (textures in `textures/`),
 and `mod.json` gets `"map:NAME": "maps/NAME/NAME.gltf"` under `replace`
 (made when missing; other keys kept). Blender's `.001` suffixes are taken
 off node and collision material names in the written file, since pieces and
-points repeat in every placement of a template.
+points repeat in every placement of a template. To make a new map of the
+export instead, move its line under `add` with the map it came from:
+`"map:m05x": {"file": "maps/m05/m05.gltf", "like": "m05"}`
+([maps](../../docs/assets/maps.md) section 9).
 
 **Build.** Set the retail ISO, the output ISO and the source tree and press
 Build ISO with Mod: `c2 build SOURCE ISO -o OUTPUT --mods MODS --mod NAME`

@@ -174,9 +174,9 @@ pub enum ModCommand {
         /// Asset ids (texture:c02a02, model:c02fuku*, sound:SE_CURSOR_MOVE, bank:SP_003,
         /// text:en/shopname, music:BG_000_000), each copied in its common format with its line
         /// added to mod.json; data tables (data:items, data:shops, data:monsters, data:inventions,
-        /// data:georama, data:medals, data:floors, data:fishing, data:characters) as JSON; or files
-        /// as extract lays them out (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied
-        /// into disc/.
+        /// data:georama, data:medals, data:floors, data:fishing, data:characters, data:layouts) as
+        /// JSON; or files as extract lays them out (snd2/sp/sp_000.snd,
+        /// chara/c01_base.chr.d/c01b.img), copied into disc/.
         #[arg(required = true)]
         paths: Vec<String>,
         /// Export files in a common format to edit there: png for textures, wav for sound banks,
@@ -494,7 +494,11 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             target.program = number.to_string();
         }
         let language = c2_script::disc::language_code(&defs);
-        let warp = startat::warp(&args.source, &consts, &target, || startat::disc_map_numbers(&args.iso, language))?;
+        // the chosen mods' new maps are numbered after the disc's
+        let new_maps = c2_script::maptable::new_maps(&c2_script::replace::all_lines(&mod_dirs)?)?;
+        let warp = startat::warp(&args.source, &consts, &target, || {
+            c2_script::maptable::disc_numbers_with(&args.iso, language, &new_maps)
+        })?;
         for warning in startat::warp_warnings(&args.source, &consts, &target, warp)? {
             println!("warning: {warning}");
         }
@@ -584,6 +588,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let (files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files)?;
     for item in &map_changes {
+        if item.old == 0 {
+            println!("added: {} (map:{}; mod {}, {} bytes)", item.path, item.map, item.module, item.new);
+            continue;
+        }
         println!(
             "replaced: {} (map:{}; mod {}, {} bytes, was {})",
             item.path, item.map, item.module, item.new, item.old

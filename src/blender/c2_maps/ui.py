@@ -195,6 +195,11 @@ def draw_placement(layout, obj, settings):
         col.prop(settings, "place_far_fade")
         op = box.operator(edit.C2_OT_clear_value.bl_idname, text="No far clip", icon="X")
         op.object_name, op.path = obj.name, json.dumps(["far_clip"])
+    if c2data.lookup(obj, ("preview",)):
+        # a template library's (a dungeon floor's parts): edits reach the template, nothing is placed
+        layout.label(text="Template %s, shown once: edits change it" % c2data.lookup(obj, ("template",)))
+        layout.label(text="It places nothing; moving it changes nothing")
+        return
     slot = c2data.lookup(obj, ("slot",))
     layout.label(text="Slot %s" % slot if slot is not None else "New: appended after the map's placements")
     layout.operator(edit.C2_OT_duplicate_placement.bl_idname, icon="DUPLICATE")
