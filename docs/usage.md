@@ -706,7 +706,11 @@ character pack; packs inside packs work the same way).
   plays (scripts that play motions by number then count the later ones one
   lower; deleting every action deletes none). Motion sets other than 0 are
   actions too, named `3:bow` for KEY `bow` of `MOTION 3`; a new action named
-  `3:curtsy` joins set 3.
+  `3:curtsy` joins set 3. A new action's KEY takes the step in its animation's
+  `extras.step` when it has one (Blender writes none; set it in the glTF after
+  exporting). Under each character pack it replaces, `build` reports the KEYs
+  added (with their place among the set's KEYs, from 0), moved or taken out,
+  and the pack's members that changed and those that did not.
 
   Vertex animation (cloth, flags, faces), material fades and colours and
   visibility are shape keys of the mesh, animated with the actions: a

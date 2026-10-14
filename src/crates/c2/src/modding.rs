@@ -606,6 +606,9 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             continue;
         };
         println!("replaced: {} (mod {}, {} bytes, was {})", item.path, item.module, item.data.len(), old);
+        for detail in &item.details {
+            println!("  {detail}");
+        }
     }
     let (files, changed) = replace::apply(&args.iso, &resolved, &files)?;
     for item in &changed {
@@ -617,6 +620,9 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             item.data.len(),
             item.old
         );
+        for detail in &item.details {
+            println!("  {detail}");
+        }
         for warning in &item.warnings {
             println!("{warning}");
         }

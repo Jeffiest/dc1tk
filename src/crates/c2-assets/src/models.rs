@@ -35,6 +35,39 @@ pub fn members(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(out)
 }
 
+/// What changed inside a character pack, for build's report: its KEYs added, moved or taken out
+/// (motions::key_changes), then its members that differ, that it gained or lost, and those left
+/// as they were. An unchanged pack gives one line saying so.
+pub fn pack_changes(old: &[u8], new: &[u8]) -> Result<Vec<String>> {
+    if old == new {
+        return Ok(vec!["unchanged".to_string()]);
+    }
+    let (before, after) = (members(old)?, members(new)?);
+    let find = |list: &[(String, Vec<u8>)], name: &str| list.iter().find(|(n, _)| n == name).map(|(_, d)| d.clone());
+    let mut lines = match (find(&before, "info.cfg"), find(&after, "info.cfg")) {
+        (Some(was), Some(now)) => motions::key_changes(&was, &now),
+        _ => Vec::new(),
+    };
+    let (mut changed, mut kept) = (Vec::new(), Vec::new());
+    for (name, data) in &after {
+        match find(&before, name) {
+            Some(was) if was == *data => kept.push(name.clone()),
+            Some(was) => changed.push(format!("{name} ({} bytes, was {})", data.len(), was.len())),
+            None => changed.push(format!("{name} ({} bytes, new)", data.len())),
+        }
+    }
+    for (name, _) in before.iter().filter(|(name, _)| find(&after, name).is_none()) {
+        changed.push(format!("{name} (taken out)"));
+    }
+    if !changed.is_empty() {
+        lines.push(format!("members changed: {}", changed.join(", ")));
+    }
+    if !kept.is_empty() {
+        lines.push(format!("members unchanged: {}", kept.join(", ")));
+    }
+    Ok(lines)
+}
+
 /// The member names of the pack's model, weights and bind pose, from its info.cfg.
 pub struct ModelFiles {
     pub model: String,
