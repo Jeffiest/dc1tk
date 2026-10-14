@@ -12,8 +12,8 @@ use indexmap::IndexMap;
 use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
 use c2_script::{
-    build, definitions, discfiles, editor, index, memory, migrate, mods, patches, renames, replace, sdk, startat,
-    tree,
+    build, definitions, discfiles, editor, index, loads, memory, migrate, mods, patches, renames, replace, sdk,
+    startat, tree,
 };
 
 use crate::Common;
@@ -288,9 +288,10 @@ fn resolved(mod_dirs: &[PathBuf], disc: &Path, defs: &[PathBuf]) -> Result<(repl
     Ok((replace::resolve(&lines, &index)?, replace::templates(&lines, Some(&index))?))
 }
 
-/// The sound entries the mods add, as constants their patches see.
-fn with_added(plan: &mut patches::Plan, resolved: &replace::Resolved) {
-    for (module, added) in &resolved.added {
+/// The sound entries the mods add and name (replace::sound_constants), as constants their patches
+/// see.
+fn with_added(plan: &mut patches::Plan, constants: &BTreeMap<String, IndexMap<String, i64>>) {
+    for (module, added) in constants {
         plan.numbers
             .entry(module.clone())
             .or_default()
@@ -299,6 +300,54 @@ fn with_added(plan: &mut patches::Plan, resolved: &replace::Resolved) {
             patch.numbers.extend(added.iter().map(|(name, number)| (name.clone(), *number)));
         }
     }
+}
+
+/// The files the mods' scripts load by name (loads.rs) that the disc, with the files the mods
+/// give, does not have, or the pack members it lacks: one line each. A load the tree's own script
+/// makes too (the game has a few that fail) is left out.
+fn missing_loads(
+    mod_dirs: &[PathBuf],
+    tree_dir: &Path,
+    consts: &IndexMap<String, i64>,
+    iso: &Path,
+    raw: &discfiles::Wanted,
+) -> Result<Vec<String>> {
+    let image = c2_disc::Image::open(iso)?;
+    let archive = c2_disc::archive::Archive::open(image.bytes())?;
+    let by_path: std::collections::HashMap<String, &c2_disc::archive::Entry> =
+        archive.entries.iter().map(|entry| (entry.path.to_lowercase(), entry)).collect();
+    let known =
+        loads::Known::new(archive.entries.iter().map(|entry| entry.path.as_str()), raw.keys().map(String::as_str));
+    let members = |path: &str| -> Option<Vec<String>> {
+        let entry = by_path.get(&path.to_lowercase())?;
+        let pack = c2_disc::archive::parse_pack(archive.read(image.bytes(), entry))?;
+        Some(pack.into_iter().map(|member| member.name).collect())
+    };
+    // (mod, file shown, text, the tree's scripts it stands for)
+    let mut texts: Vec<(String, String, String, Vec<String>)> = Vec::new();
+    let plan = mods::patch_plan(mod_dirs, tree_dir, consts, false)?;
+    for patch in &plan.patches {
+        texts.push((patch.module.clone(), patch.file_name(), patch.text.clone(), patch.scripts.clone()));
+    }
+    for mod_dir in mod_dirs {
+        let module = mod_dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        for (path, text) in mods::contents(mod_dir, tree_dir)? {
+            texts.push((module.clone(), path.clone(), text, vec![path]));
+        }
+    }
+    let mut out = Vec::new();
+    for (module, shown, text, scripts) in texts {
+        let originals: Vec<String> =
+            scripts.iter().filter_map(|script| c2_py::read_text(&tree_dir.join(script)).ok()).collect();
+        for (load, problem) in loads::check(&loads::loads(&text, consts), &known, &members) {
+            let literal = format!("\"{}\"", load.name);
+            if originals.iter().any(|original| original.contains(&literal)) {
+                continue;
+            }
+            out.push(format!("{module}: {shown}:{} {}(\"{}\"): {problem}", load.line, load.call, load.name));
+        }
+    }
+    Ok(out)
 }
 
 /// What a mod's id lines reach, one line each.
@@ -374,7 +423,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let consts = index::constants(index::tree_headers(&args.source, &defs, &sdk_dir)?.values());
     let mut plan = mods::patch_plan(&mod_dirs, &args.source, &consts, true)?;
-    with_added(&mut plan, &resolved);
+    with_added(&mut plan, &replace::sound_constants(&mod_dirs, &consts, &resolved.added)?);
     for mod_dir in &mod_dirs {
         let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
         let mine: Vec<&patches::Patch> = plan.patches.iter().filter(|patch| patch.module == name).collect();
@@ -696,7 +745,18 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                     added
                 }
             };
-            let result = mods::check_with(&mod_dirs, source, &tools, &default_constants(source)?, &added)?;
+            let consts = default_constants(source)?;
+            let numbered = disc.is_some();
+            let without: BTreeMap<String, IndexMap<String, i64>> = BTreeMap::new();
+            let named = replace::sound_constants(&mod_dirs, &consts, if numbered { &added } else { &without })?;
+            for (name, found) in &named {
+                for (constant, number) in found {
+                    println!("{name}: sound {constant} = {number}");
+                }
+            }
+            // without the disc an added entry's number is not known; its name compiles all the same
+            let added = replace::sound_constants(&mod_dirs, &consts, &added)?;
+            let result = mods::check_with(&mod_dirs, source, &tools, &consts, &added)?;
             for (name, found) in &result.numbers {
                 let sorted: BTreeMap<&String, &i64> = found.iter().collect();
                 for (constant, number) in sorted {
@@ -720,6 +780,14 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             }
             for (path, error) in &result.errors {
                 println!("error: {path}: {error}");
+            }
+            match disc {
+                Some(disc) => {
+                    for line in missing_loads(&mod_dirs, source, &consts, disc, &raw)? {
+                        println!("warning: {line}");
+                    }
+                }
+                None => println!("files the scripts load not looked up: pass --disc with the disc image to check them"),
             }
             println!("{} scripts compiled, {} failed", result.compiled, result.errors.len());
             Ok(if result.errors.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })

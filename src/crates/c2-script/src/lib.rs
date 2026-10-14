@@ -19,6 +19,7 @@ pub mod flags;
 pub mod index;
 pub mod learn;
 pub mod library;
+pub mod loads;
 pub mod mapedit;
 pub mod maps;
 pub mod memory;

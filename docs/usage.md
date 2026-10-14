@@ -293,7 +293,14 @@ The commands:
   `build` would but without a disc, and prints the mods it added for
   `requires`, the order they apply in, the numbers they were given, and
   overridden functions the tree has renamed (`--rename` writes the new
-  names into the mods).
+  names into the mods). With `--disc ISO` it also looks up the files the
+  mods' scripts load by name (`load_chara`, `load_sound`,
+  `load_message_file`, `load_image`, `start_background_load`, ... with a
+  string path, in the directory the function's `change_dir` set) and the
+  member a character pack is loaded by (`info.cfg`), and warns about any the
+  disc and the mods' own files do not have; such a load fails only in the
+  game. Loads the tree's own script makes too are left out (the game has a
+  few that fail).
 - `build --mod NAME` (repeat it for several) merges each patch into its
   targets after their libraries are included, and lists each mod's patches
   and numbers. The tree is not changed.
@@ -351,6 +358,13 @@ model pack from a glTF, in the format of the disc's file `like` names (see
 `mod migrate ISO NAME` turns a mod's `disc/` folder (below) into such
 lines. Two mods replacing one asset are refused. The rules are in
 [the design](design.md), "Mods by name".
+
+A sound reaches every copy of its bank: where a menu pack holds a version
+of a bank that differs from `snd2/sp/`'s only in parts the entry does not
+use (its volumes), the entry is one sound with both places, and a bank's
+folder (`bank:SP_001`) reaches them too. An added sound's name
+(`sound:SE_MOD_BEEP`) is a constant the mod's patches use, holding the
+entry's number.
 
 **Game files.** A mod can replace models, textures, sounds and any other
 file on the disc. It keeps them under `mods/NAME/disc/`, laid out as
@@ -412,7 +426,11 @@ character pack; packs inside packs work the same way).
   single sound (`001.wav`). Replace the ones you want with any WAV (any
   rate up to 48000 Hz, mixed to mono; a `smpl` loop makes it loop), and add
   entries by numbering on from the last (`005_beep.wav`, the name after the
-  number goes into the bank's table). An entry that plays a sequence (a
+  number goes into the bank's table). A WAV with a name gives the mod's
+  patches a constant for its entry, named as `pal.h` names the game's
+  sounds: `005_beep.wav` in `sp_004.snd.wav/` is `SE_SP_004_BEEP` (5), so a
+  patch can `play_se(bank, SE_SP_004_BEEP)`; `build` and `mod check` list
+  them, and refuse a name `pal.h` gives another entry. An entry that plays a sequence (a
   short tune of the bank's instruments) is not exported; a WAV given for it
   replaces the tune with that one sound. A changed entry overwrites its
   samples when no other entry plays them, so the bank stays the same size
