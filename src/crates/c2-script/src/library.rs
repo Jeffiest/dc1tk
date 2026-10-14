@@ -1018,9 +1018,31 @@ struct Expansion<'a> {
     headers: &'a IndexMap<String, String>,
     functions: Vec<Node>,
     library_docs: Map,
+    /// The structs and unions the program and its libraries declare.
+    structs: crate::ctype::Structs,
 }
 
 impl Expansion<'_> {
+    /// Adds a file's structs and unions; a tag two files define differently is refused.
+    fn add_structs(&mut self, program: &Node, path: &str) -> Result<()> {
+        for (tag, composite) in crate::ctype::structs_of(program) {
+            match self.structs.get(&tag).cloned() {
+                Some(known) if known.members.is_empty() || composite.members.is_empty() => {
+                    if known.members.is_empty() {
+                        self.structs.insert(tag, composite);
+                    }
+                }
+                Some(known) if known != composite => {
+                    return Err(Error::invalid(format!("{path} defines {tag} differently from the file including it")));
+                }
+                _ => {
+                    self.structs.insert(tag, composite);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn absorbed_header(&mut self, path: &str) -> Result<Option<String>> {
         if !self.absorbed.contains_key(path) {
             let table =
@@ -1049,7 +1071,8 @@ impl Expansion<'_> {
             return Err(Error::invalid(format!("cannot find included file {path}")));
         };
         self.included.insert(path.to_string());
-        let included = parse::parse(text)?;
+        let included = parse::parse_source_with(text, path, &HashMap::new(), self.headers, self.texts)?;
+        self.add_structs(&included, path)?;
         self.library_docs.insert(path.to_string(), included.get("doc").cloned().unwrap_or(Node::from("")));
         self.declarations.add_from(&included["declarations"]);
         let mut table = included["natives"].as_str().map(str::to_string);
@@ -1101,6 +1124,7 @@ pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMa
         headers,
         functions: Vec::new(),
         library_docs: Map::new(),
+        structs: crate::ctype::structs_of(&program),
     };
     let mut table = program["natives"].as_str().map(str::to_string);
     for item in list(&program, "functions") {
@@ -1140,12 +1164,44 @@ pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMa
             None => function.clone(),
         })
         .collect();
+    let program = if state.structs.is_empty() {
+        program
+    } else {
+        program.with("structs", crate::ctype::structs_node(&state.structs))
+    };
     Ok(program
         .with("natives", table.map(Node::from).unwrap_or(Node::Null))
         .with("functions", functions)
         .with("padding_of", Node::Map(Map::new()))
         .with("declarations", state.declarations.to_node())
         .with("library_docs", Node::Map(state.library_docs)))
+}
+
+/// The texts of a source's library includes and those they include, found from its #include
+/// "..." lines before it is parsed, for parse::parse_source_with: what C's #include gives the file.
+pub fn include_texts(
+    text: &str,
+    source_path: &Path,
+    overlay: Option<&IndexMap<String, String>>,
+    sdk_dir: &Path,
+    extra_dirs: &[PathBuf],
+) -> Result<IndexMap<String, String>> {
+    let program = node!({"functions": quoted_includes(text)
+        .into_iter()
+        .map(|path| node!({"kind": "include", "path": path, "system": false}))
+        .collect::<Vec<_>>()});
+    read_includes(&program, source_path, overlay, sdk_dir, extra_dirs)
+}
+
+/// The paths of a text's #include "..." lines.
+fn quoted_includes(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let rest = line.trim_start().strip_prefix('#')?.trim_start().strip_prefix("include")?.trim();
+            let path = rest.strip_prefix('"')?;
+            Some(path[..path.find('"')?].to_string())
+        })
+        .collect()
 }
 
 /// The texts of a script's library includes and of the libraries they include, looked up from
@@ -1194,9 +1250,7 @@ pub fn read_includes(
             continue;
         };
         texts.insert(path.clone(), text.clone());
-        if let Ok(nested) = parse::parse(&text) {
-            pending.extend(includes(&nested));
-        }
+        pending.extend(quoted_includes(&text));
     }
     Ok(texts)
 }

@@ -18,7 +18,13 @@
 //!   (with_wrappers). Wrappers from several mods chain as overrides do.
 //! - Other functions and globals are added. A name the script already has is refused (the patch
 //!   most likely meant to override it); a name another mod adds as well is renamed for this one, so
-//!   mods never need to agree on names. A patch's libraries can declare globals of their own.
+//!   mods never need to agree on names (a function's address taken as a value follows the name).
+//!   A patch's libraries can declare globals of their own. Global arrays and structs count their
+//!   slots, and their values are set once per load as the script's own are.
+//! - A patch is parsed as C reads it: the SDK headers' and its libraries' macros reach its #if,
+//!   and their typedefs and structs its declarations. Its structs and unions (and its libraries')
+//!   join the script's; a tag the script defines otherwise is refused. #pragma std c89 in a patch
+//!   gives its functions C's semantics, as in any file.
 //! - PROGRAM lines add programs. A program the script already has is changed by overriding its
 //!   function instead, so that several mods can change it.
 //! - A function after #pragma every_frame is called before every wait; in the script, so it runs
@@ -377,7 +383,10 @@ pub fn prepared(
     let mut defines: HashMap<String, String> =
         LANGUAGES.iter().map(|(name, value)| (name.to_string(), value.to_string())).collect();
     defines.insert("LANGUAGE".into(), language.to_string());
-    let parsed = parse::parse_with(&patch.text, &defines)?;
+    let file = patch.path.to_string_lossy();
+    let extra = [tree.to_path_buf()];
+    let libraries = library::include_texts(&patch.text, &patch.path, overlay, sdk_dir, &extra)?;
+    let parsed = parse::parse_source_with(&patch.text, &file, &defines, headers, &libraries)?;
     if parsed.get("asm").is_some() {
         return Err(Error::invalid("a patch cannot be assembly"));
     }
@@ -389,7 +398,7 @@ pub fn prepared(
     let mut own_globals: Vec<Node> =
         list(&parsed, "globals").iter().map(|declared| declared.clone().with("source", Node::Null)).collect();
     for (path, text) in &texts {
-        if let Ok(library_program) = parse::parse_with(text, &defines) {
+        if let Ok(library_program) = parse::parse_source_with(text, path, &defines, headers, &libraries) {
             own_globals
                 .extend(list(&library_program, "globals").iter().map(|declared| declared.clone().with("source", path)));
         }
@@ -468,8 +477,11 @@ fn renamed(
                     out["name"] = to.as_str().into();
                 }
             }
-            if matches!(node.kind(), "var" | "index") && !shadowed.contains(name) {
+            if matches!(node.kind(), "var" | "index" | "field") && !shadowed.contains(name) {
                 if let Some(to) = variables.get(name) {
+                    out["name"] = to.as_str().into();
+                } else if let Some(to) = calls.get(name).filter(|_| node.kind() == "var") {
+                    // a function named as a value: its address (a function pointer)
                     out["name"] = to.as_str().into();
                 }
             }
@@ -685,6 +697,25 @@ pub fn merged(
         }
         added_globals.push(out);
     }
+    // what the globals' values name (another global's address, a function) follows renaming too,
+    // once every name is known
+    let added_globals: Vec<Node> = added_globals
+        .into_iter()
+        .map(|mut declared| {
+            for key in ["init", "inits"] {
+                if let Some(value) = declared.get(key) {
+                    let value = renamed(
+                        &sdk::with_constants(value, consts, &HashSet::new()),
+                        &calls,
+                        &variables,
+                        &HashSet::new(),
+                    );
+                    declared[key] = value;
+                }
+            }
+            declared
+        })
+        .collect();
     let mut all_globals = global_names.clone();
     all_globals.extend(list(patch, "globals").iter().map(|declared| text(declared, "name").to_string()));
     for function in &mine {
@@ -809,8 +840,11 @@ pub fn merged(
         programs.push(node!({"no": number, "function": given}));
     }
     let mut globals: Vec<Node> = list(program, "globals").to_vec();
-    let global_num = program["global_num"].as_i64().unwrap_or(0).max(0) as usize;
-    while globals.len() < global_num {
+    // a global array or struct takes several slots
+    let slots =
+        |globals: &[Node]| -> i64 { globals.iter().map(|declared| declared["size"].as_i64().unwrap_or(1)).sum() };
+    let global_num = program["global_num"].as_i64().unwrap_or(0).max(0);
+    while slots(&globals) < global_num {
         // slots the script counts but never names: keep them clear of the patch's
         globals.push(node!({"name": format!("unnamed_global_{}", globals.len()), "type": "int"}));
     }
@@ -820,17 +854,41 @@ pub fn merged(
     let count = if added_globals.is_empty() { program["global_num"].clone() } else { Node::Null };
     globals.extend(added_globals);
     done.libraries.extend(libraries);
-    let count = if count.is_null() { Node::from(globals.len() as i64) } else { count };
+    let count = if count.is_null() { Node::from(slots(&globals)) } else { count };
     functions.extend(appended);
     let natives = if truthy(&program["natives"]) { program["natives"].clone() } else { patch["natives"].clone() };
-    Ok(program
-        .clone()
+    let declarations = merged_declarations(&program["declarations"], &patch["declarations"]);
+    Ok(with_structs(program, patch, module)?
         .with("functions", functions)
         .with("programs", programs)
         .with("globals", globals)
         .with("global_num", count)
-        .with("declarations", merged_declarations(&program["declarations"], &patch["declarations"]))
+        .with("declarations", declarations)
         .with("natives", natives))
+}
+
+/// The script with the patch's structs and unions (and its libraries'): a tag the script defines
+/// otherwise is refused, one both define alike is one.
+fn with_structs(program: &Node, patch: &Node, module: &str) -> Result<Node> {
+    let mut structs = crate::ctype::structs_of(program);
+    let added = crate::ctype::structs_of(patch);
+    if added.is_empty() {
+        return Ok(program.clone());
+    }
+    for (tag, composite) in added {
+        match structs.get(&tag) {
+            Some(known) if !known.members.is_empty() && !composite.members.is_empty() && *known != composite => {
+                return Err(Error::invalid(format!(
+                    "mod {module} defines {tag} otherwise than the script does; give the patch's another name"
+                )));
+            }
+            Some(known) if !known.members.is_empty() => {}
+            _ => {
+                structs.insert(tag, composite);
+            }
+        }
+    }
+    Ok(program.clone().with("structs", crate::ctype::structs_node(&structs)))
 }
 
 fn merged_declarations(script: &Node, patch: &Node) -> Node {

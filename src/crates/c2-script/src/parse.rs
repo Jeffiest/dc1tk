@@ -609,8 +609,34 @@ fn number_at(text: &[char], position: usize) -> Option<(String, String, usize)> 
 /// The refusal of double, the one part of C89 this implementation leaves out.
 const NO_DOUBLE: &str = "double is not supported: the VM has 32-bit floats only; use float";
 
-/// The SDK's and definitions' headers by path, when the preprocessor reads them for their macros.
-type Headers<'a> = Option<&'a IndexMap<String, String>>;
+/// The files #include reads as text (parse_source): the SDK's and definitions' headers, and the
+/// libraries #include "..." names, each by its path.
+#[derive(Clone, Copy)]
+pub struct Files<'a> {
+    pub headers: &'a IndexMap<String, String>,
+    pub libraries: Option<&'a IndexMap<String, String>>,
+}
+
+impl<'a> Files<'a> {
+    /// An included file's text: a header's by its path, a library's by its path in quotes.
+    fn get(&self, key: &str) -> Option<&'a String> {
+        match key.strip_prefix('"').and_then(|key| key.strip_suffix('"')) {
+            Some(path) => self.libraries?.get(path),
+            None => self.headers.get(key),
+        }
+    }
+}
+
+type Headers<'a> = Option<Files<'a>>;
+
+/// The key of an included file among Files: a header's path, a library's path in quotes.
+fn included_key(path: &str, system: bool) -> String {
+    if system {
+        path.to_string()
+    } else {
+        format!("\"{path}\"")
+    }
+}
 
 /// How deep headers may include headers.
 const INCLUDE_DEPTH: usize = 32;
@@ -625,12 +651,12 @@ thread_local! {
 /// before (library::expand), and its constants stay names in code, so nothing else changes. The
 /// prelude (c2s.h, for C tools only) and a header the headers do not have (an error later) add
 /// none.
-fn header_macros(path: &str, headers: &IndexMap<String, String>, macros: Macros, depth: usize) -> Parsed<Macros> {
+fn header_macros(path: &str, headers: Files, macros: Macros, depth: usize) -> Parsed<Macros> {
     let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {
         return Ok(macros);
     };
     if depth > INCLUDE_DEPTH {
-        return Err(Fault::Value(format!("#include <{path}>: headers include each other too deeply")));
+        return Err(Fault::Value(format!("#include {path}: files include each other too deeply")));
     }
     let key = {
         use std::hash::{Hash, Hasher};
@@ -749,6 +775,11 @@ fn tokenize_with(
                                 token.path = word["string"].as_str().unwrap().to_string()
                             }
                             _ => return lex_fail(line, "expected #include \"path\" or #include <path>"),
+                        }
+                        // a library's macros reach the file that includes it, as C includes it
+                        if let Some(files) = headers {
+                            let key = included_key(&token.path, false);
+                            *macros = header_macros(&key, files, std::mem::take(macros), depth)?;
                         }
                     }
                     tokens.push(token);
@@ -994,9 +1025,9 @@ struct State {
     types: HashMap<String, Ty>,
     /// Unnamed structs so far, for their tags.
     anonymous: usize,
-    /// The typedefs of the headers included so far, read when the headers are given (parse_source):
-    /// what a type's size and slots need. They are not type words here, as a script's names may
-    /// be the same (sdk::resolve reads the headers' kinds for the rest).
+    /// The typedefs of the headers and libraries included so far, read when they are given
+    /// (parse_source): what a type's size and slots need. They are not type words here, as a
+    /// script's names may be the same (sdk::resolve reads the headers' kinds for the rest).
     header_kinds: HashMap<String, String>,
 }
 
@@ -4212,22 +4243,45 @@ pub fn parse_file(text: &str, file: &str) -> Result<Node> {
 /// A source file as a compiler reads it: its #include <...> headers (from those given) read as text
 /// for their macros, so a header's #defines reach the file's #if as C has it.
 pub fn parse_source(text: &str, file: &str, headers: &IndexMap<String, String>) -> Result<Node> {
-    Ok(parse_program(text, &HashMap::new(), file, Some(headers))?)
+    Ok(parse_program(text, &HashMap::new(), file, Some(Files { headers, libraries: None }))?)
+}
+
+/// parse_source with #defines in force before the first line (a mod patch's LANGUAGE), and the
+/// libraries #include "..." reads (library::include_texts), whose macros, typedefs and structs
+/// reach the file as C includes them.
+pub fn parse_source_with(
+    text: &str,
+    file: &str,
+    defines: &HashMap<String, String>,
+    headers: &IndexMap<String, String>,
+    libraries: &IndexMap<String, String>,
+) -> Result<Node> {
+    Ok(parse_program(text, defines, file, Some(Files { headers, libraries: Some(libraries) }))?)
 }
 
 fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, headers: Headers) -> Parsed<Node> {
     Ok(parse_state(text, defines, file, headers)?.0)
 }
 
-thread_local! {
-    /// The typedefs a header (and those it includes) declares, by its path and text.
-    static HEADER_KINDS: RefCell<HashMap<u64, HashMap<String, String>>> = RefCell::new(HashMap::new());
+/// What an included file declares that the file including it needs while it is parsed: typedefs
+/// of scalars (for sizes), of other types, and structs and unions, its own and those of the files
+/// it includes.
+#[derive(Clone, Debug, Default)]
+struct Included {
+    kinds: HashMap<String, String>,
+    types: HashMap<String, Ty>,
+    structs: Structs,
 }
 
-/// The typedefs of a header and of those it includes, for State::header_kinds.
-fn header_kinds(path: &str, headers: &IndexMap<String, String>) -> Parsed<HashMap<String, String>> {
+thread_local! {
+    /// What a header or library (and what it includes) declares, by its key and text.
+    static INCLUDED: RefCell<HashMap<u64, Included>> = RefCell::new(HashMap::new());
+}
+
+/// What an included file declares, for the file including it.
+fn included(path: &str, headers: Files) -> Parsed<Included> {
     let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {
-        return Ok(HashMap::new());
+        return Ok(Included::default());
     };
     let key = {
         use std::hash::{Hash, Hasher};
@@ -4235,22 +4289,22 @@ fn header_kinds(path: &str, headers: &IndexMap<String, String>) -> Parsed<HashMa
         (path, text).hash(&mut hasher);
         hasher.finish()
     };
-    if let Some(found) = HEADER_KINDS.with(|cache| cache.borrow().get(&key).cloned()) {
+    if let Some(found) = INCLUDED.with(|cache| cache.borrow().get(&key).cloned()) {
         return Ok(found);
     }
     let (_, found) = parse_state(text, &HashMap::new(), path, Some(headers))
-        .map_err(|fault| Fault::Value(format!("in <{path}>: {}", Error::from(fault))))?;
-    HEADER_KINDS.with(|cache| cache.borrow_mut().insert(key, found.clone()));
+        .map_err(|fault| Fault::Value(format!("in {path}: {}", Error::from(fault))))?;
+    INCLUDED.with(|cache| cache.borrow_mut().insert(key, found.clone()));
     Ok(found)
 }
 
-/// A file's program, and the typedefs it knows at its end (its own and its headers').
+/// A file's program, and what it declares that a file including it needs.
 fn parse_state(
     text: &str,
     defines: &HashMap<String, String>,
     file: &str,
     headers: Headers,
-) -> Parsed<(Node, HashMap<String, String>)> {
+) -> Parsed<(Node, Included)> {
     let chars: Vec<char> = text.chars().collect();
     let mut macros = Macros::default();
     for (name, value) in defines {
@@ -4259,7 +4313,7 @@ fn parse_state(
     let tokens = tokenize_with(&chars, &mut macros, file, CALLER_FRAMES + 2, headers, 0)?;
     let mut state = State::new(tokens, CALLER_FRAMES + 1);
     if state.tokens[0].kind == Kind::Assembly {
-        return Ok((node!({"kind": "program", "asm": state.tokens[0].text()}), HashMap::new()));
+        return Ok((node!({"kind": "program", "asm": state.tokens[0].text()}), Included::default()));
     }
     let header_padding = "00".repeat(stb::HEADER_SIZE - stb::HEADER_FIELDS_SIZE);
     let mut program = node!({
@@ -4292,9 +4346,17 @@ fn parse_state(
                 program["functions"].as_array_mut().unwrap().push(function);
             }
             Kind::Include => {
-                if let Some(headers) = headers.filter(|_| token.system) {
-                    let found = header_kinds(&token.path, headers)?;
-                    state.header_kinds.extend(found);
+                if let Some(files) = headers {
+                    // what the file declares that this one's declarations need (a library's
+                    // structs, a header's typedefs), as C includes it
+                    let found = included(&included_key(&token.path, token.system), files)?;
+                    state.header_kinds.extend(found.kinds);
+                    state.types.extend(found.types);
+                    for (tag, composite) in found.structs {
+                        if state.structs.get(&tag).is_none_or(|known| known.members.is_empty()) {
+                            state.structs.insert(tag, composite);
+                        }
+                    }
                 }
                 program["functions"].as_array_mut().unwrap().push(node!({
                     "kind": "include",
@@ -4377,7 +4439,9 @@ fn parse_state(
     }
     let mut kinds = std::mem::take(&mut state.header_kinds);
     kinds.extend(state.kinds.clone());
-    Ok((with_own_padding(program), kinds))
+    let included =
+        Included { kinds, types: std::mem::take(&mut state.types), structs: std::mem::take(&mut state.structs) };
+    Ok((with_own_padding(program), included))
 }
 
 /// Functions take the padding #pragma padding_of gave them by name; padding_of keeps the rest.
