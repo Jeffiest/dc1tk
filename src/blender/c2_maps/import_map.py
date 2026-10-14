@@ -49,7 +49,7 @@ def match_nodes(gltf, roots):
                 continue
             obj = candidates.pop(0)
             found[index] = obj
-            pair(nodes[index].get("children", []), list(obj.children))
+            pair(nodes[index].get("children") or [], list(obj.children))
 
     pair(scene.get("nodes", []), roots)
     return found

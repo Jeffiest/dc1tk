@@ -5,6 +5,7 @@ mod asset_tree;
 mod assets;
 mod defs;
 mod files;
+mod map_cmd;
 mod modding;
 mod setup;
 mod tree_decompile;
@@ -97,6 +98,8 @@ enum Command {
     /// Write every file of the disc: DATA.DAT's files and the packs' members, the disc's other files
     /// and its layout.
     Extract { iso: PathBuf, out: String },
+    /// Write a map as a glTF scene to edit in Blender (and build back with a mod's map: line).
+    MapExport(map_cmd::MapExportArgs),
     /// What changed in the extracted folder since extracting: scripts, assets and disc files.
     Diff {
         /// The disc image the extracted folder came from.
@@ -712,6 +715,7 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Setup(args) => setup::run_setup(args),
         Command::Natives(args) => setup::run_natives(args),
         Command::Extract { iso, out } => run_extract(iso, out),
+        Command::MapExport(args) => map_cmd::run_map_export(args),
         Command::Diff { iso, extracted } => {
             println!("{}", c2_script::capture::report(&c2_script::capture::changes(extracted, iso)?));
             Ok(ExitCode::SUCCESS)
