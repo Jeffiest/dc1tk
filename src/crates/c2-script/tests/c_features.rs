@@ -250,3 +250,25 @@ fn dividing_by_zero_stops_the_test_vm_as_it_stops_the_game() {
         }
     }
 }
+
+// Standard C's forms meet the c2s ones: natives, the SDK's kinds, hoisted results.
+
+#[test]
+fn natives_work_in_cs_new_forms() {
+    let text = "#define READ(n) get_counter(n)\nstatic int calls;\nint lives = 3;\n\nint f(void)\n{\n    static int seen = 2;\n    unsigned char low = READ(3) + 300;\n    flag which = 5;\n    int i;\n\n    for (i = 0, calls++; i < 2 && get_flag(which); i++) {\n        goto out;\n    }\nout:\n    seen++;\n    return low + seen * 1000 + lives * 100 + calls;\n}\n";
+    // natives do nothing in the test VM, so their results are 0
+    let table = common::functions(&format!("{EVENT}{text}")).unwrap();
+    let found = common::run_function(&table, "f", vec![], vec![int(0); 8]).unwrap();
+    assert_eq!(found, int(44 + 3000 + 300 + 1));
+}
+
+#[test]
+fn hidden_globals_and_the_runtime_are_added_only_when_used() {
+    let global_num = |bytes: &[u8]| i32::from_le_bytes(bytes[0x18..0x1c].try_into().unwrap());
+    let plain = built("int g;\n\nint f(void)\n{\n    return g / 2;\n}\n", HEAD).unwrap();
+    let initialised = built("int g = 4;\n\nint f(void)\n{\n    return g / 2;\n}\n", HEAD).unwrap();
+    let unsigned = built("unsigned g;\n\nint f(void)\n{\n    return g / 2;\n}\n", HEAD).unwrap();
+    assert!(initialised.len() > plain.len() && unsigned.len() > plain.len());
+    // the flag that sets the values once is a global of its own
+    assert_eq!((global_num(&plain), global_num(&initialised), global_num(&unsigned)), (1, 2, 1));
+}
