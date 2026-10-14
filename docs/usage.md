@@ -100,11 +100,12 @@ only among the scripts decompiled together.
 
 ## The asset tree
 
-`assets` does for textures, character models, sounds and the menus' text
-what `decompile` does for scripts: it writes each distinct one once, in a
-format common tools open (PNG, glTF, WAV, UTF-8 text), with
-`manifest.json` giving each its id (`texture:e254a1`, `model:c02fuku*`,
-`sound:SE_CURSOR_MOVE`, `text:en/shopname`) and every place the disc has
+`assets` does for textures, character models, sounds, music and the menus'
+text what `decompile` does for scripts: it writes each distinct one once, in
+a format common tools open (PNG, glTF, WAV, MIDI with a SoundFont of its
+instruments, UTF-8 text), with `manifest.json` giving each its id
+(`texture:e254a1`, `model:c02fuku*`, `sound:SE_CURSOR_MOVE`,
+`music:BG_000_000`, `text:en/shopname`) and every place the disc has
 it. `setup` writes it into `extracted/assets/` (`--no-assets`
 leaves it out); to write it again:
 
@@ -482,8 +483,8 @@ character pack; packs inside packs work the same way).
   sounds: `005_beep.wav` in `sp_004.snd.wav/` is `SE_SP_004_BEEP` (5), so a
   patch can `play_se(bank, SE_SP_004_BEEP)`; `build` and `mod check` list
   them, and refuse a name `pal.h` gives another entry. An entry that plays a sequence (a
-  short tune of the bank's instruments) is not exported; a WAV given for it
-  replaces the tune with that one sound. A changed entry overwrites its
+  tune of the bank's instruments, edited as MIDI: below) is not exported; a
+  WAV given for it replaces the tune with that one sound. A changed entry overwrites its
   samples when no other entry plays them, so the bank stays the same size
   or shrinks, and otherwise gets samples of its own. Unedited WAVs build
   back to the disc's own bytes. Keep a bank's sample data near its original
@@ -491,6 +492,21 @@ character pack; packs inside packs work the same way).
   almost nothing to spare, and a bank that outgrows it overwrites the system
   sounds (`build` warns; see [the memory budgets](assets/memory.md#6-sound-memory-spu2)
   and [the sound bank format](assets/sounds.md)).
+- **Music as MIDI.** All the background music, and the ambient loops, are
+  sequences (`.sq`) inside sound banks, played with the bank's instruments.
+  `mod asset ISO NAME music:BG_000_000` writes `music/BG_000_000.mid` and
+  the bank's instruments as `music/BG_000.sf2`, with the line `"music:BG_000_000":
+  "music/BG_000_000.mid"`; `mod asset ISO NAME snd2/bgm/BG_000.snd --as mid`
+  writes a folder `BG_000.snd.mid/` with every sequence of the bank instead
+  (ids are the sequence's name: Palm Brinks' streets play `BG_000`, a map's
+  tune is its sound set's in `snd2/MAP_index.txt`). Open the MIDI file in
+  any sequencer with the SoundFont loaded to hear it as the game plays it,
+  edit it, or replace it with your own tune (format 0 or 1, any tempo and
+  division). Program numbers are the bank's instruments, not General MIDI's:
+  give every channel a program change to one the bank has. The loop is
+  between the markers `loopStart` and `loopEnd` (move them to move it); a
+  tune without them loops whole where the game's did. Unedited files build
+  back to the disc's own bytes. See [music and ambient loops](assets/music.md).
 - **Text as UTF-8.** The menus' item, shop, map and NPC names, their lines
   and the system messages are message files (`.mes`): a table of message
   ids, each a run of the font's glyphs and layout codes. `mod asset ISO NAME

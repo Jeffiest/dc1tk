@@ -1,7 +1,7 @@
 //! Dark Chronicle's assets in common formats: texture files (.img) as PNGs, sound banks (.snd) as
-//! WAVs and character packs (.chr) as glTF 2.0, exported and built back byte for byte as the
-//! Python tools (im3.py, textures.py, soundbank.py, sounds.py, mds.py, mot.py, info_cfg.py,
-//! to_gltf.py, from_gltf.py, models.py) do.
+//! WAVs and their sequences (.sq) as MIDI files, character packs (.chr) as glTF 2.0, exported and
+//! built back byte for byte as the Python tools (im3.py, textures.py, soundbank.py, sounds.py,
+//! mds.py, mot.py, info_cfg.py, to_gltf.py, from_gltf.py, models.py) do.
 
 pub mod cfg_text;
 pub mod data_table;
@@ -26,12 +26,15 @@ pub mod map_transform;
 pub mod mapfile;
 pub mod mds;
 pub mod models;
+pub mod music;
 pub mod monster_data;
 pub mod mot;
 pub mod motions;
 pub mod py;
+pub mod sequence;
 pub mod shop_data;
 pub mod soundbank;
+pub mod soundfont;
 pub mod sounds;
 pub mod text;
 pub mod textures;

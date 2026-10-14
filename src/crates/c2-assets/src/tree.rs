@@ -8,6 +8,8 @@
 //! models/<group>/<id>/<id>.gltf, .bin one per distinct character pack
 //! sounds/<bank>/<NNN>[_<NAME>].wav    one per entry of a distinct bank that plays a sample
 //! text/<language>/<name>.txt          one per message file name and language (text.rs)
+//! music/<bank's place>/<id>.mid       one per distinct sequence (.sq) of a bank (music.rs)
+//! music/<bank's place>.sf2            its bank's programs, to hear it with (soundfont.rs)
 //! ```
 //!
 //! A picture, pack or bank found at several places with the same bytes is one asset. Ids are the
@@ -36,6 +38,7 @@ pub const FORMAT: i64 = 1;
 pub const TEXTURES: &str = "textures";
 pub const MODELS: &str = "models";
 pub const SOUNDS: &str = "sounds";
+pub const MUSIC: &str = "music";
 
 /// A file of the disc's DATA.DAT, by its path there.
 pub struct DiscFile<'a> {
@@ -107,6 +110,8 @@ pub enum Kind {
     Bank,
     Sound,
     Text,
+    /// A sequence (.sq) of a bank: music, or an ambient loop.
+    Music,
 }
 
 impl Kind {
@@ -117,6 +122,7 @@ impl Kind {
             Kind::Bank => "bank",
             Kind::Sound => "sound",
             Kind::Text => "text",
+            Kind::Music => "music",
         }
     }
 
@@ -484,6 +490,9 @@ pub struct Summary {
     pub placeholders: usize,
     pub message_places: usize,
     pub texts: usize,
+    /// Sequences of the banks, and their places.
+    pub music: usize,
+    pub music_places: usize,
     /// Game files the tree has no asset for, and why: packs with no model, files the converters
     /// cannot read.
     pub failed: Vec<(Place, String)>,
@@ -521,8 +530,44 @@ pub(crate) struct Named<'a> {
     /// Message files' assets, their places indexes into files.
     pub texts: Vec<text::TextAsset>,
     pub message_places: usize,
+    /// The banks' sequences (.sq members), their places the bank's file and the member's position
+    /// in it (sequence_place).
+    pub sequences: Vec<Asset>,
     /// Game files that give no asset, by their index in files, and why.
     pub failed: Vec<(usize, String)>,
+}
+
+/// The members of a pack a build can reach by name, with their positions.
+fn reachable_members(data: &[u8]) -> Vec<(usize, archive::Member)> {
+    let members = archive::parse_pack(data).unwrap_or_default();
+    let reached = |member: &archive::Member| {
+        rebuild::member_named(&members, &member.name, false).map(|found| found.offset) == Some(member.offset)
+    };
+    members.iter().enumerate().filter(|(_, member)| reached(member)).map(|(at, member)| (at, member.clone())).collect()
+}
+
+/// The sequences of the banks among files: (name, hash, bank's file, member position).
+fn sequences_of(files: &[GameFile]) -> Vec<(String, String, usize, Option<usize>)> {
+    let mut out = Vec::new();
+    for (index, file) in files.iter().enumerate().filter(|(_, file)| file.kind == FileKind::Bank) {
+        for (position, member) in reachable_members(file.data) {
+            if member.name.to_lowercase().ends_with(".sq") {
+                let stem = member.name.rsplit_once('.').map_or(member.name.as_str(), |(stem, _)| stem).to_string();
+                out.push((stem, sha256(&[member.data(file.data)]), index, Some(position)));
+            }
+        }
+    }
+    out
+}
+
+/// A sequence's place: its bank's place and the member at a position of the bank.
+pub(crate) fn sequence_place(files: &[GameFile], file: usize, position: Option<usize>) -> Place {
+    let mut place = files[file].place.clone();
+    let members = archive::parse_pack(files[file].data).unwrap_or_default();
+    if let Some(member) = position.and_then(|position| members.get(position)) {
+        place.members.push(member.name.clone());
+    }
+    place
 }
 
 pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
@@ -563,6 +608,8 @@ pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
     name_assets(&mut packs, &files);
     let mut banks = distinct(banks.into_iter());
     name_assets(&mut banks, &files);
+    let mut sequences = distinct(sequences_of(&files).into_iter());
+    name_assets(&mut sequences, &files);
     let found: Vec<(&Place, &str)> =
         messages.iter().map(|(index, hash)| (&files[*index].place, hash.as_str())).collect();
     let mut texts = text::text_assets(&found);
@@ -583,6 +630,7 @@ pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
         banks,
         texts,
         message_places,
+        sequences,
         failed,
     }
 }
@@ -710,7 +758,9 @@ pub(crate) fn bank_sounds(
 /// it holds.
 pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Summary> {
     let found = named(disc);
-    let Named { files, shadowed, texture_files, pictures, textures, packs, banks, texts, mut failed, .. } = found;
+    let Named {
+        files, shadowed, texture_files, pictures, textures, packs, banks, texts, sequences, mut failed, ..
+    } = found;
     let mut summary = Summary {
         shadowed,
         texture_files,
@@ -891,6 +941,31 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
             }),
         );
     }
+    let music_outs = export_music(&sequences, &files, write)?;
+    for (asset, out) in sequences.iter().zip(music_outs) {
+        let out = match out {
+            Ok(out) => out,
+            Err(error) => {
+                failed.extend(asset.places.iter().map(|&(file, _)| (file, error.to_string())));
+                continue;
+            }
+        };
+        summary.music += 1;
+        summary.music_places += asset.places.len();
+        let places: Vec<Value> =
+            asset.places.iter().map(|&(file, at)| Value::Object(sequence_place(&files, file, at).json())).collect();
+        let files_json: Map<String, Value> = out.into_iter().map(|(path, hash)| (path, json!(hash))).collect();
+        assets.insert(
+            Kind::Music.id(&asset.id),
+            json!({
+                "kind": "music",
+                "name": asset.shown,
+                "files": files_json,
+                "game_hash": asset.game_hash,
+                "places": places,
+            }),
+        );
+    }
     failed.sort_by_key(|(file, _)| *file);
     summary.failed = failed.iter().map(|(file, error)| (files[*file].place.clone(), error.clone())).collect();
     let failed_json: Vec<Value> = failed
@@ -907,6 +982,7 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         "bank": summary.banks,
         "sound": summary.sounds,
         "text": summary.texts,
+        "music": summary.music,
     });
     let manifest = json!({
         "format": FORMAT,
@@ -917,6 +993,70 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
     });
     write(MANIFEST, &manifest_text(&manifest))?;
     Ok(summary)
+}
+
+/// What a sequence's export gives the manifest: its files and their hashes.
+type MusicOut = Result<Vec<(String, String)>>;
+
+/// Every sequence as a MIDI file, from its bank's own file where the disc has one (else the first
+/// pack holding it), beside a SoundFont of that bank's programs: music/snd2/bgm/BG_000_000.mid
+/// and music/snd2/bgm/BG_000.sf2 for a sequence of snd2/bgm/BG_000.snd (each bank's SoundFont
+/// written once). Each gives its files and their hashes, or why it cannot be exported.
+fn export_music(sequences: &[Asset], files: &[GameFile], write: &Write) -> Result<Vec<MusicOut>> {
+    let home = |asset: &Asset| *asset.places.iter().min_by_key(|(file, _)| files[*file].place.members.len()).unwrap();
+    let mut by_bank: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (index, asset) in sequences.iter().enumerate() {
+        by_bank.entry(home(asset).0).or_default().push(index);
+    }
+    let groups: Vec<(usize, Vec<usize>)> = by_bank.into_iter().collect();
+    let done: Vec<Vec<(usize, MusicOut)>> = groups
+        .par_iter()
+        .map(|(file, indices)| -> Result<Vec<(usize, MusicOut)>> {
+            let place = files[*file].place.display();
+            let base = format!("{MUSIC}/{}", place.rsplit_once('.').map_or(place.as_str(), |(stem, _)| stem));
+            let folder = base.rsplit_once('/').map_or(MUSIC, |(folder, _)| folder);
+            let font = Bank::from_bytes(files[*file].data)
+                .and_then(|bank| crate::soundfont::write(&bank, &file_name_stem(&files[*file].place)));
+            let font = match font {
+                Ok(font) => {
+                    let path = format!("{base}{}", crate::soundfont::SUFFIX);
+                    write(&path, &font)?;
+                    Ok((path, sha256(&[&font])))
+                }
+                Err(error) => Err(error.to_string()),
+            };
+            let members = archive::parse_pack(files[*file].data).unwrap_or_default();
+            let mut out = Vec::new();
+            for &index in indices {
+                let asset = &sequences[index];
+                let (path, hash) = match &font {
+                    Ok(found) => found.clone(),
+                    Err(error) => {
+                        out.push((index, Err(Error::invalid(error.clone()))));
+                        continue;
+                    }
+                };
+                let Some(member) = home(asset).1.and_then(|position| members.get(position)) else {
+                    out.push((index, Err(Error::invalid("the bank has no such sequence"))));
+                    continue;
+                };
+                match crate::music::export(member.data(files[*file].data), &asset.shown) {
+                    Ok(midi) => {
+                        let midi_path = format!("{folder}/{}{}", file_stem(&asset.id), crate::music::SUFFIX);
+                        write(&midi_path, &midi)?;
+                        out.push((index, Ok(vec![(midi_path, sha256(&[&midi])), (path, hash)])));
+                    }
+                    Err(error) => out.push((index, Err(error))),
+                }
+            }
+            Ok(out)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut outs: Vec<Option<MusicOut>> = (0..sequences.len()).map(|_| None).collect();
+    for (index, out) in done.into_iter().flatten() {
+        outs[index] = Some(out);
+    }
+    Ok(outs.into_iter().map(|out| out.expect("every sequence is exported")).collect())
 }
 
 /// A message file's text, from its reference's first place, written to text/<language>/<name>.txt:
