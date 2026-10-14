@@ -12,6 +12,10 @@
    ],
    "doc": "Need admits he is useless as mayor, and Cedric says he cannot believe him."
   },
+  "00153763852cd449": {
+   "name": "show_butterfly_red_first_hint",
+   "loose": "74c5dbaa0243b94f"
+  },
   "0022ab46b3a38f5b": {
    "name": "play_gaspard_departure_scene",
    "loose": "a50add9358274388",
@@ -70,6 +74,10 @@
    ],
    "doc": "Program 510: swaps between Max and Monica with swap_max_and_monica and, the first time (flag 64 unset), pauses monster AI and player steps to show the hint to protect Lin from the approaching Evil Flame.",
    "loose": "569c908bed6705a9"
+  },
+  "007a97abca691e08": {
+   "name": "show_butterfly_stealth_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "007addc5227ee1cc": {
    "name": "open_party_npc_menu",
@@ -535,7 +543,7 @@
    "doc": "Places Corinne inside when quest 18 is active and counter 11 is 0."
   },
   "02a47314f497e0f9": {
-   "name": "print_map_init_2",
+   "name": "print_debug_test_marker",
    "doc": "Debug test entry: prints the marker line \"----210----\" to the debug log.",
    "loose": "b7b08f1e03f96e66"
   },
@@ -1813,7 +1821,7 @@
    "doc": "Shows the train easing in from z = 0 to z = 700 over 90 frames with smoke and a stop sound from the given sound bank; once it has stopped, sparks flash briefly and steam puffs from both sides."
   },
   "09e1947b236d1ec9": {
-   "name": "play_luna_lab_arrival_scene",
+   "name": "replay_luna_lab_arrival_scene",
    "loose": "bac80af7387fa537",
    "doc": "Only calls play_luna_lab_arrival_scene, the lab arrival scene."
   },
@@ -6588,6 +6596,10 @@
    ],
    "doc": "Pauses the monsters and the player and shows a hint to hit the boss's head."
   },
+  "21bfa277f413e796": {
+   "name": "show_butterfly_split_hint",
+   "loose": "74c5dbaa0243b94f"
+  },
   "21db5ca3dd812576": {
    "name": "on_board_train",
    "loose": "0d4d3927badeac8c",
@@ -7206,6 +7218,10 @@
    ],
    "doc": "Event 108a, sets flag 108: the elephant falls, Max and Steve strike a victory pose and Max shouts, an angry Flotsam threatens revenge and flies off, narration about the outside world follows, then the Ridepod tutorial. Afterwards Steve the Ridepod becomes the active character with the field music.",
    "loose": "e0e4f95c2f0d8de3"
+  },
+  "2484c64b902e14b4": {
+   "name": "show_butterfly_split_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "24866b9247b69302": {
    "name": "use_earth_gem_on_altar",
@@ -8403,6 +8419,10 @@
    "params": [],
    "locals": [],
    "doc": "Deletes the five characters (32 to 36) loaded for event 204."
+  },
+  "29c11592f54458ae": {
+   "name": "print_door_event_marker",
+   "loose": "b7b08f1e03f96e66"
   },
   "29db0910899a20ad": {
    "name": "play_station_pieces_slide_shot",
@@ -11191,6 +11211,10 @@
    "loose": "2ef775e10e6edc20",
    "doc": "Program 510: hides the memo item, loads and shows Steve (event 105 model) in the house and loads script i01h01/i01h01c_1.stb as program 510."
   },
+  "3b94031d6fa5320c": {
+   "name": "show_butterfly_order_hint",
+   "loose": "74c5dbaa0243b94f"
+  },
   "3ba6fbc9c2c6bf17": {
    "name": "warp_to_s20_after_story_516",
    "loose": "017abbef3bfff5c4",
@@ -11887,6 +11911,10 @@
    ],
    "doc": "Crossfade scene where the player runs through a gate between the floor and the sky area high above it (y around 3200). Despite the parameter name, 0 runs up into the sky area with sound set 4682 and map light 0, and any other value runs back down to the floor with sound set 4600 and map light 8; the battle music loop is restarted or stopped to match."
   },
+  "3ea0462bc5a51b75": {
+   "name": "show_butterfly_stealth_hint",
+   "loose": "74c5dbaa0243b94f"
+  },
   "3eac8f5a36fb112b": {
    "name": "hide_map_part_if_flag_209",
    "loose": "a0253323de7b1b2d",
@@ -12261,7 +12289,7 @@
    "doc": "Hides the partners and loads map s64 at event 500 without a fade."
   },
   "4059d47914854ddd": {
-   "name": "play_train_arrival_scene",
+   "name": "play_run_off_arrived_train_scene",
    "loose": "e7f6cab72305618c",
    "locals": [
     "sound_id"
@@ -12304,6 +12332,10 @@
    "name": "play_robot_scene_then_jump_to_s30",
    "loose": "d7eed8d0c4f52550",
    "doc": "Plays the Paznos robot scene and jumps to map s30 at program 650."
+  },
+  "406e916442478e1c": {
+   "name": "show_butterfly_order_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "4083896415b01b2f": {
    "name": "play_griffon_defeat_and_go_to_s31",
@@ -13769,7 +13801,7 @@
    "loose": "d4df51f8fb2baccb",
    "locals": [
     "balance_valley_arrival_seen",
-    "s18_arrival_seen"
+    "yorda_tree_arrival_seen"
    ],
    "doc": "Map start. With flag 300 set and 332 clear it plays the arrival scene (event 332) and places the player at (0, 0, -600); with flag 300 and 332 both set it plays the condor drop-off scene. Otherwise, and after the drop-off, it places the player on the ledge at (-1306, 200.4, -546). It always shows the rev_floor NPC and fades in."
   },
@@ -14437,6 +14469,10 @@
    "loose": "e932168c2f3067bf",
    "locals": [],
    "doc": "Boss landing shot: Linda drops in front of Max and Steve at 1.2 times scale with a camera shake, the loaded music starts, and the shot waits for her landing motion and growl. Returns 0."
+  },
+  "4b51592dd974f404": {
+   "name": "show_butterfly_red_first_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "4b8ab78fa194e582": {
    "name": "run_boss_loss_game_over",
@@ -17649,9 +17685,9 @@
    "locals": [
     "balance_valley_arrival_seen",
     "lin_ill_scene_seen",
-    "clinic_e306_seen",
+    "lin_poisoned_seen",
     "lao_chao_cooking_seen",
-    "clinic_e328_seen",
+    "miracle_dumplings_delivered_seen",
     "lin_recovered",
     "party_npc",
     "sound_id"
@@ -19204,6 +19240,10 @@
    "doc": "Used at the Ocean's Roar Cave entrance before event 404 (meeting Pau and Shingala): the player steps 30 units back from the cave mouth with the camera following, then wonders about the cry heard earlier and says to look in that cave first. Returns 0.",
    "loose": "74698a416b7c35ed"
   },
+  "662e7ec53ad14578": {
+   "name": "show_butterfly_order_hint",
+   "loose": "74c5dbaa0243b94f"
+  },
   "6634603b39488432": {
    "name": "play_griffon_talk_then_go_to_starlight_temple",
    "loose": "a4cb4d6771d2afad",
@@ -20560,7 +20600,7 @@
    "doc": "Calls the generic villager talk when the talked-to character number is below 100 or above 1000; other characters are handled elsewhere."
   },
   "6c687e120bef56ca": {
-   "name": "play_potato_pie_memory_scene",
+   "name": "start_potato_pie_memory_scene",
    "loose": "8a5e412d71e893b1",
    "doc": "Program 600: plays the scene where Max is reminded of the potato pies his mother made."
   },
@@ -22670,7 +22710,7 @@
    "name": "setup_s01_map",
    "loose": "105d53861a66a33a",
    "locals": [
-    "s01_event_201_seen"
+    "first_walk_outside_channel_seen"
    ],
    "doc": "Parks the train. On the first visit (flag 201 clear) it marks floor 8 of the Underground Channel tree map (this exit) as visited and plays the story 201 walk scene; otherwise it walks the player in from the channel exit. Then updates the train event point."
   },
@@ -24309,6 +24349,10 @@
    "name": "show_fixed_camera_until_button_press",
    "loose": "819ebc87a6b9c21d",
    "doc": "Sets a fixed camera view and waits for a button press before clearing effects and finishing the event."
+  },
+  "81a3684a93710ca7": {
+   "name": "print_race_hall_marker",
+   "loose": "b7b08f1e03f96e66"
   },
   "81a4f74ea6a13631": {
    "name": "setup_lighthouse_cape_events",
@@ -26708,7 +26752,7 @@
    "doc": "Waits 30 frames and plays the mother's farewell flashback."
   },
   "8ef7e9074828e49a": {
-   "name": "use_star_key_on_door",
+   "name": "ask_for_star_key_and_open_door",
    "loose": "53b6064a535d2962",
    "locals": [
     "story_flag",
@@ -30484,6 +30528,10 @@
    ],
    "doc": "Aunt Polly's chatter after the bread delivery quest is cleared, asking where to go next. Chapter 8 swaps in an offer of bread."
   },
+  "a3af0efc33f5139c": {
+   "name": "show_butterfly_order_hint",
+   "loose": "74c5dbaa0243b94f"
+  },
   "a3ba7b36972efba8": {
    "name": "ask_to_leave_for_d06",
    "loose": "0e4d2b63cafab9b2",
@@ -30587,6 +30635,10 @@
    "params": [],
    "locals": [],
    "doc": "Tilts the train's door and step map pieces (s3601_16, 17 and 12 variants) by plus or minus 30 or 90 degrees to open pose, and hides the s3601_14 pieces 2 to 5."
+  },
+  "a4a96dc315377e10": {
+   "name": "print_map_setup_marker",
+   "loose": "b7b08f1e03f96e66"
   },
   "a4b7806d81b79c26": {
    "name": "talk_parn_joined_in_studio",
@@ -33989,6 +34041,10 @@
    ],
    "loose": "9ff671221fd3f2d0",
    "doc": "Runs the game over for the active character: stops the battle music, plays the defeat pose (the death face for Max and Monica, the breakdown for the ride pod) and loads the game over music. If another character can take over, it shows the knocked-out message from show_game_over_message, opens the character change menu, restores the field music and returns 0. Otherwise it plays voice first when voice is 0 or more, slides in the game over screen and waits for a button press, then fades out and either revives the player at full health and weapon durability and returns 1 (revive 1) or sets the exit flag and returns 0. With the debug flag set it refills HP and weapons and resumes play instead, returning 0."
+  },
+  "b57c308b2f552a3b": {
+   "name": "show_butterfly_stealth_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "b58a338e357f6555": {
    "name": "play_knock_scene_and_enter_house",
@@ -40170,6 +40226,10 @@
    "loose": "1b8532c0f75e0b5b",
    "doc": "Debug entry: clears flags 304, 306, 324 and 330 and plays event 304."
   },
+  "d3250ce25b219bba": {
+   "name": "show_butterfly_stealth_hint",
+   "loose": "74c5dbaa0243b94f"
+  },
   "d34cf48f16999e94": {
    "name": "show_caption_wait_for_button",
    "loose": "f1c3d6cca75fe4c4",
@@ -40527,6 +40587,10 @@
     "active_chara_again"
    ],
    "doc": "Time travel cutscene in which Monica raises her Atlamillia at a time gate. use_red_gate picks the red gate models, otherwise the blue ones (every caller passes the blue gate). With show_both_characters Max stands beside Monica whichever of them is active, and any party NPC is shown as well. The Atlamillia shine is placed by fixed offsets for Monica's Pumpkin Shorts, Striped Dress, Star Leotard, Princess Dress and Panther Ensemble outfits, then the glare grows, the screen fades to white and show_time_travel_caption(0) runs."
+  },
+  "d576170530ff4883": {
+   "name": "show_butterfly_split_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "d57c0a96e226de9c": {
    "name": "play_event_108_victory_line",
@@ -41223,6 +41287,10 @@
    "name": "start_story_105c_script",
    "doc": "Story 105c: sets up the house, clears flag 20, shows Steve and loads script i01h01/i01h01b_1.stb as program 11053.",
    "loose": "96c6987043cf342b"
+  },
+  "d8e3bcc27dd2abe1": {
+   "name": "show_butterfly_split_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "d8e7857450abdfb1": {
    "name": "talk_adel_to_monica",
@@ -42665,6 +42733,10 @@
     "frame"
    ],
    "doc": "The player runs into the station from the entrance."
+  },
+  "e0d3adff82210aa9": {
+   "name": "show_butterfly_red_first_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "e0df800ee67ab192": {
    "name": "start_room_music",
@@ -46693,6 +46765,10 @@
    "name": "load_s05b_event_501",
    "loose": "e275bc3183106afe",
    "doc": "Initialises the event and loads event script s05b_1 with event 501."
+  },
+  "f6b29610d444894c": {
+   "name": "show_butterfly_red_first_hint",
+   "loose": "74c5dbaa0243b94f"
   },
   "f6d363769eb65136": {
    "name": "play_finny_frenzy_announcement_then_enter_d04",

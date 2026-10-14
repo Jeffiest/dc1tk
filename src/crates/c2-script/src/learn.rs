@@ -169,7 +169,8 @@ pub fn script_entries(
             continue;
         }
         // A function the file holds twice decompiles once under its name and again under an alias
-        // (start_event_for_program_506, name_2); only the first copy says what to call it.
+        // (start_event_for_program_506, unused_name, name_for_caller, name_2); only the first copy
+        // says what to call it.
         if !seen.insert(exact.clone()) {
             continue;
         }

@@ -8,6 +8,7 @@ pub mod build;
 pub mod capture;
 pub mod compile;
 pub mod composite;
+pub mod constants;
 pub mod coverage;
 pub mod cpp;
 pub mod ctype;

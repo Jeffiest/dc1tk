@@ -47,6 +47,7 @@ c2 defs todo extracted/disc                      unnamed functions, most called 
 c2 disassemble <script.stb>                      text assembly, for debugging
 c2 assemble <script.asm> -o <script.stb>
 c2 defs learn <source> <definition set>
+c2 defs rename <definition set> OLD NEW --in extracted/scripts   rename a flag or other constant
 c2 defs disc extracted/disc <definition set>     record which disc a set is for
 c2 natives <ChronicleTwo checkout>
 ```
@@ -769,8 +770,19 @@ comment above a statement, and the file name, top comment and global
 names of each library. A function that
 appears in several files takes the copy you edited; the aliases the
 decompiler gives a second copy in one file (`start_event_for_program_506`,
-`do_nothing_2`) are not learned as names. See
+`unused_do_nothing`, `unlock_interrupts_for_recoil_from_hit`) are not
+learned as names. See
 [definitions](definitions.md).
+
+Constants (flag names, the music and sound enums) live in the set's
+`include/pal.h`, which trees include from the set, so they are not learned.
+`defs rename` renames one in the header, in what the set says about it
+(docs, notes, the variables named after it) and in the source of each tree
+or mod given with `--in`, keeping unedited files unedited:
+
+```
+c2 defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
+```
 
 ## Checking a C toolchain can read the output
 

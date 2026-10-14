@@ -9322,7 +9322,7 @@
    "doc": "Waits up to max_frames for the move order to finish, tracking damage."
   },
   "36ec9aae37608d0b": {
-   "name": "do_nothing_args_2",
+   "name": "do_nothing_with_three_args",
    "loose": "36ec9aae37608d0b",
    "params": [
     "unused_value",
@@ -42861,7 +42861,7 @@
    "doc": "Loop that returns when the target is beyond 120 units. When facing it, occasionally uses attack 2 or attack 1; otherwise occasionally steps or turns to face it."
   },
   "f7763dc51258665d": {
-   "name": "do_nothing",
+   "name": "begin_and_end_locked_action",
    "loose": "94f4bffc4563b291",
    "doc": "Begins and immediately ends a locked action, so nothing happens."
   },
