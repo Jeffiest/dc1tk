@@ -1869,9 +1869,10 @@ impl Bank {
 }
 
 /// A small bank for tests: a placeholder entry 0 that plays a silent sample, then one entry for
-/// each rate (a short saw wave played at it), entry 1 at the given volume.
-#[cfg(test)]
-pub(crate) fn test_bank(rates: &[i64], volume: i64) -> Vec<u8> {
+/// each rate (a short saw wave played at it), entry 1 at the given volume. Public for other
+/// crates' tests.
+#[doc(hidden)]
+pub fn test_bank(rates: &[i64], volume: i64) -> Vec<u8> {
     let vag = encode_adpcm(&[0; 28], None, true).unwrap();
     let mut hd = Hd {
         version: vec![0, 0, 2, 0],

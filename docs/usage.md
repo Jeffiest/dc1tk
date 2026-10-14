@@ -415,13 +415,17 @@ each at every place the disc has it:
 "add": {
   "sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"},
   "file:mods/calculator/ui.img": {"file": "ui", "like": "texture:logo_d00"},
-  "file:mods/calculator/calc.chr": {"file": "model/calc.gltf", "like": "model:uki"}
+  "file:mods/calculator/calc.chr": {"file": "model/calc.gltf", "like": "model:uki"},
+  "music:BG_200": {"file": "music/fish.mid", "like": "BG_193"}
 }
 ```
 
 A `file:` line with `like` makes a new picture file from PNGs, or a new
 model pack from a glTF, in the format of the disc's file `like` names (see
-[the modding guide](modding.md#pictures-and-models-of-a-mods-own)).
+[the modding guide](modding.md#pictures-and-models-of-a-mods-own)). A
+`music:BG_NNN` line under `add` makes a new music file, `snd2/bgm/BG_200.snd`,
+whose tune is the MIDI file, played with `load_bgm(200); play_bgm(0);` (see
+[the modding guide](modding.md#music-of-a-mods-own)).
 `mod asset ISO NAME ID...` copies assets out by id and adds their lines,
 `mod check SOURCE NAME... --disc ISO` checks every line resolves, and
 `mod migrate ISO NAME` turns a mod's `disc/` folder (below) into such

@@ -397,6 +397,21 @@ fn reached_lines(resolved: &replace::Resolved, module: &str) -> Vec<String> {
     out
 }
 
+/// The music files a mod adds, one line each, with how its scripts play them.
+fn new_music_lines(lines: &[replace::Line], module: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in lines.iter().filter(|line| line.module == module && line.is_new_music()) {
+        let Some(number) = line.bgm_number() else { continue };
+        out.push(format!(
+            "adds {} ({}, like {}): scripts play it with load_bgm({number}); play_bgm(0);",
+            line.key,
+            c2_assets::music::bgm_path(number),
+            line.like.as_deref().unwrap_or_default()
+        ));
+    }
+    out
+}
+
 /// Prints what the loads of the files the build rewrites use of the game's fixed memory
 /// (c2_script::memory, docs/assets/memory.md); true when a budget that is certain is exceeded.
 /// The image is mapped only here, so writing the new image can still clone the original.
@@ -465,6 +480,9 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             println!("  patch {}", patches::summary(patch));
         }
         for line in reached_lines(&resolved, &name) {
+            println!("  {line}");
+        }
+        for line in new_music_lines(&all_lines, &name) {
             println!("  {line}");
         }
         let given: BTreeMap<&String, &i64> =
@@ -603,6 +621,19 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             println!("{warning}");
         }
     }
+    let (files, new_music) = replace::add_music(&args.iso, &all_lines, &files)?;
+    for item in &new_music {
+        println!(
+            "added: {} ({}; mod {}, {} bytes, a new file)",
+            item.place.display(),
+            item.ids.join(", "),
+            item.modules.join(", "),
+            item.data.len()
+        );
+        for warning in &item.warnings {
+            println!("{warning}");
+        }
+    }
     let program_of = |line: &replace::Line, value: &serde_json::Value| -> Result<i64> {
         Ok(c2_script::mapscript::program_number(value, &line.module, &plan.numbers, &consts)?)
     };
@@ -666,6 +697,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     let mut wrong = build::check(&args.output, &found.scripts)?;
     wrong.extend(discfiles::check(&args.output, &replaced)?);
     wrong.extend(replace::check(&args.output, &changed)?);
+    wrong.extend(replace::check(&args.output, &new_music)?);
     wrong.extend(crate::data_cmd::check(&args.output, &data_changes, &files, executable.as_deref())?);
     for path in &wrong {
         println!("reads back wrong: {path}");
@@ -675,6 +707,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         found.scripts.len(),
         replaced.len()
             + changed.len()
+            + new_music.len()
             + map_changes.len()
             + data_changes.iter().map(|change| change.files.len()).sum::<usize>(),
         files.len(),
@@ -758,10 +791,22 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                     if !clashes.is_empty() {
                         bail!("the chosen mods cannot be built together:\n  {}", clashes.join("\n  "));
                     }
+                    // the music files they add, made as build makes them (the number free, the
+                    // like bank's tune replaced)
+                    let given = raw.keys().map(|path| (path.clone(), Vec::new())).collect();
+                    let (_, new_music) = replace::add_music(disc, &lines, &given)?;
                     for mod_dir in &mod_dirs {
                         let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
                         for line in reached_lines(&resolved, &name) {
                             println!("{name}: {line}");
+                        }
+                        for line in new_music_lines(&lines, &name) {
+                            println!("{name}: {line}");
+                        }
+                        for item in new_music.iter().filter(|item| item.modules.contains(&name)) {
+                            for note in &item.warnings {
+                                println!("{name}: {}: {note}", item.place.display());
+                            }
                         }
                     }
                     let (_, _, data_changes) = crate::data_cmd::apply_data(disc, &mod_dirs, &Default::default())?;
@@ -796,7 +841,10 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                     }
                     // an added entry's number needs the disc; its name compiles all the same
                     let mut added: BTreeMap<String, IndexMap<String, i64>> = BTreeMap::new();
-                    for line in lines.iter().filter(|line| line.add && !line.is_file() && !line.is_map()) {
+                    for line in lines
+                        .iter()
+                        .filter(|line| line.add && !line.is_file() && !line.is_map() && !line.is_new_music())
+                    {
                         added.entry(line.module.clone()).or_default().insert(line.key["sound:".len()..].to_string(), 0);
                     }
                     added

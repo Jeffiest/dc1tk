@@ -80,8 +80,12 @@ struct Disc {
 }
 
 fn disc(name: &str) -> Disc {
+    disc_of(name, &disc_files())
+}
+
+fn disc_of(name: &str, disc_files: &[(&str, Vec<u8>)]) -> Disc {
     let folder = TempDir::new(name);
-    let (index_file, dat) = archive_files(&disc_files());
+    let (index_file, dat) = archive_files(disc_files);
     let iso = folder.path().join("disc.iso");
     fs::write(&iso, iso_image(&[("DATA.HD4", index_file), ("DATA.DAT", dat), ("DMMY", vec![0; 4 * SECTOR])])).unwrap();
     let image = Image::open(&iso).unwrap();
@@ -746,4 +750,132 @@ fn a_migrated_mod_builds_the_same_files() {
     assert_eq!(before, after);
     // nothing left to migrate
     fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "no disc/ folder");
+}
+
+/// A music bank as the disc's are: entry 0 plays BG_001_000.sq, a short tune on program 1 (a saw
+/// wave); program 2, another saw wave, nothing plays.
+fn music_bank() -> Vec<u8> {
+    use c2_assets::sequence::{Event, Message, Sequence};
+    use c2_assets::soundbank::{self, Bank, Pack};
+    let mut bank = Bank::from_bytes(&soundbank::test_bank(&[22050, 11025], 100)).unwrap();
+    let eol = bank.cfg.eol();
+    bank.cfg.lines = ["BG\tTEST\t1\t\t\t\t\t", "0\tBGM\tA\t0\tBG_001_000.sq\t*\t*\t", "END\t\t\t\t\t\t\t"]
+        .iter()
+        .map(|line| (line.as_bytes().to_vec(), eol.clone()))
+        .collect();
+    let data = bank.build().unwrap();
+    let mut members: Vec<(String, Vec<u8>)> = Pack::parse(&data)
+        .unwrap()
+        .members
+        .into_iter()
+        .map(|member| (member.name.replace("x.", "BG_001."), member.data))
+        .collect();
+    let tune = Sequence {
+        division: 480,
+        events: vec![
+            Event::new(0, Message::tempo(500_000)),
+            Event::new(10, Message::Program { channel: 1, program: 1 }),
+            Event::new(110, Message::NoteOn { channel: 1, key: 60, velocity: 100 }),
+            Event::new(480, Message::NoteOff { channel: 1, key: 60 }),
+            Event::new(480, Message::end()),
+        ],
+    };
+    members.push(("BG_001_000.sq".to_string(), tune.write().unwrap()));
+    c2_assets::models::write_pack(&members).unwrap()
+}
+
+/// A MIDI file of two notes on program 2.
+fn fish_midi() -> Vec<u8> {
+    use c2_assets::music::{Smf, Track};
+    use c2_assets::sequence::Message;
+    let events = vec![
+        (0, Message::Program { channel: 2, program: 2 }),
+        (0, Message::NoteOn { channel: 2, key: 64, velocity: 90 }),
+        (480, Message::NoteOff { channel: 2, key: 64 }),
+        (480, Message::NoteOn { channel: 2, key: 67, velocity: 90 }),
+        (960, Message::NoteOff { channel: 2, key: 67 }),
+    ];
+    Smf { format: 0, division: 480, tracks: vec![Track { events, end: 960 }] }.write()
+}
+
+#[test]
+fn a_mod_adds_a_music_file_made_like_a_bank_of_the_disc() {
+    use c2_assets::music;
+    use c2_assets::sequence::Sequence;
+    use c2_assets::soundbank::{Bank, EntryKind};
+    let like = music_bank();
+    let disc = disc_of("music", &[("snd2\\bgm\\BG_001.snd", like.clone())]);
+    let mod_dir = disc.mods.join("fish");
+    write(&mod_dir.join("music/fish.mid"), &fish_midi());
+    mod_json(&mod_dir, json!({"add": {"music:BG_200": {"file": "music/fish.mid", "like": "BG_001"}}}));
+    let lines = replace::lines(&mod_dir).unwrap();
+    assert!(lines[0].is_new_music());
+    assert_eq!(lines[0].bgm_number(), Some(200));
+    assert!(!replace::needs_index(&lines));
+    assert!(replace::resolve(&lines, &disc.index).unwrap().edits.is_empty());
+    let (files, changed) = replace::add_music(&disc.iso, &lines, &BTreeMap::new()).unwrap();
+    assert_eq!(files.keys().collect::<Vec<_>>(), ["snd2/bgm/BG_200.snd"]);
+    assert_eq!((changed[0].place.display(), changed[0].old), ("snd2/bgm/BG_200.snd".to_string(), 0));
+    assert_eq!(changed[0].ids, ["music:BG_200 like BG_001"]);
+    assert!(changed[0].warnings.iter().any(|note| note.contains("cut to stubs")), "{:?}", changed[0].warnings);
+
+    // written into an image, the new file reads back: a bank whose entry 0 plays the MIDI file,
+    // built as a music: line builds it with the like bank's tune as the template
+    let out = disc._folder.path().join("music.iso");
+    rebuild::write_disc(&disc.iso, &out, &files).unwrap();
+    assert!(replace::check(&out, &changed).unwrap().is_empty());
+    let image = Image::open(&out).unwrap();
+    let archive = Archive::open(image.bytes()).unwrap();
+    let entry = archive.entries.iter().find(|entry| entry.path.eq_ignore_ascii_case("snd2/bgm/BG_200.snd")).unwrap();
+    let bank = Bank::from_bytes(archive.read(image.bytes(), entry)).unwrap();
+    let entries = bank.entries().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!((entries[0].kind, entries[0].file.as_str()), (EntryKind::Sq, "BG_200_000.sq"));
+    let sq = &bank.pack.members[bank.pack.find("sq")[0]].data;
+    let old = Bank::from_bytes(&like).unwrap();
+    let template = &old.pack.members[old.pack.find("sq")[0]].data;
+    assert_eq!(*sq, music::build(&fish_midi(), template, Some(&old)).unwrap());
+    let notes: Vec<(i64, u8)> =
+        Sequence::read(sq).unwrap().notes().into_iter().map(|(program, key, _)| (program, key)).collect();
+    assert_eq!(notes, [(2, 64), (2, 67)]);
+    // the like bank's tune's sample, which nothing plays now, is a stub
+    let vag = |bank: &Bank, program: i64| bank.vag_data[bank.resolve(program, 60, 90)[0].vag].len();
+    assert!(vag(&bank, 1) < vag(&old, 1));
+    assert_eq!(vag(&bank, 2), vag(&old, 2));
+
+    // refused: a number the disc has, a bank it lacks, a path a file: line gives too, and two
+    // mods adding one number
+    let refused = |body: Value, words: &str| {
+        mod_json(&mod_dir, body);
+        fails(replace::add_music(&disc.iso, &replace::lines(&mod_dir).unwrap(), &BTreeMap::new()), words);
+    };
+    refused(
+        json!({"add": {"music:BG_001": {"file": "music/fish.mid", "like": "BG_001"}}}),
+        "the disc has snd2/bgm/BG_001.snd already",
+    );
+    refused(
+        json!({"add": {"music:BG_200": {"file": "music/fish.mid", "like": "bank:BG_002"}}}),
+        "the disc has no snd2/bgm/BG_002.snd",
+    );
+    mod_json(&mod_dir, json!({"add": {"music:BG_200": {"file": "music/fish.mid", "like": "music:bg_001"}}}));
+    let given: discfiles::Files = [("snd2/bgm/bg_200.snd".to_string(), Vec::new())].into();
+    fails(replace::add_music(&disc.iso, &replace::lines(&mod_dir).unwrap(), &given), "given by a file: line");
+    let other = disc.mods.join("tuna");
+    write(&other.join("tuna.mid"), &fish_midi());
+    mod_json(&other, json!({"add": {"music:bg_200": {"file": "tuna.mid", "like": "BG_001"}}}));
+    let both = replace::all_lines(&[mod_dir.clone(), other.clone()]).unwrap();
+    fails(replace::add_music(&disc.iso, &both, &BTreeMap::new()), "both add music file 200");
+    assert_eq!(replace::key_clashes(&[mod_dir.clone(), other]).unwrap().len(), 1);
+
+    // and as mod.json is read: a name that is no music file's, a missing or wrong "like", no MIDI
+    let case = |body: Value, words: &str| {
+        mod_json(&mod_dir, body);
+        fails(replace::lines(&mod_dir), words);
+    };
+    case(json!({"add": {"music:BG_2000": {"file": "music/fish.mid", "like": "BG_001"}}}), "BG_ and three digits");
+    case(json!({"add": {"music:fish": {"file": "music/fish.mid", "like": "BG_001"}}}), "BG_ and three digits");
+    case(json!({"add": {"music:BG_200": "music/fish.mid"}}), "names the disc's music bank");
+    case(json!({"add": {"music:BG_200": {"file": "music/fish.mid", "like": "SR_001"}}}), "names the disc's music bank");
+    write(&mod_dir.join("music/fish.wav"), b"");
+    case(json!({"add": {"music:BG_200": {"file": "music/fish.wav", "like": "BG_001"}}}), "is not a MIDI file");
 }
