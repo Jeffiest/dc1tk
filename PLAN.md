@@ -190,16 +190,22 @@ Make the script compiler a conforming C89/C90 freestanding implementation
 code keeps compiling to its own bytes. What the compiler lacks today
 ([language](docs/language.md)), in the order to do it:
 
-1. **A conformance suite.** A test of every C89 feature, each passing,
-   failing to compile, or compiling with different behaviour, so progress is
-   measured.
-2. **Cheap features:** `goto` and labels, `sizeof`, the comma operator,
-   unary `+`, `const`/`volatile`/`register`/`auto`, `static` locals (kept
-   between calls), initialised globals, multi-dimensional local arrays, K&R
-   function definitions, macros with parameters with `#` and `##`, `#error`,
-   `#line`, `__FILE__`/`__LINE__`/`__STDC__`, and full `#if` arithmetic.
-3. **Integer types:** `char`, `short`, `long`, `signed` and `unsigned` with
-   C's widths, wrap-around and conversions, emulated on the VM's ints.
+1. **A conformance suite** (done). 115 programs in
+   `src/crates/c2-script/tests/c89/`, run in the VM interpreter, each with a
+   row in [c-standard](docs/c-standard.md): 95 supported (83 give C's result,
+   12 the error C requires), 3 differ (step 4, and a header's macros not
+   seen by the includer's `#if`), 15 planned (step 5), 2 at the limit
+   (`double`).
+2. **Cheap features** (done): a real preprocessor (macros with parameters,
+   `#` and `##`, `#if` in 32-bit C arithmetic, `#error`, `#line`, the
+   predefined macros, trigraphs), `goto`, `sizeof`, the comma operator,
+   unary `+`, `const`/`volatile`/`register`/`auto`, implicit int, `static`
+   locals, initialised globals (a hidden once-per-load initialiser),
+   multi-dimensional local arrays, K&R definitions, block scope.
+3. **Integer types** (done): `char` and `short` masked to their widths,
+   `unsigned` with biased comparisons and a small runtime for `/`, `%`, `>>`
+   and float conversions, added only when used; `<limits.h>`, `<stddef.h>`,
+   `<float.h>`. Retail bytes are unchanged (`c2 verify` OK).
 4. **C's semantics in a strict mode** (`#pragma std c89` or a mod option):
    assignment converts to the variable's type (the VM stores the value's own
    type), `&&`/`||` give 0 or 1, and natives in conditions run only when C
