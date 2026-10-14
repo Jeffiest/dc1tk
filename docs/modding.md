@@ -344,11 +344,16 @@ A new game starts in dungeon 1's script at `floor_start` (`title.cpp`,
 function in front of `floor_start` that, the first time it runs, sets flag
 2047 and warps the way the game's own story warps out of dungeon 1 do:
 `load_dungeon_map`, then `load_event_script` at the program. Later visits to
-dungeon 1 play normally. This works for maps the game loads with
+dungeon 1 play normally. That suits maps the game loads with
 `load_dungeon_map` (story scenes and dungeon-like maps; `xref map` shows
-whether it does), and the scene starts with a new game's party and items, so
-a scene that expects more may not play right. Use these images for testing
-only.
+whether it does). Towns are not loaded that way, and the dungeon loop a new
+game runs in ignores `jump_to_map`; for any other map in the disc's map table
+(`map/map1.cfg`, numbered by row) the warp is the one the game uses to leave a
+dungeon for a town, `go_to_edit_mode(map number, program)`, so
+`--start-at m05` (at `map_start`) or `--start-at m05:PROGRAM` opens a town.
+`build` prints which way it warps. The scene starts with a new game's party
+and items, so a scene that expects more may not play right. Use these images
+for testing only.
 
 ## Keeping your edits
 
