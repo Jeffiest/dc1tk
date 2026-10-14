@@ -159,14 +159,16 @@ pub enum ModCommand {
         /// The mod's name.
         name: String,
         /// Asset ids (texture:c02a02, model:c02fuku*, sound:SE_CURSOR_MOVE, bank:SP_003,
-        /// text:en/shopname), each copied in its common format with its line added to mod.json;
-        /// data tables (data:items, data:shops, data:monsters, data:inventions, data:georama,
-        /// data:medals, data:floors, data:fishing, data:characters) as JSON; or files as extract
-        /// lays them out (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied into disc/.
+        /// text:en/shopname, music:BG_000_000), each copied in its common format with its line
+        /// added to mod.json; data tables (data:items, data:shops, data:monsters, data:inventions,
+        /// data:georama, data:medals, data:floors, data:fishing, data:characters) as JSON; or files
+        /// as extract lays them out (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied
+        /// into disc/.
         #[arg(required = true)]
         paths: Vec<String>,
         /// Export files in a common format to edit there: png for textures, wav for sound banks,
-        /// gltf for character packs, txt for message files.
+        /// gltf for character packs, txt for message files, mid for a sound bank's sequences (its
+        /// music, with its instruments as a SoundFont).
         #[arg(long = "as")]
         form: Option<String>,
         #[arg(long, default_value = "mods")]

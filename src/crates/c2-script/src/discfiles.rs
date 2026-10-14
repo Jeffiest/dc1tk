@@ -8,7 +8,8 @@
 //! format's suffix: build converts it, with the disc's own file as the template (palette size,
 //! sample rate, layout), and mod asset --as exports to it. Textures are a folder of PNGs
 //! (c02a.img.png/c02a01.png), sound banks a folder of WAVs by entry number
-//! (sp_000.snd.wav/003.wav), character packs a folder holding a glTF with its textures
+//! (sp_000.snd.wav/003.wav) or their sequences a folder of MIDI files by name
+//! (BG_000.snd.mid/BG_000_000.mid), character packs a folder holding a glTF with its textures
 //! (c02a.chr.gltf/c02a.gltf) and message files a text file (shopname.mes.txt); c2_assets converts
 //! them.
 //!
@@ -41,11 +42,14 @@ pub struct Converter {
     pub folder: bool,
 }
 
-pub const CONVERTERS: [Converter; 4] = [
+pub const CONVERTERS: [Converter; 5] = [
     Converter { suffix: ".png", game: ".img", folder: true },
     Converter { suffix: ".wav", game: ".snd", folder: true },
     Converter { suffix: ".gltf", game: ".chr", folder: true },
     Converter { suffix: ".txt", game: ".mes", folder: false },
+    // a bank's sequences as MIDI files (BG_000.snd.mid/BG_000_000.mid), with its programs as a
+    // SoundFont to hear them with
+    Converter { suffix: ".mid", game: ".snd", folder: true },
 ];
 
 impl Converter {
@@ -55,6 +59,7 @@ impl Converter {
         let built = match self.suffix {
             ".png" => c2_assets::textures::build(source, original),
             ".wav" => c2_assets::sounds::build(source, original),
+            ".mid" => c2_assets::music::build_bank(source, original),
             ".txt" => c2_py::read_text(source)
                 .map_err(c2_assets::Error::from)
                 .and_then(|written| text::build(&written, original, original, path, fonts)),
@@ -69,6 +74,16 @@ impl Converter {
         let exported = match self.suffix {
             ".png" => c2_assets::textures::export(data),
             ".wav" => c2_assets::sounds::export(data),
+            ".mid" => {
+                let name = path.rsplit('/').next().unwrap_or(path);
+                let name = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+                match c2_assets::music::export_bank(data, name) {
+                    Ok(files) if files.is_empty() => {
+                        Err(c2_assets::Error::invalid(format!("{path} has no sequences (.sq)")))
+                    }
+                    other => other,
+                }
+            }
             ".txt" => text::export(data, path, &format!("file:{path}"), fonts)
                 .map(|text| vec![(String::new(), text.into_bytes())]),
             _ => c2_assets::models::export(data),
@@ -173,15 +188,14 @@ pub fn converter_of(source: &Path) -> Option<Converter> {
 }
 
 /// The converter for a mod file standing for a game file: a folder converts by the game file's
-/// suffix (a folder of PNGs for a .img), whatever the folder is named; a file in a common format
-/// that writes a file converts by its own suffix too (a .txt for a .mes); another file is the game
-/// file itself.
+/// suffix (a folder of PNGs for a .img), whatever the folder is named, unless its name ends with
+/// another converter's suffix for that game file (a bank's folder of MIDI files, .snd.mid); a file
+/// in a common format that writes a file converts by its own suffix too (a .txt for a .mes);
+/// another file is the game file itself.
 pub fn conversion(target: &str, source: &Path) -> Option<Converter> {
-    CONVERTERS.iter().copied().find(|converter| {
-        lower(target).ends_with(converter.game)
-            && converter.folder == source.is_dir()
-            && (converter.folder || lower(&name_of(source)).ends_with(converter.suffix))
-    })
+    let fits = |converter: &&Converter| lower(target).ends_with(converter.game) && converter.folder == source.is_dir();
+    let named = CONVERTERS.iter().filter(fits).find(|converter| lower(&name_of(source)).ends_with(converter.suffix));
+    named.or_else(|| CONVERTERS.iter().filter(fits).find(|converter| converter.folder)).copied()
 }
 
 /// The game file's bytes for a mod file standing for the game file at target: the file itself,

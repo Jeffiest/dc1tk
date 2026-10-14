@@ -1,0 +1,238 @@
+# Dark Chronicle music and ambient loops (`.sq`)
+
+How the PAL disc stores its background music and ambient loops, how the game
+plays them, and how a mod replaces them with MIDI files. `sequence.rs` (in
+`src/crates/c2-assets/src/`) reads and writes the `.sq` files, `music.rs`
+converts them to and from standard MIDI files, `soundfont.rs` writes a bank's
+instruments as a SoundFont to hear them with. The sound banks that hold the
+sequences and their instruments are in [the sound bank notes](sounds.md).
+
+Evidence, as there: **engine** (the decompiled EE code in
+`finaldc2/ChronicleTwo/ps2`: `src/sound.cpp`, `src/scenesnd.cpp`,
+`src/ezbgm.cpp`, `src/event_func.cpp` and the asm of `PlayBGM`), **data**
+(statistics over the 447 `.sq` files of `extracted/disc`, all of which the
+code reads and writes back byte for byte) and **Sony** (the IOP plays
+sequences with Sony's MIDI sequencer modules, which were not decompiled; what
+their events mean is the MIDI standard's and, for the loop controllers,
+inferred from where the disc puts them).
+
+## 1. What is music on the disc
+
+All background music is sequenced: each tune is a `.sq` member of a sound
+bank (`.snd`), played by the IOP with that bank's instruments. Nothing musical
+is streamed.
+
+| Where | Banks | Sequences | Use |
+|---|---|---|---|
+| `snd2/bgm/BG_NNN.snd` | 73 | 76 (70 banks one, 3 two) | background music, one tune a bank |
+| `snd2/env/SR_*.snd` | 96 | 352 (1 to 8 a bank; 66 banks four) | ambient loops (wind, water, crowds) |
+| `snd2/event/EV_*.snd` | 6 | 7 | event sounds played as sequences |
+| `sg/fish/fishing2*.pak` | 6 copies of `BG_193.snd` | 12 | the fishing music, a second version of both tunes |
+
+447 places, 435 names, 437 distinct sequences (278 by their bytes alone: many
+ambient loops are copied under other names; the fishing packs' copies of
+`BG_193_000` and `BG_193_001` differ from `snd2/bgm`'s): the 437 `music:`
+assets.
+
+**Background music** (engine): `CScene::LoadBGM` reads
+`snd2/bgm/BG_%03d.snd` (`GetBgmFile`) and loads it on game port 0 or 11 (two
+slots, for changing tunes), whose sequences go to IOP memory (`LoadSeq`, a
+block of the file's size + 256). `PlayBGM(entry, volume, fade)` plays an
+entry of that bank as `play_se` does (`sndSePlayV`): the bank's `.cfg` row
+names the `.sq` (`BG_000_000.sq`), so the entry plays the sequence with
+`SQ_Play`, at the row's default volume from the `.vol` (`BG_000`: 45) unless
+the caller gives one. A map's sound set (the map list's
+column and `snd2/MAP_index.txt`) names its default tune (`GetDefBgmNo`);
+scripts start others (`start_bgm`). Palm Brinks' streets m01 to m05 use set
+1000, whose tune is `BG_000`.
+
+**Ambient loops**: the sound set's ambient bank (`SR_*`, port 2) and the
+sequence the set names (`SR_010_000`), or one the time of day picks; event
+banks (port 4) play theirs as entries.
+
+**Streamed audio** (engine, data): `SOUND.DAT` (969,644,032 bytes) holds
+3,102 RIFF WAVE files, 16-bit PCM mono at 48 kHz with `bext`, `minf` and
+`elmo` chunks, indexed by `SOUND.HD3` (16-byte records: name offset, size,
+sector, sector count; names `0010010.wav`, numbered by voice). The IOP's
+EZBGM server streams them (`CSound::StreamOpenFast`, `ezBgm`): event dialogue
+(`CommandStreamOpen`), the chapter titles' narration (`menucapt.cpp`), the
+robot's voice (`CRoboVoiceSystem`) and the minigames' voices. They are voices,
+not music; the movies (`MOVIE/*.PSS`) carry their own sound. `SOUND.DAT`
+cannot go in a mod.
+
+## 2. The `.sq` file
+
+Little-endian, Sony's chunk layout (as the `.hd`'s): creator `IECS`, the
+chunk type reversed, the chunk's size. Every file on the disc has exactly
+this header; `Sequence::read` refuses anything else.
+
+| Off | Size | Field | Value |
+|---|---|---|---|
+| 0x00 | 16 | `Vers` chunk: `IECS` `sreV` 0x10, reserved u16, version 1.0 | fixed |
+| 0x10 | 12 | `Sequ` chunk header: `IECS` `uqeS` 0x20 | fixed |
+| 0x1C | 4 | file size | |
+| 0x20 | 16 | offsets of the song, MIDI, SE-sequence and SE-song chunks | 0xFFFFFFFF, 0x30, 0xFFFFFFFF, 0xFFFFFFFF |
+| 0x30 | 12 | `Midi` chunk header: `IECS` `idiM`, size = file size - 0x30 | |
+| 0x3C | 4 | max index of the data blocks | 0: one block |
+| 0x40 | 4 | its offset from the chunk | 0x14 |
+| 0x44 | 4 | the events' offset from the block | 6 |
+| 0x48 | 2 | division (ticks per quarter note) | 480 in all 447 |
+| 0x4A | | the events, one track, ending with end of track | |
+| | | 0xFF padding to a multiple of 16 bytes | |
+
+### Events
+
+MIDI events, each a delta time (a variable-length quantity, always in as few
+bytes as it needs) and a message, compressed three ways:
+
+- **Running status**: a channel message whose status byte equals the last one
+  written leaves it out; a meta event ends running status (the next channel
+  message writes its status). It is used wherever it can be (182,192 times).
+- **Note-offs carry only the key**: `8n kk`, no velocity. Notes end with
+  note-offs, never note-ons of velocity 0.
+- **Zero delta times left out**: a channel message that wrote its status byte
+  sets bit 7 of its last data byte when the next event's delta is 0, and that
+  delta is not written. A message in running status never sets it (its first
+  byte would then read as a status byte, for a one-byte message), so after one
+  a delta of 0 is written out; a meta event never sets it either. Over the
+  disc 174,966 zero deltas are left out and 29,088 are written after a
+  message in running status. This rule leaves nothing to chance: a sequence is
+  its events, and writing them gives the disc's bytes for all 447 files.
+
+Meta events are `FF type length data` (length a variable-length quantity):
+tempo (`FF 51 03`, microseconds per quarter note; 473, at tick 0 in 443
+sequences, none in 4 ambient ones) and end of track (`FF 2F 00`). No system
+exclusive, no other meta event.
+
+What the 527,181 events are:
+
+| Message | Count |
+|---|---|
+| note-on / note-off | 132,552 each |
+| controller 10 (pan) | 136,826 |
+| controller 11 (expression) | 110,360 |
+| controller 7 (volume) | 2,073 |
+| controller 99 (NRPN MSB), 6 (data entry), 38 (data entry LSB) | 873, 873, 436: the loops |
+| program change | 2,087 |
+| pitch bend | 7,629 |
+| tempo, end of track | 473, 447 |
+
+No poly or channel pressure, no bank select, no other controller. A sequence
+uses 1 to 14 channels; every channel gets a program change before its first
+note. Sizes run from 128 bytes to 44,128 (`BG_118_000`).
+
+### Loops
+
+A loop is two NRPNs (data, positions): NRPN 0 (`B0 63 00`, then `B0 06 00`
+ten ticks later) marks the start, NRPN 1 (`B0 63 01`, `B0 06 00` and
+`B0 26 00`, ten ticks apart) the end. In the music the span from the start's
+data entry to the end's LSB is whole bars (`BG_193_000`: 53,760 ticks, 28 bars
+of 4/4), so those two events are taken as the loop points; the sequencer
+jumps back on reaching the end and plays on forever. 430 sequences put the
+loop on channel 0, 6 on channel 3, 1 on 12.
+
+436 sequences loop; `BG_060_001` has only a start; 10 have none and play once
+(`BG_100_000`, `BG_111_000`, `BG_115_000`, `BG_118_000`, `SR_003_001` and the
+five event sequences). The end of track comes 505 to 18,482 ticks after the
+loop's end (1,942 in 309), room for the last notes' release.
+
+### Programs
+
+A program change selects a program (`Prog` record) of the bank holding the
+sequence (its `.hd`, see [the sound banks](sounds.md#5-hd-instrument-header));
+the key picks the program's splits and the velocity its samples, as for
+sound effects. There is no bank select: a port holds one bank. 4 ambient
+sequences name programs their banks lack, parts that stay silent:
+`SR_248_000` (program 1), `SR_272_001` (43, 44), `SR_273_000` (2).
+`Bank.voices()` resolves a sequence entry's notes to the samples they play:
+over the 841 banks of `snd2/`, 2,009 of the 7,215 VAGs are played only by
+sequences, 310 by nothing.
+
+## 3. As MIDI
+
+`music::export` writes a sequence as a standard MIDI file of format 0: one
+track, the sequence's division, its events as they are (a note-off with
+velocity 64), its name as the track name, and markers `loopStart` and
+`loopEnd` at the loop's points. Program numbers are the bank's programs, not
+General MIDI's: to hear the file as the game plays it, load the SoundFont
+`soundfont.rs` writes for the bank (preset n of banks 0 and 128 is program n,
+so channel 10 sounds the same in a General MIDI player): every split a zone
+over its key range, every sample a zone over its velocity range, the VAG at
+its own rate and loop, the base note as root key, transposes as coarse tune,
+detunes in 1/128 semitone (assumed), volumes (128 unity) as attenuation, and
+the SPU2 envelope (ADSR1, ADSR2) turned into SoundFont times by running it at
+48 kHz. An approximation for listening: LFOs, velocity curves, key follow and
+bend ranges (256, taken as Sony's 2 semitones) are left out.
+
+`music::build` makes the `.sq` from a MIDI file, with the disc's sequence it
+replaces as the template:
+
+- **Unedited** (the events read back equal the template's), the disc's bytes.
+  Every one of the 447 sequences exported and built back gives its own bytes.
+- **Any MIDI file** of format 0 or 1 (or RIFF `.rmi`), any division: the
+  tracks are merged by time (ties in track order) and the times scaled to
+  480 ticks a quarter note, the only division the disc uses. Kept: notes (a
+  note-on of velocity 0 becomes a note-off), controllers, program changes,
+  pitch bends and tempo. Left out: poly and channel pressure, system
+  exclusive, other meta events, bank select (0, 32), and RPNs and NRPNs with
+  their data entries (98 to 101, 6, 38, 96, 97), which the driver would read
+  as loop commands; only the disc's loop NRPNs are kept.
+- **The loop**: the disc's NRPNs where the file has them; markers (or text
+  events) `loopStart` and `loopEnd` (any case, any spaces or `_`), which win
+  when they are not where the NRPNs are, so moving the markers in an editor
+  moves the loop; else, where the disc's sequence looped, the whole tune from
+  its start to its end of track. A loop is written as the disc writes it, on
+  channel 0, and the end of track one beat after its end.
+- **Tempo**: a file with no tempo at its start plays at 120 quarter notes a
+  minute, as MIDI says, so a tempo event of 500,000 is put there.
+- **Refused**: a program the bank lacks (unless the disc's sequence names it
+  too), a note on a channel that has had no program change, one loop marker
+  without the other, an end before the start, format 2, SMPTE time.
+
+## 4. In a mod
+
+- **By id**: `c2 mod asset dc2.iso mymod music:BG_000_000` writes
+  `music/BG_000_000.mid` and `music/BG_000.sf2` into the mod and adds
+  `"music:BG_000_000": "music/BG_000_000.mid"` to its `replace`. The
+  replacement reaches every place the id has (the fishing packs' versions are
+  `music:BG_193_000@fishing2`). In the asset tree each sequence is
+  `music/<bank's folder>/<id>.mid` beside `<bank>.sf2`; `c2 mod make` takes an
+  edited MIDI file from there.
+- **By path**: `c2 mod asset dc2.iso mymod snd2/bgm/BG_000.snd --as mid`
+  writes `disc/snd2/bgm/BG_000.snd.mid/` with a MIDI file per sequence (named
+  after it) and the SoundFont; build replaces each sequence whose file is
+  there and reads nothing else. A `.snd.mid` folder and a `.snd.wav` folder for
+  one bank cannot both be given (use `sound:` ids for the effects).
+- A sequence's samples and programs stay the bank's, so its sound memory does
+  not change; the sequence itself goes to IOP memory, as the disc's biggest
+  (44 KB) do. A tune plays with the SPU2's voices the game leaves the music
+  (not measured): keep to the disc's few channels and short chords.
+
+## 5. Verification
+
+| Check | Result |
+|---|---|
+| `.sq` read -> write byte-exact | 447 / 447 (527,181 events) |
+| export to MIDI -> build back byte-exact, programs named are in the bank | 447 / 447; the 4 sequences above name programs their banks lack |
+| a bank's SoundFont: chunks add up, every zone's sample and loop in range | 175 banks with sequences (146,708,074 bytes) |
+| asset tree: music ids at every place, tree and index agree, MIDI builds back | `BG_193` alone and in a pack, `SR_138`'s 8 |
+
+Unit tests cover the compression rule, a foreign MIDI file (format 1, 96
+ticks a quarter note, bank select, an RPN, markers), refused programs and
+channels, a tune looped whole, and markers moved in an editor.
+
+## 6. Open problems
+
+1. **The driver is not decompiled.** That the loop points are the data entry
+   after NRPN 0 and the LSB after NRPN 1, that a sequence without a tempo
+   plays at 120, and how notes held over the loop's end behave are read from
+   the data, not from Sony's IOP modules.
+2. **Voices.** How many SPU2 voices the music may use while effects play was
+   not established; a dense tune may lose notes.
+3. **New instruments.** A tune plays the bank's own programs. Adding samples
+   and programs to a BG bank (from a SoundFont, say) is not implemented;
+   `sounds.rs` adds one-sample programs for effects.
+4. **The SoundFont is approximate** (above); nothing was compared with the
+   game's output.
+5. `sounds::free_unused` still leaves banks with sequences alone, though
+   `voices()` now resolves what their sequences play.

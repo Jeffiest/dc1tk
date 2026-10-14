@@ -11,6 +11,7 @@
 //!   "bank:SP_003": "sounds/SP_003",                         a folder of WAVs by entry number
 //!   "texture:a01ia_01": {"file": "art/floor.png", "only": ["map/a"]},
 //!   "text:en/shopname": "text/en/shopname.txt",             a message file's text, by message
+//!   "music:BG_000_000": "music/BG_000_000.mid",             a sequence (music, an ambient loop) as MIDI
 //!   "file:snd2/event/EV_000_130.snd": "raw/bank.snd"        a disc file or pack member by path
 //! },
 //! "add": {
@@ -48,9 +49,11 @@ use std::path::{Path, PathBuf};
 
 use c2_assets::ids::{self, Index};
 use c2_assets::im3;
+use c2_assets::soundbank::Bank;
 use c2_assets::sounds::{self, Given};
 use c2_assets::text;
 use c2_assets::tree::{self, Kind, Place};
+use c2_assets::{music, soundfont};
 use c2_disc::archive::Archive;
 use c2_disc::{rebuild, Image};
 use indexmap::IndexMap;
@@ -66,6 +69,8 @@ pub const FILE: &str = "file:";
 pub const MAP: &str = "map:";
 /// A table of game data edited as JSON (docs/assets/data.md): `"data:items": "data/items.json"`.
 pub const DATA: &str = "data:";
+/// What a music: line's MIDI file may be called.
+const MIDI_SUFFIXES: [&str; 3] = [".mid", ".midi", ".rmi"];
 /// The tables a data: line can name.
 pub const DATA_TABLES: [&str; 9] =
     ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters"];
@@ -173,7 +178,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     let kind = ids::kind_of(key);
     if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
         return Err(line.fail(
-            "a key is an asset id (texture:, model:, sound:, bank:, text:), file: and a disc path, map: and a map's name, \
+            "a key is an asset id (texture:, model:, sound:, bank:, text:, music:), file: and a disc path, map: and a map's name, \
              or data: and a table (data:items, data:monsters, ...)",
         ));
     }
@@ -274,6 +279,9 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         Some(Kind::Bank) if !line.file.is_dir() => Some("a folder of WAVs named by entry number (004.wav)"),
         Some(Kind::Text) if !(line.file.is_file() && suffix_is(&line.file, ".txt")) => {
             Some("a .txt file of messages (mod asset text:ID writes one)")
+        }
+        Some(Kind::Music) if !(line.file.is_file() && MIDI_SUFFIXES.iter().any(|end| suffix_is(&line.file, end))) => {
+            Some("a MIDI file (.mid)")
         }
         _ => None,
     };
@@ -391,6 +399,8 @@ pub enum Change {
     Entry(Given),
     /// The messages of a text file, with the place its text was exported from (the id's first).
     Text(PathBuf, Place),
+    /// A sequence (.sq member of a bank) built from a MIDI file.
+    Sequence(PathBuf),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -407,7 +417,7 @@ pub struct Edit {
 impl Edit {
     fn slot(&self) -> (String, Option<usize>) {
         let at = match &self.change {
-            Change::Model(_) | Change::Text(..) => None,
+            Change::Model(_) | Change::Text(..) | Change::Sequence(_) => None,
             Change::Picture(entry, _) => Some(*entry),
             Change::Entry(given) => Some(given.number),
         };
@@ -515,6 +525,11 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                     let reference = asset.places[0].0.clone();
                     for (place, _) in places {
                         resolved.edits.push(edit(place, Change::Text(line.file.clone(), reference.clone())));
+                    }
+                }
+                Kind::Music => {
+                    for (place, _) in places {
+                        resolved.edits.push(edit(place, Change::Sequence(line.file.clone())));
                     }
                 }
                 Kind::Sound => {
@@ -708,12 +723,14 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
     let disc = Archive::open(image.bytes())?;
     let index = discfiles::disc_index(&disc);
     let mut files = files.clone();
-    // models, then banks, then pictures, then texts; outer places first
+    // models, then banks, then pictures, then texts, then the sequences inside banks; outer places
+    // first
     let stage = |edit: &Edit| match edit.change {
         Change::Model(_) => 0,
         Change::Entry(_) => 1,
         Change::Picture(..) => 2,
         Change::Text(..) => 3,
+        Change::Sequence(_) => 4,
     };
     let fonts = discfiles::disc_fonts(&disc, &image, &index);
     let mut groups: BTreeMap<(usize, usize, String), Vec<&Edit>> = BTreeMap::new();
@@ -762,6 +779,13 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
                     .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
                     .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
                 text::build(&written, &old, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?
+            }
+            4 => {
+                let Change::Sequence(source) = &first.change else { unreachable!() };
+                // the bank holding the sequence, for its programs
+                let bank = place.members.split_last().and_then(|(_, bank)| rebuild::read_member(&data, bank));
+                let bank = bank.map(Bank::from_bytes).transpose().map_err(|error| fail(error.into()))?;
+                music::build(&fs::read(source)?, &old, bank.as_ref()).map_err(|error| fail(error.into()))?
             }
             1 => {
                 let mut given: Vec<Given> = edits
@@ -937,6 +961,23 @@ pub fn copy_out(
                     let bank_name = &bank[bank.find(':').map_or(0, |at| at + 1)..];
                     let target = format!("sounds/{}/{}", bank_stem(bank), tree::wav_name(number, named, bank_name));
                     (target.clone(), vec![(target, wav.1)])
+                }
+                Kind::Music => {
+                    // the MIDI file, and its bank's programs as a SoundFont beside it to hear it with
+                    let target = format!("music/{stem}{}", music::SUFFIX);
+                    let mut files = vec![(target.clone(), music::export(data, &asset.name)?)];
+                    if let Some((_, members)) = place.members.split_last() {
+                        let top = disc_index.get(&place.path.to_lowercase());
+                        let bank = top.and_then(|top| rebuild::read_member(disc.read(image.bytes(), top), members));
+                        let file = members.last().unwrap_or(&place.path);
+                        let file = file.rsplit('/').next().unwrap_or(file);
+                        let name = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+                        if let Some(bank) = bank {
+                            let font = soundfont::write(&Bank::from_bytes(bank)?, name)?;
+                            files.push((format!("music/{}{}", tree::file_stem(name), soundfont::SUFFIX), font));
+                        }
+                    }
+                    (target, files)
                 }
             };
             if known.contains(&asset.id.to_lowercase()) || new_lines.iter().any(|(id, _)| id == &asset.id) {

@@ -54,7 +54,7 @@ and `.mid` members.
 | `vol` | 1, required | default volumes, reverb |
 | `hd` | 1 (optional to the engine; all banks have it) | instrument header, IOP heap |
 | `bd` | 1 (same) | ADPCM sample body, DMA'd to SPU2 RAM |
-| `sq` | 0..; loaded only for game ports 0, 2, 4, 11; at most 32 names kept; the driver holds 10 sequences per port (`MIDI_PORT_SEQ_MAX`) and only warns at 16, so keep to 10; the disc has at most 2 per bank | Sony sequences, by index |
+| `sq` | 0..; loaded only for game ports 0, 2, 4, 11; at most 32 names kept; the driver holds 10 sequences per port (`MIDI_PORT_SEQ_MAX`) and only warns at 16, so keep to 10; the disc has up to 8 per bank (six `SR_*` banks) | Sony sequences, by index ([music](music.md)) |
 | `mid` | 0..48 | SMF sound-effect sequences, converted on load |
 
 All 861 banks have exactly one hd/bd/cfg/vol; 447 `.sq` and 2,146 `.mid`.
@@ -103,7 +103,9 @@ with no split covering the key, 11 only samples without a VAG. 4,262
 playable entries start one voice, 1,661 start 2 or more (multi-split
 programs, sequences, velocity layers). 1,531 VAGs are reached from more
 than one entry; 2,487 of the 7,397 VAGs are reached by no cfg row (music
-and ambient sequences use them, or nothing does).
+and ambient sequences use them, or nothing does: over the 841 banks of
+`snd2/`, counting a sequence entry's notes, 2,009 VAGs are played only by
+sequences and 310 by nothing).
 
 ## 3. `.cfg` (sound-effect table)
 
@@ -328,13 +330,10 @@ history, as the SPU does) and keeps the least squared error.
 
 ## 7. `.sq` and `.mid`
 
-`.sq` (Sony sequence): `Vers` (0x10, version 1.0), `Sequ` (0x20: file
-size, then song / MIDI / SE-sequence / SE-song chunk offsets, only MIDI
-present), `Midi` (max index 0, one offset to a data block: u32 offset of
-the event data = 6, u16 division (480), then a compressed MIDI stream).
-Kept as bytes. In SE banks (`snd2/env`, 7 in `snd2/event`) they are
-ambient loops played through `SQ_Play`; their programs refer to the same
-bank's `Prog` table.
+`.sq` (Sony sequence): the music of the `BG_*` banks and the ambient loops
+of `snd2/env` (and 7 in `snd2/event`), played through `SQ_Play` with the same
+bank's `Prog` table. Decoded completely, edited as MIDI: see [music and
+ambient loops](music.md).
 
 `.mid`: standard MIDI file, format 0, one track, division 480 (all 2,146).
 `sndCSeSeqData::LoadSMF` converts it to 6-byte events: note on/off,
@@ -457,13 +456,10 @@ against the mono mix. Replacing one entry and adding one grew the `.bd` by
 
 ## 11. Open problems
 
-1. **`.sq` event streams are not decoded.** Their headers are, but the
-   compressed MIDI data (a running-status stream whose data bytes carry a
-   flag bit) was only partly understood: a trial parser reached the end
-   marker in 164 of 447 files. So voices of `.sq` entries are unknown, and
-   `free_program` cannot avoid program numbers that only a sequence uses
-   (a new program could then sound inside an ambient loop if the sequence
-   names a program the bank lacks).
+1. **`.sq` sequences are decoded** (see [music](music.md)): `voices()`
+   resolves a sequence entry's notes to the samples they play, and
+   `free_program` avoids the programs sequences name. `free_unused` still
+   leaves banks with sequences alone.
 2. **Field meanings from Sony's names, not measured.** Layout and sizes
    are certain; the semantics of cross-fades, bend ranges (u16, 256 =
    1 semitone?), velocity curves, LFO fields, the SPU-attribute bits and

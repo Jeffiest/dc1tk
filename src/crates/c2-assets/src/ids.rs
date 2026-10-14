@@ -38,10 +38,12 @@ pub struct Index {
 }
 
 fn kind_named(name: &str) -> Option<Kind> {
-    [Kind::Texture, Kind::Model, Kind::Bank, Kind::Sound, Kind::Text].into_iter().find(|kind| kind.name() == name)
+    [Kind::Texture, Kind::Model, Kind::Bank, Kind::Sound, Kind::Text, Kind::Music]
+        .into_iter()
+        .find(|kind| kind.name() == name)
 }
 
-/// The kind an id or pattern names by its prefix (texture:, model:, bank:, sound:, text:).
+/// The kind an id or pattern names by its prefix (texture:, model:, bank:, sound:, text:, music:).
 pub fn kind_of(id: &str) -> Option<Kind> {
     kind_named(&id.split_once(':')?.0.to_lowercase())
 }
@@ -119,6 +121,11 @@ impl Index {
         for asset in &found.texts {
             let at = asset.places.iter().map(|&file| (files[file].place.clone(), None)).collect();
             index.insert(Kind::Text, &asset.id, &asset.name, at);
+        }
+        for asset in &found.sequences {
+            let at =
+                asset.places.iter().map(|&(file, member)| (tree::sequence_place(files, file, member), None)).collect();
+            index.insert(Kind::Music, &asset.id, &asset.shown, at);
         }
         index
     }
