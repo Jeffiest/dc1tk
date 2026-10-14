@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use c2_disc::rebuild;
 use c2_script::compile::Toolchain;
 use c2_script::{
-    build, definitions, discfiles, editor, index, loads, memory, migrate, mods, patches, renames, replace, sdk,
+    build, definitions, discfiles, editor, index, loads, memory, migrate, mods, patches, renames, replace, sdk, slim,
     startat, tree,
 };
 
@@ -82,6 +82,19 @@ pub enum ModCommand {
         #[command(flatten)]
         common: Common,
     },
+    /// Turn a mod's whole files (copies of the tree's scripts and libraries) into patches of the
+    /// functions, globals and programs they change or add, where the mod then builds to the same
+    /// bytes, and remove the copies.
+    Slim {
+        /// The decompiled source tree.
+        source: PathBuf,
+        /// The mod's name.
+        name: String,
+        #[arg(long, default_value = "mods")]
+        mods: PathBuf,
+        #[command(flatten)]
+        common: Common,
+    },
     /// List the mods, their files, and mods that change the same file.
     List {
         /// The decompiled source tree.
@@ -119,7 +132,7 @@ pub enum ModCommand {
         source: PathBuf,
         /// The mod's name.
         name: String,
-        /// Functions to override, as the script names them.
+        /// Functions to override, as the script names them, or natives to wrap (place_monster).
         #[arg(required = true)]
         functions: Vec<String>,
         /// Patch every language of a map's script (s51).
@@ -159,14 +172,16 @@ pub enum ModCommand {
         /// The mod's name.
         name: String,
         /// Asset ids (texture:c02a02, model:c02fuku*, sound:SE_CURSOR_MOVE, bank:SP_003,
-        /// text:en/shopname), each copied in its common format with its line added to mod.json;
-        /// data tables (data:items, data:shops, data:monsters, data:inventions, data:georama,
-        /// data:medals, data:floors, data:fishing, data:characters) as JSON; or files as extract
-        /// lays them out (snd2/sp/sp_000.snd, chara/c01_base.chr.d/c01b.img), copied into disc/.
+        /// text:en/shopname, music:BG_000_000), each copied in its common format with its line
+        /// added to mod.json; data tables (data:items, data:shops, data:monsters, data:inventions,
+        /// data:georama, data:medals, data:floors, data:fishing, data:characters, data:layouts) as
+        /// JSON; or files as extract lays them out (snd2/sp/sp_000.snd,
+        /// chara/c01_base.chr.d/c01b.img), copied into disc/.
         #[arg(required = true)]
         paths: Vec<String>,
         /// Export files in a common format to edit there: png for textures, wav for sound banks,
-        /// gltf for character packs, txt for message files.
+        /// gltf for character packs, txt for message files, mid for a sound bank's sequences (its
+        /// music, with its instruments as a SoundFont).
         #[arg(long = "as")]
         form: Option<String>,
         #[arg(long, default_value = "mods")]
@@ -479,7 +494,11 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             target.program = number.to_string();
         }
         let language = c2_script::disc::language_code(&defs);
-        let warp = startat::warp(&args.source, &consts, &target, || startat::disc_map_numbers(&args.iso, language))?;
+        // the chosen mods' new maps are numbered after the disc's
+        let new_maps = c2_script::maptable::new_maps(&c2_script::replace::all_lines(&mod_dirs)?)?;
+        let warp = startat::warp(&args.source, &consts, &target, || {
+            c2_script::maptable::disc_numbers_with(&args.iso, language, &new_maps)
+        })?;
         for warning in startat::warp_warnings(&args.source, &consts, &target, warp)? {
             println!("warning: {warning}");
         }
@@ -569,6 +588,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     let (files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files)?;
     for item in &map_changes {
+        if item.old == 0 {
+            println!("added: {} (map:{}; mod {}, {} bytes)", item.path, item.map, item.module, item.new);
+            continue;
+        }
         println!(
             "replaced: {} (map:{}; mod {}, {} bytes, was {})",
             item.path, item.map, item.module, item.new, item.old
@@ -879,7 +902,8 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             if kinds.len() != 1 {
                 bail!("give one of --map, --script, --monster and --library: the scripts to patch");
             }
-            let result = mods::override_functions(source, &mod_dir, kinds[0].0, kinds[0].1, functions)?;
+            let headers = sdk::header_texts(&common.definitions()?, &common.sdk_dir())?;
+            let result = mods::override_functions(source, &mod_dir, kinds[0].0, kinds[0].1, functions, &headers)?;
             let added =
                 if result.added.is_empty() { "already overrides them".to_string() } else { result.added.join(", ") };
             println!("{}: {}", shown(&result.path), added);
@@ -914,6 +938,36 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             let copied = mods::new(source, &mod_dir, paths)?;
             println!("{} files copied into {}; edit them there", copied.len(), shown(&mod_dir.join(mods::FILES)));
             mods::write_editor_flags(&mod_dir, source, &common.sdk_dir(), &common.definitions()?.sets)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        ModCommand::Slim { source, name, mods: mods_dir, common } => {
+            let mod_dir = mods::folder(mods_dir, name)?;
+            if !mods::exists(&mod_dir) {
+                bail!("no mod at {}", shown(&mod_dir));
+            }
+            let defs = common.definitions()?;
+            let sdk_dir = common.sdk_dir();
+            let headers = sdk::header_texts(&defs, &sdk_dir)?;
+            let tables = common.tables()?;
+            let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+            let outcome = slim::slim(mods_dir, name, source, &tools, &default_constants(source)?)?;
+            for slimmed in &outcome.slimmed {
+                println!("{}", slim::describe(slimmed, &mod_dir));
+            }
+            for (file, reason) in &outcome.kept {
+                println!("{file}: kept, since {reason}");
+            }
+            if outcome.slimmed.iter().any(|slimmed| slimmed.patch.is_some()) {
+                write_editor_files(&mod_dir, source, common)?;
+                record_fingerprints(&mod_dir, source, common)?;
+            }
+            let patched = outcome.slimmed.iter().filter(|slimmed| slimmed.patch.is_some()).count();
+            println!(
+                "{patched} made patches, {} the same as the tree's, {} kept; every script they reach builds to the \
+                 same bytes as before",
+                outcome.slimmed.len() - patched,
+                outcome.kept.len()
+            );
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Save { source, name, mods: mods_dir, common } => {

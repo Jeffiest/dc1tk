@@ -607,7 +607,11 @@ fn write_value(value: &Value, indent: usize, out: &mut String) {
             out.push_str(&pad(indent));
             out.push('}');
         }
-        Value::Array(list) if list.iter().any(|item| item.is_object() || item.is_array()) => {
+        // rows of text, one a line (a dungeon layout's cells, dungeon_layout)
+        Value::Array(list)
+            if list.iter().any(|item| item.is_object() || item.is_array())
+                || (list.len() > 1 && list.iter().all(|item| item.as_str().is_some_and(|text| text.contains(' ')))) =>
+        {
             out.push_str("[\n");
             for (number, item) in list.iter().enumerate() {
                 out.push_str(&pad(indent + 1));

@@ -156,6 +156,8 @@ struct State<'a> {
     next_slot: i64,
     loops: Vec<Loop>,
     notes: Option<IndexMap<String, Node>>,
+    /// The labels of goto, by name, numbered as the compiler's own when first met.
+    labels: HashMap<String, i64>,
 }
 
 impl State<'_> {
@@ -175,6 +177,16 @@ impl State<'_> {
 
     fn emit(&mut self, line: impl AsRef<str>) {
         self.lines.push(format!("    {}", line.as_ref()));
+    }
+
+    /// The number of a goto label.
+    fn user_label(&mut self, name: &str) -> i64 {
+        if let Some(&number) = self.labels.get(name) {
+            return number;
+        }
+        let number = self.new_label();
+        self.labels.insert(name.to_string(), number);
+        number
     }
 
     fn place_label(&mut self, number: i64) {
@@ -276,11 +288,18 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
                 _ => return fail(format!("unknown operator {op}")),
             }
         }
+        "comma" => {
+            expression(state, &node["left"])?;
+            state.emit("pop");
+            expression(state, &node["right"])?;
+        }
         "unary" => {
             expression(state, &node["operand"])?;
             match text(node, "op") {
                 "-" => state.emit("neg"),
                 "!" => state.emit("not"),
+                // C's unary + only promotes, which the VM's values need not
+                "+" => {}
                 op => return fail(format!("unknown operator {op}")),
             }
         }
@@ -290,7 +309,9 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
                 "float" => state.emit("itof"),
                 "int" => state.emit("ftoi"),
                 // a pointer cast, or an address cast to an enum, passes the address unchanged
-                "int *" | "float *" => {}
+                other if other.ends_with(" *") => {}
+                // the value is worked out and dropped
+                "void" => {}
                 other if other.starts_with("enum ") && node["operand"].kind() == "addr" => {}
                 other => return fail(format!("unknown cast to {other}")),
             }
@@ -323,6 +344,10 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
             state.place_label(label);
         }
         "compound" => compound(state, node)?,
+        "narrow" => {
+            expression(state, &node["operand"])?;
+            narrow(state, text(node, "type"));
+        }
         "via" => {
             state.emit("push 0");
             state.emit(format!("load {} {}", pointer_modes(text(node, "type")), int(&node["slot"])?));
@@ -344,6 +369,27 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
     Ok(())
 }
 
+/// A value wrapped to the width of a narrow integer type: masked for an unsigned one, and for a
+/// signed one offset into the unsigned range, masked and offset back.
+fn narrow(state: &mut State, kind: &str) {
+    let (mask, offset) = match kind {
+        "char" => (255, Some(128)),
+        "unsigned char" => (255, None),
+        "short" => (65535, Some(32768)),
+        _ => (65535, None),
+    };
+    if let Some(offset) = offset {
+        state.emit(format!("push {offset}"));
+        state.emit("add");
+    }
+    state.emit(format!("push {mask}"));
+    state.emit("and");
+    if let Some(offset) = offset {
+        state.emit(format!("push {offset}"));
+        state.emit("sub");
+    }
+}
+
 /// target op= value. A variable compiles as target = target op value. An element's address is
 /// worked out once, into a hidden local, and the element is read and written through it, so an
 /// index with side effects (a[i++] += 1) runs them once.
@@ -355,6 +401,9 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
             state,
             &node!({"kind": "binary", "op": node["op"].clone(), "left": target.clone(), "right": node["value"].clone()}),
         )?;
+        if let Some(kind) = node["narrow"].as_str() {
+            narrow(state, kind);
+        }
         state.emit("store");
         return Ok(());
     }
@@ -372,6 +421,9 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
         state,
         &node!({"kind": "binary", "op": node["op"].clone(), "left": via, "right": node["value"].clone()}),
     )?;
+    if let Some(kind) = node["narrow"].as_str() {
+        narrow(state, kind);
+    }
     state.emit("store");
     Ok(())
 }
@@ -404,10 +456,18 @@ fn shift(state: &mut State, node: &Node) -> Result<()> {
     let op = if node["op"] == "<<" { "mul" } else { "div" };
     let count = &node["right"];
     if count.kind() == "int" {
+        let shift = u32::try_from(int(&count["value"])?).ok().filter(|shift| *shift < 32);
+        let shift = shift.ok_or_else(|| Error::invalid("a shift count out of range (0 to 31)"))?;
         expression(state, &node["left"])?;
-        let power = u32::try_from(int(&count["value"])?).ok().and_then(|shift| 1i128.checked_shl(shift));
-        let power = power.ok_or_else(|| Error::invalid("a shift count out of range"))?;
-        state.emit(format!("push {power}"));
+        if shift == 31 && op == "div" {
+            // only -2^31 divided by 2^31, which an int cannot hold, is not 0
+            state.emit("push -2147483648");
+            state.emit("cmp eq");
+            state.emit("neg");
+            return Ok(());
+        }
+        // 2^31 as an int is -2^31, which multiplies the same in 32 bits
+        state.emit(format!("push {}", (1i64 << shift) as i32));
         state.emit(op);
         return Ok(());
     }
@@ -504,6 +564,15 @@ fn statement_code(state: &mut State, node: &Node) -> Result<()> {
             state.emit(format!("print {}", args.len()));
         }
         "wait" | "end" | "skip_end" => state.emit(kind),
+        "label" => {
+            let number = state.user_label(text(node, "name"));
+            state.place_label(number);
+        }
+        "goto" => {
+            let number = state.user_label(text(node, "name"));
+            let name = state.label_name(number);
+            state.emit(format!("jmp {name}"));
+        }
         "if" => conditional(state, node)?,
         "while" => while_loop(state, node)?,
         "switch" => switch(state, node)?,
@@ -645,6 +714,7 @@ fn function_lines(function: &Node, context: &mut Context) -> Result<Vec<String>>
         next_slot: size,
         loops: Vec::new(),
         notes: context.notes.is_some().then(IndexMap::new),
+        labels: HashMap::new(),
     };
     block(&mut state, list(function, "body"))?;
     if let (Some(notes), Some(all)) = (state.notes.take(), context.notes.as_deref_mut()) {

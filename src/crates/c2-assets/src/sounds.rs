@@ -155,12 +155,8 @@ pub fn build_entries(given: &[Given], original: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// Cuts the samples an entry played before it got samples of its own down to a silent stub when no
-/// entry plays them any more. Not in a bank with .sq sequences: which samples those play is not
-/// decoded.
+/// entry plays them any more, a sequence's notes included (Bank::voices follows them).
 pub fn free_unused(bank: &mut Bank, vags: &BTreeSet<usize>) -> Result<()> {
-    if !bank.pack.find("sq").is_empty() {
-        return Ok(());
-    }
     let stub = soundbank::encode_adpcm(&[0; 28], None, true)?;
     for &vag in vags {
         if bank.vag_data[vag].len() > stub.len() && bank.users_of_vag(vag)?.is_empty() {

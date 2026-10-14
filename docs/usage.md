@@ -100,11 +100,12 @@ only among the scripts decompiled together.
 
 ## The asset tree
 
-`assets` does for textures, character models, sounds and the menus' text
-what `decompile` does for scripts: it writes each distinct one once, in a
-format common tools open (PNG, glTF, WAV, UTF-8 text), with
-`manifest.json` giving each its id (`texture:e254a1`, `model:c02fuku*`,
-`sound:SE_CURSOR_MOVE`, `text:en/shopname`) and every place the disc has
+`assets` does for textures, character models, sounds, music and the menus'
+text what `decompile` does for scripts: it writes each distinct one once, in
+a format common tools open (PNG, glTF, WAV, MIDI with a SoundFont of its
+instruments, UTF-8 text), with `manifest.json` giving each its id
+(`texture:e254a1`, `model:c02fuku*`, `sound:SE_CURSOR_MOVE`,
+`music:BG_000_000`, `text:en/shopname`) and every place the disc has
 it. `setup` writes it into `extracted/assets/` (`--no-assets`
 leaves it out); to write it again:
 
@@ -239,6 +240,42 @@ void start_castle_battle(void)
   build the override as if the patch said it; `mod check --rename` writes
   the new name into the mod's files. If the code is in several functions
   of the script, they name them and you choose.
+- **`#pragma override NATIVE`** before a function wraps a native: every
+  call the targets make to it (by its SDK name, in the scripts' own code,
+  their libraries and the patches) calls the function instead, and
+  `original(...)` inside it calls the native. So a mod changes what a
+  script asks the engine for without copying the functions that ask:
+
+  ```c
+  #pragma target map s51
+  #include <event.h>
+  #include <disc.h>
+
+  #pragma override place_monster
+  void place_rats(monster_kind monster, float x, float y, float z, float rot_x, float rot_y, float rot_z,
+                  int talk_param)
+  {
+      if (monster == MONSTER_GRIFFON_SOLDIER_523) {
+          monster = MONSTER_SEWER_RAT;
+      }
+      original(monster, x, y, z, rot_x, rot_y, rot_z, talk_param);
+  }
+  ```
+
+  The function takes the native's parameters, `OPTIONAL` ones included,
+  and returns what the native returns (or is `void`). A call that leaves
+  optional arguments out reaches it with those parameters 0, and its
+  `original()` passes on only the arguments the call gave, so the native
+  sees the call as the script made it (`place_monster(-1)` places the
+  floor's monsters at random still). Give it a name of its own, as above:
+  C tools would read a function named like the native as a second
+  declaration of it (a function named `place_monster` works too, but
+  clangd marks it). Only the calls change: the script's own code compiles
+  to the same bytes around them, and the wrapper goes at its end (once for
+  each number of arguments the calls give). The function can be called by
+  its own name as well. Wrappers from several mods chain as overrides do:
+  the later mod's runs first, and its `original()` runs the earlier one's.
+  A wrapper's own calls to its native reach the native.
 - **`#pragma every_frame`** before a function without parameters calls it
   before every `wait;` in the target, so it runs once a frame whatever the
   script is waiting in: a monster keeping a timer, say. It must not wait.
@@ -280,7 +317,10 @@ The commands:
   `--monster`, `--library`) starts a patch, or adds to one: it copies the
   functions from the target (the English variant of a map) into
   `mods/NAME/s51.c`, each after `#pragma override`, with the target line and
-  the script's headers, and writes the editor files `mod header` writes.
+  the script's headers, and writes the editor files `mod header` writes. A
+  native named instead of a function (`place_monster`) gets a wrapper that
+  takes the native's parameters and passes them on, with the native's doc
+  comment.
 - `mod header SOURCE NAME` writes, for each patch, a header of what its
   target declares (`mods/NAME/.editor/s51.h`: the script's functions with
   their signatures and doc comments, those of its libraries, its globals
@@ -326,6 +366,18 @@ the game's scripts; whole files suit scripts and libraries of the mod's own.
   compare them).
 - `mod apply SOURCE NAME...` writes mods' files into the tree instead;
   patches are merged by `build` only.
+- `mod slim SOURCE NAME` turns the mod's copies of tree files into patches:
+  for each, a patch (`mods/NAME/s51_1.c`, `#pragma target script` or
+  `library` and the file's path) that overrides each function the copy
+  changes and adds the functions, globals, `PROGRAM` lines, `#define` lines
+  and libraries it adds; then the copy goes. It compiles every script the
+  copy reaches with the copy and then with the patch, and keeps the copy,
+  saying why, unless they are the same bytes: a patch adds at the end of a
+  script, so a copy that added a function above the script's own, or
+  removes or changes what a patch cannot (a function, global or `PROGRAM`
+  line taken away, `MAIN`, an enum), stays a whole file. A copy that
+  changes nothing is removed. Files of the mod's own, not in the tree,
+  stay as they are.
 
 A mod made on a tree with readable names applies to one without, and the
 other way round: files and `#include` lines follow each tree's layout.
@@ -431,8 +483,8 @@ character pack; packs inside packs work the same way).
   sounds: `005_beep.wav` in `sp_004.snd.wav/` is `SE_SP_004_BEEP` (5), so a
   patch can `play_se(bank, SE_SP_004_BEEP)`; `build` and `mod check` list
   them, and refuse a name `pal.h` gives another entry. An entry that plays a sequence (a
-  short tune of the bank's instruments) is not exported; a WAV given for it
-  replaces the tune with that one sound. A changed entry overwrites its
+  tune of the bank's instruments, edited as MIDI: below) is not exported; a
+  WAV given for it replaces the tune with that one sound. A changed entry overwrites its
   samples when no other entry plays them, so the bank stays the same size
   or shrinks, and otherwise gets samples of its own. Unedited WAVs build
   back to the disc's own bytes. Keep a bank's sample data near its original
@@ -440,6 +492,21 @@ character pack; packs inside packs work the same way).
   almost nothing to spare, and a bank that outgrows it overwrites the system
   sounds (`build` warns; see [the memory budgets](assets/memory.md#6-sound-memory-spu2)
   and [the sound bank format](assets/sounds.md)).
+- **Music as MIDI.** All the background music, and the ambient loops, are
+  sequences (`.sq`) inside sound banks, played with the bank's instruments.
+  `mod asset ISO NAME music:BG_000_000` writes `music/BG_000_000.mid` and
+  the bank's instruments as `music/BG_000.sf2`, with the line `"music:BG_000_000":
+  "music/BG_000_000.mid"`; `mod asset ISO NAME snd2/bgm/BG_000.snd --as mid`
+  writes a folder `BG_000.snd.mid/` with every sequence of the bank instead
+  (ids are the sequence's name: Palm Brinks' streets play `BG_000`, a map's
+  tune is its sound set's in `snd2/MAP_index.txt`). Open the MIDI file in
+  any sequencer with the SoundFont loaded to hear it as the game plays it,
+  edit it, or replace it with your own tune (format 0 or 1, any tempo and
+  division). Program numbers are the bank's instruments, not General MIDI's:
+  give every channel a program change to one the bank has. The loop is
+  between the markers `loopStart` and `loopEnd` (move them to move it); a
+  tune without them loops whole where the game's did. Unedited files build
+  back to the disc's own bytes. See [music and ambient loops](assets/music.md).
 - **Text as UTF-8.** The menus' item, shop, map and NPC names, their lines
   and the system messages are message files (`.mes`): a table of message
   ids, each a run of the font's glyphs and layout codes. `mod asset ISO NAME
@@ -473,7 +540,14 @@ character pack; packs inside packs work the same way).
   adds new models to the map's model pack and pictures to its textures.
   Unedited scenes change nothing. An example is
   [map-edit](examples/map-edit/); the formats are in
-  [maps](assets/maps.md).
+  [maps](assets/maps.md). A dungeon floor's map (`c2 map-export d01f01`)
+  shows each of its parts once, to edit their models, collision and points;
+  the floor generator places them ([dungeons](assets/dungeons.md)). A **new
+  map** is an edited export of another under `add`:
+  `"map:m05x": {"file": "maps/m05x/m05.gltf", "like": "m05", "title": "Park"}`
+  writes its files under the new name, appends its row to every language's
+  map table, and `--start-at m05x` goes there ([maps](assets/maps.md)
+  section 9).
 - **Game data as JSON.** `mod asset ISO NAME data:items data:shops
   data:monsters` writes `data/items.json` (every item's common data, with
   its weapon, usable effect, attachment, ridepod part or fish stats nested:
@@ -489,7 +563,10 @@ character pack; packs inside packs work the same way).
   parts), `data:medals` (each floor's fastest time, fishing record, seal,
   Spheda prizes, practice medal), `data:floors` (each floor's monsters),
   `data:fishing` (spots, race opponents, prizes, fish species and race
-  kinds) and `data:characters` (starting HP and equipment, WHP gained at a
+  kinds), `data:layouts` (the room layouts dungeon floors are built from:
+  each room's rows of parts, as text, how often it is chosen; rooms may be
+  added, see [dungeons](assets/dungeons.md)) and `data:characters`
+  (starting HP and equipment, WHP gained at a
   weapon level-up, Monica's monster forms, badge growth). Keep only the
   records and fields you change, each record with the keys that name it
   (`item`, `shop`, `id`, `recipe`, `dungeon` and `floor`, ...):
@@ -633,7 +710,12 @@ Two edits that show within minutes of starting a new game:
   `PROGRAM(monsters_cleared, start_georama_with_starter_items);` to the
   patch: the engine runs program 1500 once no monster is left. Build with
   `--mod first-fight --start-at s51:500`; the patch reaches all five
-  languages of the map's script.
+  languages of the map's script. Or leave `start_castle_battle` as it is
+  and wrap the natives it calls: `c2 mod override extracted/scripts
+  first-fight --map s51 load_monster_data place_monster` writes wrappers
+  that pass every call on, and changing the kind in each (`if (monster ==
+  MONSTER_GRIFFON_SOLDIER_523) { monster = MONSTER_SEWER_RAT; }` before
+  `original(...)`) swaps every soldier the map loads and places.
 
 ## Improving the definitions
 

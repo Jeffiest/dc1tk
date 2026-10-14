@@ -27,6 +27,8 @@ extracted/assets/
   sounds/<bank>/<NNN>_<NAME>.wav  one per entry that plays a sample (<NNN>.wav when unnamed)
   maps/<map>/<map>.gltf         later: the map's pieces placed as the .map file places them
   text/<language>/<name>.txt    the message files' text, one per name and language (assets/text.md)
+  music/<bank's folder>/<id>.mid  one per distinct sequence (music, ambient loops; assets/music.md)
+  music/<bank's folder>/<bank>.sf2  its bank's instruments, to hear it with
 ```
 
 Folders are only for browsing (`<group>` is the folder of the disc file
@@ -49,6 +51,7 @@ Over the PAL disc:
 | character packs | 2,997 | 2,744 | 2,692 | 2,410 models |
 | sound banks | 861 | 846 | 846 | 846 banks, 16,107 sound entries |
 | message files | 310 | 118 | 111 | 120 texts |
+| sequences (`.sq` in banks) | 447 | 437 | 278 | 437 music |
 
 An asset is a distinct content under one of the game's names, extracted
 once; changing it changes every place the disc has it. A content found
@@ -240,7 +243,9 @@ in `c2-assets`' `ids`).
   go into the pack, as the old `--as gltf` folders do); a folder holding
   one other `.gltf` is that file. A sound: a WAV for that entry. A bank: a
   folder of WAVs named by entry number (`004.wav`, or `004_NAME.wav` as the
-  tree names them), for entries the bank has; new entries are `add`'s.
+  tree names them), for entries the bank has; new entries are `add`'s. A
+  music asset: a MIDI file (`.mid`), built into the sequence with the
+  disc's as the template ([music](assets/music.md#3-as-midi)).
 - **Every place.** A replacement reaches every place the disc has the id,
   each built with that place's own file as the template. `only` keeps the
   places under the disc paths it lists: a place itself

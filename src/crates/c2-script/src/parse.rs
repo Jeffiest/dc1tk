@@ -1,22 +1,25 @@
-//! The C-like script language: the tokenizer (comments, #if/#ifdef/#ifndef/#elif/#else/#endif,
-//! #define/#undef, #include, #pragma, asm blocks) and the recursive-descent parser that turns a
-//! file into a program tree, as parse.py does, key for key.
+//! The C-like script language: the tokenizer, which is also the preprocessor (comments, trigraphs,
+//! #if/#ifdef/#ifndef/#elif/#else/#endif, #define/#undef and macros, #include, #pragma, #line,
+//! #error, asm blocks; see cpp.rs), and the recursive-descent parser that turns a file into a
+//! program tree, as parse.py did, key for key, for the forms the decompiler writes. C89's other
+//! forms parse to trees of forms the compiler has, or to the few it lowers (lower.rs); see
+//! docs/c-standard.md.
 //!
 //! Where parse.py keeps a #pragma's words as asm.tokenize gives them, a plain word is a string and
 //! a quoted one {"string": text}.
 //!
 //! Errors carry parse.py's ValueError messages. Where parse.py fails with another exception (a
 //! token with no text quoted in a message, a bad string in a #pragma, a #pragma missing its value,
-//! recursion past Python's limit), this fails too, with its own message. Python's integers have no
-//! limit; here an integer in the tree past 64 bits, or one in an #if condition past 128, is an
-//! error.
+//! recursion past Python's limit), this fails too, with its own message. An integer literal past
+//! 32 bits is an error, as C has no type for it here.
 
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use c2_py::{ascii_digits, int_base, is_space, is_word, repr, split, strip, IntError};
+use c2_py::{ascii_digits, int_base, is_space, repr, split, strip, IntError};
 
+use crate::cpp::{self, Macros};
 use crate::node::Node;
 use crate::{asm, stb, Error, Result};
 
@@ -105,20 +108,6 @@ fn request(word: &str) -> Option<&'static str> {
         "NEW_FLAG" => "flag",
         "NEW_PROGRAM" => "program",
         "NEW_MONSTER_VAR" => "monster_var",
-        _ => return None,
-    })
-}
-
-/// A string or character literal's escapes.
-fn escape(c: Option<char>) -> Option<char> {
-    Some(match c? {
-        '\\' => '\\',
-        '"' => '"',
-        '\'' => '\'',
-        'n' => '\n',
-        'r' => '\r',
-        't' => '\t',
-        '0' => '\0',
         _ => return None,
     })
 }
@@ -223,552 +212,6 @@ fn split_first_word(text: &str) -> Vec<&str> {
 
 // ---- #if conditions ------------------------------------------------------------------------
 
-/// How a condition fails to fold: it is not one (parse.py's "cannot read the condition"), or it
-/// goes where Python raises something else.
-enum Unreadable {
-    Condition,
-    Crash(String),
-}
-
-/// The value of an #if or #elif condition: integers, defined(NAME), names #defined to integers
-/// (any other name is 0, as in C), ! && || ?, comparisons and arithmetic. As in parse.py, the text
-/// becomes a Python expression, read as Python reads it. frames: Python frames in use, this
-/// function's included.
-fn condition_value(text: &str, defines: &HashMap<String, String>, line: usize, frames: usize) -> Parsed<bool> {
-    let mut expression = replace_defined(before_comment(text), defines);
-    for _ in 0..16 {
-        let replaced = replace_names(&expression, defines);
-        if replaced == expression {
-            break;
-        }
-        expression = replaced;
-    }
-    let expression = strip_suffixes(&expression).replace("&&", " and ").replace("||", " or ");
-    let expression = replace_bangs(&expression);
-    let source = match strip(&expression) {
-        "" => "0",
-        source => source,
-    };
-    match python_condition(source, PYTHON_FRAMES.saturating_sub(frames)) {
-        Ok(value) => Ok(value != 0),
-        Err(Unreadable::Condition) => lex_fail(line, format!("cannot read the condition {}", repr(strip(text)))),
-        Err(Unreadable::Crash(message)) => Err(Fault::Crash(format!("line {line}: {message}"))),
-    }
-}
-
-/// defined(NAME) and defined NAME become 1 or 0.
-fn replace_defined(text: &str, defines: &HashMap<String, String>) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let at = |i: usize| chars.get(i).copied();
-    let spaces = |mut i: usize| {
-        while at(i).is_some_and(is_space) {
-            i += 1;
-        }
-        i
-    };
-    let word = |mut i: usize| {
-        while at(i).is_some_and(is_word) {
-            i += 1;
-        }
-        i
-    };
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    while i < chars.len() {
-        if starts_with(&chars, i, "defined") {
-            let after = i + "defined".len();
-            let mut found = None;
-            let open = spaces(after);
-            if at(open) == Some('(') {
-                let start = spaces(open + 1);
-                let end = word(start);
-                let close = spaces(end);
-                if end > start && at(close) == Some(')') {
-                    found = Some((start, end, close + 1));
-                }
-            }
-            if found.is_none() && at(after).is_some_and(is_space) {
-                let start = spaces(after);
-                let end = word(start);
-                if end > start {
-                    found = Some((start, end, end));
-                }
-            }
-            if let Some((start, end, next)) = found {
-                out.push(if defines.contains_key(&text_of(&chars[start..end])) { '1' } else { '0' });
-                i = next;
-                continue;
-            }
-        }
-        out.push(chars[i]);
-        i += 1;
-    }
-    out
-}
-
-/// Every name (a word starting with a letter or _) becomes (its #define), or (0).
-fn replace_names(text: &str, defines: &HashMap<String, String>) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if (c.is_ascii_alphabetic() || c == '_') && (i == 0 || !is_word(chars[i - 1])) {
-            let mut end = i + 1;
-            while end < chars.len() && is_word(chars[end]) {
-                end += 1;
-            }
-            let value = defines.get(&text_of(&chars[i..end])).map(String::as_str).filter(|value| !value.is_empty());
-            out.push('(');
-            out.push_str(value.unwrap_or("0"));
-            out.push(')');
-            i = end;
-        } else {
-            out.push(c);
-            i += 1;
-        }
-    }
-    out
-}
-
-/// Integer suffixes (u, l) go.
-fn strip_suffixes(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let suffix = |mut i: usize| {
-        while chars.get(i).is_some_and(|c| "uUlL".contains(*c)) {
-            i += 1;
-        }
-        i
-    };
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    while i < chars.len() {
-        if i == 0 || !is_word(chars[i - 1]) {
-            let mut number = None;
-            if chars[i] == '0' && chars.get(i + 1).is_some_and(|c| *c == 'x' || *c == 'X') {
-                let mut end = i + 2;
-                while chars.get(end).is_some_and(char::is_ascii_hexdigit) {
-                    end += 1;
-                }
-                if end > i + 2 && suffix(end) > end {
-                    number = Some((end, suffix(end)));
-                }
-            }
-            if number.is_none() && c2_py::is_decimal(chars[i]) {
-                let mut end = i;
-                while chars.get(end).is_some_and(|c| c2_py::is_decimal(*c)) {
-                    end += 1;
-                }
-                if suffix(end) > end {
-                    number = Some((end, suffix(end)));
-                }
-            }
-            if let Some((end, next)) = number {
-                out.extend(&chars[i..end]);
-                i = next;
-                continue;
-            }
-        }
-        out.push(chars[i]);
-        i += 1;
-    }
-    out
-}
-
-/// ! (not before =) becomes " not ".
-fn replace_bangs(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    for (i, &c) in chars.iter().enumerate() {
-        if c == '!' && chars.get(i + 1) != Some(&'=') {
-            out.push_str(" not ");
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
-/// A token of the Python expression a condition becomes: an integer (None past 128 bits), or an
-/// operator or and/or/not.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum PyToken {
-    Int(Option<i128>),
-    Op(&'static str),
-}
-
-/// The Python operators a condition can fold, longest first.
-const PY_OPERATORS: [&str; 18] =
-    ["//", "<=", ">=", "==", "!=", "(", ")", "+", "-", "~", "*", "/", "%", "&", "|", "^", "<", ">"];
-
-/// The longest-matching Python operator at i, among those a condition can fold.
-fn py_operator(chars: &[char], i: usize) -> Option<(&'static str, usize)> {
-    // these Python operators start like the ones above but never fold
-    for long in ["**", "<<", ">>", "<>", "->", "//=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="] {
-        if starts_with(chars, i, long) {
-            return None;
-        }
-    }
-    PY_OPERATORS.iter().find(|op| starts_with(chars, i, op)).map(|op| (*op, op.len()))
-}
-
-/// An integer literal as Python's tokenizer reads it; None for a syntax error or a float.
-fn py_number(chars: &[char], i: &mut usize) -> Option<Option<i128>> {
-    let at = |k: usize| chars.get(k).copied().unwrap_or('\0');
-    let mut value = Some(0i128);
-    let add = |value: &mut Option<i128>, radix: u32, c: char| {
-        *value = value.and_then(|v| v.checked_mul(radix as i128)?.checked_add(c.to_digit(radix).unwrap() as i128));
-    };
-    let decimal_tail = |i: &mut usize| -> Option<()> {
-        loop {
-            while at(*i).is_ascii_digit() {
-                *i += 1;
-            }
-            if at(*i) != '_' {
-                return Some(());
-            }
-            *i += 1;
-            if !at(*i).is_ascii_digit() {
-                return None;
-            }
-        }
-    };
-    let radix = match (at(*i), at(*i + 1)) {
-        ('0', 'x' | 'X') => 16,
-        ('0', 'o' | 'O') => 8,
-        ('0', 'b' | 'B') => 2,
-        _ => 10,
-    };
-    if radix != 10 {
-        *i += 2;
-        loop {
-            if at(*i) == '_' {
-                *i += 1;
-            }
-            if !at(*i).is_digit(radix) {
-                return None;
-            }
-            while at(*i).is_digit(radix) {
-                add(&mut value, radix, at(*i));
-                *i += 1;
-            }
-            if at(*i) != '_' {
-                break;
-            }
-        }
-        if radix != 16 && at(*i).is_ascii_digit() {
-            return None;
-        }
-        return Some(value);
-    }
-    let start = *i;
-    if at(*i) == '0' {
-        while at(*i) == '0' {
-            *i += 1;
-            if at(*i) == '_' {
-                *i += 1;
-                if !at(*i).is_ascii_digit() {
-                    return None;
-                }
-            }
-        }
-        let nonzero = at(*i).is_ascii_digit();
-        if nonzero {
-            decimal_tail(i)?;
-        }
-        if ".eEjJ".contains(at(*i)) || nonzero {
-            return None;
-        }
-        return Some(Some(0));
-    }
-    decimal_tail(i)?;
-    if ".eEjJ".contains(at(*i)) {
-        return None;
-    }
-    for &c in &chars[start..*i] {
-        if c != '_' {
-            add(&mut value, 10, c);
-        }
-    }
-    Some(value)
-}
-
-/// The tokens of a condition's Python expression; None when it holds anything that cannot fold
-/// (a float, a string, a name, an operator folded_condition does not take, a syntax error).
-fn py_tokens(chars: &[char]) -> Option<Vec<PyToken>> {
-    let mut tokens = Vec::new();
-    let mut level = 0;
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if matches!(c, ' ' | '\t' | '\x0c') {
-            i += 1;
-        } else if c == '#' {
-            break;
-        } else if c.is_ascii_digit() {
-            tokens.push(PyToken::Int(py_number(chars, &mut i)?));
-        } else if c.is_ascii_alphabetic() || c == '_' {
-            let start = i;
-            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
-                i += 1;
-            }
-            tokens.push(match text_of(&chars[start..i]).as_str() {
-                "and" => PyToken::Op("and"),
-                "or" => PyToken::Op("or"),
-                "not" => PyToken::Op("not"),
-                "True" => PyToken::Int(Some(1)),
-                "False" => PyToken::Int(Some(0)),
-                _ => return None,
-            });
-        } else {
-            let (op, length) = py_operator(chars, i)?;
-            if op == "(" {
-                if level >= 200 {
-                    return None;
-                }
-                level += 1;
-            } else if op == ")" {
-                if level == 0 {
-                    return None;
-                }
-                level -= 1;
-            }
-            tokens.push(PyToken::Op(op));
-            i += length;
-        }
-    }
-    (level == 0).then_some(tokens)
-}
-
-/// A folded condition's tree: what ast.parse gives, for the nodes folded_condition takes. Deep
-/// stands for a subtree past Python's recursion limit.
-enum PyNode {
-    Int(Option<i128>),
-    Deep,
-    All(Vec<PyNode>),
-    Any(Vec<PyNode>),
-    Unary(&'static str, Box<PyNode>),
-    Binary(&'static str, Box<PyNode>, Box<PyNode>),
-}
-
-/// A subtree and its depth.
-type Sized = (PyNode, usize);
-
-/// Python's expression grammar, for the part a condition can use.
-struct PyParser {
-    tokens: Vec<PyToken>,
-    pos: usize,
-    /// The deepest tree folded_condition can recurse through within Python's recursion limit.
-    limit: usize,
-}
-
-impl PyParser {
-    fn sized(&self, node: PyNode, depth: usize) -> Sized {
-        if depth > self.limit {
-            (PyNode::Deep, depth)
-        } else {
-            (node, depth)
-        }
-    }
-
-    fn eat(&mut self, op: &str) -> bool {
-        let found = matches!(self.tokens.get(self.pos), Some(PyToken::Op(o)) if *o == op);
-        if found {
-            self.pos += 1;
-        }
-        found
-    }
-
-    fn next_op(&self, ops: &[&'static str]) -> Option<&'static str> {
-        match self.tokens.get(self.pos) {
-            Some(PyToken::Op(op)) => ops.iter().find(|o| **o == *op).copied(),
-            _ => None,
-        }
-    }
-
-    /// operand (word operand)*: one BoolOp, its values all folded.
-    fn bool_op(&mut self, word: &'static str, operand: fn(&mut PyParser) -> Option<Sized>) -> Option<Sized> {
-        let first = operand(self)?;
-        if self.next_op(&[word]).is_none() {
-            return Some(first);
-        }
-        let mut depth = first.1;
-        let mut values = vec![first.0];
-        while self.eat(word) {
-            let (value, value_depth) = operand(self)?;
-            depth = depth.max(value_depth);
-            values.push(value);
-        }
-        Some(self.sized(if word == "and" { PyNode::All(values) } else { PyNode::Any(values) }, depth + 1))
-    }
-
-    fn disjunction(&mut self) -> Option<Sized> {
-        self.bool_op("or", PyParser::conjunction)
-    }
-
-    fn conjunction(&mut self) -> Option<Sized> {
-        self.bool_op("and", PyParser::inversion)
-    }
-
-    fn inversion(&mut self) -> Option<Sized> {
-        let mut count = 0;
-        while self.eat("not") {
-            count += 1;
-        }
-        let operand = self.comparison()?;
-        Some(self.prefixed(vec!["not"; count], operand))
-    }
-
-    /// Prefix operators (innermost last) around an operand.
-    fn prefixed(&self, ops: Vec<&'static str>, (mut node, depth): Sized) -> Sized {
-        let depth = depth + ops.len();
-        if depth > self.limit {
-            return (PyNode::Deep, depth);
-        }
-        for op in ops.into_iter().rev() {
-            node = PyNode::Unary(op, Box::new(node));
-        }
-        (node, depth)
-    }
-
-    fn comparison(&mut self) -> Option<Sized> {
-        let (left, left_depth) = self.bitwise(0)?;
-        let Some(op) = self.next_op(&["==", "!=", "<", "<=", ">", ">="]) else {
-            return Some((left, left_depth));
-        };
-        self.pos += 1;
-        let (right, right_depth) = self.bitwise(0)?;
-        if self.next_op(&["==", "!=", "<", "<=", ">", ">="]).is_some() {
-            return None;
-        }
-        Some(self.sized(PyNode::Binary(op, Box::new(left), Box::new(right)), left_depth.max(right_depth) + 1))
-    }
-
-    /// | then ^ then & then + - then * / // %, each left-associative.
-    fn bitwise(&mut self, level: usize) -> Option<Sized> {
-        const LEVELS: [&[&str]; 5] = [&["|"], &["^"], &["&"], &["+", "-"], &["*", "/", "//", "%"]];
-        let operand = |parser: &mut PyParser| {
-            if level + 1 < LEVELS.len() {
-                parser.bitwise(level + 1)
-            } else {
-                parser.factor()
-            }
-        };
-        let (mut left, mut depth) = operand(self)?;
-        while let Some(op) = self.next_op(LEVELS[level]) {
-            self.pos += 1;
-            let (right, right_depth) = operand(self)?;
-            (left, depth) = self.sized(PyNode::Binary(op, Box::new(left), Box::new(right)), depth.max(right_depth) + 1);
-        }
-        Some((left, depth))
-    }
-
-    fn factor(&mut self) -> Option<Sized> {
-        let mut ops = Vec::new();
-        while let Some(op) = self.next_op(&["+", "-", "~"]) {
-            self.pos += 1;
-            ops.push(op);
-        }
-        let operand = self.atom()?;
-        // a call: (1)(2)
-        if self.next_op(&["("]).is_some() {
-            return None;
-        }
-        Some(self.prefixed(ops, operand))
-    }
-
-    fn atom(&mut self) -> Option<Sized> {
-        match self.tokens.get(self.pos).copied()? {
-            PyToken::Int(value) => {
-                self.pos += 1;
-                Some((PyNode::Int(value), 1))
-            }
-            PyToken::Op("(") => {
-                self.pos += 1;
-                let inner = self.disjunction()?;
-                self.eat(")").then_some(inner)
-            }
-            PyToken::Op(_) => None,
-        }
-    }
-}
-
-/// ast.parse(source, mode="eval") folded as folded_condition folds it, with room for a tree limit
-/// deep.
-fn python_condition(source: &str, limit: usize) -> std::result::Result<i128, Unreadable> {
-    let chars: Vec<char> = source.chars().collect();
-    let tokens = py_tokens(&chars).ok_or(Unreadable::Condition)?;
-    let mut parser = PyParser { tokens, pos: 0, limit };
-    let (tree, _) = parser.disjunction().ok_or(Unreadable::Condition)?;
-    if parser.pos != parser.tokens.len() {
-        return Err(Unreadable::Condition);
-    }
-    fold(&tree)
-}
-
-fn fold(node: &PyNode) -> std::result::Result<i128, Unreadable> {
-    let too_large = || Unreadable::Crash("a number in the condition is too large".into());
-    Ok(match node {
-        PyNode::Int(value) => value.ok_or_else(too_large)?,
-        PyNode::Deep => return Err(Unreadable::Crash("the condition nests too deeply".into())),
-        PyNode::All(values) | PyNode::Any(values) => {
-            let folded = values.iter().map(fold).collect::<std::result::Result<Vec<i128>, _>>()?;
-            let all = matches!(node, PyNode::All(_));
-            (if all { folded.iter().all(|&v| v != 0) } else { folded.iter().any(|&v| v != 0) }) as i128
-        }
-        PyNode::Unary(op, operand) => {
-            let value = fold(operand)?;
-            match *op {
-                "not" => (value == 0) as i128,
-                "-" => value.checked_neg().ok_or_else(too_large)?,
-                "+" => value,
-                _ => !value,
-            }
-        }
-        PyNode::Binary(op, left, right) => {
-            let (left, right) = (fold(left)?, fold(right)?);
-            let checked = |value: Option<i128>| value.ok_or_else(too_large);
-            match *op {
-                "+" => checked(left.checked_add(right))?,
-                "-" => checked(left.checked_sub(right))?,
-                "*" => checked(left.checked_mul(right))?,
-                "&" => left & right,
-                "|" => left | right,
-                "^" => left ^ right,
-                "/" | "//" => {
-                    if right == 0 {
-                        return Err(Unreadable::Condition);
-                    }
-                    // int(left / right): true division, then toward zero
-                    const EXACT: i128 = 1 << 53;
-                    if left.abs() <= EXACT && right.abs() <= EXACT {
-                        (left as f64 / right as f64).trunc() as i128
-                    } else {
-                        checked(left.checked_div(right))?
-                    }
-                }
-                "%" => {
-                    if right == 0 {
-                        return Err(Unreadable::Condition);
-                    }
-                    let remainder = checked(left.checked_rem(right))?;
-                    if remainder != 0 && (remainder < 0) != (right < 0) {
-                        remainder + right
-                    } else {
-                        remainder
-                    }
-                }
-                "==" => (left == right) as i128,
-                "!=" => (left != right) as i128,
-                "<" => (left < right) as i128,
-                "<=" => (left <= right) as i128,
-                ">" => (left > right) as i128,
-                _ => (left >= right) as i128,
-            }
-        }
-    })
-}
-
 /// An open #if: whether its enclosing code compiles, whether its current branch does, and whether
 /// any branch has.
 struct Block {
@@ -776,39 +219,49 @@ struct Block {
     on: bool,
     taken: bool,
     line: usize,
+    /// whether its #else has been read, after which only #endif may come
+    otherwise: bool,
 }
 
-/// frames: Python frames in use, this function's included.
+/// The value of an #if or #elif condition, as C works it out (cpp::condition).
+fn condition_value(text: &str, macros: &Macros, line: usize) -> Parsed<bool> {
+    cpp::condition(text, macros)
+        .or_else(|reason| lex_fail(line, format!("cannot read the condition {}: {reason}", repr(strip(text)))))
+}
+
 fn conditional_directive(
     word: &str,
     rest: &str,
     conditions: &mut Vec<Block>,
-    defines: &HashMap<String, String>,
+    macros: &Macros,
     line: usize,
-    frames: usize,
 ) -> Parsed<()> {
     let compiling = conditions.last().is_none_or(|block| block.on);
     if matches!(word, "if" | "ifdef" | "ifndef") {
         let name = strip(before_comment(rest));
         let chosen = if word == "if" {
-            compiling && condition_value(rest, defines, line, frames + 1)?
+            compiling && condition_value(rest, macros, line)?
         } else {
-            compiling && (defines.contains_key(name) == (word == "ifdef"))
+            compiling && (macros.defined(name) == (word == "ifdef"))
         };
-        conditions.push(Block { parent: compiling, on: chosen, taken: chosen || !compiling, line });
+        conditions.push(Block { parent: compiling, on: chosen, taken: chosen || !compiling, line, otherwise: false });
         return Ok(());
     }
     let Some(block) = conditions.last_mut() else {
         return lex_fail(line, format!("#{word} without #if"));
     };
+    if block.otherwise && word != "endif" {
+        return lex_fail(line, format!("#{word} after #else"));
+    }
     match word {
         "elif" => {
-            block.on = block.parent && !block.taken && condition_value(rest, defines, line, frames + 1)?;
+            block.on = block.parent && !block.taken && condition_value(rest, macros, line)?;
             block.taken = block.taken || block.on;
         }
         "else" => {
             block.on = block.parent && !block.taken;
             block.taken = true;
+            block.otherwise = true;
         }
         _ => {
             conditions.pop();
@@ -909,9 +362,9 @@ fn read_string(text: &[char], position: usize, line: usize) -> Parsed<(String, u
         if next == Some('x') {
             out.push(hex_escape(&text[(position + 2).min(text.len())..(position + 4).min(text.len())])?);
             position += 4;
-        } else if let Some(c) = escape(next) {
-            out.push(c);
-            position += 2;
+        } else if let Some((value, length)) = cpp::escape_value(&text[position + 1..]) {
+            out.push(char::from_u32(value).unwrap_or('\0'));
+            position += 1 + length;
         } else {
             return lex_fail(line, format!("unknown escape \\{}", next.map(String::from).unwrap_or_default()));
         }
@@ -922,20 +375,15 @@ fn read_string(text: &[char], position: usize, line: usize) -> Parsed<(String, u
     Ok((out, position + 1))
 }
 
-/// A character literal, 'a' or '\n', as its character code.
-fn read_char(text: &[char], position: usize, line: usize) -> Parsed<(u32, usize)> {
-    let (value, position) = if text.get(position + 1) == Some(&'\\') {
-        let next = text.get(position + 2).copied();
-        let Some(value) = escape(next) else {
-            return lex_fail(line, format!("unknown escape \\{}", next.map(String::from).unwrap_or_default()));
-        };
-        (Some(value), position + 3)
-    } else {
-        (text.get(position + 1).copied(), position + 2)
-    };
-    match value {
-        Some(value) if text.get(position) == Some(&'\'') => Ok((value as u32, position + 1)),
-        _ => lex_fail(line, "a character literal holds one character, as in 'a'"),
+/// A character literal, 'a' or '\n', as its character code: an escape's value is a char's, so
+/// '\377' is -1 (char is signed), and another character is its code.
+fn read_char(text: &[char], position: usize, line: usize) -> Parsed<(i64, usize)> {
+    match cpp::character_constant(&text[position..]) {
+        Ok((value, length)) if text[position + 1] == '\\' && value < 256 => {
+            Ok((value as u8 as i8 as i64, position + length))
+        }
+        Ok((value, length)) => Ok((value as i64, position + length)),
+        Err(reason) => lex_fail(line, reason),
     }
 }
 
@@ -1066,7 +514,25 @@ fn joined(lines: &[&str]) -> String {
     text
 }
 
-/// #[ \t]*NAME[ \t]*REST at a #: the directive's name and the rest of its line.
+/// The end of a directive's line, read on past a backslash that ends a line (C's line splicing),
+/// and how many lines it joins.
+fn directive_end(text: &[char], position: usize) -> (usize, usize) {
+    let mut at = position;
+    let mut joined = 0;
+    loop {
+        let end = line_end(text, at);
+        let before = text[at..end].iter().rposition(|c| *c != '\r').map(|offset| at + offset);
+        if end < text.len() && before.is_some_and(|last| text[last] == '\\') {
+            joined += 1;
+            at = end + 1;
+        } else {
+            return (end, joined);
+        }
+    }
+}
+
+/// #[ \t]*NAME[ \t]*REST at a #: the directive's name and the rest of its line, its spliced lines
+/// joined.
 fn directive_at(text: &[char], position: usize) -> Option<(String, String)> {
     let mut i = position + 1;
     while i < text.len() && matches!(text[i], ' ' | '\t') {
@@ -1083,9 +549,13 @@ fn directive_at(text: &[char], position: usize) -> Option<(String, String)> {
     while i < text.len() && matches!(text[i], ' ' | '\t') {
         i += 1;
     }
-    Some((word, text_of(&text[i..line_end(text, i)])))
+    let (end, joined) = directive_end(text, i);
+    let mut rest = text_of(&text[i.min(end)..end]);
+    if joined > 0 {
+        rest = rest.replace("\\\r\n", "").replace("\\\n", "");
+    }
+    Some((word, rest))
 }
-
 /// A number at a digit, as NUMBER matches it: (0x hex | decimal [. decimal] [e [+-] decimal])
 /// then [fFuUlL]*, the decimals in any script. The word, the suffix and the end.
 fn number_at(text: &[char], position: usize) -> Option<(String, String, usize)> {
@@ -1097,7 +567,7 @@ fn number_at(text: &[char], position: usize) -> Option<(String, String, usize)> 
         while at(end).is_ascii_hexdigit() {
             end += 1;
         }
-    } else if decimal(position) {
+    } else if decimal(position) || (at(position) == '.' && decimal(position + 1)) {
         end = position;
         while decimal(end) {
             end += 1;
@@ -1130,9 +600,19 @@ fn number_at(text: &[char], position: usize) -> Option<(String, String, usize)> 
     Some((text_of(&text[position..word_end]), text_of(&text[word_end..end]), end))
 }
 
-/// defines, when given, are #defines in force before the first line (a mod patch's LANGUAGE).
-/// frames: Python frames in use, this function's included.
-fn tokenize(text: &[char], mut defines: HashMap<String, String>, frames: usize) -> Parsed<Vec<Token>> {
+/// The refusal of double, the one part of C89 this implementation leaves out.
+const NO_DOUBLE: &str = "double is not supported: the VM has 32-bit floats only; use float";
+
+/// The tokens of a file. macros are the #defines in force before the first line (a mod patch's
+/// LANGUAGE), which stay constants in code; file is the name __FILE__ gives until a #line names
+/// another. frames: Python frames in use, this function's included.
+fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> Parsed<Vec<Token>> {
+    // the text grows and shrinks as macros are replaced in it
+    let mut text = cpp::trigraphs(source);
+    let mut file = file.to_string();
+    let mut regions: Vec<cpp::Region> = Vec::new();
+    // __DATE__ and __TIME__, read from the clock when first used
+    let mut when: Option<(String, String)> = None;
     let mut tokens = Vec::new();
     let mut comments: Vec<(usize, String)> = Vec::new();
     let mut conditions: Vec<Block> = Vec::new();
@@ -1145,90 +625,127 @@ fn tokenize(text: &[char], mut defines: HashMap<String, String>, frames: usize) 
             position += 1;
             continue;
         }
-        let directive = if c == '#' { directive_at(text, position) } else { None };
+        let directive = if c == '#' { directive_at(&text, position) } else { None };
         if let Some((word, rest)) = &directive {
             if CONDITIONALS.contains(&word.as_str()) {
-                conditional_directive(word, rest, &mut conditions, &defines, line, frames + 1)?;
-                position = line_end(text, position);
+                conditional_directive(word, rest, &mut conditions, &macros, line)?;
+                let (end, joined) = directive_end(&text, position);
+                line += joined;
+                position = end;
                 continue;
             }
         }
         if conditions.last().is_some_and(|block| !block.on) {
-            position = line_end(text, position);
+            position = line_end(&text, position);
             continue;
         }
         if let Some((word, rest)) = &directive {
-            if word == "undef" {
-                defines.remove(strip(before_comment(rest)));
-                position = line_end(text, position);
-                continue;
+            let (end, joined) = directive_end(&text, position);
+            let mut next_line = line + joined;
+            match word.as_str() {
+                "undef" => macros.undefine(strip(before_comment(rest))),
+                "define" => {
+                    let (name, definition) = cpp::parse_define(rest).or_else(|reason| lex_fail(line, reason))?;
+                    if cpp::PREDEFINED.contains(&name.as_str()) || name == "defined" {
+                        return lex_fail(line, format!("{name} cannot be #defined"));
+                    }
+                    let same = |old: &cpp::Macro| {
+                        let spaced = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+                        old.params == definition.params && spaced(&old.body) == spaced(&definition.body)
+                    };
+                    if macros.table.get(&name).is_some_and(|old| !same(old)) {
+                        return lex_fail(line, format!("{name} is #defined again differently; #undef it first"));
+                    }
+                    if definition.params.is_some() {
+                        macros.define(&name, definition, false);
+                    } else {
+                        let words: Vec<String> = split_first_word(rest).into_iter().map(String::from).collect();
+                        let constant = match words.get(1) {
+                            Some(value) => constant_of(value, frames + 1)?.is_some(),
+                            None => false,
+                        };
+                        macros.define(&name, definition, constant);
+                        let mut token = Token::new(Kind::Define, line, None);
+                        token.words = words;
+                        tokens.push(token);
+                    }
+                }
+                "include" => {
+                    let rest = strip(rest);
+                    let mut token = Token::new(Kind::Include, line, None);
+                    if rest.starts_with('<') && rest.ends_with('>') {
+                        token.path = strip(&rest[1..rest.len() - 1]).to_string();
+                        token.system = true;
+                    } else {
+                        let words = asm_words(&rest.chars().collect::<Vec<char>>())?;
+                        match words.as_slice() {
+                            [word] if word.as_object().is_some() => {
+                                token.path = word["string"].as_str().unwrap().to_string()
+                            }
+                            _ => return lex_fail(line, "expected #include \"path\" or #include <path>"),
+                        }
+                    }
+                    tokens.push(token);
+                }
+                "pragma" => {
+                    let words = asm_words(&rest.chars().collect::<Vec<char>>())?;
+                    if words.first().is_some_and(|word| *word == "assembly") {
+                        let rest = text_of(&text[(end + 1).min(text.len())..]);
+                        tokens.push(Token::new(Kind::Assembly, line, Some(rest)));
+                        return Ok(tokens);
+                    }
+                    let mut token = Token::new(Kind::Pragma, line, None);
+                    token.pragma = words;
+                    tokens.push(token);
+                }
+                "error" => return lex_fail(line, format!("#error {}", strip(rest))),
+                "line" => {
+                    let expanded =
+                        cpp::expand_text(rest, &macros, true, &[]).or_else(|reason| lex_fail(line, reason))?;
+                    let words = asm_words(&expanded.replace(cpp::PAINT, " ").chars().collect::<Vec<char>>())?;
+                    let number = words.first().and_then(Node::as_str).and_then(|word| word.parse::<usize>().ok());
+                    let name = words.get(1).map(|word| word.get("string").and_then(Node::as_str));
+                    match (number, name, words.len()) {
+                        (Some(number), None, 1) => next_line = number.saturating_sub(1),
+                        (Some(number), Some(Some(name)), 2) => {
+                            next_line = number.saturating_sub(1);
+                            file = name.to_string();
+                        }
+                        _ => return lex_fail(line, "#line takes a line number and, after it, a file name in quotes"),
+                    }
+                }
+                other => return lex_fail(line, format!("unknown directive #{other}")),
             }
+            line = next_line;
+            position = end;
+            continue;
+        }
+        if c == '#' && text[position + 1..line_end(&text, position)].iter().all(|c| is_space(*c)) {
+            // the null directive
+            position = line_end(&text, position);
+            continue;
         }
         if is_space(c) {
             position += 1;
-        } else if starts_with(text, position, "//") {
-            let end = line_end(text, position);
+        } else if starts_with(&text, position, "//") {
+            let end = line_end(&text, position);
             let start = (0..position).rev().find(|&at| text[at] == '\n').map_or(0, |at| at + 1);
             if strip(&text_of(&text[start..position])).is_empty() {
                 comments.push((line, strip(&text_of(&text[position + 2..end])).to_string()));
             }
             position = end;
-        } else if starts_with(text, position, "/*") {
-            let Some(end) = find(text, position + 2, "*/") else {
+        } else if starts_with(&text, position, "/*") {
+            let Some(end) = find(&text, position + 2, "*/") else {
                 return lex_fail(line, "unterminated comment");
             };
-            line += count_lines(text, position, end);
+            line += count_lines(&text, position, end);
             position = end + 2;
-        } else if starts_with(text, position, "#define") {
-            let end = line_end(text, position);
-            let rest = text_of(&text[position + "#define".len()..end]);
-            let words: Vec<String> = split_first_word(&rest).into_iter().map(String::from).collect();
-            if words.first().is_some_and(|word| word.contains('(')) {
-                return lex_fail(line, "macros with parameters are not supported; write a function instead");
-            }
-            if let Some(name) = words.first() {
-                let value = words.get(1).map_or("1", |value| strip(before_comment(value)));
-                defines.insert(name.clone(), value.to_string());
-            }
-            let mut token = Token::new(Kind::Define, line, None);
-            token.words = words;
-            tokens.push(token);
-            position = end;
-        } else if starts_with(text, position, "#include") {
-            let end = line_end(text, position);
-            let rest = text_of(&text[position + "#include".len()..end]);
-            let rest = strip(&rest);
-            let mut token = Token::new(Kind::Include, line, None);
-            if rest.starts_with('<') && rest.ends_with('>') {
-                token.path = strip(&rest[1..rest.len() - 1]).to_string();
-                token.system = true;
-            } else {
-                let words = asm_words(&rest.chars().collect::<Vec<char>>())?;
-                match words.as_slice() {
-                    [word] if word.as_object().is_some() => token.path = word["string"].as_str().unwrap().to_string(),
-                    _ => return lex_fail(line, "expected #include \"path\" or #include <path>"),
-                }
-            }
-            tokens.push(token);
-            position = end;
-        } else if starts_with(text, position, "#pragma") {
-            let end = line_end(text, position);
-            let words = asm_words(&text[position + "#pragma".len()..end])?;
-            if words.first().is_some_and(|word| *word == "assembly") {
-                let rest = text_of(&text[(end + 1).min(text.len())..]);
-                tokens.push(Token::new(Kind::Assembly, line, Some(rest)));
-                return Ok(tokens);
-            }
-            let mut token = Token::new(Kind::Pragma, line, None);
-            token.pragma = words;
-            tokens.push(token);
-            position = end;
         } else if c == '"' {
-            let (value, end) = read_string(text, position, line)?;
+            let (value, end) = read_string(&text, position, line)?;
             tokens.push(Token::new(Kind::Str, line, Some(value)));
             position = end;
-        } else if c2_py::is_digit(c) {
-            let Some((mut word, suffix, end)) = number_at(text, position) else {
+        } else if c2_py::is_digit(c) || (c == '.' && text.get(position + 1).is_some_and(|next| next.is_ascii_digit())) {
+            let Some((mut word, suffix, end)) = number_at(&text, position) else {
                 return Err(Fault::Crash(format!("line {line}: cannot read the number at {}", repr(&c.to_string()))));
             };
             let lower = word.to_lowercase();
@@ -1238,36 +755,79 @@ fn tokenize(text: &[char], mut defines: HashMap<String, String>, frames: usize) 
             if floating && !word.contains('.') && !lower.contains('e') {
                 word.push_str(".0");
             }
-            tokens.push(Token::new(if floating { Kind::Float } else { Kind::Int }, line, Some(word)));
+            if floating && suffix.to_lowercase().contains('l') {
+                return lex_fail(line, NO_DOUBLE.replace("double is", "long double is"));
+            }
+            let mut token = Token::new(if floating { Kind::Float } else { Kind::Int }, line, Some(word));
+            token.words = vec![suffix];
+            tokens.push(token);
             position = end;
         } else if c == '\'' {
-            let (value, end) = read_char(text, position, line)?;
+            let (value, end) = read_char(&text, position, line)?;
             tokens.push(Token::new(Kind::Int, line, Some(value.to_string())));
             position = end;
-        } else if c.is_ascii_alphabetic() || c == '_' {
-            let mut end = position + 1;
-            while end < text.len() && (text[end].is_ascii_alphanumeric() || text[end] == '_') {
-                end += 1;
-            }
-            let name = text_of(&text[position..end]);
-            if name == "asm" {
-                let (token, after) = read_asm(text, end, line)?;
+        } else if c == 'L' && text.get(position + 1) == Some(&'\'') {
+            // a wide character: its Shift-JIS code, which wchar_t holds
+            let (value, end) =
+                cpp::character_constant(&text[position + 1..]).or_else(|reason| lex_fail(line, reason))?;
+            let value = match char::from_u32(value).filter(|_| text[position + 2] != '\\') {
+                Some(character) => c2_disc::text::encode(&character.to_string())
+                    .ok_or_else(|| Fault::Value(format!("line {line}: {character:?} has no Shift-JIS code")))?
+                    .iter()
+                    .fold(0u32, |code, byte| code << 8 | u32::from(*byte)),
+                None => value,
+            };
+            tokens.push(Token::new(Kind::Int, line, Some(value.to_string())));
+            position += 1 + end;
+        } else if c == 'L' && text.get(position + 1) == Some(&'"') {
+            return lex_fail(line, "wide string literals are not supported yet: a string is the VM's");
+        } else if c == cpp::PAINT || c.is_ascii_alphabetic() || c == '_' {
+            // a painted name is one a macro's own replacement held, which is never expanded
+            let painted = c == cpp::PAINT;
+            let start = position + usize::from(painted);
+            let end = cpp::word_end(&text, start);
+            let name = text_of(&text[start..end]);
+            if name == "asm" && !painted {
+                let (token, after) = read_asm(&text, end, line)?;
                 tokens.push(token);
-                line += count_lines(text, position, after);
+                line += count_lines(&text, position, after);
                 position = after;
                 continue;
             }
-            let mut token = Token::new(Kind::Name, line, Some(name));
-            let doc = comment_block(&comments, line);
-            if !doc.is_empty() {
-                token.doc = Some(doc);
+            if !painted && cpp::expandable(&macros, &name, false).is_some() {
+                regions.retain(|region| region.end > position);
+                if !cpp::disabled(&regions, &name, position)
+                    && cpp::expand_at(&mut text, position, end, &macros, false, &mut regions)
+                        .or_else(|reason| lex_fail(line, reason))?
+                {
+                    continue;
+                }
             }
-            tokens.push(token);
             position = end;
-        } else if let Some(op) = LONG_OPERATORS.iter().find(|op| starts_with(text, position, op)) {
+            let token = match name.as_str() {
+                "" => continue,
+                "__LINE__" => Token::new(Kind::Int, line, Some(line.to_string())),
+                "__FILE__" => Token::new(Kind::Str, line, Some(file.clone())),
+                "__DATE__" | "__TIME__" => {
+                    let (date, time) = when.get_or_insert_with(cpp::translation_time);
+                    Token::new(Kind::Str, line, Some(if name == "__DATE__" { date.clone() } else { time.clone() }))
+                }
+                "__STDC__" => Token::new(Kind::Int, line, Some("1".into())),
+                "double" => return lex_fail(line, NO_DOUBLE),
+                _ => {
+                    let mut token = Token::new(Kind::Name, line, Some(name));
+                    let doc = comment_block(&comments, line);
+                    if !doc.is_empty() {
+                        token.doc = Some(doc);
+                    }
+                    token
+                }
+            };
+            tokens.push(token);
+        } else if let Some(op) = LONG_OPERATORS.iter().find(|op| starts_with(&text, position, op)) {
             tokens.push(Token::new(Kind::Op, line, Some(op.to_string())));
             position += 3;
-        } else if let Some(op) = OPERATORS.iter().find(|op| starts_with(text, position, op)) {
+        } else if let Some(op) = OPERATORS.iter().find(|op| starts_with(&text, position, op)) {
             tokens.push(Token::new(Kind::Op, line, Some(op.to_string())));
             position += 2;
         } else if SINGLES.contains(c) {
@@ -1288,8 +848,37 @@ fn tokenize(text: &[char], mut defines: HashMap<String, String>, frames: usize) 
 
 /// A function's parameters and the locals declared so far.
 struct Scope {
+    function: String,
     params: Vec<Node>,
     locals: Vec<Node>,
+    /// The blocks open where the parser is, outermost (the parameters) first: the names declared
+    /// in each and the variables they stand for. A local gets a slot for the whole function, so a
+    /// name declared again in a block beside another reuses its slot; one that hides a name of an
+    /// enclosing block gets a slot of its own, under another name.
+    blocks: Vec<HashMap<String, String>>,
+    /// static locals' hidden globals, by name
+    statics: HashMap<String, Node>,
+    /// labels defined and used, with the line of their first use
+    labels: Vec<String>,
+    gotos: Vec<(String, usize)>,
+    /// typedefs declared in the function
+    typedefs: Vec<String>,
+}
+
+impl Scope {
+    fn new(function: &str, params: Vec<Node>) -> Scope {
+        let names = params.iter().map(|param| (field(param, "name").to_string(), field(param, "name").to_string()));
+        Scope {
+            function: function.to_string(),
+            blocks: vec![names.collect()],
+            params,
+            locals: Vec::new(),
+            statics: HashMap::new(),
+            labels: Vec::new(),
+            gotos: Vec::new(),
+            typedefs: Vec::new(),
+        }
+    }
 }
 
 /// A token taken from the state's list, without copying it.
@@ -1311,9 +900,16 @@ struct State {
     pos: usize,
     /// Integer #defines so far, for array sizes.
     constants: HashMap<String, i128>,
+    /// The enumerators so far, for constant expressions.
+    enumerators: HashMap<String, i128>,
+    /// Enumerators an enum defined in a declaration gave, for the program's constants.
+    constants_found: Vec<Node>,
     /// typedef'd value kinds and their base types.
     kinds: HashMap<String, String>,
     scope: Option<Scope>,
+    /// The globals declared so far, by name, and the hidden globals of static locals.
+    globals: HashMap<String, Node>,
+    statics: Vec<Node>,
     /// Python frames in use, the current function's included.
     depth: usize,
     /// Whether a call went past Python's recursion limit: everything fails from there, as the
@@ -1324,7 +920,55 @@ struct State {
 impl State {
     fn new(tokens: Vec<Token>, depth: usize) -> State {
         let (constants, kinds) = (HashMap::new(), HashMap::new());
-        State { tokens: tokens.into(), pos: 0, constants, kinds, scope: None, depth, overflow: Cell::new(false) }
+        State {
+            tokens: tokens.into(),
+            pos: 0,
+            constants,
+            enumerators: HashMap::new(),
+            constants_found: Vec::new(),
+            kinds,
+            scope: None,
+            globals: HashMap::new(),
+            statics: Vec::new(),
+            depth,
+            overflow: Cell::new(false),
+        }
+    }
+
+    /// A variable's declaration, by the name code uses for it (storage_name): a parameter, a local,
+    /// a static local's hidden global, or a global.
+    fn variable(&self, name: &str) -> Option<Node> {
+        if let Some(scope) = &self.scope {
+            if let Some(hidden) = scope.statics.get(name) {
+                return Some(hidden.clone());
+            }
+            let local = scope.params.iter().chain(&scope.locals).find(|entry| entry["name"] == *name);
+            if let Some(local) = local {
+                return Some(local.clone());
+            }
+        }
+        self.globals.get(name).cloned()
+    }
+
+    /// The name code uses for a variable it names: the variable the innermost block declaring the
+    /// name gives it (another name for one that hides an outer one, or a static local's hidden
+    /// global), or the name itself.
+    fn storage_name(&self, name: &str) -> String {
+        let blocks = self.scope.as_ref().map_or(&[][..], |scope| scope.blocks.as_slice());
+        blocks.iter().rev().find_map(|block| block.get(name)).cloned().unwrap_or_else(|| name.to_string())
+    }
+
+    /// Opens a block of declarations, in a function.
+    fn open_block(&mut self) {
+        if let Some(scope) = &mut self.scope {
+            scope.blocks.push(HashMap::new());
+        }
+    }
+
+    fn close_block(&mut self) {
+        if let Some(scope) = &mut self.scope {
+            scope.blocks.pop();
+        }
     }
 
     /// A call of a parse.py helper that holds frames more frames at its deepest.
@@ -1413,15 +1057,33 @@ impl State {
     }
 }
 
+/// An integer literal's value: hexadecimal after 0x, octal after a leading 0, as in C.
 fn int_value(text: &str) -> Parsed<i128> {
     let hexadecimal = text.starts_with("0x") || text.starts_with("0X");
+    if !hexadecimal && text.len() > 1 && text.starts_with('0') && text.chars().all(|c| c.is_ascii_digit()) {
+        return python_int(&text[1..], 8);
+    }
     python_int(text, if hexadecimal { 16 } else { 10 })
+}
+
+/// An unsigned int literal, held as the VM's 32 bits.
+fn unsigned_literal(value: i128) -> Parsed<Node> {
+    Ok(int_literal(value as u32 as i32 as i128)?.with("unsigned", true))
 }
 
 fn literal(state: &State, token: &Token) -> Parsed<Node> {
     state.leaf(2);
     if token.kind == Kind::Int {
-        return int_literal(int_value(token.text())?);
+        let value = int_value(token.text())?;
+        // C89: a literal too large for int (and long) is unsigned; one too large for that has no type
+        let unsigned = token.words.first().is_some_and(|suffix| suffix.contains(['u', 'U']));
+        if value > u32::MAX as i128 {
+            return state.fail(format!("{} does not fit in 32 bits", token.text()));
+        }
+        if unsigned || value > i32::MAX as i128 {
+            return unsigned_literal(value);
+        }
+        return int_literal(value);
     }
     let bits = asm::float_bits(&ascii_digits(token.text())).map_err(|error| Fault::Crash(error.to_string()))?;
     Ok(node!({"kind": "float", "bits": bits}))
@@ -1447,9 +1109,16 @@ fn primary(state: &mut State) -> Parsed<Node> {
         let token = state.take();
         match token.kind {
             Kind::Int | Kind::Float => return literal(state, &token),
-            Kind::Str => return Ok(node!({"kind": "string", "text": token.text()})),
+            Kind::Str => {
+                // adjacent string literals are one
+                let mut text = token.text().to_string();
+                while state.peek(0).kind == Kind::Str {
+                    text.push_str(state.take().text());
+                }
+                return Ok(node!({"kind": "string", "text": text}));
+            }
             Kind::Op if token.text() == "(" => {
-                let node = assignment(state)?;
+                let node = expression(state)?;
                 state.expect(")")?;
                 return Ok(node);
             }
@@ -1470,20 +1139,73 @@ fn primary(state: &mut State) -> Parsed<Node> {
         if state.at("(", 0) {
             return Ok(node!({"kind": "call", "name": name, "args": arguments(state)?}));
         }
-        let node = if state.at("[", 0) {
-            state.expect("[")?;
-            let index = assignment(state)?;
-            state.expect("]")?;
-            node!({"kind": "index", "name": name, "index": index})
-        } else {
-            node!({"kind": "var", "name": name})
-        };
+        let node = named(state, name)?;
         if state.at("++", 0) || state.at("--", 0) {
             let op = state.take();
+            writable(state, &node)?;
             return Ok(postfix(state, node, op.text()));
         }
         Ok(node)
     })
+}
+
+/// A variable, or an element of an array, by the name code wrote: x, a[i], m[i][j].
+#[inline(never)]
+fn named(state: &mut State, name: &str) -> Parsed<Node> {
+    let name = state.storage_name(name);
+    if !state.at("[", 0) {
+        return Ok(node!({"kind": "var", "name": name}));
+    }
+    let mut indices = Vec::new();
+    while state.at("[", 0) {
+        state.expect("[")?;
+        indices.push(expression(state)?);
+        state.expect("]")?;
+    }
+    if indices.len() == 1 && state.variable(&name).is_none_or(|entry| entry.get("dims").is_none()) {
+        return Ok(node!({"kind": "index", "name": name, "index": indices.pop().unwrap()}));
+    }
+    element(state, &name, indices)
+}
+
+/// The inner sizes of a multi-dimensional array: all of a local's after the first, all of a
+/// parameter's (whose first is the pointer's).
+fn inner_sizes(entry: &Node) -> Vec<i64> {
+    let dims: Vec<i64> =
+        entry["dims"].as_array().map_or(Vec::new(), |dims| dims.iter().filter_map(Node::as_i64).collect());
+    if entry.get("array").is_some() {
+        dims
+    } else {
+        dims.into_iter().skip(1).collect()
+    }
+}
+
+/// a[i][j] of a multi-dimensional array: the element at i * columns + j, or, with fewer indices
+/// than the array has sizes, the address of that row (a[i] passes a row).
+fn element(state: &State, name: &str, indices: Vec<Node>) -> Parsed<Node> {
+    let Some(entry) = state.variable(name) else {
+        return state.fail(format!("unknown variable {name}"));
+    };
+    let inner = inner_sizes(&entry);
+    if indices.len() > inner.len() + 1 {
+        return state.fail(format!("{name} has {} sizes, not {}", inner.len() + 1, indices.len()));
+    }
+    let mut total = Node::Null;
+    for (at, index) in indices.iter().enumerate() {
+        let stride: i64 = inner[at..].iter().product();
+        let term = if stride == 1 {
+            index.clone()
+        } else {
+            node!({"kind": "binary", "op": "*", "left": index.clone(), "right": {"kind": "int", "value": stride}})
+        };
+        total = if total.is_null() { term } else { node!({"kind": "binary", "op": "+", "left": total, "right": term}) };
+    }
+    let cell = node!({"kind": "index", "name": name, "index": total});
+    if indices.len() == inner.len() + 1 {
+        return Ok(cell);
+    }
+    let row: i64 = inner[indices.len() - 1..].iter().product();
+    Ok(node!({"kind": "addr", "target": cell, "row": row}))
 }
 
 /// target op= value, as in x += 2. The compiler works out the target's address once, so an index
@@ -1527,6 +1249,248 @@ fn is_target(node: &Node) -> bool {
     matches!(node.kind(), "var" | "index" | "deref")
 }
 
+/// The variable an assignment target writes: x, a[i] or *p.
+fn target_name(target: &Node) -> &str {
+    match target.kind() {
+        "deref" => field(&target["operand"], "name"),
+        _ => field(target, "name"),
+    }
+}
+
+/// Refuses writing a const object: a const variable, an element of a const array, or what a
+/// pointer to const points at.
+fn writable(state: &State, target: &Node) -> Parsed<()> {
+    let name = target_name(target);
+    let Some(entry) = state.variable(name) else {
+        return Ok(());
+    };
+    let pointer = entry.get("pointer").is_some() || entry.get("array").is_some_and(|array| *array == Node::Bool(true));
+    let constant = if target.kind() == "var" || !pointer {
+        entry.get("const").is_some()
+    } else {
+        entry.get("pointee_const").is_some()
+    };
+    if constant {
+        let shown = if target.kind() == "var" { name.to_string() } else { format!("what {name} points at") };
+        return state.fail(format!("{shown} is const"));
+    }
+    Ok(())
+}
+
+// ---- types ---------------------------------------------------------------------------------
+
+const STORAGE: [&str; 5] = ["static", "extern", "auto", "register", "typedef"];
+const QUALIFIERS: [&str; 2] = ["const", "volatile"];
+const INTEGER_WORDS: [&str; 6] = ["char", "short", "int", "long", "signed", "unsigned"];
+/// The integer types besides int, as declarations name them (char is signed; long is int).
+pub const INTEGER_TYPES: [&str; 5] = ["unsigned int", "short", "unsigned short", "char", "unsigned char"];
+
+/// Whether the token offset ahead starts a type: a keyword of one, or a typedef of this file.
+fn starts_type(state: &State, offset: usize) -> bool {
+    let token = state.token(offset);
+    token.kind == Kind::Name && type_word(state, token.text())
+}
+
+fn type_word(state: &State, text: &str) -> bool {
+    STORAGE.contains(&text)
+        || QUALIFIERS.contains(&text)
+        || INTEGER_WORDS.contains(&text)
+        || ["float", "string", "void", "enum"].contains(&text)
+        || state.kinds.contains_key(text)
+}
+
+/// What a declaration's specifiers say: the type, the storage class, and the qualifiers.
+#[derive(Clone, Debug, Default)]
+struct Spec {
+    kind: String,
+    storage: Option<String>,
+    constant: bool,
+    volatile: bool,
+}
+
+/// The type the integer keywords of a declaration name, as C 3.5.2 lists their combinations.
+fn integer_type(words: &[String]) -> std::result::Result<&'static str, String> {
+    let count = |word: &str| words.iter().filter(|known| *known == word).count();
+    let shown = || words.join(" ");
+    if count("long") > 1 {
+        return Err("long long is C99, and the VM's integers are 32 bits".into());
+    }
+    if ["char", "short", "int", "signed", "unsigned"].iter().any(|word| count(word) > 1)
+        || (count("signed") > 0 && count("unsigned") > 0)
+    {
+        return Err(format!("{} is not a type", shown()));
+    }
+    let unsigned = count("unsigned") > 0;
+    if count("char") > 0 {
+        if count("short") + count("long") + count("int") > 0 {
+            return Err(format!("{} is not a type", shown()));
+        }
+        return Ok(if unsigned { "unsigned char" } else { "char" });
+    }
+    if count("short") > 0 {
+        if count("long") > 0 {
+            return Err(format!("{} is not a type", shown()));
+        }
+        return Ok(if unsigned { "unsigned short" } else { "short" });
+    }
+    Ok(if unsigned { "unsigned int" } else { "int" })
+}
+
+/// A declaration's specifiers. header_kinds: an unknown name followed by a name or * is a value
+/// kind from a header (bgm_file track;), which sdk.resolve reads as its base type.
+fn specifiers(state: &mut State, header_kinds: bool) -> Parsed<Spec> {
+    let mut spec = Spec::default();
+    let mut words: Vec<String> = Vec::new();
+    let mut base: Option<String> = None;
+    let mut any = false;
+    while state.token(0).kind == Kind::Name {
+        let text = state.token(0).text().to_string();
+        if STORAGE.contains(&text.as_str()) {
+            if spec.storage.is_some() {
+                return state.fail("a declaration has one storage class");
+            }
+            spec.storage = Some(text);
+        } else if text == "const" {
+            spec.constant = true;
+        } else if text == "volatile" {
+            spec.volatile = true;
+        } else if INTEGER_WORDS.contains(&text.as_str()) && base.is_none() {
+            words.push(text);
+        } else if base.is_none() && words.is_empty() {
+            if ["float", "string", "void"].contains(&text.as_str()) || state.kinds.contains_key(&text) {
+                base = Some(text);
+            } else if text == "enum" {
+                state.take();
+                let name = if state.at("{", 0) { None } else { Some(state.name()?) };
+                if state.at("{", 0) {
+                    // the enum is defined here; its members are the file's constants
+                    let members = enumerators(state, name.as_deref())?;
+                    state.constants_found.extend(members);
+                }
+                base = Some(name.map_or("int".to_string(), |name| format!("enum {name}")));
+                any = true;
+                continue;
+            } else if header_kinds
+                && (state.token(1).kind == Kind::Name
+                    || (state.token(1).kind == Kind::Op && state.token(1).text() == "*"))
+            {
+                base = Some(text);
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+        state.take();
+        any = true;
+    }
+    if !any {
+        let found = state.shown(state.token(0))?;
+        return state.fail(format!("expected a type, found {found}"));
+    }
+    spec.kind = match base {
+        Some(base) if words.is_empty() => base,
+        Some(base) => return state.fail(format!("{} {base} is not a type", words.join(" "))),
+        // C89's implicit int: static x; const y = 1;
+        None => integer_type(&words).or_else(|reason| state.fail(reason))?.to_string(),
+    };
+    Ok(spec)
+}
+
+/// A type name in a cast or sizeof: specifiers, then *s and [N]s. The type, how many pointers,
+/// and the array sizes.
+fn type_name_of(state: &mut State) -> Parsed<(Spec, usize, Vec<i64>)> {
+    let spec = specifiers(state, false)?;
+    if spec.storage.is_some() {
+        return state.fail("a type name has no storage class");
+    }
+    let mut pointers = 0;
+    while state.at("*", 0) {
+        state.take();
+        pointers += 1;
+        while state.at("const", 0) || state.at("volatile", 0) {
+            state.take();
+        }
+    }
+    let mut dims = Vec::new();
+    while state.at("[", 0) {
+        state.take();
+        let size = constant_expression(state)?;
+        state.expect("]")?;
+        dims.push(size);
+    }
+    Ok((spec, pointers, dims))
+}
+
+/// An integer constant expression (an array size): numbers, this file's integer #defines and enum
+/// members, sizeof, and C's operators.
+fn constant_expression(state: &mut State) -> Parsed<i64> {
+    let node = ternary(state)?;
+    let found =
+        |name: &str| state.constants.get(name).or_else(|| state.enumerators.get(name)).map(|value| *value as i64);
+    match folded(&node, &found) {
+        Some((value, _)) => Ok(value),
+        None => state.fail("expected an integer constant"),
+    }
+}
+
+/// The bytes a value of a type (or a typedef of one) takes: the VM's slot holds 32 bits, and char and
+/// short are C's 1 and 2.
+fn type_size(state: &State, kind: &str) -> i64 {
+    let kind = state.kinds.get(kind).map_or(kind, String::as_str);
+    match kind {
+        "char" | "unsigned char" => 1,
+        "short" | "unsigned short" => 2,
+        _ => 4,
+    }
+}
+
+/// The number of elements a local's or global's size gives (1 for a scalar).
+fn elements(state: &State, entry: &Node) -> Parsed<i64> {
+    match &entry["size"] {
+        Node::Null => Ok(1),
+        Node::Str(name) => match state.constants.get(name) {
+            Some(value) => Ok(*value as i64),
+            None => state.fail(format!("sizeof needs the value of {name}, which this file does not define")),
+        },
+        size => Ok(size.as_i64().unwrap_or(1)),
+    }
+}
+
+/// What sizeof gives for an expression, which it does not evaluate.
+fn size_of(state: &State, node: &Node) -> Parsed<i64> {
+    let entry = |name: &str| state.variable(name);
+    Ok(match node.kind() {
+        "string" => match stb::encode_string(field(node, "text")) {
+            Ok(bytes) => bytes.len() as i64,
+            Err(error) => return state.fail(error),
+        },
+        "var" => match entry(field(node, "name")) {
+            Some(found) if found.get("pointer").is_some() || found["array"] == Node::Bool(true) => 4,
+            Some(found) => elements(state, &found)? * type_size(state, field(&found, "type")),
+            None => 4,
+        },
+        "index" => entry(field(node, "name")).map_or(4, |found| type_size(state, field(&found, "type"))),
+        "deref" => entry(field(&node["operand"], "name")).map_or(4, |found| type_size(state, field(&found, "type"))),
+        "addr" if node.get("row").is_some() => {
+            let row = node["row"].as_i64().unwrap_or(1);
+            row * entry(field(&node["target"], "name")).map_or(4, |found| type_size(state, field(&found, "type")))
+        }
+        "cast" if field(node, "type") == "void" => return state.fail("sizeof a void expression"),
+        "cast" if field(node, "type").ends_with('*') => 4,
+        "cast" => type_size(state, field(node, "type")),
+        "assign" | "compound" => size_of(state, &node["target"])?,
+        "comma" => size_of(state, &node["right"])?,
+        "binary" if node.get("postfix").is_some() => size_of(state, &node["left"])?,
+        _ => 4,
+    })
+}
+
+/// A sizeof's value: an int constant of size_t, which is unsigned int.
+fn size_literal(size: i64) -> Node {
+    node!({"kind": "int", "value": size, "unsigned": true})
+}
+
 fn unary(state: &mut State) -> Parsed<Node> {
     state.framed(|state| {
         if state.at("-", 0) || state.at("!", 0) {
@@ -1535,7 +1499,10 @@ fn unary(state: &mut State) -> Parsed<Node> {
         }
         if state.at("+", 0) {
             state.take();
-            return unary(state);
+            return Ok(node!({"kind": "unary", "op": "+", "operand": unary(state)?}));
+        }
+        if state.at("sizeof", 0) {
+            return sizeof(state);
         }
         if state.at("~", 0) {
             state.take();
@@ -1548,6 +1515,7 @@ fn unary(state: &mut State) -> Parsed<Node> {
             if !is_target(&target) {
                 return state.fail("++ and -- need a variable");
             }
+            writable(state, &target)?;
             return Ok(stepped(state, target, op));
         }
         if state.at("&", 0) {
@@ -1556,7 +1524,7 @@ fn unary(state: &mut State) -> Parsed<Node> {
             if !is_target(&target) {
                 return state.fail("& needs a variable");
             }
-            return Ok(node!({"kind": "addr", "target": target}));
+            return address(state, target);
         }
         if state.at("*", 0) {
             state.take();
@@ -1592,8 +1560,61 @@ fn unary(state: &mut State) -> Parsed<Node> {
             }
             return Ok(node!({"kind": "cast", "type": format!("{kind} *"), "operand": operand}));
         }
+        if state.at("(", 0) && starts_type(state, 1) {
+            return cast(state);
+        }
         primary(state)
     })
+}
+
+/// sizeof(type) or sizeof expression.
+#[inline(never)]
+fn sizeof(state: &mut State) -> Parsed<Node> {
+    state.take();
+    if state.at("(", 0) && starts_type(state, 1) {
+        state.take();
+        let (spec, pointers, dims) = type_name_of(state)?;
+        state.expect(")")?;
+        if spec.kind == "void" && pointers == 0 {
+            return state.fail("sizeof(void)");
+        }
+        let element = if pointers > 0 { 4 } else { type_size(state, &spec.kind) };
+        return Ok(size_literal(element * dims.iter().product::<i64>()));
+    }
+    let operand = unary(state)?;
+    Ok(size_literal(size_of(state, &operand)?))
+}
+
+/// Any cast but the decompiler's: (unsigned char)x, (void)f(), (long)y, (const int)z.
+#[inline(never)]
+fn cast(state: &mut State) -> Parsed<Node> {
+    state.take();
+    let (spec, pointers, dims) = type_name_of(state)?;
+    state.expect(")")?;
+    if !dims.is_empty() {
+        return state.fail("a cast cannot give an array");
+    }
+    let operand = unary(state)?;
+    if pointers > 0 {
+        if operand.kind() != "addr" {
+            return state.fail("a pointer cast takes an address (&x)");
+        }
+        return Ok(node!({"kind": "cast", "type": format!("{} *", spec.kind), "operand": operand}));
+    }
+    let kind = state.kinds.get(&spec.kind).cloned().unwrap_or(spec.kind);
+    let kind = if kind.starts_with("enum ") { "int".to_string() } else { kind };
+    Ok(node!({"kind": "cast", "type": kind, "operand": operand}))
+}
+
+/// &x; a register variable has no address.
+#[inline(never)]
+fn address(state: &State, target: Node) -> Parsed<Node> {
+    if target.kind() == "var"
+        && state.variable(field(&target, "name")).is_some_and(|entry| entry.get("register").is_some())
+    {
+        return state.fail(format!("{} is a register variable, which has no address", field(&target, "name")));
+    }
+    Ok(node!({"kind": "addr", "target": target}))
 }
 
 fn binary(state: &mut State, minimum: u32) -> Parsed<Node> {
@@ -1632,6 +1653,7 @@ fn assignment(state: &mut State) -> Parsed<Node> {
         if !is_target(&left) {
             return state.fail("cannot assign to this expression");
         }
+        writable(state, &left)?;
         let op = state.take();
         let value = assignment(state)?;
         if let Some(op) = compound_op(op.text()) {
@@ -1641,19 +1663,50 @@ fn assignment(state: &mut State) -> Parsed<Node> {
     })
 }
 
+/// An expression with C's comma operator: a, b works out a, then gives b.
+fn expression(state: &mut State) -> Parsed<Node> {
+    let mut node = assignment(state)?;
+    while state.at(",", 0) {
+        state.take();
+        let right = assignment(state)?;
+        node = node!({"kind": "comma", "left": discarded(node), "right": right});
+    }
+    Ok(node)
+}
+
+/// An expression whose value is not used: x++ is only its step.
+fn discarded(node: Node) -> Node {
+    if node["postfix"] == Node::Bool(true) {
+        node["left"].clone()
+    } else {
+        node
+    }
+}
+
 fn expression_statement(state: &State, node: Node) -> Node {
     state.leaf(1);
-    let node = if node["postfix"] == Node::Bool(true) { node["left"].clone() } else { node };
-    node!({"kind": "expr", "expr": node})
+    node!({"kind": "expr", "expr": discarded(node)})
+}
+
+/// The statements of an expression statement: one for each operand of a comma at its top.
+fn expression_statements(state: &State, node: Node) -> Vec<Node> {
+    if node.kind() == "comma" {
+        let mut found = expression_statements(state, node["left"].clone());
+        found.extend(expression_statements(state, node["right"].clone()));
+        return found;
+    }
+    vec![expression_statement(state, node)]
 }
 
 fn braced(state: &mut State) -> Parsed<Vec<Node>> {
     state.framed(|state| {
         state.expect("{")?;
+        state.open_block();
         let mut statements = Vec::new();
         while !state.at("}", 0) {
             statements.extend(statement(state)?);
         }
+        state.close_block();
         state.expect("}")?;
         Ok(statements)
     })
@@ -1668,7 +1721,7 @@ fn conditional(state: &mut State) -> Parsed<Node> {
     state.framed(|state| {
         let line = state.expect("if")?.line;
         state.expect("(")?;
-        let cond = assignment(state)?;
+        let cond = expression(state)?;
         state.expect(")")?;
         let then = body(state)?;
         let mut otherwise = Node::Null;
@@ -1738,11 +1791,14 @@ fn for_loop(state: &mut State) -> Parsed<Vec<Node>> {
     state.framed(|state| {
         let line = state.expect("for")?.line;
         state.expect("(")?;
+        // a declaration in the first part belongs to the loop (as C99 has it)
+        state.open_block();
         let mut init = if declaration_ahead(state) { declaration(state)? } else { expression_list(state, ";")? };
-        let cond = if state.at(";", 0) { one() } else { assignment(state)? };
+        let cond = if state.at(";", 0) { one() } else { expression(state)? };
         state.expect(";")?;
         let step = expression_list(state, ")")?;
         let mut loop_body = before_continue(&body(state)?, &step);
+        state.close_block();
         loop_body.extend(step);
         init.push(node!({"kind": "while", "cond": cond, "body": loop_body, "line": line}));
         Ok(init)
@@ -1757,7 +1813,7 @@ fn do_loop(state: &mut State) -> Parsed<Vec<Node>> {
         let loop_body = body(state)?;
         state.expect("while")?;
         state.expect("(")?;
-        let cond = assignment(state)?;
+        let cond = expression(state)?;
         state.expect(")")?;
         state.expect(";")?;
         let leave = node!({
@@ -1776,14 +1832,26 @@ fn switch(state: &mut State) -> Parsed<Node> {
     state.framed(|state| {
         let line = state.expect("switch")?.line;
         state.expect("(")?;
-        let value = assignment(state)?;
+        let value = expression(state)?;
         state.expect(")")?;
         state.expect("{")?;
         let mut cases: Vec<Node> = Vec::new();
+        // the case values known here, which C allows once each
+        let mut numbers: Vec<i64> = Vec::new();
         while !state.at("}", 0) {
             if state.at("case", 0) {
                 state.take();
-                cases.push(node!({"value": ternary(state)?, "default": false, "body": []}));
+                let value = ternary(state)?;
+                let found = |name: &str| {
+                    state.constants.get(name).or_else(|| state.enumerators.get(name)).map(|value| *value as i64)
+                };
+                if let Some((number, _)) = folded(&value, &found) {
+                    if numbers.contains(&number) {
+                        return state.fail(format!("case {number} is in the switch twice"));
+                    }
+                    numbers.push(number);
+                }
+                cases.push(node!({"value": value, "default": false, "body": []}));
                 state.expect(":")?;
             } else if state.at("default", 0) {
                 state.take();
@@ -1852,25 +1920,56 @@ fn statement_nodes(state: &mut State) -> Parsed<Vec<Node>> {
         if declaration_ahead(state) {
             return declaration(state);
         }
+        if state.token(0).kind == Kind::Name
+            && !STATEMENT_WORDS.contains(&word.as_str())
+            && state.token(1).kind == Kind::Op
+            && state.token(1).text() == ":"
+        {
+            // a label: the statement after it follows it in the list
+            state.take();
+            state.take();
+            let Some(scope) = state.scope.as_mut() else {
+                return state.fail("labels belong in functions");
+            };
+            if scope.labels.contains(&word) {
+                return state.fail(format!("label {word} is defined twice"));
+            }
+            scope.labels.push(word.clone());
+            let mut found = vec![node!({"kind": "label", "name": &word})];
+            if !state.at("}", 0) {
+                found.extend(statement(state)?);
+            }
+            return Ok(found);
+        }
         match word.as_str() {
             "if" => return Ok(vec![conditional(state)?]),
             "while" => {
                 state.take();
                 state.expect("(")?;
-                let cond = assignment(state)?;
+                let cond = expression(state)?;
                 state.expect(")")?;
                 return Ok(vec![node!({"kind": "while", "cond": cond, "body": body(state)?})]);
             }
             "for" => return for_loop(state),
             "do" => return do_loop(state),
             "switch" => return Ok(vec![switch(state)?]),
+            "goto" => {
+                let line = state.take().line;
+                let label = state.name()?;
+                state.expect(";")?;
+                let Some(scope) = state.scope.as_mut() else {
+                    return state.fail("goto belongs in functions");
+                };
+                scope.gotos.push((label.clone(), line));
+                return Ok(vec![node!({"kind": "goto", "name": label})]);
+            }
             "return" => {
                 state.take();
                 if state.at(";", 0) {
                     state.take();
                     return Ok(vec![node!({"kind": "return", "value": null})]);
                 }
-                let value = assignment(state)?;
+                let value = expression(state)?;
                 state.expect(";")?;
                 return Ok(vec![node!({"kind": "return", "value": value})]);
             }
@@ -1887,9 +1986,9 @@ fn statement_nodes(state: &mut State) -> Parsed<Vec<Node>> {
             }
             _ => {}
         }
-        let node = assignment(state)?;
+        let node = expression(state)?;
         state.expect(";")?;
-        Ok(vec![expression_statement(state, node)])
+        Ok(expression_statements(state, node))
     })
 }
 
@@ -1922,49 +2021,83 @@ impl Size {
 
 /// An array size: a number, or a constant's name. A name this file does not define is kept and
 /// resolved with the constants of the headers and libraries the script includes (sdk.resolve).
+/// Any other integer constant expression is worked out here.
 fn array_size(state: &mut State) -> Parsed<Size> {
     state.leaf(3);
-    let token = state.take();
-    match token.kind {
-        Kind::Int => Ok(Size::Number(int_value(token.text())?)),
-        Kind::Name => Ok(match state.constants.get(token.text()) {
-            Some(value) => Size::Number(*value),
-            None => Size::Named(token.text().to_string()),
-        }),
-        _ => {
-            state.pos -= 1;
-            state.fail("an array size is a number or a constant")
-        }
+    let token = state.token(0);
+    let alone = state.token(1).kind == Kind::Op && state.token(1).text() == "]";
+    if alone && matches!(token.kind, Kind::Int | Kind::Name) {
+        let token = state.take();
+        return Ok(match token.kind {
+            Kind::Int => Size::Number(int_value(token.text())?),
+            _ => match state.constants.get(token.text()) {
+                Some(value) => Size::Number(*value),
+                None => Size::Named(token.text().to_string()),
+            },
+        });
     }
+    if matches!(token.kind, Kind::Int | Kind::Name | Kind::Op) {
+        return Ok(Size::Number(constant_expression(state)? as i128));
+    }
+    state.fail("an array size is a number or a constant")
 }
 
-fn initial_values(state: &mut State) -> Parsed<Vec<Node>> {
+/// An initializer: an expression, or a braced list of initializers.
+#[derive(Clone, Debug)]
+enum Init {
+    Value(Node),
+    List(Vec<Init>),
+}
+
+fn initializer(state: &mut State) -> Parsed<Init> {
     state.framed(|state| {
+        if !state.at("{", 0) {
+            return Ok(Init::Value(assignment(state)?));
+        }
         state.expect("{")?;
         let mut values = Vec::new();
         while !state.at("}", 0) {
-            values.push(assignment(state)?);
+            values.push(initializer(state)?);
             if !state.at("}", 0) {
                 state.expect(",")?;
             }
         }
         state.expect("}")?;
-        Ok(values)
+        Ok(Init::List(values))
     })
-}
-
-enum Init {
-    None,
-    Value(Node),
-    List(Vec<Node>),
 }
 
 struct Declared {
     name: String,
-    size: Size,
-    init: Init,
+    /// The array's sizes, the first Number(-1) when the initializer gives it.
+    dims: Vec<Size>,
+    init: Option<Init>,
     line: usize,
     pointer: bool,
+    /// int *const p: the pointer itself is const.
+    pointer_const: bool,
+}
+
+impl Declared {
+    fn size(&self) -> &Size {
+        self.dims.first().unwrap_or(&Size::None)
+    }
+}
+
+/// The *, and const after it, before a declarator's name.
+fn pointer_part(state: &mut State) -> Parsed<(bool, bool)> {
+    let pointer = state.at("*", 0);
+    let mut constant = false;
+    if pointer {
+        state.take();
+        while state.at("const", 0) || state.at("volatile", 0) {
+            constant |= state.take().text() == "const";
+        }
+        if state.at("*", 0) {
+            return state.fail("pointers to pointers are not supported yet: the VM has one level of indirection");
+        }
+    }
+    Ok((pointer, constant))
 }
 
 fn declarators(state: &mut State) -> Parsed<Vec<Declared>> {
@@ -1972,36 +2105,27 @@ fn declarators(state: &mut State) -> Parsed<Vec<Declared>> {
         let mut found = Vec::new();
         loop {
             let line = state.line();
-            let pointer = state.at("*", 0);
-            if pointer {
-                state.take();
-            }
+            let (pointer, pointer_const) = pointer_part(state)?;
             let name = state.name()?;
-            let mut size = Size::None;
-            if state.at("[", 0) {
+            let mut dims = Vec::new();
+            while state.at("[", 0) {
                 state.take();
-                let given = if state.at("]", 0) { None } else { Some(array_size(state)?) };
+                let open = dims.is_empty() && state.at("]", 0);
+                dims.push(if open { Size::Number(-1) } else { array_size(state)? });
                 state.expect("]")?;
-                size = given.unwrap_or(Size::Number(-1));
             }
-            let mut init = Init::None;
+            let mut init = None;
             if state.at("=", 0) {
                 state.take();
-                init =
-                    if state.at("{", 0) { Init::List(initial_values(state)?) } else { Init::Value(assignment(state)?) };
+                init = Some(initializer(state)?);
             }
-            if size == Size::Number(-1) {
-                let Init::List(values) = &init else {
-                    return state.fail(format!("{name}[] needs a size or a list of values"));
-                };
-                size = Size::Number(values.len() as i128);
+            if dims.first() == Some(&Size::Number(-1)) && init.is_none() {
+                return state.fail(format!("{name}[] needs a size or a list of values"));
             }
-            if let Init::List(values) = &init {
-                if size == Size::None || matches!(size, Size::Number(count) if values.len() as i128 > count) {
-                    return state.fail(format!("too many values for {name}"));
-                }
+            if matches!(init, Some(Init::List(_))) && dims.is_empty() && pointer {
+                return state.fail(format!("too many values for {name}"));
             }
-            found.push(Declared { name, size, init, line, pointer });
+            found.push(Declared { name, dims, init, line, pointer, pointer_const });
             if !state.at(",", 0) {
                 break;
             }
@@ -2019,11 +2143,15 @@ fn declaration_ahead(state: &State) -> bool {
         return false;
     }
     if token.text() == "enum" {
-        return state.peek(1).kind == Kind::Name && state.peek(2).kind == Kind::Name;
+        let defined = |offset: usize| state.token(offset).kind == Kind::Op && state.token(offset).text() == "{";
+        return defined(1) || (state.peek(1).kind == Kind::Name && (state.peek(2).kind == Kind::Name || defined(2)));
     }
     let following = state.peek(1);
     if TYPES.contains(&token.text()) {
         return following.kind == Kind::Name || (following.kind == Kind::Op && following.text() == "*");
+    }
+    if starts_type(state, 0) {
+        return true;
     }
     if STATEMENT_WORDS.contains(&token.text()) {
         return false;
@@ -2033,73 +2161,335 @@ fn declaration_ahead(state: &State) -> bool {
         && state.peek(2).text.as_deref().is_some_and(|text| [";", "=", "[", ","].contains(&text))
 }
 
-/// A variable's type: int, float or string, or a value kind or enum (enum se_bank) that sdk.resolve
-/// turns into the type it stands for.
-fn variable_type(state: &mut State) -> Parsed<String> {
-    state.leaf(4);
-    if state.at("enum", 0) {
-        state.take();
-        return Ok(format!("enum {}", state.name()?));
+/// The zero an element of a type starts at when its array's initializer leaves it out.
+fn zero(kind: &str) -> Node {
+    if kind == "float" {
+        node!({"kind": "float", "bits": 0})
+    } else {
+        node!({"kind": "int", "value": 0})
     }
-    let kind = state.name()?;
-    if kind == "void" || kind == "any" {
-        state.pos -= 1;
-        return state.fail(format!("unknown type {kind}"));
+}
+
+/// A string's bytes as the elements of a char array (with its 0).
+fn string_elements(state: &State, text: &str, kind: &str) -> Parsed<Vec<Node>> {
+    let bytes = stb::encode_string(text).or_else(|error| state.fail(error))?;
+    Ok(bytes
+        .into_iter()
+        .map(|byte| node!({"kind": "int", "value": if kind == "char" { byte as i8 as i64 } else { byte as i64 }}))
+        .collect())
+}
+
+fn is_string(init: &Init) -> Option<&str> {
+    match init {
+        Init::Value(node) if node.kind() == "string" => node["text"].as_str(),
+        _ => None,
     }
-    Ok(kind)
+}
+
+/// Puts an initializer list's values into an array of the sizes given, from base, reading the
+/// list from at with C's brace elision (a list for each row, or the values in a row). Gives how
+/// many of the first size's rows it reached; a first size of -1 takes as many as the list has.
+#[allow(clippy::too_many_arguments)]
+fn fill(
+    state: &State,
+    items: &[Init],
+    at: &mut usize,
+    dims: &[i64],
+    base: i64,
+    kind: &str,
+    out: &mut std::collections::BTreeMap<i64, Node>,
+) -> Parsed<i64> {
+    let stride: i64 = dims[1..].iter().product();
+    let chars = matches!(kind, "char" | "unsigned char");
+    let mut row = 0;
+    while (dims[0] < 0 || row < dims[0]) && *at < items.len() {
+        let item = &items[*at];
+        if dims.len() == 1 {
+            let value = match item {
+                Init::Value(node) => node.clone(),
+                Init::List(inner) => match inner.as_slice() {
+                    [Init::Value(node)] => node.clone(),
+                    _ => return state.fail("a scalar takes one value"),
+                },
+            };
+            out.insert(base + row, value);
+            *at += 1;
+        } else if let (true, 2, Some(text)) = (chars, dims.len(), is_string(item)) {
+            put_string(state, text, dims[1], base + row * stride, kind, out)?;
+            *at += 1;
+        } else if let Init::List(inner) = item {
+            let mut inner_at = 0;
+            fill(state, inner, &mut inner_at, &dims[1..], base + row * stride, kind, out)?;
+            if inner_at < inner.len() {
+                return state.fail("too many values in a row");
+            }
+            *at += 1;
+        } else {
+            fill(state, items, at, &dims[1..], base + row * stride, kind, out)?;
+        }
+        row += 1;
+    }
+    Ok(row)
+}
+
+/// A string into a char array of length places (its 0 left out when the array is exactly its
+/// length, as C allows); gives the elements it took.
+fn put_string(
+    state: &State,
+    text: &str,
+    length: i64,
+    base: i64,
+    kind: &str,
+    out: &mut std::collections::BTreeMap<i64, Node>,
+) -> Parsed<i64> {
+    let mut elements = string_elements(state, text, kind)?;
+    if length >= 0 && elements.len() as i64 == length + 1 {
+        elements.pop();
+    }
+    if length >= 0 && elements.len() as i64 > length {
+        return state.fail("the string is longer than the array");
+    }
+    let count = elements.len() as i64;
+    for (offset, value) in elements.into_iter().enumerate() {
+        out.insert(base + offset as i64, value);
+    }
+    Ok(count)
+}
+
+/// The values an array's initializer gives its elements, by offset.
+type Elements = Vec<(i64, Node)>;
+
+/// An array's sizes as numbers, and the assignments its initializer makes: every element, the
+/// ones the list leaves out set to 0 as C sets them.
+fn array_values(state: &State, declared: &Declared, kind: &str) -> Parsed<(Vec<i64>, Elements)> {
+    let mut dims = Vec::new();
+    for (at, size) in declared.dims.iter().enumerate() {
+        match size {
+            Size::Number(value) => dims.push(*value as i64),
+            Size::Named(name) if state.enumerators.contains_key(name) => dims.push(state.enumerators[name] as i64),
+            Size::Named(_) if declared.dims.len() == 1 && declared.init.is_none() => {
+                // resolved with the headers' constants later
+                return Ok((Vec::new(), Vec::new()));
+            }
+            Size::Named(name) => {
+                return state.fail(format!(
+                    "{}: size {} of {} must be a constant this file defines",
+                    declared.name,
+                    at + 1,
+                    name
+                ))
+            }
+            Size::None => {}
+        }
+    }
+    let Some(init) = &declared.init else {
+        if dims.iter().any(|size| *size <= 0) {
+            return state.fail(format!("{} needs a size of at least 1", declared.name));
+        }
+        return Ok((dims, Vec::new()));
+    };
+    let mut out = std::collections::BTreeMap::new();
+    let chars = matches!(kind, "char" | "unsigned char");
+    let rows = match (init, is_string(init)) {
+        (_, Some(text)) if chars && dims.len() == 1 => put_string(state, text, dims[0], 0, kind, &mut out)?,
+        (Init::List(items), _) => {
+            let mut at = 0;
+            let rows = fill(state, items, &mut at, &dims, 0, kind, &mut out)?;
+            if at < items.len() {
+                return state.fail(format!("too many values for {}", declared.name));
+            }
+            rows
+        }
+        (Init::Value(_), _) => return state.fail(format!("{} is an array; give it a list of values", declared.name)),
+    };
+    if dims[0] < 0 {
+        dims[0] = rows;
+    }
+    if dims.iter().any(|size| *size <= 0) {
+        return state.fail(format!("{} needs a size of at least 1", declared.name));
+    }
+    let total: i64 = dims.iter().product();
+    let values = (0..total).map(|offset| (offset, out.remove(&offset).unwrap_or_else(|| zero(kind)))).collect();
+    Ok((dims, values))
 }
 
 /// A local declaration anywhere in a function. Every local gets a slot in the function's frame, so a
 /// name declared again in another block reuses the slot when the type matches. Initializers become
-/// assignments where the declaration stands.
+/// assignments where the declaration stands. A static local is a hidden global, set once before
+/// the script runs (see lower.rs).
 fn declaration(state: &mut State) -> Parsed<Vec<Node>> {
     state.framed(|state| {
         if state.scope.is_none() {
             return state.fail("declarations belong inside functions");
         }
-        let kind = variable_type(state)?;
+        let spec = specifiers(state, true)?;
+        if spec.storage.as_deref() == Some("typedef") {
+            return local_typedef(state, &spec);
+        }
+        // a typedef of this function's stands for its type
+        let kind = state.kinds.get(&spec.kind).filter(|_| local_kind(state, &spec.kind)).cloned().unwrap_or(spec.kind.clone());
+        if kind == "void" || kind == "any" {
+            return state.fail(format!("unknown type {kind}"));
+        }
         let mut statements = Vec::new();
         for declared in declarators(state)? {
-            let mut entry = node!({"name": &declared.name, "type": &kind, "size": declared.size.node()?});
+            if spec.storage.as_deref() == Some("extern") {
+                // names a global this file declares
+                continue;
+            }
+            let line = declared.line;
+            let (dims, values) = if declared.dims.is_empty() { (Vec::new(), Vec::new()) } else { array_values(state, &declared, &kind)? };
+            let size = match dims.as_slice() {
+                [] => declared.size().node()?,
+                dims => int_node(dims.iter().product::<i64>() as i128)?,
+            };
+            let storage = storage_for(state, &declared.name, &kind, &size, spec.storage.as_deref() == Some("static"))?;
+            if spec.storage.as_deref() == Some("static") {
+                static_local(state, &declared, &storage, &kind, &spec)?;
+                continue;
+            }
+            let mut entry = node!({"name": &storage, "type": &kind, "size": size});
             if declared.pointer {
                 entry["pointer"] = Node::Bool(true);
             }
-            let scope = state.scope.as_ref().unwrap();
-            if scope.params.iter().any(|param| param["name"] == *declared.name) {
-                return state.fail(format!("{} is already a parameter", declared.name));
+            if dims.len() > 1 {
+                entry["dims"] = Node::List(dims.iter().map(|size| Node::from(*size)).collect());
             }
-            match scope.locals.iter().find(|local| local["name"] == *declared.name) {
-                Some(existing) if *existing != entry => {
-                    return state.fail(format!("{} is declared again with another type", declared.name));
-                }
-                Some(_) => {}
-                None => state.scope.as_mut().unwrap().locals.push(entry),
+            if (spec.constant && !declared.pointer) || declared.pointer_const {
+                entry["const"] = Node::Bool(true);
             }
+            if spec.constant && declared.pointer {
+                entry["pointee_const"] = Node::Bool(true);
+            }
+            if spec.storage.as_deref() == Some("register") {
+                entry["register"] = Node::Bool(true);
+            }
+            let scope = state.scope.as_mut().unwrap();
+            if !scope.locals.contains(&entry) {
+                scope.locals.push(entry);
+            }
+            let assign = |target: Node, value: Node| {
+                node!({"kind": "expr", "expr": {"kind": "assign", "target": target, "value": value}, "line": line})
+            };
             match declared.init {
-                Init::List(values) => {
-                    for (position, value) in values.into_iter().enumerate() {
-                        let cell =
-                            node!({"kind": "index", "name": &declared.name, "index": {"kind": "int", "value": position}});
-                        statements.push(node!({
-                            "kind": "expr",
-                            "expr": {"kind": "assign", "target": cell, "value": value},
-                            "line": declared.line,
-                        }));
+                Some(Init::Value(value)) if declared.dims.is_empty() => {
+                    statements.push(assign(node!({"kind": "var", "name": &storage}), value));
+                }
+                Some(Init::List(items)) if declared.dims.is_empty() => match items.as_slice() {
+                    // int x = {5};
+                    [Init::Value(value)] => statements.push(assign(node!({"kind": "var", "name": &storage}), value.clone())),
+                    _ => return state.fail(format!("too many values for {}", declared.name)),
+                },
+                Some(_) => {
+                    for (offset, value) in values {
+                        let cell = node!({"kind": "index", "name": &storage, "index": {"kind": "int", "value": offset}});
+                        statements.push(assign(cell, value));
                     }
                 }
-                Init::Value(value) => {
-                    let target = node!({"kind": "var", "name": &declared.name});
-                    statements.push(node!({
-                        "kind": "expr",
-                        "expr": {"kind": "assign", "target": target, "value": value},
-                        "line": declared.line,
-                    }));
-                }
-                Init::None => {}
+                None => {}
             }
         }
         Ok(statements)
     })
+}
+
+/// Whether a typedef name is one a function declared, which a declaration reads as its base type
+/// (a file's typedefs reach sdk.resolve through the program's kinds).
+fn local_kind(state: &State, name: &str) -> bool {
+    state.scope.as_ref().is_some_and(|scope| scope.typedefs.iter().any(|known| known == name))
+}
+
+/// typedef inside a function: the name stands for the type in the declarations after it.
+fn local_typedef(state: &mut State, spec: &Spec) -> Parsed<Vec<Node>> {
+    let base = base_type(state, &spec.kind)?;
+    let name = state.name()?;
+    state.expect(";")?;
+    state.kinds.insert(name.clone(), base);
+    state.scope.as_mut().unwrap().typedefs.push(name);
+    Ok(Vec::new())
+}
+
+/// The type a typedef stands for: int, float, string, an integer type, or another typedef's.
+fn base_type(state: &State, kind: &str) -> Parsed<String> {
+    let base = state.kinds.get(kind).cloned().unwrap_or_else(|| kind.to_string());
+    let base = if base.starts_with("enum ") { "int".to_string() } else { base };
+    if TYPES.contains(&base.as_str()) || INTEGER_TYPES.contains(&base.as_str()) || base == "any" {
+        return Ok(base);
+    }
+    state.fail(format!("cannot typedef {kind}"))
+}
+
+/// The name a local declared in the innermost block is held under: its own, or, where that would
+/// share a slot with a variable it must not (one it hides, one of another type, a static), its name
+/// numbered. A static local's is the hidden global's. Refuses a name declared twice in a block.
+fn storage_for(state: &mut State, name: &str, kind: &str, size: &Node, is_static: bool) -> Parsed<String> {
+    let scope = state.scope.as_ref().unwrap();
+    let innermost = scope.blocks.len() - 1;
+    if scope.blocks[innermost].contains_key(name) {
+        return state.fail(format!("{name} is declared twice in one block"));
+    }
+    if innermost == 1 && scope.blocks[0].contains_key(name) {
+        return state.fail(format!("{name} is already a parameter"));
+    }
+    let visible = scope.blocks.iter().any(|block| block.values().any(|storage| storage == name));
+    let taken = |candidate: &str| {
+        scope.params.iter().chain(&scope.locals).any(|entry| entry["name"] == *candidate)
+            || scope.statics.contains_key(candidate)
+            || scope.blocks.iter().any(|block| block.values().any(|storage| storage == candidate))
+    };
+    let reusable = !is_static
+        && !visible
+        && !scope.params.iter().any(|param| param["name"] == *name)
+        && scope.locals.iter().any(|local| local["name"] == *name && local["type"] == *kind && local["size"] == *size);
+    let storage = if is_static {
+        let mut hidden = format!("__static_{}_{}", scope.function, name);
+        let mut count = 2;
+        while scope.statics.contains_key(&hidden) {
+            hidden = format!("__static_{}_{}_{}", scope.function, name, count);
+            count += 1;
+        }
+        hidden
+    } else if reusable || !taken(name) {
+        name.to_string()
+    } else {
+        let mut count = 2;
+        while taken(&format!("{name}__{count}")) {
+            count += 1;
+        }
+        format!("{name}__{count}")
+    };
+    state.scope.as_mut().unwrap().blocks[innermost].insert(name.to_string(), storage.clone());
+    Ok(storage)
+}
+
+/// A static local: a hidden global that keeps its value between calls, which code in the function
+/// reaches by the local's name.
+fn static_local(state: &mut State, declared: &Declared, hidden: &str, kind: &str, spec: &Spec) -> Parsed<()> {
+    if !declared.dims.is_empty() {
+        return state
+            .fail(format!("static arrays are not supported: the script VM cannot index a global ({})", declared.name));
+    }
+    if declared.pointer {
+        return state.fail(format!(
+            "static pointers are not supported: the script VM cannot index through a global ({})",
+            declared.name
+        ));
+    }
+    let mut entry = node!({"name": hidden, "type": kind});
+    match &declared.init {
+        Some(Init::Value(value)) => entry["init"] = value.clone(),
+        Some(Init::List(items)) => match items.as_slice() {
+            [Init::Value(value)] => entry["init"] = value.clone(),
+            _ => return state.fail(format!("too many values for {}", declared.name)),
+        },
+        None => {}
+    }
+    if spec.constant {
+        entry["const"] = Node::Bool(true);
+    }
+    state.statics.push(entry.clone());
+    state.scope.as_mut().unwrap().statics.insert(hidden.to_string(), entry);
+    Ok(())
 }
 
 fn no_parameters(state: &mut State) -> bool {
@@ -2110,29 +2500,81 @@ fn no_parameters(state: &mut State) -> bool {
     state.at(")", 0)
 }
 
-fn parameters(state: &mut State) -> Parsed<Vec<Node>> {
+/// A function's parameters, and whether they are a K&R identifier list (int f(a, b) int a; ...),
+/// whose types the declarations after the ) give. A prototype's parameters may go unnamed.
+fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool)> {
     state.expect("(")?;
     let mut params = Vec::new();
+    let identifiers = state.token(0).kind == Kind::Name
+        && !starts_type(state, 0)
+        && state.token(1).kind == Kind::Op
+        && [",", ")"].contains(&state.token(1).text());
+    if identifiers {
+        loop {
+            params.push(node!({"name": state.name()?, "type": "int", "array": false}));
+            if !state.at(",", 0) {
+                break;
+            }
+            state.take();
+        }
+        state.expect(")")?;
+        return Ok((params, true));
+    }
     if !no_parameters(state) {
         loop {
             // void *p: a pointer parameter the function never reads, so of no element type
-            let kind = if state.at("void", 0) && state.at("*", 1) {
+            let spec = if state.at("void", 0) && state.at("*", 1) {
                 state.take();
-                "void".to_string()
+                Spec { kind: "void".to_string(), ..Spec::default() }
             } else {
-                variable_type(state)?
+                specifiers(state, true)?
             };
-            let pointer = state.at("*", 0);
-            if pointer {
-                state.take();
+            if spec.storage.as_ref().is_some_and(|storage| storage != "register") {
+                return state.fail("a parameter's only storage class is register");
             }
-            let name = state.name()?;
+            let pointer_ahead = state.at("*", 0);
+            if spec.kind == "any" || (spec.kind == "void" && !pointer_ahead) {
+                return state.fail(format!("unknown type {}", spec.kind));
+            }
+            let (pointer, pointer_const) = if spec.kind == "void" && pointer_ahead {
+                state.take();
+                (true, false)
+            } else {
+                pointer_part(state)?
+            };
+            let name = if state.peek(0).kind == Kind::Name { state.name()? } else { String::new() };
             let array = state.at("[", 0);
+            let mut inner = Vec::new();
             if array {
                 state.take();
+                if !state.at("]", 0) {
+                    array_size(state)?;
+                }
                 state.expect("]")?;
+                while state.at("[", 0) {
+                    state.take();
+                    match array_size(state)? {
+                        Size::Number(size) => inner.push(size as i64),
+                        _ => return state.fail("a parameter's inner array sizes must be constants this file defines"),
+                    }
+                    state.expect("]")?;
+                }
             }
-            params.push(node!({"name": name, "type": kind, "array": array || pointer}));
+            let kind = if local_kind(state, &spec.kind) { state.kinds[&spec.kind].clone() } else { spec.kind.clone() };
+            let mut param = node!({"name": name, "type": kind, "array": array || pointer});
+            if !inner.is_empty() {
+                param["dims"] = Node::List(inner.into_iter().map(Node::from).collect());
+            }
+            if (spec.constant && !pointer && !array) || pointer_const {
+                param["const"] = Node::Bool(true);
+            }
+            if spec.constant && (pointer || array) {
+                param["pointee_const"] = Node::Bool(true);
+            }
+            if spec.storage.is_some() {
+                param["register"] = Node::Bool(true);
+            }
+            params.push(param);
             if !state.at(",", 0) {
                 break;
             }
@@ -2140,7 +2582,31 @@ fn parameters(state: &mut State) -> Parsed<Vec<Node>> {
         }
     }
     state.expect(")")?;
-    Ok(params)
+    Ok((params, false))
+}
+
+/// The declarations of a K&R definition's parameters, between its ) and its {.
+fn identifier_types(state: &mut State, params: &mut [Node]) -> Parsed<()> {
+    while !state.at("{", 0) {
+        let spec = specifiers(state, true)?;
+        if spec.storage.as_ref().is_some_and(|storage| storage != "register") {
+            return state.fail("a parameter's only storage class is register");
+        }
+        for declared in declarators(state)? {
+            let Some(param) = params.iter_mut().find(|param| param["name"] == *declared.name) else {
+                return state.fail(format!("{} is not a parameter", declared.name));
+            };
+            if declared.init.is_some() {
+                return state.fail(format!("parameter {} cannot have a value", declared.name));
+            }
+            let array = declared.pointer || !declared.dims.is_empty();
+            *param = node!({"name": &declared.name, "type": &spec.kind, "array": array});
+            if spec.constant && !array {
+                param["const"] = Node::Bool(true);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// What #pragma lines have set for the next function.
@@ -2149,6 +2615,8 @@ struct Pending {
     strings: Option<Vec<Node>>,
     padding: Option<Node>,
     override_: bool,
+    /// What #pragma override NAME names, when it names something: a native the function wraps.
+    override_of: Option<String>,
     every_frame: bool,
 }
 
@@ -2158,15 +2626,30 @@ fn function_definition(
     returns: &str,
     name: &str,
     doc: Option<&str>,
-) -> Parsed<Node> {
+) -> Parsed<Option<Node>> {
     if name.starts_with('_') {
         state.pos -= 1;
         return state.fail("function names cannot start with _, which marks natives");
     }
-    let params = parameters(state)?;
-    state.scope = Some(Scope { params: params.clone(), locals: Vec::new() });
+    let (mut params, identifiers) = parameters(state)?;
+    if state.at(";", 0) {
+        // a prototype: calls are checked against the definition
+        state.take();
+        return Ok(None);
+    }
+    if identifiers {
+        identifier_types(state, &mut params)?;
+    }
+    if params.iter().any(|param| param["name"] == "") {
+        return state.fail(format!("{name}: every parameter of a definition needs a name"));
+    }
+    state.scope = Some(Scope::new(name, params.clone()));
     let body = braced(state)?;
-    let locals = state.scope.take().unwrap().locals;
+    let scope = state.scope.take().unwrap();
+    if let Some((label, line)) = scope.gotos.iter().find(|(label, _)| !scope.labels.contains(label)) {
+        return lex_fail(*line, format!("goto {label}: no such label in {name}"));
+    }
+    let locals = scope.locals;
     let mut function = node!({
         "kind": "function",
         "name": name,
@@ -2183,10 +2666,86 @@ fn function_definition(
     if pending.override_ {
         function["override"] = Node::Bool(true);
     }
+    if let Some(of) = &pending.override_of {
+        function["override_of"] = Node::from(of.as_str());
+    }
     if pending.every_frame {
         function["every_frame"] = Node::Bool(true);
     }
-    Ok(function)
+    Ok(Some(function))
+}
+
+/// Whether an extern declares a native (extern int f(...) NATIVE(n);) rather than a C object or
+/// function: NATIVE comes before the ;.
+fn native_ahead(state: &State) -> bool {
+    (0..)
+        .map(|offset| state.token(offset))
+        .take_while(|token| token.kind != Kind::Eof && token.text() != ";")
+        .any(|token| token.kind == Kind::Name && token.text() == "NATIVE")
+}
+
+/// A declaration at file scope: a function's definition or prototype, or globals. A global's value
+/// is set once before the script runs (see lower.rs). Ok(true) for a function's definition.
+fn top_declaration(state: &mut State, program: &mut Node, pending: &Pending, doc: Option<&str>) -> Parsed<bool> {
+    let spec = specifiers(state, false)?;
+    if matches!(spec.storage.as_deref(), Some("auto" | "register")) {
+        return state.fail("auto and register belong inside functions");
+    }
+    if state.at(";", 0) {
+        state.take();
+        return Ok(false);
+    }
+    if state.peek(0).kind == Kind::Name && state.at("(", 1) {
+        let name = state.name()?;
+        let function = state.framed(|state| function_definition(state, pending, &spec.kind, &name, doc))?;
+        let Some(function) = function else {
+            return Ok(false);
+        };
+        program["functions"].as_array_mut().unwrap().push(function);
+        return Ok(true);
+    }
+    if state.at("*", 0) && state.at("(", 2) {
+        return state.fail("functions that return pointers are not supported yet");
+    }
+    if spec.kind == "void" {
+        return state.fail("variables cannot be void");
+    }
+    for declared in declarators(state)? {
+        if declared.size() != &Size::None {
+            return state.fail("global arrays are not supported: the script VM cannot index a global");
+        }
+        if declared.pointer {
+            return state.fail("global pointers are not supported: the script VM cannot index through a global");
+        }
+        let mut entry = node!({"name": &declared.name, "type": &spec.kind});
+        match declared.init {
+            Some(Init::Value(value)) => entry["init"] = value,
+            Some(Init::List(items)) => match items.as_slice() {
+                [Init::Value(value)] => entry["init"] = value.clone(),
+                _ => return state.fail(format!("too many values for {}", declared.name)),
+            },
+            None => {}
+        }
+        if spec.constant {
+            entry["const"] = Node::Bool(true);
+        }
+        let globals = program["globals"].as_array_mut().unwrap();
+        match globals.iter_mut().find(|global| global["name"] == *declared.name) {
+            // a tentative definition, or an extern declaration, of a global declared before
+            Some(existing) if existing["type"] == entry["type"] => {
+                if entry.get("init").is_some() {
+                    if existing.get("init").is_some() {
+                        return state.fail(format!("{} is given a value twice", declared.name));
+                    }
+                    *existing = entry.clone();
+                }
+            }
+            Some(_) => return state.fail(format!("{} is declared again with another type", declared.name)),
+            None => globals.push(entry.clone()),
+        }
+        state.globals.insert(declared.name.clone(), entry);
+    }
+    Ok(false)
 }
 
 fn result_name(name: &str) -> String {
@@ -2315,8 +2874,17 @@ fn inline_definition(state: &mut State) -> Parsed<Node> {
     Ok(node!({"name": name, "params": params, "body": braced(state)?}))
 }
 
+/// An enumerator's value: a number, as headers write them, or any integer constant expression of
+/// numbers, this file's integer #defines and the enumerators before it.
 fn enum_value(state: &mut State) -> Parsed<i128> {
     let negative = state.at("-", 0);
+    let offset = usize::from(negative);
+    let plain = state.token(offset).kind == Kind::Int
+        && state.token(offset + 1).kind == Kind::Op
+        && [",", "}"].contains(&state.token(offset + 1).text());
+    if !plain {
+        return Ok(constant_expression(state)? as i128);
+    }
     if negative {
         state.take();
     }
@@ -2328,9 +2896,20 @@ fn declarations<'a>(program: &'a mut Node, key: &str) -> &'a mut Vec<Node> {
     program["declarations"][key].as_array_mut().unwrap()
 }
 
+/// enum NAME { ... }; or an anonymous enum { ... };.
 fn enumeration(state: &mut State, program: &mut Node) -> Parsed<()> {
-    let enumeration = state.name()?;
+    let enumeration = if state.at("{", 0) { None } else { Some(state.name()?) };
+    let members = enumerators(state, enumeration.as_deref())?;
+    let key = if enumeration.as_deref() == Some("program") { "programs" } else { "constants" };
+    declarations(program, key).extend(members);
+    state.expect(";")?;
+    Ok(())
+}
+
+/// An enum's { ... }: its members as constants (as program names for enum program).
+fn enumerators(state: &mut State, enumeration: Option<&str>) -> Parsed<Vec<Node>> {
     state.expect("{")?;
+    let mut members = Vec::new();
     let mut value = 0i128;
     while !state.at("}", 0) {
         let name = state.name()?;
@@ -2338,14 +2917,11 @@ fn enumeration(state: &mut State, program: &mut Node) -> Parsed<()> {
             state.take();
             value = enum_value(state)?;
         }
-        if enumeration == "program" {
-            declarations(program, "programs").push(node!({"name": name, "no": int_node(value)?}));
+        if enumeration == Some("program") {
+            members.push(node!({"name": name, "no": int_node(value)?}));
         } else {
-            declarations(program, "constants").push(node!({
-                "name": name,
-                "value": int_literal(value)?,
-                "enum": &enumeration,
-            }));
+            state.enumerators.insert(name.clone(), value);
+            members.push(node!({"name": name, "value": int_literal(value)?, "enum": enumeration}));
         }
         value += 1;
         if !state.at(",", 0) {
@@ -2354,8 +2930,49 @@ fn enumeration(state: &mut State, program: &mut Node) -> Parsed<()> {
         state.take();
     }
     state.expect("}")?;
-    state.expect(";")?;
-    Ok(())
+    Ok(members)
+}
+
+/// Whether an enum definition at file scope stands alone (enum e { ... };), as headers write them,
+/// rather than starting a declaration (enum e { ... } x;).
+fn enum_alone(state: &State) -> bool {
+    let close = (0..)
+        .map(|offset| (offset, state.token(offset)))
+        .find(|(_, token)| token.kind == Kind::Eof || (token.kind == Kind::Op && token.text() == "}"));
+    close.is_some_and(|(offset, _)| state.at(";", offset + 1))
+}
+
+/// The constant a #define's value stands for, when the compiler keeps it as a name: a number or a
+/// string, a negative number, or a unary expression of integer constants (a parenthesised one, as
+/// (-2147483647 - 1)). Any other value is text the tokenizer puts where the name is used.
+/// frames: Python frames in use, this function's included.
+fn constant_of(value: &str, frames: usize) -> Parsed<Option<Node>> {
+    let chars: Vec<char> = value.chars().collect();
+    let mut inner = State::new(tokenize(&chars, Macros::default(), "", frames + 1)?, frames);
+    let mut value = match unary(&mut inner) {
+        Ok(value) => value,
+        Err(Fault::Value(_)) => return Ok(None),
+        Err(crash) => return Err(crash),
+    };
+    if inner.peek(0).kind != Kind::Eof {
+        return Ok(None);
+    }
+    if value.kind() == "unary" && value["op"] == "-" && value["operand"].kind() == "int" {
+        let negated = -(value["operand"]["value"].as_i64().unwrap() as i128);
+        let unsigned = value["operand"].get("unsigned").is_some();
+        value = if unsigned { unsigned_literal(negated as i32 as i128)? } else { int_literal(negated)? };
+    }
+    if matches!(value.kind(), "int" | "float" | "string") {
+        return Ok(Some(value));
+    }
+    Ok(folded(&value, &|_| None).map(|(value, unsigned)| {
+        let found = node!({"kind": "int", "value": value});
+        if unsigned {
+            found.with("unsigned", true)
+        } else {
+            found
+        }
+    }))
 }
 
 /// A #define whose value is a number or a string: a constant, and an integer one sizes arrays.
@@ -2363,22 +2980,8 @@ fn definition(state: &mut State, token: &Token, program: &mut Node) -> Parsed<()
     let [name, value] = token.words.as_slice() else {
         return Ok(());
     };
-    let chars: Vec<char> = value.chars().collect();
     // definition's own frame, then tokenize's
-    let mut inner = State::new(tokenize(&chars, HashMap::new(), state.depth + 2)?, state.depth + 1);
-    let mut value = match unary(&mut inner) {
-        Ok(value) => value,
-        Err(Fault::Value(_)) => return Ok(()),
-        Err(crash) => return Err(crash),
-    };
-    if inner.peek(0).kind != Kind::Eof {
-        return Ok(());
-    }
-    if value.kind() == "unary" && value["op"] == "-" && value["operand"].kind() == "int" {
-        let negated = -(value["operand"]["value"].as_i64().unwrap() as i128);
-        value = int_literal(negated)?;
-    }
-    if matches!(value.kind(), "int" | "float" | "string") {
+    if let Some(value) = constant_of(value, state.depth + 1)? {
         let integer = value["value"].as_i64().filter(|_| value.kind() == "int");
         declarations(program, "constants").push(node!({"name": name, "value": value, "enum": null}));
         if let Some(integer) = integer {
@@ -2386,6 +2989,76 @@ fn definition(state: &mut State, token: &Token, program: &mut Node) -> Parsed<()
         }
     }
     Ok(())
+}
+
+/// An integer constant expression's value, wrapped to 32 bits, and whether it is unsigned; None
+/// when it is not one (names give their value through names). Unsigned division, remainder,
+/// comparison and right shifts are left to the compiler.
+fn folded(node: &Node, names: &dyn Fn(&str) -> Option<i64>) -> Option<(i64, bool)> {
+    let wrap = |value: i64| value as i32 as i64;
+    match node.kind() {
+        "int" => Some((wrap(node["value"].as_i64()?), node.get("unsigned").is_some())),
+        "var" => names(field(node, "name")).map(|value| (wrap(value), false)),
+        "cast" if matches!(field(node, "type"), "int" | "long") => folded(&node["operand"], names),
+        "unary" => {
+            let (value, unsigned) = folded(&node["operand"], names)?;
+            Some(match field(node, "op") {
+                "-" => (wrap(value.wrapping_neg()), unsigned),
+                "+" => (value, unsigned),
+                "!" => (i64::from(value == 0), false),
+                _ => return None,
+            })
+        }
+        "ternary" => {
+            let (cond, _) = folded(&node["cond"], names)?;
+            let (then, then_unsigned) = folded(&node["then"], names)?;
+            let (otherwise, otherwise_unsigned) = folded(&node["else"], names)?;
+            Some((if cond != 0 { then } else { otherwise }, then_unsigned || otherwise_unsigned))
+        }
+        "logical" => {
+            let (left, _) = folded(&node["left"], names)?;
+            let (right, _) = folded(&node["right"], names)?;
+            let truth = if node["op"] == "&&" { left != 0 && right != 0 } else { left != 0 || right != 0 };
+            Some((i64::from(truth), false))
+        }
+        "binary" => {
+            let (left, left_unsigned) = folded(&node["left"], names)?;
+            let (right, right_unsigned) = folded(&node["right"], names)?;
+            let unsigned = left_unsigned || right_unsigned;
+            let op = field(node, "op");
+            if unsigned && matches!(op, "/" | "%" | "<" | "<=" | ">" | ">=" | ">>") {
+                return None;
+            }
+            let (a, b) = (left as i32, right as i32);
+            let value = match op {
+                "+" => a.wrapping_add(b),
+                "-" => a.wrapping_sub(b),
+                "*" => a.wrapping_mul(b),
+                "/" if b != 0 => a.wrapping_div(b),
+                "%" if b != 0 => a.wrapping_rem(b),
+                "&" => a & b,
+                "|" => a | b,
+                "^" => a ^ b,
+                "<<" if (0..32).contains(&b) => a.wrapping_shl(b as u32),
+                ">>" if (0..32).contains(&b) => a >> b,
+                "==" => i32::from(a == b),
+                "!=" => i32::from(a != b),
+                "<" => i32::from(a < b),
+                "<=" => i32::from(a <= b),
+                ">" => i32::from(a > b),
+                ">=" => i32::from(a >= b),
+                _ => return None,
+            };
+            let compared = matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=");
+            Some((value as i64, unsigned && !compared))
+        }
+        _ => None,
+    }
+}
+
+/// A node's text field, or "".
+fn field<'a>(node: &'a Node, key: &str) -> &'a str {
+    node[key].as_str().unwrap_or("")
 }
 
 fn program_entry(state: &mut State, program: &mut Node) -> Parsed<()> {
@@ -2480,7 +3153,8 @@ fn from_hex(text: &str) -> std::result::Result<Vec<u8>, usize> {
 fn pragma(state: &mut State, token: &Token, program: &mut Node, pending: &mut Pending) -> Parsed<()> {
     let words = &token.pragma;
     if words.is_empty() {
-        return state.fail("empty pragma");
+        // #pragma alone, which C ignores
+        return Ok(());
     }
     let line = token.line;
     let crash = |what: &str| Fault::Crash(format!("line {line}: #pragma {what}"));
@@ -2521,10 +3195,15 @@ fn pragma(state: &mut State, token: &Token, program: &mut Node, pending: &mut Pe
             }
             program["targets"].as_array_mut().unwrap().push(node!({"kind": kind, "values": values}));
         }
-        "override" => pending.override_ = true,
+        "override" => {
+            // #pragma override, or #pragma override place_monster before a function of another name
+            pending.override_ = true;
+            pending.override_of = rest.first().map(word).transpose()?;
+        }
         "every_frame" => pending.every_frame = true,
         "once" => {}
-        _ => return state.fail(format!("unknown pragma {key}")),
+        // C ignores a pragma it does not know
+        _ => {}
     }
     Ok(())
 }
@@ -2546,6 +3225,9 @@ fn file_doc(text: &str) -> String {
     comment_block(&comments, comments.len() + 1)
 }
 
+/// The name __FILE__ gives a file parsed without one.
+pub const UNNAMED_FILE: &str = "<script>";
+
 /// parse.parse(text): the program a script's source holds.
 pub fn parse(text: &str) -> Result<Node> {
     parse_with(text, &HashMap::new())
@@ -2554,12 +3236,21 @@ pub fn parse(text: &str) -> Result<Node> {
 /// parse.parse(text, defines): with #defines in force before the first line (a mod patch's
 /// LANGUAGE).
 pub fn parse_with(text: &str, defines: &HashMap<String, String>) -> Result<Node> {
-    Ok(parse_program(text, defines)?)
+    Ok(parse_program(text, defines, UNNAMED_FILE)?)
 }
 
-fn parse_program(text: &str, defines: &HashMap<String, String>) -> Parsed<Node> {
+/// The program a file's source holds, with its name for __FILE__.
+pub fn parse_file(text: &str, file: &str) -> Result<Node> {
+    Ok(parse_program(text, &HashMap::new(), file)?)
+}
+
+fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str) -> Parsed<Node> {
     let chars: Vec<char> = text.chars().collect();
-    let mut state = State::new(tokenize(&chars, defines.clone(), CALLER_FRAMES + 2)?, CALLER_FRAMES + 1);
+    let mut macros = Macros::default();
+    for (name, value) in defines {
+        macros.define(name, cpp::Macro { params: None, body: value.clone() }, true);
+    }
+    let mut state = State::new(tokenize(&chars, macros, file, CALLER_FRAMES + 2)?, CALLER_FRAMES + 1);
     if state.tokens[0].kind == Kind::Assembly {
         return Ok(node!({"kind": "program", "asm": state.tokens[0].text()}));
     }
@@ -2600,7 +3291,9 @@ fn parse_program(text: &str, defines: &HashMap<String, String>) -> Parsed<Node> 
             })),
             Kind::Assembly => return state.fail("#pragma assembly must start the file"),
             Kind::Define => definition(&mut state, &token, &mut program)?,
-            _ if word == "enum" => enumeration(&mut state, &mut program)?,
+            _ if word == "enum" && (state.at("{", 0) || state.at("{", 1)) && enum_alone(&state) => {
+                enumeration(&mut state, &mut program)?
+            }
             _ if word == "PROGRAM" => program_entry(&mut state, &mut program)?,
             _ if request(word).is_some() => {
                 // NEW_FLAG(name): a number build gives the mod (numbers.py)
@@ -2620,49 +3313,34 @@ fn parse_program(text: &str, defines: &HashMap<String, String>) -> Parsed<Node> 
                 state.expect(";")?;
             }
             _ if word == "typedef" => {
-                let base = type_name(&mut state, &NATIVE_TYPES)?;
+                let base = if state.at("any", 0) {
+                    type_name(&mut state, &NATIVE_TYPES)?
+                } else {
+                    let spec = specifiers(&mut state, false)?;
+                    base_type(&state, &spec.kind)?
+                };
+                if state.at("*", 0) {
+                    return state.fail("pointer typedefs are not supported yet");
+                }
                 let name = state.name()?;
                 state.expect(";")?;
                 program["declarations"]["kinds"][name.as_str()] = Node::from(&base);
                 state.kinds.insert(name, base);
             }
-            _ if word == "extern" => {
+            _ if word == "extern" && native_ahead(&state) => {
                 let native = native_declaration(&mut state)?;
                 declarations(&mut program, "natives").push(native);
             }
-            _ if word == "static" => {
+            _ if word == "static" && state.at("inline", 0) => {
                 state.expect("inline")?;
                 let inline = state.framed(inline_definition)?;
                 declarations(&mut program, "inlines").push(inline);
             }
-            _ if RETURN_TYPES.contains(&word) => {
-                let name = state.name()?;
-                if state.at("(", 0) {
-                    let doc = token.doc.as_deref();
-                    let function = state.framed(|state| function_definition(state, &pending, word, &name, doc))?;
-                    program["functions"].as_array_mut().unwrap().push(function);
+            _ if token.kind == Kind::Name && type_word(&state, word) => {
+                let doc = token.doc.clone();
+                state.pos -= 1;
+                if top_declaration(&mut state, &mut program, &pending, doc.as_deref())? {
                     pending = Pending::default();
-                } else if word == "void" {
-                    return state.fail("variables cannot be void");
-                } else {
-                    state.pos -= 1;
-                    for declared in declarators(&mut state)? {
-                        if declared.size != Size::None {
-                            return state.fail("global arrays are not supported: the script VM cannot index a global");
-                        }
-                        if declared.pointer {
-                            return state.fail(
-                                "global pointers are not supported: the script VM cannot index through a global",
-                            );
-                        }
-                        if !matches!(declared.init, Init::None) {
-                            return state.fail(format!(
-                                "globals start at 0 when the script loads; set {} in a program instead",
-                                declared.name
-                            ));
-                        }
-                        program["globals"].as_array_mut().unwrap().push(node!({"name": declared.name, "type": word}));
-                    }
                 }
             }
             _ => {
@@ -2671,7 +3349,11 @@ fn parse_program(text: &str, defines: &HashMap<String, String>) -> Parsed<Node> 
                 return state.fail(format!("expected a declaration, found {found}"));
             }
         }
+        let found = std::mem::take(&mut state.constants_found);
+        declarations(&mut program, "constants").extend(found);
     }
+    // static locals' hidden globals
+    program["globals"].as_array_mut().unwrap().extend(std::mem::take(&mut state.statics));
     if program["global_num"].is_null() {
         program["global_num"] = Node::from(program["globals"].as_array().unwrap().len());
     }
@@ -2727,7 +3409,7 @@ mod tests {
     #[test]
     fn defines_enums_and_literals() {
         let text = "#define N 3\nenum e { A, B = -2 };\nvoid f() { int t[N] = {1, 2}; x = 'a' + 0x10 + 1.5f; }\n";
-        let want = r#""globals":[],"global_num":0,"main":null,"programs":[],"functions":[{"kind":"function","name":"f","returns":"void","params":[],"locals":[{"name":"t","type":"int","size":3}],"body":[{"kind":"expr","expr":{"kind":"assign","target":{"kind":"index","name":"t","index":{"kind":"int","value":0}},"value":{"kind":"int","value":1}},"line":3},{"kind":"expr","expr":{"kind":"assign","target":{"kind":"index","name":"t","index":{"kind":"int","value":1}},"value":{"kind":"int","value":2}},"line":3},{"kind":"expr","expr":{"kind":"assign","target":{"kind":"var","name":"x"},"value":{"kind":"binary","op":"+","left":{"kind":"binary","op":"+","left":{"kind":"int","value":97},"right":{"kind":"int","value":16}},"right":{"kind":"float","bits":1069547520}}},"line":3}],"unused_strings":[],"padding":null}],"string_pool":false,"padding_of":{},"declarations":{"natives":[],"programs":[],"inlines":[],"constants":[{"name":"N","value":{"kind":"int","value":3},"enum":null},{"name":"A","value":{"kind":"int","value":0},"enum":"e"},{"name":"B","value":{"kind":"int","value":-2},"enum":"e"}],"kinds":{}}}"#;
+        let want = r#""globals":[],"global_num":0,"main":null,"programs":[],"functions":[{"kind":"function","name":"f","returns":"void","params":[],"locals":[{"name":"t","type":"int","size":3}],"body":[{"kind":"expr","expr":{"kind":"assign","target":{"kind":"index","name":"t","index":{"kind":"int","value":0}},"value":{"kind":"int","value":1}},"line":3},{"kind":"expr","expr":{"kind":"assign","target":{"kind":"index","name":"t","index":{"kind":"int","value":1}},"value":{"kind":"int","value":2}},"line":3},{"kind":"expr","expr":{"kind":"assign","target":{"kind":"index","name":"t","index":{"kind":"int","value":2}},"value":{"kind":"int","value":0}},"line":3},{"kind":"expr","expr":{"kind":"assign","target":{"kind":"var","name":"x"},"value":{"kind":"binary","op":"+","left":{"kind":"binary","op":"+","left":{"kind":"int","value":97},"right":{"kind":"int","value":16}},"right":{"kind":"float","bits":1069547520}}},"line":3}],"unused_strings":[],"padding":null}],"string_pool":false,"padding_of":{},"declarations":{"natives":[],"programs":[],"inlines":[],"constants":[{"name":"N","value":{"kind":"int","value":3},"enum":null},{"name":"A","value":{"kind":"int","value":0},"enum":"e"},{"name":"B","value":{"kind":"int","value":-2},"enum":"e"}],"kinds":{}}}"#;
         assert_eq!(dump(text), format!("{HEADER}{want}"));
     }
 
@@ -2744,14 +3426,15 @@ mod tests {
     }
 
     #[test]
-    fn conditions_read_as_python_reads_them() {
+    fn conditions_read_as_c_reads_them() {
         let text = "#if LANGUAGE == LANGUAGE_FRENCH\nint fr;\n#elif LANGUAGE\nint other;\n#else\nint none;\n#endif\n";
         let defines: HashMap<String, String> =
             [("LANGUAGE", "2"), ("LANGUAGE_FRENCH", "2")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         let program = parse_with(text, &defines).unwrap();
         assert_eq!(program["globals"].to_string(), r#"[{"name":"fr","type":"int"}]"#);
-        // Python's precedence, not C's: (3 & 1) == 1, not (2 == 1); / truncates
-        for (condition, value) in [("3 & 1 == 1", true), ("!2 == 1", true), ("-7 / 2 == -3", true), ("1and 0", false)] {
+        // C's precedence: 3 & (1 == 1), (!2) == 1; / truncates
+        for (condition, value) in [("3 & 1 == 1", true), ("!2 == 1", false), ("-7 / 2 == -3", true), ("1 && 0", false)]
+        {
             let globals = dump(&format!("#if {condition}\nint yes;\n#endif\n"));
             assert_eq!(globals.contains("\"yes\""), value, "{condition}");
         }
@@ -2765,7 +3448,7 @@ mod tests {
             ("void f() { s = \"\\xzz\"; }", "invalid literal for int() with base 16: 'zz'"),
             ("#if 1\nint a;\n", "line 1: #if without #endif"),
             ("/* open", "line 1: unterminated comment"),
-            ("#if (1\n#endif\n", "line 1: cannot read the condition '(1'"),
+            ("#if (1\n#endif\n", "line 1: cannot read the condition '(1': ( without )"),
             (
                 "#pragma magic S\u{e9}\n",
                 "'ascii' codec can't encode character '\\xe9' in position 1: ordinal not in range(128)",

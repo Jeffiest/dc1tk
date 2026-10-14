@@ -133,10 +133,16 @@ Blender unchanged. The formats and conventions are in
 [maps](docs/assets/maps.md); the example [map-edit](docs/examples/map-edit/)
 was checked in the game. Left over:
 
-- **New maps.** A wholly new map needs a map number, the engine's map tables
-  and a way in; only the maps on the disc can be edited.
-- **Dungeon floors.** Random floors are built from parts at run time; their
-  layouts and parts are not editable yet.
+- **New maps** (done, being tried). `"add": {"map:m05x": {"file": ...,
+  "like": "m05"}}` builds a new map from an existing one's edited scene,
+  with a row in every language's map table, so `--start-at m05x` reaches it
+  ([maps](docs/assets/maps.md) section 9). Left: a new map's own script,
+  and a door into it from the game's maps.
+- **Dungeon floors** (done, being tried). The floor layouts
+  (`dungeon/cfg_file/*.cfg`) are `data:layouts`; the parts they place edit
+  in Blender (`c2 map-export d01f01` shows each template once)
+  ([dungeons](docs/assets/dungeons.md)). Left: new part kinds (fixed in the
+  executable), which ways on a floor gets, the chest-item scripts.
 
 ## Now: the rest of the game
 
@@ -184,16 +190,22 @@ Make the script compiler a conforming C89/C90 freestanding implementation
 code keeps compiling to its own bytes. What the compiler lacks today
 ([language](docs/language.md)), in the order to do it:
 
-1. **A conformance suite.** A test of every C89 feature, each passing,
-   failing to compile, or compiling with different behaviour, so progress is
-   measured.
-2. **Cheap features:** `goto` and labels, `sizeof`, the comma operator,
-   unary `+`, `const`/`volatile`/`register`/`auto`, `static` locals (kept
-   between calls), initialised globals, multi-dimensional local arrays, K&R
-   function definitions, macros with parameters with `#` and `##`, `#error`,
-   `#line`, `__FILE__`/`__LINE__`/`__STDC__`, and full `#if` arithmetic.
-3. **Integer types:** `char`, `short`, `long`, `signed` and `unsigned` with
-   C's widths, wrap-around and conversions, emulated on the VM's ints.
+1. **A conformance suite** (done). 115 programs in
+   `src/crates/c2-script/tests/c89/`, run in the VM interpreter, each with a
+   row in [c-standard](docs/c-standard.md): 95 supported (83 give C's result,
+   12 the error C requires), 3 differ (step 4, and a header's macros not
+   seen by the includer's `#if`), 15 planned (step 5), 2 at the limit
+   (`double`).
+2. **Cheap features** (done): a real preprocessor (macros with parameters,
+   `#` and `##`, `#if` in 32-bit C arithmetic, `#error`, `#line`, the
+   predefined macros, trigraphs), `goto`, `sizeof`, the comma operator,
+   unary `+`, `const`/`volatile`/`register`/`auto`, implicit int, `static`
+   locals, initialised globals (a hidden once-per-load initialiser),
+   multi-dimensional local arrays, K&R definitions, block scope.
+3. **Integer types** (done): `char` and `short` masked to their widths,
+   `unsigned` with biased comparisons and a small runtime for `/`, `%`, `>>`
+   and float conversions, added only when used; `<limits.h>`, `<stddef.h>`,
+   `<float.h>`. Retail bytes are unchanged (`c2 verify` OK).
 4. **C's semantics in a strict mode** (`#pragma std c89` or a mod option):
    assignment converts to the variable's type (the VM stores the value's own
    type), `&&`/`||` give 0 or 1, and natives in conditions run only when C
@@ -213,15 +225,13 @@ code keeps compiling to its own bytes. What the compiler lacks today
 
 Done: mods that need mods (`requires`, `after`), editor headers for patches
 (`mod header`), and overrides that follow a renamed function by its
-fingerprint (`mods/NAME/fingerprints.json`, `mod check --rename`); see
-[modding](docs/modding.md).
+fingerprint (`mods/NAME/fingerprints.json`, `mod check --rename`),
+wrapping natives (`#pragma override place_monster` routes the target
+scripts' calls through the mod's function; `original()` calls the native),
+and `mod slim`, which turns copied files into patches that compile to the
+same bytes; see [modding](docs/modding.md). Not yet tried in the game:
+a native wrapper (e.g. swapping a fight's monsters).
 
-- **Wrapping natives.** `#pragma override place_monster` in a patch would
-  route every call the target makes to a native through the mod's function,
-  so swapping a fight's monsters would not mean copying the function that
-  places them.
-- **Whole-file mods into patches.** A `mod slim` that compares each copied
-  file with the tree and writes overrides for the functions that changed.
 - **Save counters.** `NEW_COUNTER` once the number of 16-bit save counters is
   known (scripts use 0 to 20).
 
@@ -277,9 +287,14 @@ do:
 5. **New characters.** A model is rebuilt on the disc model's skeleton; a
    wholly new character needs a new pack, an `info.cfg` and a skeleton of
    its own from glTF, and cloth (`.clo`) left out or carried over.
-6. **Music.** `.sq` sequences (music and ambient loops) are not decoded, and
-   a WAV given for a sequence entry replaces it with one sound; sequences
-   from MIDI are a separate job.
+6. **Music** (done, being tried). All background music and ambient loops
+   are `.sq` sequences played with their bank's instruments
+   ([music](docs/assets/music.md)); `SOUND.DAT` is streamed voices. All 447
+   round-trip byte for byte and through MIDI; `music:BG_000_000` in
+   `mod.json` replaces a tune from a `.mid` (with a `.sf2` of the bank's
+   instruments to hear it). Left: the IOP sequencer is not decompiled (loop
+   and tempo defaults read from the data), and a tune can only use its
+   bank's existing instruments.
 
 ## Next: names and docs
 

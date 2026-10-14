@@ -462,6 +462,9 @@ pub fn import_map(
     for (name, uri) in scene_pictures(&doc) {
         let png = read_cached(&uri).map_err(|error| Error::invalid(format!("picture {name}: {error}")))?;
         match textures.find(&name) {
+            // the first of the name is a render target, which the export showed as its stand-in
+            // (d01f01's d01b17, which d01b01 has with pixels)
+            Some((_, first)) if first.no_image && crate::textures::same_pixels(&png, &crate::to_gltf::placeholder_png(&name))? => {}
             Some(_) => {
                 // changed when it is none of the disc's pictures of the name (several maps have
                 // their own under one name; a render target has no pixels to change)

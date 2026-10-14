@@ -11,12 +11,14 @@
 //!   "bank:SP_003": "sounds/SP_003",                         a folder of WAVs by entry number
 //!   "texture:a01ia_01": {"file": "art/floor.png", "only": ["map/a"]},
 //!   "text:en/shopname": "text/en/shopname.txt",             a message file's text, by message
+//!   "music:BG_000_000": "music/BG_000_000.mid",             a sequence (music, an ambient loop) as MIDI
 //!   "file:snd2/event/EV_000_130.snd": "raw/bank.snd"        a disc file or pack member by path
 //! },
 //! "add": {
 //!   "sound:SE_MOD_BEEP": {"file": "sounds/beep.wav", "bank": "SP_004"},
 //!   "file:mods/calc/ui.img": {"file": "ui", "like": "texture:logo_d00"},     a new texture file of PNGs
 //!   "file:mods/calc/calc.chr": {"file": "calc/calc.gltf", "like": "model:uki"} a new pack from a glTF
+//!   "map:m05x": {"file": "maps/m05x/m05x.gltf", "like": "m05", "title": "Park"} a new map from a map's scene
 //! }
 //! ```
 //!
@@ -48,9 +50,11 @@ use std::path::{Path, PathBuf};
 
 use c2_assets::ids::{self, Index};
 use c2_assets::im3;
+use c2_assets::soundbank::Bank;
 use c2_assets::sounds::{self, Given};
 use c2_assets::text;
 use c2_assets::tree::{self, Kind, Place};
+use c2_assets::{music, soundfont};
 use c2_disc::archive::Archive;
 use c2_disc::{rebuild, Image};
 use indexmap::IndexMap;
@@ -62,13 +66,19 @@ use crate::{mods, Error, Result};
 pub const REPLACE: &str = "replace";
 pub const ADD: &str = "add";
 pub const FILE: &str = "file:";
-/// A map edited as a glTF scene (docs/assets/maps.md section 8): `"map:s17": "maps/s17/s17.gltf"`.
+/// A map edited as a glTF scene (docs/assets/maps.md section 8): `"map:s17": "maps/s17/s17.gltf"`;
+/// under "add", a new map made from another's scene (`{"file": ..., "like": "m05"}`, section 9).
 pub const MAP: &str = "map:";
+/// The longest name a new map may have: its files are `<name>_<language>.stb` and the like in the
+/// engine's 32-byte file names.
+pub const MAP_NAME_MOST: usize = 12;
 /// A table of game data edited as JSON (docs/assets/data.md): `"data:items": "data/items.json"`.
 pub const DATA: &str = "data:";
+/// What a music: line's MIDI file may be called.
+const MIDI_SUFFIXES: [&str; 3] = [".mid", ".midi", ".rmi"];
 /// The tables a data: line can name.
-pub const DATA_TABLES: [&str; 9] =
-    ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters"];
+pub const DATA_TABLES: [&str; 10] =
+    ["items", "shops", "monsters", "inventions", "georama", "medals", "floors", "fishing", "characters", "layouts"];
 
 /// One line of a mod's replace or add.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,8 +93,11 @@ pub struct Line {
     /// The bank an added sound goes into.
     pub bank: Option<String>,
     pub add: bool,
-    /// For a file: line made whole from a common format, the template: an asset id or disc path.
+    /// For a file: line made whole from a common format, the template: an asset id or disc path;
+    /// for a new map, the map it is made from.
     pub like: Option<String>,
+    /// A new map's title in the map table (every language's), instead of the like map's.
+    pub title: Option<String>,
 }
 
 impl Line {
@@ -169,11 +182,12 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         bank: None,
         add,
         like: None,
+        title: None,
     };
     let kind = ids::kind_of(key);
     if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
         return Err(line.fail(
-            "a key is an asset id (texture:, model:, sound:, bank:, text:), file: and a disc path, map: and a map's name, \
+            "a key is an asset id (texture:, model:, sound:, bank:, text:, music:), file: and a disc path, map: and a map's name, \
              or data: and a table (data:items, data:monsters, ...)",
         ));
     }
@@ -213,6 +227,17 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
                 let like = value.as_str().ok_or_else(|| line.fail("\"like\" is an asset id or a disc path"))?;
                 line.like = Some(like.replace('\\', "/").trim_matches('/').to_string());
             }
+            "like" if line.is_map() && add => {
+                let like = value.as_str().ok_or_else(|| line.fail("\"like\" is the map the new one is made from"))?;
+                line.like = Some(like.trim_start_matches(MAP).to_string());
+            }
+            "title" if line.is_map() && add => {
+                let title = value
+                    .as_str()
+                    .filter(|title| title.chars().all(|c| (' '..='~').contains(&c)) && !title.contains('"'));
+                let title = title.ok_or_else(|| line.fail("\"title\" is text of printable ASCII without quotes"))?;
+                line.title = Some(title.to_string());
+            }
             _ => return Err(line.fail(format!("unknown option \"{option}\""))),
         }
     }
@@ -241,8 +266,22 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     }
     if line.is_map() {
         let name = line.map_name();
-        if add || name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        if !add && (name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
             return Err(line.fail("a map: line replaces a map, named as the game names it (map:s17)"));
+        }
+        if add {
+            let fits = (1..=MAP_NAME_MOST).contains(&name.len())
+                && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                && name.starts_with(|c: char| c.is_ascii_lowercase());
+            if !fits {
+                return Err(line.fail(format!(
+                    "a new map is named in lower-case letters, digits and _, from a letter, at most {MAP_NAME_MOST} long (map:m05x)"
+                )));
+            }
+            let like = line.like.as_deref().unwrap_or_default();
+            if like.is_empty() || !like.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                return Err(line.fail("a new map names the map it is made from: {\"file\": ..., \"like\": \"m05\"}"));
+            }
         }
         if !(line.file.is_file() && suffix_is(&line.file, ".gltf")) {
             return Err(line.fail(format!("{} is not a .gltf file (c2 map export writes one)", line.shown)));
@@ -274,6 +313,9 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
         Some(Kind::Bank) if !line.file.is_dir() => Some("a folder of WAVs named by entry number (004.wav)"),
         Some(Kind::Text) if !(line.file.is_file() && suffix_is(&line.file, ".txt")) => {
             Some("a .txt file of messages (mod asset text:ID writes one)")
+        }
+        Some(Kind::Music) if !(line.file.is_file() && MIDI_SUFFIXES.iter().any(|end| suffix_is(&line.file, end))) => {
+            Some("a MIDI file (.mid)")
         }
         _ => None,
     };
@@ -337,7 +379,7 @@ fn check_like(line: &Line, like: &str) -> Result<()> {
 pub fn templates(lines: &[Line], index: Option<&Index>) -> Result<Templates> {
     let mut out = Templates::new();
     for line in lines {
-        let Some(like) = &line.like else {
+        let Some(like) = line.like.as_ref().filter(|_| line.is_file()) else {
             continue;
         };
         let template = match ids::kind_of(like) {
@@ -391,6 +433,8 @@ pub enum Change {
     Entry(Given),
     /// The messages of a text file, with the place its text was exported from (the id's first).
     Text(PathBuf, Place),
+    /// A sequence (.sq member of a bank) built from a MIDI file.
+    Sequence(PathBuf),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -407,7 +451,7 @@ pub struct Edit {
 impl Edit {
     fn slot(&self) -> (String, Option<usize>) {
         let at = match &self.change {
-            Change::Model(_) | Change::Text(..) => None,
+            Change::Model(_) | Change::Text(..) | Change::Sequence(_) => None,
             Change::Picture(entry, _) => Some(*entry),
             Change::Entry(given) => Some(given.number),
         };
@@ -516,6 +560,11 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                     let reference = asset.places[0].0.clone();
                     for (place, _) in places {
                         resolved.edits.push(edit(place, Change::Text(line.file.clone(), reference.clone())));
+                    }
+                }
+                Kind::Music => {
+                    for (place, _) in places {
+                        resolved.edits.push(edit(place, Change::Sequence(line.file.clone())));
                     }
                 }
                 Kind::Sound => {
@@ -728,12 +777,14 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
     let disc = Archive::open(image.bytes())?;
     let index = discfiles::disc_index(&disc);
     let mut files = files.clone();
-    // models, then banks, then pictures, then texts; outer places first
+    // models, then banks, then pictures, then texts, then the sequences inside banks; outer places
+    // first
     let stage = |edit: &Edit| match edit.change {
         Change::Model(_) => 0,
         Change::Entry(_) => 1,
         Change::Picture(..) => 2,
         Change::Text(..) => 3,
+        Change::Sequence(_) => 4,
     };
     let fonts = discfiles::disc_fonts(&disc, &image, &index);
     let mut groups: BTreeMap<(usize, usize, String), Vec<&Edit>> = BTreeMap::new();
@@ -782,6 +833,13 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
                     .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
                     .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
                 text::build(&written, &old, original, &place.display(), &fonts).map_err(|error| fail(error.into()))?
+            }
+            4 => {
+                let Change::Sequence(source) = &first.change else { unreachable!() };
+                // the bank holding the sequence, for its programs
+                let bank = place.members.split_last().and_then(|(_, bank)| rebuild::read_member(&data, bank));
+                let bank = bank.map(Bank::from_bytes).transpose().map_err(|error| fail(error.into()))?;
+                music::build(&fs::read(source)?, &old, bank.as_ref()).map_err(|error| fail(error.into()))?
             }
             1 => {
                 let mut given: Vec<Given> = edits
@@ -957,6 +1015,23 @@ pub fn copy_out(
                     let bank_name = &bank[bank.find(':').map_or(0, |at| at + 1)..];
                     let target = format!("sounds/{}/{}", bank_stem(bank), tree::wav_name(number, named, bank_name));
                     (target.clone(), vec![(target, wav.1)])
+                }
+                Kind::Music => {
+                    // the MIDI file, and its bank's programs as a SoundFont beside it to hear it with
+                    let target = format!("music/{stem}{}", music::SUFFIX);
+                    let mut files = vec![(target.clone(), music::export(data, &asset.name)?)];
+                    if let Some((_, members)) = place.members.split_last() {
+                        let top = disc_index.get(&place.path.to_lowercase());
+                        let bank = top.and_then(|top| rebuild::read_member(disc.read(image.bytes(), top), members));
+                        let file = members.last().unwrap_or(&place.path);
+                        let file = file.rsplit('/').next().unwrap_or(file);
+                        let name = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+                        if let Some(bank) = bank {
+                            let font = soundfont::write(&Bank::from_bytes(bank)?, name)?;
+                            files.push((format!("music/{}{}", tree::file_stem(name), soundfont::SUFFIX), font));
+                        }
+                    }
+                    (target, files)
                 }
             };
             if known.contains(&asset.id.to_lowercase()) || new_lines.iter().any(|(id, _)| id == &asset.id) {

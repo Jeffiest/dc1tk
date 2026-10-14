@@ -3,7 +3,8 @@
 `sdk/<table>.h` (`event`, `monster`, `action`, `effect`, `arg`) is the
 scripting SDK, `sdk/helpers/<table>.h` holds its inline helpers (each table
 header includes its own), and `sdk/c2s.h` is the C prelude. A script includes its table's
-header instead of naming a native table.
+header instead of naming a native table. `sdk/limits.h`, `sdk/float.h` and `sdk/stddef.h`
+are C89's freestanding headers for the VM's types (see [the standard](c-standard.md)).
 
 ```c
 enum program {

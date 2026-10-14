@@ -149,10 +149,14 @@ fn export_one(disc: &Disc, name: &str, out: &Path, search: Option<&TextureSearch
         fs::create_dir_all(target.parent().unwrap())?;
         fs::write(&target, data)?;
     }
+    let placed = if map.placements.is_empty() {
+        format!("a template library: its {} templates shown once each, placed nowhere", map.templates.len())
+    } else {
+        format!("{} placements", map.placements.len())
+    };
     let mut line = format!(
-        "{}: {} placements, {} models, {} nodes, written to {}",
+        "{}: {placed}, {} models, {} nodes, written to {}",
         files.name,
-        map.placements.len(),
         report.models,
         report.nodes,
         out.join(format!("{}.gltf", files.name)).display()
@@ -215,13 +219,25 @@ pub struct MapChange {
     pub module: String,
     pub map: String,
     pub path: String,
+    /// The file's size on the disc; 0 for a new map's file.
     pub old: usize,
     pub new: usize,
 }
 
+/// Where a new map's file is: the like map's file renamed and moved to the new map's folder
+/// (`map/m/m05/m05.mpk` for m05x is `map/m/m05/m05x.mpk`, as GetMapPath finds it).
+fn new_map_path(path: &str, like: &mapedit::MapFiles, name: &str) -> String {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let suffix = file.get(like.name.len()..).unwrap_or_default();
+    format!("{}/{name}{}", mapedit::rule_folder(name), suffix.to_lowercase())
+}
+
 /// Builds the chosen mods' map: lines (an edited scene of `c2 map-export`) into the disc files:
 /// the map's .map rebuilt from the scene, and the models whose meshes changed rebuilt into their
-/// model packs. `files` holds what the build already rewrote, by DATA.DAT path.
+/// model packs. A map: line under "add" makes a new map of its like map's files (docs/assets/maps.md
+/// section 9): each written under the new name, the scene's edits made in the copies, a row
+/// appended to every language's map table. `files` holds what the build already rewrote, by
+/// DATA.DAT path.
 pub fn apply_maps(
     iso: &Path,
     mod_dirs: &[PathBuf],
@@ -235,9 +251,16 @@ pub fn apply_maps(
         return Ok((out, changes));
     }
     let disc = Disc::open(iso)?;
+    let new_maps = c2_script::maptable::new_maps(&lines)?;
     for line in &lines {
         let name = line.map_name();
-        let found = mapedit::map_files(disc.entries(), &name)?;
+        let source = if line.add { line.like.clone().unwrap_or_default() } else { name.clone() };
+        if line.add && mapedit::map_files(disc.entries(), &name).is_ok() {
+            bail!("{} (mod {}): the disc has a map {name}; edit it with a map: line under \"replace\"", line.key, line.module);
+        }
+        let found = mapedit::map_files(disc.entries(), &source).with_context(|| format!("{} (mod {})", line.key, line.module))?;
+        // where a file of the map goes: its own place, or a new map's
+        let place = |path: &str| if line.add { new_map_path(path, &found, &name) } else { path.to_string() };
         // a file an earlier step rewrote is the one to build on
         let current = |path: &str| -> Result<Vec<u8>> {
             match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
@@ -270,8 +293,8 @@ pub fn apply_maps(
             println!("note: {} (mod {}): {note}", line.key, line.module);
         }
         if let Some(text) = imported.map {
-            changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: found.map.clone(), old: original.len(), new: text.len() });
-            out.insert(found.map.clone(), text);
+            changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: place(&found.map), old: if line.add { 0 } else { original.len() }, new: text.len() });
+            out.insert(place(&found.map), text);
         }
         if !imported.models.is_empty() || !imported.new_models.is_empty() {
             let Some((mpk_path, mut mpk_data)) = mpk else {
@@ -293,14 +316,14 @@ pub fn apply_maps(
                 println!("  {} (map {}): rebuilt {} in {}", line.module, name, member, pack.name);
             }
             if !imported.new_models.is_empty() {
-                mpk_data = with_new_models(mpk_data, &name, &imported.new_models)
+                mpk_data = with_new_models(mpk_data, &found.name, &imported.new_models)
                     .with_context(|| format!("{} (mod {})", line.key, line.module))?;
                 for model in &imported.new_models {
                     println!("  {} (map {}): added {} ({})", line.module, name, model.file, map_export::kind_name(model.kind));
                 }
             }
-            changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: mpk_path.clone(), old: old_size, new: mpk_data.len() });
-            out.insert(mpk_path, mpk_data);
+            changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: place(&mpk_path), old: if line.add { 0 } else { old_size }, new: mpk_data.len() });
+            out.insert(place(&mpk_path), mpk_data);
         }
         if !imported.textures.is_empty() {
             let current = |path: &str| -> Result<Vec<u8>> {
@@ -315,12 +338,67 @@ pub fn apply_maps(
                 .map(|Rewritten { path, data, said }| Ok((current(&path)?.len(), path, data, said)))
                 .collect::<Result<Vec<_>>>()?;
             for (old, path, data, said) in rewritten {
+                // a new map's own pictures go into its copy of the like map's texture pack
+                let own = line.add && Some(&path) == found.ipk.as_ref();
+                let path = if own { place(&path) } else { path };
                 for text in said {
+                    let text = if own { text.replace(found.ipk.as_deref().unwrap_or_default(), &path) } else { text };
                     println!("  {} (map {}): {text}", line.module, name);
                 }
+                let old = if own { 0 } else { old };
                 changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: path.clone(), old, new: data.len() });
                 out.insert(path, data);
             }
+        }
+        if line.add {
+            // the like map's other files, copied as they are
+            let theirs = [Some(&found.map), found.mpk.as_ref(), found.ipk.as_ref(), found.cfg.as_ref(), found.efp.as_ref(), found.sky.as_ref()];
+            let mut copies = Vec::new();
+            for path in theirs.into_iter().flatten() {
+                let target = place(path);
+                if !out.contains_key(&target) {
+                    let data = match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
+                        Some((_, data)) => data.clone(),
+                        None => disc.read(path)?,
+                    };
+                    copies.push((path.clone(), target, data));
+                }
+            }
+            for (path, target, data) in copies {
+                changes.push(MapChange { module: line.module.clone(), map: name.clone(), path: target.clone(), old: 0, new: data.len() });
+                println!("  {} (map {}): {target}, a copy of {path}", line.module, name);
+                out.insert(target, data);
+            }
+        }
+    }
+    if !new_maps.is_empty() {
+        // a row for each new map in every language's map table
+        let module = lines.iter().filter(|line| line.add).map(|line| line.module.clone()).collect::<Vec<_>>().join(", ");
+        let names = new_maps.iter().map(|map| map.name.as_str()).collect::<Vec<_>>().join(", ");
+        for language in c2_script::maptable::LANGUAGES {
+            let path = c2_script::startat::map_table_path(Some(language));
+            let table = match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(&path)) {
+                Some((_, data)) => data.clone(),
+                None => match disc.read(&path) {
+                    Ok(data) => data,
+                    Err(_) => continue,
+                },
+            };
+            let (written, numbers) = c2_script::maptable::with_new_maps(&table, &new_maps).with_context(|| path.clone())?;
+            if language == 1 {
+                for (map, number) in new_maps.iter().zip(&numbers) {
+                    println!("  map {} (like {}) is map number {number}", map.name, map.like);
+                    if *number >= c2_script::maptable::FLAGGED_MAPS {
+                        println!(
+                            "warning: map {} is numbered {number}; the save keeps map flags (opened chests and the like) for numbers below {}",
+                            map.name,
+                            c2_script::maptable::FLAGGED_MAPS
+                        );
+                    }
+                }
+            }
+            changes.push(MapChange { module: module.clone(), map: names.clone(), path: path.clone(), old: table.len(), new: written.len() });
+            out.insert(path, written);
         }
     }
     Ok((out, changes))
@@ -463,6 +541,22 @@ fn info_cfg_with(cfg: &str, models: &[(&str, i64)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_maps_files_take_its_name_and_folder() {
+        let like = mapedit::MapFiles {
+            name: "m05".into(),
+            folder: "map/m/m05".into(),
+            map: "map/m/m05/m05.map".into(),
+            mpk: Some("map/m/m05/m05.mpk".into()),
+            ipk: None,
+            efp: None,
+            sky: None,
+            cfg: None,
+        };
+        assert_eq!(new_map_path(&like.map, &like, "m05x"), "map/m/m05/m05x.map");
+        assert_eq!(new_map_path("map/m/m05/m05.MPK", &like, "park2b"), "map/p/par/k2b/park2b.mpk");
+    }
 
     #[test]
     fn info_cfg_gets_an_entry_per_new_model() {

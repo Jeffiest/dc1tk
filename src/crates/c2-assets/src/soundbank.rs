@@ -1479,14 +1479,20 @@ impl Bank {
         voices
     }
 
-    /// Voices an entry plays: KeyOn resolves (prog, key, 127); a .mid every note-on; a .sq none.
+    /// Voices an entry plays: KeyOn resolves (prog, key, 127); a .mid or .sq every note-on.
     pub fn voices(&self, entry: &Entry) -> Result<Vec<Voice>> {
         match entry.kind {
             EntryKind::KeyOn => Ok(self.resolve(entry.prog, entry.key, 127)),
-            EntryKind::SeSeq => {
-                let member = self.pack.find("mid")[entry.seq_index.unwrap()];
+            EntryKind::SeSeq | EntryKind::Sq => {
+                let notes = if entry.kind == EntryKind::Sq {
+                    let member = self.pack.find("sq")[entry.seq_index.unwrap()];
+                    crate::sequence::Sequence::read(&self.pack.members[member].data)?.notes()
+                } else {
+                    let member = self.pack.find("mid")[entry.seq_index.unwrap()];
+                    midi_notes(&self.pack.members[member].data)?.into_iter().map(|(_, p, k, v)| (p, k, v)).collect()
+                };
                 let mut seen = Vec::new();
-                for (_, prog, key, velocity) in midi_notes(&self.pack.members[member].data)? {
+                for (prog, key, velocity) in notes {
                     for v in self.resolve(prog, key as i64, velocity as i64) {
                         if !seen.contains(&v) {
                             seen.push(v);
@@ -1499,7 +1505,7 @@ impl Bank {
         }
     }
 
-    /// Programs named by KeyOn rows and .mid program changes.
+    /// Programs named by KeyOn rows, .mid program changes and .sq program changes.
     pub fn referenced_programs(&self) -> Result<BTreeSet<i64>> {
         let mut used = BTreeSet::new();
         for e in self.entries()? {
@@ -1511,6 +1517,10 @@ impl Bank {
             for (_, prog, _, _) in midi_notes(&self.pack.members[m].data)? {
                 used.insert(prog & 0x7F);
             }
+        }
+        for m in self.pack.find("sq") {
+            let sequence = crate::sequence::Sequence::read(&self.pack.members[m].data)?;
+            used.extend(sequence.programs().into_iter().map(i64::from));
         }
         Ok(used)
     }

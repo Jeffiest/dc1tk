@@ -22,6 +22,7 @@ pub struct Report {
     pub pack_places: usize,
     pub bank_places: usize,
     pub message_places: usize,
+    pub music_places: usize,
     /// Places of each kind of game file on the disc, and in the manifest (as assets or failures).
     pub on_disc: BTreeMap<&'static str, usize>,
     pub listed: BTreeMap<&'static str, usize>,
@@ -100,6 +101,7 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
     let mut packs = Vec::new();
     let mut banks = Vec::new();
     let mut texts = Vec::new();
+    let mut music = Vec::new();
     for (id, asset) in assets {
         match asset["kind"].as_str() {
             Some("texture") => {
@@ -117,6 +119,7 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
             Some("model") => packs.push((id, asset)),
             Some("bank") => banks.push((id, asset)),
             Some("text") => texts.push((id, asset)),
+            Some("music") => music.push((id, asset)),
             _ => {}
         }
     }
@@ -237,6 +240,30 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
         .collect();
     problems.extend(text_problems);
 
+    // sequences: the MIDI file built at each place
+    report.music_places = music.iter().map(|(_, asset)| places(asset).len()).sum();
+    let music_problems: Vec<String> = music
+        .par_iter()
+        .flat_map(|(id, asset)| -> Vec<String> {
+            let check = || -> Result<Vec<String>> {
+                let Some(file) = first_file(asset, crate::music::SUFFIX) else {
+                    return Ok(vec![format!("{id}: no MIDI file")]);
+                };
+                let midi = read(root, file)?;
+                let mut out = Vec::new();
+                for (place, _) in places(asset) {
+                    let sq = at(&tops, &place)?;
+                    if crate::music::build(&midi, sq, None)? != sq {
+                        out.push(format!("{id}: builds back to other bytes at {}", place.display()));
+                    }
+                }
+                Ok(out)
+            };
+            check().unwrap_or_else(|error| vec![format!("{id}: {error}")])
+        })
+        .collect();
+    problems.extend(music_problems);
+
     // every game file of the disc is listed
     for file in tree::game_files(disc).files {
         *report.on_disc.entry(kind_name(file.kind)).or_default() += 1;
@@ -314,5 +341,42 @@ mod tests {
         // its hash, and both places it is at
         assert_eq!(report.problems.len(), 3, "{:?}", report.problems);
         assert!(report.problems[0].contains("builds back to other bytes"));
+    }
+
+    /// Real banks of an extracted disc (C2S_CORPUS): a music bank at its own path and inside a
+    /// pack, and an ambient bank of several sequences. Each sequence is a music asset at every
+    /// place, the tree and the index give the same ids, and the tree's MIDI files build back.
+    #[test]
+    fn corpus_sequences_are_music_in_the_tree_and_build_back() {
+        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
+            return;
+        };
+        let read = |path: &str| std::fs::read(Path::new(&corpus).join(path)).unwrap();
+        let bgm = read("snd2/bgm/BG_193.snd");
+        let disc = vec![
+            ("sg/fish/fish.pak".to_string(), tree::tests::pack(&[("BG_193.snd", &bgm)])),
+            ("snd2/bgm/BG_193.snd".to_string(), bgm.clone()),
+            ("snd2/env/SR_138.snd".to_string(), read("snd2/env/SR_138.snd")),
+        ];
+        let (summary, written) = build_disc(&disc);
+        let files: Vec<DiscFile> = disc.iter().map(|(path, data)| DiscFile { path: path.clone(), data }).collect();
+        let manifest: Value = serde_json::from_slice(&written[tree::MANIFEST]).unwrap();
+        let index = crate::ids::Index::from_disc(&files, &tree::sound_names(""));
+        assert_eq!(index, crate::ids::Index::from_manifest(&manifest).unwrap());
+        let music = index.get("music:BG_193_000").unwrap();
+        let places: Vec<String> = music.places.iter().map(|(place, _)| place.display()).collect();
+        assert_eq!(places, ["sg/fish/fish.pak.d/BG_193.snd.d/BG_193_000.sq", "snd2/bgm/BG_193.snd.d/BG_193_000.sq"]);
+        assert!(
+            written.contains_key("music/snd2/bgm/BG_193_000.mid"),
+            "{:?}",
+            written.keys().filter(|k| k.starts_with("music")).collect::<Vec<_>>()
+        );
+        assert!(written.contains_key("music/snd2/bgm/BG_193.sf2"));
+        let root = written_tree("music", &written);
+        let report = check(&files, &root, &root.join("temp")).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+        assert_eq!(report.problems, Vec::<String>::new());
+        assert_eq!(report.music_places, summary.music_places);
+        assert!(summary.music >= 3, "{}", summary.music);
     }
 }

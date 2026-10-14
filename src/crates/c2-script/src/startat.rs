@@ -187,15 +187,13 @@ pub fn function_text(target: &Target, original: &str) -> String {
     .join("\n")
 }
 
-/// The map a town warp comes from: the Underground Channel (d01f01), the dungeon a new game is in.
-/// d01's start_dungeon_floor sets it with set_current_map before leaving for a town, and towns'
-/// arrival programs place the player by the map they came from (m01 at its dungeon gate when it
-/// was a dungeon); with no previous map they place no one, and the player falls through the map.
-pub const FROM_MAP: i64 = 55;
-
 /// The warp into a town map, as the game's dungeon scripts leave for one (d01's
-/// start_dungeon_floor, d07's floor start): the previous map set to the new game's dungeon
-/// (FROM_MAP), then go_to_edit_mode.
+/// start_dungeon_floor, d07's floor start, s06's way back to Palm Brinks): Max made the player
+/// (a new game starts as Monica; s06 does the same before going to Palm Brinks), the previous map
+/// set to the town itself, then go_to_edit_mode. Towns' arrival programs place the player by the
+/// map they came from: with none, m01 placed no one, and coming from a dungeon (d01's 55) it
+/// placed the player at another entrance, off the ground of the town as it is at the start; from
+/// itself it takes the plain default arrival.
 pub fn town_function_text(target: &Target, number: i64, original: &str) -> String {
     [
         format!(
@@ -213,7 +211,9 @@ pub fn town_function_text(target: &Target, number: i64, original: &str) -> Strin
         "        init_event();".into(),
         "        fade_out(1);".into(),
         "        wait;".into(),
-        format!("        set_current_map({FROM_MAP});  // Underground Channel: towns place the player by it"),
+        "        change_player_chara(USER_CHARA_MAX);".into(),
+        "        set_active_chara(0);".into(),
+        format!("        set_current_map({number});  // the town itself: its arrival takes the default spot"),
         format!("        go_to_edit_mode({number}, {});", target.program),
         "        wait;".into(),
         "        return;".into(),
@@ -377,7 +377,9 @@ MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n MAP_NAME \
                 "init_event();",
                 "fade_out(1);",
                 "wait;",
-                "set_current_map(55);  // Underground Channel: towns place the player by it",
+                "change_player_chara(USER_CHARA_MAX);",
+                "set_active_chara(0);",
+                "set_current_map(14);  // the town itself: its arrival takes the default spot",
                 "go_to_edit_mode(14, map_start);",
                 "wait;",
                 "return;",

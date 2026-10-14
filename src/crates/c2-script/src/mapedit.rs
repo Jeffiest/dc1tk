@@ -19,14 +19,15 @@ pub struct MapFiles {
     pub cfg: Option<String>,
 }
 
-/// Where the engine looks for a map: map/<first letter>/<letters 1-3>/<letters 4-6>/<name>.map
-/// (GetMapPath, mapselect.cpp:197), so map/s/s17/s17.map and map/i/i03/h02/i03h02.map.
+/// Where the engine looks for a map: map/<first letter>/<letters 1-3>/<letters 4-6>/<name>.map,
+/// the third folder only for a name of six letters or more (GetMapPath, mapselect.cpp:197), so
+/// map/s/s17/s17.map, map/m/m05/m05x.map and map/i/i03/h02/i03h02.map.
 pub fn rule_folder(name: &str) -> String {
     let lower = name.to_lowercase();
     let chars: Vec<char> = lower.chars().collect();
     let part = |from: usize, to: usize| chars.get(from..to.min(chars.len())).map(|slice| slice.iter().collect::<String>()).unwrap_or_default();
     let mut folder = format!("map/{}/{}", part(0, 1), part(0, 3));
-    let rest = part(3, 6);
+    let rest = if chars.len() >= 6 { part(3, 6) } else { String::new() };
     if !rest.is_empty() {
         folder.push('/');
         folder.push_str(&rest);
@@ -83,6 +84,7 @@ mod tests {
     fn maps_are_found_by_the_engine_rule_then_by_name() {
         assert_eq!(rule_folder("s17"), "map/s/s17");
         assert_eq!(rule_folder("i03h02"), "map/i/i03/h02");
+        assert_eq!((rule_folder("m05x"), rule_folder("d02f01r")), ("map/m/m05".into(), "map/d/d02/f01".into()));
         let entries = [
             entry("map/s/s17/s17.map"),
             entry("map/s/s17/s17.mpk"),
