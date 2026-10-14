@@ -303,6 +303,15 @@ all seven `comdatmes`; message 10000 + `message` into each language's
 has the item descriptions (`text.rs` writes them; `system_N.mes` stays
 within its 0xD000 bytes). For an item of the game's own, `name` changes the
 English name and `names`/`descriptions` any language's, the same places.
+Names and descriptions are message text ([text.md](text.md#5-the-text-form))
+in each language's font. In English they may use letters past the font's
+table, any the European font has or `build` composes of a letter and a
+mark (`gŷros`), at most 32 together with the mods' `text:en/...` lines:
+`build` draws them into the English font
+([text.md](text.md#4-codes), "The English font gains letters"). The
+`comdatmes1.cfg` name, which holds Shift-JIS, spells such a letter plainly
+(`gyros`, `ß` as `ss`), so an owned weapon's name and the inventions and
+Georama menus show it so.
 Limits (refused past): 432 items (`local_com_itemdata`, 9 more than the
 disc's), numbers 1 to 511, the family tables (116 weapons: 4 more; 38
 attachments: 2; 162 usable items: 2; 68 ridepod parts: 5; 20 fish: 2; 40

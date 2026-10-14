@@ -879,3 +879,30 @@ fn a_mod_adds_a_music_file_made_like_a_bank_of_the_disc() {
     write(&mod_dir.join("music/fish.wav"), b"");
     case(json!({"add": {"music:BG_200": {"file": "music/fish.wav", "like": "BG_001"}}}), "is not a MIDI file");
 }
+
+#[test]
+fn the_english_fonts_letters_are_every_mods_together() {
+    let user = |id: &str, module: &str, letters: &str| (id.to_string(), module.to_string(), letters.chars().collect());
+    // a text: line's and an item's letters share the 32 glyphs; ŷ takes ¡'s, é keeps its own
+    let english = replace::EnglishLetters::new(vec![
+        user("text:en/allmenu", "one", "é"),
+        user("data:items", "two", "ŷ"),
+        user("text:en/system", "two", ""),
+    ])
+    .unwrap();
+    assert_eq!((english.slots[0], english.slots[18]), ('ŷ', 'é'));
+    assert_eq!(english.users.len(), 2);
+    assert_eq!(english.used().into_iter().collect::<String>(), "éŷ");
+    // none: the glyphs read as the export reads them
+    let none = replace::EnglishLetters::new(Vec::new()).unwrap();
+    assert_eq!(none.slots.iter().collect::<String>(), c2_assets::font::ENGLISH_EXTRA);
+    // past 32 letters, every one is named, and who uses them
+    let error = replace::EnglishLetters::new(vec![
+        user("text:en/allmenu", "one", "ŷŶĉĈĝĜĥĤĵĴŝŜŵŴĩĨũŨ"),
+        user("data:items", "two", "ůŮĺĹńŃŕŔśŚźŹćĆé"),
+    ])
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("uses 33 letters past the English font's own"), "{error}");
+    assert!(error.contains("used by text:en/allmenu (mod one), data:items (mod two)"), "{error}");
+}

@@ -567,10 +567,12 @@ character pack; packs inside packs work the same way).
   each gets the messages whose text you changed and keeps its own others.
   Unedited text builds back to the disc's own bytes. A character the
   language's font lacks is refused (English has ASCII, full-width
-  punctuation and kana, and 32 accented letters, `¡¿ÀÁÄÇÈÉÑÖÜßàáâäçèéêëíîïñóôöùúûü`,
-  which `build` draws into the English font when a text uses them; French,
+  punctuation and kana, and up to 32 letters more, which `build` draws into
+  the English font when the mods' English text uses them: any the French
+  font has, and letters it makes of an ASCII letter and a grave, acute,
+  circumflex, tilde, diaeresis, ring or cedilla (`ŷ`, `ĉ`, `ş`); French,
   German, Italian and Spanish ASCII and their accented letters; Japanese
-  and Korean their fonts' kana, kanji and Hangul). The accented letters in
+  and Korean their fonts' kana, kanji and Hangul). The added letters in
   English take a whole cell each (15 pixels, an ASCII letter 8), as the
   game spaces every glyph past ASCII, so they stand a little apart from
   their neighbours. `meswin/system_N.mes`, `sysmes_N.mes` and

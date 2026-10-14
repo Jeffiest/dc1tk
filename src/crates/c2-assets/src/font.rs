@@ -12,6 +12,8 @@
 //! corpus test checks every glyph they use is in it and the pages have ink exactly where it has
 //! characters). It is a list of characters, not the font: the pictures stay on the user's disc.
 
+use std::collections::BTreeSet;
+
 use crate::{bail, Result};
 
 /// The characters of Japanese glyphs 94 on (glyph 94 is the full-width space).
@@ -87,13 +89,16 @@ pub const EUROPEAN_TEXTURE: &str = "meswin/FontTex_2_0.tm2";
 /// The Korean font table.
 pub const KOREAN_TABLE: &str = "meswin/fonttbl_6.bin";
 
-/// Accented letters added to the English font as glyphs 288 to 319 (ENGLISH_EXTRA_FIRST on), in
-/// this order, the ones the French, German, Italian and Spanish text uses most. Their pictures are
-/// the European font's own, copied in at build time. The English texture is loaded into a buffer
-/// of 0xD000 bytes (font_buff, mainloop.cpp), which leaves room for one more row of 32 glyphs and
-/// no more.
+/// The letters glyphs 288 to 319 (ENGLISH_EXTRA_FIRST on) of the English font read as, in this
+/// order, the ones the French, German, Italian and Spanish text uses most: what an exported text
+/// reads them as, and what the build draws there unless a mod's English text uses other letters
+/// (english_slots). Their pictures are the European font's own, copied in at build time. The
+/// English texture is loaded into a buffer of 0xD000 bytes (font_buff, mainloop.cpp), which leaves
+/// room for one more row of 32 glyphs and no more.
 pub const ENGLISH_EXTRA: &str = "¡¿ÀÁÄÇÈÉÑÖÜßàáâäçèéêëíîïñóôöùúûü";
 pub const ENGLISH_EXTRA_FIRST: u16 = 288;
+/// How many glyphs the English font can gain.
+pub const ENGLISH_EXTRA_COUNT: usize = 32;
 /// The buffer the game copies the English font texture into.
 pub const FONT_BUFFER: usize = 0xD000;
 
@@ -118,6 +123,166 @@ pub fn latin_char(byte: u8) -> char {
 /// The European glyph that draws a character, of the letters at 0x5E on.
 pub fn european_glyph(c: char) -> Option<u16> {
     EUROPEAN_LETTERS.iter().position(|&byte| latin_char(byte) == c).map(|at| 0x5E + at as u16)
+}
+
+/// A mark the build copies off a European letter to draw a letter no font has: over the base
+/// letter, or under it (the cedilla).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mark {
+    Grave,
+    Acute,
+    Circumflex,
+    Tilde,
+    Diaeresis,
+    Ring,
+    Cedilla,
+}
+
+impl Mark {
+    pub fn name(self) -> &'static str {
+        match self {
+            Mark::Grave => "grave",
+            Mark::Acute => "acute",
+            Mark::Circumflex => "circumflex",
+            Mark::Tilde => "tilde",
+            Mark::Diaeresis => "diaeresis",
+            Mark::Ring => "ring",
+            Mark::Cedilla => "cedilla",
+        }
+    }
+
+    /// The European letters the mark is copied from, small and capital, each with its base letter.
+    fn sources(self) -> [(char, char); 2] {
+        match self {
+            Mark::Grave => [('è', 'e'), ('È', 'E')],
+            Mark::Acute => [('é', 'e'), ('É', 'E')],
+            Mark::Circumflex => [('ê', 'e'), ('Ê', 'E')],
+            Mark::Tilde => [('õ', 'o'), ('Õ', 'O')],
+            Mark::Diaeresis => [('ë', 'e'), ('Ë', 'E')],
+            Mark::Ring => [('å', 'a'), ('Å', 'A')],
+            Mark::Cedilla => [('ç', 'c'), ('Ç', 'C')],
+        }
+    }
+
+    fn below(self) -> bool {
+        self == Mark::Cedilla
+    }
+}
+
+/// The Latin-1 and Latin Extended-A letters that are an ASCII letter and one mark (their Unicode
+/// canonical decomposition): (letters, their base letters, the mark when a European letter has it
+/// to copy, the mark's name).
+const DECOMPOSITIONS: [(&str, &str, Option<Mark>, &str); 13] = [
+    ("ÀÈÌÒÙàèìòù", "AEIOUaeiou", Some(Mark::Grave), "grave"),
+    ("ÁÉÍÓÚÝáéíóúýĆćĹĺŃńŔŕŚśŹź", "AEIOUYaeiouyCcLlNnRrSsZz", Some(Mark::Acute), "acute"),
+    ("ÂÊÎÔÛâêîôûĈĉĜĝĤĥĴĵŜŝŴŵŶŷ", "AEIOUaeiouCcGgHhJjSsWwYy", Some(Mark::Circumflex), "circumflex"),
+    ("ÃÑÕãñõĨĩŨũ", "ANOanoIiUu", Some(Mark::Tilde), "tilde"),
+    ("ÄËÏÖÜäëïöüÿŸ", "AEIOUaeiouyY", Some(Mark::Diaeresis), "diaeresis"),
+    ("ÅåŮů", "AaUu", Some(Mark::Ring), "ring"),
+    ("ÇçĢģĶķĻļŅņŖŗŞşŢţ", "CcGgKkLlNnRrSsTt", Some(Mark::Cedilla), "cedilla"),
+    ("ĀāĒēĪīŌōŪū", "AaEeIiOoUu", None, "macron"),
+    ("ĂăĔĕĞğĬĭŎŏŬŭ", "AaEeGgIiOoUu", None, "breve"),
+    ("ĊċĖėĠġİŻż", "CcEeGgIZz", None, "dot above"),
+    ("ŐőŰű", "OoUu", None, "double acute"),
+    ("ČčĎďĚěĽľŇňŘřŠšŤťŽž", "CcDdEeLlNnRrSsTtZz", None, "caron"),
+    ("ĄąĘęĮįŲų", "AaEeIiUu", None, "ogonek"),
+];
+
+/// A letter as an ASCII letter and a mark: (base, the mark when the European font has it, its
+/// name).
+pub fn decomposed(c: char) -> Option<(char, Option<Mark>, &'static str)> {
+    DECOMPOSITIONS.iter().find_map(|(letters, bases, mark, name)| {
+        let at = letters.chars().position(|known| known == c)?;
+        Some((bases.chars().nth(at)?, *mark, *name))
+    })
+}
+
+/// Whether the build can draw a letter into the English font: one of the European font's own, or
+/// an ASCII letter with a mark one of them has.
+pub fn drawable(c: char) -> bool {
+    european_glyph(c).is_some() || decomposed(c).is_some_and(|(_, mark, _)| mark.is_some())
+}
+
+/// Why the build cannot draw a character into the English font.
+pub fn why_not_drawable(c: char) -> String {
+    let marks = "grave, acute, circumflex, tilde, diaeresis, ring and cedilla";
+    match decomposed(c) {
+        Some((base, None, name)) => {
+            format!("{c} is {base} with a {name}, a mark no letter of the European font has to copy (they have the {marks})")
+        }
+        _ => format!(
+            "the build draws the European font's letters and ASCII letters with a mark one of them has (the {marks}), and {c:?} is neither"
+        ),
+    }
+}
+
+/// Every letter the build can draw into the English font: ENGLISH_EXTRA first, then the European
+/// font's other letters, then the composed ones in code order.
+pub fn drawable_letters() -> Vec<char> {
+    let mut out: Vec<char> = ENGLISH_EXTRA.chars().collect();
+    for byte in EUROPEAN_LETTERS {
+        let c = latin_char(byte);
+        if !out.contains(&c) {
+            out.push(c);
+        }
+    }
+    let mut composed: Vec<char> = DECOMPOSITIONS
+        .iter()
+        .filter(|(_, _, mark, _)| mark.is_some())
+        .flat_map(|(letters, ..)| letters.chars())
+        .filter(|c| !out.contains(c))
+        .collect();
+    composed.sort_unstable();
+    out.extend(composed);
+    out
+}
+
+/// A letter the English font gains spelled for a `comdatmes` name, which holds Shift-JIS: its base
+/// letter (ŷ is y), or its ASCII spelling (ß ss); None for a character that is not one.
+pub fn folded(c: char) -> Option<&'static str> {
+    const ASCII: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    if let Some((base, _, _)) = decomposed(c) {
+        let at = ASCII.find(base)?;
+        return Some(&ASCII[at..at + 1]);
+    }
+    Some(match c {
+        'ß' => "ss",
+        'æ' => "ae",
+        'Æ' => "AE",
+        'œ' => "oe",
+        'Œ' => "OE",
+        'ª' => "a",
+        'º' => "o",
+        '°' => "o",
+        '¡' => "!",
+        '¿' => "?",
+        _ => return None,
+    })
+}
+
+/// The 32 letters glyphs 288 to 319 draw for a build whose English text uses `used` past the
+/// font's own: each of ENGLISH_EXTRA keeps its glyph, and the other letters used take the glyphs of
+/// the ENGLISH_EXTRA letters not used, in code order, so the same letters always get the same
+/// glyphs and text using only ENGLISH_EXTRA builds as it always has. Refused past 32 letters, and
+/// for a letter the build cannot draw.
+pub fn english_slots(used: &BTreeSet<char>) -> Result<Vec<char>> {
+    if let Some(&c) = used.iter().find(|&&c| !drawable(c)) {
+        bail!("the English font has no {c:?} (U+{:04X}): {}", c as u32, why_not_drawable(c));
+    }
+    if used.len() > ENGLISH_EXTRA_COUNT {
+        let all: String = used.iter().collect();
+        bail!(
+            "the English text uses {} letters past the English font's own, and its texture has room for {ENGLISH_EXTRA_COUNT} (glyphs 288 to 319): {all}",
+            used.len()
+        );
+    }
+    let mut slots: Vec<char> = ENGLISH_EXTRA.chars().collect();
+    let free: Vec<usize> = (0..slots.len()).filter(|&at| !used.contains(&slots[at])).collect();
+    let others = used.iter().filter(|c| !ENGLISH_EXTRA.contains(**c));
+    for (&c, at) in others.zip(free) {
+        slots[at] = c;
+    }
+    Ok(slots)
 }
 
 /// The characters of a table like fonttbl_1.bin (4 words, then each glyph's big-endian code),
@@ -228,28 +393,142 @@ impl Page {
     }
 }
 
-/// The English font texture with the accented letters of ENGLISH_EXTRA drawn as glyphs 288 to
-/// 319, from the European font's pictures: the page grows by the rows the 10th row of glyphs
-/// needs (200 pixels tall, within the game's 0xD000-byte buffer), each letter centred in its cell
-/// since a glyph past the ASCII ones advances the pen a whole cell (CheckHalfFont, font.cpp), and
-/// its shades mapped to the English palette's nearest. An English texture already holding them is
-/// given back as it is.
-pub fn extended_english(english: &[u8], european: &[u8]) -> Result<Vec<u8>> {
+/// The glyph of an ASCII character in every font (printable ASCII from the space, without the
+/// backslash).
+fn ascii_glyph(c: char) -> Option<usize> {
+    let byte = u8::try_from(c as u32).ok().filter(|b| (0x20..0x7F).contains(b) && *b != b'\\')?;
+    Some((byte - 0x20) as usize - usize::from(byte > b'\\'))
+}
+
+/// The first and last rows of a 16 by 20 cell with any ink.
+fn ink_rows(cell: &[u8]) -> Option<(usize, usize)> {
+    let inked: Vec<usize> = (0..20).filter(|&y| cell[y * 16..y * 16 + 16].iter().any(|&a| a > 0)).collect();
+    Some((*inked.first()?, *inked.last()?))
+}
+
+/// The first and last columns of a cell with any ink.
+fn ink_columns(cell: &[u8]) -> Option<(usize, usize)> {
+    let inked: Vec<usize> = (0..16).filter(|&x| (0..20).any(|y| cell[y * 16 + x] > 0)).collect();
+    Some((*inked.first()?, *inked.last()?))
+}
+
+/// An i or j without its dot (the ink above the first gap between rows of strong ink), for a mark
+/// to go over.
+fn dotless(cell: &[u8]) -> Vec<u8> {
+    let strong = |y: usize| cell[y * 16..y * 16 + 16].iter().any(|&a| a >= 26);
+    let mut out = cell.to_vec();
+    let Some(dot) = (0..20).find(|&y| strong(y)) else {
+        return out;
+    };
+    let Some(gap) = (dot..20).find(|&y| !strong(y)) else {
+        return out;
+    };
+    if let Some(stem) = (gap..20).find(|&y| strong(y)) {
+        out[..stem * 16].fill(0);
+    }
+    out
+}
+
+/// A letter's picture in the European font's shades, 16 by 20: the font's own, or an ASCII letter
+/// of it with a mark copied off one of its letters. The mark is the ink of that letter above its
+/// base letter's first row (below its last, for the cedilla), set as far from the new base letter
+/// and as far off its middle; the small letter's mark first for a small letter, the capital's for
+/// a capital, the other when that does not fit in the cell.
+pub fn letter_cell(source: &Page, c: char) -> Result<Vec<u8>> {
+    if let Some(glyph) = european_glyph(c) {
+        return Ok(source.cell(glyph as usize));
+    }
+    let Some((base, Some(mark), _)) = decomposed(c) else {
+        bail!("the English font has no {c:?} (U+{:04X}): {}", c as u32, why_not_drawable(c));
+    };
+    let Some(base_glyph) = ascii_glyph(base) else {
+        bail!("{c}: {base} is not ASCII");
+    };
+    let mut cell = source.cell(base_glyph);
+    if matches!(base, 'i' | 'j') && !mark.below() {
+        cell = dotless(&cell);
+    }
+    let (Some((top, bottom)), Some((left, right))) = (ink_rows(&cell), ink_columns(&cell)) else {
+        bail!("{c}: the European font's {base} has no ink");
+    };
+    let mut sources = mark.sources();
+    if base.is_uppercase() {
+        sources.reverse();
+    }
+    for (letter, letter_base) in sources {
+        let (Some(from), Some(from_base)) = (european_glyph(letter), ascii_glyph(letter_base)) else {
+            continue;
+        };
+        let (accented, plain) = (source.cell(from as usize), source.cell(from_base));
+        let (Some((plain_top, plain_bottom)), Some((plain_left, plain_right)), Some((accented_top, accented_bottom))) =
+            (ink_rows(&plain), ink_columns(&plain), ink_rows(&accented))
+        else {
+            continue;
+        };
+        // where the base letter is in the accented one (å's a is a row lower than a): its far
+        // edge from the mark lines up with the plain letter's
+        let (base_top, base_bottom) = if mark.below() {
+            (accented_top, accented_top + plain_bottom - plain_top)
+        } else {
+            ((accented_bottom + plain_top).saturating_sub(plain_bottom), accented_bottom)
+        };
+        // the mark: the accented letter's ink beyond its base letter's rows
+        let mut alone = vec![0u8; 320];
+        for y in 0..20 {
+            if (mark.below() && y > base_bottom) || (!mark.below() && y < base_top) {
+                alone[y * 16..y * 16 + 16].copy_from_slice(&accented[y * 16..y * 16 + 16]);
+            }
+        }
+        let (Some((mark_top, mark_bottom)), Some((mark_left, mark_right))) = (ink_rows(&alone), ink_columns(&alone))
+        else {
+            continue;
+        };
+        // as far from the base letter, and off its middle, as on the letter it came from
+        let dy = if mark.below() { bottom as i64 - base_bottom as i64 } else { top as i64 - base_top as i64 };
+        let off = (mark_left + mark_right) as i64 - (plain_left + plain_right) as i64;
+        let dx = ((left + right) as i64 + off - (mark_left + mark_right) as i64).div_euclid(2);
+        let fits = |low: usize, high: usize, by: i64, size: i64| low as i64 + by >= 0 && high as i64 + by < size;
+        if !fits(mark_top, mark_bottom, dy, 20) || !fits(mark_left, mark_right, dx, 16) {
+            continue;
+        }
+        let mut out = cell.clone();
+        for y in mark_top..=mark_bottom {
+            for x in mark_left..=mark_right {
+                let to = (y as i64 + dy) as usize * 16 + (x as i64 + dx) as usize;
+                out[to] = out[to].max(alone[y * 16 + x]);
+            }
+        }
+        return Ok(out);
+    }
+    bail!(
+        "the English font has no {c:?} (U+{:04X}): the {} does not fit {} {base} in a glyph's 16 by 20 pixels",
+        c as u32,
+        mark.name(),
+        if mark.below() { "under" } else { "over" }
+    )
+}
+
+/// The English font texture with `letters` (english_slots: ENGLISH_EXTRA, or the letters a build's
+/// text uses) drawn as glyphs 288 on, from the European font's pictures (letter_cell): the page
+/// grows by the rows the 10th row of glyphs needs (200 pixels tall, within the game's
+/// 0xD000-byte buffer), each letter centred in its cell since a glyph past the ASCII ones advances
+/// the pen a whole cell (CheckHalfFont, font.cpp), and its shades mapped to the English palette's
+/// nearest.
+pub fn extended_english(english: &[u8], european: &[u8], letters: &[char]) -> Result<Vec<u8>> {
     let mut page = Page::read(english)?;
     let source = Page::read(european)?;
-    let last = ENGLISH_EXTRA_FIRST as usize + ENGLISH_EXTRA.chars().count();
+    if letters.len() > ENGLISH_EXTRA_COUNT {
+        bail!("the English font has room for {ENGLISH_EXTRA_COUNT} more glyphs, not {}", letters.len());
+    }
+    let last = ENGLISH_EXTRA_FIRST as usize + letters.len();
     let height = last.div_ceil(32) * 20;
     if page.height < height {
         page.pixels.resize(page.width * height, 0);
         page.height = height;
     }
-    for (at, c) in ENGLISH_EXTRA.chars().enumerate() {
-        let Some(from) = european_glyph(c) else {
-            bail!("the European font has no {c}");
-        };
-        let cell = source.cell(from as usize);
-        let inked: Vec<usize> = (0..16).filter(|&x| (0..20).any(|y| cell[y * 16 + x] > 0)).collect();
-        let (left, right) = (inked.first().copied().unwrap_or(0), inked.last().copied().unwrap_or(0));
+    for (at, &c) in letters.iter().enumerate() {
+        let cell = letter_cell(&source, c)?;
+        let (left, right) = ink_columns(&cell).unwrap_or((0, 0));
         // the ink's middle at the cell's (a whole cell is 15 pixels of pen)
         let shift = 7 - (left + right) as i64 / 2;
         let glyph = ENGLISH_EXTRA_FIRST as usize + at;
@@ -343,7 +622,8 @@ mod tests {
                 source[at] = if px % 2 == 0 { (source[at] & 0xF0) | 15 } else { (source[at] & 0x0F) | 0xF0 };
             }
         }
-        let built = extended_english(&page(192, &english), &source).unwrap();
+        let built =
+            extended_english(&page(192, &english), &source, &ENGLISH_EXTRA.chars().collect::<Vec<_>>()).unwrap();
         let read = Page::read(&built).unwrap();
         assert_eq!((read.height, read.glyphs(), built.len()), (200, 320, 16 + 0x30 + 512 * 100 + 64));
         let at = ENGLISH_EXTRA_FIRST as usize + ENGLISH_EXTRA.chars().position(|c| c == 'é').unwrap();
@@ -353,7 +633,128 @@ mod tests {
         assert_eq!(columns, vec![6, 7, 8, 9]);
         // the other glyphs keep their pixels
         assert_eq!(read.cell(5), Page::read(&page(192, &english)).unwrap().cell(5));
-        assert!(extended_english(&page(300, &english), &source).unwrap_err().to_string().contains("53248"));
+        assert!(extended_english(&page(300, &english), &source, &['é']).unwrap_err().to_string().contains("53248"));
         assert!(uses_english_extra([1, 2, 300]) && !uses_english_extra([1, 287, 320]));
+    }
+
+    /// Paints a glyph's cell of a made-up page: each (x, y, colour).
+    fn paint(data: &mut [u8], glyph: usize, pixels: &[(usize, usize, u8)]) {
+        for &(x, y, colour) in pixels {
+            let (px, py) = (glyph % 32 * 16 + x, glyph / 32 * 20 + y);
+            let at = 16 + 0x30 + (py * 512 + px) / 2;
+            data[at] = if px % 2 == 0 { (data[at] & 0xF0) | colour } else { (data[at] & 0x0F) | (colour << 4) };
+        }
+    }
+
+    fn block(x: std::ops::Range<usize>, y: std::ops::Range<usize>) -> Vec<(usize, usize, u8)> {
+        y.flat_map(|y| x.clone().map(move |x| (x, y, 15))).collect()
+    }
+
+    #[test]
+    fn letters_no_font_has_are_composed_of_a_letter_and_a_mark() {
+        let alphas: Vec<u8> = (0..16).map(|i| (i * 127 / 15) as u8).collect();
+        let mut source = page(192, &alphas);
+        // e: rows 8 to 15; ê: a lower e under a circumflex (rows 4 and 5); y: rows 8 to 18
+        let e = block(1..7, 8..16);
+        paint(&mut source, ascii_glyph('e').unwrap(), &e);
+        let mut hat = block(2..6, 4..5);
+        hat.extend([(1, 5, 15), (6, 5, 15)]);
+        let lower: Vec<(usize, usize, u8)> = e.iter().map(|&(x, y, c)| (x, y + 1, c)).collect();
+        paint(&mut source, european_glyph('ê').unwrap() as usize, &[hat.clone(), lower].concat());
+        let y = block(3..9, 8..19);
+        paint(&mut source, ascii_glyph('y').unwrap(), &y);
+        let read = Page::read(&source).unwrap();
+        let cell = letter_cell(&read, 'ŷ').unwrap();
+        // the y, and the circumflex as far above it (the e is a row lower in ê: two rows up from
+        // its top), centred over it as over the e (the y's middle is 2 pixels right of the e's)
+        let mut wanted = vec![0u8; 320];
+        for &(x, row, _) in &y {
+            wanted[row * 16 + x] = 127;
+        }
+        for &(x, row, _) in &hat {
+            wanted[(row - 1) * 16 + x + 2] = 127;
+        }
+        assert_eq!(cell, wanted);
+        // a letter of the European font is its own picture
+        assert_eq!(letter_cell(&read, 'ê').unwrap(), read.cell(european_glyph('ê').unwrap() as usize));
+        // a mark the font has no letter with, and a mark that does not fit
+        let error = letter_cell(&read, 'č').unwrap_err().to_string();
+        assert!(error.contains("č is c with a caron, a mark no letter of the European font has"), "{error}");
+        paint(&mut source, ascii_glyph('g').unwrap(), &block(2..7, 6..20));
+        paint(&mut source, ascii_glyph('c').unwrap(), &block(2..7, 6..14));
+        paint(&mut source, european_glyph('ç').unwrap() as usize, &[block(2..7, 6..14), block(3..5, 15..18)].concat());
+        let read = Page::read(&source).unwrap();
+        let error = letter_cell(&read, 'ģ').unwrap_err().to_string();
+        assert!(error.contains("the cedilla does not fit under g"), "{error}");
+        assert_eq!(letter_cell(&read, 'ç').unwrap(), read.cell(european_glyph('ç').unwrap() as usize));
+        // the composed letter drawn into the English page, as the slots give it
+        let english: Vec<u8> = (0..16).map(|i| (i * 128 / 15) as u8).collect();
+        let slots = english_slots(&['ŷ', 'é'].into_iter().collect()).unwrap();
+        let built = Page::read(&extended_english(&page(192, &english), &source, &slots).unwrap()).unwrap();
+        let at = ENGLISH_EXTRA_FIRST as usize + slots.iter().position(|&c| c == 'ŷ').unwrap();
+        let drawn: Vec<bool> = built.cell(at).iter().map(|&alpha| alpha > 0).collect();
+        // centred: the y's columns 3 to 8 at 5 to 10 (the ink's middle at 7)
+        let shifted: Vec<bool> = (0..320).map(|i| i % 16 >= 2 && wanted[i - 2] > 0).collect();
+        assert_eq!(drawn, shifted);
+    }
+
+    #[test]
+    fn the_extra_glyphs_go_to_the_letters_used() {
+        let set = |text: &str| text.chars().collect::<BTreeSet<char>>();
+        let extra: Vec<char> = ENGLISH_EXTRA.chars().collect();
+        // ENGLISH_EXTRA's letters keep their glyphs: text using only them builds as it always has
+        assert_eq!(english_slots(&set("éü¡")).unwrap(), extra);
+        assert_eq!(english_slots(&set("")).unwrap(), extra);
+        // others take the glyphs of the ones not used, in code order, whatever order they come in
+        let slots = english_slots(&set("ŷé¡ĉ")).unwrap();
+        assert_eq!((slots[0], slots[1], slots[2], slots[18]), ('¡', 'ĉ', 'ŷ', 'é'));
+        assert_eq!(slots[3..].iter().filter(|c| !extra.contains(c)).count(), 0);
+        // any 32 letters
+        let many = set("ŷŶĉĈĝĜĥĤĵĴŝŜŵŴĩĨũŨůŮĺĹńŃŕŔśŚźŹćĆ");
+        assert_eq!(many.len(), 32);
+        let slots = english_slots(&many).unwrap();
+        assert_eq!(slots.iter().copied().collect::<BTreeSet<char>>(), many);
+        assert_eq!(slots[0], 'Ć');
+        // not 33, nor a letter the build cannot draw
+        let error = english_slots(&set("ŷŶĉĈĝĜĥĤĵĴŝŜŵŴĩĨũŨůŮĺĹńŃŕŔśŚźŹćĆé")).unwrap_err().to_string();
+        assert!(error.contains("uses 33 letters past the English font's own"), "{error}");
+        assert!(error.contains("éĆćĈĉ"), "{error}");
+        let error = english_slots(&set("ŷš")).unwrap_err().to_string();
+        assert!(error.contains("'š' (U+0161): š is s with a caron"), "{error}");
+        assert!(english_slots(&set("€")).unwrap_err().to_string().contains("is neither"));
+        // what can be drawn, and how a name in Shift-JIS spells it
+        let letters = drawable_letters();
+        assert_eq!(&letters[..32], &extra[..]);
+        assert!(letters.contains(&'ŷ') && letters.contains(&'Œ') && !letters.contains(&'š') && !letters.contains(&'Ø'));
+        assert_eq!((folded('ŷ'), folded('ß'), folded('Ç'), folded('Ø')), (Some("y"), Some("ss"), Some("C"), None));
+    }
+
+    /// Every letter the build can draw, from the European font of an extracted disc (C2S_CORPUS):
+    /// the composed ones drawn, shown with C2S_SHOW_LETTERS set.
+    #[test]
+    fn corpus_letters_compose() {
+        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
+            return;
+        };
+        let root = std::path::Path::new(&corpus);
+        let source = Page::read(&std::fs::read(root.join(EUROPEAN_TEXTURE)).unwrap()).unwrap();
+        let mut refused = String::new();
+        for c in drawable_letters() {
+            match letter_cell(&source, c) {
+                Ok(cell) if std::env::var_os("C2S_SHOW_LETTERS").is_some() => {
+                    eprintln!("{c}");
+                    for row in cell.chunks(16) {
+                        eprintln!(
+                            "|{}|",
+                            row.iter().map(|&a| b" .:-=+*#%@"[a as usize * 9 / 128] as char).collect::<String>()
+                        );
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => refused.push(c),
+            }
+        }
+        // a cedilla under g's descender does not fit
+        assert_eq!(refused, "ģ");
     }
 }
