@@ -215,24 +215,21 @@ scripts (see [usage](docs/usage.md#mods) and [the formats](docs/assets/)):
 Unedited exports build back to the disc's own bytes in every case. Still to
 do:
 
-1. **Sounds in the game.** A test mod in Monica's first fight (recoloured
-   PNG textures, a bigger head from glTF, green soldiers, two event sounds
-   as WAV) showed every change in PCSX2 but the sounds: the old ones were
-   heard. The bank on the disc is the new one (one copy, the one sound set
-   800 names), its rows 4 and 13 are KeyOn rows of new programs, and the
-   engine's cfg reader and IOP upload read it as written. Likely the test
-   sounds: the crash was a 40-140 Hz boom, near silent on TV speakers, and
-   the original's glass layer, shared with entry 6, still plays; the chime
-   was at the fade. Rebuild with loud mid-range sounds; if the old ones are
-   still heard, read the engine's sound table over PINE once event 50 has
-   loaded (`PortInfo` 0x3F6540, port 4) to see what the rows became.
+1. **Sounds in the game** (fixed where c2 was wrong, being tried). The game
+   reads the copy `build` rewrites (`DATA.HD4`'s first match); the event 50
+   test's sounds were most likely too quiet (a 40-140 Hz boom at volume 44)
+   or masked by an unchanged shared glass sample. A real gap was fixed: banks
+   whose copies differ (the menu packs' `SP_001`-`SP_003`, the two `SY_000`,
+   `BG_193`) were separate assets, so a sound reached only one copy; a sound
+   now reaches every version of its bank. `sound-test.iso` has loud test
+   tones on the title menu and in event 50.
 2. **Memory** (done, see "Now: the rest of the game" item 4). The sound-set
    puzzle is settled: a set's event bank never loads with that set's own
    field banks; a script's `load_sound(set)` adds only the event bank to the
    set already loaded.
-3. **Names for a mod's new sounds.** New bank entries are used by number;
-   generate names for them (`SE_SP_004_BEEP`) as `disc.h` names the game's,
-   and have `mod check` check the pack paths and member names scripts load.
+3. **Names for a mod's new sounds** (done). `005_beep.wav` in
+   `sp_004.snd.wav/` gives a mod's patches `SE_SP_004_BEEP = 5`; `mod check
+   --disc` checks the files and pack members scripts load.
 4. **Motions from glTF.** Export writes every motion as an animation, but
    build does not read animations back yet: decode the remaining channels
    (per-vertex, material alpha, visibility), confirm the frame rate, and
