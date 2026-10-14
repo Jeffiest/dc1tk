@@ -50,7 +50,9 @@ optionally, parameter and local names:
 Because the key is the fingerprint, one entry names that function in every
 script and library that has it. Two versions of a helper can share a name;
 when two such versions would meet in one file, the later one gets a numbered
-suffix (`do_nothing_2`). Variable names that would clash with each other or with a
+suffix (`swing_attack_2`). A later copy of code the file already holds is
+named for its one caller (`unlock_interrupts_for_recoil_from_hit`) or as
+unused (`unused_do_nothing`). Variable names that would clash with each other or with a
 global are ignored.
 
 Every function on the disc now has a name. Names are checked by `verify`

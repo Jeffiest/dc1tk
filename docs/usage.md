@@ -758,7 +758,8 @@ comment above a statement, and the file name, top comment and global
 names of each library. A function that
 appears in several files takes the copy you edited; the aliases the
 decompiler gives a second copy in one file (`start_event_for_program_506`,
-`do_nothing_2`) are not learned as names. See
+`unused_do_nothing`, `unlock_interrupts_for_recoil_from_hit`) are not
+learned as names. See
 [definitions](definitions.md).
 
 ## Checking a C toolchain can read the output

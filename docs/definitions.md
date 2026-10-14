@@ -149,10 +149,15 @@ also names language variants. `params` and `locals` name variables in
 declaration order. `doc` is printed as a comment above the function.
 
 Several fingerprints may share a name: versions of the same helper should.
-When two different functions with the same name meet in one file, or one
-function appears twice, the later one gets a numbered suffix
-(`do_nothing_2`); an entry point in that position is named for its program
-instead (`on_stopped`, `start` for `MAIN`, `return_zero_for_program_212`).
+When two different functions with the same name meet in one file, the later
+one gets a numbered suffix (`swing_attack_2`); an entry point in that
+position is named for its program instead (`on_stopped`, `start` for
+`MAIN`, `return_zero_for_program_212`). A file that holds the same code
+twice or more (identical stubs, which no fingerprint can tell apart) names
+the later copies by their use: for the one function that calls a copy
+(`unlock_interrupts_for_recoil_from_hit`, a caller's `on_` left off), or
+`unused_do_nothing` for a copy nothing calls or starts. Copies called from
+several places keep a number.
 Library functions keep one name everywhere, so where two libraries that
 meet in some script both have a function of the same name, one is numbered
 on every disc file. Names that clash with a native, helper, constant or
