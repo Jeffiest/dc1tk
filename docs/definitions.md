@@ -215,7 +215,10 @@ read from the disc.
 flags, items, characters, maps, sounds. They are included by every
 decompiled script and used when compiling, so `set_flag(FLAG_BRIDGE_REPAIRED,
 1)` round-trips. Engine constants (motion flags, pad buttons) belong in the
-SDK instead.
+SDK instead. A name may be declared once across the SDK and every set's
+headers: an enum member that repeats another constant's name, or a
+`#define` with a second value, stops decompiling and compiling with an
+error naming both, as clang would.
 
 The PAL set ships `include/pal.h` with `enum flag_story`, a name and a doc
 comment for each of the 185 save flags the retail scripts set or read by

@@ -120,7 +120,7 @@ extern void wrap_angle(float *angle) NATIVE(12);
 // Writes a random number from 0 up to but not including range into value. A float range gives a
 // float; an int range gives an int.
 // Original name: _GET_RAND.
-extern void get_random(any range, any *value) NATIVE(13);
+extern void get_random(any range, void *value) NATIVE(13);
 
 // Computes the rotation in radians that faces from point (from_x, from_y, from_z) toward point
 // (to_x, to_y, to_z). With three out parameters it writes pitch, yaw and 0; with only one it
@@ -170,7 +170,7 @@ extern int get_owner_id(void) NATIVE(56);
 // Reads shared value slot index (0 to 7) of this effect into value, as an int or a float according
 // to the type of the variable passed. The starter fills these slots with set_child_value.
 // Original name: _GET_VALUE.
-extern void get_effect_value(int index, any *value) NATIVE(57);
+extern void get_effect_value(int index, void *value) NATIVE(57);
 
 // Stores value, int or float, in value slot index (0 to 7) of this effect.
 // Original name: _SET_VALUE.
@@ -533,7 +533,7 @@ extern void get_chara_frame_pos(int chara, string frame_name, float *x, float *y
 // hit x, y, z, then those three; 7-9 outs get hit x, y, z, the unit reflection direction x, y, z,
 // then those three. Other outputs are only valid when hit_index is 0 or more.
 // Original name: _INTERSECTION_POINT.
-extern void get_line_hit(enum coll_query ignore_mask, float start_x, float start_y, float start_z, float end_x, float end_y, float end_z, any *hit_x, OPTIONAL(any *hit_y, any *hit_z, any *reflect_x, any *reflect_y, any *reflect_z, any *hit_index, any *area_kind, int *foot_sound)) NATIVE(203);
+extern void get_line_hit(enum coll_query ignore_mask, float start_x, float start_y, float start_z, float end_x, float end_y, float end_z, void *hit_x, OPTIONAL(void *hit_y, void *hit_z, void *reflect_x, void *reflect_y, void *reflect_z, void *hit_index, void *area_kind, int *foot_sound)) NATIVE(203);
 
 // Disabled in this build: prints an error and fails without creating anything or writing the
 // result. Use create_attack instead.

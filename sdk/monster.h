@@ -332,7 +332,7 @@ extern void set_monster_var(int index, any value) NATIVE(35, 2);
 // Reads a monster variable into value, as an int or a float to match the receiving variable's
 // type. Indexes 0 to 7 belong to this monster; 8 to 135 are shared by all monsters on the floor.
 // Original name: _V_POP.
-extern void get_monster_var(int index, any *value) NATIVE(35, 3);
+extern void get_monster_var(int index, void *value) NATIVE(35, 3);
 
 // Returns the number of script-driven monsters active on the floor, this one included.
 // Original name: _GET_MONSTER_NUM.
@@ -438,7 +438,7 @@ extern void set_monster_var2(any index, OPTIONAL(any value)) NATIVE(35, 24);
 // Reads this monster's second variable set, indexes 0 to 31, into value as an int or a float to
 // match the receiving variable's type. Fails unless both arguments are given.
 // Original name: _V_POP2.
-extern void get_monster_var2(any index, OPTIONAL(any *value)) NATIVE(35, 25);
+extern void get_monster_var2(any index, OPTIONAL(void *value)) NATIVE(35, 25);
 
 // Sets how the player picks a target: 0 locks onto the nearest monster, 2 uses the cycling target
 // selection.
@@ -847,7 +847,7 @@ extern void set_life(any life, OPTIONAL(any extra2, any extra3)) NATIVE(160, 2);
 // Reads this monster's life into an int variable, or its life as a fraction 0.0 to 1.0 of max life
 // into a float variable.
 // Original name: _GET_MONSTER_LIFE.
-extern void get_life(any *life) NATIVE(160, 3);
+extern void get_life(void *life) NATIVE(160, 3);
 
 // Returns how many hits on this monster did no damage.
 // Original name: _GET_NO_DAMAGE_CNT.

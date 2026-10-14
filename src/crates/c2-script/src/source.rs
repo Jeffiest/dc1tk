@@ -457,6 +457,8 @@ pub fn typed_parameter(param: &Node) -> String {
         Some(name) => format!("enum {}", py_str(name)),
         None => first_or(param, "kind", "type"),
     };
+    // a pointer to any is void * in C, which takes int * and float * alike
+    let kind = if kind == "any" && !pointer.is_empty() { "void".to_string() } else { kind };
     format!("{} {}{}", kind, pointer, py_str(&param["name"]))
 }
 

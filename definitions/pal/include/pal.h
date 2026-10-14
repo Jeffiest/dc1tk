@@ -1247,8 +1247,8 @@ enum base_se_pal {
     SE_BASE_STEP_ROPE_R = 39,
     SE_BASE_STEP_ROOF_TILE_L = 40,
     SE_BASE_STEP_ROOF_TILE_R = 41,
-    SE_BASE_STEP_CARPET_L = 42,
-    SE_BASE_STEP_CARPET_R = 43,
+    SE_BASE_STEP_CARPET_ON_STONE_L = 42,  // carpet that sounds like stone underneath
+    SE_BASE_STEP_CARPET_ON_STONE_R = 43,
     SE_BASE_STEP_RAIN_JINGLE_L = 44,
     SE_BASE_STEP_RAIN_JINGLE_R = 45,
     SE_BASE_STEP_GLASS_L = 46,
