@@ -76,6 +76,22 @@ pub struct Ideas {
     counts: Vec<usize>,
 }
 
+/// An entry of a copy as the mods leave it: whether a mod gave its sort key (else build may move
+/// it up to make room for a name put in its place), and the mod that changed it.
+#[derive(Clone, Debug)]
+struct Placed {
+    entry: Entry,
+    fixed: bool,
+    owner: Option<String>,
+}
+
+impl Placed {
+    /// The mod a change of the entry is by: its owner, or build for a key moved to make room.
+    fn module(&self) -> String {
+        self.owner.clone().unwrap_or_else(|| "build".to_string())
+    }
+}
+
 /// What the mods give an idea in one language: (value, mod).
 #[derive(Default)]
 struct Given {
@@ -369,30 +385,37 @@ impl Ideas {
         given: &BTreeMap<i64, Given>,
         edits: &mut Vec<Edit>,
     ) -> Result<()> {
+        let placed = self.placed(file, disc, given)?;
+        check_room(file, &placed)?;
+        entry_edits(file, disc, &placed, edits);
+        self.added_edits(file, disc, &placed, edits)
+    }
+
+    /// A copy's entries with the names and keys the mods give, new ones after the disc's: a name
+    /// given without its key is put in its place in the language's order.
+    fn placed(&self, file: usize, disc: &[Entry], given: &BTreeMap<i64, Given>) -> Result<Vec<Placed>> {
         let language = FILE_LANGUAGES[file];
         let short = LANGUAGE_NAMES[language];
-        let path = &paths()[file];
-        let mut entries = disc.to_vec();
-        let mut fixed = vec![false; entries.len()];
-        let mut owner: Vec<Option<String>> = vec![None; entries.len()];
+        let mut placed: Vec<Placed> =
+            disc.iter().map(|entry| Placed { entry: entry.clone(), fixed: false, owner: None }).collect();
         let mut to_place = Vec::new();
         let longest =
             disc.iter().filter(|entry| entry.id < SCOOP_FIRST).map(|entry| stored_len(&entry.name, language)).max();
         let most = longest.unwrap_or(0).max(NAME_MOST);
         for (&id, wanted) in given {
             let label = format!("idea {id}");
-            let at = match entries.iter().position(|entry| entry.id == id) {
+            let at = match placed.iter().position(|placed| placed.entry.id == id) {
                 Some(at) => at,
                 None => {
-                    entries.push(Entry { statement: None, id, name: Vec::new(), sort: 0 });
-                    fixed.push(false);
-                    owner.push(None);
-                    entries.len() - 1
+                    let entry = Entry { statement: None, id, name: Vec::new(), sort: 0 };
+                    placed.push(Placed { entry, fixed: false, owner: None });
+                    placed.len() - 1
                 }
             };
+            let it = &mut placed[at];
             if let Some((text, module)) = wanted.name.get(&language) {
                 let bytes = name_bytes(text, language, &label)?;
-                if bytes != entries[at].name {
+                if bytes != it.entry.name {
                     let length = stored_len(&bytes, language);
                     if length > most {
                         bail!(
@@ -400,73 +423,41 @@ impl Ideas {
                              (MenuInventNetaMemoDraw's text[0x20] after \"[bulb2]\", or the game's own longest)"
                         );
                     }
-                    entries[at].name = bytes;
-                    owner[at] = Some(module.clone());
+                    it.entry.name = bytes;
+                    it.owner = Some(module.clone());
                     if !wanted.sort.contains_key(&language) {
                         to_place.push(at);
                     }
                 }
             }
             if let Some((sort, module)) = wanted.sort.get(&language) {
-                entries[at].sort = *sort;
-                fixed[at] = true;
-                owner[at] = Some(module.clone());
-            } else if entries[at].statement.is_none() && !to_place.contains(&at) {
+                it.entry.sort = *sort;
+                it.fixed = true;
+                it.owner = Some(module.clone());
+            } else if it.entry.statement.is_none() && !to_place.contains(&at) {
                 to_place.push(at);
             }
         }
         for at in to_place {
-            place(&mut entries, &fixed, at, language)?;
+            place(&mut placed, at, language)?;
         }
-        if entries.len() > ENTRIES_MOST {
-            bail!("{path}: {} ideas and scoops; the notebook sorts at most {ENTRIES_MOST} (UpdataNetaMemoStr's sort_keys)", entries.len());
-        }
-        let taken = units(&entries, language);
-        if taken >= UNITS {
-            bail!(
-                "{path}: the {short} ideas and scoops take {taken} 16-byte units, and {} is the most ({UNITS_WHY}): \
-                 shorter names, or fewer new ideas",
-                UNITS - 1
-            );
-        }
-        // the changes, by the mods that make them (moved keys by build)
-        let module_of = |at: usize| owner[at].clone().unwrap_or_else(|| "build".to_string());
-        for (at, entry) in entries.iter().enumerate() {
-            let Some(statement) = entry.statement else {
-                continue;
-            };
-            let old = &disc[at];
-            if entry.name != old.name {
-                edits.push(Edit {
-                    file,
-                    statement,
-                    arg: 1,
-                    to: To::Arg(cfg_text::str_text(&entry.name)),
-                    what: format!("idea {} name ({short})", entry.id),
-                    module: module_of(at),
-                });
-            }
-            if entry.sort != old.sort {
-                edits.push(Edit {
-                    file,
-                    statement,
-                    arg: 2,
-                    to: To::Arg(cfg_text::int_text(entry.sort)),
-                    what: format!("idea {} sort ({short})", entry.id),
-                    module: if fixed[at] { module_of(at) } else { "build".to_string() },
-                });
-            }
-        }
-        let added: Vec<usize> = (disc.len()..entries.len()).collect();
+        Ok(placed)
+    }
+
+    /// The new entries' PIC_NAMEs, after the copy's last idea (before the scoops), and its
+    /// PIC_INFO count raised.
+    fn added_edits(&self, file: usize, disc: &[Entry], placed: &[Placed], edits: &mut Vec<Edit>) -> Result<()> {
+        let added = &placed[disc.len()..];
         if added.is_empty() {
             return Ok(());
         }
+        let path = &paths()[file];
         let Some(after) = disc.iter().filter(|entry| entry.id < SCOOP_FIRST).filter_map(|entry| entry.statement).max()
         else {
             bail!("{path} has no idea to put new ones after");
         };
-        for at in added {
-            let entry = &entries[at];
+        for new in added {
+            let entry = &new.entry;
             let args = [cfg_text::int_text(entry.id), cfg_text::str_text(&entry.name), cfg_text::int_text(entry.sort)];
             edits.push(Edit {
                 file,
@@ -474,7 +465,7 @@ impl Ideas {
                 arg: 0,
                 to: To::Insert(cfg_text::statement_text(self.scripts[file].newline(), "PIC_NAME", &args)),
                 what: format!("idea {} (new)", entry.id),
-                module: module_of(at),
+                module: new.module(),
             });
         }
         let count = self.counts[file];
@@ -483,8 +474,8 @@ impl Ideas {
             file,
             statement: count,
             arg: 0,
-            to: To::Arg(cfg_text::int_text(had + (entries.len() - disc.len()) as i64)),
-            what: format!("ideas count ({short})"),
+            to: To::Arg(cfg_text::int_text(had + added.len() as i64)),
+            what: format!("ideas count ({})", LANGUAGE_NAMES[FILE_LANGUAGES[file]]),
             module: "build".to_string(),
         });
         Ok(())
@@ -545,35 +536,92 @@ fn name_bytes(text: &str, language: usize, label: &str) -> Result<Vec<u8>> {
     }
 }
 
+/// Refuses a copy whose entries the notebook cannot sort, or whose names outgrow the heap.
+fn check_room(file: usize, placed: &[Placed]) -> Result<()> {
+    let language = FILE_LANGUAGES[file];
+    let path = &paths()[file];
+    if placed.len() > ENTRIES_MOST {
+        bail!(
+            "{path}: {} ideas and scoops; the notebook sorts at most {ENTRIES_MOST} (UpdataNetaMemoStr's sort_keys)",
+            placed.len()
+        );
+    }
+    let entries: Vec<Entry> = placed.iter().map(|placed| placed.entry.clone()).collect();
+    let taken = units(&entries, language);
+    if taken >= UNITS {
+        bail!(
+            "{path}: the {} ideas and scoops take {taken} 16-byte units, and {} is the most ({UNITS_WHY}): \
+             shorter names, or fewer new ideas",
+            LANGUAGE_NAMES[language],
+            UNITS - 1
+        );
+    }
+    Ok(())
+}
+
+/// The edits of the disc's entries whose names or keys changed, by the mods that change them (a
+/// key moved to make room by build).
+fn entry_edits(file: usize, disc: &[Entry], placed: &[Placed], edits: &mut Vec<Edit>) {
+    let short = LANGUAGE_NAMES[FILE_LANGUAGES[file]];
+    for (old, placed) in disc.iter().zip(placed) {
+        let (entry, Some(statement)) = (&placed.entry, placed.entry.statement) else {
+            continue;
+        };
+        if entry.name != old.name {
+            edits.push(Edit {
+                file,
+                statement,
+                arg: 1,
+                to: To::Arg(cfg_text::str_text(&entry.name)),
+                what: format!("idea {} name ({short})", entry.id),
+                module: placed.module(),
+            });
+        }
+        if entry.sort != old.sort {
+            edits.push(Edit {
+                file,
+                statement,
+                arg: 2,
+                to: To::Arg(cfg_text::int_text(entry.sort)),
+                what: format!("idea {} sort ({short})", entry.id),
+                module: if placed.fixed { placed.module() } else { "build".to_string() },
+            });
+        }
+    }
+}
+
 /// Gives entry `at` the key of its name's place in its language's order: the key of the first
 /// name of its letter after it (or one past the letter's last), those from there on moved up
 /// one unless a mod gave them their keys.
-fn place(entries: &mut [Entry], fixed: &[bool], at: usize, language: usize) -> Result<()> {
-    let text = name_text(&entries[at].name, language);
+fn place(entries: &mut [Placed], at: usize, language: usize) -> Result<()> {
+    let text = name_text(&entries[at].entry.name, language);
     let letter = letter(&text, language).unwrap_or(50);
     let wanted = order_text(&text, language);
+    let sort = |entries: &[Placed], other: usize| entries[other].entry.sort;
     let mut same: Vec<usize> =
-        (0..entries.len()).filter(|&other| other != at && entries[other].sort.div_euclid(100) == letter).collect();
-    same.sort_by_key(|&other| entries[other].sort);
-    let next =
-        same.iter().copied().find(|&other| order_text(&name_text(&entries[other].name, language), language) > wanted);
+        (0..entries.len()).filter(|&other| other != at && sort(entries, other).div_euclid(100) == letter).collect();
+    same.sort_by_key(|&other| sort(entries, other));
+    let next = same
+        .iter()
+        .copied()
+        .find(|&other| order_text(&name_text(&entries[other].entry.name, language), language) > wanted);
     let key = match next {
-        Some(other) => entries[other].sort,
-        None => same.last().map_or(letter * 100, |&last| entries[last].sort + 1),
+        Some(other) => sort(entries, other),
+        None => same.last().map_or(letter * 100, |&last| sort(entries, last) + 1),
     };
     for &other in &same {
-        if entries[other].sort >= key && !fixed[other] {
-            entries[other].sort += 1;
+        if entries[other].entry.sort >= key && !entries[other].fixed {
+            entries[other].entry.sort += 1;
         }
     }
-    if same.iter().map(|&other| entries[other].sort).chain([key]).any(|sort| sort >= letter * 100 + 100) {
+    if same.iter().map(|&other| sort(entries, other)).chain([key]).any(|sort| sort >= letter * 100 + 100) {
         bail!(
             "idea {}: the {} letter {letter} has no room for another place (100 keys a letter); give its \"sorts\"",
-            entries[at].id,
+            entries[at].entry.id,
             LANGUAGE_NAMES[language]
         );
     }
-    entries[at].sort = key;
+    entries[at].entry.sort = key;
     Ok(())
 }
 

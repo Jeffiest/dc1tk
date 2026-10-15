@@ -657,158 +657,41 @@ impl Table {
     /// counts raised.
     fn additions(&self, section: &Section, records: &[Added], edits: &mut Vec<Edit>) -> Result<()> {
         let adding = section.adding.as_ref().expect("a section that takes records");
-        let name = &section.name;
-        let first_file = |record: &Record| record.block.first().map_or(usize::MAX, |&(file, ..)| file);
         let place_at = adding.place.and_then(|place| section.keys.iter().position(|key| key == place));
-        let mut new: Vec<(&Added, &Record, String)> = Vec::new();
+        let mut new = Vec::new();
         for added in records {
-            let label = format!("{name} {} (new)", keys_text(&section.keys, &added.keys));
+            let label = format!("{} {} (new)", section.name, keys_text(&section.keys, &added.keys));
             let like = self.like_of(section, &added.given["like"], &added.keys, &label)?;
-            new.push((added, like, label));
+            new.push(New { added, like, label });
         }
         // places continue from the last, in order
-        new.sort_by_key(|(added, ..)| place_at.map_or(0, |at| added.keys[at].as_i64().unwrap_or(0)));
-        // a record's group: its first file and the keys a new record takes from the one it is like
-        // (its town), which its place counts in and new ones go after
-        let group = |record: &Record| -> String {
-            let kept: Vec<String> = record
-                .keys
-                .iter()
-                .filter(|(key, _)| {
-                    Some(key.as_str()) != adding.place && !adding.key_args.iter().any(|(known, ..)| known == key)
-                })
-                .map(|(_, value)| shown(value))
-                .collect();
-            format!("{} {}", first_file(record), kept.join(" "))
-        };
+        new.sort_by_key(|new| place_at.map_or(0, |at| new.added.keys[at].as_i64().unwrap_or(0)));
         let mut added_to: BTreeMap<String, usize> = BTreeMap::new();
-        for &(added, like, ref label) in &new {
-            let had = section.records.iter().filter(|record| group(record) == group(like)).count();
-            let count = added_to.entry(group(like)).or_insert(0);
+        for new in &new {
+            let group = group_of(adding, new.like);
+            let had = section.records.iter().filter(|record| group_of(adding, record) == group).count();
+            let count = added_to.entry(group.clone()).or_insert(0);
             *count += 1;
-            if had + *count > adding.most {
-                bail!("{label}: {} {name} in its file; the game holds {} ({})", had + *count, adding.most, adding.why);
+            let place = had + *count - 1;
+            if place >= adding.most {
+                bail!(
+                    "{}: {} {} in its file; the game holds {} ({})",
+                    new.label,
+                    place + 1,
+                    section.name,
+                    adding.most,
+                    adding.why
+                );
             }
-            // keys: the place, written ones, or the like record's own
-            let mut key_texts: Vec<(&str, usize, Vec<u8>)> = Vec::new();
-            for ((key, value), (_, like_value)) in section.keys.iter().zip(&added.keys).zip(&like.keys) {
-                if Some(key.as_str()) == adding.place {
-                    let wanted = (had + *count - 1) as i64;
-                    if value.as_i64() != Some(wanted) {
-                        bail!("{label}: a new record's {key} is the next one, {wanted}");
-                    }
-                    // a place the statements also hold (a request's number)
-                    if let Some(&(_, tag, arg, kind)) = adding.key_args.iter().find(|(known, ..)| known == key) {
-                        key_texts.push((tag, arg, value_text(kind, value, &format!("{label} {key}"))?));
-                    }
-                } else if let Some(&(_, tag, arg, kind)) = adding.key_args.iter().find(|(known, ..)| known == key) {
-                    key_texts.push((tag, arg, value_text(kind, value, &format!("{label} {key}"))?));
-                } else if !same(value, like_value) {
-                    bail!("{label}: a new record has the {key} of the record it is like ({})", shown(like_value));
-                }
-            }
-            // the copy: the like record's statements in each of its files
-            let mut scripts = Vec::new();
-            for &(file, first, last) in &like.block {
-                let mut statements = self.scripts[file].statements[first..=last].to_vec();
-                statements[0].before = self.scripts[file].newline().as_bytes().to_vec();
-                let language = adding.languages.iter().find(|(known, _)| *known == file).map(|&(_, language)| language);
-                for statement in statements.iter_mut() {
-                    for (tag, arg, text) in &key_texts {
-                        if statement.tag == *tag {
-                            set_piece(statement, *arg, text.clone(), label)?;
-                        }
-                    }
-                    for &(label_name, tag, arg, most) in &adding.label_args {
-                        if statement.tag != tag {
-                            continue;
-                        }
-                        let Some(value) = added.given.get(label_name) else {
-                            continue;
-                        };
-                        let text = label_in(value, language, label_name, label)?;
-                        let Some(bytes) = crate::lang::name_bytes(&text, language.unwrap_or(1)) else {
-                            bail!("{label}: {label_name} {text:?} has characters the game's text cannot hold");
-                        };
-                        if crate::lang::converted_len(&bytes, language.unwrap_or(1)) > most {
-                            bail!("{label}: {label_name} {text:?} is longer than the {most} bytes the game keeps");
-                        }
-                        set_piece(statement, arg, cfg_text::str_text(&bytes), label)?;
-                    }
-                }
-                scripts.push(Script { statements, tail: Vec::new() });
-            }
-            // the like record's fields, moved onto the copy
-            let moved = |&(file, statement): &(usize, usize)| -> Option<(usize, usize)> {
-                like.block
-                    .iter()
-                    .position(|&(known, first, last)| known == file && (first..=last).contains(&statement))
-                    .map(|copy| (copy, statement - like.block[copy].1))
-            };
-            let copy = Table::new(&self.what, scripts, Vec::new());
-            let mut fields = Vec::new();
-            for field in &like.fields {
-                let place = match &field.place {
-                    Place::Args { at, arg, len, kind } => {
-                        Place::Args { at: at.iter().filter_map(moved).collect(), arg: *arg, len: *len, kind: *kind }
-                    }
-                    Place::List { at, arg, tail, entry, count } => Place::List {
-                        at: at.iter().filter_map(moved).collect(),
-                        arg: *arg,
-                        tail: *tail,
-                        entry: entry.clone(),
-                        count: *count,
-                    },
-                    Place::Lines { copies, entry, count, per_line, grow } => Place::Lines {
-                        copies: copies
-                            .iter()
-                            .map(|lines| lines.iter().filter_map(moved).collect::<Vec<_>>())
-                            .filter(|lines| !lines.is_empty())
-                            .collect(),
-                        entry: entry.clone(),
-                        count: *count,
-                        per_line: *per_line,
-                        grow: *grow,
-                    },
-                    Place::Bytes { .. } => continue,
-                };
-                fields.push(Field { name: field.name.clone(), place, fixed: None });
-            }
-            let moved_record = Record { fields, ..Record::default() };
-            let mut flat = Vec::new();
-            for (key, value) in added.given.iter() {
-                if section.keys.contains(key)
-                    || key == "like"
-                    || adding.label_args.iter().any(|(known, ..)| known == key)
-                {
-                    continue;
-                }
-                if like.labels.iter().any(|(known, _)| known == key) {
-                    bail!("{label}: \"{key}\" is text the copy keeps from the record it is like");
-                }
-                flatten(&moved_record, key, value, &mut flat, label)?;
-            }
-            let mut copy_edits = Vec::new();
-            let mut unused = Vec::new();
-            for (field_name, value) in flat {
-                let field = moved_record.fields.iter().find(|field| field.name == field_name).unwrap();
-                let outside = match &field.place {
-                    Place::Args { at, .. } | Place::List { at, .. } => at.is_empty(),
-                    Place::Lines { copies, .. } => copies.is_empty(),
-                    Place::Bytes { .. } => true,
-                };
-                if outside {
-                    bail!("{label} {field_name}: the record it is like keeps it outside its statements");
-                }
-                let what = format!("{label} {field_name}");
-                copy.field_changes(field, value, &what, added.module, &mut copy_edits, &mut unused)?;
-            }
-            let texts = cfg_text::apply_edits(&copy.scripts, &copy_edits)?;
-            for (&(file, ..), text) in like.block.iter().zip(texts) {
+            let key_texts = self.key_texts(section, new, place)?;
+            let copy = Table::new(&self.what, self.copied_statements(adding, new, &key_texts)?, Vec::new());
+            let texts = cfg_text::apply_edits(&copy.scripts, &copy.copy_edits(section, new)?)?;
+            for (&(file, ..), text) in new.like.block.iter().zip(texts) {
+                // after the last record of the group in the file
                 let after = section
                     .records
                     .iter()
-                    .filter(|record| group(record) == group(like))
+                    .filter(|record| group_of(adding, record) == group)
                     .flat_map(|record| &record.block)
                     .filter(|(known, ..)| *known == file)
                     .map(|&(_, _, last)| last)
@@ -819,26 +702,126 @@ impl Table {
                     statement: after,
                     arg: 0,
                     to: To::Insert(text),
-                    what: label.clone(),
-                    module: added.module.to_string(),
+                    what: new.label.clone(),
+                    module: new.added.module.to_string(),
                 });
             }
         }
-        // the counts of the files records were added to
+        self.count_edits(section, &new, edits)
+    }
+
+    /// The texts of a new record's keys its statements hold, (tag, argument, text): its place
+    /// (the next one, and checked to be) where the statements hold it (a request's number), the
+    /// keys the section writes; the others are the like record's own.
+    fn key_texts(&self, section: &Section, new: &New, place: usize) -> Result<Vec<(&'static str, usize, Vec<u8>)>> {
+        let adding = section.adding.as_ref().expect("a section that takes records");
+        let label = &new.label;
+        let mut out = Vec::new();
+        for ((key, value), (_, like_value)) in section.keys.iter().zip(&new.added.keys).zip(&new.like.keys) {
+            let written = adding.key_args.iter().find(|(known, ..)| known == key);
+            if Some(key.as_str()) == adding.place && value.as_i64() != Some(place as i64) {
+                bail!("{label}: a new record's {key} is the next one, {place}");
+            }
+            if let Some(&(_, tag, arg, kind)) = written {
+                out.push((tag, arg, value_text(kind, value, &format!("{label} {key}"))?));
+            } else if Some(key.as_str()) != adding.place && !same(value, like_value) {
+                bail!("{label}: a new record has the {key} of the record it is like ({})", shown(like_value));
+            }
+        }
+        Ok(out)
+    }
+
+    /// The copy of a new record: its like record's statements in each of its files, with the new
+    /// keys and labels written in.
+    fn copied_statements(
+        &self,
+        adding: &Adding,
+        new: &New,
+        key_texts: &[(&'static str, usize, Vec<u8>)],
+    ) -> Result<Vec<Script>> {
+        let label = &new.label;
+        let mut scripts = Vec::new();
+        for &(file, first, last) in &new.like.block {
+            let mut statements = self.scripts[file].statements[first..=last].to_vec();
+            statements[0].before = self.scripts[file].newline().as_bytes().to_vec();
+            let language = adding.languages.iter().find(|(known, _)| *known == file).map(|&(_, language)| language);
+            for statement in statements.iter_mut() {
+                for (tag, arg, text) in key_texts {
+                    if statement.tag == *tag {
+                        set_piece(statement, *arg, text.clone(), label)?;
+                    }
+                }
+                for &(label_name, tag, arg, most) in &adding.label_args {
+                    let Some(value) = new.added.given.get(label_name).filter(|_| statement.tag == tag) else {
+                        continue;
+                    };
+                    let text = label_in(value, language, label_name, label)?;
+                    let language = language.unwrap_or(crate::lang::ENGLISH);
+                    let Some(bytes) = crate::lang::name_bytes(&text, language) else {
+                        bail!("{label}: {label_name} {text:?} has characters the game's text cannot hold");
+                    };
+                    if crate::lang::converted_len(&bytes, language) > most {
+                        bail!("{label}: {label_name} {text:?} is longer than the {most} bytes the game keeps");
+                    }
+                    set_piece(statement, arg, cfg_text::str_text(&bytes), label)?;
+                }
+            }
+            scripts.push(Script { statements, tail: Vec::new() });
+        }
+        Ok(scripts)
+    }
+
+    /// The edits of a new record's copy (this table, of the copied statements) that give it the
+    /// fields the mod gives, the like record's fields moved onto the copy.
+    fn copy_edits(&self, section: &Section, new: &New) -> Result<Vec<Edit>> {
+        let adding = section.adding.as_ref().expect("a section that takes records");
+        let label = &new.label;
+        let moved = moved_fields(new.like);
+        let mut flat = Vec::new();
+        for (key, value) in new.added.given.iter() {
+            if section.keys.contains(key) || key == "like" || adding.label_args.iter().any(|(known, ..)| known == key) {
+                continue;
+            }
+            if new.like.labels.iter().any(|(known, _)| known == key) {
+                bail!("{label}: \"{key}\" is text the copy keeps from the record it is like");
+            }
+            flatten(&moved, key, value, &mut flat, label)?;
+        }
+        let mut edits = Vec::new();
+        let mut unused = Vec::new();
+        for (field_name, value) in flat {
+            let field = moved.fields.iter().find(|field| field.name == field_name).unwrap();
+            let outside = match &field.place {
+                Place::Args { at, .. } | Place::List { at, .. } => at.is_empty(),
+                Place::Lines { copies, .. } => copies.is_empty(),
+                Place::Bytes { .. } => true,
+            };
+            if outside {
+                bail!("{label} {field_name}: the record it is like keeps it outside its statements");
+            }
+            let what = format!("{label} {field_name}");
+            self.field_changes(field, value, &what, new.added.module, &mut edits, &mut unused)?;
+        }
+        Ok(edits)
+    }
+
+    /// The counts of the files records were added to, raised.
+    fn count_edits(&self, section: &Section, new: &[New], edits: &mut Vec<Edit>) -> Result<()> {
+        let adding = section.adding.as_ref().expect("a section that takes records");
         for &(file, statement, arg) in &adding.counts {
-            let more = new.iter().filter(|(_, like, _)| like.block.iter().any(|&(known, ..)| known == file)).count();
+            let more = new.iter().filter(|new| new.like.block.iter().any(|&(known, ..)| known == file)).count();
             if more == 0 {
                 continue;
             }
             let Some(piece) = self.args(file, statement).get(arg) else {
-                bail!("{name}: the count statement has no argument {arg}");
+                bail!("{}: the count statement has no argument {arg}", section.name);
             };
             edits.push(Edit {
                 file,
                 statement,
                 arg,
                 to: To::Arg(cfg_text::int_text(piece.value().int() as i64 + more as i64)),
-                what: format!("{name} count (file {file})"),
+                what: format!("{} count (file {file})", section.name),
                 module: "build".to_string(),
             });
         }
@@ -877,10 +860,9 @@ impl Table {
                         let Some(piece) = self.args(file, statement).get(arg + number) else {
                             bail!("{what}: the statement has no such argument");
                         };
-                        if same(&arg_value(piece.value(), *kind), value) {
-                            continue;
+                        if !same(&arg_value(piece.value(), *kind), value) {
+                            edits.push(edit(file, statement, arg + number, To::Arg(text.clone()), what.clone()));
                         }
-                        edits.push(edit(file, statement, arg + number, To::Arg(text.clone()), what.clone()));
                     }
                 }
             }
@@ -888,49 +870,19 @@ impl Table {
                 let texts = entry_texts(entry, *count, value, what)?;
                 for &(file, statement) in at {
                     let count = self.args(file, statement).len();
-                    if same(
-                        &Value::Array(self.entries(file, statement, *arg, count.saturating_sub(*tail), entry)),
-                        value,
-                    ) {
-                        continue;
+                    let had = Value::Array(self.entries(file, statement, *arg, count.saturating_sub(*tail), entry));
+                    if !same(&had, value) {
+                        edits.push(edit(file, statement, *arg, To::Span(texts.clone(), *tail), what.to_string()));
                     }
-                    edits.push(edit(file, statement, *arg, To::Span(texts.clone(), *tail), what.to_string()));
                 }
             }
             Place::Lines { copies, entry, count, per_line, grow } => {
                 let texts = entry_texts(entry, *count, value, what)?;
                 for at in copies {
-                    let room = if *per_line == 0 || *grow { usize::MAX } else { at.len() * per_line };
-                    if at.is_empty() || texts.len() / entry.len() > room {
-                        bail!(
-                            "{what}: {} entries; the file has {} lines of {per_line} for them (lines are not added)",
-                            texts.len() / entry.len(),
-                            at.len()
-                        );
-                    }
-                    let mut rest = &texts[..];
-                    for (number, &(file, statement)) in at.iter().enumerate() {
-                        let had = self.args(file, statement).len() / entry.len() * entry.len();
-                        let take = match *per_line {
-                            0 if number + 1 == at.len() => rest.len(),
-                            0 => had.min(rest.len()),
-                            per_line => (per_line * entry.len()).min(rest.len()),
-                        };
-                        let (mine, after) = rest.split_at(take);
-                        rest = after;
-                        let old: Vec<&[u8]> =
-                            self.args(file, statement).iter().map(|piece| piece.text.as_slice()).collect();
-                        if old == mine.iter().map(Vec::as_slice).collect::<Vec<_>>() {
-                            continue;
-                        }
-                        edits.push(edit(file, statement, 0, To::Rest(mine.to_vec()), what.to_string()));
-                    }
-                    // what the lines had no room for: new lines of the last one's tag after it
-                    let &(file, last) = at.last().expect("lines");
-                    let tag = self.scripts[file].statements[last].tag.clone();
-                    for (number, chunk) in rest.chunks((*per_line).max(1) * entry.len()).enumerate() {
-                        let text = cfg_text::statement_text(self.scripts[file].newline(), &tag, chunk);
-                        edits.push(edit(file, last, 0, To::Insert(text), format!("{what} (new line {})", number + 1)));
+                    for (file, statement, to, what) in
+                        self.lines_edits(at, entry.len(), *per_line, *grow, &texts, what)?
+                    {
+                        edits.push(edit(file, statement, 0, to, what));
                     }
                 }
             }
@@ -939,14 +891,59 @@ impl Table {
                     let bytes = value_bytes(*kind, *size, value, &what)?;
                     let at = offset + number * size;
                     let have = &self.elf[at..at + size];
-                    if have == bytes.as_slice() || same(&bytes_value(*kind, have), value) {
-                        continue;
+                    if have != bytes.as_slice() && !same(&bytes_value(*kind, have), value) {
+                        patches.push(Patch { offset: at, bytes, what, module: module.to_string() });
                     }
-                    patches.push(Patch { offset: at, bytes, what, module: module.to_string() });
                 }
             }
         }
         Ok(())
+    }
+
+    /// A list over lines written into one copy's lines (Place::Lines): each line's arguments, its
+    /// new texts where they differ, and new lines after the last for what they have no room for;
+    /// (file, statement, the edit, what).
+    fn lines_edits(
+        &self,
+        at: &[(usize, usize)],
+        entry: usize,
+        per_line: usize,
+        grow: bool,
+        texts: &[Vec<u8>],
+        what: &str,
+    ) -> Result<Vec<(usize, usize, To, String)>> {
+        let room = if per_line == 0 || grow { usize::MAX } else { at.len() * per_line };
+        if at.is_empty() || texts.len() / entry > room {
+            bail!(
+                "{what}: {} entries; the file has {} lines of {per_line} for them (lines are not added)",
+                texts.len() / entry,
+                at.len()
+            );
+        }
+        let mut out = Vec::new();
+        let mut rest = texts;
+        for (number, &(file, statement)) in at.iter().enumerate() {
+            let had = self.args(file, statement).len() / entry * entry;
+            let take = match per_line {
+                0 if number + 1 == at.len() => rest.len(),
+                0 => had.min(rest.len()),
+                per_line => (per_line * entry).min(rest.len()),
+            };
+            let (mine, after) = rest.split_at(take);
+            rest = after;
+            let old: Vec<&[u8]> = self.args(file, statement).iter().map(|piece| piece.text.as_slice()).collect();
+            if old != mine.iter().map(Vec::as_slice).collect::<Vec<_>>() {
+                out.push((file, statement, To::Rest(mine.to_vec()), what.to_string()));
+            }
+        }
+        // what the lines had no room for: new lines of the last one's tag after it
+        let &(file, last) = at.last().expect("lines");
+        let tag = &self.scripts[file].statements[last].tag;
+        for (number, chunk) in rest.chunks(per_line.max(1) * entry).enumerate() {
+            let text = cfg_text::statement_text(self.scripts[file].newline(), tag, chunk);
+            out.push((file, last, To::Insert(text), format!("{what} (new line {})", number + 1)));
+        }
+        Ok(out)
     }
 
     /// The scripts with the edits made.
@@ -979,60 +976,70 @@ impl Table {
         self.scripts.iter().map(Script::write).collect()
     }
 
-    /// The fields whose values do not write back as the text or bytes they were read from (in the
-    /// first copy: copies may differ, and the first is the one shown; what
-    /// the corpus tests check is empty), and whether the JSON changes anything.
+    /// What would not survive an unedited round trip, for the corpus tests to find empty: the
+    /// fields whose values do not write back as the text or bytes they were read from (in the
+    /// first copy, the one shown: copies may differ), and anything the exported JSON, given back
+    /// as a mod's table, would change.
     pub fn check(&self) -> Vec<String> {
         let mut wrong = Vec::new();
         for section in &self.sections {
             for record in &section.records {
                 let label = record.label_text(&section.name);
                 for field in &record.fields {
-                    let what = format!("{label} {}", field.name);
-                    let value = self.value(field);
-                    match &field.place {
-                        Place::Args { at, arg, len, kind } => {
-                            let values =
-                                if *len == 1 { vec![value] } else { value.as_array().cloned().unwrap_or_default() };
-                            for (number, value) in values.iter().enumerate() {
-                                for &(file, statement) in &at[..1] {
-                                    let text = value_text(*kind, value, &what);
-                                    let have = self.args(file, statement).get(arg + number).map(|piece| &piece.text);
-                                    if text.as_ref().ok() != have {
-                                        wrong.push(format!("{what}: {value} in file {file}"));
-                                    }
-                                }
-                            }
-                        }
-                        Place::List { entry, count, .. } | Place::Lines { entry, count, .. } => {
-                            if entry_texts(entry, *count, &value, &what).is_err() {
-                                wrong.push(format!("{what}: {value}"));
-                            }
-                        }
-                        Place::Bytes { offset, size, len, kind } => {
-                            let values =
-                                if *len == 1 { vec![value] } else { value.as_array().cloned().unwrap_or_default() };
-                            for (number, value) in values.iter().enumerate() {
-                                let at = offset + number * size;
-                                let bytes = value_bytes(*kind, *size, value, &what);
-                                let same_bytes = match (&bytes, kind) {
-                                    (Ok(bytes), Kind::Text(_)) => bytes_value(*kind, bytes) == *value,
-                                    (Ok(bytes), _) => bytes.as_slice() == &self.elf[at..at + size],
-                                    _ => false,
-                                };
-                                if !same_bytes {
-                                    wrong.push(format!("{what}: {value}"));
-                                }
-                            }
-                        }
+                    wrong.extend(self.field_problems(field, &format!("{label} {}", field.name)));
+                }
+            }
+        }
+        wrong.extend(self.round_trip_problem());
+        wrong
+    }
+
+    /// The values of a field that do not write back as they were read.
+    fn field_problems(&self, field: &Field, what: &str) -> Vec<String> {
+        let value = self.value(field);
+        let values =
+            |len: usize| if len == 1 { vec![value.clone()] } else { value.as_array().cloned().unwrap_or_default() };
+        let mut wrong = Vec::new();
+        match &field.place {
+            Place::Args { at, arg, len, kind } => {
+                let (file, statement) = at[0];
+                for (number, value) in values(*len).iter().enumerate() {
+                    let text = value_text(*kind, value, what);
+                    let have = self.args(file, statement).get(arg + number).map(|piece| &piece.text);
+                    if text.as_ref().ok() != have {
+                        wrong.push(format!("{what}: {value} in file {file}"));
+                    }
+                }
+            }
+            Place::List { entry, count, .. } | Place::Lines { entry, count, .. } => {
+                if entry_texts(entry, *count, &value, what).is_err() {
+                    wrong.push(format!("{what}: {value}"));
+                }
+            }
+            Place::Bytes { offset, size, len, kind } => {
+                for (number, value) in values(*len).iter().enumerate() {
+                    let at = offset + number * size;
+                    // a string the same up to its NUL is the same string
+                    let same_bytes = match (value_bytes(*kind, *size, value, what), kind) {
+                        (Ok(bytes), Kind::Text(_)) => bytes_value(*kind, &bytes) == *value,
+                        (Ok(bytes), _) => bytes.as_slice() == &self.elf[at..at + size],
+                        _ => false,
+                    };
+                    if !same_bytes {
+                        wrong.push(format!("{what}: {value}"));
                     }
                 }
             }
         }
+        wrong
+    }
+
+    /// What the exported JSON, read back as a mod's table, changes or why it is refused.
+    fn round_trip_problem(&self) -> Option<String> {
         let json: Value = serde_json::from_str(&crate::json::json_text(&self.to_json())).unwrap();
         match self.changes(&json, "check") {
-            Ok((edits, patches)) if edits.is_empty() && patches.is_empty() => {}
-            Ok((edits, patches)) => wrong.push(format!(
+            Ok((edits, patches)) if edits.is_empty() && patches.is_empty() => None,
+            Ok((edits, patches)) => Some(format!(
                 "the exported JSON changes {} arguments and {} values of the executable: {:?}",
                 edits.len(),
                 patches.len(),
@@ -1043,9 +1050,8 @@ impl Table {
                     .take(5)
                     .collect::<Vec<_>>()
             )),
-            Err(error) => wrong.push(format!("the exported JSON is refused: {error}")),
+            Err(error) => Some(format!("the exported JSON is refused: {error}")),
         }
-        wrong
     }
 }
 
@@ -1055,6 +1061,68 @@ struct Added<'a> {
     keys: Vec<Value>,
     module: &'a str,
     given: &'a Map<String, Value>,
+}
+
+/// A record a mod adds, with the record it is like and its name in messages.
+struct New<'a> {
+    added: &'a Added<'a>,
+    like: &'a Record,
+    label: String,
+}
+
+/// A record's group: its first file and the keys a new record takes from the one it is like
+/// (its town), which its place counts in and new ones go after.
+fn group_of(adding: &Adding, record: &Record) -> String {
+    let first_file = record.block.first().map_or(usize::MAX, |&(file, ..)| file);
+    let kept: Vec<String> = record
+        .keys
+        .iter()
+        .filter(|(key, _)| {
+            Some(key.as_str()) != adding.place && !adding.key_args.iter().any(|(known, ..)| known == key)
+        })
+        .map(|(_, value)| shown(value))
+        .collect();
+    format!("{first_file} {}", kept.join(" "))
+}
+
+/// A like record's fields moved onto its copy: each statement (file, statement) as (the copy of
+/// that block, the statement's place in it). A field of the executable stays the like record's.
+fn moved_fields(like: &Record) -> Record {
+    let moved = |&(file, statement): &(usize, usize)| -> Option<(usize, usize)> {
+        like.block
+            .iter()
+            .position(|&(known, first, last)| known == file && (first..=last).contains(&statement))
+            .map(|copy| (copy, statement - like.block[copy].1))
+    };
+    let mut fields = Vec::new();
+    for field in &like.fields {
+        let place = match &field.place {
+            Place::Args { at, arg, len, kind } => {
+                Place::Args { at: at.iter().filter_map(moved).collect(), arg: *arg, len: *len, kind: *kind }
+            }
+            Place::List { at, arg, tail, entry, count } => Place::List {
+                at: at.iter().filter_map(moved).collect(),
+                arg: *arg,
+                tail: *tail,
+                entry: entry.clone(),
+                count: *count,
+            },
+            Place::Lines { copies, entry, count, per_line, grow } => Place::Lines {
+                copies: copies
+                    .iter()
+                    .map(|lines| lines.iter().filter_map(moved).collect::<Vec<_>>())
+                    .filter(|lines| !lines.is_empty())
+                    .collect(),
+                entry: entry.clone(),
+                count: *count,
+                per_line: *per_line,
+                grow: *grow,
+            },
+            Place::Bytes { .. } => continue,
+        };
+        fields.push(Field { name: field.name.clone(), place, fixed: None });
+    }
+    Record { fields, ..Record::default() }
 }
 
 fn keys_text(names: &[String], values: &[Value]) -> String {
@@ -1243,5 +1311,82 @@ mod tests {
         let (mut both, _) = table.changes(&json!({"floors": [{"floor": 1, "fast_time": 1}]}), "a").unwrap();
         both.extend(table.changes(&json!({"floors": [{"floor": 1, "fast_time": 2}]}), "b").unwrap().0);
         assert!(table.apply(&both).unwrap_err().to_string().contains("mod a and mod b"));
+    }
+
+    /// Two files, English and French, of a counted list of houses, each a REC statement: house,
+    /// "name", size. Houses are added as copies, numbered on, named in each file's language.
+    fn houses() -> Table {
+        let scripts = vec![
+            Script::parse(b"NUM 2;\r\nREC 0,\"Hut\",5;\r\nREC 1,\"Barn\",7;\r\n").unwrap(),
+            Script::parse(b"NUM 2;\r\nREC 0,\"Hutte\",5;\r\nREC 1,\"Grange\",7;\r\n").unwrap(),
+        ];
+        let mut table = Table::new("a house table", scripts, Vec::new());
+        let mut records = Vec::new();
+        for (house, name) in ["Hut", "Barn"].into_iter().enumerate() {
+            let at = [(0, house + 1), (1, house + 1)];
+            let mut record = Record::new(&[("house", json!(house))]);
+            record.label("name", json!(name)).arg("size", S16, &at, 2);
+            record.block = at.iter().map(|&(file, statement)| (file, statement, statement)).collect();
+            records.push(record);
+        }
+        table.section("houses", &["house"], records);
+        table.adding(Adding {
+            counts: vec![(0, 0, 0), (1, 0, 0)],
+            most: 3,
+            why: "three houses",
+            place: Some("house"),
+            key_args: vec![("house", "REC", 0, Kind::Int(0, 2))],
+            label_args: vec![("name", "REC", 1, 8)],
+            languages: vec![(0, 1), (1, 2)],
+        });
+        table
+    }
+
+    #[test]
+    fn a_new_record_copies_its_like_record_with_its_place_labels_and_fields() {
+        let table = houses();
+        let shed = json!({"houses": [{"house": 2, "like": 0, "name": {"en": "Shed", "fr": "Cabane"}, "size": 9}]});
+        let (edits, patches) = table.changes(&shed, "m").unwrap();
+        assert!(patches.is_empty());
+        let files = table.apply(&edits).unwrap();
+        assert_eq!(files[0], b"NUM 3;\r\nREC 0,\"Hut\",5;\r\nREC 1,\"Barn\",7;\r\nREC 2,\"Shed\",9;\r\n");
+        assert_eq!(files[1], b"NUM 3;\r\nREC 0,\"Hutte\",5;\r\nREC 1,\"Grange\",7;\r\nREC 2,\"Cabane\",9;\r\n");
+        // like by an object of the keys; one name for every language; a language not given English
+        let barn = json!({"houses": [{"house": 2, "like": {"house": 1}, "name": "Loft"}]});
+        let files = table.apply(&table.changes(&barn, "m").unwrap().0).unwrap();
+        assert!(files[0].ends_with(b"REC 2,\"Loft\",7;\r\n") && files[1].ends_with(b"REC 2,\"Loft\",7;\r\n"));
+        let english = json!({"houses": [{"house": 2, "like": 0, "name": {"en": "Shed"}}]});
+        let files = table.apply(&table.changes(&english, "m").unwrap().0).unwrap();
+        assert!(files[1].ends_with(b"REC 2,\"Shed\",5;\r\n"));
+        // two mods adding it alike add it once, and count it once
+        let (both, _) = table.changes_all(&[("a".into(), shed.clone()), ("b".into(), shed)]).unwrap();
+        assert!(table.apply(&both).unwrap()[0].starts_with(b"NUM 3;"));
+    }
+
+    #[test]
+    fn new_records_past_the_limits_or_out_of_place_are_refused() {
+        let table = houses();
+        let refused = |edit: Value| table.changes(&edit, "m").unwrap_err().to_string();
+        let house = |house: i64, like: Value, name: &str| json!({"house": house, "like": like, "name": name});
+        let error = refused(json!({"houses": [house(3, json!(0), "Shed")]}));
+        assert!(error.contains("houses house 3 (new): a new record's house is the next one, 2"), "{error}");
+        let error = refused(json!({"houses": [house(2, json!(0), "Shed"), house(3, json!(0), "Hall")]}));
+        assert!(error.contains("4 houses in its file; the game holds 3 (three houses)"), "{error}");
+        assert!(refused(json!({"houses": [house(2, json!(0), "A long name")]})).contains("longer than the 8 bytes"));
+        assert!(refused(json!({"houses": [house(2, json!(5), "Shed")]})).contains("like 5: no such record to copy"));
+        assert!(refused(json!({"houses": [{"house": 2, "name": "Shed"}]})).contains("names the record it is like"));
+        assert!(refused(json!({"houses": [{"house": 0, "like": 1}]})).contains("the game's own"));
+        assert!(refused(json!({"houses": [{"house": 2, "like": 0, "name": "x", "roof": 1}]})).contains("no such field"));
+        let other = json!({"houses": [house(2, json!(0), "Other")]});
+        let error = table
+            .changes_all(&[("a".into(), json!({"houses": [house(2, json!(0), "Shed")]})), ("b".into(), other)])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("new record house 2 is given two ways, by mod a and mod b"), "{error}");
+        // a section that takes no records
+        let mut fixed = houses();
+        fixed.sections[0].adding = None;
+        let error = fixed.changes(&json!({"houses": [house(2, json!(0), "Shed")]}), "m").unwrap_err().to_string();
+        assert!(error.contains("edited, not added to"), "{error}");
     }
 }

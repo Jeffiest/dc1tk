@@ -21,11 +21,11 @@ use serde_json::Value;
 
 use crate::cfg_text::{Arg, Script};
 use crate::data_table::{self, Adding, Kind, Place, Record, Table, S16, S32};
-use crate::Result;
+use crate::{lang, Result};
 
 pub const LANGUAGES: usize = 7;
 /// The language whose texts label the records (English).
-pub const LABELS: usize = 1;
+pub const LABELS: usize = lang::ENGLISH;
 /// AnalyzeSrc's data[16]: the requests of a town.
 pub const REQUESTS_MOST: usize = 16;
 /// CON_NO takes at most seven conditions (an s8 list ended by -1).
@@ -105,8 +105,7 @@ pub fn requests(files: &[Vec<u8>]) -> Result<Table> {
     let scripts = data_table::parse_all(&request_paths(), files)?;
     let found: Vec<Found> = scripts.iter().map(requests_of).collect();
     // the statement of a key in every language, the English first
-    let order: Vec<usize> =
-        std::iter::once(LABELS).chain((0..LANGUAGES).filter(|&language| language != LABELS)).collect();
+    let order = lang::english_first(LANGUAGES);
     let mut conditions = Vec::new();
     for (&(town, number), &at) in &found[LABELS].0 {
         let mut record = Record::new(&[("town", Value::from(town)), ("condition", Value::from(number))]);
@@ -146,17 +145,19 @@ pub fn requests(files: &[Vec<u8>]) -> Result<Table> {
                 Vec::new()
             }
         };
-        if !at(None, 2).is_empty() {
-            record.arg("unread", S32, &at(None, 2), 1);
+        // each field where the English file has it, its places found once
+        let found = |tag: Option<&str>, least: usize| Some(at(tag, least)).filter(|places| !places.is_empty());
+        if let Some(places) = found(None, 2) {
+            record.arg("unread", S32, &places, 1);
         }
-        if !at(None, 4).is_empty() {
-            record.arg("geostone", S16, &at(None, 4), 3);
+        if let Some(places) = found(None, 4) {
+            record.arg("geostone", S16, &places, 3);
         }
-        if !at(Some("CON_NO"), 1).is_empty() {
+        if let Some(places) = found(Some("CON_NO"), 1) {
             record.field(
                 "conditions",
                 Place::List {
-                    at: at(Some("CON_NO"), 1),
+                    at: places,
                     arg: 0,
                     tail: 0,
                     entry: vec![("condition", Kind::Int(0, 63))],
@@ -165,12 +166,12 @@ pub fn requests(files: &[Vec<u8>]) -> Result<Table> {
             );
         }
         for (name, tag) in [("on_parts", "ON_PARTS"), ("off_parts", "OFF_PARTS")] {
-            if !at(Some(tag), 1).is_empty() {
-                record.arg(name, Kind::Text(16 * 0x40), &at(Some(tag), 1), 0);
+            if let Some(places) = found(Some(tag), 1) {
+                record.arg(name, Kind::Text(16 * 0x40), &places, 0);
             }
         }
-        if !at(Some("PERCENT"), 1).is_empty() {
-            record.arg("percent", S16, &at(Some("PERCENT"), 1), 0);
+        if let Some(places) = found(Some("PERCENT"), 1) {
+            record.arg("percent", S16, &places, 0);
         }
         record.block = blocks.iter().map(|(file, block)| (*file, block.first, block.last)).collect();
         requests.push(record);
@@ -198,8 +199,7 @@ pub fn townspeople(files: &[Vec<u8>]) -> Result<Table> {
     let scripts = data_table::parse_all(&townspeople_paths(), files)?;
     let keyed: Vec<std::collections::BTreeMap<i32, Vec<usize>>> =
         scripts.iter().map(|script| data_table::by_first(script, "NPC_INFO")).collect();
-    let order: Vec<usize> =
-        std::iter::once(LABELS).chain((0..LANGUAGES).filter(|&language| language != LABELS)).collect();
+    let order = lang::english_first(LANGUAGES);
     let mut records = Vec::new();
     for (&number, places) in &keyed[LABELS] {
         let first = *places.last().expect("a statement");

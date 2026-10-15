@@ -509,118 +509,134 @@ impl Layouts {
     /// The files with the changes made, by [`paths`]. Two changes of one field with different
     /// values are refused, naming both mods; a new room must follow the last.
     pub fn apply(&self, changes: &[Change]) -> Result<Vec<Vec<u8>>> {
-        // (layout, room, field) -> the change
-        let mut wanted: BTreeMap<(usize, Option<usize>, &'static str), &Change> = BTreeMap::new();
-        for change in changes {
-            let key = (change.layout, change.room, change.field.name());
-            match wanted.get(&key) {
-                Some(known) if known.field != change.field => {
-                    let what = match change.room {
-                        Some(room) => format!("{} room {room} {}", LAYOUTS[change.layout], change.field.name()),
-                        None => format!("{} {}", LAYOUTS[change.layout], change.field.name()),
-                    };
-                    return Err(crate::given_two_ways(what, &known.module, &change.module));
-                }
-                Some(_) => {}
-                None => {
-                    wanted.insert(key, change);
-                }
-            }
-        }
+        let wanted = merged(changes)?;
         let mut out = Vec::new();
         for (index, layout) in self.layouts.iter().enumerate() {
-            let name = LAYOUTS[index];
-            let mine: Vec<&&Change> =
-                wanted.iter().filter(|((at, _, _), _)| *at == index).map(|(_, change)| change).collect();
+            let mine: Vec<&Change> =
+                wanted.iter().filter(|((at, _, _), _)| *at == index).map(|(_, &change)| change).collect();
             if mine.is_empty() {
                 out.push(layout.script.write());
                 continue;
             }
-            let mut rooms: Vec<Option<Room>> = self.rooms(index).into_iter().map(Some).collect();
-            let mut changed = vec![false; rooms.len()];
-            let mut grid = None;
-            for change in &mine {
-                let Some(number) = change.room else {
-                    if let Field::GridSize(size) = change.field {
-                        grid = Some(size);
-                    }
-                    continue;
-                };
-                if number >= rooms.len() {
-                    rooms.resize(number + 1, None);
-                    changed.resize(number + 1, false);
-                }
-                let room = rooms[number].get_or_insert_with(|| Room {
-                    id: number as i32,
-                    rate: 100,
-                    fixed: 0,
-                    cells: Vec::new(),
-                });
-                match &change.field {
-                    Field::Id(value) => room.id = *value,
-                    Field::Rate(value) => room.rate = *value,
-                    Field::Fixed(value) => room.fixed = *value,
-                    Field::Cells(cells) => room.cells = cells.clone(),
-                    Field::GridSize(_) => {}
-                }
-                changed[number] = true;
-            }
-            if let Some(gap) = rooms.iter().position(Option::is_none) {
-                bail!(
-                    "{name}: room {gap} is missing; new rooms follow the last (the next is room {})",
-                    layout.rooms.len()
-                );
-            }
-            let nl = layout.script.newline();
-            let nl_bytes = nl.as_bytes().to_vec();
-            let mut statements = Vec::new();
-            let mut taken = 0;
-            let separator = layout.rooms.get(1).map_or_else(
-                || nl.repeat(4).into_bytes(),
-                |&(start, _)| layout.script.statements[start].before.clone(),
-            );
-            let push = |statements: &mut Vec<Statement>, text: String, before: Vec<u8>| -> Result<()> {
-                statements.extend(cfg_text::statements_of(&text, before)?);
-                Ok(())
-            };
-            let grid_text = |[w, d]: [f32; 2]| format!("GRID_SIZE {w:.6}, {d:.6};");
-            for (at, statement) in layout.script.statements.iter().enumerate() {
-                if at < taken {
-                    continue;
-                }
-                if Some(at) == layout.grid {
-                    if let Some(size) = grid {
-                        push(&mut statements, grid_text(size), statement.before.clone())?;
-                        continue;
-                    }
-                }
-                if let Some(number) = layout.rooms.iter().position(|&(start, _)| start == at) {
-                    if changed[number] {
-                        let room = rooms[number].as_ref().unwrap();
-                        push(&mut statements, room_text(room, nl), statement.before.clone())?;
-                        taken = layout.rooms[number].1 + 1;
-                        continue;
-                    }
-                }
-                statements.push(statement.clone());
-                if layout.grid.is_none() && statement.tag == "VER" {
-                    if let Some(size) = grid {
-                        push(&mut statements, grid_text(size), nl_bytes.clone())?;
-                    }
-                }
-            }
-            for room in rooms.iter().skip(layout.rooms.len()).flatten() {
-                let before = if statements.is_empty() { Vec::new() } else { separator.clone() };
-                push(&mut statements, room_text(room, nl), before)?;
-            }
-            if rooms.len() > ROOMS_MOST {
-                bail!("{name}: {} rooms; the generator holds {ROOMS_MOST}", rooms.len());
-            }
-            let tail = if layout.script.tail.is_empty() { nl_bytes.clone() } else { layout.script.tail.clone() };
-            out.push(Script { statements, tail }.write());
+            out.push(rewritten(layout, LAYOUTS[index], &self.edited(index, &mine)?)?);
         }
         Ok(out)
     }
+
+    /// A layout's rooms and grid size with its changes made, a new room (rate 100, fixed 0, its
+    /// id its place) after the last.
+    fn edited(&self, index: usize, changes: &[&Change]) -> Result<Edited> {
+        let mut rooms: Vec<Option<Room>> = self.rooms(index).into_iter().map(Some).collect();
+        let mut changed = vec![false; rooms.len()];
+        let mut grid = None;
+        for change in changes {
+            let Some(number) = change.room else {
+                if let Field::GridSize(size) = change.field {
+                    grid = Some(size);
+                }
+                continue;
+            };
+            if number >= rooms.len() {
+                rooms.resize(number + 1, None);
+                changed.resize(number + 1, false);
+            }
+            let room =
+                rooms[number].get_or_insert_with(|| Room { id: number as i32, rate: 100, fixed: 0, cells: Vec::new() });
+            match &change.field {
+                Field::Id(value) => room.id = *value,
+                Field::Rate(value) => room.rate = *value,
+                Field::Fixed(value) => room.fixed = *value,
+                Field::Cells(cells) => room.cells = cells.clone(),
+                Field::GridSize(_) => {}
+            }
+            changed[number] = true;
+        }
+        if let Some(gap) = rooms.iter().position(Option::is_none) {
+            bail!(
+                "{}: room {gap} is missing; new rooms follow the last (the next is room {})",
+                LAYOUTS[index],
+                self.layouts[index].rooms.len()
+            );
+        }
+        let rooms: Vec<Room> = rooms.into_iter().flatten().collect();
+        if rooms.len() > ROOMS_MOST {
+            bail!("{}: {} rooms; the generator holds {ROOMS_MOST}", LAYOUTS[index], rooms.len());
+        }
+        Ok(Edited { rooms, changed, grid })
+    }
+}
+
+/// A layout's rooms and grid size as the changes leave them, and which rooms changed.
+struct Edited {
+    rooms: Vec<Room>,
+    changed: Vec<bool>,
+    grid: Option<[f32; 2]>,
+}
+
+/// The changes by (layout, room, field), each once; two of one field with different values are
+/// refused, naming both mods.
+/// A change's layout, room (None for the layout's own field) and field.
+type FieldKey = (usize, Option<usize>, &'static str);
+
+fn merged(changes: &[Change]) -> Result<BTreeMap<FieldKey, &Change>> {
+    let mut wanted: BTreeMap<FieldKey, &Change> = BTreeMap::new();
+    for change in changes {
+        let key = (change.layout, change.room, change.field.name());
+        match wanted.get(&key) {
+            Some(known) if known.field != change.field => {
+                let what = match change.room {
+                    Some(room) => format!("{} room {room} {}", LAYOUTS[change.layout], change.field.name()),
+                    None => format!("{} {}", LAYOUTS[change.layout], change.field.name()),
+                };
+                return Err(crate::given_two_ways(what, &known.module, &change.module));
+            }
+            Some(_) => {}
+            None => {
+                wanted.insert(key, change);
+            }
+        }
+    }
+    Ok(wanted)
+}
+
+/// A layout's file with its changed rooms and grid size written again in place (a grid size the
+/// file lacks after its VER), its new rooms after the last; the rest keep their bytes.
+fn rewritten(layout: &Layout, name: &str, edited: &Edited) -> Result<Vec<u8>> {
+    let nl = layout.script.newline();
+    let nl_bytes = nl.as_bytes().to_vec();
+    // what is between rooms: the file's own, or three empty lines
+    let separator = layout
+        .rooms
+        .get(1)
+        .map_or_else(|| nl.repeat(4).into_bytes(), |&(start, _)| layout.script.statements[start].before.clone());
+    let grid_text = |[w, d]: [f32; 2]| format!("GRID_SIZE {w:.6}, {d:.6};");
+    let mut statements = Vec::new();
+    let mut taken = 0;
+    for (at, statement) in layout.script.statements.iter().enumerate() {
+        if at < taken {
+            continue;
+        }
+        if let (true, Some(size)) = (Some(at) == layout.grid, edited.grid) {
+            statements.extend(cfg_text::statements_of(&grid_text(size), statement.before.clone())?);
+            continue;
+        }
+        if let Some(number) = layout.rooms.iter().position(|&(start, _)| start == at).filter(|&n| edited.changed[n]) {
+            let text = room_text(&edited.rooms[number], nl);
+            statements.extend(cfg_text::statements_of(&text, statement.before.clone()).context(name)?);
+            taken = layout.rooms[number].1 + 1;
+            continue;
+        }
+        statements.push(statement.clone());
+        if let (None, "VER", Some(size)) = (layout.grid, statement.tag.as_str(), edited.grid) {
+            statements.extend(cfg_text::statements_of(&grid_text(size), nl_bytes.clone())?);
+        }
+    }
+    for room in edited.rooms.iter().skip(layout.rooms.len()) {
+        let before = if statements.is_empty() { Vec::new() } else { separator.clone() };
+        statements.extend(cfg_text::statements_of(&room_text(room, nl), before).context(name)?);
+    }
+    let tail = if layout.script.tail.is_empty() { nl_bytes } else { layout.script.tail.clone() };
+    Ok(Script { statements, tail }.write())
 }
 
 fn number_of(value: &Value, what: &str, key: &str) -> Result<i32> {

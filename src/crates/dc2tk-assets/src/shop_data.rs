@@ -238,171 +238,187 @@ impl Shops {
                 bail!("a shop table has \"prices\" and \"shops\", not \"{key}\"");
             }
         }
-        let list = |key: &str| -> Result<Vec<&Map<String, Value>>> {
-            match object.get(key) {
-                None => Ok(Vec::new()),
-                Some(Value::Array(records)) => records
-                    .iter()
-                    .map(|record| {
-                        record
-                            .as_object()
-                            .ok_or_else(|| crate::Error::invalid(format!("each of \"{key}\" is an object")))
-                    })
-                    .collect(),
-                Some(_) => bail!("\"{key}\" is a list"),
-            }
-        };
         let mut out = Vec::new();
-        let files = self.scripts.len();
-        for record in list("prices")? {
-            let Some(item) = record.get("item").and_then(Value::as_i64) else {
-                bail!("each price names its item: {{\"item\": 11, \"buy\": 450}}");
-            };
-            let Some(places) = i32::try_from(item).ok().and_then(|item| self.prices.get(&item)) else {
-                // a new price: a PRICE line in every file
-                if !(1..PRICE_SLOTS).contains(&item) {
-                    bail!("price of item {item}: CShop::price has items 1 to {}", PRICE_SLOTS - 1);
-                }
-                let what = format!("new price of item {item}");
-                for key in record.keys() {
-                    if !["item", "name", "buy", "sell"].contains(&key.as_str()) {
-                        bail!("{what}: \"{key}\" is not a field (buy, sell)");
-                    }
-                }
-                let (Some(buy), Some(sell)) = (record.get("buy"), record.get("sell")) else {
-                    bail!("{what}: a new price gives \"buy\" and \"sell\"");
-                };
-                let buys = Self::chapters(buy, &format!("{what} buy"), false)?;
-                let sells = Self::chapters(sell, &format!("{what} sell"), false)?;
-                for chapter in 0..CHAPTERS {
-                    let mut args = vec![cfg_text::int_text(item)];
-                    for (key, value) in [("buy", buys[chapter]), ("sell", sells[chapter])] {
-                        let Some(number) = value.as_i64().filter(|number| (0..=i32::MAX as i64).contains(number))
-                        else {
-                            bail!("{what} {key} is a whole number from 0");
-                        };
-                        args.push(cfg_text::int_text(number));
-                    }
-                    for file in [chapter, chapter + CHAPTERS].into_iter().filter(|&file| file < files) {
-                        out.push(self.added(file, "PRICE", args.clone(), what.clone(), module)?);
-                    }
-                }
-                continue;
-            };
-            for (key, value) in record {
-                let arg = match key.as_str() {
-                    "item" | "name" => continue,
-                    "buy" => 1,
-                    "sell" => 2,
-                    _ => bail!("price of item {item}: \"{key}\" is not a field (buy, sell)"),
-                };
-                let what = format!("price of item {item} {key}");
-                for (chapter, value) in Self::chapters(value, &what, false)?.into_iter().enumerate() {
-                    let Some(number) = value.as_i64().filter(|number| (0..=i32::MAX as i64).contains(number)) else {
-                        bail!("{what} is a whole number from 0");
-                    };
-                    // a value the export shows unchanged changes nothing, in either set of files
-                    let shown = places[chapter].and_then(|at| self.values(chapter, at).get(arg).map(Arg::int));
-                    if shown == Some(number as i32) {
-                        continue;
-                    }
-                    for file in [chapter, chapter + CHAPTERS].into_iter().filter(|&file| file < files) {
-                        let Some(at) = places[file] else {
-                            continue;
-                        };
-                        if self.values(file, at).get(arg).map(Arg::int) == Some(number as i32) {
-                            continue;
-                        }
-                        if self.scripts[file].statements[at].args().len() <= arg {
-                            bail!("{what}: the price line in chapter {} has no {key}", chapter + 1);
-                        }
-                        out.push(Edit {
-                            file,
-                            statement: at,
-                            arg,
-                            to: To::Arg(cfg_text::int_text(number)),
-                            what: format!("{what} (chapter {})", chapter + 1),
-                            module: module.to_string(),
-                        });
-                    }
-                }
-            }
+        for record in records(object, "prices")? {
+            self.price_changes(record, module, &mut out)?;
         }
-        for record in list("shops")? {
-            let Some(shop) = record.get("shop").and_then(Value::as_i64) else {
-                bail!("each shop names its id: {{\"shop\": 0, \"items\": [...]}}");
-            };
-            let none = vec![None; files];
-            let places = match i32::try_from(shop).ok().and_then(|shop| self.shops.get(&shop)) {
-                Some(places) => places,
-                None if (0..=i16::MAX as i64).contains(&shop) => {
-                    if !record.contains_key("items") {
-                        bail!("new shop {shop}: a new shop gives its \"items\"");
-                    }
-                    &none
-                }
-                None => bail!("shop {shop}: a shop number is 0 to {} (CShop::shop_id)", i16::MAX),
-            };
-            for (key, value) in record {
-                match key.as_str() {
-                    "shop" | "currency" | "names" => continue,
-                    "items" => {}
-                    _ => bail!("shop {shop}: \"{key}\" is not a field (items)"),
-                }
-                let what = format!("shop {shop} items");
-                for (chapter, value) in Self::chapters(value, &what, true)?.into_iter().enumerate() {
-                    let Some(items) = value.as_array() else {
-                        bail!("{what} is a list of item numbers");
-                    };
-                    let mut numbers = Vec::new();
-                    for item in items {
-                        let Some(number) = item.as_i64().filter(|number| (1..PRICE_SLOTS).contains(number)) else {
-                            bail!("{what}: {item} is not an item number");
-                        };
-                        if !self.prices.get(&(number as i32)).is_some_and(|places| places[chapter].is_some())
-                            && !priced.contains(&(number as i32))
-                        {
-                            bail!(
-                                "{what}: item {number} has no price in chapter {}; give it one under \"prices\"",
-                                chapter + 1
-                            );
-                        }
-                        numbers.push(number as i32);
-                    }
-                    if numbers.len() > SHOP_ITEM_MAX {
-                        bail!("{what}: {} goods; a shop lists at most {SHOP_ITEM_MAX}", numbers.len());
-                    }
-                    let shown: Option<Vec<i32>> =
-                        places[chapter].map(|at| self.values(chapter, at)[1..].iter().map(Arg::int).collect());
-                    if shown.as_ref() == Some(&numbers) {
-                        continue;
-                    }
-                    for file in [chapter, chapter + CHAPTERS].into_iter().filter(|&file| file < files) {
-                        let Some(at) = places[file] else {
-                            // a shop the file lacks: a SHOP line of its own
-                            let mut args = vec![cfg_text::int_text(shop)];
-                            args.extend(numbers.iter().map(|&number| cfg_text::int_text(number as i64)));
-                            let what = format!("new shop {shop} (chapter {})", chapter + 1);
-                            out.push(self.added(file, "SHOP", args, what, module)?);
-                            continue;
-                        };
-                        let old: Vec<i32> = self.values(file, at)[1..].iter().map(Arg::int).collect();
-                        if old == numbers {
-                            continue;
-                        }
-                        out.push(Edit {
-                            file,
-                            statement: at,
-                            arg: 1,
-                            to: To::Rest(numbers.iter().map(|&number| cfg_text::int_text(number as i64)).collect()),
-                            what: format!("{what} (chapter {})", chapter + 1),
-                            module: module.to_string(),
-                        });
-                    }
-                }
-            }
+        for record in records(object, "shops")? {
+            self.shop_changes(record, module, priced, &mut out)?;
         }
         Ok(out)
+    }
+
+    /// The files a chapter's value goes into: its file of the other languages and the Japanese.
+    fn chapter_files(&self, chapter: usize) -> impl Iterator<Item = usize> {
+        let files = self.scripts.len();
+        [chapter, chapter + CHAPTERS].into_iter().filter(move |&file| file < files)
+    }
+
+    /// The edits of a price: its buy and sell arguments where they change, or new PRICE lines.
+    fn price_changes(&self, record: &Map<String, Value>, module: &str, out: &mut Vec<Edit>) -> Result<()> {
+        let Some(item) = record.get("item").and_then(Value::as_i64) else {
+            bail!("each price names its item: {{\"item\": 11, \"buy\": 450}}");
+        };
+        let Some(places) = i32::try_from(item).ok().and_then(|item| self.prices.get(&item)) else {
+            return self.new_price(item, record, module, out);
+        };
+        for (key, value) in record {
+            let arg = match key.as_str() {
+                "item" | "name" => continue,
+                "buy" => 1,
+                "sell" => 2,
+                _ => bail!("price of item {item}: \"{key}\" is not a field (buy, sell)"),
+            };
+            let what = format!("price of item {item} {key}");
+            for (chapter, value) in Self::chapters(value, &what, false)?.into_iter().enumerate() {
+                let number = price_number(value, &what)?;
+                // a value the export shows unchanged changes nothing, in either set of files
+                let shown = places[chapter].and_then(|at| self.values(chapter, at).get(arg).map(Arg::int));
+                if shown == Some(number as i32) {
+                    continue;
+                }
+                for file in self.chapter_files(chapter) {
+                    let Some(at) = places[file] else {
+                        continue;
+                    };
+                    if self.values(file, at).get(arg).map(Arg::int) == Some(number as i32) {
+                        continue;
+                    }
+                    if self.scripts[file].statements[at].args().len() <= arg {
+                        bail!("{what}: the price line in chapter {} has no {key}", chapter + 1);
+                    }
+                    out.push(Edit {
+                        file,
+                        statement: at,
+                        arg,
+                        to: To::Arg(cfg_text::int_text(number)),
+                        what: format!("{what} (chapter {})", chapter + 1),
+                        module: module.to_string(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A price for an item the lists lack: a PRICE line in every file, its buy and sell both given.
+    fn new_price(&self, item: i64, record: &Map<String, Value>, module: &str, out: &mut Vec<Edit>) -> Result<()> {
+        if !(1..PRICE_SLOTS).contains(&item) {
+            bail!("price of item {item}: CShop::price has items 1 to {}", PRICE_SLOTS - 1);
+        }
+        let what = format!("new price of item {item}");
+        for key in record.keys() {
+            if !["item", "name", "buy", "sell"].contains(&key.as_str()) {
+                bail!("{what}: \"{key}\" is not a field (buy, sell)");
+            }
+        }
+        let (Some(buy), Some(sell)) = (record.get("buy"), record.get("sell")) else {
+            bail!("{what}: a new price gives \"buy\" and \"sell\"");
+        };
+        let buys = Self::chapters(buy, &format!("{what} buy"), false)?;
+        let sells = Self::chapters(sell, &format!("{what} sell"), false)?;
+        for chapter in 0..CHAPTERS {
+            let mut args = vec![cfg_text::int_text(item)];
+            for (key, value) in [("buy", buys[chapter]), ("sell", sells[chapter])] {
+                args.push(cfg_text::int_text(price_number(value, &format!("{what} {key}"))?));
+            }
+            for file in self.chapter_files(chapter) {
+                out.push(self.added(file, "PRICE", args.clone(), what.clone(), module)?);
+            }
+        }
+        Ok(())
+    }
+
+    /// The edits of a shop's goods in each chapter: its SHOP lines rewritten, or new ones.
+    fn shop_changes(
+        &self,
+        record: &Map<String, Value>,
+        module: &str,
+        priced: &std::collections::BTreeSet<i32>,
+        out: &mut Vec<Edit>,
+    ) -> Result<()> {
+        let Some(shop) = record.get("shop").and_then(Value::as_i64) else {
+            bail!("each shop names its id: {{\"shop\": 0, \"items\": [...]}}");
+        };
+        let none = vec![None; self.scripts.len()];
+        let places = match i32::try_from(shop).ok().and_then(|shop| self.shops.get(&shop)) {
+            Some(places) => places,
+            None if (0..=i16::MAX as i64).contains(&shop) => {
+                if !record.contains_key("items") {
+                    bail!("new shop {shop}: a new shop gives its \"items\"");
+                }
+                &none
+            }
+            None => bail!("shop {shop}: a shop number is 0 to {} (CShop::shop_id)", i16::MAX),
+        };
+        for (key, value) in record {
+            match key.as_str() {
+                "shop" | "currency" | "names" => continue,
+                "items" => {}
+                _ => bail!("shop {shop}: \"{key}\" is not a field (items)"),
+            }
+            let what = format!("shop {shop} items");
+            for (chapter, value) in Self::chapters(value, &what, true)?.into_iter().enumerate() {
+                let numbers = self.goods_of(value, chapter, priced, &what)?;
+                let shown: Option<Vec<i32>> =
+                    places[chapter].map(|at| self.values(chapter, at)[1..].iter().map(Arg::int).collect());
+                if shown.as_ref() == Some(&numbers) {
+                    continue;
+                }
+                let texts: Vec<Vec<u8>> = numbers.iter().map(|&number| cfg_text::int_text(number as i64)).collect();
+                for file in self.chapter_files(chapter) {
+                    let Some(at) = places[file] else {
+                        // a shop the file lacks: a SHOP line of its own
+                        let args = [vec![cfg_text::int_text(shop)], texts.clone()].concat();
+                        let what = format!("new shop {shop} (chapter {})", chapter + 1);
+                        out.push(self.added(file, "SHOP", args, what, module)?);
+                        continue;
+                    };
+                    let old: Vec<i32> = self.values(file, at)[1..].iter().map(Arg::int).collect();
+                    if old == numbers {
+                        continue;
+                    }
+                    out.push(Edit {
+                        file,
+                        statement: at,
+                        arg: 1,
+                        to: To::Rest(texts.clone()),
+                        what: format!("{what} (chapter {})", chapter + 1),
+                        module: module.to_string(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A chapter's goods from a mod's list: item numbers, each priced in that chapter (by the
+    /// game or one of the mods), at most SHOP_ITEM_MAX.
+    fn goods_of(
+        &self,
+        value: &Value,
+        chapter: usize,
+        priced: &std::collections::BTreeSet<i32>,
+        what: &str,
+    ) -> Result<Vec<i32>> {
+        let Some(items) = value.as_array() else {
+            bail!("{what} is a list of item numbers");
+        };
+        let mut numbers = Vec::new();
+        for item in items {
+            let Some(number) = item.as_i64().filter(|number| (1..PRICE_SLOTS).contains(number)) else {
+                bail!("{what}: {item} is not an item number");
+            };
+            let number = number as i32;
+            if !self.prices.get(&number).is_some_and(|places| places[chapter].is_some()) && !priced.contains(&number) {
+                bail!("{what}: item {number} has no price in chapter {}; give it one under \"prices\"", chapter + 1);
+            }
+            numbers.push(number);
+        }
+        if numbers.len() > SHOP_ITEM_MAX {
+            bail!("{what}: {} goods; a shop lists at most {SHOP_ITEM_MAX}", numbers.len());
+        }
+        Ok(numbers)
     }
 
     /// The files with the edits made, by [`files`].
@@ -412,6 +428,22 @@ impl Shops {
 
     pub fn write(&self) -> Vec<Vec<u8>> {
         self.scripts.iter().map(Script::write).collect()
+    }
+}
+
+/// A table's records under a key: none when it is absent, each an object.
+fn records<'a>(object: &'a Map<String, Value>, key: &str) -> Result<Vec<&'a Map<String, Value>>> {
+    crate::json::list(object, key, "a shop table")?
+        .iter()
+        .map(|record| crate::json::object(record, format!("each of \"{key}\"")))
+        .collect()
+}
+
+/// A price's buy or sell: a whole number from 0 that CShop's int holds.
+fn price_number(value: &Value, what: &str) -> Result<i64> {
+    match value.as_i64().filter(|number| (0..=i32::MAX as i64).contains(number)) {
+        Some(number) => Ok(number),
+        None => bail!("{what} is a whole number from 0"),
     }
 }
 

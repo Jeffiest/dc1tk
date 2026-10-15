@@ -302,29 +302,29 @@ impl Chests {
                 out.push(file.script.write());
                 continue;
             }
-            let mut groups: Vec<(i32, Vec<Item>, bool)> =
-                file.groups.iter().map(|group| (group.id, group.items.clone(), false)).collect();
-            let mut floors: Vec<(i32, Vec<i32>, bool)> =
-                file.floors.iter().map(|floor| (floor.floor, floor.groups.clone(), false)).collect();
+            let mut groups: Vec<Wanted<Item>> = file
+                .groups
+                .iter()
+                .map(|group| Wanted { number: group.id, holds: group.items.clone(), changed: false })
+                .collect();
+            let mut floors: Vec<Wanted<i32>> = file
+                .floors
+                .iter()
+                .map(|floor| Wanted { number: floor.floor, holds: floor.groups.clone(), changed: false })
+                .collect();
             for change in &mine {
                 match &change.field {
-                    Field::Group(id, items) => match groups.iter_mut().find(|(known, _, _)| known == id) {
-                        Some(group) => *group = (*id, items.clone(), true),
-                        None => groups.push((*id, items.clone(), true)),
-                    },
-                    Field::Floor(number, ids) => match floors.iter_mut().find(|(known, _, _)| known == number) {
-                        Some(floor) => *floor = (*number, ids.clone(), true),
-                        None => floors.push((*number, ids.clone(), true)),
-                    },
+                    Field::Group(id, items) => Wanted::set(&mut groups, *id, items),
+                    Field::Floor(number, ids) => Wanted::set(&mut floors, *number, ids),
                 }
             }
             let path = &paths[dungeon];
             if groups.len() > GROUPS_MOST {
                 bail!("{path}: {} groups; the game holds {GROUPS_MOST}", groups.len());
             }
-            for (number, ids, _) in &floors {
+            for Wanted { number, holds: ids, .. } in &floors {
                 if let Some(missing) =
-                    ids.iter().find(|id| !groups.iter().any(|(known, items, _)| known == *id && !items.is_empty()))
+                    ids.iter().find(|&&id| !groups.iter().any(|group| group.number == id && !group.holds.is_empty()))
                 {
                     bail!("{path}: floor {number} draws from group {missing}, which the file does not have (the game would hang)");
                 }
@@ -332,6 +332,25 @@ impl Chests {
             out.push(rewritten(file, &groups, &floors)?);
         }
         Ok(out)
+    }
+}
+
+/// A group's items or a floor's groups as the changes leave them: its id or floor, what it holds,
+/// and whether a change gave it (it is then written again).
+struct Wanted<T> {
+    number: i32,
+    holds: Vec<T>,
+    changed: bool,
+}
+
+impl<T: Clone> Wanted<T> {
+    /// A change's contents, in place of the file's or after them.
+    fn set(list: &mut Vec<Wanted<T>>, number: i32, holds: &[T]) {
+        let wanted = Wanted { number, holds: holds.to_vec(), changed: true };
+        match list.iter_mut().find(|known| known.number == number) {
+            Some(known) => *known = wanted,
+            None => list.push(wanted),
+        }
     }
 }
 
@@ -351,7 +370,7 @@ fn floor_text(floor: i32, groups: &[i32]) -> String {
 
 /// The file with its changed groups and floors written again in place, the new ones after the last
 /// of their kind, and the start lines' counts made true.
-fn rewritten(file: &File, groups: &[(i32, Vec<Item>, bool)], floors: &[(i32, Vec<i32>, bool)]) -> Result<Vec<u8>> {
+fn rewritten(file: &File, groups: &[Wanted<Item>], floors: &[Wanted<i32>]) -> Result<Vec<u8>> {
     let nl = file.script.newline();
     let nl_bytes = nl.as_bytes().to_vec();
     let mut statements: Vec<Statement> = Vec::new();
@@ -359,10 +378,12 @@ fn rewritten(file: &File, groups: &[(i32, Vec<Item>, bool)], floors: &[(i32, Vec
         statements.extend(cfg_text::statements_of(&text, before)?);
         Ok(())
     };
-    let item_count: usize = groups.iter().map(|(_, items, _)| items.len()).sum();
-    let reference_count: usize = floors.iter().map(|(_, ids, _)| ids.len()).sum();
+    let item_count: usize = groups.iter().map(|group| group.holds.len()).sum();
+    let reference_count: usize = floors.iter().map(|floor| floor.holds.len()).sum();
+    let changed_group = |id: i32| groups.iter().find(|group| group.number == id && group.changed);
+    let changed_floor = |number: i32| floors.iter().find(|floor| floor.number == number && floor.changed);
     // the ITEM lines of the groups written again
-    let changed = |id: i32| groups.iter().any(|(known, _, changed)| *known == id && *changed);
+    let changed = |id: i32| changed_group(id).is_some();
     // where new groups follow: the last group's last line, or its GROUP line when it is written again
     let last_group = file
         .groups
@@ -389,13 +410,13 @@ fn rewritten(file: &File, groups: &[(i32, Vec<Item>, bool)], floors: &[(i32, Vec
                 statement.before.clone(),
             )?;
         } else if let Some(group) = file.groups.iter().find(|group| group.at[0] == at) {
-            match groups.iter().find(|(id, _, changed)| *id == group.id && *changed) {
-                Some((id, items, _)) => push(&mut statements, group_text(*id, items, nl), statement.before.clone())?,
+            match changed_group(group.id) {
+                Some(new) => push(&mut statements, group_text(new.number, &new.holds, nl), statement.before.clone())?,
                 None => statements.push(statement.clone()),
             }
         } else if let Some(floor) = file.floors.iter().find(|floor| floor.at == at) {
-            match floors.iter().find(|(number, _, changed)| *number == floor.floor && *changed) {
-                Some((number, ids, _)) => push(&mut statements, floor_text(*number, ids), statement.before.clone())?,
+            match changed_floor(floor.floor) {
+                Some(new) => push(&mut statements, floor_text(new.number, &new.holds), statement.before.clone())?,
                 None => statements.push(statement.clone()),
             }
         } else {
@@ -403,15 +424,13 @@ fn rewritten(file: &File, groups: &[(i32, Vec<Item>, bool)], floors: &[(i32, Vec
         }
         // new groups and floors after the last of their kind
         if Some(at) == last_group {
-            for (id, items, _) in groups.iter().filter(|(id, _, _)| !file.groups.iter().any(|group| group.id == *id)) {
-                push(&mut statements, group_text(*id, items, nl), nl_bytes.clone())?;
+            for new in groups.iter().filter(|new| !file.groups.iter().any(|group| group.id == new.number)) {
+                push(&mut statements, group_text(new.number, &new.holds, nl), nl_bytes.clone())?;
             }
         }
         if Some(at) == last_floor {
-            for (number, ids, _) in
-                floors.iter().filter(|(number, _, _)| !file.floors.iter().any(|floor| floor.floor == *number))
-            {
-                push(&mut statements, floor_text(*number, ids), nl_bytes.clone())?;
+            for new in floors.iter().filter(|new| !file.floors.iter().any(|floor| floor.floor == new.number)) {
+                push(&mut statements, floor_text(new.number, &new.holds), nl_bytes.clone())?;
             }
         }
     }
