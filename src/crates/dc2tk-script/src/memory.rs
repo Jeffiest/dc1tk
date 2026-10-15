@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use dc2tk_assets::info_cfg;
-use dc2tk_assets::json::Value;
+use dc2tk_assets::info_cfg::Arg;
 use dc2tk_disc::{archive, text};
 
 /// Bytes in a quadword: mgCMemory sizes and allocations count quadwords.
@@ -487,17 +487,17 @@ fn key_list_memory(stack: &mut Stack, data: &[u8]) {
 // ---------------------------------------------------------------------------------------------
 // Character packs
 
-fn text_arg(args: &[Value], index: usize) -> Option<String> {
+fn text_arg(args: &[Arg], index: usize) -> Option<String> {
     match args.get(index) {
-        Some(Value::Str(text)) => Some(text.clone()),
+        Some(Arg::Str(text)) => Some(text.clone()),
         _ => None,
     }
 }
 
-fn int_arg(args: &[Value], index: usize) -> Option<i64> {
+fn int_arg(args: &[Arg], index: usize) -> Option<i64> {
     match args.get(index) {
-        Some(Value::Int(value)) => Some(*value),
-        Some(Value::Float(value)) => Some(*value as i64),
+        Some(Arg::Int(value)) => Some(*value),
+        Some(Arg::Float(value)) => Some(*value as i64),
         _ => None,
     }
 }

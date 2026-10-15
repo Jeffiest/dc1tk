@@ -13,7 +13,7 @@ use dc2tk_disc::{archive, rebuild};
 use crate::folder::Folder;
 use crate::from_gltf::{self, Gltf, MeshId};
 use crate::info_cfg;
-use crate::json::Value as Arg;
+use crate::info_cfg::Arg;
 use crate::{bail, im3, motions, textures, to_gltf, Error, Result};
 
 pub const TEXTURES: &str = "textures";
@@ -93,11 +93,11 @@ pub fn model_files(folder: &Folder) -> Result<ModelFiles> {
     };
     let info = info_cfg::read(info);
     let model = match info.model.as_ref() {
-        Some(model) if model.truthy() => model,
+        Some(model) if model.is_set() => model,
         _ => bail!("the pack's info.cfg names no model"),
     };
     let Some(model) = model.as_str() else {
-        bail!("expected str, bytes or os.PathLike object");
+        bail!("the pack's info.cfg names its model with {model:?}, which is not a string");
     };
     let stem = path_stem(model).to_string();
     let pose = info.motion0().map_or(Arg::Null, |m| m.bbp.clone());
@@ -180,7 +180,7 @@ pub fn motions_only(data: &[u8]) -> bool {
         return false;
     };
     let info = info_cfg::read(cfg);
-    info.model.as_ref().is_none_or(|model| !model.truthy()) && !info.motions.is_empty()
+    info.model.as_ref().is_none_or(|model| !model.is_set()) && !info.motions.is_empty()
 }
 
 /// The words of a pack's name, and of three letters or more without their numbers:
@@ -378,7 +378,7 @@ pub fn build_on_disc(folder: &Path, original: &[u8], path: &str, disc: &DiscFile
     crate::tree::build_model(folder, original, stem)
 }
 
-/// The files under a folder by relative path, sorted as the Python lists them.
+/// The files under a folder by relative path, in files_under's order.
 fn folder_files(folder: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     crate::files_under(folder)?
         .into_iter()
@@ -395,13 +395,10 @@ fn load_from_disk(path: &Path) -> Result<Gltf> {
 /// A glTF read from the export's files.
 fn load_from_folder(files: &Folder, name: &str) -> Result<Gltf> {
     let Some(raw) = files.get(name) else {
-        bail!("[Errno 2] No such file or directory: {}", im3::str_repr(name));
+        bail!("the folder has no {name:?}");
     };
     from_gltf::load_gltf(raw, &|uri| {
-        files
-            .get(uri)
-            .map(<[u8]>::to_vec)
-            .ok_or_else(|| Error::invalid(format!("[Errno 2] No such file or directory: '{uri}'")))
+        files.get(uri).map(<[u8]>::to_vec).ok_or_else(|| Error::invalid(format!("the folder has no {uri:?}")))
     })
 }
 
@@ -431,9 +428,9 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
             bail!("the folder has no {gltf}, the model's glTF");
         }
         let pose_name = match &files.pose {
-            p if !p.truthy() => None,
+            p if !p.is_set() => None,
             Arg::Str(name) => Some(name.as_str()),
-            _ => bail!("unsupported operand type(s) for /: 'WindowsPath' and 'int'"),
+            other => bail!("the pack's info.cfg names motion set 0's pose with {other:?}, which is not a string"),
         };
         let pose = pose_name.and_then(|name| source.get(name));
         let weights = source.get(&files.weights);
@@ -443,7 +440,7 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
             other => other,
         };
         let Some(template) = source.get(&files.model) else {
-            bail!("[Errno 2] No such file or directory: {}", im3::str_repr(&files.model));
+            bail!("the folder has no {:?}, the model", files.model);
         };
         let meshes = changed_meshes(&gltf_path, &exported_folder, template).map_err(wrap)?;
         let given_gltf = load_from_disk(&gltf_path).map_err(wrap)?;
@@ -974,18 +971,18 @@ mod tests {
     fn an_edited_mesh_and_texture_reach_the_pack() {
         let pack = sample_pack();
         let mut exported = export(&pack).unwrap();
-        let gltf = crate::json::loads(std::str::from_utf8(get(&exported, "c.gltf")).unwrap()).unwrap();
+        let gltf = crate::from_gltf::load_json(std::str::from_utf8(get(&exported, "c.gltf")).unwrap()).unwrap();
         let mut buffer = get(&exported, "c.bin").to_vec();
         let primitive =
-            &gltf.get("meshes").unwrap().as_list().unwrap()[0].get("primitives").unwrap().as_list().unwrap()[0];
+            &gltf.get("meshes").unwrap().as_array().unwrap()[0].get("primitives").unwrap().as_array().unwrap()[0];
         let accessor = from_gltf::index(
             gltf.get("accessors").unwrap(),
             primitive.get("attributes").unwrap().get("POSITION").unwrap(),
         )
         .unwrap();
         let view = from_gltf::index(gltf.get("bufferViews").unwrap(), accessor.get("bufferView").unwrap()).unwrap();
-        let base = view.get("byteOffset").and_then(|v| v.as_int()).unwrap_or(0) as usize;
-        for i in 0..accessor.get("count").unwrap().as_int().unwrap() as usize {
+        let base = view.get("byteOffset").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
+        for i in 0..accessor.get("count").unwrap().as_i64().unwrap() as usize {
             for axis in 0..2 {
                 let at = base + 12 * i + 4 * axis;
                 let x = f32::from_le_bytes(buffer[at..at + 4].try_into().unwrap());
@@ -1114,11 +1111,11 @@ mod tests {
             }
         };
         assert_eq!(rgba(&png), rgba(&given));
-        let json = crate::json::loads(std::str::from_utf8(get(&exported, "calc.gltf")).unwrap()).unwrap();
+        let json = crate::from_gltf::load_json(std::str::from_utf8(get(&exported, "calc.gltf")).unwrap()).unwrap();
         let meshes: Vec<&str> = json
             .get("meshes")
             .unwrap()
-            .as_list()
+            .as_array()
             .unwrap()
             .iter()
             .map(|m| m.get("name").unwrap().as_str().unwrap())
@@ -1315,8 +1312,8 @@ mod tests {
         // read back: the pack's export carries them as the same shape keys and motions
         let exported = load_from_folder(&folder_of(&export(&built).unwrap()), "hero.gltf").unwrap();
         let names = |gltf: &Gltf| -> Vec<String> {
-            let meshes = gltf.json.get("meshes").unwrap().as_list().unwrap();
-            let names = meshes[0].get("extras").and_then(|e| e.get("targetNames")).and_then(|n| n.as_list());
+            let meshes = gltf.json.get("meshes").unwrap().as_array().unwrap();
+            let names = meshes[0].get("extras").and_then(|e| e.get("targetNames")).and_then(|n| n.as_array());
             names.into_iter().flatten().filter_map(|n| n.as_str().map(str::to_string)).collect()
         };
         assert_eq!(names(&exported), ["c2_fade_0", "c2_visible"]);
@@ -1339,36 +1336,36 @@ mod tests {
     /// parented to its bone), names given twice numbered .001 on in the order the nodes were made
     /// (a skinned model's bones and objects apart), and the nodes in post-order (children first).
     pub(crate) fn blender_like(gltf: &Gltf) -> Gltf {
-        use crate::json::Value;
+        use serde_json::Value;
         let mut json = gltf.json.clone();
         let strip = |value: &mut Value| {
             if let Value::Object(items) = value {
-                items.retain(|(key, _)| key != "extras");
+                items.retain(|key, _| key != "extras");
             }
         };
-        let skinned = json.get("skins").and_then(Value::as_list).is_some_and(|skins| !skins.is_empty());
-        let Some(Value::List(mut nodes)) = json.get("nodes").cloned() else {
+        let skinned = json.get("skins").and_then(Value::as_array).is_some_and(|skins| !skins.is_empty());
+        let Some(Value::Array(mut nodes)) = json.get("nodes").cloned() else {
             return Gltf { json, buffers: gltf.buffers.clone() };
         };
         nodes.iter_mut().for_each(strip);
         for key in ["meshes", "materials"] {
-            if let Some(Value::List(list)) = json.get_mut(key) {
+            if let Some(Value::Array(list)) = json.get_mut(key) {
                 list.iter_mut().for_each(strip);
             }
         }
         if skinned {
             for gi in 0..nodes.len() {
-                if nodes[gi].has("mesh") && !nodes[gi].has("skin") {
+                if nodes[gi].get("mesh").is_some() && !nodes[gi].get("skin").is_some() {
                     let mesh = nodes[gi].get("mesh").unwrap().clone();
                     let name = nodes[gi].get("name").cloned().unwrap_or(Value::Null);
                     if let Value::Object(items) = &mut nodes[gi] {
-                        items.retain(|(key, _)| key != "mesh");
+                        items.retain(|key, _| key != "mesh");
                     }
-                    nodes.push(crate::object! {"name" => name, "mesh" => mesh});
-                    let child = Value::Int(nodes.len() as i64 - 1);
+                    nodes.push(serde_json::json!({"name": name, "mesh": mesh}));
+                    let child = Value::from(nodes.len() as i64 - 1);
                     match nodes[gi].get_mut("children") {
-                        Some(Value::List(children)) => children.push(child),
-                        _ => nodes[gi].set("children", Value::List(vec![child])),
+                        Some(Value::Array(children)) => children.push(child),
+                        _ => nodes[gi]["children"] = Value::Array(vec![child]),
                     }
                 }
             }
@@ -1379,25 +1376,25 @@ mod tests {
                 continue;
             };
             // a skinned model's nodes are bones, named apart from objects; a rigid one's all objects
-            let count = seen.entry((skinned && node.has("mesh"), name.clone())).or_insert(0);
+            let count = seen.entry((skinned && node.get("mesh").is_some(), name.clone())).or_insert(0);
             if *count > 0 {
-                node.set("name", Value::Str(format!("{name}.{:03}", *count)));
+                node["name"] = Value::String(format!("{name}.{:03}", *count));
             }
             *count += 1;
         }
         // post-order from the scene's roots
         let children = |node: &Value| -> Vec<usize> {
             node.get("children")
-                .and_then(Value::as_list)
-                .map_or(Vec::new(), |list| list.iter().filter_map(|c| c.as_int()).map(|c| c as usize).collect())
+                .and_then(Value::as_array)
+                .map_or(Vec::new(), |list| list.iter().filter_map(|c| c.as_i64()).map(|c| c as usize).collect())
         };
-        let roots: Vec<usize> = json.get("scenes").and_then(Value::as_list).unwrap()[0]
+        let roots: Vec<usize> = json.get("scenes").and_then(Value::as_array).unwrap()[0]
             .get("nodes")
             .unwrap()
-            .as_list()
+            .as_array()
             .unwrap()
             .iter()
-            .map(|n| n.as_int().unwrap() as usize)
+            .map(|n| n.as_i64().unwrap() as usize)
             .collect();
         let mut order = Vec::new();
         fn visit(at: usize, nodes: &[Value], children: &dyn Fn(&Value) -> Vec<usize>, order: &mut Vec<usize>) {
@@ -1414,27 +1411,27 @@ mod tests {
             new_of[old] = new as i64;
         }
         let renumber = |value: &mut Value| {
-            if let Some(old) = value.as_int() {
-                *value = Value::Int(new_of[old as usize]);
+            if let Some(old) = value.as_i64() {
+                *value = Value::from(new_of[old as usize]);
             }
         };
         let mut reordered: Vec<Value> = order.iter().map(|&old| nodes[old].clone()).collect();
         for node in reordered.iter_mut() {
-            if let Some(Value::List(list)) = node.get_mut("children") {
+            if let Some(Value::Array(list)) = node.get_mut("children") {
                 list.iter_mut().for_each(renumber);
             }
         }
-        json.set("nodes", Value::List(reordered));
-        if let Some(Value::List(scenes)) = json.get_mut("scenes") {
+        json["nodes"] = Value::Array(reordered);
+        if let Some(Value::Array(scenes)) = json.get_mut("scenes") {
             for scene in scenes {
-                if let Some(Value::List(list)) = scene.get_mut("nodes") {
+                if let Some(Value::Array(list)) = scene.get_mut("nodes") {
                     list.iter_mut().for_each(renumber);
                 }
             }
         }
-        if let Some(Value::List(skins)) = json.get_mut("skins") {
+        if let Some(Value::Array(skins)) = json.get_mut("skins") {
             for skin in skins {
-                if let Some(Value::List(list)) = skin.get_mut("joints") {
+                if let Some(Value::Array(list)) = skin.get_mut("joints") {
                     list.iter_mut().for_each(renumber);
                 }
                 if let Some(skeleton) = skin.get_mut("skeleton") {
@@ -1442,9 +1439,9 @@ mod tests {
                 }
             }
         }
-        if let Some(Value::List(animations)) = json.get_mut("animations") {
+        if let Some(Value::Array(animations)) = json.get_mut("animations") {
             for animation in animations {
-                if let Some(Value::List(channels)) = animation.get_mut("channels") {
+                if let Some(Value::Array(channels)) = animation.get_mut("channels") {
                     for channel in channels {
                         if let Some(node) = channel.get_mut("target").and_then(|t| t.get_mut("node")) {
                             renumber(node);
@@ -1458,22 +1455,24 @@ mod tests {
 
     /// Changes each value of an attribute of the meshes of the nodes named `name` in place.
     pub(crate) fn edit_attribute(gltf: &mut Gltf, name: &str, attribute: &str, edit: &dyn Fn(&mut [f32])) {
-        use crate::json::Value;
+        use serde_json::Value;
         let j = gltf.json.clone();
         let at = |list: &str, i: &Value| from_gltf::index(j.get(list).unwrap(), i).unwrap().clone();
-        let nodes = j.get("nodes").unwrap().as_list().unwrap();
-        for node in nodes.iter().filter(|n| n.get("name").and_then(Value::as_str) == Some(name) && n.has("mesh")) {
+        let nodes = j.get("nodes").unwrap().as_array().unwrap();
+        for node in
+            nodes.iter().filter(|n| n.get("name").and_then(Value::as_str) == Some(name) && n.get("mesh").is_some())
+        {
             let mesh = at("meshes", node.get("mesh").unwrap());
-            for primitive in mesh.get("primitives").unwrap().as_list().unwrap() {
+            for primitive in mesh.get("primitives").unwrap().as_array().unwrap() {
                 let accessor = at("accessors", primitive.get("attributes").unwrap().get(attribute).unwrap());
                 let view = at("bufferViews", accessor.get("bufferView").unwrap());
-                let base = view.get("byteOffset").and_then(|v| v.as_int()).unwrap_or(0) as usize;
+                let base = view.get("byteOffset").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
                 let n = match accessor.get("type").unwrap().as_str().unwrap() {
                     "VEC2" => 2,
                     "VEC3" => 3,
                     _ => 4,
                 };
-                for k in 0..accessor.get("count").unwrap().as_int().unwrap() as usize {
+                for k in 0..accessor.get("count").unwrap().as_i64().unwrap() as usize {
                     let bytes = &mut gltf.buffers[0][base + 4 * n * k..base + 4 * n * (k + 1)];
                     let mut values: Vec<f32> =
                         bytes.chunks(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
@@ -1510,7 +1509,7 @@ mod tests {
         let names: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
         assert_eq!(names, ["bow.bin", "bow.gltf", "textures/body01.png"]);
         let gltf = load_from_folder(&folder_of(&files), "bow.gltf").unwrap();
-        let animations = gltf.json.get("animations").unwrap().as_list().unwrap().clone();
+        let animations = gltf.json.get("animations").unwrap().as_array().unwrap().clone();
         assert_eq!(animations.len(), 1);
         assert_eq!(animations[0].get("name").unwrap().as_str(), Some("bow"));
         // unedited: the same pack
@@ -1519,7 +1518,7 @@ mod tests {
         std::fs::remove_dir_all(folder).unwrap();
         // the hip's turn doubled: bow.mot alone changes, over the KEY's frames
         let mut edited = gltf;
-        let channel = &animations[0].get("channels").unwrap().as_list().unwrap()[0];
+        let channel = &animations[0].get("channels").unwrap().as_array().unwrap()[0];
         let sampler =
             from_gltf::index(animations[0].get("samplers").unwrap(), channel.get("sampler").unwrap()).unwrap().clone();
         let output = from_gltf::accessor(&edited, sampler.get("output").unwrap()).unwrap();
@@ -1528,7 +1527,7 @@ mod tests {
                 from_gltf::index(gltf.json.get("accessors").unwrap(), sampler.get("output").unwrap()).unwrap();
             let view =
                 from_gltf::index(gltf.json.get("bufferViews").unwrap(), accessor.get("bufferView").unwrap()).unwrap();
-            view.get("byteOffset").and_then(|v| v.as_int()).unwrap_or(0) as usize
+            view.get("byteOffset").and_then(|v| v.as_i64()).unwrap_or(0) as usize
         };
         let base = view_of(&edited);
         for k in 0..output.len() {
@@ -1648,7 +1647,7 @@ mod tests {
             else {
                 return Ok(true);
             };
-            let node_name = blender.json.get("nodes").unwrap().as_list().unwrap()[gi]
+            let node_name = blender.json.get("nodes").unwrap().as_array().unwrap()[gi]
                 .get("name")
                 .unwrap()
                 .as_str()
@@ -1719,7 +1718,7 @@ mod tests {
         let mut files: Vec<(String, Vec<u8>)> = exported.to_vec();
         for (path, content) in files.iter_mut() {
             if *path == "c.gltf" {
-                *content = crate::json::dumps_compact(&gltf.json).into_bytes();
+                *content = serde_json::to_string(&gltf.json).expect("a JSON value serializes").into_bytes();
             } else if *path == "c.bin" {
                 *content = gltf.buffers[0].clone();
             }
@@ -1835,17 +1834,17 @@ mod tests {
         let folder = folder_of(files);
         let gltf = load_from_folder(&folder, "piece.gltf").unwrap();
         let j = &gltf.json;
-        let at = |list: &str, i: &crate::json::Value| from_gltf::index(j.get(list).unwrap(), i).unwrap().clone();
+        let at = |list: &str, i: &serde_json::Value| from_gltf::index(j.get(list).unwrap(), i).unwrap().clone();
         let mesh = at(
             "meshes",
             from_gltf::index(j.get("nodes").unwrap(), &(node as i64).into()).unwrap().get("mesh").unwrap(),
         );
         let mut bin = folder.get("piece.bin").unwrap().to_vec();
-        for primitive in mesh.get("primitives").unwrap().as_list().unwrap() {
+        for primitive in mesh.get("primitives").unwrap().as_array().unwrap() {
             let accessor = at("accessors", primitive.get("attributes").unwrap().get("POSITION").unwrap());
             let view = at("bufferViews", accessor.get("bufferView").unwrap());
-            let base = view.get("byteOffset").and_then(|v| v.as_int()).unwrap_or(0) as usize;
-            for k in 0..accessor.get("count").unwrap().as_int().unwrap() as usize {
+            let base = view.get("byteOffset").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
+            for k in 0..accessor.get("count").unwrap().as_i64().unwrap() as usize {
                 let x = f32::from_le_bytes(bin[base + 12 * k..base + 12 * k + 4].try_into().unwrap());
                 bin[base + 12 * k..base + 12 * k + 4].copy_from_slice(&(x + 1.0).to_le_bytes());
             }
@@ -1863,13 +1862,13 @@ mod tests {
         assert_eq!(paths, ["piece.bin", "piece.gltf", "textures/leaf01.png", "textures/wall01.png"]);
         let pictures = im3::read(&img).unwrap();
         assert_eq!(get(&files, "textures/wall01.png"), im3::to_png(&pictures[0], true).unwrap());
-        let json = crate::json::loads(std::str::from_utf8(get(&files, "piece.gltf")).unwrap()).unwrap();
-        let list = |key: &str| json.get(key).unwrap().as_list().unwrap().clone();
+        let json = crate::from_gltf::load_json(std::str::from_utf8(get(&files, "piece.gltf")).unwrap()).unwrap();
+        let list = |key: &str| json.get(key).unwrap().as_array().unwrap().clone();
         let names: Vec<String> =
             list("nodes").iter().map(|n| n.get("name").unwrap().as_str().unwrap().to_string()).collect();
         assert_eq!(names, ["piece", "grid54--f2appz0n1t-5_1", "grid54--a40aof-6_1", "lamp--n1z0c0f2app-"]);
         for (i, node) in list("nodes").iter().enumerate() {
-            assert_eq!(node.get("extras").unwrap().get("mds_index").unwrap().as_int(), Some(i as i64));
+            assert_eq!(node.get("extras").unwrap().get("mds_index").unwrap().as_i64(), Some(i as i64));
         }
         let meshes: Vec<String> =
             list("meshes").iter().map(|n| n.get("name").unwrap().as_str().unwrap().to_string()).collect();
@@ -1877,27 +1876,27 @@ mod tests {
         // wall01 repeats (CLAMP 0), leaf01 clamps (CLAMP 5)
         let wrap = |texture: &str| {
             let t = list("textures").into_iter().find(|t| t.get("name").unwrap().as_str() == Some(texture)).unwrap();
-            let s = &list("samplers")[t.get("sampler").unwrap().as_int().unwrap() as usize];
-            (s.get("wrapS").unwrap().as_int().unwrap(), s.get("wrapT").unwrap().as_int().unwrap())
+            let s = &list("samplers")[t.get("sampler").unwrap().as_i64().unwrap() as usize];
+            (s.get("wrapS").unwrap().as_i64().unwrap(), s.get("wrapT").unwrap().as_i64().unwrap())
         };
         assert_eq!(wrap("wall01"), (10497, 10497));
         assert_eq!(wrap("leaf01"), (33071, 33071));
         // blend flags: additive -> BLEND, alpha test 0x40 with aOF -> MASK 0.5, c0 -> unlit
         let material_of = |node: usize| {
-            let mesh = &list("meshes")[list("nodes")[node].get("mesh").unwrap().as_int().unwrap() as usize];
+            let mesh = &list("meshes")[list("nodes")[node].get("mesh").unwrap().as_i64().unwrap() as usize];
             let number =
-                mesh.get("primitives").unwrap().as_list().unwrap()[0].get("material").unwrap().as_int().unwrap();
+                mesh.get("primitives").unwrap().as_array().unwrap()[0].get("material").unwrap().as_i64().unwrap();
             list("materials")[number as usize].clone()
         };
-        let mode = |m: &crate::json::Value| m.get("alphaMode").and_then(|v| v.as_str()).map(str::to_string);
+        let mode = |m: &serde_json::Value| m.get("alphaMode").and_then(|v| v.as_str()).map(str::to_string);
         assert_eq!(mode(&material_of(1)).as_deref(), Some("BLEND"));
         assert_eq!(mode(&material_of(2)).as_deref(), Some("MASK"));
         assert_eq!(material_of(2).get("alphaCutoff").unwrap().as_f64(), Some(0.5));
-        assert!(material_of(3).get("extensions").unwrap().has("KHR_materials_unlit"));
-        assert!(!material_of(1).has("extensions"));
+        assert!(material_of(3).get("extensions").unwrap().get("KHR_materials_unlit").is_some());
+        assert!(!material_of(1).get("extensions").is_some());
         let flags = material_of(3).get("extras").unwrap().get("frame_flags").unwrap().clone();
         assert_eq!(flags.get("mds_flags").unwrap().as_str(), Some("n1z0c0f2app-"));
-        assert_eq!(flags.get("z_write").unwrap().as_int(), Some(0));
+        assert_eq!(flags.get("z_write").unwrap().as_bool(), Some(false));
         assert_eq!(list("extensionsUsed")[0].as_str(), Some("KHR_materials_unlit"));
     }
 
@@ -1928,10 +1927,10 @@ mod tests {
         check(&edited);
         // and by the whole names when the extras are lost (a tool that drops custom properties)
         let mut bare = edited;
-        if let Some(crate::json::Value::List(nodes)) = bare.json.get_mut("nodes") {
+        if let Some(serde_json::Value::Array(nodes)) = bare.json.get_mut("nodes") {
             for node in nodes {
-                if let crate::json::Value::Object(items) = node {
-                    items.retain(|(key, _)| key != "extras");
+                if let serde_json::Value::Object(items) = node {
+                    items.retain(|key, _| key != "extras");
                 }
             }
         }
@@ -1975,11 +1974,11 @@ mod tests {
         let piece = collision_piece();
         let options = to_gltf::Options::collision();
         let (files, _) = export_map_model(&piece, "piece", &options).unwrap();
-        let json = crate::json::loads(std::str::from_utf8(get(&files, "piece.gltf")).unwrap()).unwrap();
+        let json = crate::from_gltf::load_json(std::str::from_utf8(get(&files, "piece.gltf")).unwrap()).unwrap();
         let names: Vec<&str> = json
             .get("materials")
             .unwrap()
-            .as_list()
+            .as_array()
             .unwrap()
             .iter()
             .map(|m| m.get("name").unwrap().as_str().unwrap())
@@ -1990,16 +1989,16 @@ mod tests {
         assert_eq!(build_map_model(&gltf, &piece, &options).unwrap(), piece);
         // renamed as Blender keeps duplicates apart: the floor becomes foot sound 5, area 9; and the
         // mesh gains normals and uvs, as Blender writes them
-        if let Some(crate::json::Value::List(materials)) = gltf.json.get_mut("materials") {
-            materials[0].set("name", "col_ground0_foot5_area9_mask4.001".into());
+        if let Some(serde_json::Value::Array(materials)) = gltf.json.get_mut("materials") {
+            materials[0]["name"] = "col_ground0_foot5_area9_mask4.001".into();
         }
-        if let Some(crate::json::Value::List(meshes)) = gltf.json.get_mut("meshes") {
-            if let Some(crate::json::Value::List(primitives)) = meshes[0].get_mut("primitives") {
+        if let Some(serde_json::Value::Array(meshes)) = gltf.json.get_mut("meshes") {
+            if let Some(serde_json::Value::Array(primitives)) = meshes[0].get_mut("primitives") {
                 for p in primitives {
                     let position = p.get("attributes").unwrap().get("POSITION").unwrap().clone();
                     if let Some(attributes) = p.get_mut("attributes") {
-                        attributes.set("NORMAL", position.clone());
-                        attributes.set("TEXCOORD_0", position);
+                        attributes["NORMAL"] = position.clone();
+                        attributes["TEXCOORD_0"] = position;
                     }
                 }
             }

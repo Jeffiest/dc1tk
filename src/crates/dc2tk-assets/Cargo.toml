@@ -7,7 +7,6 @@ description = "Dark Chronicle's assets: textures to PNG, sound banks to WAV, cha
 
 [dependencies]
 dc2tk-disc.workspace = true
-dc2tk-py.workspace = true
 flate2.workspace = true
 rayon.workspace = true
 serde.workspace = true

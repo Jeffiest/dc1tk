@@ -20,12 +20,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::from_gltf::{self, accessor, clean, index, item, Gltf};
-use crate::info_cfg::{self, Statement};
-use crate::json::Value;
+use crate::info_cfg::{self, Arg, Statement};
 use crate::mds::Mds;
 use crate::mot::{self, KeyList};
 use crate::to_gltf::{decompose, slerp, Target};
 use crate::{bail, Result};
+use serde_json::Value;
 
 /// Motion frames a second at step 1.0: the PAL game advances a KEY by 1.2 × step frames each
 /// 25 Hz game frame (CCharacter2::NormalDrive), the NTSC one by step each 30 Hz frame.
@@ -214,7 +214,7 @@ fn channel_rest(model: &Mds, (frame, kind, target): Channel) -> Option<Vec4> {
 /// nodes stand for none.
 fn node_frames(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
     let empty = Vec::new();
-    let nodes = json.get("nodes").and_then(Value::as_list).unwrap_or(&empty);
+    let nodes = json.get("nodes").and_then(Value::as_array).unwrap_or(&empty);
     let mut whole: HashMap<&str, Vec<usize>> = HashMap::new();
     let mut base: HashMap<&str, Vec<usize>> = HashMap::new();
     for (i, node) in model.nodes.iter().enumerate() {
@@ -222,9 +222,9 @@ fn node_frames(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
         base.entry(node.base_name()).or_default().push(i);
     }
     let children = |gi: usize| -> Vec<usize> {
-        let list = nodes[gi].get("children").and_then(Value::as_list).unwrap_or(&empty);
+        let list = nodes[gi].get("children").and_then(Value::as_array).unwrap_or(&empty);
         list.iter()
-            .filter_map(|c| c.as_int().and_then(|c| usize::try_from(c).ok()))
+            .filter_map(|c| c.as_i64().and_then(|c| usize::try_from(c).ok()))
             .filter(|&c| c < nodes.len())
             .collect()
     };
@@ -240,7 +240,7 @@ fn node_frames(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
     let mut named: Vec<(Option<usize>, String, usize, usize)> = Vec::new();
     for (gi, n) in nodes.iter().enumerate() {
         let stem = match n.get("name").and_then(Value::as_str) {
-            Some(name) if !n.has("skin") => {
+            Some(name) if !n.get("skin").is_some() => {
                 let stem = clean(n.get("name"))?;
                 let number = if stem.len() < name.len() { name[stem.len() + 1..].parse().unwrap_or(0) } else { 0 };
                 named.push((parent[gi], stem.clone(), number, gi));
@@ -272,9 +272,9 @@ fn node_frames(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
     let mut out = vec![None; nodes.len()];
     for gi in order {
         let n = &nodes[gi];
-        let index = n.get("extras").and_then(|e| e.get("mds_index")).and_then(Value::as_int);
+        let index = n.get("extras").and_then(|e| e.get("mds_index")).and_then(Value::as_i64);
         if let Some(i) = index.and_then(|i| usize::try_from(i).ok()).filter(|&i| i < model.nodes.len()) {
-            out[gi] = (!n.has("skin")).then_some(i);
+            out[gi] = (!n.get("skin").is_some()).then_some(i);
             continue;
         }
         let Some(stem) = &stems[gi] else {
@@ -298,7 +298,7 @@ fn node_frames(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
 }
 
 fn floats_of(value: Option<&Value>, default: &[f64]) -> Vec<f64> {
-    match value.and_then(Value::as_list) {
+    match value.and_then(Value::as_array) {
         Some(items) => items.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect(),
         None => default.to_vec(),
     }
@@ -323,7 +323,7 @@ fn node_rest(node: &Value) -> Result<[Vec4; 3]> {
     Ok([normalized(&[r[0], r[1], r[2], r[3]]), [s[0], s[1], s[2], 0.0], [t[0], t[1], t[2], 0.0]])
 }
 
-fn vec4(values: &[crate::py::Num]) -> Vec4 {
+fn vec4(values: &[crate::numeric::Num]) -> Vec4 {
     std::array::from_fn(|i| values.get(i).map_or(0.0, |v| v.f()))
 }
 
@@ -348,13 +348,13 @@ fn read<'m>(
     let j = &gltf.json;
     let frames = node_frames(j, model)?;
     let empty = Vec::new();
-    let nodes = j.get("nodes").and_then(Value::as_list).unwrap_or(&empty);
+    let nodes = j.get("nodes").and_then(Value::as_array).unwrap_or(&empty);
     let mut chosen: Vec<Option<usize>> = vec![None; model.nodes.len()];
     for (gi, frame) in frames.iter().enumerate() {
         if let Some(f) = *frame {
             let better = match chosen[f] {
                 None => true,
-                Some(other) => nodes[other].has("mesh") && !nodes[gi].has("mesh"),
+                Some(other) => nodes[other].get("mesh").is_some() && !nodes[gi].get("mesh").is_some(),
             };
             if better {
                 chosen[f] = Some(gi);
@@ -365,16 +365,16 @@ fn read<'m>(
     let morph_meshes = from_gltf::morph_meshes(gltf, model, binds)?;
     let mesh_of: HashMap<usize, usize> = morph_meshes.iter().map(|(&frame, morph)| (morph.node, frame)).collect();
     let mut animations = Vec::new();
-    for (number, a) in j.get("animations").and_then(Value::as_list).unwrap_or(&empty).iter().enumerate() {
+    for (number, a) in j.get("animations").and_then(Value::as_array).unwrap_or(&empty).iter().enumerate() {
         let name = a.get("name").and_then(Value::as_str).map_or(format!("animation{number}"), str::to_string);
         let samplers = item(a, "samplers")?;
         let mut curves = BTreeMap::new();
         let mut morphs = BTreeSet::new();
         let (mut start, mut end) = (f64::INFINITY, 0.0f64);
-        for channel in item(a, "channels")?.as_list().unwrap_or(&empty) {
+        for channel in item(a, "channels")?.as_array().unwrap_or(&empty) {
             let target = item(channel, "target")?;
             let path = target.get("path").and_then(Value::as_str);
-            let Some(gi) = target.get("node").and_then(Value::as_int).and_then(|n| usize::try_from(n).ok()) else {
+            let Some(gi) = target.get("node").and_then(Value::as_i64).and_then(|n| usize::try_from(n).ok()) else {
                 continue;
             };
             let sampler = index(samplers, item(channel, "sampler")?)?;
@@ -612,8 +612,8 @@ struct Key {
 /// A motion set as info.cfg gives it (CharInfo's reading: an id given again keeps its place and
 /// starts its KEYs again): its id, its .mot and its KEYs.
 struct SetInfo {
-    id: Value,
-    mot: Value,
+    id: Arg,
+    mot: Arg,
     keys: Vec<Key>,
 }
 
@@ -640,7 +640,7 @@ fn motion_sets(info: &[u8]) -> Vec<SetInfo> {
             "KEY" if statement.args.len() >= 4 => {
                 if let Some(at) = current {
                     let range = match (&statement.args[1].0, &statement.args[2].0) {
-                        (Value::Int(s), Value::Int(e)) => Some((*s, *e.max(s))),
+                        (Arg::Int(s), Arg::Int(e)) => Some((*s, *e.max(s))),
                         _ => None,
                     };
                     out[at].keys.push(Key { statement, range });
@@ -657,7 +657,7 @@ fn motion_sets(info: &[u8]) -> Vec<SetInfo> {
 fn motion0_keys(info: &[u8]) -> Vec<Key> {
     motion_sets(info)
         .into_iter()
-        .find(|set| info_cfg::same_value(&set.id, &Value::Int(0)))
+        .find(|set| info_cfg::same_value(&set.id, &Arg::Int(0)))
         .map(|set| set.keys)
         .unwrap_or_default()
 }
@@ -759,11 +759,11 @@ pub fn build(
     // the sets the pack holds a .mot of, as the export reads them
     let mut sets: Vec<LoadedSet> = Vec::new();
     for set in motion_sets(info) {
-        let zero = info_cfg::same_value(&set.id, &Value::Int(0));
+        let zero = info_cfg::same_value(&set.id, &Arg::Int(0));
         let name = match &set.mot {
-            Value::Str(name) if !name.is_empty() => name.clone(),
-            value if !value.truthy() => continue,
-            _ if zero => bail!("expected str, bytes or os.PathLike object"),
+            Arg::Str(name) if !name.is_empty() => name.clone(),
+            value if !value.is_set() => continue,
+            _ if zero => bail!("info.cfg names motion set 0's .mot with {:?}, which is not a string", set.mot),
             _ => continue,
         };
         let Some(data) = member(&name) else {
@@ -821,7 +821,7 @@ pub fn build(
         if sets.is_empty() {
             bail!("the pack has no motion set to add the animation {} to", g.name);
         }
-        let stem = clean(Some(&Value::Str(g.name.clone())))?;
+        let stem = clean(Some(&Value::String(g.name.clone())))?;
         let copied = by_name.get(stem.as_str()).and_then(|&i| exported_keys.get(i).map(|&(s, k)| (s, k, i)));
         // the set its name gives (`7:jump`), and the KEY's name in it
         let named = crate::to_gltf::set_of_name(&g.name).and_then(|(id, rest)| {
@@ -1471,14 +1471,8 @@ pub fn key_changes(before: &[u8], after: &[u8]) -> Vec<String> {
     let arg = |info: &[u8], key: &Key, at: usize| {
         key.statement.args.get(at).map(|(_, bytes)| String::from_utf8_lossy(&info[bytes.clone()]).into_owned())
     };
-    let name = |key: &Key| match &key.statement.args[0].0 {
-        Value::Str(name) => name.clone(),
-        other => format!("{other:?}"),
-    };
-    let set_name = |set: &SetInfo| match &set.id {
-        Value::Int(id) => id.to_string(),
-        other => format!("{other:?}"),
-    };
+    let name = |key: &Key| key.statement.args[0].0.text();
+    let set_name = |set: &SetInfo| set.id.text();
     let frames = |info: &[u8], key: &Key| {
         format!(
             "frames {} to {}, step {}",
@@ -1812,18 +1806,18 @@ mod tests {
     fn bytes_mut<'a>(gltf: &'a mut Gltf, number: &Value) -> &'a mut [u8] {
         let accessor = index(item(&gltf.json, "accessors").unwrap(), number).unwrap().clone();
         let view = index(item(&gltf.json, "bufferViews").unwrap(), item(&accessor, "bufferView").unwrap()).unwrap();
-        let start = view.get("byteOffset").and_then(Value::as_int).unwrap_or(0) as usize;
-        let length = view.get("byteLength").and_then(Value::as_int).unwrap() as usize;
+        let start = view.get("byteOffset").and_then(Value::as_i64).unwrap_or(0) as usize;
+        let length = view.get("byteLength").and_then(Value::as_i64).unwrap() as usize;
         &mut gltf.buffers[0][start..start + length]
     }
 
     fn animation<'a>(gltf: &'a Gltf, name: &str) -> &'a Value {
-        let list = gltf.json.get("animations").unwrap().as_list().unwrap();
+        let list = gltf.json.get("animations").unwrap().as_array().unwrap();
         list.iter().find(|a| a.get("name").and_then(Value::as_str) == Some(name)).unwrap()
     }
 
     fn animation_mut<'a>(gltf: &'a mut Gltf, name: &str) -> &'a mut Value {
-        let Some(Value::List(list)) = gltf.json.get_mut("animations") else {
+        let Some(Value::Array(list)) = gltf.json.get_mut("animations") else {
             panic!("no animations");
         };
         list.iter_mut().find(|a| a.get("name").and_then(Value::as_str) == Some(name)).unwrap()
@@ -1832,9 +1826,9 @@ mod tests {
     /// The output accessor of an animation's channel of a node and path.
     fn output_of(gltf: &Gltf, name: &str, node: i64, path: &str) -> Value {
         let a = animation(gltf, name).clone();
-        let channel = a.get("channels").unwrap().as_list().unwrap().iter().find(|c| {
+        let channel = a.get("channels").unwrap().as_array().unwrap().iter().find(|c| {
             let target = c.get("target").unwrap();
-            target.get("node").unwrap().as_int() == Some(node) && target.get("path").unwrap().as_str() == Some(path)
+            target.get("node").unwrap().as_i64() == Some(node) && target.get("path").unwrap().as_str() == Some(path)
         });
         let sampler = index(a.get("samplers").unwrap(), channel.unwrap().get("sampler").unwrap()).unwrap();
         sampler.get("output").unwrap().clone()
@@ -1857,7 +1851,7 @@ mod tests {
 
     /// Edits the weights an animation gives a mesh node's morph target of this name, by key.
     fn edit_weights(gltf: &mut Gltf, name: &str, node: i64, target: &str, edit: &dyn Fn(usize, f32) -> f32) {
-        let mesh = gltf.json.get("nodes").unwrap().as_list().unwrap()[node as usize].get("mesh").unwrap().clone();
+        let mesh = gltf.json.get("nodes").unwrap().as_array().unwrap()[node as usize].get("mesh").unwrap().clone();
         let names = index(gltf.json.get("meshes").unwrap(), &mesh)
             .unwrap()
             .get("extras")
@@ -1865,7 +1859,7 @@ mod tests {
             .get("targetNames")
             .unwrap()
             .clone();
-        let names: Vec<&str> = names.as_list().unwrap().iter().map(|n| n.as_str().unwrap()).collect();
+        let names: Vec<&str> = names.as_array().unwrap().iter().map(|n| n.as_str().unwrap()).collect();
         let k = names.iter().position(|n| *n == target).unwrap_or_else(|| panic!("no target {target}"));
         let count = names.len();
         let output = output_of(gltf, name, node, "weights");
@@ -1880,7 +1874,7 @@ mod tests {
     /// Stretches an animation in time.
     fn retime(gltf: &mut Gltf, name: &str, factor: f32) {
         let a = animation(gltf, name).clone();
-        let input = a.get("samplers").unwrap().as_list().unwrap()[0].get("input").unwrap().clone();
+        let input = a.get("samplers").unwrap().as_array().unwrap()[0].get("input").unwrap().clone();
         for t in bytes_mut(gltf, &input).chunks_mut(4) {
             let x = f32::from_le_bytes(t.try_into().unwrap());
             t.copy_from_slice(&(x * factor).to_le_bytes());
@@ -1927,10 +1921,10 @@ mod tests {
         assert!(rebuilt(&pack, &exported(&pack)).is_none());
         // nor one that lost its extras, as Blender writes it
         let mut bare = exported(&pack);
-        if let Some(Value::List(nodes)) = bare.json.get_mut("nodes") {
+        if let Some(Value::Array(nodes)) = bare.json.get_mut("nodes") {
             for node in nodes {
                 if let Value::Object(items) = node {
-                    items.retain(|(key, _)| key != "extras");
+                    items.retain(|key, _| key != "extras");
                 }
             }
         }
@@ -1941,13 +1935,13 @@ mod tests {
     fn the_vertex_and_material_lists_are_morph_targets() {
         let pack = sample_pack();
         let gltf = exported(&pack);
-        let mesh = &gltf.json.get("meshes").unwrap().as_list().unwrap()[0];
+        let mesh = &gltf.json.get("meshes").unwrap().as_array().unwrap()[0];
         let names: Vec<&str> = mesh
             .get("extras")
             .unwrap()
             .get("targetNames")
             .unwrap()
-            .as_list()
+            .as_array()
             .unwrap()
             .iter()
             .map(|n| n.as_str().unwrap())
@@ -2001,11 +1995,11 @@ mod tests {
         let pack = sample_pack();
         let mut given = exported(&pack);
         // the third vertex (0, 1, 0) moves 2 along z in frame 18's shape
-        let mesh = given.json.get("meshes").unwrap().as_list().unwrap()[0].clone();
-        let primitive = &mesh.get("primitives").unwrap().as_list().unwrap()[0];
+        let mesh = given.json.get("meshes").unwrap().as_array().unwrap()[0].clone();
+        let primitive = &mesh.get("primitives").unwrap().as_array().unwrap()[0];
         let positions = accessor(&given, primitive.get("attributes").unwrap().get("POSITION").unwrap()).unwrap();
         let corner = (0..positions.len()).find(|&j| positions.at(j as i64).unwrap()[1].f() == 1.0).unwrap();
-        let target = primitive.get("targets").unwrap().as_list().unwrap()[17].get("POSITION").unwrap().clone();
+        let target = primitive.get("targets").unwrap().as_array().unwrap()[17].get("POSITION").unwrap().clone();
         let bytes = bytes_mut(&mut given, &target);
         bytes[12 * corner + 8..12 * corner + 12].copy_from_slice(&2.0f32.to_le_bytes());
         let (out, built) = rebuilt(&pack, &given).unwrap();
@@ -2056,8 +2050,8 @@ mod tests {
         retime(&mut given, "jump", 2.0);
         // a copy of stand, as Blender names a duplicated action
         let mut copy = animation(&given, "stand").clone();
-        copy.set("name", Value::Str("stand.001".into()));
-        if let Some(Value::List(animations)) = given.json.get_mut("animations") {
+        copy["name"] = Value::String("stand.001".into());
+        if let Some(Value::Array(animations)) = given.json.get_mut("animations") {
             animations.push(copy);
         }
         let (out, built) = rebuilt(&pack, &given).unwrap();
@@ -2076,9 +2070,9 @@ mod tests {
         let mut given = exported(&pack);
         retime(&mut given, "jump", 2.0);
         let mut spin = animation(&given, "stand").clone();
-        spin.set("name", Value::Str("spin".into()));
-        spin.set("extras", crate::object! {"step" => 0.3});
-        if let Some(Value::List(animations)) = given.json.get_mut("animations") {
+        spin["name"] = Value::String("spin".into());
+        spin["extras"] = serde_json::json!({"step": 0.3});
+        if let Some(Value::Array(animations)) = given.json.get_mut("animations") {
             animations.retain(|a| a.get("name").and_then(Value::as_str) != Some("walk"));
             animations.push(spin);
         }
@@ -2114,11 +2108,11 @@ mod tests {
         let mut given = exported(&pack);
         // the root has no rotation list: jump turns it as it turns the hip
         let jump = animation_mut(&mut given, "jump");
-        let Some(Value::List(channels)) = jump.get_mut("channels") else {
+        let Some(Value::Array(channels)) = jump.get_mut("channels") else {
             panic!("no channels");
         };
         let mut root = channels[0].clone();
-        root.set("target", crate::object! {"node" => 0i64, "path" => "rotation"});
+        root["target"] = serde_json::json!({"node": 0i64, "path": "rotation"});
         channels.push(root);
         let (_, built) = rebuilt(&pack, &given).unwrap();
         let after = lists(&built);
@@ -2136,7 +2130,7 @@ mod tests {
     fn a_deleted_action_takes_its_key_its_frames_and_its_sounds_out() {
         let pack = sample_pack();
         let mut given = exported(&pack);
-        if let Some(Value::List(animations)) = given.json.get_mut("animations") {
+        if let Some(Value::Array(animations)) = given.json.get_mut("animations") {
             animations.retain(|a| a.get("name").and_then(Value::as_str) != Some("jump"));
         }
         let (out, built) = rebuilt(&pack, &given).unwrap();
@@ -2153,7 +2147,7 @@ mod tests {
         }
         // walk, which shares a frame with stand, goes: stand keeps frame 5
         let mut given = exported(&pack);
-        if let Some(Value::List(animations)) = given.json.get_mut("animations") {
+        if let Some(Value::Array(animations)) = given.json.get_mut("animations") {
             animations.retain(|a| a.get("name").and_then(Value::as_str) != Some("walk"));
         }
         let (_, built) = rebuilt(&pack, &given).unwrap();
@@ -2181,7 +2175,7 @@ mod tests {
             .json
             .get("animations")
             .unwrap()
-            .as_list()
+            .as_array()
             .unwrap()
             .iter()
             .map(|a| a.get("name").unwrap().as_str().unwrap())
@@ -2192,8 +2186,8 @@ mod tests {
         let mut given = exported(&pack);
         turn(&mut given, "3:bow", 1, 20.0);
         let mut copy = animation(&given, "3:bow").clone();
-        copy.set("name", Value::Str("3:curtsy".into()));
-        if let Some(Value::List(animations)) = given.json.get_mut("animations") {
+        copy["name"] = Value::String("3:curtsy".into());
+        if let Some(Value::Array(animations)) = given.json.get_mut("animations") {
             animations.push(copy);
         }
         let (out, built) = rebuilt(&pack, &given).unwrap();
@@ -2270,16 +2264,16 @@ mod tests {
             }
             // nor as Blender names it: no extras, a name given again numbered ".001" on
             let mut bare = gltf_of(&files);
-            if let Some(Value::List(nodes)) = bare.json.get_mut("nodes") {
+            if let Some(Value::Array(nodes)) = bare.json.get_mut("nodes") {
                 let mut seen: HashMap<String, usize> = HashMap::new();
                 for node in nodes {
                     if let Value::Object(items) = node {
-                        items.retain(|(key, _)| key != "extras");
+                        items.retain(|key, _| key != "extras");
                     }
                     if let Some(name) = node.get("name").and_then(Value::as_str).map(str::to_string) {
                         let count = seen.entry(name.clone()).or_default();
                         if *count > 0 {
-                            node.set("name", Value::Str(format!("{name}.{count:03}")));
+                            node["name"] = Value::String(format!("{name}.{count:03}"));
                         }
                         *count += 1;
                     }
@@ -2292,12 +2286,12 @@ mod tests {
                 )));
             }
             // the first motion turning a bone
-            let Some((name, node)) = before.json.get("animations").and_then(Value::as_list).and_then(|list| {
+            let Some((name, node)) = before.json.get("animations").and_then(Value::as_array).and_then(|list| {
                 list.iter().find_map(|a| {
-                    let channel = a.get("channels")?.as_list()?.iter().find(|c| {
+                    let channel = a.get("channels")?.as_array()?.iter().find(|c| {
                         c.get("target").and_then(|t| t.get("path")).and_then(Value::as_str) == Some("rotation")
                     })?;
-                    Some((a.get("name")?.as_str()?.to_string(), channel.get("target")?.get("node")?.as_int()?))
+                    Some((a.get("name")?.as_str()?.to_string(), channel.get("target")?.get("node")?.as_i64()?))
                 })
             }) else {
                 return Ok(None);
@@ -2321,20 +2315,20 @@ mod tests {
             let in_place = out.info == info;
             // that motion's action deleted: its KEY alone goes, every other motion as it was (a
             // glTF with no animation left deletes none: a tool may have left them all out)
-            let count = |g: &Gltf| g.json.get("animations").and_then(Value::as_list).map_or(0, Vec::len);
+            let count = |g: &Gltf| g.json.get("animations").and_then(Value::as_array).map_or(0, Vec::len);
             // (nor a KEY whose name another repeats: that one's export name, `name_<start>`, would
             // become `name`)
             let names: Vec<&str> = before
                 .json
                 .get("animations")
-                .and_then(Value::as_list)
+                .and_then(Value::as_array)
                 .map(|list| list.iter().filter_map(|a| a.get("name").and_then(Value::as_str)).collect())
                 .unwrap_or_default();
             if count(&before) < 2 || names.iter().any(|other| other.starts_with(&format!("{name}_"))) {
                 return Ok(Some(in_place));
             }
             let mut given = gltf_of(&files);
-            if let Some(Value::List(animations)) = given.json.get_mut("animations") {
+            if let Some(Value::Array(animations)) = given.json.get_mut("animations") {
                 animations.retain(|a| a.get("name").and_then(Value::as_str) != Some(name.as_str()));
             }
             let Some(out) = run(&given)? else {

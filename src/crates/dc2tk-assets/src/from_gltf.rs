@@ -4,12 +4,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::json::{self, Value};
 use crate::mds::{self, Material, Mds, Mdt, Node, Prim, IDENT};
 use crate::mot::{self, KeyList};
-use crate::py::{self, Num};
+use crate::numeric::{self, Num};
 use crate::to_gltf::{mat_inv, mat_mul, normalize, xform_dir, xform_point, CollisionAttributes, Matrix};
 use crate::{bail, Error, Result};
+use serde_json::{json, Value};
 
 /// A glTF's JSON and its buffers.
 pub struct Gltf {
@@ -18,27 +18,39 @@ pub struct Gltf {
 }
 
 fn missing(key: &str) -> Error {
-    Error::invalid(format!("'{key}'"))
+    Error::invalid(format!("the glTF has no \"{key}\" where it needs one"))
 }
 
-/// d[key].
+/// Whether a value gives something: it is not null, false, zero or empty (a string, list or
+/// object). A glTF leaves out what it has nothing for, or writes it so.
+pub fn is_set(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(number) => number.as_f64() != Some(0.0),
+        Value::String(text) => !text.is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(map) => !map.is_empty(),
+    }
+}
+
+/// value[key], or an error naming the key.
 pub fn item<'a>(value: &'a Value, key: &str) -> Result<&'a Value> {
     value.get(key).ok_or_else(|| missing(key))
 }
 
-/// list[index] with Python's negative indexing; the index a JSON int.
+/// list[at], at a JSON int; an index the list does not have is an error.
 pub fn index<'a>(list: &'a Value, at: &Value) -> Result<&'a Value> {
-    let Some(items) = list.as_list() else {
-        bail!("the value is not a list");
+    let Some(items) = list.as_array() else {
+        bail!("the glTF has something else where it needs a list");
     };
-    let Some(i) = at.as_int() else {
-        bail!("list indices must be integers or slices");
-    };
-    let i = if i < 0 { items.len() as i64 + i } else { i };
-    if i < 0 || i >= items.len() as i64 {
-        bail!("list index out of range");
-    }
-    Ok(&items[i as usize])
+    let found = at.as_u64().and_then(|i| usize::try_from(i).ok()).and_then(|i| items.get(i));
+    found.ok_or_else(|| Error::invalid(format!("the glTF's index {at} is not one of a list of {}", items.len())))
+}
+
+/// The glTF's JSON.
+pub fn load_json(text: &str) -> Result<Value> {
+    serde_json::from_str(text).map_err(|error| Error::invalid(format!("the glTF's JSON does not read: {error}")))
 }
 
 fn base64(text: &str) -> Result<Vec<u8>> {
@@ -65,7 +77,7 @@ fn base64(text: &str) -> Result<Vec<u8>> {
 }
 
 fn utf8(data: &[u8]) -> Result<&str> {
-    std::str::from_utf8(data).map_err(|_| Error::invalid("'utf-8' codec can't decode bytes"))
+    std::str::from_utf8(data).map_err(|_| Error::invalid("the glTF is not UTF-8"))
 }
 
 /// A .gltf (with its buffers read through `read`, by path relative to the glTF's folder) or a .glb.
@@ -75,26 +87,26 @@ pub fn load_gltf(raw: &[u8], read: &dyn Fn(&str) -> Result<Vec<u8>>) -> Result<G
         let (mut found, mut bin) = (None, Vec::new());
         while o < raw.len() {
             if o + 8 > raw.len() {
-                bail!("unpack_from requires a buffer of at least {} bytes", o + 8);
+                bail!("the .glb ends inside the header of a chunk at {o}");
             }
             let length = u32::from_le_bytes(raw[o..o + 4].try_into().unwrap()) as usize;
             let chunk = &raw[o + 8..(o + 8 + length).min(raw.len())];
             match &raw[o + 4..o + 8] {
-                b"JSON" => found = Some(json::loads(utf8(chunk)?)?),
+                b"JSON" => found = Some(load_json(utf8(chunk)?)?),
                 b"BIN\0" => bin = chunk.to_vec(),
                 _ => {}
             }
             o += 8 + length;
         }
         let Some(json) = found else {
-            bail!("'NoneType' object is not subscriptable");
+            bail!("the .glb has no JSON chunk");
         };
         return Ok(Gltf { json, buffers: vec![bin] });
     }
-    let json = json::loads(utf8(raw)?)?;
+    let json = load_json(utf8(raw)?)?;
     let mut buffers = Vec::new();
-    let Some(list) = item(&json, "buffers")?.as_list() else {
-        bail!("'buffers' is not a list");
+    let Some(list) = item(&json, "buffers")?.as_array() else {
+        bail!("the glTF's buffers are not a list");
     };
     for buffer in list {
         let Some(uri) = item(buffer, "uri")?.as_str() else {
@@ -102,7 +114,7 @@ pub fn load_gltf(raw: &[u8], read: &dyn Fn(&str) -> Result<Vec<u8>>) -> Result<G
         };
         if uri.starts_with("data:") {
             let Some((_, data)) = uri.split_once(',') else {
-                bail!("list index out of range");
+                bail!("a buffer's data: URI has no comma before its data");
             };
             buffers.push(base64(data)?);
         } else {
@@ -111,8 +123,7 @@ pub fn load_gltf(raw: &[u8], read: &dyn Fn(&str) -> Result<Vec<u8>>) -> Result<G
     }
     Ok(Gltf { json, buffers })
 }
-
-/// An accessor's values: `n` components each, as the Python reads them (ints or floats).
+/// An accessor's values: `n` components each, ints or floats as its component type has them.
 pub struct Values {
     pub n: usize,
     pub values: Vec<Num>,
@@ -127,46 +138,21 @@ impl Values {
         self.values.is_empty()
     }
 
-    /// The c-th value (Python's negative indexing).
+    /// The c-th value's components; an index the accessor does not have is an error.
     pub fn at(&self, c: i64) -> Result<&[Num]> {
-        let count = self.len() as i64;
-        let i = if c < 0 { count + c } else { c };
-        if i < 0 || i >= count {
-            bail!("list index out of range");
-        }
-        let start = i as usize * self.n;
-        Ok(&self.values[start..(start + self.n).min(self.values.len())])
-    }
-
-    /// repr() of the list the Python's accessor() returns.
-    pub fn repr(&self) -> String {
-        let number = |v: &Num| match v {
-            Num::Int(i) => i.to_string(),
-            Num::Float(f) => dc2tk_py::float_repr(*f),
+        let Some(i) = usize::try_from(c).ok().filter(|&i| i < self.len()) else {
+            bail!("the glTF's index {c} is not one of an accessor's {} values", self.len());
         };
-        let mut out = String::from("[");
-        for (k, chunk) in self.values.chunks(self.n.max(1)).enumerate() {
-            if k > 0 {
-                out.push_str(", ");
-            }
-            if self.n == 1 {
-                out.push_str(&number(&chunk[0]));
-            } else {
-                out.push('(');
-                out.push_str(&chunk.iter().map(number).collect::<Vec<_>>().join(", "));
-                out.push(')');
-            }
-        }
-        out.push(']');
-        out
+        let start = i * self.n;
+        Ok(&self.values[start..(start + self.n).min(self.values.len())])
     }
 }
 
+/// A JSON int (or a bool, as 0 or 1).
 fn json_int(value: &Value, what: &str) -> Result<i64> {
-    match value {
-        Value::Int(v) => Ok(*v),
-        Value::Bool(b) => Ok(*b as i64),
-        _ => bail!("{what} must be an integer"),
+    match value.as_i64().or_else(|| value.as_bool().map(i64::from)) {
+        Some(int) => Ok(int),
+        None => bail!("the glTF's {what} is {value}, not an integer"),
     }
 }
 
@@ -180,11 +166,11 @@ pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
         "VEC3" => 3,
         "VEC4" => 4,
         "MAT4" => 16,
-        _ => bail!("'{kind}'"),
+        _ => bail!("an accessor of type {kind:?}, which glTF does not have"),
     };
     let component = json_int(item(a, "componentType")?, "componentType")?;
     if !matches!(component, 5120 | 5121 | 5122 | 5123 | 5125 | 5126) {
-        bail!("{component}");
+        bail!("an accessor of component type {component}, which glTF does not have");
     }
     let count = json_int(item(a, "count")?, "count")?.max(0) as usize;
     let mut values = match a.get("bufferView") {
@@ -210,15 +196,15 @@ pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
             values[place * n..(place + 1) * n].copy_from_slice(&replaced[k * n..(k + 1) * n]);
         }
     }
-    if a.get("normalized").is_some_and(Value::truthy) {
+    if a.get("normalized").is_some_and(|normalized| normalized.as_bool() == Some(true)) {
         let divisor = match component {
             5120 => 127.0,
             5121 => 255.0,
             5122 => 32767.0,
             5123 => 65535.0,
-            _ => bail!("{component}"),
+            _ => bail!("an accessor of component type {component}, which glTF does not have"),
         };
-        values = values.into_iter().map(|v| Num::Float(py::max(-1.0, v.f() / divisor))).collect();
+        values = values.into_iter().map(|v| Num::Float(numeric::max(-1.0, v.f() / divisor))).collect();
     }
     Ok(Values { n, values })
 }
@@ -236,24 +222,25 @@ fn view_values(
         5120 | 5121 => 1,
         5122 | 5123 => 2,
         5125 | 5126 => 4,
-        _ => bail!("{component}"),
+        _ => bail!("an accessor of component type {component}, which glTF does not have"),
     };
     let view = index(item(&gltf.json, "bufferViews")?, view)?;
     let buffer_number = view.get("buffer").map_or(Ok(0), |b| json_int(b, "buffer"))?;
     let Some(buffer) = usize::try_from(buffer_number).ok().and_then(|b| gltf.buffers.get(b)) else {
-        bail!("list index out of range");
+        bail!("the glTF has no buffer {buffer_number}");
     };
     let base = view.get("byteOffset").map_or(Ok(0), |o| json_int(o, "byteOffset"))?
         + offset.map_or(Ok(0), |o| json_int(o, "byteOffset"))?;
-    let stride = match view.get("byteStride") {
-        Some(s) if s.truthy() => json_int(s, "byteStride")?,
+    // a stride of 0 (or none) means the values are packed
+    let stride = match view.get("byteStride").map(|s| json_int(s, "byteStride")).transpose()? {
+        Some(stride) if stride != 0 => stride,
         _ => (n * size) as i64,
     };
     let mut values = Vec::with_capacity(count * n);
     for k in 0..count as i64 {
         let at = base + k * stride;
         if at < 0 || at as usize + n * size > buffer.len() {
-            bail!("unpack_from requires a buffer of at least {} bytes", at + (n * size) as i64);
+            bail!("an accessor's value {k} runs past the end of buffer {buffer_number} ({} bytes)", buffer.len());
         }
         let at = at as usize;
         for j in 0..n {
@@ -264,7 +251,7 @@ fn view_values(
                 5122 => Num::Int(i16::from_le_bytes([b[0], b[1]]) as i64),
                 5123 => Num::Int(u16::from_le_bytes([b[0], b[1]]) as i64),
                 5125 => Num::Int(u32::from_le_bytes(b.try_into().unwrap()) as i64),
-                _ => Num::Float(py::unpack_f32(u32::from_le_bytes(b.try_into().unwrap()))),
+                _ => Num::Float(numeric::f32_value(u32::from_le_bytes(b.try_into().unwrap()))),
             });
         }
     }
@@ -274,11 +261,9 @@ fn view_values(
 /// The node's name without Blender's ".001" duplicate suffix.
 pub fn clean(name: Option<&Value>) -> Result<String> {
     let name = match name {
-        Some(value) if value.truthy() => match value.as_str() {
-            Some(text) => text.to_string(),
-            None => bail!("object of type '{}' has no len()", "int"),
-        },
-        _ => String::new(),
+        None | Some(Value::Null) => String::new(),
+        Some(Value::String(text)) => text.clone(),
+        Some(other) => bail!("the glTF has a name that is not text: {other}"),
     };
     let chars: Vec<char> = name.chars().collect();
     let n = chars.len();
@@ -288,20 +273,19 @@ pub fn clean(name: Option<&Value>) -> Result<String> {
     Ok(name)
 }
 
+/// A JSON number (a bool as 0 or 1), an int kept apart from a float.
 fn num(value: &Value) -> Result<Num> {
     match value {
-        Value::Int(v) => Ok(Num::Int(*v)),
         Value::Bool(b) => Ok(Num::Int(*b as i64)),
-        Value::Float(v) => Ok(Num::Float(*v)),
-        _ => bail!("unsupported operand type(s)"),
+        _ => Num::of(value).ok_or_else(|| Error::invalid(format!("the glTF has {value} where it needs a number"))),
     }
 }
 
 fn nums(value: Option<&Value>, default: &[i64]) -> Result<Vec<Num>> {
     match value {
         None => Ok(default.iter().map(|&v| Num::Int(v)).collect()),
-        Some(Value::List(items)) => items.iter().map(num).collect(),
-        Some(_) => bail!("the value is not a list"),
+        Some(Value::Array(items)) => items.iter().map(num).collect(),
+        Some(other) => bail!("the glTF has {other} where it needs a list of numbers"),
     }
 }
 
@@ -312,7 +296,7 @@ fn node_matrix(node: &Value) -> Result<TypedMatrix> {
     if let Some(matrix) = node.get("matrix") {
         let m = nums(Some(matrix), &[])?;
         if m.len() < 16 {
-            bail!("tuple index out of range");
+            bail!("a node's matrix has {} numbers, not 16", m.len());
         }
         return Ok(m);
     }
@@ -320,10 +304,10 @@ fn node_matrix(node: &Value) -> Result<TypedMatrix> {
     let r = nums(node.get("rotation"), &[0, 0, 0, 1])?;
     let s = nums(node.get("scale"), &[1, 1, 1])?;
     if r.len() != 4 {
-        bail!("not enough values to unpack (expected 4, got {})", r.len());
+        bail!("a node's rotation has {} numbers, not 4", r.len());
     }
     if t.len() < 3 || s.len() < 3 {
-        bail!("tuple index out of range");
+        bail!("a node's translation or scale has fewer than 3 numbers");
     }
     let (x, y, z, w) = (r[0], r[1], r[2], r[3]);
     let (one, two, zero) = (Num::Int(1), Num::Int(2), Num::Float(0.0));
@@ -362,7 +346,7 @@ fn typed_mul(a: &TypedMatrix, b: &TypedMatrix) -> TypedMatrix {
     let mut out = Vec::with_capacity(16);
     for c in 0..4 {
         for r in 0..4 {
-            out.push(py::sum_nums((0..4).map(|k| a[k * 4 + r] * b[c * 4 + k])));
+            out.push(numeric::sum_nums((0..4).map(|k| a[k * 4 + r] * b[c * 4 + k])));
         }
     }
     out
@@ -387,7 +371,7 @@ fn close_bind(a: &Matrix, b: &Matrix) -> bool {
         let difference = (x - y).abs();
         match at {
             12..=14 => difference <= 5e-3 + 2e-5 * y.abs(),
-            _ => difference <= 1e-3 * py::max(1.0, y.abs()),
+            _ => difference <= 1e-3 * numeric::max(1.0, y.abs()),
         }
     })
 }
@@ -542,7 +526,7 @@ fn build_mdt(prims: &[Primitive], materials: Vec<Material>) -> (Mdt, Vec<Skin>) 
 
 fn floats_of(value: &Value) -> Result<Vec<f64>> {
     match value {
-        Value::List(items) => {
+        Value::Array(items) => {
             items.iter().map(|v| v.as_f64().ok_or_else(|| Error::invalid("required argument is not a float"))).collect()
         }
         _ => bail!("the value is not a list"),
@@ -556,7 +540,7 @@ fn material_from_gltf(gltf: &Value, number: &Value) -> Result<Material> {
         return Ok(m);
     }
     let gm = index(item(gltf, "materials")?, number)?;
-    let empty = Value::object();
+    let empty = json!({});
     let extras = gm.get("extras").unwrap_or(&empty);
     let pbr = gm.get("pbrMetallicRoughness").unwrap_or(&empty);
     m.diffuse = match extras.get("mdt_diffuse").or_else(|| pbr.get("baseColorFactor")) {
@@ -578,27 +562,27 @@ fn material_from_gltf(gltf: &Value, number: &Value) -> Result<Material> {
             let tx = index(item(gltf, "textures")?, item(base, "index")?)?;
             let image = match tx.get("source") {
                 Some(source) => index(item(gltf, "images")?, source)?.clone(),
-                None => Value::object(),
+                None => json!({}),
             };
-            let name = image.get("name").filter(|v| v.truthy()).cloned();
+            let name = image.get("name").filter(|v| is_set(v)).cloned();
             texture = Some(match name {
                 Some(name) => name,
                 None => {
                     let uri = image.get("uri").and_then(Value::as_str).unwrap_or("");
                     let base_name = uri.rsplit(['/', '\\']).next().unwrap_or("");
-                    Value::Str(crate::to_gltf::strip_extension(base_name).to_string())
+                    Value::String(crate::to_gltf::strip_extension(base_name).to_string())
                 }
             });
         }
     }
-    let texture = texture.unwrap_or_else(|| gm.get("name").cloned().unwrap_or(Value::Str(String::new())));
+    let texture = texture.unwrap_or_else(|| gm.get("name").cloned().unwrap_or(Value::String(String::new())));
     let Some(texture) = texture.as_str() else {
         bail!("the material's texture name is not text");
     };
     let encoded_length: usize =
         texture.chars().map(|c| dc2tk_disc::text::encode(&c.to_string()).map_or(1, |b| b.len())).sum();
     if encoded_length > 31 {
-        bail!("texture name too long: {}", crate::im3::str_repr(texture));
+        bail!("texture name too long: {texture:?}");
     }
     m.texture = texture.to_string();
     Ok(m)
@@ -702,7 +686,7 @@ pub struct ImportOptions {
 pub fn frames_of(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
     let empty = Vec::new();
     let nodes = match json.get("nodes") {
-        Some(nodes) => nodes.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?,
+        Some(nodes) => nodes.as_array().ok_or_else(|| Error::invalid("'nodes' is not a list"))?,
         None => &empty,
     };
     let mut whole: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -712,9 +696,9 @@ pub fn frames_of(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
         base.entry(node.base_name()).or_default().push(i);
     }
     let parent = parents_of(nodes);
-    let skinned = json.get("skins").and_then(Value::as_list).is_some_and(|skins| !skins.is_empty());
+    let skinned = json.get("skins").and_then(Value::as_array).is_some_and(|skins| !skins.is_empty());
     let index_of = |n: &Value| {
-        let index = n.get("extras").and_then(|e| e.get("mds_index")).and_then(Value::as_int);
+        let index = n.get("extras").and_then(|e| e.get("mds_index")).and_then(Value::as_i64);
         index.and_then(|i| usize::try_from(i).ok()).filter(|&i| i < model.nodes.len())
     };
     let names: Vec<String> = nodes.iter().map(|n| frame_name(json, n)).collect::<Result<_>>()?;
@@ -723,7 +707,10 @@ pub fn frames_of(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
         .map(|gi| {
             let n = &nodes[gi];
             let up = parent.get(&(gi as i64)).copied()?;
-            let lone = n.has("mesh") && !n.has("skin") && index_of(n).is_none() && !nodes[up].has("mesh");
+            let lone = n.get("mesh").is_some()
+                && !n.get("skin").is_some()
+                && index_of(n).is_none()
+                && !nodes[up].get("mesh").is_some();
             (lone && names[up] == names[gi]).then_some(up)
         })
         .collect();
@@ -754,7 +741,7 @@ pub fn frames_of(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
             (_, Some(frames), _) | (None, None, Some(frames)) => frames,
             _ => return None,
         };
-        let k = taken.entry((nodes[gi].has("skin"), name.clone())).or_insert(0);
+        let k = taken.entry((nodes[gi].get("skin").is_some(), name.clone())).or_insert(0);
         *k += 1;
         Some(frames[(*k - 1).min(frames.len() - 1)])
     };
@@ -791,10 +778,10 @@ pub fn frames_of(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
 pub fn mesh_ids(json: &Value, model: &Mds) -> Result<Vec<(usize, MeshId)>> {
     let frames = frames_of(json, model)?;
     let empty = Vec::new();
-    let nodes = json.get("nodes").and_then(Value::as_list).unwrap_or(&empty);
+    let nodes = json.get("nodes").and_then(Value::as_array).unwrap_or(&empty);
     let mut out = Vec::new();
     for (gi, n) in nodes.iter().enumerate() {
-        if n.has("mesh") {
+        if n.get("mesh").is_some() {
             let id = match frames[gi] {
                 Some(frame) => MeshId::Frame(frame),
                 None => MeshId::New(frame_name(json, n)?),
@@ -838,13 +825,13 @@ pub fn frame_geometry(gltf: &Gltf, model: &Mds) -> Result<BTreeMap<MeshId, Geome
 fn parents_of(node_list: &[Value]) -> HashMap<i64, usize> {
     let mut parent = HashMap::new();
     for (i, n) in node_list.iter().enumerate() {
-        for c in n.get("children").and_then(Value::as_list).map(Vec::as_slice).unwrap_or_default() {
-            match c {
-                Value::Int(c) => {
-                    parent.insert(*c, i);
+        for c in n.get("children").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() {
+            match Num::of(c) {
+                Some(Num::Int(c)) => {
+                    parent.insert(c, i);
                 }
-                Value::Float(c) if c.fract() == 0.0 => {
-                    parent.insert(*c as i64, i);
+                Some(Num::Float(c)) if c.fract() == 0.0 => {
+                    parent.insert(c as i64, i);
                 }
                 _ => {}
             }
@@ -869,10 +856,10 @@ fn rigid_to_local(
     let Some(frame) = resolved[gi] else {
         return Ok(None);
     };
-    let node_list = nodes.as_list().map(Vec::as_slice).unwrap_or_default();
+    let node_list = nodes.as_array().map(Vec::as_slice).unwrap_or_default();
     let mut frame_world = None;
     for (g2, n2) in node_list.iter().enumerate() {
-        if !n2.has("mesh") && resolved[g2] == Some(frame) {
+        if !n2.get("mesh").is_some() && resolved[g2] == Some(frame) {
             frame_world = Some(floats(&world_of(g2 as i64, nodes, parent, world, 0)?));
         }
     }
@@ -930,7 +917,7 @@ fn geometry(
         }
         false => item(&gltf.json, "nodes")?,
     };
-    let nodes = nodes_value.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
+    let nodes = nodes_value.as_array().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
     let parent = parents_of(nodes);
     let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
     let template_world = model.world_matrices()?;
@@ -948,10 +935,10 @@ fn geometry(
                     }
                     let skin = index(item(&gltf.json, "skins")?, skin)?;
                     let joints =
-                        item(skin, "joints")?.as_list().ok_or_else(|| Error::invalid("'joints' is not a list"))?;
+                        item(skin, "joints")?.as_array().ok_or_else(|| Error::invalid("'joints' is not a list"))?;
                     let mut frames = Vec::with_capacity(joints.len());
                     for joint in joints {
-                        let at = joint.as_int().and_then(|j| usize::try_from(j).ok());
+                        let at = joint.as_i64().and_then(|j| usize::try_from(j).ok());
                         let frame = at.and_then(|j| resolved.get(j).copied().flatten());
                         frames.push(match (frame, at) {
                             (Some(frame), _) => frame as i64,
@@ -968,7 +955,7 @@ fn geometry(
             }
         }
         let list = |key: &str| -> Option<Vec<f64>> {
-            node.get(key).and_then(Value::as_list).map(|l| l.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
+            node.get(key).and_then(Value::as_array).map(|l| l.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
         };
         let matrix = match list("matrix").filter(|m| m.len() == 16) {
             _ if in_frames => IDENT.to_vec(),
@@ -998,7 +985,7 @@ fn geometry(
             }
         };
         let mesh = index(item(&gltf.json, "meshes")?, item(node, "mesh")?)?;
-        let Some(primitives) = item(mesh, "primitives")?.as_list() else {
+        let Some(primitives) = item(mesh, "primitives")?.as_array() else {
             bail!("'primitives' is not a list");
         };
         let mut groups: BTreeMap<String, Vec<[Vec<f64>; 3]>> = BTreeMap::new();
@@ -1104,15 +1091,15 @@ fn geometry(
 pub fn bind_matrices(gltf: &Gltf, model: &Mds) -> Result<HashMap<usize, Matrix>> {
     let resolved = frames_of(&gltf.json, model)?;
     let mut out = HashMap::new();
-    for skin in gltf.json.get("skins").and_then(Value::as_list).map(Vec::as_slice).unwrap_or_default() {
-        let (Some(ibm), Some(joints)) = (skin.get("inverseBindMatrices"), skin.get("joints").and_then(Value::as_list))
+    for skin in gltf.json.get("skins").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() {
+        let (Some(ibm), Some(joints)) = (skin.get("inverseBindMatrices"), skin.get("joints").and_then(Value::as_array))
         else {
             continue;
         };
         let ibm = accessor(gltf, ibm)?;
         for (k, joint) in joints.iter().enumerate() {
             let frame =
-                joint.as_int().and_then(|j| usize::try_from(j).ok()).and_then(|j| resolved.get(j).copied().flatten());
+                joint.as_i64().and_then(|j| usize::try_from(j).ok()).and_then(|j| resolved.get(j).copied().flatten());
             let values: Vec<f64> = ibm.at(k as i64)?.iter().map(|v| v.f()).collect();
             if let (Some(frame), true) = (frame, values.len() >= 16) {
                 if let Some(bind) = mat_inv(&values[..16].try_into().unwrap()) {
@@ -1135,14 +1122,14 @@ fn skin_matrices(
     binds: &HashMap<usize, Matrix>,
 ) -> Result<Vec<Matrix>> {
     let skin = index(item(&gltf.json, "skins")?, skin)?;
-    let Some(joints) = item(skin, "joints")?.as_list() else {
+    let Some(joints) = item(skin, "joints")?.as_array() else {
         bail!("'joints' is not a list");
     };
     let ibm = skin.get("inverseBindMatrices").map(|at| accessor(gltf, at)).transpose()?;
     let mut out = Vec::with_capacity(joints.len());
     for (k, joint) in joints.iter().enumerate() {
         let frame =
-            joint.as_int().and_then(|j| usize::try_from(j).ok()).and_then(|j| resolved.get(j).copied().flatten());
+            joint.as_i64().and_then(|j| usize::try_from(j).ok()).and_then(|j| resolved.get(j).copied().flatten());
         let inverse: Option<Matrix> = match &ibm {
             Some(ibm) => {
                 let values: Vec<f64> = ibm.at(k as i64)?.iter().map(|v| v.f()).collect();
@@ -1201,7 +1188,7 @@ pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Matrix>) ->
     let mut out = BTreeMap::new();
     let resolved = frames_of(&gltf.json, model)?;
     let nodes_value = animated_nodes_at_rest(&gltf.json, model, &resolved)?;
-    let nodes = nodes_value.as_list().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
+    let nodes = nodes_value.as_array().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
     let parent = parents_of(nodes);
     let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
     let template_world = model.world_matrices()?;
@@ -1211,14 +1198,14 @@ pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Matrix>) ->
         };
         let node = &nodes[gi];
         let mesh = index(item(&gltf.json, "meshes")?, item(node, "mesh")?)?;
-        let Some(primitives) = item(mesh, "primitives")?.as_list() else {
+        let Some(primitives) = item(mesh, "primitives")?.as_array() else {
             bail!("'primitives' is not a list");
         };
-        let count = primitives.iter().filter_map(|p| p.get("targets").and_then(Value::as_list)).map(Vec::len).max();
+        let count = primitives.iter().filter_map(|p| p.get("targets").and_then(Value::as_array)).map(Vec::len).max();
         let (Some(count), Some(t)) = (count.filter(|&c| c > 0), model.nodes[frame].mdt.as_ref()) else {
             continue;
         };
-        let names: Vec<String> = match mesh.get("extras").and_then(|e| e.get("targetNames")).and_then(Value::as_list) {
+        let names: Vec<String> = match mesh.get("extras").and_then(|e| e.get("targetNames")).and_then(Value::as_array) {
             Some(list) => (0..count)
                 .map(|i| list.get(i).and_then(Value::as_str).map_or(format!("target{i}"), str::to_string))
                 .collect(),
@@ -1269,7 +1256,7 @@ pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Matrix>) ->
             let positions = accessor(gltf, positions)?;
             let mut targets = Vec::with_capacity(count);
             for k in 0..count {
-                let target = primitive.get("targets").and_then(Value::as_list).and_then(|list| list.get(k));
+                let target = primitive.get("targets").and_then(Value::as_array).and_then(|list| list.get(k));
                 targets.push(match target.and_then(|target| target.get("POSITION")) {
                     Some(at) => Some(accessor(gltf, at)?),
                     None => None,
@@ -1285,7 +1272,7 @@ pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Matrix>) ->
             for j in 0..positions.len() {
                 let point: Vec<f64> = positions.at(j as i64)?.iter().take(3).map(|v| v.f()).collect();
                 if point.len() < 3 {
-                    bail!("tuple index out of range");
+                    bail!("a vertex position has fewer than 3 numbers");
                 }
                 let m = match (&reskin, &skin) {
                     (Some(matrices), Some((joints, weights))) => {
@@ -1498,18 +1485,18 @@ pub fn import_with(
     };
     // frames added for glTF mesh nodes no template frame stands for, by name
     let mut by_name: HashMap<String, usize> = HashMap::new();
-    let empty = Value::List(Vec::new());
+    let empty = Value::Array(Vec::new());
     // animated nodes at their frames' rests, as frame_geometry compares them
     let at_rest = animated_nodes_at_rest(j, &model, &resolved)?;
     let nodes = &at_rest;
-    let Some(node_list) = nodes.as_list() else {
+    let Some(node_list) = nodes.as_array() else {
         bail!("'nodes' is not a list");
     };
     let parent = parents_of(node_list);
     let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
     let mds_index_of = |by_name: &HashMap<String, usize>, gi: &Value| -> Result<Option<usize>> {
         let n = index(nodes, gi)?;
-        let at = gi.as_int().unwrap_or(-1);
+        let at = gi.as_i64().unwrap_or(-1);
         let at = if at < 0 { node_list.len() as i64 + at } else { at };
         match resolved.get(at as usize).copied().flatten() {
             Some(frame) => Ok(Some(frame)),
@@ -1519,19 +1506,19 @@ pub fn import_with(
 
     // bind matrices of joints from the inverse bind matrices (keeps edits to the bind pose)
     let template_world = model.world_matrices()?;
-    for skin in j.get("skins").unwrap_or(&empty).as_list().unwrap_or(&Vec::new()) {
+    for skin in j.get("skins").unwrap_or(&empty).as_array().unwrap_or(&Vec::new()) {
         let Some(ibm_index) = skin.get("inverseBindMatrices") else {
             continue;
         };
         let ibm = accessor(gltf, ibm_index)?;
-        let Some(joints) = item(skin, "joints")?.as_list() else {
+        let Some(joints) = item(skin, "joints")?.as_array() else {
             bail!("'joints' is not a list");
         };
         for (k, gi) in joints.iter().enumerate() {
             let mi = mds_index_of(&by_name, gi)?;
             let matrix = ibm.at(k as i64)?;
             if matrix.len() < 16 {
-                bail!("tuple index out of range");
+                bail!("an inverse bind matrix has fewer than 16 numbers");
             }
             let values: Vec<f64> = matrix.iter().map(|v| v.f()).collect();
             let inverse = mat_inv(&values[..16].try_into().unwrap());
@@ -1569,8 +1556,8 @@ pub fn import_with(
                 // a new node, under the root
                 let mut node = Node::new(&nm, if model.nodes.is_empty() { -1 } else { 0 });
                 if let Some(&pj) = parent.get(&(gi as i64)) {
-                    if let Some(p) = mds_index_of(&by_name, &Value::Int(pj as i64))? {
-                        if !n.has("skin") {
+                    if let Some(p) = mds_index_of(&by_name, &Value::from(pj as i64))? {
+                        if !n.get("skin").is_some() {
                             node.parent = p as i32;
                         }
                     }
@@ -1584,7 +1571,7 @@ pub fn import_with(
         };
         let skin = match n.get("skin") {
             Some(_) if options.collision => bail!("collision meshes are rigid; mesh {nm} has a skin"),
-            Some(s) => Some(index(item(j, "skins")?, s)?).filter(|s| s.truthy()),
+            Some(s) => Some(index(item(j, "skins")?, s)?).filter(|s| is_set(s)),
             None => None,
         };
         let to_local: Matrix;
@@ -1607,7 +1594,7 @@ pub fn import_with(
                 bbp[target] = model.world_matrices()?[target];
             }
             to_local = mat_inv(&bbp[target]).unwrap_or(IDENT);
-            let Some(joints) = item(skin, "joints")?.as_list() else {
+            let Some(joints) = item(skin, "joints")?.as_array() else {
                 bail!("'joints' is not a list");
             };
             for g in joints {
@@ -1618,7 +1605,7 @@ pub fn import_with(
             let mut frame_world = None;
             if resolved[gi].is_none() {
                 for (g2, n2) in node_list.iter().enumerate() {
-                    if !n2.has("mesh") && resolved[g2].is_none() && clean(n2.get("name"))? == nm {
+                    if !n2.get("mesh").is_some() && resolved[g2].is_none() && clean(n2.get("name"))? == nm {
                         frame_world = Some(world_of(g2 as i64, nodes, &parent, &mut world, 0)?);
                     }
                 }
@@ -1644,7 +1631,7 @@ pub fn import_with(
         let mut material_of: Vec<(Value, usize)> = Vec::new();
         let mut prims = Vec::new();
         let mesh = index(mesh_list.ok_or_else(|| missing("meshes"))?, mesh_index)?;
-        let Some(primitives) = item(mesh, "primitives")?.as_list() else {
+        let Some(primitives) = item(mesh, "primitives")?.as_array() else {
             bail!("'primitives' is not a list");
         };
         for p in primitives {
@@ -1665,14 +1652,14 @@ pub fn import_with(
                 Some(i) => {
                     let values = accessor(gltf, i)?;
                     if values.n != 1 {
-                        bail!("list indices must be integers or slices, not tuple");
+                        bail!("a primitive's indices have {} components, not 1", values.n);
                     }
                     values.values
                 }
                 None => (0..pos.len() as i64).map(Num::Int).collect(),
             };
             let mk = p.get("material").cloned().unwrap_or(Value::Null);
-            let material = match material_of.iter().find(|(k, _)| crate::info_cfg::same_value(k, &mk)) {
+            let material = match material_of.iter().find(|(k, _)| *k == mk) {
                 Some((_, at)) => *at,
                 None => {
                     materials.push(if options.collision {
@@ -1687,11 +1674,11 @@ pub fn import_with(
             let mut corners = Vec::with_capacity(indices.len());
             for c in &indices {
                 let Num::Int(c) = *c else {
-                    bail!("list indices must be integers or slices, not float");
+                    bail!("a primitive's indices are floats");
                 };
                 let point = pos.at(c)?;
                 if point.len() < 3 {
-                    bail!("tuple index out of range");
+                    bail!("a vertex position has fewer than 3 numbers");
                 }
                 let point: Vec<f64> = point.iter().map(|v| v.f()).collect();
                 let skinning = match (&reskin, jts.as_ref(), wts.as_ref()) {
@@ -1705,7 +1692,7 @@ pub fn import_with(
                     Some(nrm) => {
                         let v: Vec<f64> = nrm.at(c)?.iter().map(|v| v.f()).collect();
                         if v.len() < 3 {
-                            bail!("tuple index out of range");
+                            bail!("a normal has fewer than 3 numbers");
                         }
                         Some(normalize(&xform_dir(&to_local, &xform_dir(&skinning, &v)), &[0.0, 0.0, 1.0]))
                     }
@@ -1715,7 +1702,7 @@ pub fn import_with(
                     Some(uv) => {
                         let v = uv.at(c)?;
                         if v.len() < 2 {
-                            bail!("tuple index out of range");
+                            bail!("a texture coordinate has fewer than 2 numbers");
                         }
                         Some([v[0].f(), v[1].f()])
                     }
@@ -1727,7 +1714,7 @@ pub fn import_with(
                         v.push(if col.n == 3 { alphas.near(&position) } else { 1.0 });
                         v.truncate(4);
                         if v.len() < 4 {
-                            bail!("tuple index out of range");
+                            bail!("a colour has fewer than 4 numbers");
                         }
                         Some(v)
                     }
@@ -1736,25 +1723,28 @@ pub fn import_with(
                 let mut skin_key = None;
                 if let Some(jts) = jts.as_ref().filter(|v| !v.is_empty()) {
                     let Some(wts) = wts.as_ref() else {
-                        bail!("'NoneType' object is not subscriptable");
+                        bail!("the .glb has no JSON chunk");
                     };
                     let mut pairs: Vec<(Num, i64)> = Vec::new();
                     for (jj, w) in jts.at(c)?.iter().zip(wts.at(c)?) {
                         let Num::Int(jj) = *jj else {
-                            bail!("list indices must be integers or slices, not float");
+                            bail!("a primitive's indices are floats");
                         };
                         if w.f() > 0.0 {
-                            if let Some(bone) = *crate::to_gltf::py_index(&joint_map, jj)? {
+                            if let Some(bone) = *crate::to_gltf::at_index(&joint_map, jj)? {
                                 pairs.push((*w, bone as i64));
                             }
                         }
                     }
                     pairs.sort_by(|a, b| b.0.f().partial_cmp(&a.0.f()).unwrap().then(b.1.cmp(&a.1)));
                     pairs.truncate(4);
-                    let total = py::sum_nums(pairs.iter().map(|(w, _)| *w));
+                    let total = numeric::sum_nums(pairs.iter().map(|(w, _)| *w));
                     let total = if total.f() == 0.0 { 1.0 } else { total.f() };
                     skin_key = Some(
-                        pairs.iter().map(|(w, b)| (*b, KeyFloat(py::round_to(w.f() / total * 100.0, 4)))).collect(),
+                        pairs
+                            .iter()
+                            .map(|(w, b)| (*b, KeyFloat(numeric::round_decimal(w.f() / total * 100.0, 4))))
+                            .collect(),
                     );
                 }
                 corners.push(Corner { position, normal, uv, colour, skin: skin_key });
@@ -1775,7 +1765,7 @@ pub fn import_with(
             }
             for (b, keys) in per_bone {
                 let Ok(b) = i32::try_from(b) else {
-                    bail!("'i' format requires -2147483648 <= number <= 2147483647");
+                    bail!("a value does not fit in a 32-bit int");
                 };
                 new_wgt.push(KeyList::new(target as i32, b, 20, keys));
             }
@@ -1800,12 +1790,12 @@ pub fn import_with(
 /// The name import_gltf gives the frame of glTF node `n`: its name, or for a mesh node without one
 /// its mesh's, Blender's ".001" and a skinned mesh's "_skin" dropped.
 fn frame_name(j: &Value, n: &Value) -> Result<String> {
-    let mut name = match (n.get("name").filter(|v| v.truthy()), n.get("mesh")) {
+    let mut name = match (n.get("name").filter(|v| is_set(v)), n.get("mesh")) {
         (Some(name), _) => clean(Some(name))?,
         (None, Some(mesh)) => clean(index(item(j, "meshes")?, mesh)?.get("name"))?,
         (None, None) => String::new(),
     };
-    if n.has("mesh") && n.has("skin") {
+    if n.get("mesh").is_some() && n.get("skin").is_some() {
         if let Some(stem) = name.strip_suffix("_skin") {
             name = stem.to_string();
         }
@@ -1823,11 +1813,11 @@ fn frame_name(j: &Value, n: &Value) -> Result<String> {
 /// renamed to their frames' names, so what reads it next (motions::new_motion) finds them.
 pub fn new_model(gltf: &mut Gltf, version: u32, root: &str) -> Result<NewModel> {
     let empty = Vec::new();
-    let node_count = gltf.json.get("nodes").and_then(Value::as_list).map_or(0, Vec::len);
+    let node_count = gltf.json.get("nodes").and_then(Value::as_array).map_or(0, Vec::len);
     // every node named, distinctly, as import_gltf will read the names
     let mut names: Vec<String> = Vec::with_capacity(node_count);
     for i in 0..node_count {
-        let n = index(item(&gltf.json, "nodes")?, &Value::Int(i as i64))?;
+        let n = index(item(&gltf.json, "nodes")?, &Value::from(i as i64))?;
         let mut name = frame_name(&gltf.json, n)?;
         if name.is_empty() {
             name = format!("node{i}");
@@ -1840,35 +1830,35 @@ pub fn new_model(gltf: &mut Gltf, version: u32, root: &str) -> Result<NewModel> 
         }
         names.push(name);
     }
-    if let Some(Value::List(nodes)) = gltf.json.get_mut("nodes") {
+    if let Some(Value::Array(nodes)) = gltf.json.get_mut("nodes") {
         for (node, name) in nodes.iter_mut().zip(&names) {
-            node.set("name", Value::Str(name.clone()));
+            node["name"] = Value::String(name.clone());
             // the frames are the glTF's own, found by these names: an index into another model
             // (left by an export) names none of them
             if let Some(Value::Object(extras)) = node.get_mut("extras") {
-                extras.retain(|(key, _)| key != "mds_index");
+                extras.retain(|key, _| key != "mds_index");
             }
         }
     }
     // a material without a texture names none (import_gltf would take the material's name)
-    if let Some(Value::List(materials)) = gltf.json.get_mut("materials") {
+    if let Some(Value::Array(materials)) = gltf.json.get_mut("materials") {
         for material in materials {
-            let textured = material.get("extras").is_some_and(|extras| extras.has("texture"))
-                || material.get("pbrMetallicRoughness").is_some_and(|pbr| pbr.has("baseColorTexture"));
+            let textured = material.get("extras").is_some_and(|extras| extras.get("texture").is_some())
+                || material.get("pbrMetallicRoughness").is_some_and(|pbr| pbr.get("baseColorTexture").is_some());
             if !textured {
                 match material.get_mut("extras") {
-                    Some(extras @ Value::Object(_)) => extras.set("texture", Value::Str(String::new())),
-                    _ => material.set("extras", crate::object! {"texture" => ""}),
+                    Some(extras @ Value::Object(_)) => extras["texture"] = Value::String(String::new()),
+                    _ => material["extras"] = json!({"texture": ""}),
                 }
             }
         }
     }
     let j = &gltf.json;
-    let node_list = item(j, "nodes")?.as_list().unwrap_or(&empty);
+    let node_list = item(j, "nodes")?.as_array().unwrap_or(&empty);
     let mut parent: HashMap<usize, usize> = HashMap::new();
     for (i, n) in node_list.iter().enumerate() {
-        for c in n.get("children").and_then(Value::as_list).unwrap_or(&empty) {
-            match c.as_int() {
+        for c in n.get("children").and_then(Value::as_array).unwrap_or(&empty) {
+            match c.as_i64() {
                 Some(c) if (0..node_count as i64).contains(&c) => {
                     parent.insert(c as usize, i);
                 }
@@ -1894,21 +1884,21 @@ pub fn new_model(gltf: &mut Gltf, version: u32, root: &str) -> Result<NewModel> 
         frame.matrix = floats(&node_matrix(n)?);
         frames.push(frame);
         let at = (frames.len() - 1) as i32;
-        let children = n.get("children").and_then(Value::as_list).unwrap_or(&empty);
+        let children = n.get("children").and_then(Value::as_array).unwrap_or(&empty);
         for c in children.iter().rev() {
-            pending.push((c.as_int().unwrap_or(0) as usize, at));
+            pending.push((c.as_i64().unwrap_or(0) as usize, at));
         }
     }
     if placed.iter().any(|placed| !placed) {
         bail!("the glTF's node hierarchy has a cycle");
     }
-    if !node_list.iter().any(|n| n.has("mesh")) {
+    if !node_list.iter().any(|n| n.get("mesh").is_some()) {
         bail!("the glTF has no mesh");
     }
     let skinned: Vec<String> = node_list
         .iter()
         .zip(&names)
-        .filter(|(n, _)| n.has("mesh") && n.has("skin"))
+        .filter(|(n, _)| n.get("mesh").is_some() && n.get("skin").is_some())
         .map(|(_, name)| name.clone())
         .collect();
     let skeleton = mds::build(&Mds { version, nodes: frames })?;
@@ -1937,15 +1927,15 @@ pub fn image_bytes(gltf: &Gltf, i: &Value, read: &dyn Fn(&str) -> Result<Vec<u8>
         return read(uri);
     }
     let Some(view) = image.get("bufferView") else {
-        bail!("image {} has neither a uri nor a buffer view", i.as_int().unwrap_or(-1));
+        bail!("image {} has neither a uri nor a buffer view", i.as_i64().unwrap_or(-1));
     };
     let view = index(item(&gltf.json, "bufferViews")?, view)?;
-    let buffer = view.get("buffer").and_then(Value::as_int).unwrap_or(0);
+    let buffer = view.get("buffer").and_then(Value::as_i64).unwrap_or(0);
     let Some(buffer) = usize::try_from(buffer).ok().and_then(|b| gltf.buffers.get(b)) else {
-        bail!("list index out of range");
+        bail!("the glTF has no buffer {buffer}");
     };
-    let start = view.get("byteOffset").and_then(Value::as_int).unwrap_or(0).max(0) as usize;
-    let length = view.get("byteLength").and_then(Value::as_int).unwrap_or(0).max(0) as usize;
+    let start = view.get("byteOffset").and_then(Value::as_i64).unwrap_or(0).max(0) as usize;
+    let length = view.get("byteLength").and_then(Value::as_i64).unwrap_or(0).max(0) as usize;
     match buffer.get(start..start + length) {
         Some(bytes) => Ok(bytes.to_vec()),
         None => bail!("an image's buffer view runs past its buffer"),
@@ -1957,9 +1947,9 @@ pub fn image_bytes(gltf: &Gltf, i: &Value, read: &dyn Fn(&str) -> Result<Vec<u8>
 pub fn material_textures(gltf: &Gltf) -> Result<Vec<(String, Value)>> {
     let j = &gltf.json;
     let mut out: Vec<(String, Value)> = Vec::new();
-    let count = j.get("materials").and_then(Value::as_list).map_or(0, Vec::len);
+    let count = j.get("materials").and_then(Value::as_array).map_or(0, Vec::len);
     for m in 0..count {
-        let number = Value::Int(m as i64);
+        let number = Value::from(m as i64);
         let material = index(item(j, "materials")?, &number)?;
         let Some(base) = material.get("pbrMetallicRoughness").and_then(|pbr| pbr.get("baseColorTexture")) else {
             continue;
@@ -1973,7 +1963,7 @@ pub fn material_textures(gltf: &Gltf) -> Result<Vec<(String, Value)>> {
             continue;
         }
         match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(&name)) {
-            Some((_, other)) if other.as_int() != source.as_int() => {
+            Some((_, other)) if other.as_i64() != source.as_i64() => {
                 bail!("two different images are named {name}; give each texture its own name")
             }
             Some(_) => {}
@@ -1990,18 +1980,18 @@ pub fn material_textures(gltf: &Gltf) -> Result<Vec<(String, Value)>> {
 fn animated_nodes_at_rest(json: &Value, model: &Mds, resolved: &[Option<usize>]) -> Result<Value> {
     let mut nodes = item(json, "nodes")?.clone();
     let mut animated = BTreeSet::new();
-    for animation in json.get("animations").and_then(Value::as_list).map(Vec::as_slice).unwrap_or_default() {
-        for channel in animation.get("channels").and_then(Value::as_list).map(Vec::as_slice).unwrap_or_default() {
+    for animation in json.get("animations").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() {
+        for channel in animation.get("channels").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() {
             let target = channel.get("target");
             let path = target.and_then(|t| t.get("path")).and_then(Value::as_str);
             if matches!(path, Some("translation" | "rotation" | "scale")) {
-                if let Some(node) = target.and_then(|t| t.get("node")).and_then(Value::as_int) {
+                if let Some(node) = target.and_then(|t| t.get("node")).and_then(Value::as_i64) {
                     animated.insert(node);
                 }
             }
         }
     }
-    if let Value::List(list) = &mut nodes {
+    if let Value::Array(list) = &mut nodes {
         for (gi, node) in list.iter_mut().enumerate() {
             let frame = resolved.get(gi).copied().flatten();
             let (Some(frame), true) = (frame, animated.contains(&(gi as i64))) else {
@@ -2009,11 +1999,11 @@ fn animated_nodes_at_rest(json: &Value, model: &Mds, resolved: &[Option<usize>])
             };
             let (t, r, s) = crate::to_gltf::decompose(&model.nodes[frame].matrix)?;
             if let Value::Object(items) = node {
-                items.retain(|(key, _)| !matches!(key.as_str(), "matrix" | "translation" | "rotation" | "scale"));
+                items.retain(|key, _| !matches!(key.as_str(), "matrix" | "translation" | "rotation" | "scale"));
             }
-            node.set("translation", Value::floats(&t));
-            node.set("rotation", Value::floats(&r));
-            node.set("scale", Value::floats(&s));
+            node["translation"] = Value::from(t.to_vec());
+            node["rotation"] = Value::from(r.to_vec());
+            node["scale"] = Value::from(s.to_vec());
         }
     }
     Ok(nodes)
@@ -2124,7 +2114,7 @@ fn blender_rotation(m: &Matrix) -> Vec<f64> {
     vec![q[1], q[3], -q[2], q[0]]
 }
 
-/// The glTF world matrix of node i (W in the Python), memoised.
+/// The glTF world matrix of node i, memoised.
 fn world_of(
     i: i64,
     nodes: &Value,
@@ -2138,7 +2128,7 @@ fn world_of(
     if depth > 900 {
         bail!("maximum recursion depth exceeded");
     }
-    let m = node_matrix(index(nodes, &Value::Int(i))?)?;
+    let m = node_matrix(index(nodes, &Value::from(i))?)?;
     let m = match parent.get(&i) {
         Some(&p) => typed_mul(&world_of(p as i64, nodes, parent, world, depth + 1)?, &m),
         None => m,

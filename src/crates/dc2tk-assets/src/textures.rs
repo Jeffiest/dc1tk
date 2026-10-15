@@ -38,8 +38,8 @@ pub fn export(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(out)
 }
 
-/// The files of a folder whose names end in the suffix (ignoring case, as glob does on Windows),
-/// sorted as pathlib sorts them.
+/// The files of a folder whose names end in the suffix (ignoring case, as Windows names do),
+/// in crate::sorted_paths order.
 pub(crate) fn glob_suffix(folder: &Path, suffix: &str) -> Result<Vec<std::path::PathBuf>> {
     let mut found = Vec::new();
     for entry in std::fs::read_dir(folder)? {

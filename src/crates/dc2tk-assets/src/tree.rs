@@ -30,7 +30,7 @@ use dc2tk_disc::extract::{MAX_PACK_DEPTH, PACK_SUFFIX};
 use dc2tk_disc::{archive, rebuild};
 
 use crate::soundbank::{self, Bank, EntryKind};
-use crate::{im3, json as pyjson, models, text, Error, Result};
+use crate::{im3, models, text, Error, Result};
 
 pub const MANIFEST: &str = "manifest.json";
 /// The manifest's layout; changes when a reader of an older one would misread it.
@@ -1153,11 +1153,12 @@ fn export_model(
     let folder = model_folder(asset, files);
     let id_stem = file_stem(&asset.id);
     let up = "../".repeat(folder.split('/').count());
-    let mut json = pyjson::loads(std::str::from_utf8(gltf).map_err(|_| Error::invalid("the glTF is not UTF-8"))?)?;
+    let mut json =
+        crate::from_gltf::load_json(std::str::from_utf8(gltf).map_err(|_| Error::invalid("the glTF is not UTF-8"))?)?;
     let mut out = ModelOut { files: Vec::new(), textures: Vec::new(), placeholders: Vec::new() };
-    if let Some(pyjson::Value::List(images)) = json.get_mut("images") {
+    if let Some(serde_json::Value::Array(images)) = json.get_mut("images") {
         for image in images {
-            let name = image.get("name").and_then(pyjson::Value::as_str).unwrap_or_default().to_string();
+            let name = image.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
             let png = get(&format!("{}/{name}.png", models::TEXTURES))
                 .ok_or_else(|| Error::invalid(format!("the export has no texture {name}")))?;
             let found =
@@ -1165,7 +1166,7 @@ fn export_model(
             match found {
                 Some(id) => {
                     let (file, _) = &texture_files[id];
-                    image.set("uri", pyjson::Value::Str(uri_path(&format!("{up}{file}"))));
+                    image["uri"] = serde_json::Value::String(uri_path(&format!("{up}{file}")));
                     if !out.textures.contains(id) {
                         out.textures.push(id.clone());
                     }
@@ -1179,12 +1180,12 @@ fn export_model(
             }
         }
     }
-    if let Some(pyjson::Value::List(buffers)) = json.get_mut("buffers") {
+    if let Some(serde_json::Value::Array(buffers)) = json.get_mut("buffers") {
         if let Some(buffer) = buffers.first_mut() {
-            buffer.set("uri", pyjson::Value::Str(uri_path(&format!("{id_stem}.bin"))));
+            buffer["uri"] = serde_json::Value::String(uri_path(&format!("{id_stem}.bin")));
         }
     }
-    let text = pyjson::dumps_compact(&json).into_bytes();
+    let text = serde_json::to_string(&json).expect("a JSON value serializes").into_bytes();
     let gltf_path = format!("{folder}/{id_stem}.gltf");
     let bin_path = format!("{folder}/{id_stem}.bin");
     write(&gltf_path, &text)?;
@@ -1199,19 +1200,21 @@ fn export_model(
 /// takes its meshes, skin and pose from the glTF; its textures are assets of their own.
 pub fn exported_gltf(tree_gltf: &[u8], pack: &[u8], name: &str) -> Result<(String, Vec<u8>)> {
     let stem = models::unpacked(&model_pack(pack, name).0)?.1.stem;
-    let mut json = pyjson::loads(std::str::from_utf8(tree_gltf).map_err(|_| Error::invalid("the glTF is not UTF-8"))?)?;
-    if let Some(pyjson::Value::List(images)) = json.get_mut("images") {
+    let mut json = crate::from_gltf::load_json(
+        std::str::from_utf8(tree_gltf).map_err(|_| Error::invalid("the glTF is not UTF-8"))?,
+    )?;
+    if let Some(serde_json::Value::Array(images)) = json.get_mut("images") {
         for image in images {
-            let name = image.get("name").and_then(pyjson::Value::as_str).unwrap_or_default().to_string();
-            image.set("uri", pyjson::Value::Str(format!("{}/{name}.png", models::TEXTURES)));
+            let name = image.get("name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+            image["uri"] = serde_json::Value::String(format!("{}/{name}.png", models::TEXTURES));
         }
     }
-    if let Some(pyjson::Value::List(buffers)) = json.get_mut("buffers") {
+    if let Some(serde_json::Value::Array(buffers)) = json.get_mut("buffers") {
         if let Some(buffer) = buffers.first_mut() {
-            buffer.set("uri", pyjson::Value::Str(format!("{stem}.bin")));
+            buffer["uri"] = serde_json::Value::String(format!("{stem}.bin"));
         }
     }
-    Ok((stem, pyjson::dumps_compact(&json).into_bytes()))
+    Ok((stem, serde_json::to_string(&json).expect("a JSON value serializes").into_bytes()))
 }
 
 const INFO_CFG: &str = "info.cfg";
@@ -1290,12 +1293,13 @@ pub fn build_model_from(gltf: &[u8], bin: &[u8], data: &[u8], name: &str, folder
 
 /// The bytes of a glTF file's buffer: the file its first buffer's uri names, beside the glTF.
 pub fn gltf_buffer(path: &std::path::Path, gltf: &[u8]) -> Result<Vec<u8>> {
-    let json = pyjson::loads(std::str::from_utf8(gltf).map_err(|_| Error::invalid("the glTF is not UTF-8"))?)?;
-    let buffers = json.get("buffers").and_then(pyjson::Value::as_list).map(Vec::as_slice).unwrap_or_default();
+    let json =
+        crate::from_gltf::load_json(std::str::from_utf8(gltf).map_err(|_| Error::invalid("the glTF is not UTF-8"))?)?;
+    let buffers = json.get("buffers").and_then(serde_json::Value::as_array).map(Vec::as_slice).unwrap_or_default();
     let [buffer] = buffers else {
         return Err(Error::invalid(format!("{}: a model's glTF has one buffer", path.display())));
     };
-    let uri = buffer.get("uri").and_then(pyjson::Value::as_str).unwrap_or_default();
+    let uri = buffer.get("uri").and_then(serde_json::Value::as_str).unwrap_or_default();
     if uri.is_empty() || uri.starts_with("data:") {
         return Err(Error::invalid(format!(
             "{}: the glTF's buffer must be a .bin file beside it (glTF Separate)",
@@ -1593,11 +1597,12 @@ enum item_id {
         let model = &assets["model:c01"];
         assert_eq!(model["textures"], json!(["texture:tex01", "texture:tex02"]));
         assert_eq!(model["placeholders"], json!(["nowhere"]));
-        let gltf = pyjson::loads(std::str::from_utf8(&written["models/chara/c01/c01.gltf"]).unwrap()).unwrap();
+        let gltf =
+            crate::from_gltf::load_json(std::str::from_utf8(&written["models/chara/c01/c01.gltf"]).unwrap()).unwrap();
         let uris: Vec<&str> = gltf
             .get("images")
             .unwrap()
-            .as_list()
+            .as_array()
             .unwrap()
             .iter()
             .map(|i| i.get("uri").unwrap().as_str().unwrap())
@@ -1607,10 +1612,12 @@ enum item_id {
             ["../../../textures/chara/tex01.png", "../../../textures/map/a/tex02.png", "textures/nowhere.png"]
         );
         assert!(written.contains_key("models/chara/c01/textures/nowhere.png"));
-        assert_eq!(gltf.get("buffers").unwrap().as_list().unwrap()[0].get("uri").unwrap().as_str(), Some("c01.bin"));
-        let menu = pyjson::loads(std::str::from_utf8(&written["models/menu/c01@menu/c01@menu.gltf"]).unwrap()).unwrap();
+        assert_eq!(gltf.get("buffers").unwrap().as_array().unwrap()[0].get("uri").unwrap().as_str(), Some("c01.bin"));
+        let menu =
+            crate::from_gltf::load_json(std::str::from_utf8(&written["models/menu/c01@menu/c01@menu.gltf"]).unwrap())
+                .unwrap();
         assert_eq!(
-            menu.get("buffers").unwrap().as_list().unwrap()[0].get("uri").unwrap().as_str(),
+            menu.get("buffers").unwrap().as_array().unwrap()[0].get("uri").unwrap().as_str(),
             Some("c01@menu.bin")
         );
 

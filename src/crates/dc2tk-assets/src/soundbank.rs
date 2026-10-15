@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use dc2tk_disc::text;
 
-use crate::{bail, py, Error, Result};
+use crate::{bail, numeric, Error, Result};
 
 pub const PACK_NAME: usize = 64;
 pub const PACK_SLOT: usize = 0x50;
@@ -15,7 +15,7 @@ pub const PACK_ALIGN: usize = 16;
 fn i32_at(data: &[u8], at: usize) -> Result<i32> {
     match data.get(at..at + 4) {
         Some(b) => Ok(i32::from_le_bytes(b.try_into().unwrap())),
-        None => bail!("unpack_from requires a buffer of at least {} bytes", at + 4),
+        None => bail!("the data is shorter than the {} bytes read here", at + 4),
     }
 }
 
@@ -26,7 +26,7 @@ fn u32_at(data: &[u8], at: usize) -> Result<u32> {
 fn u16_at(data: &[u8], at: usize) -> Result<u16> {
     match data.get(at..at + 2) {
         Some(b) => Ok(u16::from_le_bytes([b[0], b[1]])),
-        None => bail!("unpack_from requires a buffer of at least {} bytes", at + 2),
+        None => bail!("the data is shorter than the {} bytes read here", at + 2),
     }
 }
 
@@ -86,7 +86,7 @@ impl Pack {
                 bail!("subsection not found");
             };
             let Some(name) = text::decode_strict(&raw[..end]) else {
-                bail!("'cp932' codec can't decode the member name at 0x{off:x}");
+                bail!("the member name at 0x{off:x} is not cp932");
             };
             let (doff, size, next) = (
                 i32_at(data, off + PACK_NAME)?,
@@ -161,7 +161,7 @@ fn format_size(format: u8) -> usize {
     }
 }
 
-/// A record of a Layout, its values as Python ints.
+/// A record of a Layout, its values as wide ints (each field's range is checked when written).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Record {
     pub values: Vec<i64>,
@@ -304,7 +304,7 @@ impl Record {
         for (_, format) in fields {
             let size = format_size(*format);
             let Some(b) = data.get(pos..pos + size) else {
-                bail!("unpack_from requires a buffer of at least {} bytes", at + layout.layout().size());
+                bail!("the data is shorter than the {} bytes read here", at + layout.layout().size());
             };
             values.push(match format {
                 b'B' => b[0] as i64,
@@ -331,7 +331,7 @@ impl Record {
                 _ => (-0x8000_0000, 0x7FFF_FFFF),
             };
             if v < low || v > high {
-                bail!("'{}' format requires {} <= number <= {}", *format as char, low, high);
+                bail!("a value does not fit the record's field, which holds {low} to {high}");
             }
             out.extend(&(v as u32).to_le_bytes()[..format_size(*format)]);
         }
@@ -376,7 +376,7 @@ pub struct SampleSet {
 impl SampleSet {
     fn unpack(data: &[u8], at: usize) -> Result<SampleSet> {
         let Some(head) = data.get(at..at + 4) else {
-            bail!("unpack_from requires a buffer of at least {} bytes", at + 4);
+            bail!("the data is shorter than the {} bytes read here", at + 4);
         };
         let samples = (0..head[3] as usize).map(|i| Ok(u16_at(data, at + 4 + 2 * i)? as i64)).collect::<Result<_>>()?;
         Ok(SampleSet {
@@ -391,13 +391,13 @@ impl SampleSet {
         let mut out = Vec::new();
         for v in [self.vel_curve, self.vel_limit_low, self.vel_limit_high, self.samples.len() as i64] {
             if !(0..=0xFF).contains(&v) {
-                bail!("ubyte format requires 0 <= number <= 255");
+                bail!("a value does not fit in a byte");
             }
             out.push(v as u8);
         }
         for &s in &self.samples {
             if !(0..=0xFFFF).contains(&s) {
-                bail!("'H' format requires 0 <= number <= 65535");
+                bail!("a value does not fit in an unsigned 16-bit int");
             }
             out.extend((s as u16).to_le_bytes());
         }
@@ -419,7 +419,7 @@ fn chunks(data: &[u8]) -> Result<Vec<(String, usize, usize)>> {
     let mut off = 0;
     while off < data.len() {
         if off + 12 > data.len() {
-            bail!("unpack_from requires a buffer of at least {} bytes", off + 12);
+            bail!("the data is shorter than the {} bytes read here", off + 12);
         }
         let size = u32_at(data, off + 8)? as usize;
         if &data[off..off + 4] != CREATOR || size < 12 || off + size > data.len() {
@@ -427,7 +427,7 @@ fn chunks(data: &[u8]) -> Result<Vec<(String, usize, usize)>> {
         }
         let kind: Vec<u8> = data[off + 4..off + 8].iter().rev().copied().collect();
         if !kind.is_ascii() {
-            bail!("'ascii' codec can't decode a chunk name");
+            bail!("a chunk name is not ASCII");
         }
         out.push((String::from_utf8(kind).unwrap(), off, size));
         off += size;
@@ -552,7 +552,7 @@ impl Hd {
         })
     }
 
-    /// The .hd bytes; sets each program's n_split to its splits, as the Python does.
+    /// The .hd bytes; sets each program's n_split to its splits, so the count always matches.
     pub fn build(&mut self, body_size: usize) -> Result<Vec<u8>> {
         let mut vers = CREATOR.to_vec();
         vers.extend(tag("Vers"));
@@ -762,7 +762,7 @@ pub fn encode_adpcm(samples: &[i64], loop_start: Option<i64>, full: bool) -> Res
     let blocks = samples.len() / BLOCK_SAMPLES;
     let mut loop_block = 0;
     if let Some(start) = loop_start {
-        if py::modulo(start, BLOCK_SAMPLES as i64) != 0 || !(0..samples.len() as i64).contains(&start) {
+        if start.rem_euclid(BLOCK_SAMPLES as i64) != 0 || !(0..samples.len() as i64).contains(&start) {
             bail!("loop start must be a block start inside the sound");
         }
         loop_block = start as usize / BLOCK_SAMPLES;
@@ -817,7 +817,7 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
         let body = slice(data, off + 8, off + 8 + size);
         if id == b"fmt " {
             if body.len() < 16 {
-                bail!("unpack_from requires a buffer of at least 16 bytes");
+                bail!("the data is shorter than the 16 bytes read here");
             }
             let mut tag = u16_at(body, 0)?;
             let channels = u16_at(body, 2)? as usize;
@@ -862,7 +862,7 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
         _ => bail!("unsupported WAV format {tag} with {bits} bits"),
     };
     let values: Vec<f64> = if channels > 1 {
-        values.chunks(channels).map(|frame| dc2tk_py::sum_floats(frame.iter().copied()) / channels as f64).collect()
+        values.chunks(channels).map(|frame| numeric::compensated_sum(frame.iter().copied()) / channels as f64).collect()
     } else {
         values
     };
@@ -874,7 +874,7 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
         if v.is_infinite() {
             bail!("cannot convert float infinity to integer");
         }
-        samples.push((py::round(v) as i64).clamp(-32768, 32767));
+        samples.push((v.round_ties_even() as i64).clamp(-32768, 32767));
     }
     let mut loop_start = None;
     if let Some((start, end)) = wav_loop {
@@ -891,14 +891,14 @@ pub fn wav_bytes(sound: &Sound) -> Result<Vec<u8>> {
     let mut body = Vec::with_capacity(2 * sound.samples.len());
     for &s in &sound.samples {
         let Ok(s) = i16::try_from(s) else {
-            bail!("short format requires -32768 <= number <= 32767");
+            bail!("a value does not fit in a 16-bit int");
         };
         body.extend(s.to_le_bytes());
     }
     let u32_of = |v: i64| -> Result<[u8; 4]> {
         match u32::try_from(v) {
             Ok(v) => Ok(v.to_le_bytes()),
-            Err(_) => bail!("'I' format requires 0 <= number <= 4294967295"),
+            Err(_) => bail!("a value does not fit in an unsigned 32-bit int"),
         }
     };
     let mut chunks = b"fmt ".to_vec();
@@ -918,9 +918,9 @@ pub fn wav_bytes(sound: &Sound) -> Result<Vec<u8>> {
     }
     if let Some(loop_start) = sound.loop_start {
         if sound.rate == 0 {
-            bail!("float division by zero");
+            bail!("a sound with a rate of 0");
         }
-        let period = py::round_int(1e9 / sound.rate as f64);
+        let period = (1e9 / sound.rate as f64).round_ties_even() as i64;
         let mut smpl = Vec::new();
         for v in [0, 0, period, 60, 0, 0, 0, 1, 0, 0, 0, loop_start, sound.samples.len() as i64 - 1, 0, 0] {
             smpl.extend(u32_of(v)?);
@@ -943,9 +943,9 @@ pub fn resample(samples: &[i64], src_rate: i64, dst_rate: i64) -> Vec<i64> {
         return samples.to_vec();
     }
     let ratio = dst_rate as f64 / src_rate as f64;
-    let cut = py::min(1.0, ratio);
+    let cut = numeric::min(1.0, ratio);
     let width = (half_width / cut).ceil() as i64;
-    let n_out = py::round_int(samples.len() as f64 * ratio).max(1);
+    let n_out = ((samples.len() as f64 * ratio).round_ties_even() as i64).max(1);
     let n = samples.len() as i64;
     let pi = std::f64::consts::PI;
     let mut out = Vec::with_capacity(n_out as usize);
@@ -965,7 +965,7 @@ pub fn resample(samples: &[i64], src_rate: i64, dst_rate: i64) -> Vec<i64> {
                 acc += samples[j as usize] as f64 * sinc * w;
             }
         }
-        out.push((py::round(acc) as i64).clamp(-32768, 32767));
+        out.push((acc.round_ties_even() as i64).clamp(-32768, 32767));
     }
     out
 }
@@ -985,7 +985,7 @@ pub fn prepare_loop(sound: &Sound) -> Result<Sound> {
     let Some(loop_start) = sound.loop_start else {
         return Ok(Sound { rate: sound.rate, samples: sound.samples.clone(), loop_start: None });
     };
-    let lead = py::modulo(-loop_start, BLOCK_SAMPLES as i64);
+    let lead = (-loop_start).rem_euclid(BLOCK_SAMPLES as i64);
     let mut s = vec![0i64; lead as usize];
     s.extend(&sound.samples);
     let ls = loop_start + lead;
@@ -998,7 +998,8 @@ pub fn prepare_loop(sound: &Sound) -> Result<Sound> {
     if k <= 4 {
         body = body.repeat(k);
     } else {
-        let target = (py::round_int(body.len() as f64 / BLOCK_SAMPLES as f64) * BLOCK_SAMPLES as i64).max(28);
+        let target =
+            ((body.len() as f64 / BLOCK_SAMPLES as f64).round_ties_even() as i64 * BLOCK_SAMPLES as i64).max(28);
         body = resample(&body, body.len() as i64, target);
         body.resize((target as usize).max(body.len()), 0);
         body.truncate(target as usize);
@@ -1106,7 +1107,7 @@ fn vlq(b: &[u8], mut p: usize) -> Result<(usize, usize)> {
     let mut v = 0usize;
     loop {
         let Some(&c) = b.get(p) else {
-            bail!("index out of range");
+            bail!("a variable-length number runs past the end of the data");
         };
         p += 1;
         v = (v << 7) | (c & 0x7F) as usize;
@@ -1119,7 +1120,7 @@ fn vlq(b: &[u8], mut p: usize) -> Result<(usize, usize)> {
 fn byte_at(data: &[u8], p: usize) -> Result<u8> {
     match data.get(p) {
         Some(&b) => Ok(b),
-        None => bail!("index out of range"),
+        None => bail!("the picture's data runs past the picture it is based on"),
     }
 }
 
@@ -1304,11 +1305,11 @@ pub struct Bank {
 }
 
 fn decode(bytes: &[u8]) -> Result<String> {
-    text::decode_strict(bytes).ok_or_else(|| Error::invalid("'cp932' codec can't decode bytes"))
+    text::decode_strict(bytes).ok_or_else(|| Error::invalid(format!("{bytes:02x?} is not cp932 text")))
 }
 
 fn encode(text_: &str) -> Result<Vec<u8>> {
-    text::encode(text_).ok_or_else(|| Error::invalid("'cp932' codec can't encode character"))
+    text::encode(text_).ok_or_else(|| Error::invalid(format!("{text_:?} has a character cp932 cannot encode")))
 }
 
 impl Bank {
@@ -1553,7 +1554,7 @@ impl Bank {
         let mut ls = sound.loop_start;
         if let Some(start) = ls {
             if rate != sound.rate {
-                ls = Some(py::round_int((start * rate) as f64 / sound.rate as f64));
+                ls = Some(((start * rate) as f64 / sound.rate as f64).round_ties_even() as i64);
             }
         }
         if wanted == Some(true) && ls.is_none() {
@@ -1841,7 +1842,7 @@ impl Bank {
     pub fn add_entry(&mut self, sound: &Sound, name: &str, category: &str, volume: i64, key: i64) -> Result<usize> {
         for text_ in [name, category] {
             if encode(text_)?.len() > 63 {
-                bail!("{} is longer than 63 bytes", crate::im3::str_repr(text_));
+                bail!("{text_:?} is longer than 63 bytes");
             }
         }
         let prog = self.new_chain(sound, key, None, None, None)?;

@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 
-use crate::{bail, py, Error, Result};
+use crate::{bail, Error, Result};
 
 pub const IM3_ENTRY: usize = 0x40;
 pub const IM1_ENTRY: usize = 0x30;
@@ -264,11 +264,7 @@ impl Image {
 fn lookup(indices: &[u8], palette: &[[u8; 4]], fill: [u8; 4]) -> Result<Vec<u8>> {
     let mut out = Vec::with_capacity(indices.len() * 4);
     for &i in indices {
-        let colour = match palette.get(i as usize) {
-            Some(colour) => *colour,
-            None if palette.len() <= i as usize && (i as usize) < 256 => fill,
-            None => bail!("list index out of range"),
-        };
+        let colour = palette.get(i as usize).copied().unwrap_or(fill);
         out.extend(colour);
     }
     Ok(out)
@@ -277,14 +273,14 @@ fn lookup(indices: &[u8], palette: &[[u8; 4]], fill: [u8; 4]) -> Result<Vec<u8>>
 fn u16_at(data: &[u8], at: usize) -> Result<u16> {
     match data.get(at..at + 2) {
         Some(b) => Ok(u16::from_le_bytes([b[0], b[1]])),
-        None => bail!("unpack_from requires a buffer of at least {} bytes", at + 2),
+        None => bail!("the data is shorter than the {} bytes read here", at + 2),
     }
 }
 
 fn u32_at(data: &[u8], at: usize) -> Result<u32> {
     match data.get(at..at + 4) {
         Some(b) => Ok(u32::from_le_bytes(b.try_into().unwrap())),
-        None => bail!("unpack_from requires a buffer of at least {} bytes", at + 4),
+        None => bail!("the data is shorter than the {} bytes read here", at + 4),
     }
 }
 
@@ -295,17 +291,17 @@ fn i32_at(data: &[u8], at: usize) -> Result<i32> {
 fn u64_at(data: &[u8], at: usize) -> Result<u64> {
     match data.get(at..at + 8) {
         Some(b) => Ok(u64::from_le_bytes(b.try_into().unwrap())),
-        None => bail!("unpack_from requires a buffer of at least {} bytes", at + 8),
+        None => bail!("the data is shorter than the {} bytes read here", at + 8),
     }
 }
 
-/// data[start:end] with Python's clamping of a slice to the data.
+/// data[start..end], each end clamped to the data (an end past it, or before start, makes the slice shorter or empty).
 fn slice(data: &[u8], start: usize, end: usize) -> &[u8] {
     let start = start.min(data.len());
     &data[start..end.clamp(start, data.len())]
 }
 
-/// struct.pack_into: the bytes at `at`, which must fit.
+/// Writes the bytes at `at`, which must fit in the buffer.
 fn put(buffer: &mut [u8], at: usize, bytes: &[u8]) -> Result<()> {
     match buffer.get_mut(at..at + bytes.len()) {
         Some(target) => {
@@ -350,7 +346,7 @@ fn parse_archive(data: &[u8]) -> Result<(Option<Kind>, Vec<Entry>)> {
         b"IM3" => (Kind::Im3, u32_at(data, 8)?, IM3_ENTRY),
         b"IM2" => (Kind::Im2, u32_at(data, 4)?, IM1_ENTRY),
         b"IMG" => (Kind::Img, u32_at(data, 4)?, IM1_ENTRY),
-        _ => bail!("unknown archive tag {}", bytes_repr(&data[..4])),
+        _ => bail!("unknown archive tag {}", data[..4].escape_ascii()),
     };
     let mut entries = Vec::new();
     for i in 0..count as usize {
@@ -373,7 +369,7 @@ fn parse_archive(data: &[u8]) -> Result<(Option<Kind>, Vec<Entry>)> {
         };
         if kind == Kind::Im3 {
             if raw.len() < 0x40 {
-                bail!("unpack_from requires a buffer of at least 64 bytes for unpacking 32 bytes at offset 32 (actual buffer size is {})", raw.len());
+                bail!("an IM3 entry is {} bytes, short of 64", raw.len());
             }
             entry.script = entry.name.first() == Some(&b'#');
             entry.offset = i32_at(&raw, 0x24)?;
@@ -392,25 +388,7 @@ fn parse_archive(data: &[u8]) -> Result<(Option<Kind>, Vec<Entry>)> {
     Ok((Some(kind), entries))
 }
 
-/// Python's repr() of bytes, for messages.
-fn bytes_repr(data: &[u8]) -> String {
-    let mut out = String::from("b'");
-    for &b in data {
-        match b {
-            b'\\' => out.push_str("\\\\"),
-            b'\'' => out.push_str("\\'"),
-            b'\t' => out.push_str("\\t"),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            0x20..=0x7E => out.push(b as char),
-            _ => out.push_str(&format!("\\x{b:02x}")),
-        }
-    }
-    out.push('\'');
-    out
-}
-
-/// Where a TIM2 starts, as a position in the data (Python indexes a negative offset from the end).
+/// Where a TIM2 starts, as a position in the data; an offset outside the data is an error.
 fn tim2_start(data: &[u8], offset: i32) -> Result<usize> {
     if offset < 0 || offset as usize > data.len() {
         bail!("no TIM2 at 0x{:x}", offset);
@@ -458,7 +436,7 @@ struct Header {
 
 fn header(tim: &[u8]) -> Result<Header> {
     if tim.len() < 40 {
-        bail!("unpack_from requires a buffer of at least 40 bytes for unpacking 24 bytes at offset 16 (actual buffer size is {})", tim.len());
+        bail!("a TIM2 is {} bytes, short of its 40-byte header", tim.len());
     }
     Ok(Header {
         total: u32_at(tim, 16)?,
@@ -598,7 +576,7 @@ fn encode_level(
                 } else {
                     match base.get(i - data.len()) {
                         Some(&b) => Ok(b),
-                        None => bail!("index out of range"),
+                        None => bail!("the picture's data runs past the picture it is based on"),
                     }
                 }
             };
@@ -610,7 +588,7 @@ fn encode_level(
             let mut hi: Vec<u8> = data.iter().skip(1).step_by(2).copied().collect();
             if hi.len() < lo.len() {
                 let Some(last) = base.last() else {
-                    bail!("index out of range");
+                    bail!("the picture's data runs past the picture it is based on");
                 };
                 hi.push(last >> 4);
             }
@@ -630,7 +608,7 @@ fn encode_level(
             let mut out = Vec::with_capacity(2 * n);
             for i in 0..n {
                 let Some(p) = data.get(4 * i..4 * i + 4) else {
-                    bail!("not enough values to unpack (expected 4, got {})", data.len().saturating_sub(4 * i).min(4));
+                    bail!("palette entry {i} has fewer than 4 bytes");
                 };
                 let v = (p[0] as u16 >> 3)
                     | ((p[1] as u16 >> 3) << 5)
@@ -672,8 +650,8 @@ fn encode_clut(palette: &[[u8; 4]], format: Format, base: Option<&[u8]>) -> Vec<
 }
 
 fn tex0_fields(w: usize, h: usize) -> (u64, u64, u64) {
-    let tw = py::bit_length(w as i64 - 1) as u64;
-    let th = py::bit_length(h as i64 - 1) as u64;
+    let tw = w.next_power_of_two().trailing_zeros() as u64;
+    let th = h.next_power_of_two().trailing_zeros() as u64;
     let tbw = (w as u64).div_ceil(64).max(1);
     (tbw, tw, th)
 }
@@ -696,7 +674,7 @@ fn build_header(image: &Image, old: Option<&[u8]>) -> Result<(Vec<u8>, Vec<usize
     let image_size: usize = sizes.iter().sum();
     let (colours, clut_size, mut clut_type) = match (&image.palette, image.paletted()) {
         (Some(palette), true) => (palette.len(), 4 * palette.len(), 3u8),
-        (None, true) => bail!("object of type 'NoneType' has no len()"),
+        (None, true) => bail!("{} is paletted but has no palette", image.name),
         _ => (0, 0, 0),
     };
     let (file_header, mut tex0, tex1, regs, tclut, pf, rule, old_total);
@@ -855,14 +833,17 @@ pub fn read(data: &[u8]) -> Result<Vec<Image>> {
 
 fn latin1(text: &str) -> Result<Vec<u8>> {
     text.chars()
-        .map(|c| u8::try_from(c as u32).map_err(|_| Error::invalid("'latin-1' codec can't encode character")))
+        .map(|c| {
+            u8::try_from(c as u32)
+                .map_err(|_| Error::invalid(format!("{text:?} has a character Latin-1 cannot encode")))
+        })
         .collect()
 }
 
 fn name_field(image: &Image) -> Result<Vec<u8>> {
     let name = latin1(&image.name)?;
     if name.len() > 0x1F {
-        bail!("name {} longer than 31 bytes", str_repr(&image.name));
+        bail!("name {:?} longer than 31 bytes", image.name);
     }
     if let Some(raw) = &image.raw_name {
         if raw.split(|&b| b == 0).next().unwrap_or_default() == name.as_slice() {
@@ -872,30 +853,6 @@ fn name_field(image: &Image) -> Result<Vec<u8>> {
     let mut field = name;
     field.resize(0x20, 0);
     Ok(field)
-}
-
-/// Python's repr() of a str, for messages (the quotes it picks and the escapes of ASCII).
-pub(crate) fn str_repr(text: &str) -> String {
-    let quote = if text.contains('\'') && !text.contains('"') { '"' } else { '\'' };
-    let mut out = String::new();
-    out.push(quote);
-    for c in text.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c == quote => {
-                out.push('\\');
-                out.push(c);
-            }
-            c if (c as u32) < 0x20 || c as u32 == 0x7F => out.push_str(&format!("\\x{:02x}", c as u32)),
-            c if (0x80..0xA0).contains(&(c as u32)) || c == '\u{AD}' => out.push_str(&format!("\\x{:02x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push(quote);
-    out
 }
 
 /// bytearray slice assignment buffer[start:end] = new (which can change the length).
@@ -1014,7 +971,7 @@ pub fn write(images: &[Image], like: Option<&[u8]>) -> Result<Vec<u8>> {
 }
 
 fn checked_i32(value: i64) -> Result<i32> {
-    i32::try_from(value).map_err(|_| Error::invalid("'i' format requires -2147483648 <= number <= 2147483647"))
+    i32::try_from(value).map_err(|_| Error::invalid(format!("{value} does not fit in a 32-bit int")))
 }
 
 fn entry_bytes(image: &Image, offset: usize, size: usize) -> Result<Vec<u8>> {
@@ -1027,7 +984,7 @@ fn entry_bytes(image: &Image, offset: usize, size: usize) -> Result<Vec<u8>> {
     out.extend(0i16.to_le_bytes());
     out.extend(checked_i32(size as i64)?.to_le_bytes());
     let Some(clamp) = image.clamp else {
-        bail!("unsupported operand type(s) for &: 'NoneType' and 'int'");
+        bail!("{} has no clamp setting", image.name);
     };
     out.extend(clamp.to_le_bytes());
     Ok(out)
@@ -1125,7 +1082,7 @@ fn chunk(tag: &[u8], body: &[u8]) -> Vec<u8> {
     out
 }
 
-/// zlib.compress(data, level): the bytes CPython's zlib (1.3.1) writes.
+/// The data as a zlib stream at a compression level, as the zlib library (1.3.1) writes it.
 pub fn compress(data: &[u8], level: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len() / 2 + 64);
     let mut stream = flate2::Compress::new(flate2::Compression::new(level), true);
@@ -1226,7 +1183,7 @@ fn unfilter(raw: &[u8], width: usize, height: usize, bits_pp: usize) -> Result<(
     let mut pos = 0;
     for _ in 0..height {
         let Some(&filter) = raw.get(pos) else {
-            bail!("index out of range");
+            bail!("the PNG's image data ends before its last row");
         };
         let mut line = slice(raw, pos + 1, pos + 1 + stride).to_vec();
         pos += 1 + stride;
@@ -1235,7 +1192,7 @@ fn unfilter(raw: &[u8], width: usize, height: usize, bits_pp: usize) -> Result<(
             0 => {}
             1 => {
                 if short && stride > bpp {
-                    bail!("bytearray index out of range");
+                    bail!("the PNG's image data ends inside a row");
                 }
                 for i in bpp..stride {
                     line[i] = line[i].wrapping_add(line[i - bpp]);
@@ -1246,7 +1203,7 @@ fn unfilter(raw: &[u8], width: usize, height: usize, bits_pp: usize) -> Result<(
             }
             3 => {
                 if short {
-                    bail!("bytearray index out of range");
+                    bail!("the PNG's image data ends inside a row");
                 }
                 for i in 0..stride {
                     let left = if i >= bpp { line[i - bpp] as u32 } else { 0 };
@@ -1255,7 +1212,7 @@ fn unfilter(raw: &[u8], width: usize, height: usize, bits_pp: usize) -> Result<(
             }
             4 => {
                 if short {
-                    bail!("bytearray index out of range");
+                    bail!("the PNG's image data ends inside a row");
                 }
                 for i in 0..stride {
                     let a = if i >= bpp { line[i - bpp] as i32 } else { 0 };
@@ -1337,7 +1294,7 @@ pub fn read_png(png: &[u8]) -> Result<Png> {
     let (mut plte, mut trns, mut ihdr) = (None, None, None);
     while pos < png.len() {
         if pos + 8 > png.len() {
-            bail!("unpack_from requires a buffer of at least {} bytes", pos + 8);
+            bail!("the data is shorter than the {} bytes read here", pos + 8);
         }
         let n = u32::from_be_bytes(png[pos..pos + 4].try_into().unwrap()) as usize;
         let tag = &png[pos + 4..pos + 8];
@@ -1358,7 +1315,7 @@ pub fn read_png(png: &[u8]) -> Result<Png> {
         }
     }
     let Some(ihdr) = ihdr else {
-        bail!("cannot unpack non-iterable NoneType object");
+        bail!("the PNG has no IHDR chunk");
     };
     let w = u32::from_be_bytes(ihdr[0..4].try_into().unwrap()) as usize;
     let h = u32::from_be_bytes(ihdr[4..8].try_into().unwrap()) as usize;
@@ -1575,7 +1532,7 @@ fn median_cut(colours: Vec<(Colour, u64)>, n: usize) -> Vec<Colour> {
             let mut colour = [0u8; 4];
             for (a, slot) in colour.iter_mut().enumerate() {
                 let weighted: u64 = b.iter().map(|(c, w)| c[a] as u64 * w).sum();
-                *slot = py::round_int(weighted as f64 / total as f64) as u8;
+                *slot = (weighted as f64 / total as f64).round_ties_even() as u8;
             }
             colour
         })

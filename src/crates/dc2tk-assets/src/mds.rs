@@ -4,7 +4,7 @@
 
 use dc2tk_disc::text;
 
-use crate::{bail, py, Result};
+use crate::{bail, numeric, Result};
 
 pub const PRIM_TRIANGLES: u32 = 3;
 pub const PRIM_STRIP: u32 = 4;
@@ -17,7 +17,7 @@ pub const IDENT: [f64; 16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 
 pub(crate) fn i32_at(data: &[u8], at: usize) -> Result<i32> {
     match data.get(at..at + 4) {
         Some(b) => Ok(i32::from_le_bytes(b.try_into().unwrap())),
-        None => bail!("unpack_from requires a buffer of at least {} bytes", at + 4),
+        None => bail!("the data is shorter than the {} bytes read here", at + 4),
     }
 }
 
@@ -25,9 +25,9 @@ pub(crate) fn u32_at(data: &[u8], at: usize) -> Result<u32> {
     Ok(i32_at(data, at)? as u32)
 }
 
-/// struct.unpack_from('<f'): a float32 as a double, a signalling NaN made quiet as the CPU does.
+/// A little-endian float32 as a double, a signalling NaN made quiet as the CPU does.
 pub(crate) fn f32_at(data: &[u8], at: usize) -> Result<f64> {
-    Ok(py::unpack_f32(u32_at(data, at)?))
+    Ok(numeric::f32_value(u32_at(data, at)?))
 }
 
 pub(crate) fn floats_at<const N: usize>(data: &[u8], at: usize) -> Result<[f64; N]> {
@@ -38,10 +38,10 @@ pub(crate) fn floats_at<const N: usize>(data: &[u8], at: usize) -> Result<[f64; 
     Ok(out)
 }
 
-/// struct.pack('<Nf', *values).
+/// The values as little-endian float32s (numeric::f32_bytes).
 pub(crate) fn pack_floats(values: &[f64], out: &mut Vec<u8>) -> Result<()> {
     for &v in values {
-        out.extend(py::pack_f32(v)?);
+        out.extend(numeric::f32_bytes(v)?);
     }
     Ok(())
 }
@@ -71,16 +71,16 @@ fn name_out(name: &str, raw: &Option<Vec<u8>>, size: usize) -> Result<Vec<u8>> {
         return Ok(raw.clone());
     }
     let Some(mut bytes) = text::encode(name) else {
-        bail!("'cp932' codec can't encode character in {}", crate::im3::str_repr(name));
+        bail!("{name:?} has a character cp932 cannot encode");
     };
     if bytes.len() >= size {
-        bail!("name too long ({} bytes, max {}): {}", bytes.len(), size - 1, crate::im3::str_repr(name));
+        bail!("name too long ({} bytes, max {}): {name:?}", bytes.len(), size - 1);
     }
     bytes.resize(size, 0);
     Ok(bytes)
 }
 
-/// MDT_MATERIAL_ (0x60 bytes). The colours are lists, as the Python packs whatever it is given.
+/// MDT_MATERIAL_ (0x60 bytes). The colours are lists, as many numbers as an import gives (the packer writes four).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Material {
     pub diffuse: Vec<f64>,
@@ -112,7 +112,7 @@ impl Material {
     fn unpack(b: &[u8], o: usize) -> Result<Material> {
         let f: [f64; 13] = floats_at(b, o)?;
         let Some(raw) = b.get(o + 0x34..o + 0x54) else {
-            bail!("unpack_from requires a buffer of at least {} bytes", o + 0x60);
+            bail!("the data is shorter than the {} bytes read here", o + 0x60);
         };
         let (texture, texture_raw) = name_in(raw);
         Ok(Material {
@@ -138,7 +138,7 @@ impl Material {
         pack_floats(&floats, &mut out)?;
         out.extend(name_out(&self.texture, &self.texture_raw, 32)?);
         let Ok(unk_54) = i32::try_from(self.unk_54) else {
-            bail!("'i' format requires -2147483648 <= number <= 2147483647");
+            bail!("a value does not fit in a 32-bit int");
         };
         out.extend(unk_54.to_le_bytes());
         pack_floats(&[self.unk_58, self.unk_5c], &mut out)?;
@@ -394,7 +394,7 @@ impl Mdt {
                 out.extend(&m);
                 out.extend([0u8; 16]);
             } else {
-                let gap = py::modulo(-pos(&out), 16) as usize;
+                let gap = (-pos(&out)).rem_euclid(16) as usize;
                 out.extend(self.pad(gap));
                 no = pos(&out);
                 out.extend(&n);
@@ -436,7 +436,7 @@ impl Mdt {
         ];
         for value in header {
             let Ok(value) = i32::try_from(value) else {
-                bail!("'i' format requires -2147483648 <= number <= 2147483647");
+                bail!("a value does not fit in a 32-bit int");
             };
             out.extend(value.to_le_bytes());
         }
@@ -496,7 +496,7 @@ impl Mds {
         for n in &self.nodes {
             let m = if n.parent >= 0 {
                 let Some(parent) = out.get(n.parent as usize) else {
-                    bail!("list index out of range");
+                    bail!("frame {} names parent {}, which does not come before it", n.name, n.parent);
                 };
                 mat_mul(parent, &n.matrix)
             } else {
@@ -514,12 +514,13 @@ impl Default for Mds {
     }
 }
 
-/// a*b for column-major 4x4 matrices, each element summed as Python's sum() does.
+/// a*b for column-major 4x4 matrices, each element's terms summed with compensation
+/// (numeric::compensated_sum), which the imported bind poses' bytes depend on.
 pub fn mat_mul(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
     let mut out = [0.0; 16];
     for c in 0..4 {
         for r in 0..4 {
-            out[c * 4 + r] = dc2tk_py::sum_floats((0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]));
+            out[c * 4 + r] = numeric::compensated_sum((0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]));
         }
     }
     out
@@ -527,7 +528,7 @@ pub fn mat_mul(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
 
 pub fn parse(b: &[u8]) -> Result<Mds> {
     if b.len() < 16 {
-        bail!("unpack_from requires a buffer of at least 16 bytes");
+        bail!("the data is shorter than the 16 bytes read here");
     }
     if &b[..4] != b"MDS\0" {
         bail!("not an MDS file");
@@ -541,7 +542,7 @@ pub fn parse(b: &[u8]) -> Result<Mds> {
             bail!("unexpected record size {size}");
         }
         let Some(raw) = b.get(o + 8..o + 40) else {
-            bail!("unpack_from requires a buffer of at least {} bytes", o + 40);
+            bail!("the data is shorter than the {} bytes read here", o + 40);
         };
         let (name, name_raw) = name_in(raw);
         let mdt_ofs = i32_at(b, o + 40)?;

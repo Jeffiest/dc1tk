@@ -1,4 +1,4 @@
-//! Files in memory standing for the temporary folders the Python writes and reads back, named as
+//! Files in memory, standing for folders the converters would write and read back, named as
 //! this system's file system names them: on Windows a name differing only in case, or in trailing
 //! dots and spaces, is the same file, which keeps the name it was first written with.
 
@@ -52,7 +52,7 @@ impl Folder {
         &mut self.files
     }
 
-    /// The files sorted as sorted(folder.rglob("*")) lists them.
+    /// The files sorted by their parts, ignoring case on Windows (as crate::sorted_paths sorts a folder's).
     pub fn sorted(&self) -> Vec<(String, Vec<u8>)> {
         let mut files = self.files.clone();
         if cfg!(windows) {

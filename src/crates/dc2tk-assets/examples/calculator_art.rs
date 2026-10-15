@@ -922,8 +922,8 @@ fn write_model(dir: &Path) -> Result<()> {
 fn check_model(dir: &Path) -> Result<()> {
     let raw = fs::read(dir.join("calc.gltf"))?;
     let gltf: Gltf = from_gltf::load_gltf(&raw, &|uri| Ok(fs::read(dir.join(uri))?))?;
-    let meshes = from_gltf::item(&gltf.json, "meshes")?.as_list().ok_or("meshes")?;
-    let primitive = &from_gltf::item(&meshes[0], "primitives")?.as_list().ok_or("primitives")?[0];
+    let meshes = from_gltf::item(&gltf.json, "meshes")?.as_array().ok_or("meshes")?;
+    let primitive = &from_gltf::item(&meshes[0], "primitives")?.as_array().ok_or("primitives")?[0];
     let attributes = from_gltf::item(primitive, "attributes")?;
     let read = |key: &str| -> Result<Vec<f64>> {
         let values = from_gltf::accessor(&gltf, from_gltf::item(attributes, key)?)?;

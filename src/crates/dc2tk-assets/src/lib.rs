@@ -1,7 +1,6 @@
 //! Dark Chronicle's assets in common formats: texture files (.img) as PNGs, sound banks (.snd) as
 //! WAVs and their sequences (.sq) as MIDI files, character packs (.chr) as glTF 2.0, exported and
-//! built back byte for byte as the Python tools (im3.py, textures.py, soundbank.py, sounds.py,
-//! mds.py, mot.py, info_cfg.py, to_gltf.py, from_gltf.py, models.py) do.
+//! built back: an asset written back unedited gives the game's bytes, byte for byte.
 
 pub mod cfg_text;
 pub mod chest_data;
@@ -21,7 +20,6 @@ pub mod im3;
 pub mod info_cfg;
 pub mod invention_data;
 pub mod item_data;
-pub mod json;
 pub mod map_edit;
 pub mod map_export;
 pub mod map_import;
@@ -34,7 +32,7 @@ pub mod monster_data;
 pub mod mot;
 pub mod motions;
 pub mod music;
-pub mod py;
+pub mod numeric;
 pub mod sequence;
 pub mod shop_data;
 pub mod soundbank;
@@ -47,7 +45,7 @@ pub mod town_data;
 pub mod tree;
 pub mod tree_check;
 
-/// What went wrong, as the Python's exception message says it.
+/// What went wrong: data that is not what it should be, or a file that could not be read.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -83,7 +81,8 @@ macro_rules! bail {
     };
 }
 
-/// Paths sorted as pathlib sorts them: by their parts, ignoring case on Windows.
+/// Paths sorted by their parts, ignoring case where the file system does (Windows), so a folder's
+/// files come in one order whatever case they were written in.
 pub(crate) fn sorted_paths(mut paths: Vec<std::path::PathBuf>) -> Vec<std::path::PathBuf> {
     if cfg!(windows) {
         paths.sort_by_cached_key(|path| {
@@ -95,7 +94,7 @@ pub(crate) fn sorted_paths(mut paths: Vec<std::path::PathBuf>) -> Vec<std::path:
     paths
 }
 
-/// The files under a folder, at any depth, as sorted(folder.rglob("*")) lists them.
+/// The files under a folder, at any depth, in sorted_paths order.
 pub(crate) fn files_under(folder: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
     let mut found = Vec::new();
     let mut pending = vec![folder.to_path_buf()];
@@ -112,7 +111,7 @@ pub(crate) fn files_under(folder: &std::path::Path) -> Result<Vec<std::path::Pat
     Ok(sorted_paths(found))
 }
 
-/// The path of a file relative to a folder, with "/" (Path.relative_to(...).as_posix()).
+/// The path of a file relative to a folder, with "/" between its parts.
 pub(crate) fn relative_posix(path: &std::path::Path, folder: &std::path::Path) -> String {
     let relative = path.strip_prefix(folder).unwrap_or(path);
     relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/")

@@ -37,7 +37,7 @@ pub fn parse(b: &[u8]) -> Result<Vec<KeyList>> {
     let mut o = 0;
     loop {
         if o + 32 > b.len() {
-            bail!("unpack_from requires a buffer of at least {} bytes", o + 32);
+            bail!("the data is shorter than the {} bytes read here", o + 32);
         }
         let mut list = KeyList::new(i32_at(b, o)?, i32_at(b, o + 4)?, i32_at(b, o + 8)?, Vec::new());
         list.unk_0c = u32_at(b, o + 12)?;
@@ -47,7 +47,7 @@ pub fn parse(b: &[u8]) -> Result<Vec<KeyList>> {
         let mut q = o + 32;
         for k in 0..count {
             if q + 32 > b.len() {
-                bail!("unpack_from requires a buffer of at least {} bytes", q + 32);
+                bail!("the data is shorter than the {} bytes read here", q + 32);
             }
             let frame = u32_at(b, q)? as i64;
             let pad = &b[q + 4..q + 16];
@@ -88,14 +88,14 @@ pub fn build(lists: &[KeyList]) -> Result<Vec<u8>> {
         out.extend(list.unk_0c.to_le_bytes());
         out.extend((list.keys.len() as u32).to_le_bytes());
         let Ok(more) = u32::try_from(more) else {
-            bail!("'I' format requires 0 <= number <= 4294967295");
+            bail!("a value does not fit in an unsigned 32-bit int");
         };
         out.extend(more.to_le_bytes());
         out.extend(list.garbage.0.to_le_bytes());
         out.extend(list.garbage.1.to_le_bytes());
         for (k, (frame, value)) in list.keys.iter().enumerate() {
             let Ok(frame) = u32::try_from(*frame) else {
-                bail!("'I' format requires 0 <= number <= 4294967295");
+                bail!("a value does not fit in an unsigned 32-bit int");
             };
             out.extend(frame.to_le_bytes());
             match list.key_pad.as_ref().and_then(|pads| pads.get(&k)) {
