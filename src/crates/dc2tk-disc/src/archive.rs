@@ -61,9 +61,19 @@ fn read_name(data: &[u8], offset: i32) -> Result<String> {
     Ok(name.trim_start_matches('/').to_string())
 }
 
+/// How many records the index has. The names follow the records, so the first record's name
+/// starts where the records end; a count of more records than the data holds is refused here,
+/// before anything is allocated for them.
 fn record_count(data: &[u8]) -> Result<usize> {
     let first = i32_at(data, 0).ok_or_else(|| Error::invalid("the file index is empty"))?;
-    Ok(first as u32 as usize / INDEX_RECORD)
+    let count = first as u32 as usize / INDEX_RECORD;
+    if count > data.len() / INDEX_RECORD {
+        return Err(Error::invalid(format!(
+            "the file index is cut short: it has {count} records, and {} bytes",
+            data.len()
+        )));
+    }
+    Ok(count)
 }
 
 pub fn parse_index(data: &[u8]) -> Result<Vec<Entry>> {
@@ -241,5 +251,16 @@ mod tests {
         let entries = parse_index(&original).unwrap();
         assert_eq!(entries, vec![Entry { path: "a/b.bin".into(), size: 5, sector: 7 }]);
         assert_eq!(&original[original.len() - 12..original.len() - 4], b"a\\b.bin\0");
+    }
+
+    #[test]
+    fn an_index_claiming_more_records_than_it_holds_is_refused() {
+        // the first name's offset says 0xFFFFFFF0 / 12 records (with_entries made room for them
+        // all, 11 GB, before reading one); there are 16 bytes
+        let index = [0xF0, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let refused = "the file index is cut short: it has 357913940 records, and 16 bytes";
+        assert_eq!(parse_index(&index).unwrap_err().to_string(), refused);
+        assert_eq!(with_entries(&index, &[("a.bin".to_string(), 1, 0)]).unwrap_err().to_string(), refused);
+        assert!(parse_index(&[0xFF; 4]).is_err());
     }
 }
