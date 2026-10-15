@@ -4,10 +4,10 @@ mod common;
 
 use common::sample_script;
 use dc2tk_script::stack::{self, NativeCall};
-use dc2tk_script::stb::{self, Function, Instruction, Region, Script};
+use dc2tk_script::stb::{self, Function, Instruction, Op, Region, Script};
 
 fn item(name: &str, arg1: i32, arg2: i32) -> Instruction {
-    Instruction::new(name, arg1, arg2)
+    Instruction::new(Op::from_name(name).expect("an opcode name"), arg1, arg2)
 }
 
 /// A script of one function at offset 0, with the code section at 0.

@@ -3,19 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::stb::{Instruction, Script};
-
-pub const CONST_INT: i32 = 1;
-const INDEXED_MODES: [i32; 4] = [0x2, 0x4, 0x10, 0x20];
-
-fn fixed_effect(name: &str) -> i32 {
-    match name {
-        "LOAD" | "LOAD_ADDR" | "PUSH_CONST" => 1,
-        "POP" | "STORE" | "ADD" | "SUB" | "MUL" | "DIV" | "MOD" | "CMP" | "RET" | "JMP_FALSE" | "JMP_TRUE" | "AND"
-        | "OR" => -1,
-        _ => 0,
-    }
-}
+use crate::stb::{Instruction, Mode, Op, Script};
 
 /// Each function's argument count, by its offset from the code section.
 pub fn function_args(script: &Script) -> HashMap<i64, i32> {
@@ -23,13 +11,31 @@ pub fn function_args(script: &Script) -> HashMap<i64, i32> {
     script.functions().map(|function| (function.offset as i64 - code, function.arg)).collect()
 }
 
+/// How many values an instruction leaves on the stack, less those it takes.
 pub fn effect(item: &Instruction, args: &HashMap<i64, i32>) -> i32 {
-    let name = item.name();
-    match name {
-        "CALL" => 1 - args.get(&(item.arg2 as i64)).copied().unwrap_or(0),
-        "LOAD" | "LOAD_ADDR" if INDEXED_MODES.contains(&item.arg2) => 0,
-        "PRINT" | "EXT" => -item.arg1,
-        _ => fixed_effect(name),
+    let Some(op) = item.opcode() else {
+        return 0;
+    };
+    match op {
+        Op::Call => 1 - args.get(&(item.arg2 as i64)).copied().unwrap_or(0),
+        // an indexed load takes its index
+        Op::Load | Op::LoadAddr if Mode::from_bit(item.arg2).is_some_and(Mode::is_indexed) => 0,
+        Op::Load | Op::LoadAddr | Op::PushConst => 1,
+        Op::Print | Op::Ext => -item.arg1,
+        Op::Pop
+        | Op::Store
+        | Op::Add
+        | Op::Sub
+        | Op::Mul
+        | Op::Div
+        | Op::Mod
+        | Op::Cmp
+        | Op::Ret
+        | Op::JmpFalse
+        | Op::JmpTrue
+        | Op::And
+        | Op::Or => -1,
+        _ => 0,
     }
 }
 
@@ -50,10 +56,6 @@ pub fn native_push(instructions: &[Instruction], index: usize, args: &HashMap<i6
     None
 }
 
-pub fn is_int(item: &Instruction) -> bool {
-    item.name() == "PUSH_CONST" && item.arg1 == CONST_INT
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NativeCall {
     /// The function's offset in the file.
@@ -69,14 +71,14 @@ pub fn native_calls(script: &Script) -> Vec<NativeCall> {
     for function in script.functions() {
         let instructions = &function.instructions;
         for (index, item) in instructions.iter().enumerate() {
-            if item.name() != "EXT" {
+            if item.opcode() != Some(Op::Ext) {
                 continue;
             }
             let mut number = None;
             if let Some(push) = native_push(instructions, index, &args) {
-                if is_int(&instructions[push]) {
+                if instructions[push].is_int() {
                     let mut no = instructions[push].arg2;
-                    if is_int(&instructions[push + 1]) && instructions[push + 2].name() == "ADD" {
+                    if instructions[push + 1].is_int() && instructions[push + 2].opcode() == Some(Op::Add) {
                         no = no.wrapping_add(instructions[push + 1].arg2);
                     }
                     number = Some(no);

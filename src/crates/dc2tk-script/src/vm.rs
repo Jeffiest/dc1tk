@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use crate::asm::{self, Token};
 use crate::natives::Table;
 use crate::node::Node;
+use crate::stb::{Mode, Place};
 use crate::{compile, sdk, Error, Result};
 
 /// A value on the VM's stack or in a variable.
@@ -205,23 +206,23 @@ impl<'a> Machine<'a> {
         cells.get_mut(index).ok_or_else(|| Error::invalid("list index out of range"))
     }
 
-    fn cell(&self, mode: &str, slot: usize, stack: &mut Vec<Value>) -> Result<(Option<usize>, usize)> {
+    fn cell(&self, mode: Mode, slot: usize, stack: &mut Vec<Value>) -> Result<(Option<usize>, usize)> {
         let frame = self.frames.len() - 1;
-        if mode.starts_with("global") {
-            return Ok((None, slot));
+        match mode.place {
+            Place::Global => Ok((None, slot)),
+            Place::Local => Ok((Some(frame), slot)),
+            Place::Array => {
+                let index = pop(stack)?.int()?;
+                Ok((Some(frame), (slot as i128 + index) as usize))
+            }
+            Place::Pointer => {
+                let index = pop(stack)?.int()?;
+                let Some(Value::Pointer(place, base)) = self.frames[frame].get(slot) else {
+                    return Err(Error::invalid("not a pointer"));
+                };
+                Ok((*place, (*base as i128 + index) as usize))
+            }
         }
-        if mode.starts_with("local_idx") {
-            let index = pop(stack)?.int()?;
-            return Ok((Some(frame), (slot as i128 + index) as usize));
-        }
-        if mode.starts_with("ptr_idx") {
-            let index = pop(stack)?.int()?;
-            let Some(Value::Pointer(place, base)) = self.frames[frame].get(slot) else {
-                return Err(Error::invalid("not a pointer"));
-            };
-            return Ok((*place, (*base as i128 + index) as usize));
-        }
-        Ok((Some(frame), slot))
     }
 
     /// Runs a function and returns its result.
@@ -270,12 +271,14 @@ impl<'a> Machine<'a> {
                     stack.push(value);
                 }
                 op @ ("load" | "addr") => {
-                    let (place, index) = self.cell(word(1), number(2)?, &mut stack)?;
+                    let mode =
+                        Mode::from_name(word(1)).ok_or_else(|| Error::invalid(format!("unknown mode {}", word(1))))?;
+                    let (place, index) = self.cell(mode, number(2)?, &mut stack)?;
                     if op == "addr" {
                         stack.push(Value::Pointer(place, index));
                     } else {
                         let mut value = self.slot(place, index)?.clone();
-                        if word(1).ends_with("_f") {
+                        if mode.is_float() {
                             if let Value::Int(int) = value {
                                 value = Value::Float(int as f64);
                             }

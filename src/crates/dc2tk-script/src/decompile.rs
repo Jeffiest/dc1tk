@@ -3,7 +3,8 @@
 //! parameters and globals from how they are loaded. A function that does not fit the patterns
 //! stays assembly (with the reason), so every script still compiles back to its own bytes.
 //!
-//! The program is a tree of JSON values shaped as the Python tools' dicts, keys in the same order.
+//! The program is a tree of nodes (node.rs), its keys in the order the source writer and the
+//! compiler read them.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -14,94 +15,35 @@ use crate::asm::{self, hex};
 use crate::fingerprint;
 use crate::natives::{Native, Table};
 use crate::stack;
-use crate::stb::{self, Function, Instruction, Region, Script};
+use crate::stb::{self, Compare, Function, Instruction, Mode, Op, Place, Region, Script};
+use crate::stb::{CONST_FLOAT, CONST_INT, CONST_STR};
 
-const SCALAR_MODES: [(i32, &str); 2] = [(0x1, "int"), (0x8, "float")];
-const ARRAY_MODES: [(i32, &str); 2] = [(0x2, "int"), (0x10, "float")];
-const POINTER_MODES: [(i32, &str); 2] = [(0x4, "int"), (0x20, "float")];
-const GLOBAL_MODES: [(i32, &str); 2] = [(0x40, "int"), (0x200, "float")];
-const INDEXED_MODES: [i32; 4] = [0x2, 0x4, 0x10, 0x20];
-
-const CONST_INT: i32 = 1;
-const CONST_FLOAT: i32 = 2;
-const CONST_STR: i32 = 3;
 const MAX_GLOBALS: i64 = 0x10000;
 
 type Fail<T> = std::result::Result<T, String>;
 
-fn mode_of(modes: &[(i32, &'static str)], mode: Option<i32>) -> Option<&'static str> {
-    let mode = mode?;
-    modes.iter().find(|(number, _)| *number == mode).map(|(_, name)| *name)
+/// A LOAD's addressing mode when it is one of a place (None for none, another place, or a mode the
+/// VM does not have).
+fn mode_at(mode: Option<i32>, place: Place) -> Option<Mode> {
+    mode.and_then(Mode::from_bit).filter(|mode| mode.place == place)
 }
 
 pub fn function_name(offset: i64) -> String {
     format!("f_{offset:04x}")
 }
 
-fn binary_op(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "ADD" => "+",
-        "SUB" => "-",
-        "MUL" => "*",
-        "DIV" => "/",
-        "MOD" => "%",
-        "AND" => "&",
-        "OR" => "|",
-        _ => return None,
-    })
-}
-
-fn unary_op(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "NEG" => "-",
-        "NOT" => "!",
-        _ => return None,
-    })
-}
-
-fn cast_type(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "ITOF" => "float",
-        "FTOI" => "int",
-        _ => return None,
-    })
-}
-
-fn builtin(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "SIN" => "sin",
-        "COS" => "cos",
-        _ => return None,
-    })
-}
-
-fn statement_word(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "WAIT" => "wait",
-        "END" => "end",
-        "SKIP_END" => "skip_end",
-        _ => return None,
-    })
-}
-
-fn logical_op(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "JMP_FALSE" => "&&",
-        "JMP_TRUE" => "||",
-        _ => return None,
-    })
-}
-
-/// Python's repr of a sorted list of ints.
+/// Sorted numbers as the reason a function stays assembly lists them: [1, 8].
 fn int_list(values: &BTreeSet<i32>) -> String {
     format!("[{}]", values.iter().map(i32::to_string).collect::<Vec<_>>().join(", "))
 }
 
-/// Each slot's addressing mode, in the order the slots are first used.
+/// Each slot's addressing mode, in the order the slots are first used. The globals' are left out;
+/// a mode the VM does not have is kept (and refused by declarations).
 fn slot_modes(function: &Function) -> Fail<Vec<(i32, i32)>> {
     let mut modes: Vec<(i32, BTreeSet<i32>)> = Vec::new();
     for item in &function.instructions {
-        if matches!(item.name(), "LOAD" | "LOAD_ADDR") && mode_of(&GLOBAL_MODES, Some(item.arg2)).is_none() {
+        let loads = matches!(item.opcode(), Some(Op::Load | Op::LoadAddr));
+        if loads && mode_at(Some(item.arg2), Place::Global).is_none() {
             match modes.iter_mut().find(|(slot, _)| *slot == item.arg1) {
                 Some((_, found)) => {
                     found.insert(item.arg2);
@@ -120,44 +62,43 @@ fn slot_modes(function: &Function) -> Fail<Vec<(i32, i32)>> {
 
 fn declarations(function: &Function) -> Fail<(Vec<Node>, Vec<Node>)> {
     let modes = slot_modes(function)?;
-    let mode_at = |slot: i32| modes.iter().find(|(at, _)| *at == slot).map(|(_, mode)| *mode);
+    let mode_of = |slot: i32| modes.iter().find(|(at, _)| *at == slot).map(|(_, mode)| *mode);
     let mut params = Vec::new();
     for slot in 0..function.arg {
-        let mode = mode_at(slot);
+        let mode = mode_of(slot);
         let declared = if (slot as usize) < stb::FUNCDATA_ARGS { function.arg_types[slot as usize] } else { 1 };
-        match mode {
-            _ if mode_of(&POINTER_MODES, mode).is_some() => {
-                params.push(node!({"name": format!("a{slot}"), "type": mode_of(&POINTER_MODES, mode), "array": true}));
-            }
-            Some(other) if mode_of(&SCALAR_MODES, mode).is_none() => {
-                return Err(format!("parameter {slot} uses mode {other}"));
-            }
-            _ => params.push(node!({
-                "name": format!("a{slot}"),
-                "type": mode_of(&SCALAR_MODES, mode).unwrap_or("int"),
-                "array": mode.is_none() && declared == 0,
-            })),
+        if let Some(pointer) = mode_at(mode, Place::Pointer) {
+            params.push(node!({"name": format!("a{slot}"), "type": pointer.kind(), "array": true}));
+            continue;
         }
+        let scalar = mode_at(mode, Place::Local);
+        if let Some(other) = mode.filter(|_| scalar.is_none()) {
+            return Err(format!("parameter {slot} uses mode {other}"));
+        }
+        params.push(node!({
+            "name": format!("a{slot}"),
+            "type": scalar.map_or("int", Mode::kind),
+            "array": mode.is_none() && declared == 0,
+        }));
     }
     let mut locals = Vec::new();
     let mut slot = function.arg;
     while slot < function.local {
-        let mode = mode_at(slot);
-        if let Some(kind) = mode_of(&ARRAY_MODES, mode) {
+        let mode = mode_of(slot);
+        if let Some(array) = mode_at(mode, Place::Array) {
             let mut end = slot + 1;
-            while end < function.local && mode_at(end).is_none() {
+            while end < function.local && mode_of(end).is_none() {
                 end += 1;
             }
-            locals.push(node!({"name": format!("v{slot}"), "type": kind, "size": end - slot}));
+            locals.push(node!({"name": format!("v{slot}"), "type": array.kind(), "size": end - slot}));
             slot = end;
             continue;
         }
-        if let Some(other) = mode.filter(|_| mode_of(&SCALAR_MODES, mode).is_none()) {
+        let scalar = mode_at(mode, Place::Local);
+        if let Some(other) = mode.filter(|_| scalar.is_none()) {
             return Err(format!("local {slot} uses mode {other}"));
         }
-        locals.push(
-            node!({"name": format!("v{slot}"), "type": mode_of(&SCALAR_MODES, mode).unwrap_or("int"), "size": null}),
-        );
+        locals.push(node!({"name": format!("v{slot}"), "type": scalar.map_or("int", Mode::kind), "size": null}));
         slot += 1;
     }
     for (found, _) in &modes {
@@ -176,7 +117,7 @@ fn arg_types_for(params: &[Node]) -> Vec<i32> {
 }
 
 fn variable_name(slot: i32, mode: i32, function: &Function) -> String {
-    if mode_of(&GLOBAL_MODES, Some(mode)).is_some() {
+    if mode_at(Some(mode), Place::Global).is_some() {
         format!("g{slot}")
     } else if slot < function.arg {
         format!("a{slot}")
@@ -203,7 +144,7 @@ fn target(state: &State, index: usize) -> Fail<usize> {
         return Err("jump into the middle of an instruction".into());
     }
     let position = position as usize;
-    if state.ins[position].name() != "NOP" {
+    if state.ins[position].opcode() != Some(Op::Nop) {
         return Err("jump to an instruction that is not a label".into());
     }
     Ok(position)
@@ -226,89 +167,109 @@ fn pop2(values: &mut Vec<Node>) -> Fail<(Node, Node)> {
     Ok((taken.pop().unwrap(), right))
 }
 
-/// The values an expression leaves, where it stopped, and the instruction it stopped at (None at
-/// stop).
-fn expression(state: &mut State, mut index: usize, stop: usize) -> Fail<(Vec<Node>, usize, Option<Instruction>)> {
+/// Where an expression stopped: the values it leaves, the index it stopped at, and the instruction
+/// there (None when it ran to its end).
+struct Stopped {
+    values: Vec<Node>,
+    at: usize,
+    item: Option<Instruction>,
+}
+
+/// The expression from index on, to stop or the first instruction that is not part of one.
+fn expression(state: &mut State, mut index: usize, stop: usize) -> Fail<Stopped> {
     let mut values: Vec<Node> = Vec::new();
     while index < stop {
         let item = state.ins[index];
-        let name = item.name();
-        if name == "LOAD" || name == "LOAD_ADDR" {
-            let mut node = node!({"kind": "var", "name": variable_name(item.arg1, item.arg2, state.function)});
-            if INDEXED_MODES.contains(&item.arg2) {
-                let index_value = pop1(&mut values)?;
-                node = node!({"kind": "index", "name": node["name"].clone(), "index": index_value});
+        let op = item.opcode().expect("the reader keeps only the VM's opcodes");
+        match op {
+            Op::Load | Op::LoadAddr => {
+                let name = variable_name(item.arg1, item.arg2, state.function);
+                let mut node = node!({"kind": "var", "name": name});
+                if Mode::from_bit(item.arg2).is_some_and(Mode::is_indexed) {
+                    let index_value = pop1(&mut values)?;
+                    node = node!({"kind": "index", "name": node["name"].clone(), "index": index_value});
+                }
+                if op == Op::LoadAddr {
+                    node = node!({"kind": "addr", "target": node});
+                }
+                values.push(node);
             }
-            if name == "LOAD_ADDR" {
-                node = node!({"kind": "addr", "target": node});
+            Op::PushConst => values.push(constant(&item, index, state)?),
+            Op::Store => {
+                let (destination, value) = pop2(&mut values)?;
+                if destination.kind() != "addr" {
+                    return Err("store through a computed address".into());
+                }
+                values.push(node!({"kind": "assign", "target": destination["target"].clone(), "value": value}));
             }
-            values.push(node);
-        } else if name == "PUSH_CONST" {
-            values.push(constant(&item, index, state)?);
-        } else if name == "STORE" {
-            let (destination, value) = pop2(&mut values)?;
-            if destination.kind() != "addr" {
-                return Err("store through a computed address".into());
+            Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Mod | Op::And | Op::Or => {
+                let (left, right) = pop2(&mut values)?;
+                let op = op.binary_operator().expect("a binary instruction is a C operator");
+                values.push(node!({"kind": "binary", "op": op, "left": left, "right": right}));
             }
-            values.push(node!({"kind": "assign", "target": destination["target"].clone(), "value": value}));
-        } else if let Some(op) = binary_op(name) {
-            let (left, right) = pop2(&mut values)?;
-            values.push(node!({"kind": "binary", "op": op, "left": left, "right": right}));
-        } else if name == "CMP" {
-            let Some(compare) = asm::compare_name(item.arg1) else {
-                return Err("unknown comparison".into());
-            };
-            let (left, right) = pop2(&mut values)?;
-            let op = match compare {
-                "eq" => "==",
-                "ne" => "!=",
-                "lt" => "<",
-                "le" => "<=",
-                "gt" => ">",
-                _ => ">=",
-            };
-            values.push(node!({"kind": "binary", "op": op, "left": left, "right": right}));
-        } else if let Some(op) = unary_op(name) {
-            let operand = pop1(&mut values)?;
-            values.push(node!({"kind": "unary", "op": op, "operand": operand}));
-        } else if let Some(cast) = cast_type(name) {
-            let operand = pop1(&mut values)?;
-            values.push(node!({"kind": "cast", "type": cast, "operand": operand}));
-        } else if let Some(builtin) = builtin(name) {
-            let operand = pop1(&mut values)?;
-            values.push(node!({"kind": "builtin", "name": builtin, "operand": operand}));
-        } else if name == "CALL" {
-            let callee = item.arg2 as i64;
-            let Some(&count) = state.functions.get(&callee) else {
-                return Err("call to something that is not a function".into());
-            };
-            let args = pop(&mut values, usize::try_from(count).unwrap_or(usize::MAX))?;
-            values.push(node!({"kind": "call", "name": function_name(callee), "args": args}));
-        } else if logical_op(name).is_some() && item.arg2 == 1 {
-            let left = pop1(&mut values)?;
-            let label_index = target(state, index)?;
-            if label_index <= index || label_index >= stop {
-                return Err("short-circuit jump leaves its expression".into());
+            Op::Cmp => {
+                let Some(compare) = Compare::from_number(item.arg1) else {
+                    return Err("unknown comparison".into());
+                };
+                let (left, right) = pop2(&mut values)?;
+                values.push(node!({"kind": "binary", "op": compare.operator(), "left": left, "right": right}));
             }
-            let (mut inner, _, terminator) = expression(state, index + 1, label_index)?;
-            if terminator.is_some() || inner.len() != 1 {
-                return Err("short-circuit operand is not one expression".into());
+            Op::Neg | Op::Not => {
+                let operand = pop1(&mut values)?;
+                let op = if op == Op::Neg { "-" } else { "!" };
+                values.push(node!({"kind": "unary", "op": op, "operand": operand}));
             }
-            values.push(node!({
-                "kind": "logical",
-                "op": logical_op(name).unwrap(),
-                "left": left,
-                "right": inner.remove(0),
-                "label": state.ins[label_index].arg1,
-            }));
-            index = label_index + 1;
-            continue;
-        } else {
-            return Ok((values, index, Some(item)));
+            Op::Itof | Op::Ftoi => {
+                let operand = pop1(&mut values)?;
+                let cast = if op == Op::Itof { "float" } else { "int" };
+                values.push(node!({"kind": "cast", "type": cast, "operand": operand}));
+            }
+            Op::Sin | Op::Cos => {
+                let operand = pop1(&mut values)?;
+                let name = if op == Op::Sin { "sin" } else { "cos" };
+                values.push(node!({"kind": "builtin", "name": name, "operand": operand}));
+            }
+            Op::Call => {
+                let callee = item.arg2 as i64;
+                let Some(&count) = state.functions.get(&callee) else {
+                    return Err("call to something that is not a function".into());
+                };
+                let args = pop(&mut values, usize::try_from(count).unwrap_or(usize::MAX))?;
+                values.push(node!({"kind": "call", "name": function_name(callee), "args": args}));
+            }
+            Op::JmpFalse | Op::JmpTrue if item.arg2 == 1 => {
+                let left = pop1(&mut values)?;
+                let (logical, next) = short_circuit(state, op, left, index, stop)?;
+                values.push(logical);
+                index = next;
+                continue;
+            }
+            _ => return Ok(Stopped { values, at: index, item: Some(item) }),
         }
         index += 1;
     }
-    Ok((values, index, None))
+    Ok(Stopped { values, at: index, item: None })
+}
+
+/// a && b or a || b: a jump that keeps its tested value pushed (left) past the right operand to a
+/// label. The node and the index after the label.
+fn short_circuit(state: &mut State, op: Op, left: Node, index: usize, stop: usize) -> Fail<(Node, usize)> {
+    let label_index = target(state, index)?;
+    if label_index <= index || label_index >= stop {
+        return Err("short-circuit jump leaves its expression".into());
+    }
+    let mut right = expression(state, index + 1, label_index)?;
+    if right.item.is_some() || right.values.len() != 1 {
+        return Err("short-circuit operand is not one expression".into());
+    }
+    let logical = node!({
+        "kind": "logical",
+        "op": if op == Op::JmpFalse { "&&" } else { "||" },
+        "left": left,
+        "right": right.values.remove(0),
+        "label": state.ins[label_index].arg1,
+    });
+    Ok((logical, label_index + 1))
 }
 
 fn constant(item: &Instruction, index: usize, state: &mut State) -> Fail<Node> {
@@ -345,21 +306,20 @@ fn native_name(number: i64, state: &State) -> String {
 }
 
 fn simple_statement(mut values: Vec<Node>, item: &Instruction, state: &State) -> Fail<Node> {
-    let name = item.name();
-    match name {
-        "POP" => {
+    match item.opcode() {
+        Some(Op::Pop) => {
             if values.len() != 1 {
                 return Err("expression statement leaves values".into());
             }
             Ok(node!({"kind": "expr", "expr": values.remove(0)}))
         }
-        "RET" => {
+        Some(Op::Ret) => {
             if values.len() != 1 {
                 return Err("return leaves values".into());
             }
             Ok(node!({"kind": "return", "value": values.remove(0)}))
         }
-        "EXT" => {
+        Some(Op::Ext) => {
             if values.len() as i64 != item.arg1 as i64 || item.arg2 != 0 {
                 return Err("native call inside an expression".into());
             }
@@ -379,21 +339,19 @@ fn simple_statement(mut values: Vec<Node>, item: &Instruction, state: &State) ->
             }
             Err("native number is not a constant".into())
         }
-        "PRINT" => {
+        Some(Op::Print) => {
             if values.len() as i64 != item.arg1 as i64 || item.arg2 != 0 {
                 return Err("print inside an expression".into());
             }
             Ok(node!({"kind": "print", "args": values}))
         }
-        _ => match statement_word(name) {
-            Some(word) => {
-                if !values.is_empty() || item.arg1 != 0 || item.arg2 != 0 {
-                    return Err("statement with operands".into());
-                }
-                Ok(node!({"kind": word}))
+        Some(op @ (Op::Wait | Op::End | Op::SkipEnd)) => {
+            if !values.is_empty() || item.arg1 != 0 || item.arg2 != 0 {
+                return Err("statement with operands".into());
             }
-            None => Err(format!("unexpected {name}")),
-        },
+            Ok(node!({"kind": op.mnemonic()}))
+        }
+        _ => Err(format!("unexpected {}", item.name())),
     }
 }
 
@@ -408,19 +366,19 @@ fn block(state: &mut State, mut index: usize, stop: usize, loops: &[Loop]) -> Fa
     while index < stop {
         // where each statement starts, as an instruction index in the function, for line notes
         let start = index;
-        if state.ins[index].name() == "NOP" {
+        if state.ins[index].opcode() == Some(Op::Nop) {
             let (statement, next) = while_loop(state, index, stop, loops)?;
             statements.push(statement.with("start", node!(start)));
             index = next;
             continue;
         }
-        let (mut values, at, item) = expression(state, index, stop)?;
+        let Stopped { mut values, at, item } = expression(state, index, stop)?;
         index = at;
         let Some(item) = item else {
             return Err("expression runs into the end of a block".into());
         };
-        let name = item.name();
-        if name == "JMP_FALSE" && item.arg2 == 0 {
+        let op = item.opcode();
+        if op == Some(Op::JmpFalse) && item.arg2 == 0 {
             if values.len() != 1 {
                 return Err("condition leaves values".into());
             }
@@ -429,7 +387,7 @@ fn block(state: &mut State, mut index: usize, stop: usize, loops: &[Loop]) -> Fa
             index = next;
             continue;
         }
-        if name == "JMP" {
+        if op == Some(Op::Jmp) {
             let Some(inner) = loops.last() else {
                 return Err("jump outside a loop".into());
             };
@@ -459,7 +417,7 @@ fn conditional(state: &mut State, condition: Node, index: usize, stop: usize, lo
         return Err("if jumps outside its block".into());
     }
     let before = state.ins[else_index - 1];
-    if before.name() == "JMP" && before.arg2 == 0 && else_index - 1 > index {
+    if before.opcode() == Some(Op::Jmp) && before.arg2 == 0 && else_index - 1 > index {
         let end_index = target(state, else_index - 1)?;
         if else_index < end_index && end_index < stop {
             let then = block(state, index + 1, else_index - 1, loops)?;
@@ -487,9 +445,9 @@ fn conditional(state: &mut State, condition: Node, index: usize, stop: usize, lo
 
 fn while_loop(state: &mut State, index: usize, stop: usize, loops: &[Loop]) -> Fail<(Node, usize)> {
     let top = state.ins[index].arg1;
-    let (mut values, jump, item) = expression(state, index + 1, stop)?;
+    let Stopped { mut values, at: jump, item } = expression(state, index + 1, stop)?;
     match item {
-        Some(item) if item.name() == "JMP_FALSE" && item.arg2 == 0 && values.len() == 1 => {}
+        Some(item) if item.opcode() == Some(Op::JmpFalse) && item.arg2 == 0 && values.len() == 1 => {}
         _ => return Err("label that does not start a loop".into()),
     }
     let end_index = target(state, jump)?;
@@ -497,7 +455,7 @@ fn while_loop(state: &mut State, index: usize, stop: usize, loops: &[Loop]) -> F
         return Err("loop exit outside its block".into());
     }
     let back = state.ins[end_index - 1];
-    if back.name() != "JMP" || back.arg2 != 0 || target(state, end_index - 1)? != index {
+    if back.opcode() != Some(Op::Jmp) || back.arg2 != 0 || target(state, end_index - 1)? != index {
         return Err("loop without a jump back to its top".into());
     }
     let end = state.ins[end_index].arg1;
@@ -582,7 +540,7 @@ fn unused_strings(function: &Function, code: i64) -> Fail<Vec<String>> {
     let refs: Vec<i64> = function
         .instructions
         .iter()
-        .filter(|item| item.name() == "PUSH_CONST" && item.arg1 == CONST_STR)
+        .filter(|item| item.opcode() == Some(Op::PushConst) && item.arg1 == CONST_STR)
         .map(|item| code + item.arg2 as i64)
         .collect();
     let offsets = asm::string_offsets(function);
@@ -606,10 +564,9 @@ fn structured(function: &Function, context: &mut Context) -> Fail<Node> {
         return Err("function too short".into());
     }
     let tail = &instructions[instructions.len() - 3..];
-    if !(tail[0].name() == "PUSH_CONST"
-        && tail[0].arg1 == CONST_INT
+    if !(tail[0].is_int()
         && tail[0].arg2 == 0
-        && tail[1].name() == "RET"
+        && tail[1].opcode() == Some(Op::Ret)
         && tail[1].arg1 == 0
         && tail[1].arg2 == 0)
     {
@@ -994,10 +951,8 @@ fn global_types(script: &Script) -> BTreeMap<i32, BTreeSet<&'static str>> {
     let mut types: BTreeMap<i32, BTreeSet<&'static str>> = BTreeMap::new();
     for function in script.functions() {
         for item in &function.instructions {
-            if matches!(item.name(), "LOAD" | "LOAD_ADDR") {
-                if let Some(kind) = mode_of(&GLOBAL_MODES, Some(item.arg2)) {
-                    types.entry(item.arg1).or_default().insert(kind);
-                }
+            if let Some(global) = item.mode().filter(|mode| mode.place == Place::Global) {
+                types.entry(item.arg1).or_default().insert(global.kind());
             }
         }
     }

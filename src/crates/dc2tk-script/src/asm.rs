@@ -8,85 +8,52 @@ use dc2tk_py::{float_repr, format_g, parse_float, parse_int};
 
 use crate::natives::Table;
 use crate::stack;
-use crate::stb::{self, Function, Header, Instruction, ProgramEntry, Region, Script};
+use crate::stb::{self, Compare, Function, Header, Instruction, Mode, Op, ProgramEntry, Region, Script};
+use crate::stb::{CONST_FLOAT, CONST_INT, CONST_STR};
 use crate::{Error, Result};
 
-const MODES: [(i32, &str); 8] = [
-    (0x1, "local"),
-    (0x2, "local_idx"),
-    (0x4, "ptr_idx"),
-    (0x8, "local_f"),
-    (0x10, "local_idx_f"),
-    (0x20, "ptr_idx_f"),
-    (0x40, "global"),
-    (0x200, "global_f"),
+/// The instructions written as their mnemonic alone (Op::mnemonic), their operands 0.
+const PLAIN: [Op; 19] = [
+    Op::Pop,
+    Op::Store,
+    Op::Add,
+    Op::Sub,
+    Op::Mul,
+    Op::Div,
+    Op::Mod,
+    Op::Neg,
+    Op::Itof,
+    Op::Ftoi,
+    Op::Ret,
+    Op::Wait,
+    Op::And,
+    Op::Or,
+    Op::Not,
+    Op::End,
+    Op::SkipEnd,
+    Op::Sin,
+    Op::Cos,
 ];
 
-const COMPARES: [(i32, &str); 6] = [(40, "eq"), (41, "ne"), (42, "lt"), (43, "le"), (44, "gt"), (45, "ge")];
-
-const PLAIN: [(&str, &str); 19] = [
-    ("POP", "pop"),
-    ("STORE", "store"),
-    ("ADD", "add"),
-    ("SUB", "sub"),
-    ("MUL", "mul"),
-    ("DIV", "div"),
-    ("MOD", "mod"),
-    ("NEG", "neg"),
-    ("ITOF", "itof"),
-    ("FTOI", "ftoi"),
-    ("RET", "ret"),
-    ("WAIT", "wait"),
-    ("AND", "and"),
-    ("OR", "or"),
-    ("NOT", "not"),
-    ("END", "end"),
-    ("SKIP_END", "skip_end"),
-    ("SIN", "sin"),
-    ("COS", "cos"),
-];
-
-const COUNTED: [(&str, &str); 3] = [("PRINT", "print"), ("EXT", "ext"), ("NOP", "nop")];
+/// The instructions written as their mnemonic and a count (arg1).
+const COUNTED: [Op; 3] = [Op::Print, Op::Ext, Op::Nop];
 
 /// (opcode, keep) for each jump mnemonic: keep is arg2, 1 when the tested value stays pushed.
-const JUMPS: [((&str, i32), &str); 5] = [
-    (("JMP", 0), "jmp"),
-    (("JMP_FALSE", 0), "jf"),
-    (("JMP_FALSE", 1), "jf_push"),
-    (("JMP_TRUE", 0), "jt"),
-    (("JMP_TRUE", 1), "jt_push"),
+const JUMPS: [((Op, i32), &str); 5] = [
+    ((Op::Jmp, 0), "jmp"),
+    ((Op::JmpFalse, 0), "jf"),
+    ((Op::JmpFalse, 1), "jf_push"),
+    ((Op::JmpTrue, 0), "jt"),
+    ((Op::JmpTrue, 1), "jt_push"),
 ];
-
-pub const CONST_INT: i32 = 1;
-pub const CONST_FLOAT: i32 = 2;
-pub const CONST_STR: i32 = 3;
 
 fn default_header_padding() -> Vec<u8> {
     vec![0; stb::HEADER_SIZE - stb::HEADER_FIELDS_SIZE]
 }
 
-fn lookup<K: PartialEq + Copy, V: Copy>(table: &[(K, V)], key: K) -> Option<V> {
-    table.iter().find(|(k, _)| *k == key).map(|(_, v)| *v)
-}
-
-fn reverse<K: Copy, V: PartialEq + Copy>(table: &[(K, V)], value: V) -> Option<K> {
-    table.iter().find(|(_, v)| *v == value).map(|(k, _)| *k)
-}
-
-pub fn mode_name(mode: i32) -> Option<&'static str> {
-    lookup(&MODES, mode)
-}
-
-pub fn mode_number(name: &str) -> Option<i32> {
-    reverse(&MODES, name)
-}
-
-pub fn compare_name(value: i32) -> Option<&'static str> {
-    lookup(&COMPARES, value)
-}
-
-pub fn compare_number(name: &str) -> Option<i32> {
-    reverse(&COMPARES, name)
+/// The instruction a mnemonic of PLAIN or COUNTED is.
+fn named(table: &[Op], mnemonic: &str) -> Option<Op> {
+    table.iter().copied().find(|op| op.mnemonic() == mnemonic)
 }
 
 /// A string as the assembly (and the decompiler's C) quotes it.
@@ -165,7 +132,7 @@ pub fn strings_in_order(function: &Function, code: i64) -> bool {
     let refs: Vec<i64> = function
         .instructions
         .iter()
-        .filter(|item| item.name() == "PUSH_CONST" && item.arg1 == CONST_STR)
+        .filter(|item| item.opcode() == Some(Op::PushConst) && item.arg1 == CONST_STR)
         .map(|item| code + item.arg2 as i64)
         .collect();
     refs == string_offsets(function)
@@ -174,10 +141,9 @@ pub fn strings_in_order(function: &Function, code: i64) -> bool {
 pub fn native_positions(instructions: &[Instruction], args: &HashMap<i64, i32>) -> HashSet<usize> {
     let mut positions = HashSet::new();
     for (index, item) in instructions.iter().enumerate() {
-        if item.name() == "EXT" {
+        if item.opcode() == Some(Op::Ext) {
             if let Some(position) = stack::native_push(instructions, index, args) {
-                let push = &instructions[position];
-                if push.name() == "PUSH_CONST" && push.arg1 == CONST_INT {
+                if instructions[position].is_int() {
                     positions.insert(position);
                 }
             }
@@ -197,37 +163,39 @@ struct Context<'a> {
 }
 
 fn instruction_text(item: &Instruction, context: &mut Context) -> String {
-    let name = item.name();
+    let Some(op) = item.opcode() else {
+        return raw_op(item);
+    };
     let (arg1, arg2) = (item.arg1, item.arg2);
-    if let Some(mnemonic) = lookup(&PLAIN, name) {
-        return if arg1 == 0 && arg2 == 0 { mnemonic.to_string() } else { raw_op(item) };
+    if PLAIN.contains(&op) {
+        return if arg1 == 0 && arg2 == 0 { op.mnemonic() } else { raw_op(item) };
     }
-    if let Some(mnemonic) = lookup(&COUNTED, name) {
-        return if arg2 == 0 { format!("{mnemonic} {arg1}") } else { raw_op(item) };
+    if COUNTED.contains(&op) {
+        return if arg2 == 0 { format!("{} {arg1}", op.mnemonic()) } else { raw_op(item) };
     }
-    match name {
-        "LOAD" | "LOAD_ADDR" => match mode_name(arg2) {
-            Some(mode) => format!("{} {} {}", if name == "LOAD" { "load" } else { "addr" }, mode, arg1),
+    match op {
+        Op::Load | Op::LoadAddr => match Mode::from_bit(arg2) {
+            Some(mode) => format!("{} {} {}", if op == Op::Load { "load" } else { "addr" }, mode.name(), arg1),
             None => raw_op(item),
         },
-        "CMP" => match compare_name(arg1) {
-            Some(compare) if arg2 == 0 => format!("cmp {compare}"),
+        Op::Cmp => match Compare::from_number(arg1) {
+            Some(compare) if arg2 == 0 => format!("cmp {}", compare.name()),
             _ => raw_op(item),
         },
-        "JMP" | "JMP_FALSE" | "JMP_TRUE" => match lookup(&JUMPS, (name, arg2)) {
-            Some(mnemonic) if context.bounds.contains(&(arg1 as i64)) => {
+        Op::Jmp | Op::JmpFalse | Op::JmpTrue => match JUMPS.iter().find(|(jump, _)| *jump == (op, arg2)) {
+            Some((_, mnemonic)) if context.bounds.contains(&(arg1 as i64)) => {
                 format!("{} {}", mnemonic, jump_label(arg1 as i64))
             }
             _ => raw_op(item),
         },
-        "CALL" => {
+        Op::Call => {
             if arg1 != 0 || !context.functions.contains(&(arg2 as i64)) {
                 raw_op(item)
             } else {
                 format!("call {}", function_label(arg2 as i64))
             }
         }
-        "PUSH_CONST" => {
+        Op::PushConst => {
             if arg1 == CONST_INT && context.native {
                 return match context.natives.get(&arg2) {
                     Some(known) => format!("native {}", known.name),
@@ -271,7 +239,9 @@ pub fn function_text(
     let bounds: HashSet<i64> = (0..instructions.len()).map(at).collect();
     let targets: HashSet<i64> = instructions
         .iter()
-        .filter(|item| matches!(item.name(), "JMP" | "JMP_FALSE" | "JMP_TRUE") && bounds.contains(&(item.arg1 as i64)))
+        .filter(|item| {
+            matches!(item.opcode(), Some(Op::Jmp | Op::JmpFalse | Op::JmpTrue)) && bounds.contains(&(item.arg1 as i64))
+        })
         .map(|item| item.arg1 as i64)
         .collect();
     let mut header = format!(
@@ -712,7 +682,7 @@ fn needs_end(function: &FunctionItem) -> bool {
         None => true,
         Some(last) => {
             !(last.mnemonic == ".op"
-                && last.operands.first().and_then(Token::word).and_then(parse_int) == Some(stb::OP_FUNC_END as i64))
+                && last.operands.first().and_then(Token::word).and_then(parse_int) == Some(Op::FuncEnd.number() as i64))
         }
     }
 }
@@ -805,34 +775,35 @@ fn encode_instruction(
             arg2: number32(word_operand(item, 2)?)?,
         });
     }
-    if let Some(name) = reverse(&PLAIN, mnemonic) {
-        return Ok(Instruction::new(name, 0, 0));
+    if let Some(op) = named(&PLAIN, mnemonic) {
+        return Ok(Instruction::new(op, 0, 0));
     }
-    if let Some(name) = reverse(&COUNTED, mnemonic) {
-        return Ok(Instruction::new(name, number32(word_operand(item, 0)?)?, 0));
+    if let Some(op) = named(&COUNTED, mnemonic) {
+        return Ok(Instruction::new(op, number32(word_operand(item, 0)?)?, 0));
     }
     match mnemonic {
         "load" | "addr" => {
-            let mode = mode_number(word_operand(item, 0)?).ok_or_else(|| unknown("mode for"))?;
-            let name = if mnemonic == "load" { "LOAD" } else { "LOAD_ADDR" };
-            Ok(Instruction::new(name, number32(word_operand(item, 1)?)?, mode))
+            let mode = Mode::from_name(word_operand(item, 0)?).ok_or_else(|| unknown("mode for"))?;
+            let op = if mnemonic == "load" { Op::Load } else { Op::LoadAddr };
+            Ok(Instruction::new(op, number32(word_operand(item, 1)?)?, mode.bit()))
         }
         "cmp" => {
-            Ok(Instruction::new("CMP", compare_number(word_operand(item, 0)?).ok_or_else(|| unknown("compare"))?, 0))
+            let compare = Compare::from_name(word_operand(item, 0)?).ok_or_else(|| unknown("compare"))?;
+            Ok(Instruction::new(Op::Cmp, compare.number(), 0))
         }
-        "call" => Ok(Instruction::new("CALL", 0, address(word_operand(item, 0)?, places, places.code)?)),
+        "call" => Ok(Instruction::new(Op::Call, 0, address(word_operand(item, 0)?, places, places.code)?)),
         "native" => {
             let token = word_operand(item, 0)?;
             let no = match names.get(token) {
                 Some(&no) => no,
                 None => number32(token)?,
             };
-            Ok(Instruction::new("PUSH_CONST", CONST_INT, no))
+            Ok(Instruction::new(Op::PushConst, CONST_INT, no))
         }
         "push" => match item.operands.first() {
             Some(Token::Text(_)) => {
                 let at = queue.pop_front().ok_or_else(|| unknown("string pushed by"))?;
-                Ok(Instruction::new("PUSH_CONST", CONST_STR, (at as i64 - code) as i32))
+                Ok(Instruction::new(Op::PushConst, CONST_STR, (at as i64 - code) as i32))
             }
             Some(Token::Word(token)) if token == "string" => {
                 let index = number(word_operand(item, 1)?)?;
@@ -840,17 +811,17 @@ fn encode_instruction(
                     .ok()
                     .and_then(|index| strings.get(index))
                     .ok_or_else(|| Error::invalid(format!("line {}: no string {}", item.line, index)))?;
-                Ok(Instruction::new("PUSH_CONST", CONST_STR, (*at as i64 - code) as i32))
+                Ok(Instruction::new(Op::PushConst, CONST_STR, (*at as i64 - code) as i32))
             }
             Some(Token::Word(token)) if is_float(token) => {
-                Ok(Instruction::new("PUSH_CONST", CONST_FLOAT, float_bits(token)?))
+                Ok(Instruction::new(Op::PushConst, CONST_FLOAT, float_bits(token)?))
             }
-            Some(Token::Word(token)) => Ok(Instruction::new("PUSH_CONST", CONST_INT, number32(token)?)),
+            Some(Token::Word(token)) => Ok(Instruction::new(Op::PushConst, CONST_INT, number32(token)?)),
             None => Err(unknown("operand for")),
         },
         _ => match JUMPS.iter().find(|(_, name)| *name == mnemonic) {
-            Some(((name, keep), _)) => {
-                Ok(Instruction::new(name, address(word_operand(item, 0)?, places, places.code)?, *keep))
+            Some(((op, keep), _)) => {
+                Ok(Instruction::new(*op, address(word_operand(item, 0)?, places, places.code)?, *keep))
             }
             None => Err(Error::invalid(format!("line {}: unknown instruction {}", item.line, mnemonic))),
         },
@@ -880,7 +851,7 @@ fn build_function(function: &FunctionItem, places: &Places, names: &HashMap<&str
         .map(|item| encode_instruction(item, places, names, &strings, &mut queue))
         .collect::<Result<Vec<_>>>()?;
     if needs_end(function) {
-        instructions.push(Instruction::new("FUNC_END", 0, 0));
+        instructions.push(Instruction::new(Op::FuncEnd, 0, 0));
     }
     let line = 0;
     Ok(Function {

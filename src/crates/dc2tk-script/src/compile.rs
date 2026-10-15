@@ -11,68 +11,16 @@ use crate::natives::Table;
 use crate::node;
 use crate::node::{kinds, Node};
 use crate::source::py_str;
-use crate::stb;
+use crate::stb::{self, Compare, Mode, Op, Place};
 use crate::{Error, Result};
 
 fn fail<T>(reason: impl Into<String>) -> Result<T> {
     Err(Error::invalid(reason))
 }
 
-fn scalar_modes(kind: &str) -> &'static str {
-    if kind == "float" {
-        "local_f"
-    } else {
-        "local"
-    }
-}
-
-fn array_modes(kind: &str) -> &'static str {
-    if kind == "float" {
-        "local_idx_f"
-    } else {
-        "local_idx"
-    }
-}
-
-fn pointer_modes(kind: &str) -> &'static str {
-    if kind == "float" {
-        "ptr_idx_f"
-    } else {
-        "ptr_idx"
-    }
-}
-
-fn global_modes(kind: &str) -> &'static str {
-    if kind == "float" {
-        "global_f"
-    } else {
-        "global"
-    }
-}
-
-fn binary_mnemonic(op: &str) -> Option<&'static str> {
-    Some(match op {
-        "+" => "add",
-        "-" => "sub",
-        "*" => "mul",
-        "/" => "div",
-        "%" => "mod",
-        "&" => "and",
-        "|" => "or",
-        _ => return None,
-    })
-}
-
-fn compare_mnemonic(op: &str) -> Option<&'static str> {
-    Some(match op {
-        "==" => "eq",
-        "!=" => "ne",
-        "<" => "lt",
-        "<=" => "le",
-        ">" => "gt",
-        ">=" => "ge",
-        _ => return None,
-    })
+/// The assembly's name of the mode of a slot of a place holding a value of a type.
+fn mode(place: Place, kind: &str) -> &'static str {
+    Mode::of(place, kind).name()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -196,8 +144,8 @@ impl State<'_> {
 
 fn scalar_mode(symbol: &Symbol, name: &str) -> Result<&'static str> {
     match symbol.scope {
-        Scope::Global => Ok(global_modes(&symbol.kind)),
-        Scope::Scalar => Ok(scalar_modes(&symbol.kind)),
+        Scope::Global => Ok(mode(Place::Global, &symbol.kind)),
+        Scope::Scalar => Ok(mode(Place::Local, &symbol.kind)),
         // The slot holds the pointer itself; an int mode moves it without retyping it as a float.
         Scope::Pointer => Ok("local"),
         Scope::Array => fail(format!("{name} is an array")),
@@ -209,9 +157,9 @@ fn scalar_mode(symbol: &Symbol, name: &str) -> Result<&'static str> {
 fn indexed_mode(symbol: &Symbol, name: &str, node: &Node) -> Result<&'static str> {
     let kind = node["type"].as_str().unwrap_or(&symbol.kind);
     match symbol.scope {
-        Scope::Array => Ok(array_modes(kind)),
+        Scope::Array => Ok(mode(Place::Array, kind)),
         Scope::Pointer if kind == "void" => fail(format!("{name} is a void pointer; give it int or float")),
-        Scope::Pointer => Ok(pointer_modes(kind)),
+        Scope::Pointer => Ok(mode(Place::Pointer, kind)),
         _ => fail(format!("{name} is not an array")),
     }
 }
@@ -244,15 +192,15 @@ fn access(state: &mut State, node: &Node, mnemonic: &str) -> Result<()> {
             let name = node.text("name");
             let symbol = state.lookup(name)?;
             let kind = node.text("type");
-            let mode = if symbol.scope == Scope::Global { global_modes(kind) } else { scalar_modes(kind) };
-            state.emit(format!("{} {} {}", mnemonic, mode, symbol.slot + int(&node["offset"])?));
+            let place = if symbol.scope == Scope::Global { Place::Global } else { Place::Local };
+            state.emit(format!("{} {} {}", mnemonic, mode(place, kind), symbol.slot + int(&node["offset"])?));
         }
         kinds::AT => {
             // through a pointer an expression gives: the VM indexes through a local only
             let slot = state.temporary();
             store_temporary(state, slot, &node["pointer"])?;
             expression(state, &node["index"])?;
-            state.emit(format!("{} {} {}", mnemonic, pointer_modes(node.text("type")), slot));
+            state.emit(format!("{} {} {}", mnemonic, mode(Place::Pointer, node.text("type")), slot));
         }
         other => return fail(format!("cannot take the address of {other}")),
     }
@@ -276,7 +224,7 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
             // An array used as a value is the address of its first element, as in C.
             let symbol = state.lookup(node.text("name"))?;
             state.emit("push 0");
-            state.emit(format!("addr {} {}", array_modes(&symbol.kind), symbol.slot));
+            state.emit(format!("addr {} {}", mode(Place::Array, &symbol.kind), symbol.slot));
         }
         kinds::VAR | kinds::INDEX | kinds::DEREF | kinds::FIELD | kinds::AT => access(state, node, "load")?,
         kinds::ADDR => access(state, &node["target"], "addr")?,
@@ -291,9 +239,9 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
             expression(state, &node["left"])?;
             expression(state, &node["right"])?;
             let op = node.text("op");
-            match (compare_mnemonic(op), binary_mnemonic(op)) {
-                (Some(compare), _) => state.emit(format!("cmp {compare}")),
-                (None, Some(mnemonic)) => state.emit(mnemonic),
+            match (Compare::from_operator(op), Op::binary(op)) {
+                (Some(compare), _) => state.emit(format!("cmp {}", compare.name())),
+                (None, Some(binary)) => state.emit(binary.mnemonic()),
                 _ => return fail(format!("unknown operator {op}")),
             }
         }
@@ -359,7 +307,7 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
         }
         kinds::VIA => {
             state.emit("push 0");
-            state.emit(format!("load {} {}", pointer_modes(node.text("type")), int(&node["slot"])?));
+            state.emit(format!("load {} {}", mode(Place::Pointer, node.text("type")), int(&node["slot"])?));
         }
         kinds::TERNARY => {
             expression(state, &node["cond"])?;

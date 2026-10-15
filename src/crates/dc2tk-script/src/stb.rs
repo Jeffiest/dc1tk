@@ -13,6 +13,43 @@ pub const FUNCDATA_SIZE: usize = 0x38;
 pub const FUNCDATA_ARGS: usize = 10;
 pub const VMCODE_SIZE: usize = 12;
 
+/// The VM's instructions, by opcode (runscript.cpp's names, which OPCODES lists in order).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Op {
+    FuncEnd,
+    Load,
+    LoadAddr,
+    PushConst,
+    Pop,
+    Store,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Neg,
+    Itof,
+    Ftoi,
+    Cmp,
+    Ret,
+    Jmp,
+    JmpFalse,
+    JmpTrue,
+    Call,
+    Print,
+    Ext,
+    Nop,
+    Wait,
+    And,
+    Or,
+    Not,
+    End,
+    SkipEnd,
+    Sin,
+    Cos,
+}
+
+/// The opcodes' names, by number.
 pub const OPCODES: [&str; 31] = [
     "FUNC_END",
     "LOAD",
@@ -47,17 +84,228 @@ pub const OPCODES: [&str; 31] = [
     "COS",
 ];
 
-pub const OP_FUNC_END: i32 = 0;
-pub const OP_PUSH_CONST: i32 = 3;
+/// The binary operators' instructions, with the C operators they are.
+const BINARY: [(Op, &str); 7] =
+    [(Op::Add, "+"), (Op::Sub, "-"), (Op::Mul, "*"), (Op::Div, "/"), (Op::Mod, "%"), (Op::And, "&"), (Op::Or, "|")];
+
+impl Op {
+    /// Every opcode, by number.
+    pub const ALL: [Op; 31] = [
+        Op::FuncEnd,
+        Op::Load,
+        Op::LoadAddr,
+        Op::PushConst,
+        Op::Pop,
+        Op::Store,
+        Op::Add,
+        Op::Sub,
+        Op::Mul,
+        Op::Div,
+        Op::Mod,
+        Op::Neg,
+        Op::Itof,
+        Op::Ftoi,
+        Op::Cmp,
+        Op::Ret,
+        Op::Jmp,
+        Op::JmpFalse,
+        Op::JmpTrue,
+        Op::Call,
+        Op::Print,
+        Op::Ext,
+        Op::Nop,
+        Op::Wait,
+        Op::And,
+        Op::Or,
+        Op::Not,
+        Op::End,
+        Op::SkipEnd,
+        Op::Sin,
+        Op::Cos,
+    ];
+
+    /// The opcode a number is, if the VM has it.
+    pub fn from_number(number: i32) -> Option<Op> {
+        usize::try_from(number).ok().and_then(|number| Op::ALL.get(number)).copied()
+    }
+
+    pub fn number(self) -> i32 {
+        self as i32
+    }
+
+    pub fn name(self) -> &'static str {
+        OPCODES[self as usize]
+    }
+
+    pub fn from_name(name: &str) -> Option<Op> {
+        OPCODES.iter().position(|op| *op == name).map(|number| Op::ALL[number])
+    }
+
+    /// The assembly's mnemonic of an instruction with no operands or a count (pop, add, nop...):
+    /// its name in lower case.
+    pub fn mnemonic(self) -> String {
+        self.name().to_lowercase()
+    }
+
+    /// The instruction of a binary C operator the VM has one for (+ - * / % & |).
+    pub fn binary(operator: &str) -> Option<Op> {
+        BINARY.iter().find(|(_, known)| *known == operator).map(|(op, _)| *op)
+    }
+
+    /// The C operator a binary instruction is.
+    pub fn binary_operator(self) -> Option<&'static str> {
+        BINARY.iter().find(|(op, _)| *op == self).map(|(_, operator)| *operator)
+    }
+}
+
+/// CMP's comparisons (its arg1), as the assembly names them and C writes them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Compare {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+/// Each comparison's number, the assembly's name and C's operator.
+const COMPARES: [(Compare, i32, &str, &str); 6] = [
+    (Compare::Eq, 40, "eq", "=="),
+    (Compare::Ne, 41, "ne", "!="),
+    (Compare::Lt, 42, "lt", "<"),
+    (Compare::Le, 43, "le", "<="),
+    (Compare::Gt, 44, "gt", ">"),
+    (Compare::Ge, 45, "ge", ">="),
+];
+
+impl Compare {
+    fn entry(self) -> (Compare, i32, &'static str, &'static str) {
+        *COMPARES.iter().find(|entry| entry.0 == self).expect("every comparison is listed")
+    }
+
+    pub fn number(self) -> i32 {
+        self.entry().1
+    }
+
+    pub fn name(self) -> &'static str {
+        self.entry().2
+    }
+
+    pub fn operator(self) -> &'static str {
+        self.entry().3
+    }
+
+    pub fn from_number(number: i32) -> Option<Compare> {
+        COMPARES.iter().find(|entry| entry.1 == number).map(|entry| entry.0)
+    }
+
+    pub fn from_name(name: &str) -> Option<Compare> {
+        COMPARES.iter().find(|entry| entry.2 == name).map(|entry| entry.0)
+    }
+
+    pub fn from_operator(operator: &str) -> Option<Compare> {
+        COMPARES.iter().find(|entry| entry.3 == operator).map(|entry| entry.0)
+    }
+}
+
+/// Where a LOAD or LOAD_ADDR's slot is (its addressing mode, arg2, says, with the value's type).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Place {
+    /// A local's slot (a parameter is a local).
+    Local,
+    /// An element of a local array: the index popped, added to the slot.
+    Array,
+    /// An element through the pointer a local holds: the index popped, added to the pointer.
+    Pointer,
+    /// A global's slot.
+    Global,
+}
+
+/// A LOAD or LOAD_ADDR's addressing mode: where the slot is, and whether its value is read as a
+/// float (an int there is converted). The assembly names it local, local_idx, ptr_idx or global,
+/// with _f for a float.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Mode {
+    pub place: Place,
+    pub float: bool,
+}
+
+impl Mode {
+    /// Every mode, with its bit.
+    pub const ALL: [(Mode, i32); 8] = [
+        (Mode { place: Place::Local, float: false }, 0x1),
+        (Mode { place: Place::Array, float: false }, 0x2),
+        (Mode { place: Place::Pointer, float: false }, 0x4),
+        (Mode { place: Place::Local, float: true }, 0x8),
+        (Mode { place: Place::Array, float: true }, 0x10),
+        (Mode { place: Place::Pointer, float: true }, 0x20),
+        (Mode { place: Place::Global, float: false }, 0x40),
+        (Mode { place: Place::Global, float: true }, 0x200),
+    ];
+
+    pub fn new(place: Place, float: bool) -> Mode {
+        Mode { place, float }
+    }
+
+    /// A slot of a value of a type: float for "float", int for any other.
+    pub fn of(place: Place, kind: &str) -> Mode {
+        Mode::new(place, kind == "float")
+    }
+
+    pub fn bit(self) -> i32 {
+        Mode::ALL.iter().find(|(mode, _)| *mode == self).map(|(_, bit)| *bit).expect("every mode has a bit")
+    }
+
+    pub fn from_bit(bit: i32) -> Option<Mode> {
+        Mode::ALL.iter().find(|(_, known)| *known == bit).map(|(mode, _)| *mode)
+    }
+
+    pub fn name(self) -> &'static str {
+        match (self.place, self.float) {
+            (Place::Local, false) => "local",
+            (Place::Array, false) => "local_idx",
+            (Place::Pointer, false) => "ptr_idx",
+            (Place::Global, false) => "global",
+            (Place::Local, true) => "local_f",
+            (Place::Array, true) => "local_idx_f",
+            (Place::Pointer, true) => "ptr_idx_f",
+            (Place::Global, true) => "global_f",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Mode> {
+        Mode::ALL.iter().map(|(mode, _)| *mode).find(|mode| mode.name() == name)
+    }
+
+    pub fn is_float(self) -> bool {
+        self.float
+    }
+
+    /// Whether the instruction pops an index (an element of an array or through a pointer).
+    pub fn is_indexed(self) -> bool {
+        matches!(self.place, Place::Array | Place::Pointer)
+    }
+
+    /// The type of the value the slot is read as.
+    pub fn kind(self) -> &'static str {
+        if self.float {
+            "float"
+        } else {
+            "int"
+        }
+    }
+}
+
+/// PUSH_CONST's kinds of constant (its arg1): an int, a float's bits, or a string by its offset
+/// from the code section.
+pub const CONST_INT: i32 = 1;
+pub const CONST_FLOAT: i32 = 2;
 pub const CONST_STR: i32 = 3;
 
 /// The opcode's name, or "UNKNOWN" for a number the VM does not have.
 pub fn op_name(op: i32) -> &'static str {
-    usize::try_from(op).ok().and_then(|op| OPCODES.get(op)).copied().unwrap_or("UNKNOWN")
-}
-
-pub fn op_number(name: &str) -> Option<i32> {
-    OPCODES.iter().position(|op| *op == name).map(|op| op as i32)
+    Op::from_number(op).map_or("UNKNOWN", Op::name)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,12 +335,29 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn new(name: &str, arg1: i32, arg2: i32) -> Instruction {
-        Instruction { op: op_number(name).expect("a known opcode name"), arg1, arg2 }
+    pub fn new(op: Op, arg1: i32, arg2: i32) -> Instruction {
+        Instruction { op: op.number(), arg1, arg2 }
+    }
+
+    /// The instruction's opcode; None for a number the VM does not have (which only an assembly
+    /// .op line can give).
+    pub fn opcode(&self) -> Option<Op> {
+        Op::from_number(self.op)
     }
 
     pub fn name(&self) -> &'static str {
         op_name(self.op)
+    }
+
+    /// The addressing mode of a LOAD or LOAD_ADDR (None for another instruction, or a mode the VM
+    /// does not have).
+    pub fn mode(&self) -> Option<Mode> {
+        matches!(self.opcode(), Some(Op::Load | Op::LoadAddr)).then(|| Mode::from_bit(self.arg2)).flatten()
+    }
+
+    /// Whether the instruction pushes an int constant.
+    pub fn is_int(&self) -> bool {
+        self.opcode() == Some(Op::PushConst) && self.arg1 == CONST_INT
     }
 }
 
@@ -208,12 +473,10 @@ fn read_instructions(data: &[u8], start: usize) -> Option<Vec<Instruction>> {
     while position + VMCODE_SIZE <= data.len() {
         let item =
             Instruction { op: word(data, position), arg1: word(data, position + 4), arg2: word(data, position + 8) };
-        if !(0..OPCODES.len() as i32).contains(&item.op) {
-            return None;
-        }
+        let op = Op::from_number(item.op)?;
         instructions.push(item);
         position += VMCODE_SIZE;
-        if item.op == OP_FUNC_END {
+        if op == Op::FuncEnd {
             return Some(instructions);
         }
     }
@@ -224,7 +487,7 @@ fn read_instructions(data: &[u8], start: usize) -> Option<Vec<Instruction>> {
 pub fn string_refs(code: usize, instructions: &[Instruction]) -> Vec<i64> {
     instructions
         .iter()
-        .filter(|item| item.op == OP_PUSH_CONST && item.arg1 == CONST_STR)
+        .filter(|item| item.opcode() == Some(Op::PushConst) && item.arg1 == CONST_STR)
         .map(|item| code as i64 + item.arg2 as i64)
         .collect()
 }
