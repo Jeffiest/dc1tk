@@ -83,11 +83,10 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
                 if let Some(&place) = places.last().filter(|&&place| scripts[0].statements[place].args().len() >= 7) {
                     let place = [(0, place)];
                     record.arg("area", S32, &place, 0);
-                    record.field("area_values", Kind::Float, Place::Args { at: place.to_vec(), arg: 2, len: 5 });
+                    record.args("area_values", Kind::Float, &place, 2, 5);
                 }
                 record.field(
                     "fish",
-                    S32,
                     Place::Lines {
                         copies: vec![fish.iter().map(|&at| (0, at)).collect()],
                         entry: vec![("fish", S32), ("rate", Kind::Float), ("wait_bias", Kind::Float)],
@@ -135,7 +134,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
             record.label("name", Value::from(dc2tk_disc::text::decode_lossy(name)));
         }
         record.arg("item", S32, &at, 0).arg("colour", B8, &at, 2).arg("power", S16, &at, 3);
-        record.field("speed", S16, Place::Args { at: at.clone(), arg: 4, len: 3 });
+        record.args("speed", S16, &at, 4, 3);
         record.arg("stamina", S16, &at, 7).arg("size", S16, &at, 8);
         race_fish.push(record);
     }
@@ -157,11 +156,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
                         record.arg("count", S32, &place, 0).fixed("the count is how many PRIZE lines follow");
                     }
                     if count >= 2 {
-                        record.field(
-                            "values",
-                            S32,
-                            Place::Args { at: place.to_vec(), arg: 1, len: (count - 1).min(8) },
-                        );
+                        record.args("values", S32, &place, 1, (count - 1).min(8));
                     }
                     groups.push(record);
                 }
@@ -177,7 +172,6 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
                     record.arg("unread", S32, &place, 0);
                     record.field(
                         "places",
-                        S32,
                         Place::List {
                             at: place.to_vec(),
                             arg: 1,

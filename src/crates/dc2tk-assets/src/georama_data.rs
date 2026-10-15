@@ -134,11 +134,11 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
                 record.arg("place_eps", Kind::Float, &at("PLACE_EPS"), 0);
             }
             if count("CPOINT") >= 2 {
-                record.field("culture_points", S32, Place::Args { at: at("CPOINT"), arg: 0, len: 2 });
+                record.args("culture_points", S32, &at("CPOINT"), 0, 2);
             }
             let polygons = count("POLYN").min(3);
             if polygons > 0 {
-                record.field("polyn", S32, Place::Args { at: at("POLYN"), arg: 0, len: polygons });
+                record.args("polyn", S32, &at("POLYN"), 0, polygons);
             }
             // every language's material statements, in order
             let copies: Vec<Vec<(usize, usize)>> = std::iter::once(LABELS)
@@ -156,7 +156,6 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
                 .collect();
             record.field(
                 "materials",
-                S32,
                 Place::Lines {
                     copies,
                     entry: vec![("item", S32), ("count", S32)],
@@ -187,7 +186,7 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
                 let mut record = Record::new(&[("town", Value::from(town(number))), ("number", Value::from(index))]);
                 record.block = vec![(file, statement, statement)];
                 record.arg("part", S32, &at, 0);
-                record.field("position", Kind::Float, Place::Args { at: at.to_vec(), arg: 1, len: 3 });
+                record.args("position", Kind::Float, &at, 1, 3);
                 record.arg("angle", S32, &at, 4);
                 list.push(record);
             }
@@ -281,18 +280,18 @@ fn river_sections(scripts: &[Script]) -> Vec<(&'static str, Vec<&'static str>, V
                 }
                 "WATER_VERTEX" if args(at) >= 8 => {
                     if let Some(record) = current.as_mut() {
-                        record.field("grid", S32, Place::Args { at: place.to_vec(), arg: 0, len: 2 });
-                        record.field("corners", Kind::Float, Place::Args { at: place.to_vec(), arg: 2, len: 6 });
+                        record.args("grid", S32, &place, 0, 2);
+                        record.args("corners", Kind::Float, &place, 2, 6);
                     }
                 }
                 "WATER_POS" if args(at) >= 3 => {
                     if let Some(record) = current.as_mut() {
-                        record.field("position", Kind::Float, Place::Args { at: place.to_vec(), arg: 0, len: 3 });
+                        record.args("position", Kind::Float, &place, 0, 3);
                     }
                 }
                 "WATER_PARAM" if args(at) >= 4 => {
                     if let Some(record) = current.as_mut() {
-                        record.field("params", Kind::Float, Place::Args { at: place.to_vec(), arg: 0, len: 4 });
+                        record.args("params", Kind::Float, &place, 0, 4);
                     }
                 }
                 "WATER_SURFACE_END" => surfaces.extend(current.take()),
@@ -300,7 +299,7 @@ fn river_sections(scripts: &[Script]) -> Vec<(&'static str, Vec<&'static str>, V
                     let index = draws.iter().filter(|record: &&Record| record.keys[0].1 == town(number)).count();
                     let mut record = keys("number", Value::from(index));
                     record.arg("surface", S32, &place, 0).arg("follow", Kind::Text(63), &place, 1);
-                    record.field("position", Kind::Float, Place::Args { at: place.to_vec(), arg: 2, len: 3 });
+                    record.args("position", Kind::Float, &place, 2, 3);
                     draws.push(record);
                 }
                 _ => {}

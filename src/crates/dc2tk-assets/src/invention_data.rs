@@ -60,10 +60,9 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
         }
         let mut record = Record::new(&[("recipe", Value::from(number))]);
         record.arg("item", S16, &at, 0);
-        record.field("ideas", S16, Place::Args { at: at.clone(), arg: 1, len: 3 });
+        record.args("ideas", S16, &at, 1, 3);
         record.field(
             "materials",
-            S16,
             Place::List {
                 at: at.clone(),
                 arg: 4,
@@ -74,7 +73,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
         );
         record.arg("unknown_10", S16, &at, count - 5);
         record.arg("scale", Kind::Float, &at, count - 4);
-        record.field("position", Kind::Float, Place::Args { at: at.clone(), arg: count - 3, len: 3 });
+        record.args("position", Kind::Float, &at, count - 3, 3);
         record.block = at.iter().map(|&(file, statement)| (file, statement, statement)).collect();
         recipes.push(record);
     }

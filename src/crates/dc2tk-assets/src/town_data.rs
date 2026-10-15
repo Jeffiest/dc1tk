@@ -20,7 +20,7 @@
 use serde_json::Value;
 
 use crate::cfg_text::{Arg, Script};
-use crate::data_table::{self, Adding, Kind, Place, Record, Table, S16, S32, S8};
+use crate::data_table::{self, Adding, Kind, Place, Record, Table, S16, S32};
 use crate::Result;
 
 pub const LANGUAGES: usize = 7;
@@ -155,7 +155,6 @@ pub fn requests(files: &[Vec<u8>]) -> Result<Table> {
         if !at(Some("CON_NO"), 1).is_empty() {
             record.field(
                 "conditions",
-                S8,
                 Place::List {
                     at: at(Some("CON_NO"), 1),
                     arg: 0,
@@ -218,7 +217,7 @@ pub fn townspeople(files: &[Vec<u8>]) -> Result<Table> {
         }
         record.arg("model", Kind::Text(MODEL_MOST), &at, 2);
         record.arg("message_kind", S32, &at, 3).arg("abilities", S32, &at, 4).arg("points", S32, &at, 5);
-        record.field("ability_costs", S32, Place::Args { at: at.clone(), arg: 6, len: 4 });
+        record.args("ability_costs", S32, &at, 6, 4);
         record.arg("debug", S32, &at, 10);
         record.block = at.iter().map(|&(file, at)| (file, at, at)).collect();
         records.push(record);

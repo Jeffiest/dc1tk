@@ -16,7 +16,7 @@
 use serde_json::Value;
 
 use crate::cfg_text::Arg;
-use crate::data_table::{self, Kind, Place, Record, Table, S16, S32, S8};
+use crate::data_table::{self, Place, Record, Table, S16, S32, S8};
 use crate::Result;
 
 pub const DUNGEONS: usize = 7;
@@ -56,7 +56,6 @@ pub fn medals(files: &[Vec<u8>]) -> Result<Table> {
                 .arg("spheda", S8, &at, 6);
             record.field(
                 "spheda_prizes",
-                S16,
                 Place::List {
                     at: at.to_vec(),
                     arg: 7,
@@ -107,7 +106,6 @@ pub fn floors(files: &[Vec<u8>]) -> Result<Table> {
         let mut record = keys(dungeon, floor);
         record.field(
             "monsters",
-            Kind::Int(0, 0),
             Place::Lines {
                 copies: vec![at],
                 entry: vec![("monster", S16), ("talk", S16)],

@@ -36,22 +36,26 @@ pub enum Kind {
     Text(usize),
 }
 
+/// The ranges of the engine's integer fields. A field a script fills takes what its type holds
+/// either way (B8, B16: -1 is kept as 255, as the engine stores it); one of the executable takes
+/// its own type's range (S8 to U32).
 pub const S8: Kind = Kind::Int(-128, 127);
-/// A byte a script fills: -1 is kept as 255, as the engine stores it.
 pub const B8: Kind = Kind::Int(-128, 255);
 pub const U8: Kind = Kind::Int(0, 255);
 pub const S16: Kind = Kind::Int(-32768, 32767);
 pub const B16: Kind = Kind::Int(-32768, 65535);
+pub const U16: Kind = Kind::Int(0, 65535);
 pub const S32: Kind = Kind::Int(i32::MIN as i64, i32::MAX as i64);
+pub const U32: Kind = Kind::Int(0, u32::MAX as i64);
 
-/// Where a field's values are.
+/// Where a field's values are, and what they are.
 #[derive(Clone, Debug)]
 pub enum Place {
-    /// `len` arguments from `arg` of a statement, in every copy: (file, statement) each, the
-    /// first read.
-    Args { at: Vec<(usize, usize)>, arg: usize, len: usize },
+    /// `len` arguments of `kind` from `arg` of a statement, in every copy: (file, statement) each,
+    /// the first read.
+    Args { at: Vec<(usize, usize)>, arg: usize, len: usize, kind: Kind },
     /// A list of entries from argument `arg` to the last `tail` arguments, `entry` arguments to
-    /// an entry, from `count.0` to `count.1` entries; in every copy.
+    /// an entry (each with its kind), from `count.0` to `count.1` entries; in every copy.
     List { at: Vec<(usize, usize)>, arg: usize, tail: usize, entry: Vec<(&'static str, Kind)>, count: (usize, usize) },
     /// A list of entries over every argument of these statements in turn, in each copy (the first
     /// read). A changed list fills them in order: with `per_line` 0 each but the last as many
@@ -66,14 +70,13 @@ pub enum Place {
         per_line: usize,
         grow: bool,
     },
-    /// `len` values of `size` bytes from `offset` in the executable's file.
-    Bytes { offset: usize, size: usize, len: usize },
+    /// `len` values of `kind`, `size` bytes each, from `offset` in the executable's file.
+    Bytes { offset: usize, size: usize, len: usize, kind: Kind },
 }
 
 #[derive(Clone, Debug)]
 pub struct Field {
     pub name: String,
-    pub kind: Kind,
     pub place: Place,
     /// Why the field may not change (a number that ties records together), or None.
     pub fixed: Option<&'static str>,
@@ -125,14 +128,19 @@ impl Record {
         self
     }
 
-    pub fn field(&mut self, name: &str, kind: Kind, place: Place) -> &mut Record {
-        self.fields.push(Field { name: name.to_string(), kind, place, fixed: None });
+    pub fn field(&mut self, name: &str, place: Place) -> &mut Record {
+        self.fields.push(Field { name: name.to_string(), place, fixed: None });
         self
     }
 
     /// One argument of a statement (and its copies).
     pub fn arg(&mut self, name: &str, kind: Kind, at: &[(usize, usize)], arg: usize) -> &mut Record {
-        self.field(name, kind, Place::Args { at: at.to_vec(), arg, len: 1 })
+        self.args(name, kind, at, arg, 1)
+    }
+
+    /// `len` arguments in a row from `arg` of a statement (and its copies): a list in the JSON.
+    pub fn args(&mut self, name: &str, kind: Kind, at: &[(usize, usize)], arg: usize, len: usize) -> &mut Record {
+        self.field(name, Place::Args { at: at.to_vec(), arg, len, kind })
     }
 
     /// `len` values of `kind` in a row in the executable.
@@ -143,7 +151,7 @@ impl Record {
             Kind::Text(size) => size,
             _ => 4,
         };
-        self.field(name, kind, Place::Bytes { offset, size, len })
+        self.field(name, Place::Bytes { offset, size, len, kind })
     }
 
     /// The last field added may not change.
@@ -204,8 +212,9 @@ pub struct Table {
     pub string_units: Option<(usize, &'static str)>,
 }
 
-/// Whether two values are the same to the engine (an int and the float of it are).
-fn same(old: &Value, new: &Value) -> bool {
+/// Whether two values are the same to the engine (an int and the float of it are; two ints are
+/// compared as ints, never through an f32 that would round them).
+pub fn same(old: &Value, new: &Value) -> bool {
     match (old, new) {
         (Value::Number(a), Value::Number(b)) => match (a.as_i64(), b.as_i64()) {
             (Some(a), Some(b)) => a == b,
@@ -216,6 +225,20 @@ fn same(old: &Value, new: &Value) -> bool {
             a.len() == b.len() && a.iter().all(|(key, a)| b.get(key).is_some_and(|b| same(a, b)))
         }
         _ => old == new,
+    }
+}
+
+/// The values a field of `len` gives, each with its name in messages: the value itself for one
+/// (`what`), else a list of `len` (`what[0]`, ...).
+pub fn values_of<'a>(value: &'a Value, len: usize, what: &str) -> Result<Vec<(String, &'a Value)>> {
+    if len == 1 {
+        return Ok(vec![(what.to_string(), value)]);
+    }
+    match value.as_array() {
+        Some(list) if list.len() == len => {
+            Ok(list.iter().enumerate().map(|(number, value)| (format!("{what}[{number}]"), value)).collect())
+        }
+        _ => bail!("{what} is a list of {len}"),
     }
 }
 
@@ -234,7 +257,15 @@ pub fn float_value(value: f32) -> Value {
     serde_json::from_str(&format!("{value}")).unwrap_or(Value::Null)
 }
 
-fn arg_value(arg: Arg, kind: Kind) -> Value {
+/// The JSON number of an f32 widened to an f64, every digit of that shown (0.99 is
+/// 0.9900000095367432): how `data:items` has always written its float arguments, which its
+/// exported files keep. The tables built here write float_arg_value's shortest text.
+pub fn widened_float_value(value: f32) -> Value {
+    serde_json::Number::from_f64(value as f64).map_or(Value::Null, Value::Number)
+}
+
+/// An argument's value in the JSON, as a field of `kind` reads it.
+pub fn arg_value(arg: Arg, kind: Kind) -> Value {
     match kind {
         Kind::Int(..) => Value::from(arg.int()),
         Kind::Float => match arg {
@@ -426,9 +457,9 @@ impl Table {
     /// A field's value as the engine reads it (from the first copy).
     pub fn value(&self, field: &Field) -> Value {
         match &field.place {
-            Place::Args { at, arg, len } => {
+            Place::Args { at, arg, len, kind } => {
                 let args = self.args(at[0].0, at[0].1);
-                let one = |at: usize| args.get(at).map_or(Value::Null, |piece| arg_value(piece.value(), field.kind));
+                let one = |at: usize| args.get(at).map_or(Value::Null, |piece| arg_value(piece.value(), *kind));
                 if *len == 1 {
                     one(*arg)
                 } else {
@@ -448,10 +479,10 @@ impl Table {
                     })
                     .collect(),
             ),
-            Place::Bytes { offset, size, len } => {
+            Place::Bytes { offset, size, len, kind } => {
                 let one = |number: usize| {
                     let at = offset + number * size;
-                    bytes_value(field.kind, &self.elf[at..at + size])
+                    bytes_value(*kind, &self.elf[at..at + size])
                 };
                 if *len == 1 {
                     one(0)
@@ -717,8 +748,8 @@ impl Table {
             let mut fields = Vec::new();
             for field in &like.fields {
                 let place = match &field.place {
-                    Place::Args { at, arg, len } => {
-                        Place::Args { at: at.iter().filter_map(moved).collect(), arg: *arg, len: *len }
+                    Place::Args { at, arg, len, kind } => {
+                        Place::Args { at: at.iter().filter_map(moved).collect(), arg: *arg, len: *len, kind: *kind }
                     }
                     Place::List { at, arg, tail, entry, count } => Place::List {
                         at: at.iter().filter_map(moved).collect(),
@@ -740,7 +771,7 @@ impl Table {
                     },
                     Place::Bytes { .. } => continue,
                 };
-                fields.push(Field { name: field.name.clone(), kind: field.kind, place, fixed: None });
+                fields.push(Field { name: field.name.clone(), place, fixed: None });
             }
             let moved_record = Record { fields, ..Record::default() };
             let mut flat = Vec::new();
@@ -838,23 +869,14 @@ impl Table {
             module: module.to_string(),
         };
         match &field.place {
-            Place::Args { at, arg, len } => {
-                let values: Vec<&Value> = if *len == 1 {
-                    vec![value]
-                } else {
-                    match value.as_array() {
-                        Some(list) if list.len() == *len => list.iter().collect(),
-                        _ => bail!("{what} is a list of {len}"),
-                    }
-                };
-                for (number, value) in values.into_iter().enumerate() {
-                    let what = if *len == 1 { what.to_string() } else { format!("{what}[{number}]") };
-                    let text = value_text(field.kind, value, &what)?;
+            Place::Args { at, arg, len, kind } => {
+                for (number, (what, value)) in values_of(value, *len, what)?.into_iter().enumerate() {
+                    let text = value_text(*kind, value, &what)?;
                     for &(file, statement) in at {
                         let Some(piece) = self.args(file, statement).get(arg + number) else {
                             bail!("{what}: the statement has no such argument");
                         };
-                        if same(&arg_value(piece.value(), field.kind), value) {
+                        if same(&arg_value(piece.value(), *kind), value) {
                             continue;
                         }
                         edits.push(edit(file, statement, arg + number, To::Arg(text.clone()), what.clone()));
@@ -911,21 +933,12 @@ impl Table {
                     }
                 }
             }
-            Place::Bytes { offset, size, len } => {
-                let values: Vec<&Value> = if *len == 1 {
-                    vec![value]
-                } else {
-                    match value.as_array() {
-                        Some(list) if list.len() == *len => list.iter().collect(),
-                        _ => bail!("{what} is a list of {len}"),
-                    }
-                };
-                for (number, value) in values.into_iter().enumerate() {
-                    let what = if *len == 1 { what.to_string() } else { format!("{what}[{number}]") };
-                    let bytes = value_bytes(field.kind, *size, value, &what)?;
+            Place::Bytes { offset, size, len, kind } => {
+                for (number, (what, value)) in values_of(value, *len, what)?.into_iter().enumerate() {
+                    let bytes = value_bytes(*kind, *size, value, &what)?;
                     let at = offset + number * size;
                     let have = &self.elf[at..at + size];
-                    if have == bytes.as_slice() || same(&bytes_value(field.kind, have), value) {
+                    if have == bytes.as_slice() || same(&bytes_value(*kind, have), value) {
                         continue;
                     }
                     patches.push(Patch { offset: at, bytes, what, module: module.to_string() });
@@ -977,12 +990,12 @@ impl Table {
                     let what = format!("{label} {}", field.name);
                     let value = self.value(field);
                     match &field.place {
-                        Place::Args { at, arg, len } => {
+                        Place::Args { at, arg, len, kind } => {
                             let values =
                                 if *len == 1 { vec![value] } else { value.as_array().cloned().unwrap_or_default() };
                             for (number, value) in values.iter().enumerate() {
                                 for &(file, statement) in &at[..1] {
-                                    let text = value_text(field.kind, value, &what);
+                                    let text = value_text(*kind, value, &what);
                                     let have = self.args(file, statement).get(arg + number).map(|piece| &piece.text);
                                     if text.as_ref().ok() != have {
                                         wrong.push(format!("{what}: {value} in file {file}"));
@@ -995,14 +1008,14 @@ impl Table {
                                 wrong.push(format!("{what}: {value}"));
                             }
                         }
-                        Place::Bytes { offset, size, len } => {
+                        Place::Bytes { offset, size, len, kind } => {
                             let values =
                                 if *len == 1 { vec![value] } else { value.as_array().cloned().unwrap_or_default() };
                             for (number, value) in values.iter().enumerate() {
                                 let at = offset + number * size;
-                                let bytes = value_bytes(field.kind, *size, value, &what);
-                                let same_bytes = match (&bytes, field.kind) {
-                                    (Ok(bytes), Kind::Text(_)) => bytes_value(field.kind, bytes) == *value,
+                                let bytes = value_bytes(*kind, *size, value, &what);
+                                let same_bytes = match (&bytes, kind) {
+                                    (Ok(bytes), Kind::Text(_)) => bytes_value(*kind, bytes) == *value,
                                     (Ok(bytes), _) => bytes.as_slice() == &self.elf[at..at + size],
                                     _ => false,
                                 };
@@ -1174,13 +1187,11 @@ mod tests {
         floor.arg("fast_time", S32, &[(0, 0), (1, 0)], 2);
         floor.field(
             "materials",
-            Kind::Int(0, 0),
             Place::List { at: vec![(0, 1)], arg: 2, tail: 2, entry: vec![("item", S16), ("count", U8)], count: (1, 4) },
         );
-        floor.field("scale", Kind::Float, Place::Args { at: vec![(0, 1)], arg: 7, len: 1 });
+        floor.arg("scale", Kind::Float, &[(0, 1)], 7);
         floor.field(
             "monsters",
-            Kind::Int(0, 0),
             Place::Lines {
                 copies: vec![vec![(0, 2), (0, 3)]],
                 entry: vec![("id", S16), ("param", S16)],
