@@ -93,8 +93,8 @@ pub fn load_gltf(raw: &[u8], read: &dyn Fn(&str) -> Result<Vec<u8>>) -> Result<G
             if o + 8 > raw.len() {
                 bail!("the .glb ends inside the header of a chunk at {o}");
             }
-            let length = u32::from_le_bytes(raw[o..o + 4].try_into().unwrap()) as usize;
-            let chunk = &raw[o + 8..(o + 8 + length).min(raw.len())];
+            let length = crate::bytes::u32_at(raw, o)? as usize;
+            let chunk = crate::bytes::clamped(raw, o + 8, o + 8 + length);
             match &raw[o + 4..o + 8] {
                 b"JSON" => found = Some(load_json(utf8(chunk)?)?),
                 b"BIN\0" => bin = chunk.to_vec(),
