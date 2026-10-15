@@ -24,6 +24,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Map, Value};
 
+use crate::bytes::{u16_at, u32_at};
 use crate::cfg_text::{self, Arg, Script, Statement};
 use crate::elf::file_offset;
 use crate::{bail, json, Context, Error, Result};
@@ -72,7 +73,7 @@ pub fn parts(elf: &[u8]) -> Result<Vec<Part>> {
         let record = elf
             .get(start + number * PARTS_RECORD..start + (number + 1) * PARTS_RECORD)
             .ok_or_else(|| Error::invalid("PartsInfoData runs past the executable"))?;
-        let pointer = u32::from_le_bytes(record[..4].try_into().unwrap());
+        let pointer = u32_at(record, 0)?;
         if pointer == 0 {
             break;
         }
@@ -80,7 +81,7 @@ pub fn parts(elf: &[u8]) -> Result<Vec<Part>> {
         let end = elf[text..].iter().position(|&byte| byte == 0).map_or(elf.len(), |end| text + end);
         out.push(Part {
             name: String::from_utf8_lossy(&elf[text..end]).into_owned(),
-            kind: i16::from_le_bytes([record[4], record[5]]),
+            kind: u16_at(record, 4)? as i16,
             link: record[6],
             entrance: record[7],
         });
@@ -122,7 +123,7 @@ pub fn parts_table(elf: &[u8]) -> Result<crate::data_table::Table> {
     let mut parts = Vec::new();
     for number in 0..PARTS_COUNT {
         let at = start + number * PARTS_RECORD;
-        let pointer = u32::from_le_bytes(elf[at..at + 4].try_into().unwrap());
+        let pointer = u32_at(elf, at)?;
         let name_at = table_offset(elf, pointer, PART_NAME_SLOT, "a part's name")?;
         let mut record = Record::new(&[("part", Value::from(number))]);
         record.bytes("name", Kind::Text(PART_NAME_SLOT), name_at, 1);

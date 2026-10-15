@@ -212,7 +212,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     for row in 1..SPECIES {
         let at = start + row * SPECIES_RECORD;
         let mut record = Record::new(&[("fish", Value::from(row))]);
-        let pointer = u32::from_le_bytes(elf[at..at + 4].try_into().unwrap());
+        let pointer = crate::bytes::u32_at(elf, at)?;
         if let Some(name) = text_at(elf, pointer) {
             record.label("name", name);
         }

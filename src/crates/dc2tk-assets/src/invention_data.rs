@@ -93,7 +93,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     let mut scoops = Vec::new();
     for number in 0..SCOOPS {
         let at = start + number * SCOOP_RECORD;
-        let id = i16::from_le_bytes([elf[at], elf[at + 1]]);
+        let id = crate::bytes::u16_at(elf, at)? as i16;
         let mut record = Record::new(&[("scoop", Value::from(id))]);
         record.bytes("flag", S16, at + 2, 1).bytes("info", S8, at + 4, 1);
         scoops.push(record);

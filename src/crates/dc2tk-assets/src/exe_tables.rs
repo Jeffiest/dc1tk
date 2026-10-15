@@ -5,6 +5,7 @@
 
 use serde_json::Value;
 
+use crate::bytes::u16_at;
 use crate::data_table::{self, Kind, Record, Table, S16, S8};
 use crate::elf::table_offset;
 use crate::item_data::ITEM_MOST;
@@ -112,7 +113,7 @@ pub fn characters(elf: &[u8]) -> Result<Table> {
     let mut forms = Vec::new();
     for row in 0..HENGE_ROWS {
         let at = henge + row * HENGE_RECORD;
-        let mut record = Record::new(&[("monster", Value::from(i16::from_le_bytes([elf[at], elf[at + 1]])))]);
+        let mut record = Record::new(&[("monster", Value::from(u16_at(elf, at)? as i16))]);
         record.bytes("attack", S16, at + 2, 1).bytes("defence", S16, at + 4, 1);
         forms.push(record);
     }

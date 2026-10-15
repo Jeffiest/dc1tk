@@ -111,7 +111,7 @@ pub fn read(elf: &[u8]) -> Result<Table> {
         if bytes[NAME] == 0 {
             break;
         }
-        let id = i16::from_le_bytes([bytes[0], bytes[1]]);
+        let id = crate::bytes::u16_at(bytes, 0)? as i16;
         let mut record = Record::new(&[("id", Value::from(id))]);
         record.label("name", Value::from(text_of(&bytes[NAME..NAME + NAME_SIZE])));
         for spec in &SPECS {
