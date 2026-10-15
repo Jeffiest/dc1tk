@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use dc2tk_assets::text::{self, Fonts};
 use dc2tk_assets::tree::Place;
-use dc2tk_disc::archive::{self, Archive, Entry};
+use dc2tk_disc::archive::{Archive, Entry};
 use dc2tk_disc::{rebuild, Image};
 use indexmap::IndexMap;
 
@@ -306,48 +306,6 @@ pub fn clash_text(clashes: &IndexMap<String, Vec<String>>) -> String {
         .join("\n")
 }
 
-pub const MAX_MEMBER_NAME: usize = archive::PACK_NAME - 1;
-
-/// The pack with a new member added at the end of its chain (or of the chain of a pack inside it),
-/// so the members it had keep their positions: the engine finds members by name, ignoring case
-/// (GetPackFile in dataread.cpp), but some loaders walk a pack by position or take every member
-/// with an extension.
-pub fn added_member(data: &[u8], names: &[String], new: &[u8]) -> Result<Vec<u8>> {
-    let members = archive::parse_pack(data).ok_or_else(|| Error::invalid("not a pack"))?;
-    if names.len() > 1 {
-        let Some(member) = rebuild::member_named(&members, &names[0], false) else {
-            return Err(Error::invalid(format!("no pack {} to add {} to", names[0], names[1..].join("/"))));
-        };
-        let inner = added_member(member.data(data), &names[1..], new)?;
-        return Ok(rebuild::replaced_member(data, &names[..1], &inner)?);
-    }
-    let name = &names[0];
-    if members.iter().any(|member| lower(&member.name) == lower(name)) {
-        return Err(Error::invalid(format!(
-            "the pack has a member {name} already, in other case; the game would find that one"
-        )));
-    }
-    let raw = dc2tk_disc::text::encode(name)
-        .ok_or_else(|| Error::invalid(format!("'cp932' codec can't encode the member name {name}")))?;
-    if raw.len() > MAX_MEMBER_NAME {
-        return Err(Error::invalid(format!("member names are at most {MAX_MEMBER_NAME} bytes")));
-    }
-    let last = members.last().ok_or_else(|| Error::invalid("not a pack"))?;
-    let end = last.offset + last.size + archive::padding(last.size);
-    let mut entry = raw;
-    entry.resize(archive::PACK_NAME, 0);
-    entry.extend((archive::PACK_SLOT as i32).to_le_bytes());
-    entry.extend((new.len() as i32).to_le_bytes());
-    entry.extend(((archive::PACK_SLOT + new.len() + archive::padding(new.len())) as i32).to_le_bytes());
-    entry.resize(archive::PACK_SLOT, 0);
-    let mut out = data[..end].to_vec();
-    out.extend(entry);
-    out.extend_from_slice(new);
-    out.extend(std::iter::repeat_n(0, archive::padding(new.len())));
-    out.extend_from_slice(&data[end..]);
-    Ok(out)
-}
-
 /// The disc's files by path ignoring case, as the game finds them (SearchFile in dataread.cpp).
 pub fn disc_index(disc: &Archive) -> HashMap<String, &Entry> {
     disc.entries.iter().map(|entry| (lower(&entry.path), entry)).collect()
@@ -454,7 +412,12 @@ pub fn replaced(
                         }
                         None => fs::read(file)?,
                     };
-                    let packed = added_member(&data, &members, &new)?;
+                    // at the end of its pack, so the members it had keep their positions: the
+                    // engine finds members by name, ignoring case (GetPackFile in dataread.cpp),
+                    // but some loaders walk a pack by position or take every member with an
+                    // extension
+                    let (name, chain) = members.split_last().expect("a member's chain names it");
+                    let packed = rebuild::added_member(&data, chain, name, &new)?;
                     Ok((new, packed))
                 }
                 Some(old) => {

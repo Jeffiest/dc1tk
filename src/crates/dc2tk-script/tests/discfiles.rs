@@ -34,7 +34,7 @@ fn a_member_is_replaced_inside_its_pack_and_the_rest_kept() {
 fn a_new_member_goes_at_the_end_of_its_pack() {
     let inner = pack(&[("tex.img", b"texture".to_vec()), ("info.cfg", b"cfg".to_vec())]);
     let outer = pack(&[("model.chr", inner.clone())]);
-    let added = discfiles::added_member(&outer, &strings(&["model.chr", "new_motion.mot"]), b"motion data").unwrap();
+    let added = rebuild::added_member(&outer, &strings(&["model.chr"]), "new_motion.mot", b"motion data").unwrap();
     let members = archive::parse_pack(rebuild::read_member(&added, &strings(&["model.chr"])).unwrap()).unwrap();
     assert_eq!(
         members.iter().map(|member| member.name.as_str()).collect::<Vec<_>>(),
@@ -43,9 +43,9 @@ fn a_new_member_goes_at_the_end_of_its_pack() {
     assert_eq!(rebuild::read_member(&added, &strings(&["model.chr", "new_motion.mot"])), Some(&b"motion data"[..]));
     assert_eq!(rebuild::read_member(&added, &strings(&["model.chr", "tex.img"])), Some(&b"texture"[..]));
     // the engine matches names ignoring case, so a name only differing in case is refused
-    match discfiles::added_member(&inner, &strings(&["TEX.IMG"]), b"x") {
+    match rebuild::added_member(&inner, &[], "TEX.IMG", b"x") {
         Ok(_) => panic!("added a member shadowed by another"),
-        Err(error) => assert!(error.to_string().contains("other case"), "{error}"),
+        Err(error) => assert!(error.to_string().contains("already has a member TEX.IMG"), "{error}"),
     }
 }
 
