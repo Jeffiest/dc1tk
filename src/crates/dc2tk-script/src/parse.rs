@@ -55,7 +55,10 @@ const OPERATORS: [&str; 19] =
 const SINGLES: &str = "(){}[],;=<>+-*/%&|!^~?:.";
 const NOTE: &str = "note:";
 
-fn precedence(op: &str) -> Option<u32> {
+/// A binary operator's precedence, as C's grammar orders them (higher binds tighter); the parser
+/// reads and the source writer (source.rs) parenthesises by it. Assignment is below them all, and
+/// unary operators above.
+pub fn precedence(op: &str) -> Option<u32> {
     Some(match op {
         "||" => 2,
         "&&" => 3,
@@ -4578,22 +4581,7 @@ fn parse_state(
     if state.tokens[0].kind == Kind::Assembly {
         return Ok((node!({"kind": "program", "asm": state.tokens[0].text()}), Included::default()));
     }
-    let header_padding = "00".repeat(stb::HEADER_SIZE - stb::HEADER_FIELDS_SIZE);
-    let mut program = node!({
-        "kind": "program",
-        "natives": null,
-        "magic": "SB2\0",
-        "unk_14": 0,
-        "header_padding": header_padding,
-        "globals": [],
-        "global_num": null,
-        "main": null,
-        "programs": [],
-        "functions": [],
-        "string_pool": false,
-        "padding_of": {},
-        "declarations": {"natives": [], "programs": [], "inlines": [], "constants": [], "kinds": {}},
-    });
+    let mut program = crate::node::program_skeleton();
     let doc = file_doc(text);
     if !doc.is_empty() {
         program["doc"] = Node::from(doc);

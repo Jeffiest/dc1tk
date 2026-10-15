@@ -192,6 +192,28 @@ pub mod kinds {
     pub const VIA: &str = "via";
 }
 
+/// A program with nothing in it yet, its keys in the order the tree has them: the header's fields
+/// as the original compiler wrote them (no main yet, the global count from the globals), no
+/// globals, programs or functions, no declarations.
+pub fn program_skeleton() -> Node {
+    let header_padding = "00".repeat(crate::stb::HEADER_SIZE - crate::stb::HEADER_FIELDS_SIZE);
+    crate::node!({
+        "kind": kinds::PROGRAM,
+        "natives": null,
+        "magic": "SB2\0",
+        "unk_14": 0,
+        "header_padding": header_padding,
+        "globals": [],
+        "global_num": null,
+        "main": null,
+        "programs": [],
+        "functions": [],
+        "string_pool": false,
+        "padding_of": {},
+        "declarations": {"natives": [], "programs": [], "inlines": [], "constants": [], "kinds": {}},
+    })
+}
+
 static NULL: Node = Node::Null;
 
 impl Node {

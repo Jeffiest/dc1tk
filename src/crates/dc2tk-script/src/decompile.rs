@@ -1071,21 +1071,21 @@ pub fn decompile(script: &Script, table: &str, tables: &BTreeMap<String, Table>)
     let named = |found: &BTreeMap<i64, String>| -> Map {
         prints.order.iter().map(|offset| (function_name(*offset), node!(&found[offset]))).collect()
     };
-    node!({
-        "kind": "program",
-        "natives": table,
-        "magic": latin1(&header.magic),
-        "unk_14": header.unk_14,
-        "header_padding": hex(&header.padding),
-        "globals": globals,
-        "global_num": header.global_num,
-        "main": function_name(header.main as i64 - code),
-        "programs": entries.iter().map(|entry| node!({"no": entry.no, "function": function_name(entry.func as i64 - code)})).collect::<Vec<_>>(),
-        "functions": functions,
-        "string_pool": pool,
-        "padding_of": {},
-        "declarations": {"natives": [], "programs": [], "inlines": [], "constants": [], "kinds": {}},
-        "fingerprints": named(&prints.exact),
-        "loose_fingerprints": named(&prints.loose),
-    })
+    let programs: Vec<Node> = entries
+        .iter()
+        .map(|entry| node!({"no": entry.no, "function": function_name(entry.func as i64 - code)}))
+        .collect();
+    crate::node::program_skeleton()
+        .with("natives", table)
+        .with("magic", latin1(&header.magic))
+        .with("unk_14", header.unk_14)
+        .with("header_padding", hex(&header.padding))
+        .with("globals", globals)
+        .with("global_num", header.global_num)
+        .with("main", function_name(header.main as i64 - code))
+        .with("programs", programs)
+        .with("functions", functions)
+        .with("string_pool", pool)
+        .with("fingerprints", named(&prints.exact))
+        .with("loose_fingerprints", named(&prints.loose))
 }

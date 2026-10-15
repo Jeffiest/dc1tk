@@ -8,9 +8,11 @@ use crate::asm;
 use crate::node::{Map, Node};
 use crate::{Error, Result};
 
+/// Precedences of what is not a binary operator (parse::precedence has those): an assignment's
+/// is below them all, a unary operator's and then a primary expression's above.
 const ASSIGN: i32 = 1;
-const UNARY: i32 = 10;
-const PRIMARY: i32 = 11;
+const UNARY: i32 = 12;
+const PRIMARY: i32 = 13;
 pub const INDENT: &str = "    ";
 /// Extension of decompiled source files, so editors read them as C.
 pub const EXTENSION: &str = ".c";
@@ -19,17 +21,7 @@ pub const EXTENSION: &str = ".c";
 pub const EDITOR_FLAGS: &str = "compile_flags.txt";
 
 fn precedence(op: &str) -> Option<i32> {
-    Some(match op {
-        "||" => 2,
-        "&&" => 3,
-        "|" => 4,
-        "&" => 5,
-        "==" | "!=" => 6,
-        "<" | "<=" | ">" | ">=" => 7,
-        "+" | "-" => 8,
-        "*" | "/" | "%" => 9,
-        _ => return None,
-    })
+    crate::parse::precedence(op).map(|level| level as i32)
 }
 
 /// A value as Python's str() or "%s" writes it.
@@ -497,4 +489,18 @@ pub fn native_declaration(declared: &Node) -> Result<String> {
         parameter_list(texts),
         number
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn operators_are_parenthesised_by_the_parsers_precedence() {
+        let text = "void f() { x = (a ^ b) & c << 2; y = a - (b - c); z = (a | b) == c; }";
+        let program = crate::parse::parse(text).unwrap();
+        let written: Vec<String> =
+            program["functions"][0].list("body").iter().map(|line| expression(&line["expr"]).unwrap().0).collect();
+        assert_eq!(written, ["x = (a ^ b) & c << 2", "y = a - (b - c)", "z = (a | b) == c"]);
+    }
 }
