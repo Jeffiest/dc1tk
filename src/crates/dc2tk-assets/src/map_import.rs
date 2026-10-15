@@ -10,7 +10,7 @@ use std::sync::Arc;
 use serde_json::{json, Map, Value};
 
 use crate::from_gltf;
-use crate::map_export::{find_model, options_for, ModelPack};
+use crate::map_export::{find_model, options_for, ModelPack, PackType};
 use crate::map_scene::{self, SceneNode};
 use crate::map_transform::Trs;
 use crate::mapfile;
@@ -72,27 +72,27 @@ fn scene_pictures(doc: &Value) -> Vec<(String, String)> {
 pub struct NewModel {
     /// The file name pieces give (`s17_well-m.mds`).
     pub file: String,
-    /// The info.cfg TYPE: 0 drawn, 1 floor and wall collision, 2 camera collision.
-    pub kind: i64,
+    /// The info.cfg TYPE: drawn, floor and wall collision, or camera collision.
+    pub kind: PackType,
     pub data: Vec<u8>,
 }
 
 /// A new model's pack type: from its pieces' kind, or else from its name (`-a` collision, `-c`
 /// camera), as the disc names them.
-fn new_model_kind(kind: &str, file: &str) -> i64 {
+fn new_model_kind(kind: &str, file: &str) -> PackType {
     match kind {
-        "collision" => 1,
-        "camera" => 2,
-        "model" => 0,
+        "collision" => PackType::Collision,
+        "camera" => PackType::Camera,
+        "model" => PackType::Model,
         _ => {
             let stem = file.to_lowercase();
             let stem = stem.strip_suffix(".mds").unwrap_or(&stem);
             if stem.ends_with("-a") {
-                1
+                PackType::Collision
             } else if stem.ends_with("-c") {
-                2
+                PackType::Camera
             } else {
-                0
+                PackType::Model
             }
         }
     }
@@ -429,7 +429,7 @@ pub fn import_map(
             out.new_models.push(NewModel { file: model, kind, data });
             continue;
         };
-        if kind >= 3 {
+        if kind == PackType::Character {
             continue;
         }
         let rebuilt =

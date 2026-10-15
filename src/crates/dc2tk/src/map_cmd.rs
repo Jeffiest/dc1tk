@@ -353,13 +353,7 @@ pub fn apply_maps(
                 mpk_data = with_new_models(mpk_data, &found.name, &imported.new_models)
                     .with_context(|| format!("{} (mod {})", line.key, line.module))?;
                 for model in &imported.new_models {
-                    println!(
-                        "  {} (map {}): added {} ({})",
-                        line.module,
-                        name,
-                        model.file,
-                        map_export::kind_name(model.kind)
-                    );
+                    println!("  {} (map {}): added {} ({})", line.module, name, model.file, model.kind.name());
                 }
             }
             changes.push(MapChange {
@@ -655,7 +649,7 @@ fn with_new_models(mpk: Vec<u8>, map: &str, models: &[dc2tk_assets::map_import::
     for model in models {
         out = dc2tk_disc::rebuild::added_member(&out, &names, &model.file, &model.data)?;
     }
-    let entries: Vec<(&str, i64)> = models.iter().map(|model| (model.file.as_str(), model.kind)).collect();
+    let entries: Vec<(&str, i64)> = models.iter().map(|model| (model.file.as_str(), model.kind.number())).collect();
     let text = info_cfg_with(&dc2tk_disc::text::decode_lossy(cfg), &entries);
     let cfg_bytes = dc2tk_disc::text::encode(&text).with_context(|| format!("{pcp}: info.cfg is not Shift-JIS"))?;
     Ok(dc2tk_disc::rebuild::replaced_member(&out, &[pcp.clone(), cfg_name.clone()], &cfg_bytes)?)

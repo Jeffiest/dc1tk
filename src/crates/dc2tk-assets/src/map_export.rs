@@ -13,10 +13,60 @@ use crate::mapfile::MapFile;
 use crate::to_gltf::{Options, TextureSearch};
 use crate::{info_cfg, models, Context, Error, Result};
 
+/// What a map's pieces place, as a model pack's info.cfg gives it (`TYPE`, pcpTYPE).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PackType {
+    /// 0: a drawn model.
+    Model,
+    /// 1: floor and wall collision.
+    Collision,
+    /// 2: camera collision.
+    Camera,
+    /// 3 and 4 (and any other number): an animated character.
+    Character,
+}
+
+impl PackType {
+    /// The type of a TYPE number.
+    pub fn from_number(number: i64) -> PackType {
+        match number {
+            0 => PackType::Model,
+            1 => PackType::Collision,
+            2 => PackType::Camera,
+            _ => PackType::Character,
+        }
+    }
+
+    /// The TYPE number an info.cfg writes.
+    pub fn number(self) -> i64 {
+        match self {
+            PackType::Model => 0,
+            PackType::Collision => 1,
+            PackType::Camera => 2,
+            PackType::Character => 3,
+        }
+    }
+
+    /// The name the scene's pieces give the type (`extras.c2.kind`).
+    pub fn name(self) -> &'static str {
+        match self {
+            PackType::Model => "model",
+            PackType::Collision => "collision",
+            PackType::Camera => "camera",
+            PackType::Character => "chara",
+        }
+    }
+
+    /// Whether the model is collision, exported and rebuilt as such (to_gltf::Options::collision).
+    pub fn is_collision(self) -> bool {
+        matches!(self, PackType::Collision | PackType::Camera)
+    }
+}
+
 /// A map's model pack (a .pcp of its .mpk): its info.cfg's entries (model, TYPE) and its files.
 pub struct ModelPack {
     pub name: String,
-    pub types: Vec<(String, i64)>,
+    pub types: Vec<(String, PackType)>,
     pub files: HashMap<String, Vec<u8>>,
 }
 
@@ -32,10 +82,10 @@ impl ModelPack {
                     match tag.as_str() {
                         "MDS" => current = args.first().and_then(|arg| arg.as_str()).map(str::to_string),
                         "TYPE" => {
-                            if let (Some(model), Some(kind)) =
+                            if let (Some(model), Some(number)) =
                                 (&current, args.first().and_then(|arg| arg.as_f64()).map(|kind| kind as i64))
                             {
-                                types.push((model.clone(), kind));
+                                types.push((model.clone(), PackType::from_number(number)));
                             }
                         }
                         "MDS_END" => current = None,
@@ -49,31 +99,24 @@ impl ModelPack {
     }
 }
 
-/// What a map's pieces place: drawn models, floor and wall collision, camera collision, or
-/// animated characters (`pcpTYPE`: 0, 1, 2, 3 and 4).
-pub fn kind_name(pack_type: i64) -> &'static str {
-    match pack_type {
-        0 => "model",
-        1 => "collision",
-        2 => "camera",
-        _ => "chara",
-    }
-}
-
 /// A piece model's pack type and bytes, looked up as the engine does (ignoring case, across the
 /// map's packs in order).
-pub fn find_model<'a>(packs: &'a [ModelPack], model: &str) -> Option<(i64, &'a [u8])> {
+pub fn find_model<'a>(packs: &'a [ModelPack], model: &str) -> Option<(PackType, &'a [u8])> {
     let wanted = model.to_lowercase();
     packs.iter().find_map(|pack| {
         let data = pack.files.get(&wanted)?;
-        let kind = pack.types.iter().find(|(name, _)| name.to_lowercase() == wanted).map_or(0, |(_, kind)| *kind);
+        let kind = pack
+            .types
+            .iter()
+            .find(|(name, _)| name.to_lowercase() == wanted)
+            .map_or(PackType::Model, |(_, kind)| *kind);
         Some((kind, data.as_slice()))
     })
 }
 
 /// The export options a model of a pack type is exported and rebuilt with.
-pub fn options_for<'a>(pack_type: i64, textures: &'a TextureSearch) -> Options<'a> {
-    if pack_type == 1 || pack_type == 2 {
+pub fn options_for<'a>(pack_type: PackType, textures: &'a TextureSearch) -> Options<'a> {
+    if pack_type.is_collision() {
         Options::collision()
     } else {
         Options::map(Some(textures))
@@ -300,7 +343,7 @@ pub fn export_map(
     textures: &TextureSearch,
 ) -> Result<(BTreeMap<String, Vec<u8>>, Report)> {
     let kind_of =
-        |model: &str| find_model(packs, model).map_or("model".to_string(), |(kind, _)| kind_name(kind).to_string());
+        |model: &str| find_model(packs, model).map_or("model".to_string(), |(kind, _)| kind.name().to_string());
     let tree = map_scene::build_scene(map, name, &kind_of)?;
     let mut report = Report::default();
     let mut scene = Scene { json: Map::new(), files: BTreeMap::new(), images: HashMap::new() };
@@ -325,7 +368,7 @@ pub fn export_map(
             }
             continue;
         };
-        if kind >= 3 {
+        if kind == PackType::Character {
             report.skipped.push(format!("{model}: an animated character piece (shown without its model)"));
             continue;
         }
