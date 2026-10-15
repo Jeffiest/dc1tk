@@ -748,6 +748,44 @@ fn a_migrated_mod_builds_the_same_files() {
     fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "no disc/ folder");
 }
 
+#[test]
+fn migrate_gathers_an_ids_places_into_one_line() {
+    let disc = disc("migrate-places");
+    let mod_dir = disc.mods.join("walls");
+    let root = mod_dir.join(discfiles::DISC);
+    // wall is in both texture files; the mod changes it alike in both, so it needs no "only"
+    write(&root.join("map/a/a01.ipk.d/a01.img.png/wall.png"), &png([6, 6, 6]));
+    write(&root.join("map/b/b02.ipk.d/x.img.png/wall.png"), &png([6, 6, 6]));
+    let found = migrate::migrate(&mod_dir, &disc.iso, &disc.index).unwrap();
+    assert_eq!(found.lines, [("texture:wall".to_string(), json!("textures/wall.png"))]);
+    assert!(mod_dir.join("textures/wall.png").is_file());
+    // the other copy is kept aside
+    assert!(mod_dir.join("unused/duplicates/map/b/b02.ipk.d/x.img.png/wall.png").is_file());
+    assert!(found.notes.iter().any(|note| note.contains("a copy of a file a line has")), "{:?}", found.notes);
+}
+
+#[test]
+fn migrate_refuses_what_it_cannot_make_one_line_of_and_leaves_the_mod_alone() {
+    let disc = disc("migrate-refused");
+    let mod_dir = disc.mods.join("walls");
+    let root = mod_dir.join(discfiles::DISC);
+    let a01 = root.join("map/a/a01.ipk.d/a01.img.png/wall.png");
+    write(&a01, &png([6, 6, 6]));
+    write(&root.join("map/b/b02.ipk.d/x.img.png/wall.png"), &png([7, 7, 7]));
+    fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "texture:wall is given differently");
+    assert!(a01.is_file());
+    fs::remove_dir_all(root.join("map/b")).unwrap();
+    // a file where the line's would go
+    write(&mod_dir.join("textures/wall.png"), b"mine");
+    fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "is there already");
+    fs::remove_file(mod_dir.join("textures/wall.png")).unwrap();
+    // a line mod.json has for the id already
+    write(&mod_dir.join("w.png"), &png([1, 1, 1]));
+    mod_json(&mod_dir, json!({"replace": {"texture:wall": "w.png"}}));
+    fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "has a line for texture:wall already");
+    assert!(a01.is_file());
+}
+
 /// A music bank as the disc's are: entry 0 plays BG_001_000.sq, a short tune on program 1 (a saw
 /// wave); program 2, another saw wave, nothing plays.
 fn music_bank() -> Vec<u8> {

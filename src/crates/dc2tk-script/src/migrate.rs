@@ -8,7 +8,7 @@
 //! The migrated mod builds the same image: a line whose id the disc has at more places than the
 //! old file covered gets "only" with the places it covered.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,6 +17,7 @@ use dc2tk_assets::tree::{self, Kind};
 use dc2tk_assets::{im3, sounds, textures};
 use dc2tk_disc::archive::Archive;
 use dc2tk_disc::{rebuild, Image};
+use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::discfiles::{self, DISC};
@@ -34,9 +35,12 @@ struct Planned {
     all: usize,
 }
 
+/// mod.json's lines: (key, value).
+type Lines = Vec<(String, Value)>;
+
 /// What migrate did: the lines written, and notes.
 pub struct Migrated {
-    pub lines: Vec<(String, Value)>,
+    pub lines: Lines,
     pub notes: Vec<String>,
 }
 
@@ -64,125 +68,142 @@ fn stem(id: &str) -> String {
     tree::file_stem(id.split_once(':').map_or(id, |(_, name)| name))
 }
 
+/// The lines planned for one disc/ file or folder: (id, the file's place in the mod, the file).
+type ById = Vec<(String, String, PathBuf)>;
+
+/// The disc's ids by (kind, place, entry): Index::at.
+type Ids = HashMap<(Kind, String, Option<usize>), String>;
+
 /// Plans the lines for one disc/ file or folder; None when it has no id (it becomes a file: line).
-fn by_id(
-    path: &str,
-    source: &Path,
-    data: &[u8],
-    index: &Index,
-    at: &std::collections::HashMap<(Kind, String, Option<usize>), String>,
-) -> Result<Option<Vec<(String, String, PathBuf)>>> {
+fn by_id(path: &str, source: &Path, data: &[u8], index: &Index, at: &Ids) -> Result<Option<ById>> {
     let place = path.to_lowercase();
     let Some(converter) = discfiles::conversion(path, source) else {
         return Ok(None);
     };
-    let mut out = Vec::new();
     match converter.suffix {
-        ".png" => {
-            let Ok(images) = im3::read(data) else {
-                return Ok(None);
-            };
-            // a PNG's picture as textures::build finds it: by name, or name_index
-            let mut by_name: BTreeMap<String, usize> = BTreeMap::new();
-            for (position, image) in images.iter().enumerate() {
-                by_name.entry(textures::file_name(&image.name)).or_insert(position);
-                by_name
-                    .entry(textures::file_name(&format!("{}_{}", image.name, image.index.unwrap_or(0))))
-                    .or_insert(position);
-            }
-            for name in discfiles::files_in(source)? {
-                let file = paths::join_relative(source, &name);
-                if name.contains('/') || !name.to_lowercase().ends_with(textures::SUFFIX) {
-                    continue;
-                }
-                let Some(id) = by_name
-                    .get(&name)
-                    .and_then(|&position| at.get(&(Kind::Texture, place.clone(), images[position].index)))
-                else {
-                    return Ok(None);
-                };
-                out.push((id.clone(), format!("textures/{}.png", stem(id)), file));
-            }
+        ".png" => pictures_by_id(&place, source, data, at),
+        ".wav" => sounds_by_id(&place, source, index, at),
+        ".mid" => music_by_id(&place, source, at),
+        ".txt" => Ok(text_by_id(place, source, at)),
+        _ => Ok(model_by_id(place, source, at)),
+    }
+}
+
+/// A texture file's folder of PNGs: each a texture id's line, found as textures::build finds its
+/// picture (by name, or name_index). None when a PNG is no picture of the file's.
+fn pictures_by_id(place: &str, source: &Path, data: &[u8], at: &Ids) -> Result<Option<ById>> {
+    let Ok(images) = im3::read(data) else {
+        return Ok(None);
+    };
+    let mut by_name: BTreeMap<String, usize> = BTreeMap::new();
+    for (position, image) in images.iter().enumerate() {
+        by_name.entry(textures::file_name(&image.name)).or_insert(position);
+        by_name.entry(textures::file_name(&format!("{}_{}", image.name, image.index.unwrap_or(0)))).or_insert(position);
+    }
+    let mut out = Vec::new();
+    for name in discfiles::files_in(source)? {
+        if name.contains('/') || !name.to_lowercase().ends_with(textures::SUFFIX) {
+            continue;
         }
-        ".wav" => {
-            let Some(bank) = at.get(&(Kind::Bank, place.clone(), None)) else {
-                return Ok(None);
-            };
-            let count = index.assets[bank].entries.unwrap_or(0);
-            let wavs = sounds::numbered(source)?;
-            if wavs.iter().any(|(number, _, _)| *number >= count) {
-                return Ok(None);
-            }
-            let bank_name = &bank[Kind::Bank.name().len() + 1..];
-            for (number, _, file) in wavs {
-                let Some(id) = at.get(&(Kind::Sound, place.clone(), Some(number))) else {
-                    return Ok(None);
-                };
-                let name = id[Kind::Sound.name().len() + 1..].to_string();
-                let named = (!name.contains('/')).then_some(name.as_str());
-                out.push((
-                    id.clone(),
-                    format!("sounds/{}/{}", tree::file_stem(bank_name), tree::wav_name(number, named, bank_name)),
-                    file,
-                ));
-            }
-        }
-        ".mid" => {
-            // each MIDI file a sequence of the bank (BG_000_000.mid for its BG_000_000.sq); the
-            // SoundFont beside them is only for listening
-            for name in discfiles::files_in(source)? {
-                let lower = name.to_lowercase();
-                if name.contains('/') || !lower.ends_with(dc2tk_assets::music::SUFFIX) {
-                    continue;
-                }
-                let member = format!(
-                    "{place}{}{}.sq",
-                    discfiles::PACK,
-                    &lower[..lower.len() - dc2tk_assets::music::SUFFIX.len()]
-                );
-                let Some(id) = at.get(&(Kind::Music, member, None)) else {
-                    return Ok(None);
-                };
-                out.push((
-                    id.clone(),
-                    format!("music/{}{}", stem(id), dc2tk_assets::music::SUFFIX),
-                    paths::join_relative(source, &name),
-                ));
-            }
-        }
-        ".txt" => {
-            let Some(id) = at.get(&(Kind::Text, place, None)) else {
-                return Ok(None);
-            };
-            let target = dc2tk_assets::text::text_file(&id[Kind::Text.name().len() + 1..]);
-            out.push((id.clone(), target, source.to_path_buf()));
-        }
-        _ => {
-            let Some(id) = at.get(&(Kind::Model, place, None)) else {
-                return Ok(None);
-            };
-            out.push((id.clone(), format!("models/{}", stem(id)), source.to_path_buf()));
-        }
+        let Some(id) = by_name
+            .get(&name)
+            .and_then(|&position| at.get(&(Kind::Texture, place.to_string(), images[position].index)))
+        else {
+            return Ok(None);
+        };
+        out.push((id.clone(), format!("textures/{}.png", stem(id)), paths::join_relative(source, &name)));
     }
     Ok(Some(out))
+}
+
+/// A bank's folder of WAVs: each a sound id's line. None when one adds an entry the bank lacks.
+fn sounds_by_id(place: &str, source: &Path, index: &Index, at: &Ids) -> Result<Option<ById>> {
+    let Some(bank) = at.get(&(Kind::Bank, place.to_string(), None)) else {
+        return Ok(None);
+    };
+    let count = index.assets[bank].entries.unwrap_or(0);
+    let wavs = sounds::numbered(source)?;
+    if wavs.iter().any(|(number, _, _)| *number >= count) {
+        return Ok(None);
+    }
+    let bank_name = &bank[Kind::Bank.name().len() + 1..];
+    let mut out = Vec::new();
+    for (number, _, file) in wavs {
+        let Some(id) = at.get(&(Kind::Sound, place.to_string(), Some(number))) else {
+            return Ok(None);
+        };
+        let name = id[Kind::Sound.name().len() + 1..].to_string();
+        let named = (!name.contains('/')).then_some(name.as_str());
+        let target = format!("sounds/{}/{}", tree::file_stem(bank_name), tree::wav_name(number, named, bank_name));
+        out.push((id.clone(), target, file));
+    }
+    Ok(Some(out))
+}
+
+/// A music bank's folder: each MIDI file a sequence's line (BG_000_000.mid for its
+/// BG_000_000.sq); the SoundFont beside them is only for listening.
+fn music_by_id(place: &str, source: &Path, at: &Ids) -> Result<Option<ById>> {
+    let mut out = Vec::new();
+    for name in discfiles::files_in(source)? {
+        let lower = name.to_lowercase();
+        if name.contains('/') || !lower.ends_with(dc2tk_assets::music::SUFFIX) {
+            continue;
+        }
+        let sequence = &lower[..lower.len() - dc2tk_assets::music::SUFFIX.len()];
+        let member = format!("{place}{}{sequence}.sq", discfiles::PACK);
+        let Some(id) = at.get(&(Kind::Music, member, None)) else {
+            return Ok(None);
+        };
+        let target = format!("music/{}{}", stem(id), dc2tk_assets::music::SUFFIX);
+        out.push((id.clone(), target, paths::join_relative(source, &name)));
+    }
+    Ok(Some(out))
+}
+
+/// A message file's text: a text id's line.
+fn text_by_id(place: String, source: &Path, at: &Ids) -> Option<ById> {
+    let id = at.get(&(Kind::Text, place, None))?;
+    let target = dc2tk_assets::text::text_file(&id[Kind::Text.name().len() + 1..]);
+    Some(vec![(id.clone(), target, source.to_path_buf())])
+}
+
+/// A character pack's model folder: a model id's line.
+fn model_by_id(place: String, source: &Path, at: &Ids) -> Option<ById> {
+    let id = at.get(&(Kind::Model, place, None))?;
+    Some(vec![(id.clone(), format!("models/{}", stem(id)), source.to_path_buf())])
 }
 
 /// Migrates the mod's disc/ folder, with the disc image its files replace and the disc's index of
 /// ids. Nothing is moved or written when any line cannot be made.
 pub fn migrate(mod_dir: &Path, iso_path: &Path, index: &Index) -> Result<Migrated> {
-    let root = mod_dir.join(DISC);
     let found = discfiles::mod_files(mod_dir)?;
     if found.is_empty() {
         return Err(Error::invalid(format!("{} has no {DISC}/ folder to migrate", mod_dir.display())));
     }
+    let (planned, used) = planned(mod_dir, &found, iso_path, index)?;
+    let (written, mut notes) = lines_of(mod_dir, &planned, index)?;
+    moved(mod_dir, &planned, &used, &mut notes)?;
+    replace::add_lines(mod_dir, &written)?;
+    replace::lines(mod_dir)?;
+    Ok(Migrated { lines: written, notes })
+}
+
+/// The lines for every disc/ file, an id's places gathered into one line (refused when they give
+/// it differently), and every file a line takes.
+fn planned(
+    mod_dir: &Path,
+    found: &IndexMap<String, PathBuf>,
+    iso_path: &Path,
+    index: &Index,
+) -> Result<(Vec<Planned>, Vec<PathBuf>)> {
+    let root = mod_dir.join(DISC);
     let image = Image::open(iso_path)?;
     let disc = Archive::open(image.bytes())?;
     let disc_index = discfiles::disc_index(&disc);
     let at = index.at();
     let mut planned: Vec<Planned> = Vec::new();
-    let mut notes = Vec::new();
     let mut used: Vec<PathBuf> = Vec::new();
-    for (path, source) in &found {
+    for (path, source) in found {
         let (top, members) = discfiles::location(path);
         let data = disc_index
             .get(&top.to_lowercase())
@@ -215,10 +236,17 @@ pub fn migrate(mod_dir: &Path, iso_path: &Path, index: &Index) -> Result<Migrate
             }
         }
     }
+    Ok((planned, used))
+}
 
+/// mod.json's line for each planned one, with "only" where the id is at more places than the old
+/// files covered, and notes saying so. A line mod.json has already, a file in the way, or two
+/// lines moving a file to one place is refused.
+fn lines_of(mod_dir: &Path, planned: &[Planned], index: &Index) -> Result<(Lines, Vec<String>)> {
     let known: Vec<String> = replace::lines(mod_dir)?.into_iter().map(|line| line.key.to_lowercase()).collect();
     let mut written = Vec::new();
-    for plan in &planned {
+    let mut notes = Vec::new();
+    for plan in planned {
         if known.contains(&plan.key.to_lowercase()) {
             return Err(Error::invalid(format!("{} has a line for {} already", mods::INDEX, plan.key)));
         }
@@ -229,7 +257,7 @@ pub fn migrate(mod_dir: &Path, iso_path: &Path, index: &Index) -> Result<Migrate
                 target.display()
             )));
         }
-        let places: Vec<String> = match index.get(&plan.key) {
+        let mut places: Vec<String> = match index.get(&plan.key) {
             // the disc's own spelling of each place
             Some(asset) => asset
                 .places
@@ -239,7 +267,6 @@ pub fn migrate(mod_dir: &Path, iso_path: &Path, index: &Index) -> Result<Migrate
                 .collect(),
             None => plan.places.clone(),
         };
-        let mut places = places;
         places.dedup();
         let value = if plan.all > places.len() && !plan.key.starts_with(FILE) {
             notes.push(format!(
@@ -260,22 +287,26 @@ pub fn migrate(mod_dir: &Path, iso_path: &Path, index: &Index) -> Result<Migrate
     {
         return Err(Error::invalid(format!("two lines would move a file to {twice}")));
     }
+    Ok((written, notes))
+}
 
-    // move the files, then whatever disc/ still holds into unused/
-    for plan in &planned {
+/// Moves each line's file into place, then whatever disc/ still holds into unused/ (a copy of a
+/// file a line has into unused/duplicates/), saying so, and removes disc/.
+fn moved(mod_dir: &Path, planned: &[Planned], used: &[PathBuf], notes: &mut Vec<String>) -> Result<()> {
+    let root = mod_dir.join(DISC);
+    for plan in planned {
         let target = paths::join_relative(mod_dir, &plan.target);
         fs::create_dir_all(target.parent().unwrap())?;
         fs::rename(&plan.sources[0], &target)?;
     }
-    let rest: Vec<String> = discfiles::files_in(&root)?;
-    for relative in &rest {
-        let from = paths::join_relative(&root, relative);
+    for relative in discfiles::files_in(&root)? {
+        let from = paths::join_relative(&root, &relative);
         if !from.is_file() {
             continue;
         }
         let duplicate = used.iter().any(|file| from.starts_with(file));
         let target =
-            paths::join_relative(&mod_dir.join(if duplicate { "unused/duplicates" } else { "unused" }), relative);
+            paths::join_relative(&mod_dir.join(if duplicate { "unused/duplicates" } else { "unused" }), &relative);
         fs::create_dir_all(target.parent().unwrap())?;
         fs::rename(&from, &target)?;
         let why = if duplicate { "a copy of a file a line has" } else { "used by no line" };
@@ -285,7 +316,5 @@ pub fn migrate(mod_dir: &Path, iso_path: &Path, index: &Index) -> Result<Migrate
         ));
     }
     fs::remove_dir_all(&root)?;
-    replace::add_lines(mod_dir, &written)?;
-    replace::lines(mod_dir)?;
-    Ok(Migrated { lines: written, notes })
+    Ok(())
 }
