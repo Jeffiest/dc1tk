@@ -40,7 +40,7 @@ use indexmap::IndexMap;
 
 use crate::ctype::{self, Structs, Ty};
 use crate::node;
-use crate::node::{Map, Node};
+use crate::node::{kinds, Map, Node};
 use crate::sdk::Context;
 use crate::{Error, Result};
 
@@ -93,7 +93,7 @@ fn times(value: Node, factor: i64) -> Node {
     if factor == 1 {
         return value;
     }
-    if value.kind() == "int" && value.get("unsigned").is_none() {
+    if value.kind() == kinds::INT && value.get("unsigned").is_none() {
         return int_node(value["value"].as_i64().unwrap_or(0) * factor);
     }
     node!({"kind": "binary", "op": "*", "left": value, "right": int_node(factor)})
@@ -104,7 +104,7 @@ fn has_effects(node: &Node) -> bool {
     match node {
         Node::List(items) => items.iter().any(has_effects),
         Node::Map(map) => {
-            matches!(node.kind(), "assign" | "compound" | "call" | "call_ptr" | "va_arg")
+            matches!(node.kind(), kinds::ASSIGN | kinds::COMPOUND | kinds::CALL | kinds::CALL_PTR | kinds::VA_ARG)
                 || map.values().any(has_effects)
         }
         _ => false,
@@ -179,8 +179,8 @@ fn scalar_base(name: &str, kinds: &Map) -> String {
 /// A number or string literal and its type.
 fn literal(node: &Node) -> Typed {
     let ty = match node.kind() {
-        "int" if node.get("unsigned").is_some() => "unsigned int",
-        "int" => "int",
+        kinds::INT if node.get("unsigned").is_some() => "unsigned int",
+        kinds::INT => "int",
         other => other,
     };
     Typed::new(node.clone(), Ty::Scalar(ty.into()))
@@ -272,7 +272,7 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
     let signatures = program
         .list("functions")
         .iter()
-        .filter(|function| function.kind() == "function")
+        .filter(|function| function.kind() == kinds::FUNCTION)
         .map(|function| (function.text("name").to_string(), signature_of(function)))
         .collect();
     let mut lowering = Lowering {
@@ -292,7 +292,7 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
     };
     let mut functions = Vec::new();
     for function in program.list("functions") {
-        if function.kind() != "function" {
+        if function.kind() != kinds::FUNCTION {
             functions.push(function.clone());
             continue;
         }
@@ -465,9 +465,9 @@ impl Lowering<'_> {
     fn statement(&mut self, node: &Node) -> Result<Vec<Node>> {
         let saved = std::mem::take(&mut self.before);
         let lowered = match node.kind() {
-            "expr" => node.clone().with("expr", self.rvalue(&node["expr"])?.node),
-            "return" if !node["value"].is_null() => self.return_statement(node)?,
-            "if" => {
+            kinds::EXPR => node.clone().with("expr", self.rvalue(&node["expr"])?.node),
+            kinds::RETURN if !node["value"].is_null() => self.return_statement(node)?,
+            kinds::IF => {
                 let cond = self.condition(&node["cond"])?;
                 let mut out = node.clone().with("cond", cond).with("then", self.statements(node.list("then"))?);
                 if let Some(otherwise) = node["else"].as_array() {
@@ -475,11 +475,11 @@ impl Lowering<'_> {
                 }
                 out
             }
-            "while" => {
+            kinds::WHILE => {
                 let cond = self.condition(&node["cond"])?;
                 node.clone().with("cond", cond).with("body", self.statements(node.list("body"))?)
             }
-            "switch" => {
+            kinds::SWITCH => {
                 let value = self.scalar(&node["value"], "a switch's value")?;
                 let mut cases = Vec::new();
                 for case in node.list("cases") {
@@ -492,7 +492,7 @@ impl Lowering<'_> {
                 }
                 node.clone().with("value", value.node).with("cases", cases)
             }
-            "print" | "native" => {
+            kinds::PRINT | kinds::NATIVE => {
                 let mut args = Vec::new();
                 for arg in node.list("args") {
                     args.push(self.scalar(arg, "an argument")?.node);
@@ -540,7 +540,7 @@ impl Lowering<'_> {
     /// What an lvalue designates, and its type.
     fn place(&mut self, node: &Node) -> Result<(Place, Ty)> {
         match node.kind() {
-            "var" => {
+            kinds::VAR => {
                 let name = node.text("name");
                 match self.lookup(name) {
                     Some(found) => Ok((Place::Var(found.name.clone()), found.ty)),
@@ -548,7 +548,7 @@ impl Lowering<'_> {
                     None => Ok((Place::Plain(node.clone()), ctype::int())),
                 }
             }
-            "index" => {
+            kinds::INDEX => {
                 let name = node.text("name");
                 let found = self.lookup(name);
                 match found {
@@ -572,19 +572,22 @@ impl Lowering<'_> {
                     }
                 }
             }
-            "deref" => match self.plain_deref(node) {
+            kinds::DEREF => match self.plain_deref(node) {
                 Some(found) => Ok(found),
                 None => {
                     let pointer = self.pointed(&node["operand"])?;
                     self.deref_place(pointer)
                 }
             },
-            "subscript" => self.subscript_place(&node["array"], &node["index"]),
-            "member" => {
+            kinds::SUBSCRIPT => self.subscript_place(&node["array"], &node["index"]),
+            kinds::MEMBER => {
                 let (base, ty) = if node["arrow"] == Node::Bool(true) {
                     let pointer = self.rvalue(&node["object"])?;
                     self.deref_place(pointer)?
-                } else if matches!(node["object"].kind(), "var" | "member" | "subscript" | "deref" | "index") {
+                } else if matches!(
+                    node["object"].kind(),
+                    kinds::VAR | kinds::MEMBER | kinds::SUBSCRIPT | kinds::DEREF | kinds::INDEX
+                ) {
                     self.place(&node["object"])?
                 } else {
                     // a struct a call or assignment gives: its address
@@ -607,7 +610,7 @@ impl Lowering<'_> {
                     None => (place, member),
                 })
             }
-            "field" => {
+            kinds::FIELD => {
                 // an initializer's slot (parse/declarations.rs), of its C type, read as its type's base
                 let ty = node.get("ctype").map_or_else(|| Ty::Scalar(node.text("type").to_string()), Ty::from_node);
                 let mut plain = node.clone().with("type", self.slot_kind(&ty));
@@ -629,7 +632,7 @@ impl Lowering<'_> {
     /// *p of a pointer or array variable of the forms the compiler had before, as it was.
     fn plain_deref(&self, node: &Node) -> Option<(Place, Ty)> {
         let operand = &node["operand"];
-        if operand.kind() != "var" {
+        if operand.kind() != kinds::VAR {
             return None;
         }
         let found = self.lookup(operand.text("name"))?;
@@ -674,20 +677,22 @@ impl Lowering<'_> {
     /// The place an address expression is the address of, when the expression says it.
     fn place_of_address(&self, node: &Node) -> Option<Place> {
         match node.kind() {
-            "addr" => {
+            kinds::ADDR => {
                 let target = &node["target"];
                 Some(match target.kind() {
-                    "var" => Place::Var(target.text("name").to_string()),
-                    "field" => Place::Field(target.text("name").to_string(), target["offset"].as_i64().unwrap_or(0)),
-                    "index" => Place::Index(target.text("name").to_string(), target["index"].clone()),
-                    "at" => Place::At(target["pointer"].clone(), target["index"].clone()),
-                    "deref" if target["operand"].kind() == "var" => {
+                    kinds::VAR => Place::Var(target.text("name").to_string()),
+                    kinds::FIELD => {
+                        Place::Field(target.text("name").to_string(), target["offset"].as_i64().unwrap_or(0))
+                    }
+                    kinds::INDEX => Place::Index(target.text("name").to_string(), target["index"].clone()),
+                    kinds::AT => Place::At(target["pointer"].clone(), target["index"].clone()),
+                    kinds::DEREF if target["operand"].kind() == kinds::VAR => {
                         Place::Index(target["operand"].text("name").to_string(), int_node(0))
                     }
                     _ => return None,
                 })
             }
-            "var" => {
+            kinds::VAR => {
                 let found = self.lookup(node.text("name"))?;
                 match (found.storage, &found.ty) {
                     (Storage::Pointer, _) => Some(Place::Index(found.name, int_node(0))),
@@ -703,7 +708,7 @@ impl Lowering<'_> {
     fn offset(&self, place: Place, by: i64, index: Option<Node>) -> Place {
         // a constant index is an offset: a[2] of a global array is its slot
         let (by, index) = match index {
-            Some(index) if index.kind() == "int" && index.get("unsigned").is_none() => {
+            Some(index) if index.kind() == kinds::INT && index.get("unsigned").is_none() => {
                 (by + index["value"].as_i64().unwrap_or(0), None)
             }
             other => (by, other),
@@ -729,10 +734,10 @@ impl Lowering<'_> {
             Place::At(pointer, at) => Place::At(pointer, plus(at, more)),
             Place::Plain(node) => {
                 let place = match node.kind() {
-                    "var" => Place::Var(node.text("name").to_string()),
-                    "index" => Place::Index(node.text("name").to_string(), node["index"].clone()),
-                    "field" => Place::Field(node.text("name").to_string(), node["offset"].as_i64().unwrap_or(0)),
-                    "deref" => Place::Index(node["operand"].text("name").to_string(), int_node(0)),
+                    kinds::VAR => Place::Var(node.text("name").to_string()),
+                    kinds::INDEX => Place::Index(node.text("name").to_string(), node["index"].clone()),
+                    kinds::FIELD => Place::Field(node.text("name").to_string(), node["offset"].as_i64().unwrap_or(0)),
+                    kinds::DEREF => Place::Index(node["operand"].text("name").to_string(), int_node(0)),
                     _ => return Place::At(address_of(node), more),
                 };
                 self.offset(place, by, index)
@@ -792,7 +797,7 @@ impl Lowering<'_> {
     fn stable(&mut self, place: Place, ty: &Ty, parts: &mut Vec<Node>) -> Place {
         match place {
             Place::Var(_) | Place::Field(..) => place,
-            Place::Index(name, index) if index.kind() == "int" => Place::Index(name, index),
+            Place::Index(name, index) if index.kind() == kinds::INT => Place::Index(name, index),
             other => {
                 let pointer = self.hidden_pointer(&ctype::pointer(ty.clone()));
                 parts.push(assign(var(&pointer), self.address(&other)));
@@ -831,26 +836,26 @@ impl Lowering<'_> {
     /// deeply nested expression small (parse::NESTING).
     fn rvalue(&mut self, node: &Node) -> Result<Typed> {
         match node.kind() {
-            "int" | "float" | "string" => Ok(literal(node)),
-            "wide" => self.literal_array(node),
-            "var" => self.variable(node),
-            "deref" if self.plain_deref(node).is_none() => self.deref_value(node),
-            "index" | "deref" | "subscript" | "member" | "field" => self.place_value(node),
-            "addr" => self.address_value(node),
-            "assign" => self.assignment(node),
-            "compound" => self.compound(node),
-            "binary" => self.binary(node),
-            "unary" => self.unary(node),
-            "logical" => self.logical(node),
-            "ternary" => self.ternary(node),
-            "cast" => self.cast(node),
-            "comma" => self.comma(node),
-            "call" => self.call(node),
-            "call_ptr" => self.call_through(node),
-            "builtin" => self.builtin(node),
-            "va_arg" => self.va_arg(node),
-            "va_start" => self.va_start(node),
-            "narrow" => self.narrow(node),
+            kinds::INT | kinds::FLOAT | kinds::STRING => Ok(literal(node)),
+            kinds::WIDE => self.literal_array(node),
+            kinds::VAR => self.variable(node),
+            kinds::DEREF if self.plain_deref(node).is_none() => self.deref_value(node),
+            kinds::INDEX | kinds::DEREF | kinds::SUBSCRIPT | kinds::MEMBER | kinds::FIELD => self.place_value(node),
+            kinds::ADDR => self.address_value(node),
+            kinds::ASSIGN => self.assignment(node),
+            kinds::COMPOUND => self.compound(node),
+            kinds::BINARY => self.binary(node),
+            kinds::UNARY => self.unary(node),
+            kinds::LOGICAL => self.logical(node),
+            kinds::TERNARY => self.ternary(node),
+            kinds::CAST => self.cast(node),
+            kinds::COMMA => self.comma(node),
+            kinds::CALL => self.call(node),
+            kinds::CALL_PTR => self.call_through(node),
+            kinds::BUILTIN => self.builtin(node),
+            kinds::VA_ARG => self.va_arg(node),
+            kinds::VA_START => self.va_start(node),
+            kinds::NARROW => self.narrow(node),
             _ => Ok(Typed::new(node.clone(), ctype::int())),
         }
     }
@@ -971,7 +976,7 @@ impl Lowering<'_> {
 
     fn address_value(&mut self, node: &Node) -> Result<Typed> {
         let target = &node["target"];
-        if target.kind() == "var" && self.lookup(target.text("name")).is_none() {
+        if target.kind() == kinds::VAR && self.lookup(target.text("name")).is_none() {
             if let Some(signature) = self.signatures.get(target.text("name")).cloned() {
                 return self.function_number(target.text("name"), &signature);
             }
@@ -990,7 +995,7 @@ impl Lowering<'_> {
     /// A string literal as an array (its characters, signed as char is, and a 0) or a wide string
     /// (its codes and a 0): a hidden global, set before the statement.
     fn literal_array(&mut self, node: &Node) -> Result<Typed> {
-        let (codes, element): (Vec<i64>, Ty) = if node.kind() == "wide" {
+        let (codes, element): (Vec<i64>, Ty) = if node.kind() == kinds::WIDE {
             let codes = node.list("codes").iter().filter_map(Node::as_i64).collect();
             (codes, Ty::Scalar("unsigned short".into()))
         } else {
@@ -1013,7 +1018,7 @@ impl Lowering<'_> {
     /// A value given where a pointer of a type is wanted: a string literal is an array then, when
     /// the pointer is to char.
     fn value_for(&mut self, node: &Node, to: &Ty) -> Result<Typed> {
-        if node.kind() == "string" && to.target().is_some_and(|target| is_char(target, self.kinds)) {
+        if node.kind() == kinds::STRING && to.target().is_some_and(|target| is_char(target, self.kinds)) {
             return self.literal_array(node);
         }
         self.rvalue(node)
@@ -1021,7 +1026,7 @@ impl Lowering<'_> {
 
     /// A value that is indexed or dereferenced: a string literal is an array then.
     fn pointed(&mut self, node: &Node) -> Result<Typed> {
-        if node.kind() == "string" {
+        if node.kind() == kinds::STRING {
             return self.literal_array(node);
         }
         self.rvalue(node)
@@ -1094,7 +1099,7 @@ impl Lowering<'_> {
         let (base, _) = self.deref_place(Typed::new(read, ty.clone()))?;
         let size = self.slots(&element);
         let moved = match step.kind() {
-            "int" if step.get("unsigned").is_none() => {
+            kinds::INT if step.get("unsigned").is_none() => {
                 self.offset(base, step["value"].as_i64().unwrap_or(0) * size, None)
             }
             _ => self.offset(base, 0, Some(times(step, size))),
@@ -1105,7 +1110,7 @@ impl Lowering<'_> {
     /// A binary operation: its operands lowered, then the operation on their types (a postfix
     /// step of a pointer or a bit-field first). The operands' frames are kept small, as rvalue's.
     fn binary(&mut self, node: &Node) -> Result<Typed> {
-        if node.get("postfix").is_some() && node["left"].kind() == "compound" {
+        if node.get("postfix").is_some() && node["left"].kind() == kinds::COMPOUND {
             if let Some(stepped) = self.postfix_step(node)? {
                 return Ok(stepped);
             }
@@ -1187,7 +1192,7 @@ impl Lowering<'_> {
         let size = self.slots(&element);
         let count = if op == "-" { node!({"kind": "unary", "op": "-", "operand": count.node}) } else { count.node };
         let moved = match count.kind() {
-            "int" if count.get("unsigned").is_none() => {
+            kinds::INT if count.get("unsigned").is_none() => {
                 self.offset(base, count["value"].as_i64().unwrap_or(0) * size, None)
             }
             _ => self.offset(base, 0, Some(times(count, size))),
@@ -1198,9 +1203,9 @@ impl Lowering<'_> {
     /// Whether a value is a null pointer constant: 0, a constant that is 0, either cast.
     fn is_null(&self, node: &Node) -> bool {
         match node.kind() {
-            "int" => node["value"] == Node::Int(0),
-            "cast" => self.is_null(&node["operand"]),
-            "var" => {
+            kinds::INT => node["value"] == Node::Int(0),
+            kinds::CAST => self.is_null(&node["operand"]),
+            kinds::VAR => {
                 self.lookup(node.text("name")).is_none()
                     && self.found.constants.get(node.text("name")).is_some_and(|value| self.is_null(value))
             }
@@ -1243,7 +1248,7 @@ impl Lowering<'_> {
         }
         if to.is_pointer() || to.is_function_pointer() {
             let compatible =
-                operand.ty.is_pointer() || operand.ty.is_function_pointer() || node["operand"].kind() == "addr";
+                operand.ty.is_pointer() || operand.ty.is_function_pointer() || node["operand"].kind() == kinds::ADDR;
             if !compatible && !self.is_null(&operand.node) && !(to.is_function_pointer() && is_integer(&operand.ty)) {
                 return fail(format!(
                     "{} cannot be converted to a pointer: the VM's pointers are addresses it gives",
@@ -1333,8 +1338,8 @@ impl Lowering<'_> {
     fn call_through(&mut self, node: &Node) -> Result<Typed> {
         let callee = &node["callee"];
         let designated = match callee.kind() {
-            "var" => Some(callee),
-            "deref" if callee["operand"].kind() == "var" => Some(&callee["operand"]),
+            kinds::VAR => Some(callee),
+            kinds::DEREF if callee["operand"].kind() == kinds::VAR => Some(&callee["operand"]),
             _ => None,
         };
         if let Some(name) = designated.map(|named| named.text("name")) {

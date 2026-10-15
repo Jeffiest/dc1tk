@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::node;
-use crate::node::{Map, Node};
+use crate::node::{kinds, Map, Node};
 
 use crate::asm::{self, hex};
 use crate::fingerprint;
@@ -197,7 +197,7 @@ fn expression(state: &mut State, mut index: usize, stop: usize) -> Fail<Stopped>
             Op::PushConst => values.push(constant(&item, index, state)?),
             Op::Store => {
                 let (destination, value) = pop2(&mut values)?;
-                if destination.kind() != "addr" {
+                if destination.kind() != kinds::ADDR {
                     return Err("store through a computed address".into());
                 }
                 values.push(node!({"kind": "assign", "target": destination["target"].clone(), "value": value}));
@@ -279,7 +279,7 @@ fn constant(item: &Instruction, index: usize, state: &mut State) -> Fail<Node> {
     }
     if kind == CONST_INT {
         if state.natives.contains(&index) {
-            return Ok(node!({"kind": "native_number", "value": item.arg2}));
+            return Ok(node!({"kind": kinds::NATIVE_NUMBER, "value": item.arg2}));
         }
         return Ok(node!({"kind": "int", "value": item.arg2}));
     }
@@ -324,14 +324,14 @@ fn simple_statement(mut values: Vec<Node>, item: &Instruction, state: &State) ->
                 return Err("native call inside an expression".into());
             }
             let number = values.remove(0);
-            if number.kind() == "native_number" {
+            if number.kind() == kinds::NATIVE_NUMBER {
                 let value = number["value"].as_i64().unwrap();
                 return Ok(node!({"kind": "native", "name": native_name(value, state), "base": null, "args": values}));
             }
-            if number.kind() == "binary"
+            if number.kind() == kinds::BINARY
                 && number["op"] == "+"
-                && number["left"].kind() == "native_number"
-                && number["right"].kind() == "int"
+                && number["left"].kind() == kinds::NATIVE_NUMBER
+                && number["right"].kind() == kinds::INT
             {
                 let base = number["left"]["value"].as_i64().unwrap();
                 let total = base + number["right"]["value"].as_i64().unwrap();
@@ -467,23 +467,23 @@ fn while_loop(state: &mut State, index: usize, stop: usize, loops: &[Loop]) -> F
 
 fn expression_labels(node: &Node, out: &mut Vec<i64>) {
     match node.kind() {
-        "logical" => {
+        kinds::LOGICAL => {
             expression_labels(&node["left"], out);
             out.push(node["label"].as_i64().unwrap());
             expression_labels(&node["right"], out);
         }
-        "binary" => {
+        kinds::BINARY => {
             expression_labels(&node["left"], out);
             expression_labels(&node["right"], out);
         }
-        "unary" | "cast" | "builtin" => expression_labels(&node["operand"], out),
-        "assign" => {
+        kinds::UNARY | kinds::CAST | kinds::BUILTIN => expression_labels(&node["operand"], out),
+        kinds::ASSIGN => {
             expression_labels(&node["target"], out);
             expression_labels(&node["value"], out);
         }
-        "index" => expression_labels(&node["index"], out),
-        "addr" => expression_labels(&node["target"], out),
-        "call" => {
+        kinds::INDEX => expression_labels(&node["index"], out),
+        kinds::ADDR => expression_labels(&node["target"], out),
+        kinds::CALL => {
             for arg in node["args"].as_array().unwrap() {
                 expression_labels(arg, out);
             }
@@ -495,14 +495,14 @@ fn expression_labels(node: &Node, out: &mut Vec<i64>) {
 fn statement_labels(statements: &[Node], out: &mut Vec<i64>) {
     for statement in statements {
         match statement.kind() {
-            "expr" => expression_labels(&statement["expr"], out),
-            "return" => expression_labels(&statement["value"], out),
-            "native" | "print" => {
+            kinds::EXPR => expression_labels(&statement["expr"], out),
+            kinds::RETURN => expression_labels(&statement["value"], out),
+            kinds::NATIVE | kinds::PRINT => {
                 for arg in statement["args"].as_array().unwrap() {
                     expression_labels(arg, out);
                 }
             }
-            "if" => {
+            kinds::IF => {
                 expression_labels(&statement["cond"], out);
                 out.push(statement["labels"][0].as_i64().unwrap());
                 statement_labels(statement["then"].as_array().unwrap(), out);
@@ -511,7 +511,7 @@ fn statement_labels(statements: &[Node], out: &mut Vec<i64>) {
                     statement_labels(statement["else"].as_array().unwrap(), out);
                 }
             }
-            "while" => {
+            kinds::WHILE => {
                 out.push(statement["labels"][0].as_i64().unwrap());
                 out.push(statement["labels"][1].as_i64().unwrap());
                 expression_labels(&statement["cond"], out);
@@ -653,14 +653,14 @@ fn value_type(node: &Node, types: &HashMap<String, String>, returns: &HashMap<St
 fn returned_values<'a>(statements: &'a [Node], out: &mut Vec<&'a Node>) {
     for node in statements {
         match node.kind() {
-            "return" => out.push(&node["value"]),
-            "if" => {
+            kinds::RETURN => out.push(&node["value"]),
+            kinds::IF => {
                 returned_values(node["then"].as_array().unwrap(), out);
                 if let Some(otherwise) = node["else"].as_array() {
                     returned_values(otherwise, out);
                 }
             }
-            "while" => returned_values(node["body"].as_array().unwrap(), out),
+            kinds::WHILE => returned_values(node["body"].as_array().unwrap(), out),
             _ => {}
         }
     }
@@ -687,7 +687,7 @@ fn valued_calls(node: &Node, out: &mut Vec<String>) {
             }
         }
         Node::Map(object) => {
-            if node.get("kind") == Some(&node!("expr")) && node["expr"].kind() == "call" {
+            if node.get("kind") == Some(&node!("expr")) && node["expr"].kind() == kinds::CALL {
                 valued_calls(&node["expr"]["args"], out);
                 return;
             }
@@ -707,7 +707,7 @@ fn mentions(node: &Node, name: &str) -> bool {
     match node {
         Node::List(items) => items.iter().any(|item| mentions(item, name)),
         Node::Map(object) => {
-            (matches!(node.kind(), "var" | "index") && node["name"] == *name)
+            (matches!(node.kind(), kinds::VAR | kinds::INDEX) && node["name"] == *name)
                 || object.values().any(|value| mentions(value, name))
         }
         _ => false,
@@ -718,7 +718,7 @@ fn mentions(node: &Node, name: &str) -> bool {
 /// gives them an element type (the function record only says they are pointers), so it comes from
 /// what callers pass.
 pub fn unused_pointer_params(function: &Node) -> Vec<usize> {
-    if function.kind() != "function" {
+    if function.kind() != kinds::FUNCTION {
         return Vec::new();
     }
     let body = function.get("body").unwrap_or(&Node::Null);
@@ -741,7 +741,7 @@ fn variable_types(function: &Node, globals: &[Node]) -> HashMap<String, String> 
 
 /// The element type of an address argument (&x, &a[i]), from the variable's declaration.
 fn address_type(arg: &Node, types: &HashMap<String, String>) -> Option<String> {
-    if arg.kind() != "addr" || !matches!(arg["target"].kind(), "var" | "index") {
+    if arg.kind() != kinds::ADDR || !matches!(arg["target"].kind(), kinds::VAR | kinds::INDEX) {
         return None;
     }
     types.get(arg["target"]["name"].as_str()?).filter(|found| matches!(found.as_str(), "int" | "float")).cloned()
@@ -751,7 +751,7 @@ fn calls_in<'a>(node: &'a Node, out: &mut Vec<&'a Node>) {
     match node {
         Node::List(items) => items.iter().for_each(|item| calls_in(item, out)),
         Node::Map(object) => {
-            if node.kind() == "call" {
+            if node.kind() == kinds::CALL {
                 out.push(node);
             }
             object.values().for_each(|value| calls_in(value, out));
@@ -769,7 +769,7 @@ pub fn pointer_evidence(functions: &[Node], globals: &[Node]) -> BTreeMap<(Strin
         .filter(|(_, positions)| !positions.is_empty())
         .collect();
     let mut found: BTreeMap<(String, usize), BTreeSet<String>> = BTreeMap::new();
-    for function in functions.iter().filter(|function| function.kind() == "function") {
+    for function in functions.iter().filter(|function| function.kind() == kinds::FUNCTION) {
         let types = variable_types(function, globals);
         let mut calls = Vec::new();
         calls_in(function.get("body").unwrap_or(&Node::Null), &mut calls);
@@ -806,7 +806,7 @@ fn cast_addresses(node: &mut Node, params: &HashMap<String, Vec<Option<String>>>
         Node::List(items) => items.iter_mut().for_each(|item| cast_addresses(item, params, types)),
         Node::Map(object) => {
             object.iter_mut().for_each(|(_, value)| cast_addresses(value, params, types));
-            if node.kind() != "call" {
+            if node.kind() != kinds::CALL {
                 return;
             }
             let Some(expected) = node["name"].as_str().and_then(|name| params.get(name)).cloned() else {
@@ -842,7 +842,7 @@ fn type_pointer_params(functions: &mut [Node], globals: &[Node]) {
     }
     let params: HashMap<String, Vec<Option<String>>> = functions
         .iter()
-        .filter(|function| function.kind() == "function")
+        .filter(|function| function.kind() == kinds::FUNCTION)
         .map(|function| {
             let types = function
                 .list("params")
@@ -855,7 +855,7 @@ fn type_pointer_params(functions: &mut [Node], globals: &[Node]) {
             (function["name"].as_str().unwrap_or("").to_string(), types)
         })
         .collect();
-    for function in functions.iter_mut().filter(|function| function.kind() == "function") {
+    for function in functions.iter_mut().filter(|function| function.kind() == kinds::FUNCTION) {
         let types = variable_types(function, globals);
         if let Some(body) = function.as_object_mut().and_then(|object| object.get_mut("body")) {
             cast_addresses(body, &params, &types);
@@ -915,7 +915,9 @@ fn matches(functions: &[&Function], decompiled: &[Node], code: i64, pool: bool) 
         .zip(decompiled)
         .zip(predicted(functions, decompiled, code, pool))
         .map(|((function, found), (prefix, padding))| {
-            found.kind() == "function" && strings_of(&found["unused_strings"]) == prefix && function.padding == padding
+            found.kind() == kinds::FUNCTION
+                && strings_of(&found["unused_strings"]) == prefix
+                && function.padding == padding
         })
         .collect()
 }
@@ -923,7 +925,7 @@ fn matches(functions: &[&Function], decompiled: &[Node], code: i64, pool: bool) 
 /// Whether the file's string buffer was never reset between functions: only when that predicts
 /// every block and resetting does not.
 fn string_pool(functions: &[&Function], decompiled: &[Node], code: i64) -> bool {
-    if decompiled.iter().any(|found| found.kind() != "function")
+    if decompiled.iter().any(|found| found.kind() != kinds::FUNCTION)
         || matches(functions, decompiled, code, false).into_iter().all(|matched| matched)
     {
         return false;

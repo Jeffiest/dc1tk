@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use crate::definitions::Definitions;
 use crate::natives::Table;
 use crate::node;
-use crate::node::{Map, Node};
+use crate::node::{kinds, Map, Node};
 use crate::{assets, names, paths, Error, Result};
 
 pub use crate::soundpass::{library_sounds, Passed, Seed, Sounds};

@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 
 use crate::asm;
-use crate::stb::{self, Function, Script};
+use crate::stb::{self, Function, Op, Script};
 
 pub const VERSION: i64 = 1;
 const CONST_STR: i32 = 3;
@@ -61,11 +61,11 @@ pub fn payload_json(function: &Function, code: i64, table: &str, known: &BTreeMa
             code_text.push(',');
         }
         let _ = write!(code_text, "[{},", item.op);
-        match item.name() {
-            "JMP" | "JMP_FALSE" | "JMP_TRUE" => {
+        match item.opcode() {
+            Some(Op::Jmp | Op::JmpFalse | Op::JmpTrue) => {
                 let _ = write!(code_text, "[\"jump\",{}],{}]", item.arg1 as i64 - start, item.arg2);
             }
-            "CALL" => {
+            Some(Op::Call) => {
                 let _ = write!(code_text, "{},[\"call\",", item.arg1);
                 match known.get(&(item.arg2 as i64)) {
                     Some(found) => push_string(&mut code_text, found),
@@ -75,7 +75,7 @@ pub fn payload_json(function: &Function, code: i64, table: &str, known: &BTreeMa
                 }
                 code_text.push_str("]]");
             }
-            "PUSH_CONST" if item.arg1 == CONST_STR => {
+            Some(Op::PushConst) if item.arg1 == CONST_STR => {
                 pushed.push(item.arg2 as i64);
                 let _ = write!(code_text, "{},[\"string\",", item.arg1);
                 match texts.iter().find(|(at, _)| *at == item.arg2 as i64) {

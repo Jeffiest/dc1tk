@@ -190,6 +190,9 @@ pub mod kinds {
     pub const NARROW: &str = "narrow";
     /// An element through the address a hidden local holds (compile.rs's compound assignments).
     pub const VIA: &str = "via";
+    /// The decompiler's own: a native's number pushed for the EXT that calls it, until the call
+    /// is read (decompile.rs).
+    pub const NATIVE_NUMBER: &str = "native_number";
 }
 
 /// A program with nothing in it yet, its keys in the order the tree has them: the header's fields

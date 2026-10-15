@@ -24,7 +24,7 @@ fn matches(pattern: &Node, node: &Node, params: &HashMap<String, Param>, binding
             let Some(other) = node.as_object() else {
                 return false;
             };
-            if pattern.kind() == "var" {
+            if pattern.kind() == kinds::VAR {
                 if let Some(param) = params.get(pattern.text("name")) {
                     if *param == Param::Out && node.get("kind").and_then(Node::as_str) != Some("addr") {
                         return false;
@@ -35,8 +35,8 @@ fn matches(pattern: &Node, node: &Node, params: &HashMap<String, Param>, binding
                     return bound(pattern.text("name"), node, bindings);
                 }
             }
-            if pattern.kind() == "deref"
-                && pattern["operand"].kind() == "var"
+            if pattern.kind() == kinds::DEREF
+                && pattern["operand"].kind() == kinds::VAR
                 && params.get(pattern["operand"].text("name")) == Some(&Param::Out)
             {
                 if !matches!(node.get("kind").and_then(Node::as_str), Some("var") | Some("index")) {
@@ -125,12 +125,12 @@ fn folded(nodes: &[Node], found: &Context, inlines: &[&Node], pointers: &HashSet
         .collect();
     for position in (0..nodes.len()).rev() {
         let (statements_after, natives_after) = best[position + 1];
-        best[position] = (statements_after + 1, natives_after + usize::from(nodes[position].kind() == "native"));
+        best[position] = (statements_after + 1, natives_after + usize::from(nodes[position].kind() == kinds::NATIVE));
         let here = &nodes[position];
         for (inline, first) in inlines.iter().zip(&first) {
             if let Some((kind, name)) = first {
                 if here.get("kind").and_then(Node::as_str) != Some(kind)
-                    || (*kind == "native" && !name.same_value(&here["name"]))
+                    || (*kind == kinds::NATIVE && !name.same_value(&here["name"]))
                 {
                     continue;
                 }
@@ -178,7 +178,7 @@ fn folded(nodes: &[Node], found: &Context, inlines: &[&Node], pointers: &HashSet
 
 fn nested(node: &Node, found: &Context, inlines: &[&Node], pointers: &HashSet<String>) -> Node {
     match node.kind() {
-        "if" => {
+        kinds::IF => {
             let otherwise = match node["else"].as_array() {
                 Some(items) => Node::List(folded(items, found, inlines, pointers)),
                 None => Node::Null,
@@ -186,20 +186,20 @@ fn nested(node: &Node, found: &Context, inlines: &[&Node], pointers: &HashSet<St
             let then = folded(node.list("then"), found, inlines, pointers);
             node.clone().with("then", then).with("else", otherwise)
         }
-        "while" => {
+        kinds::WHILE => {
             let body = folded(node.list("body"), found, inlines, pointers);
             node.clone().with("body", body)
         }
-        "native" => readable_native(node, found, pointers),
+        kinds::NATIVE => readable_native(node, found, pointers),
         _ => node.clone(),
     }
 }
 
 fn result_target(arg: &Node, pointers: &HashSet<String>) -> Option<Node> {
-    if arg.kind() == "addr" && matches!(arg["target"].kind(), "var" | "index") {
+    if arg.kind() == kinds::ADDR && matches!(arg["target"].kind(), kinds::VAR | kinds::INDEX) {
         return Some(arg["target"].clone());
     }
-    if arg.kind() == "var" && pointers.contains(arg.text("name")) {
+    if arg.kind() == kinds::VAR && pointers.contains(arg.text("name")) {
         return Some(node!({"kind": "deref", "operand": arg.clone()}));
     }
     None
@@ -224,12 +224,12 @@ pub fn enum_values(name: &str, found: &Context) -> IndexMap<i64, String> {
 /// A number written as the enum's constant for it (also inside | + - * /).
 pub fn named_literal(node: &Node, enum_name: &str, found: &Context) -> Node {
     let names = enum_values(enum_name, found);
-    if node.kind() == "int" {
+    if node.kind() == kinds::INT {
         if let Some(name) = node["value"].as_i64().and_then(|value| names.get(&value)) {
             return node!({"kind": "var", "name": name.clone()});
         }
     }
-    if node.kind() == "binary" && matches!(node.text("op"), "|" | "+" | "-" | "*" | "/") {
+    if node.kind() == kinds::BINARY && matches!(node.text("op"), "|" | "+" | "-" | "*" | "/") {
         let left = named_literal(&node["left"], enum_name, found);
         let right = named_literal(&node["right"], enum_name, found);
         return node.clone().with("left", left).with("right", right);
@@ -253,7 +253,7 @@ fn named_args(args: &[Node], params: &[Node], found: &Context) -> Vec<Node> {
             match (kind, enumeration) {
                 // an address where the native takes an enum (a call written for an older native
                 // table): C needs the conversion written out; it compiles to nothing
-                (_, Some(enumeration)) if arg.kind() == "addr" => {
+                (_, Some(enumeration)) if arg.kind() == kinds::ADDR => {
                     node!({"kind": "cast", "type": format!("enum {}", enumeration.plain_text()), "operand": arg.clone()})
                 }
                 (Some(kind), _) => named_literal(arg, &kind.plain_text(), found),
@@ -267,7 +267,7 @@ fn named_floats(node: &Node, found: &Context) -> Node {
     match node {
         Node::List(items) => Node::List(items.iter().map(|item| named_floats(item, found)).collect()),
         Node::Map(map) => {
-            if node.kind() == "float" {
+            if node.kind() == kinds::FLOAT {
                 if let Some(name) = node["bits"].as_i64().and_then(|bits| found.float_names.get(&bits)) {
                     return node!({"kind": "var", "name": name.clone()});
                 }
@@ -327,7 +327,7 @@ fn vector_subject(name: &str) -> Option<&str> {
 fn call_subject(node: &Node, declared: &Node, found: &Context) -> Option<(String, String)> {
     let params = declared.list("params");
     for (position, arg) in node.list("args").iter().enumerate() {
-        if position >= params.len() || arg.kind() != "int" {
+        if position >= params.len() || arg.kind() != kinds::INT {
             continue;
         }
         let kind = params[position].get("kind").and_then(Node::as_str).unwrap_or("");
@@ -346,7 +346,7 @@ fn call_subject(node: &Node, declared: &Node, found: &Context) -> Option<(String
 fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, String)>) {
     for node in nodes {
         match node.kind() {
-            "native" => {
+            kinds::NATIVE => {
                 let Some(declared) = found.by_original.get(node.text("name")) else {
                     continue;
                 };
@@ -359,8 +359,8 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
                     .filter(|(position, arg)| {
                         *position < params.len()
                             && params[*position]["out"].is_set()
-                            && arg.kind() == "addr"
-                            && arg["target"].kind() == "var"
+                            && arg.kind() == kinds::ADDR
+                            && arg["target"].kind() == kinds::VAR
                     })
                     .collect();
                 // get_home_pos(&x, &y, &z) reads the home's position: home_x, home_y, home_z
@@ -385,11 +385,11 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
                     out.push((arg["target"].text("name").to_string(), wanted, generic));
                 }
             }
-            "if" => {
+            kinds::IF => {
                 out_uses(node.list("then"), found, out);
                 out_uses(node.list("else"), found, out);
             }
-            "while" => out_uses(node.list("body"), found, out),
+            kinds::WHILE => out_uses(node.list("body"), found, out),
             _ => {}
         }
     }
@@ -398,12 +398,12 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
 /// The native parameter each variable is first passed to as a plain value: {variable: parameter}.
 fn in_uses(nodes: &[Node], found: &Context, out: &mut HashMap<String, String>) {
     for node in nodes {
-        if node.kind() == "native" {
+        if node.kind() == kinds::NATIVE {
             let declared = found.by_original.get(node.text("name"));
             for (position, arg) in node.list("args").iter().enumerate() {
                 if let Some(declared) = declared {
                     let params = declared.list("params");
-                    if position < params.len() && !params[position]["out"].is_set() && arg.kind() == "var" {
+                    if position < params.len() && !params[position]["out"].is_set() && arg.kind() == kinds::VAR {
                         out.entry(arg.text("name").to_string())
                             .or_insert_with(|| params[position].text("name").to_string());
                     }
@@ -425,21 +425,24 @@ fn variable_access(node: &Node, reads: &mut HashSet<String>, writes: &mut HashSe
         Node::List(items) => items.iter().for_each(|item| variable_access(item, reads, writes)),
         Node::Map(map) => {
             let kind = node.kind();
-            if kind == "var" {
+            if kind == kinds::VAR {
                 reads.insert(node.text("name").to_string());
                 return;
             }
-            if (kind == "addr" || kind == "assign") && matches!(node["target"].kind(), "var" | "index") {
+            if (kind == kinds::ADDR || kind == kinds::ASSIGN)
+                && matches!(node["target"].kind(), kinds::VAR | kinds::INDEX)
+            {
                 writes.insert(node["target"].text("name").to_string());
                 if let Some(index) = node["target"].get("index") {
                     variable_access(index, reads, writes);
                 }
-                if kind == "assign" {
+                if kind == kinds::ASSIGN {
                     variable_access(&node["value"], reads, writes);
                 }
                 return;
             }
-            if kind == "native" && node.get("result").is_some_and(|result| !result.is_null() && result.kind() == "var")
+            if kind == kinds::NATIVE
+                && node.get("result").is_some_and(|result| !result.is_null() && result.kind() == kinds::VAR)
             {
                 writes.insert(node["result"].text("name").to_string());
             }
@@ -585,7 +588,7 @@ fn call_named(node: &Node, found: &Context, function_kinds: &HashMap<String, BTr
             let mut out = Node::Map(
                 map.entries().map(|(key, value)| (key.clone(), call_named(value, found, function_kinds))).collect(),
             );
-            if node.kind() == "call" {
+            if node.kind() == kinds::CALL {
                 if let Some(kinds) = function_kinds.get(node.text("name")) {
                     let args: Vec<Node> = out
                         .list("args")
@@ -632,15 +635,15 @@ fn typed_literals(node: &Node, kinds: &HashMap<String, String>, found: &Context)
                 map.entries().map(|(key, value)| (key.clone(), typed_literals(value, kinds, found))).collect(),
             );
             match out.kind() {
-                "assign" if out["target"].kind() == "var" => {
+                kinds::ASSIGN if out["target"].kind() == kinds::VAR => {
                     if let Some(kind) = kinds.get(out["target"].text("name")) {
                         let value = named_literal(&out["value"], kind, found);
                         out = out.with("value", value);
                     }
                 }
-                "binary" if matches!(out.text("op"), "==" | "!=" | "<" | "<=" | ">" | ">=") => {
+                kinds::BINARY if matches!(out.text("op"), "==" | "!=" | "<" | "<=" | ">" | ">=") => {
                     for (side, other) in [("left", "right"), ("right", "left")] {
-                        if out[side].kind() == "var" {
+                        if out[side].kind() == kinds::VAR {
                             if let Some(kind) = kinds.get(out[side].text("name")) {
                                 let value = named_literal(&out[other], kind, found);
                                 out = out.with(other, value);
@@ -676,7 +679,7 @@ fn calls_made(node: &Node, out: &mut HashSet<(String, String)>) {
     match node {
         Node::List(items) => items.iter().for_each(|item| calls_made(item, out)),
         Node::Map(map) => {
-            if matches!(node.kind(), "native" | "call") {
+            if matches!(node.kind(), kinds::NATIVE | kinds::CALL) {
                 out.insert((node.kind().to_string(), node.text("name").to_string()));
             }
             map.values().for_each(|value| calls_made(value, out));
@@ -688,7 +691,8 @@ fn calls_made(node: &Node, out: &mut HashSet<(String, String)>) {
 /// The hidden functions the sound pass needs: those that call a sound native, or call a function
 /// (shown or hidden) that does, directly or further down.
 fn sound_related<'a>(hidden: &'a [Node], shown: &[Node], found: &Context) -> Vec<&'a Node> {
-    let functions: Vec<&Node> = hidden.iter().chain(shown).filter(|function| function.kind() == "function").collect();
+    let functions: Vec<&Node> =
+        hidden.iter().chain(shown).filter(|function| function.kind() == kinds::FUNCTION).collect();
     let calls: Vec<(String, HashSet<(String, String)>)> = functions
         .iter()
         .map(|function| {
@@ -703,7 +707,7 @@ fn sound_related<'a>(hidden: &'a [Node], shown: &[Node], found: &Context) -> Vec
             made.iter().any(|(kind, callee)| {
                 let name =
                     found.by_original.get(callee).and_then(|declared| declared["name"].as_str()).unwrap_or(callee);
-                kind == "native" && crate::soundpass::is_sound_native(name)
+                kind == kinds::NATIVE && crate::soundpass::is_sound_native(name)
             })
         })
         .map(|(name, _)| name.clone())
@@ -712,17 +716,22 @@ fn sound_related<'a>(hidden: &'a [Node], shown: &[Node], found: &Context) -> Vec
     while grown {
         grown = false;
         for (name, made) in &calls {
-            if !related.contains(name) && made.iter().any(|(kind, callee)| kind == "call" && related.contains(callee)) {
+            if !related.contains(name)
+                && made.iter().any(|(kind, callee)| kind == kinds::CALL && related.contains(callee))
+            {
                 related.insert(name.clone());
                 grown = true;
             }
         }
     }
-    hidden.iter().filter(|function| function.kind() == "function" && related.contains(function.text("name"))).collect()
+    hidden
+        .iter()
+        .filter(|function| function.kind() == kinds::FUNCTION && related.contains(function.text("name")))
+        .collect()
 }
 
 fn prepared_function(function: &Node, found: &Context, function_names: &HashSet<String>, inlines: &[&Node]) -> Node {
-    if function.kind() != "function" {
+    if function.kind() != kinds::FUNCTION {
         return function.clone();
     }
     let body = assets::named(&old_numbered(function.list("body"), found), found);
@@ -785,15 +794,15 @@ fn old_numbered(nodes: &[Node], found: &Context) -> Node {
     nodes
         .iter()
         .map(|node| match node.kind() {
-            "if" => {
+            kinds::IF => {
                 let otherwise = match node["else"].as_array() {
                     Some(items) => old_numbered(items, found),
                     None => Node::Null,
                 };
                 node.clone().with("then", old_numbered(node.list("then"), found)).with("else", otherwise)
             }
-            "while" => node.clone().with("body", old_numbered(node.list("body"), found)),
-            "native" => {
+            kinds::WHILE => node.clone().with("body", old_numbered(node.list("body"), found)),
+            kinds::NATIVE => {
                 let mut notes = Vec::new();
                 if let Some(meant) = meant_native(node, found) {
                     notes.push(format!("old numbering, meant as {meant}"));
@@ -858,7 +867,7 @@ pub fn present_functions(
 ) -> Vec<Node> {
     let mut function_kinds = function_kinds_of(params_by_kind);
     // parameters a definition set gives a value kind (types)
-    for function in functions.iter().filter(|function| function.kind() == "function") {
+    for function in functions.iter().filter(|function| function.kind() == kinds::FUNCTION) {
         for (position, param) in function.list("params").iter().enumerate() {
             if let Some(kind) = param.get("kind").filter(|kind| kind.is_set()) {
                 function_kinds
@@ -874,7 +883,7 @@ pub fn present_functions(
         functions
             .iter()
             .map(|function| {
-                if function.kind() == "function" {
+                if function.kind() == kinds::FUNCTION {
                     function.clone().with("body", call_named(&function["body"], found, &function_kinds))
                 } else {
                     function.clone()
@@ -885,7 +894,7 @@ pub fn present_functions(
     let inlines = ordered_inlines(found);
     let function_names: HashSet<String> = functions
         .iter()
-        .filter(|function| function.kind() == "function")
+        .filter(|function| function.kind() == kinds::FUNCTION)
         .map(|function| function.text("name").to_string())
         .collect();
     let prepared: Vec<Node> =
@@ -915,7 +924,7 @@ pub fn present_functions(
     let presented: Vec<Node> = prepared
         .into_iter()
         .map(|function| {
-            if function.kind() != "function" {
+            if function.kind() != kinds::FUNCTION {
                 return function;
             }
             let mut banks = crate::soundpass::sound_banks(&function, &known);

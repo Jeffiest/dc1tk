@@ -127,7 +127,7 @@ pub fn header_declarations(
     let mut table = header["natives"].as_str().map(str::to_string);
     declarations.add(&header["declarations"]);
     for item in header.list("functions") {
-        if item.kind() == "include" && item["system"].is_set() {
+        if item.kind() == kinds::INCLUDE && item["system"].is_set() {
             let nested = header_declarations(item.text("path"), headers, declarations, seen, parse)?;
             if table.is_none() {
                 table = nested;
@@ -191,8 +191,8 @@ pub fn check_constants(constants: &[Node]) -> Result<()> {
     let shown = |declared: &Node| {
         let value = &declared["value"];
         let value = match value.kind() {
-            "int" => value["value"].as_i64().map_or_else(String::new, |number| number.to_string()),
-            "string" => format!("{:?}", value["value"].as_str().unwrap_or_default()),
+            kinds::INT => value["value"].as_i64().map_or_else(String::new, |number| number.to_string()),
+            kinds::STRING => format!("{:?}", value["value"].as_str().unwrap_or_default()),
             kind => kind.to_string(),
         };
         match declared["enum"].as_str() {
@@ -252,7 +252,7 @@ pub fn context(declarations: &Declarations, table: &str, tables: &BTreeMap<Strin
             if let Some(member) = value["value"].as_i64() {
                 found.enums.entry(enum_name.to_string()).or_default().entry(member).or_insert(name);
             }
-        } else if value.kind() == "float" {
+        } else if value.kind() == kinds::FLOAT {
             if let Some(bits) = value["bits"].as_i64() {
                 found.float_names.entry(bits).or_insert(name);
             }

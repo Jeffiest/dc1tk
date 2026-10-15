@@ -9,7 +9,7 @@ pub fn with_constants(node: &Node, constants: &IndexMap<String, Node>, shadowed:
     match node {
         Node::List(items) => Node::List(items.iter().map(|item| with_constants(item, constants, shadowed)).collect()),
         Node::Map(map) => {
-            if node.kind() == "var" {
+            if node.kind() == kinds::VAR {
                 let name = node.text("name");
                 if let Some(value) = constants.get(name).filter(|_| !shadowed.contains(name)) {
                     return value.clone();
@@ -56,7 +56,7 @@ fn canonical_native(name: &str, at: &Node, args: Node, found: &Context) -> Node 
 }
 
 fn address_of(target: Node) -> Node {
-    if target.kind() == "deref" {
+    if target.kind() == kinds::DEREF {
         return target["operand"].clone();
     }
     node!({"kind": "addr", "target": target})
@@ -66,12 +66,14 @@ fn substituted(node: &Node, bindings: &HashMap<String, Node>, outs: &HashSet<Str
     match node {
         Node::List(items) => Node::List(items.iter().map(|item| substituted(item, bindings, outs)).collect()),
         Node::Map(map) => {
-            if node.kind() == "var" {
+            if node.kind() == kinds::VAR {
                 if let Some(bound) = bindings.get(node.text("name")) {
                     return bound.clone();
                 }
             }
-            if node.kind() == "deref" && node["operand"].kind() == "var" && outs.contains(node["operand"].text("name"))
+            if node.kind() == kinds::DEREF
+                && node["operand"].kind() == kinds::VAR
+                && outs.contains(node["operand"].text("name"))
             {
                 return bindings[node["operand"].text("name")]["target"].clone();
             }
@@ -98,7 +100,7 @@ fn expanded_inline(inline: &Node, args: &[Node]) -> Result<Vec<Node>> {
         params.iter().filter(|param| param["out"].is_set()).map(|param| param.text("name").to_string()).collect();
     for param in params.iter().filter(|param| param["out"].is_set()) {
         let out = param.text("name");
-        if bindings[out].kind() != "addr" {
+        if bindings[out].kind() != kinds::ADDR {
             return Err(Error::invalid(format!("{name}: pass &variable for pointer parameter {out}")));
         }
     }
@@ -109,7 +111,7 @@ fn native_values(node: &Node, found: &Context, out: &mut Vec<String>) {
     match node {
         Node::List(items) => items.iter().for_each(|item| native_values(item, found, out)),
         Node::Map(map) => {
-            if node.kind() == "call" && is_native(node.text("name"), found) {
+            if node.kind() == kinds::CALL && is_native(node.text("name"), found) {
                 out.push(node.text("name").to_string());
             }
             map.values().for_each(|value| native_values(value, found, out));
@@ -134,7 +136,7 @@ fn calls_native(node: &Node, found: &Context) -> bool {
     match node {
         Node::List(items) => items.iter().any(|item| calls_native(item, found)),
         Node::Map(map) => {
-            (node.kind() == "call" && is_native(node.text("name"), found))
+            (node.kind() == kinds::CALL && is_native(node.text("name"), found))
                 || map.values().any(|value| calls_native(value, found))
         }
         _ => false,
@@ -159,8 +161,8 @@ fn truth(value: Node) -> Node {
 /// calls it only when C would (sequenced).
 fn is_sequenced(node: &Node, found: &Context) -> bool {
     match node.kind() {
-        "logical" | "comma" => calls_native(&node["right"], found),
-        "ternary" => calls_native(&node["then"], found) || calls_native(&node["else"], found),
+        kinds::LOGICAL | kinds::COMMA => calls_native(&node["right"], found),
+        kinds::TERNARY => calls_native(&node["then"], found) || calls_native(&node["else"], found),
         _ => false,
     }
 }
@@ -173,8 +175,8 @@ fn is_sequenced(node: &Node, found: &Context) -> bool {
 /// lowered by a function of its own, so the frames of a deep expression stay small.
 fn sequenced(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
     match node.kind() {
-        "logical" => sequenced_logical(node, found, temps, before),
-        "ternary" => sequenced_ternary(node, found, temps, before),
+        kinds::LOGICAL => sequenced_logical(node, found, temps, before),
+        kinds::TERNARY => sequenced_ternary(node, found, temps, before),
         _ => sequenced_comma(node, found, temps, before),
     }
 }
@@ -229,7 +231,7 @@ fn hoisted(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut V
     match node {
         _ if found.strict && is_sequenced(node, found) => sequenced(node, found, temps, before),
         Node::List(items) => hoisted_list(items, found, temps, before),
-        Node::Map(map) if node.kind() == "call" => hoisted_call(node, map, found, temps, before),
+        Node::Map(map) if node.kind() == kinds::CALL => hoisted_call(node, map, found, temps, before),
         Node::Map(map) => hoisted_map(map, found, temps, before),
         other => Ok(other.clone()),
     }
@@ -288,8 +290,9 @@ fn resolved_statement(
     if let Some(map) = plain.as_object_mut() {
         map.remove("at");
     }
-    let expression = if kind == "expr" { node.get("expr").filter(|expression| !expression.is_null()) } else { None };
-    if let Some(expression) = expression.filter(|expression| expression.kind() == "call") {
+    let expression =
+        if kind == kinds::EXPR { node.get("expr").filter(|expression| !expression.is_null()) } else { None };
+    if let Some(expression) = expression.filter(|expression| expression.kind() == kinds::CALL) {
         let name = expression.text("name");
         if let Some(inline) = found.inlines.get(name) {
             if !at.is_null() {
@@ -304,8 +307,8 @@ fn resolved_statement(
         }
     }
     if let Some(expression) = expression {
-        if expression.kind() == "assign"
-            && expression["value"].kind() == "call"
+        if expression.kind() == kinds::ASSIGN
+            && expression["value"].kind() == kinds::CALL
             && is_native(expression["value"].text("name"), found)
         {
             let name = expression["value"].text("name");
@@ -326,11 +329,11 @@ fn resolved_statement(
         return Err(Error::invalid("AT and DIRECT apply only to native calls"));
     }
     match kind {
-        "native" => {
+        kinds::NATIVE => {
             let args = hoisted(&node["args"], found, temps, before)?;
             Ok(vec![canonical_native(node.text("name"), &node["base"], args, found)])
         }
-        "if" => {
+        kinds::IF => {
             let otherwise = match node["else"].as_array() {
                 Some(items) => statements(items, found, temps)?,
                 None => Node::Null,
@@ -339,7 +342,7 @@ fn resolved_statement(
             let then = statements(node.list("then"), found, temps)?;
             Ok(vec![plain.with("cond", cond).with("then", then).with("else", otherwise)])
         }
-        "while" => {
+        kinds::WHILE => {
             let mut inner = Vec::new();
             let cond = hoisted(&node["cond"], found, temps, &mut inner)?;
             let body = statements(node.list("body"), found, temps)?;
@@ -352,7 +355,7 @@ fn resolved_statement(
             inner.extend(body.as_array().cloned().unwrap_or_default());
             Ok(vec![plain.with("cond", node!({"kind": "int", "value": 1})).with("body", inner)])
         }
-        "switch" => {
+        kinds::SWITCH => {
             let mut cases = Vec::new();
             for case in node.list("cases") {
                 let value = if case["value"].is_null() { Node::Null } else { checked(&case["value"], found)? };
@@ -404,7 +407,7 @@ fn sized_locals(function: &Node, found: &Context) -> Result<Vec<Node>> {
     let mut sized = Vec::new();
     for declared in function.list("locals") {
         if let Some(size) = declared["size"].as_str() {
-            let value = found.constants.get(size).filter(|value| value.is_set() && value.kind() == "int");
+            let value = found.constants.get(size).filter(|value| value.is_set() && value.kind() == kinds::INT);
             let Some(value) = value else {
                 return Err(Error::invalid(format!(
                     "{}: array size {} is not a known integer constant",
@@ -457,7 +460,7 @@ pub fn resolve(program: &Node, tables: &BTreeMap<String, Table>) -> Result<Node>
     let mut functions = Vec::new();
     for function in program.list("functions") {
         let mut function = function.clone();
-        if function.kind() == "function" {
+        if function.kind() == kinds::FUNCTION {
             let params: Vec<Node> =
                 function.list("params").iter().map(|param| typed(param, &declarations.kinds)).collect::<Result<_>>()?;
             let locals: Vec<Node> = function
