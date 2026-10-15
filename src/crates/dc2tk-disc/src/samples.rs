@@ -13,6 +13,25 @@ pub fn corpus() -> std::path::PathBuf {
     }
 }
 
+/// Every file of an extension (in any case) under a folder of the corpus, sorted.
+pub fn corpus_files(folder: &str, extension: &str) -> Vec<std::path::PathBuf> {
+    fn walk(folder: &std::path::Path, extension: &str, found: &mut Vec<std::path::PathBuf>) {
+        let entries = std::fs::read_dir(folder).unwrap_or_else(|error| panic!("{}: {error}", folder.display()));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, extension, found);
+            } else if path.extension().is_some_and(|found| found.eq_ignore_ascii_case(extension)) {
+                found.push(path);
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(&corpus().join(folder), extension, &mut found);
+    found.sort();
+    found
+}
+
 const SECTOR: usize = iso::SECTOR as usize;
 pub const ROOT_SECTOR: usize = 18;
 

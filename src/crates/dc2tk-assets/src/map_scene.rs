@@ -780,19 +780,7 @@ mod tests {
     #[test]
     #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_scenes_read_back_unchanged() {
-        let corpus = dc2tk_disc::samples::corpus();
-        fn walk(folder: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
-            for entry in std::fs::read_dir(folder).unwrap().flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk(&path, found);
-                } else if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("map")) {
-                    found.push(path);
-                }
-            }
-        }
-        let mut paths = Vec::new();
-        walk(&std::path::Path::new(&corpus).join("map"), &mut paths);
+        let paths = dc2tk_disc::samples::corpus_files("map", "map");
         for path in &paths {
             let bytes = std::fs::read(path).unwrap();
             let map = mapfile::parse(&bytes).unwrap();
