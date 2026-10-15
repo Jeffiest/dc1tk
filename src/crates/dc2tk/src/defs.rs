@@ -6,13 +6,11 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Subcommand;
-use rayon::prelude::*;
 
-use dc2tk_script::{constants, coverage, definitions, learn, paths, sdk};
+use dc2tk_script::{constants, coverage, decompiler, definitions, learn, paths, sdk};
 
 use crate::files;
 use crate::options::Common;
-use crate::tree_decompile::disc_match_text;
 
 #[derive(Subcommand)]
 pub enum DefsCommand {
@@ -100,11 +98,8 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
             let defs = common.definitions()?;
             let paths = paths::scripts_under(extracted)?;
             println!("{}", coverage::format_check(&coverage::check(extracted, &paths, &defs)?));
-            let scripts: Vec<(String, Vec<u8>)> = paths
-                .par_iter()
-                .map(|path| Ok((path.clone(), std::fs::read(extracted.join(path))?)))
-                .collect::<Result<_>>()?;
-            println!("{}", disc_match_text(&defs, &definitions::disc_differences(&scripts, &defs, "")));
+            let scripts = decompiler::read_scripts(extracted, &paths)?;
+            println!("{}", decompiler::disc_match_text(&defs, &definitions::disc_differences(&scripts, &defs, "")));
             Ok(ExitCode::SUCCESS)
         }
         DefsCommand::Rename { set, old, new, folders, common } => {

@@ -7,7 +7,6 @@ mod map_cmd;
 mod modding;
 mod options;
 mod setup;
-mod tree_decompile;
 mod verify;
 mod xref;
 
@@ -287,7 +286,7 @@ fn run_decompile(
     common: &Common,
 ) -> Result<ExitCode> {
     if path.is_dir() {
-        tree_decompile::run(path, output, force, common.definitions()?, common.tables()?, &common.sdk_dir())?;
+        setup::decompile_tree(path, output, force, common)?;
         return Ok(ExitCode::SUCCESS);
     }
     let setup = dc2tk_script::decompiler::Setup::new(common.definitions()?, common.tables()?, &common.sdk_dir())?;

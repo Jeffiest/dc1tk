@@ -2,17 +2,17 @@
 //! write the asset tree, all under extracted/;
 //! and dc2tk natives CHRONICLETWO: the native tables from a ChronicleTwo checkout.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Args;
 
 use dc2tk_disc::{extract, Image};
-use dc2tk_script::natives;
+use dc2tk_script::{decompiler, natives};
 
+use crate::files;
 use crate::options::Common;
-use crate::{files, tree_decompile};
 
 #[derive(Args)]
 pub struct SetupArgs {
@@ -53,18 +53,37 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
         }
     }
     let common = &args.common;
-    tree_decompile::run(
-        extracted,
-        Some(&args.output),
-        args.force,
-        common.definitions()?,
-        common.tables()?,
-        &common.sdk_dir(),
-    )?;
+    decompile_tree(extracted, Some(&args.output), args.force, common)?;
     if !args.no_assets {
         return crate::asset_tree::run_assets(&args.iso, &args.assets, true, &common.def_sets());
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Decompiles an extracted disc, or a folder of one, into a source tree, saying what it wrote.
+pub fn decompile_tree(extracted: &Path, output: Option<&Path>, force: bool, common: &Common) -> Result<()> {
+    let Some(out) = output else {
+        bail!("decompiling a directory needs -o OUT_DIR");
+    };
+    let written =
+        decompiler::decompile_tree(extracted, out, force, common.definitions()?, common.tables()?, &common.sdk_dir())?;
+    if let Some(warning) = &written.warning {
+        println!("warning: {warning}");
+    }
+    for path in &written.kept {
+        println!("kept {path}: the decompiler no longer writes it, but it was edited");
+    }
+    if !written.removed.is_empty() {
+        let count = written.removed.len();
+        println!("removed {count} file{} the decompiler no longer writes", if count == 1 { "" } else { "s" });
+    }
+    println!(
+        "{} scripts and {} library files written to {}",
+        written.scripts,
+        written.libraries,
+        files::shown_path(out)
+    );
+    Ok(())
 }
 
 #[derive(Args)]
@@ -94,7 +113,6 @@ pub fn run_natives(args: &NativesArgs) -> Result<ExitCode> {
 mod tests {
     use super::*;
     use dc2tk_script::{source, tree};
-    use std::path::Path;
 
     /// A fresh folder for a test, emptied first.
     fn scratch(name: &str) -> PathBuf {
@@ -117,7 +135,7 @@ mod tests {
         }
         let out = folder.join("source");
         let common = no_definitions();
-        tree_decompile::run(&extracted, Some(&out), force, common.definitions()?, common.tables()?, &common.sdk_dir())?;
+        decompile_tree(&extracted, Some(&out), force, &common)?;
         Ok(out)
     }
 
