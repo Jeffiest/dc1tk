@@ -93,7 +93,8 @@ Six maps sit where the path rule never finds them (`d/d02/f01r/d02f01r.map`,
 ### Loading (`CScene::LoadMapFromMemory`, `GetLoadMapInfo` at `mapjump.cpp:147`)
 
 1. Read the map's `.map`, `.cfg`, `.mpk`, `.ipk`, `.efp`, `.sky`, and an *add
-   map* from `map/cmn/<path>` when `map/map.cfg` names one.
+   map* from `map/cmn/<path>` when the map table (`map<language>.cfg`, below)
+   names one.
 2. Run the settings pass of the `.map` (section 2.1).
 3. Load the texture files (`.ipk`) and model packs (`.mpk`) of the map and the
    add map into one shared model list.
