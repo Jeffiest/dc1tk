@@ -79,7 +79,7 @@ pub fn run_natives(args: &NativesArgs) -> Result<ExitCode> {
     let out = args.out.clone().unwrap_or_else(|| files::natives_dir().to_string_lossy().into_owned());
     let tables = match natives::generate(&args.chronicletwo, Path::new(&out)) {
         // an error, printed as "error: ..."
-        Err(dc2tk_script::Error::Invalid(message)) => anyhow::bail!("error: {message}"),
+        Err(error) if error.is_input() => anyhow::bail!("error: {error}"),
         other => other?,
     };
     for table in &tables {

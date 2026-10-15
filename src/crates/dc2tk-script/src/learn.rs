@@ -397,8 +397,8 @@ pub fn learn(
     for path in source_files(source) {
         let found = match script_entries(&path, tables, headers, rules, sdk_dir) {
             Ok(found) => found,
-            Err(Error::Invalid(message)) => {
-                result.failures.push((path, message));
+            Err(error) if error.is_input() => {
+                result.failures.push((path, error.to_string()));
                 continue;
             }
             Err(error) => return Err(error),

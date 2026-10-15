@@ -196,6 +196,60 @@ pub struct Member {
 
 pub type Structs = IndexMap<String, Composite>;
 
+/// C's integer types narrower than the VM's 32-bit int, which a value stored in a variable of one
+/// is wrapped to (char is signed, as it is in the engine's compiler).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IntType {
+    Char,
+    UnsignedChar,
+    Short,
+    UnsignedShort,
+}
+
+impl IntType {
+    /// The narrow type a type's name is; None for any other type (int, float, a pointer...).
+    pub fn narrow(kind: &str) -> Option<IntType> {
+        Some(match kind {
+            "char" => IntType::Char,
+            "unsigned char" => IntType::UnsignedChar,
+            "short" => IntType::Short,
+            "unsigned short" => IntType::UnsignedShort,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            IntType::Char => "char",
+            IntType::UnsignedChar => "unsigned char",
+            IntType::Short => "short",
+            IntType::UnsignedShort => "unsigned short",
+        }
+    }
+
+    /// The bits a value of the type has.
+    pub fn mask(self) -> i64 {
+        match self {
+            IntType::Char | IntType::UnsignedChar => 0xff,
+            IntType::Short | IntType::UnsignedShort => 0xffff,
+        }
+    }
+
+    pub fn signed(self) -> bool {
+        matches!(self, IntType::Char | IntType::Short)
+    }
+
+    /// A value wrapped to the type: its bits, and for a signed type the top one spread up.
+    pub fn wrap(self, value: i64) -> i64 {
+        match self {
+            IntType::Char => value as i8 as i64,
+            IntType::UnsignedChar => value as u8 as i64,
+            IntType::Short => value as i16 as i64,
+            IntType::UnsignedShort => value as u16 as i64,
+        }
+    }
+}
+
 pub fn int() -> Ty {
     Ty::Scalar("int".into())
 }

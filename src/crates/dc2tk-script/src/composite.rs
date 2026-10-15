@@ -437,13 +437,8 @@ impl Lowering<'_> {
     fn statements(&mut self, nodes: &[Node]) -> Result<Vec<Node>> {
         let mut out = Vec::new();
         for node in nodes {
-            match self.statement(node) {
-                Ok(items) => out.extend(items),
-                Err(Error::Invalid(reason)) if !node["line"].is_null() && !reason.starts_with("line ") => {
-                    return fail(format!("line {}: {reason}", crate::source::py_str(&node["line"])));
-                }
-                Err(error) => return Err(error),
-            }
+            let items = self.statement(node).map_err(|error| error.at(&node["line"]))?;
+            out.extend(items);
         }
         Ok(out)
     }

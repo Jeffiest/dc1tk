@@ -62,6 +62,9 @@ pub mod xref;
 pub enum Error {
     #[error("{0}")]
     Invalid(String),
+    /// What is wrong with a statement of a source file, and its line there.
+    #[error("line {line}: {error}")]
+    At { line: i64, error: Box<Error> },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -71,6 +74,21 @@ pub enum Error {
 impl Error {
     pub fn invalid(message: impl Into<String>) -> Error {
         Error::Invalid(message.into())
+    }
+
+    /// The error of a statement on a line (a node's "line", when it has one): an error of the
+    /// source given the line, unless it has the line of a statement inside this one already.
+    pub fn at(self, line: &node::Node) -> Error {
+        match (self, line.as_i64()) {
+            (error @ Error::Invalid(_), Some(line)) => Error::At { line, error: Box::new(error) },
+            (error, _) => error,
+        }
+    }
+
+    /// Whether the error is one of the input (a source file, a tree) rather than of reading or
+    /// writing a file.
+    pub fn is_input(&self) -> bool {
+        matches!(self, Error::Invalid(_) | Error::At { .. })
     }
 }
 
@@ -84,3 +102,16 @@ impl From<dc2tk_assets::Error> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_statements_error_has_the_line_of_the_innermost_statement() {
+        let inner = Error::invalid("unknown variable x").at(&node::Node::Int(6));
+        assert!(inner.is_input());
+        assert_eq!(inner.at(&node::Node::Int(5)).to_string(), "line 6: unknown variable x");
+        assert_eq!(Error::invalid("no main").at(&node::Node::Null).to_string(), "no main");
+    }
+}

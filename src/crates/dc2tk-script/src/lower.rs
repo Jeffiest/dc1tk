@@ -14,6 +14,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::ctype::IntType;
 use crate::node;
 use crate::node::{kinds, Map, Node};
 use crate::sdk::Context;
@@ -266,7 +267,7 @@ fn is_integer(kind: &str) -> bool {
 }
 
 fn is_narrow(kind: &str) -> bool {
-    matches!(kind, "char" | "unsigned char" | "short" | "unsigned short")
+    IntType::narrow(kind).is_some()
 }
 
 /// The type an integer type takes part in arithmetic as: char and short promote to int.
@@ -332,17 +333,12 @@ fn call(name: &'static str, args: Vec<Node>, used: &mut Vec<&'static str>) -> No
 }
 
 /// A value stored in a variable of a narrow type, wrapped to its width (a float truncated first).
-fn narrowed(value: Node, from: &str, kind: &str) -> Node {
+fn narrowed(value: Node, from: &str, kind: IntType) -> Node {
     let value = if from == "float" { node!({"kind": "cast", "type": "int", "operand": value}) } else { value };
     if let Some(constant) = value.get("value").filter(|_| value.kind() == kinds::INT).and_then(Node::as_i64) {
-        return int_node(match kind {
-            "char" => constant as i8 as i64,
-            "unsigned char" => constant as u8 as i64,
-            "short" => constant as i16 as i64,
-            _ => constant as u16 as i64,
-        });
+        return int_node(kind.wrap(constant));
     }
-    node!({"kind": "narrow", "type": kind, "operand": value})
+    node!({"kind": "narrow", "type": kind.name(), "operand": value})
 }
 
 /// A value converted for a variable or parameter of a type: narrowed to a narrow type; an unsigned
@@ -350,8 +346,8 @@ fn narrowed(value: Node, from: &str, kind: &str) -> Node {
 /// strict mode, where C's conversions on assignment apply: an int stored in a float becomes a float
 /// and a float stored in an int is truncated.
 fn converted(value: Node, from: &str, to: &str, strict: bool, used: &mut Vec<&'static str>) -> Node {
-    if is_narrow(to) {
-        narrowed(value, from, to)
+    if let Some(narrow) = IntType::narrow(to) {
+        narrowed(value, from, narrow)
     } else if to == "float" && from == "unsigned int" {
         call(UTOF, vec![value], used)
     } else if strict && to == "float" && is_integer(from) {
@@ -536,8 +532,8 @@ impl Types<'_> {
     fn cast(&mut self, node: &Node) -> Result<(Node, String)> {
         let (operand, from) = self.expression(&node["operand"])?;
         let to = node.text("type").to_string();
-        if is_narrow(&to) {
-            return Ok((narrowed(operand, &from, &to), to));
+        if let Some(narrow) = IntType::narrow(&to) {
+            return Ok((narrowed(operand, &from, narrow), to));
         }
         let lowered = match (to.as_str(), from.as_str()) {
             ("float", "unsigned int") => call(UTOF, vec![operand], self.used),
@@ -562,8 +558,8 @@ impl Types<'_> {
             // x++ is the stepped value worked back to the old one, which for a narrow x wraps
             // back too (an unsigned char at 255 steps to 0, and 0 - 1 is 255 again)
             let (_, stepped) = self.expression(&node["left"]["target"])?;
-            if is_narrow(&stepped) {
-                return Ok((narrowed(plain(left, right), "int", &stepped), stepped));
+            if let Some(narrow) = IntType::narrow(&stepped) {
+                return Ok((narrowed(plain(left, right), "int", narrow), stepped));
             }
         }
         if kind == "float" {

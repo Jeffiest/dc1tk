@@ -721,13 +721,8 @@ fn statement(node: &Node, found: &Context, temps: &mut Vec<String>) -> Result<Ve
 pub fn statements(nodes: &[Node], found: &Context, temps: &mut Vec<String>) -> Result<Node> {
     let mut out = Vec::new();
     for node in nodes {
-        match statement(node, found, temps) {
-            Ok(items) => out.extend(items),
-            Err(Error::Invalid(reason)) if !node["line"].is_null() && !reason.starts_with("line ") => {
-                return Err(Error::invalid(format!("line {}: {}", py_str(&node["line"]), reason)));
-            }
-            Err(error) => return Err(error),
-        }
+        let items = statement(node, found, temps).map_err(|error| error.at(&node["line"]))?;
+        out.extend(items);
     }
     Ok(Node::List(out))
 }

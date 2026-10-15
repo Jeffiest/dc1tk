@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use crate::asm;
+use crate::ctype::IntType;
 use crate::natives::Table;
 use crate::node;
 use crate::node::{kinds, Node};
@@ -90,6 +91,8 @@ struct State<'a> {
     functions: &'a IndexMap<String, i64>,
     natives: &'a HashMap<String, i64>,
     lines: Vec<String>,
+    /// The instructions emitted so far (lines has the labels too).
+    instructions: usize,
     strings: Vec<String>,
     next_label: i64,
     next_slot: i64,
@@ -115,6 +118,7 @@ impl State<'_> {
     }
 
     fn emit(&mut self, line: impl AsRef<str>) {
+        self.instructions += 1;
         self.lines.push(format!("    {}", line.as_ref()));
     }
 
@@ -303,7 +307,7 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
         kinds::COMPOUND => compound(state, node)?,
         kinds::NARROW => {
             expression(state, &node["operand"])?;
-            narrow(state, node.text("type"));
+            narrow(state, node.text("type"))?;
         }
         kinds::VIA => {
             state.emit("push 0");
@@ -328,13 +332,12 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
 
 /// A value wrapped to the width of a narrow integer type: masked for an unsigned one, and for a
 /// signed one offset into the unsigned range, masked and offset back.
-fn narrow(state: &mut State, kind: &str) {
-    let (mask, offset) = match kind {
-        "char" => (255, Some(128)),
-        "unsigned char" => (255, None),
-        "short" => (65535, Some(32768)),
-        _ => (65535, None),
+fn narrow(state: &mut State, kind: &str) -> Result<()> {
+    let Some(narrow) = IntType::narrow(kind) else {
+        return fail(format!("{kind} is not a narrow integer type"));
     };
+    let mask = narrow.mask();
+    let offset = narrow.signed().then_some((mask + 1) / 2);
     if let Some(offset) = offset {
         state.emit(format!("push {offset}"));
         state.emit("add");
@@ -345,6 +348,7 @@ fn narrow(state: &mut State, kind: &str) {
         state.emit(format!("push {offset}"));
         state.emit("sub");
     }
+    Ok(())
 }
 
 /// target op= value. A variable compiles as target = target op value. An element's address is
@@ -359,14 +363,7 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
             state,
             &node!({"kind": "binary", "op": node["op"].clone(), "left": target.clone(), "right": node["value"].clone()}),
         )?;
-        if node["convert"] == "int" {
-            state.emit("ftoi");
-        }
-        if let Some(kind) = node["narrow"].as_str() {
-            narrow(state, kind);
-        }
-        state.emit("store");
-        return Ok(());
+        return compound_store(state, node);
     }
     // the element's type: the node's own (composite.rs), or its variable's
     let kind = match target["type"].as_str() {
@@ -388,11 +385,16 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
         state,
         &node!({"kind": "binary", "op": node["op"].clone(), "left": via, "right": node["value"].clone()}),
     )?;
+    compound_store(state, node)
+}
+
+/// The store of a compound assignment's result: converted and narrowed to its target's type.
+fn compound_store(state: &mut State, node: &Node) -> Result<()> {
     if node["convert"] == "int" {
         state.emit("ftoi");
     }
     if let Some(kind) = node["narrow"].as_str() {
-        narrow(state, kind);
+        narrow(state, kind)?;
     }
     state.emit("store");
     Ok(())
@@ -480,19 +482,12 @@ fn native_number(state: &State, name: &str) -> Result<i64> {
 }
 
 fn statement(state: &mut State, node: &Node) -> Result<()> {
-    if let Some(note) = node.get("note").filter(|note| crate::source::truthy(note)) {
-        if let Some(notes) = &mut state.notes {
-            // a line note, at the index of the statement's first instruction
-            let at = state.lines[1..].iter().filter(|line| line.starts_with("    ")).count();
-            notes.insert(at.to_string(), note.clone());
-        }
+    let note = node.get("note").and_then(Node::as_str).filter(|note| !note.is_empty());
+    if let (Some(note), Some(notes)) = (note, &mut state.notes) {
+        // a line note, at the index of the statement's first instruction
+        notes.insert(state.instructions.to_string(), Node::from(note));
     }
-    match statement_code(state, node) {
-        Err(Error::Invalid(reason)) if !node["line"].is_null() && !reason.starts_with("line ") => {
-            Err(Error::invalid(format!("line {}: {}", py_str(&node["line"]), reason)))
-        }
-        other => other,
-    }
+    statement_code(state, node).map_err(|error| error.at(&node["line"]))
 }
 
 fn statement_code(state: &mut State, node: &Node) -> Result<()> {
@@ -679,6 +674,7 @@ fn function_lines(function: &Node, context: &mut Context) -> Result<Vec<String>>
         functions: &context.functions,
         natives: &context.natives,
         lines: vec![header.clone()],
+        instructions: 0,
         strings,
         next_label: 0,
         next_slot: size,
