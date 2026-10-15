@@ -1195,7 +1195,6 @@ impl Applying<'_> {
     }
 
     /// A text file's messages written into the text at place, which was exported from reference.
-    #[allow(clippy::too_many_arguments)]
     fn text(
         &mut self,
         place: &Place,

@@ -424,7 +424,6 @@ struct TableBuilt {
 
 /// A table changed by whole records (layouts, chests): each line's changes, and the table's files
 /// written again where they differ.
-#[allow(clippy::too_many_arguments)]
 fn whole_files<E>(
     table: &str,
     lines: &[&Line],

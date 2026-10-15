@@ -220,7 +220,6 @@ pub(super) fn is_string(init: &Init) -> Option<&str> {
 /// Puts an initializer list's values into an array of the sizes given, from base, reading the
 /// list from at with C's brace elision (a list for each row, or the values in a row). Gives how
 /// many of the first size's rows it reached; a first size of -1 takes as many as the list has.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn fill(
     state: &State,
     items: &[Init],
