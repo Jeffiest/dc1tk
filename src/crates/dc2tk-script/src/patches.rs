@@ -86,9 +86,46 @@ pub fn language_of(plain: &str) -> i64 {
     }
 }
 
+/// What a #pragma target line picks scripts by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetKind {
+    /// Every language of a map's script.
+    Map,
+    /// Scripts by path, * and ? allowed.
+    Script,
+    /// The AI script of a monster kind.
+    Monster,
+    /// Every script that includes a library.
+    Library,
+}
+
+impl TargetKind {
+    pub const ALL: [TargetKind; 4] = [TargetKind::Map, TargetKind::Script, TargetKind::Monster, TargetKind::Library];
+
+    /// The word #pragma target gives it by (parse::TARGET_KINDS).
+    pub fn name(self) -> &'static str {
+        match self {
+            TargetKind::Map => "map",
+            TargetKind::Script => "script",
+            TargetKind::Monster => "monster",
+            TargetKind::Library => "library",
+        }
+    }
+
+    pub fn from_name(word: &str) -> Option<TargetKind> {
+        TargetKind::ALL.into_iter().find(|kind| kind.name() == word)
+    }
+}
+
+impl std::fmt::Display for TargetKind {
+    fn fmt(&self, out: &mut std::fmt::Formatter) -> std::fmt::Result {
+        out.write_str(self.name())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Target {
-    pub kind: String,
+    pub kind: TargetKind,
     pub values: Vec<String>,
 }
 
@@ -102,14 +139,15 @@ pub fn targets_in(text: &str) -> Result<Vec<Target>> {
                 Token::Word(word) | Token::Text(word) => word,
             })
             .collect();
-        if words.len() < 2 || !parse::TARGET_KINDS.contains(&words[0].as_str()) {
+        let kind = words.first().and_then(|word| TargetKind::from_name(word));
+        let (Some(kind), true) = (kind, words.len() >= 2) else {
             return Err(Error::invalid(format!(
                 "#pragma target takes {}, then what to pick: {}",
                 parse::TARGET_KINDS.join(", "),
                 line.trim()
             )));
-        }
-        found.push(Target { kind: words[0].clone(), values: words[1..].to_vec() });
+        };
+        found.push(Target { kind, values: words[1..].to_vec() });
     }
     Ok(found)
 }
@@ -191,17 +229,16 @@ impl Scripts {
     pub fn picked(&self, target: &Target) -> Result<BTreeSet<String>> {
         let mut found = BTreeSet::new();
         for value in &target.values {
-            match target.kind.as_str() {
-                "map" => found.extend(self.in_map(value)),
-                "script" => found.extend(
+            match target.kind {
+                TargetKind::Map => found.extend(self.in_map(value)),
+                TargetKind::Script => found.extend(
                     self.paths
                         .iter()
                         .filter(|path| additions::fnmatch(&self.plain[*path], value) || additions::fnmatch(path, value))
                         .cloned(),
                 ),
-                "monster" => found.extend(self.monster(value)?),
-                "library" => found.extend(self.users(value)?),
-                _ => {}
+                TargetKind::Monster => found.extend(self.monster(value)?),
+                TargetKind::Library => found.extend(self.users(value)?),
             }
         }
         Ok(found)
@@ -1510,7 +1547,7 @@ pub fn language_text(copies: &BTreeMap<i64, String>) -> String {
 }
 
 /// The start of a new patch file: what it is, its target and the headers the script includes.
-pub fn patch_header(module: &str, kind: &str, value: &str, script_text: &str) -> String {
+pub fn patch_header(module: &str, kind: TargetKind, value: &str, script_text: &str) -> String {
     static CELL: OnceLock<Regex> = OnceLock::new();
     let system = regex(&CELL, r"^#include\s*<");
     let mut lines = vec![
@@ -1569,6 +1606,23 @@ pub fn summary(patch: &Patch) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_lines_name_one_of_the_parsers_kinds() {
+        assert_eq!(TargetKind::ALL.map(TargetKind::name), parse::TARGET_KINDS);
+        let found = targets_in("#pragma target map s51 s52\n// #pragma target monster golem\n").unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            (found[0].kind, found[0].values.as_slice()),
+            (TargetKind::Map, ["s51".to_string(), "s52".to_string()].as_slice())
+        );
+        for wrong in ["#pragma target maps s51\n", "#pragma target map\n"] {
+            assert!(
+                targets_in(wrong).unwrap_err().to_string().starts_with("#pragma target takes map, script"),
+                "{wrong}"
+            );
+        }
+    }
 
     #[test]
     fn close_names_are_the_most_alike_first_and_at_most_three() {

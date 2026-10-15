@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use build_common::{disc_for, fails, make_tree, map, read, recorded, sdk_dir, strings, tables, write, TempDir, Tools};
 use dc2tk_script::node::Node;
-use dc2tk_script::patches::{self, Plan, Scripts, Target};
+use dc2tk_script::patches::{self, Plan, Scripts, Target, TargetKind};
 use dc2tk_script::renames::{self, Followed};
 use dc2tk_script::vm::{self, Machine, Value};
 use dc2tk_script::{build, definitions, editor, library, mods, numbers, parse, pathnames, sdk, slim, Result};
@@ -393,7 +393,7 @@ fn copies_from_several_languages_keep_each_ones_lines() {
 }
 
 fn picked(scripts: &Scripts, kind: &str, value: &str) -> BTreeSet<String> {
-    scripts.picked(&Target { kind: kind.into(), values: vec![value.into()] }).unwrap()
+    scripts.picked(&Target { kind: TargetKind::from_name(kind).unwrap(), values: vec![value.into()] }).unwrap()
 }
 
 fn set(items: &[&str]) -> BTreeSet<String> {
@@ -511,12 +511,13 @@ fn build_compiles_patched_scripts_and_override_starts_a_patch() {
     let mods_dir = folder.path().join("mods");
     let module = mods_dir.join("quiet");
     let helper = strings(&["helper"]);
-    let result = mods::override_functions(&root, &module, "script", "map/m/t01.c", &helper, &IndexMap::new()).unwrap();
+    let result =
+        mods::override_functions(&root, &module, TargetKind::Script, "map/m/t01.c", &helper, &IndexMap::new()).unwrap();
     assert!(result.added == helper && result.scripts == strings(&["map/m/t01.c"]));
     let text = read(&result.path);
     assert!(text.contains("#pragma target script map/m/t01.c"), "{text}");
     assert!(text.contains("#pragma override\nvoid helper(void)\n{\n    wait;\n}"), "{text}");
-    assert!(mods::override_functions(&root, &module, "script", "map/m/t01.c", &helper, &IndexMap::new())
+    assert!(mods::override_functions(&root, &module, TargetKind::Script, "map/m/t01.c", &helper, &IndexMap::new())
         .unwrap()
         .added
         .is_empty());

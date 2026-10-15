@@ -41,7 +41,7 @@ use crate::build::{self, Patched};
 use crate::compile::Toolchain;
 use crate::discfiles::Clashes;
 use crate::node::Node;
-use crate::patches::{self, ModTexts, Plan, Scripts, Target};
+use crate::patches::{self, ModTexts, Plan, Scripts, Target, TargetKind};
 use crate::{additions, discfiles, index, numbers, pathnames, paths, renames, source, tree, Error, Result};
 
 pub const INDEX: &str = "mod.json";
@@ -265,14 +265,13 @@ pub struct Overridden {
 pub fn override_functions(
     tree_dir: &Path,
     mod_dir: &Path,
-    kind: &str,
+    kind: TargetKind,
     value: &str,
     functions: &[String],
     headers: &IndexMap<String, String>,
 ) -> Result<Overridden> {
     let scripts = Scripts::new(tree_dir)?;
-    let chosen: Vec<String> =
-        scripts.picked(&Target { kind: kind.into(), values: vec![value.into()] })?.into_iter().collect();
+    let chosen: Vec<String> = scripts.picked(&Target { kind, values: vec![value.into()] })?.into_iter().collect();
     if chosen.is_empty() {
         return Err(Error::invalid(format!("--{} {} picks no script in {}", kind, value, tree_dir.display())));
     }

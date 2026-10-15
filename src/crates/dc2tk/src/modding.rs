@@ -1038,13 +1038,16 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
         }
         ModCommand::Override { source, name, functions, map, script, monster, library, mods: mods_dir, common } => {
             let mod_dir = mods::folder(mods_dir, name)?;
-            let kinds: Vec<(&str, &String)> =
-                [("map", map), ("script", script), ("monster", monster), ("library", library)]
-                    .into_iter()
-                    .filter_map(|(kind, value)| {
-                        value.as_ref().filter(|value| !value.is_empty()).map(|value| (kind, value))
-                    })
-                    .collect();
+            use dc2tk_script::patches::TargetKind;
+            let kinds: Vec<(TargetKind, &String)> = [
+                (TargetKind::Map, map),
+                (TargetKind::Script, script),
+                (TargetKind::Monster, monster),
+                (TargetKind::Library, library),
+            ]
+            .into_iter()
+            .filter_map(|(kind, value)| value.as_ref().filter(|value| !value.is_empty()).map(|value| (kind, value)))
+            .collect();
             if kinds.len() != 1 {
                 bail!("give one of --map, --script, --monster and --library: the scripts to patch");
             }
