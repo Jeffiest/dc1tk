@@ -1090,7 +1090,7 @@ pub fn string_units(script: &Script) -> usize {
 }
 
 /// Gives a statement's argument new text.
-fn set_piece(statement: &mut cfg_text::Statement, arg: usize, text: Vec<u8>, what: &str) -> Result<()> {
+pub(crate) fn set_piece(statement: &mut cfg_text::Statement, arg: usize, text: Vec<u8>, what: &str) -> Result<()> {
     let Some(piece) = statement.pieces.get(arg) else {
         bail!("{what}: the copied {} has no argument {arg}", statement.tag);
     };

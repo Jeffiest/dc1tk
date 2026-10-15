@@ -104,7 +104,10 @@ in `.data`), floor medals, race fish, prizes and conditions (whether a
 condition is met is code); a new item takes an existing icon and model, or
 one the mod draws or builds (section 2.8).
 
-The kinds after the first three share `dc2tk-assets`' `data_table.rs`: each
+Every kind but items and shops shares `dc2tk-assets`' `data_table.rs` (the
+item table uses its kinds of value and how they are written and compared;
+layouts and chests, rewritten whole, have their own; `game_data.rs` lists the
+kinds and what each reads): each
 section is a list of records named by their keys (`{"dungeon": 0, "floor":
 3}`, `{"town": "g01", "part": 1}`), with labels (names, which are text; given
 back unchanged or left out) and fields; `a.b` fields are nested objects. A

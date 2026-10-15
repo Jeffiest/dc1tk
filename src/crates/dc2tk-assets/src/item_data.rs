@@ -21,8 +21,9 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use crate::cfg_text::{self, Arg, Edit, Script, To};
-use crate::lang::{converted_len, name_bytes, LANGUAGE_NAMES};
-use crate::{bail, Result};
+use crate::data_table::{self, same, set_piece, value_text, values_of, Kind, B16, B8, S16};
+use crate::lang::{converted_len, name_bytes, ENGLISH, LANGUAGE_NAMES};
+use crate::{bail, Context, Result};
 
 /// Where the engine reads the tables (`menu/cfg7/%s`, LoadGameDataAnalyze).
 pub const FOLDER: &str = "menu/cfg7";
@@ -59,6 +60,16 @@ pub const PLAYED: std::ops::RangeInclusive<usize> = 1..=5;
 /// descriptions are allmenu.mes messages of the same number.
 pub const MESSAGE_BASE: i64 = 10000;
 
+/// The scripts, by their place in FILES.
+const COMDAT: usize = 0;
+const WEPDAT: usize = 1;
+const ITEMDAT: usize = 2;
+const ATDAT: usize = 3;
+const ROBODAT: usize = 4;
+const FISHDAT: usize = 5;
+const GRDDAT: usize = 6;
+
+/// The groups of a record's fields, by their place in GROUPS: the common data and each family's.
 const COMMON: usize = 0;
 const WEAPON: usize = 1;
 const EFFECT: usize = 2;
@@ -66,20 +77,6 @@ const ATTACH: usize = 3;
 const RIDEPOD: usize = 4;
 const FISH: usize = 5;
 
-/// What a field holds and the values the engine's field takes.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Kind {
-    Int(i64, i64),
-    /// Read with spiGetStackFloat.
-    Float,
-    /// A string of at most this many bytes.
-    Text(usize),
-}
-
-/// A byte: -1 is kept as 255, as the engine stores it.
-const U8: Kind = Kind::Int(-128, 255);
-const S16: Kind = Kind::Int(-32768, 32767);
-const U16: Kind = Kind::Int(-32768, 65535);
 /// A u32 of bits, as atoi can give it.
 const BITS: Kind = Kind::Int(0, i32::MAX as i64);
 
@@ -108,17 +105,21 @@ const ELEMENTS: [&str; 8] = ["flame", "chill", "lightning", "cyclone", "smash", 
 const ELEMENTS_MAX: [&str; 8] =
     ["flame_max", "chill_max", "lightning_max", "cyclone_max", "smash_max", "exorcism_max", "beast_max", "scale_max"];
 
+/// The COM arguments a new item's are set from: its family table's list number, its messages'.
+const COM_LIST: usize = 2;
+const COM_MESSAGE: usize = 8;
+
 /// `COM item_no, type, list_no, active_set, stack_num, max_num, icon_sheet, icon_no, message_no,
 /// "file", attribute` (_DATACOM, into CDataCommon).
 const COMMON_SPECS: [Spec; 10] = [
-    one("type", "COM", 1, U8),
-    one("list", "COM", 2, S16),
-    one("active_set", "COM", 3, U8),
+    one("type", "COM", 1, B8),
+    one("list", "COM", COM_LIST, S16),
+    one("active_set", "COM", 3, B8),
     one("stack", "COM", 4, S16),
-    one("max", "COM", 5, U16),
-    one("icon_sheet", "COM", 6, U8),
+    one("max", "COM", 5, B16),
+    one("icon_sheet", "COM", 6, B8),
     one("icon", "COM", 7, S16),
-    one("message", "COM", 8, S16),
+    one("message", "COM", COM_MESSAGE, S16),
     one("model", "COM", 9, Kind::Text(15)),
     one("attribute", "COM", 10, BITS),
 ];
@@ -135,13 +136,13 @@ fn weapon_specs() -> Vec<Spec> {
     specs.extend(ELEMENTS.iter().enumerate().map(|(at, name)| one(name, "WEP_ST2", at, S16)));
     specs.extend(ELEMENTS_MAX.iter().enumerate().map(|(at, name)| one(name, "WEP_ST2_L", at, S16)));
     specs.extend([
-        one("synthesis_points", "WEP_SPE", 0, U8),
-        one("palette", "WEP_SPE", 1, U8),
-        one("unknown_47", "WEP_SPE", 2, U8),
-        one("synthesis_per_level", "WEP_SPE", 3, U8),
+        one("synthesis_points", "WEP_SPE", 0, B8),
+        one("palette", "WEP_SPE", 1, B8),
+        one("unknown_47", "WEP_SPE", 2, B8),
+        one("synthesis_per_level", "WEP_SPE", 3, B8),
         one("special", "WEP_SPE", 4, BITS),
-        one("attack_type", "WEP_SPE", 5, U8),
-        one("model_no", "WEP_SPE", 6, U8),
+        one("attack_type", "WEP_SPE", 5, B8),
+        one("model_no", "WEP_SPE", 6, B8),
         many("build_up", "WEP_BUILD", 0, 3, S16),
         many("build_up_kills", "WEP_BUILD", 3, 3, S16),
     ]);
@@ -151,7 +152,7 @@ fn weapon_specs() -> Vec<Spec> {
 const EFFECT_SPECS: [Spec; 4] = [
     one("use_flags", "ITEM", 1, BITS),
     one("status_flags", "ITEM", 2, BITS),
-    one("target_flags", "ITEM", 3, U16),
+    one("target_flags", "ITEM", 3, B16),
     many("values", "ITEM", 4, 3, S16),
 ];
 
@@ -166,7 +167,7 @@ fn attach_specs() -> Vec<Spec> {
 /// 0 a body, 1 an arm, 2 legs, 3 an energy pack.
 fn ridepod_specs(kind: i32) -> Vec<Spec> {
     let mut specs =
-        vec![one("kind", "RB_PARTS", 1, U8), one("capacity", "RB_PARTS", 2, S16), one("file_no", "RB_PARTS", 3, U8)];
+        vec![one("kind", "RB_PARTS", 1, B8), one("capacity", "RB_PARTS", 2, S16), one("file_no", "RB_PARTS", 3, B8)];
     match kind {
         0 => specs.extend([one("defence", "RB_PARTS", 4, S16), one("label", "RB_PARTS", 5, Kind::Text(255))]),
         1 => {
@@ -187,15 +188,13 @@ fn ridepod_specs(kind: i32) -> Vec<Spec> {
 
 /// `FISH item_no, size, unknown, power, speed[3], stamina[, unknown]` (_DATAFISH): power, the
 /// speeds and stamina are the bred fish's race parameters (CopyDataFish).
-const FISH_SPECS: [Spec; 7] = [
+const FISH_SPECS: [Spec; 6] = [
     one("size", "FISH", 1, Kind::Float),
     one("unknown_4", "FISH", 2, S16),
     one("power", "FISH", 3, S16),
     many("speed", "FISH", 4, 3, S16),
     one("stamina", "FISH", 7, S16),
     one("unknown_10", "FISH", 8, S16),
-    // a last spec only to keep the array's length fixed
-    one("", "", 0, S16),
 ];
 
 const GROUPS: [&str; 6] = ["", "weapon", "effect", "attachment", "ridepod", "fish"];
@@ -227,17 +226,85 @@ struct Record {
     block: Option<(usize, usize, usize)>,
 }
 
-/// The family tables a new item's list number is counted in: (families, file, count tag, the
-/// tag that ends an entry, the most the engine holds: local_weapondata[116], local_attachdata[38],
-/// local_itemdata[162], local_robodata[68], local_fishdata[20], local_guarddata[40]).
-const FAMILY_TABLES: [(&[i32], usize, &str, &str, usize); 6] = [
-    (&[3], 1, "WEPNUM", "WEP_BUILD", 116),
-    (&[2], 3, "AT_INIT", "AT_ST_SP", 38),
-    (&[1, 7, 8], 2, "ITEMINIT", "ITEM", 162),
-    (&[5], 4, "ROBOINIT", "RB_PARTS", 68),
-    (&[6], 5, "FISHINIT", "FISH", 20),
-    (&[4], 6, "GRDNUM", "GRD", 40),
+/// A family table a new item's list number is counted in.
+struct FamilyTable {
+    families: &'static [Family],
+    file: usize,
+    /// The statement that counts the entries, and the tag that ends an entry.
+    count: &'static str,
+    last: &'static str,
+    /// The most entries the engine holds.
+    most: usize,
+    /// Whether an entry names its item first (an effect, ridepod part, fish or guard); a weapon's
+    /// or attachment's block is the n-th, for list number n, and names none.
+    by_item: bool,
+}
+
+/// The family tables: local_weapondata[116], local_attachdata[38], local_itemdata[162],
+/// local_robodata[68], local_fishdata[20], local_guarddata[40].
+const FAMILY_TABLES: [FamilyTable; 6] = [
+    FamilyTable {
+        families: &[Family::Weapon],
+        file: WEPDAT,
+        count: "WEPNUM",
+        last: "WEP_BUILD",
+        most: 116,
+        by_item: false,
+    },
+    FamilyTable {
+        families: &[Family::Attachment],
+        file: ATDAT,
+        count: "AT_INIT",
+        last: "AT_ST_SP",
+        most: 38,
+        by_item: false,
+    },
+    FamilyTable {
+        families: &[Family::Item, Family::GiftBox, Family::Boiled],
+        file: ITEMDAT,
+        count: "ITEMINIT",
+        last: "ITEM",
+        most: 162,
+        by_item: true,
+    },
+    FamilyTable {
+        families: &[Family::Ridepod],
+        file: ROBODAT,
+        count: "ROBOINIT",
+        last: "RB_PARTS",
+        most: 68,
+        by_item: true,
+    },
+    FamilyTable { families: &[Family::Fish], file: FISHDAT, count: "FISHINIT", last: "FISH", most: 20, by_item: true },
+    FamilyTable { families: &[Family::Clothing], file: GRDDAT, count: "GRDNUM", last: "GRD", most: 40, by_item: true },
 ];
+
+/// A new item a mod gives: its number and label, the mod, what it gives and the item it is like.
+struct NewItem<'a> {
+    item: i64,
+    label: String,
+    module: &'a str,
+    object: &'a Map<String, Value>,
+    like: &'a Record,
+    like_number: i64,
+}
+
+/// The common fields a new item's other parts follow: its message number, attribute and type.
+struct NewCommon {
+    message: i64,
+    attribute: i64,
+    item_type: i32,
+}
+
+/// What an item's names and descriptions are written for: its number, type and message number,
+/// its label in messages, and for a new item the message number of the item it is like.
+struct TextChange<'a> {
+    item: i32,
+    item_type: i32,
+    message: i64,
+    label: &'a str,
+    like: Option<i64>,
+}
 
 /// A message an item's name or description puts into the message files: `file` "system"
 /// (meswin/system_N.mes, the names item slots and menus show) or "allmenu" (each menu pack's
@@ -255,38 +322,55 @@ pub struct ItemText {
     pub module: String,
 }
 
-/// ConvertUsedItemType (gamedata.cpp): the family of an item type, 3 weapon, 4 clothing, 5
-/// ridepod part, 2 attachment, 1 item, 7 gift box, 6 fish, 8 boiled.
-pub fn family(item_type: i32) -> i32 {
-    let mut family = match item_type {
-        1..=4 => 3,
-        5..=10 => 4,
-        12..=15 => 5,
-        16..=19 | 0x22 => 2,
-        11 => 1,
-        t if t >= 20 => 1,
-        _ => 0,
-    };
+/// ConvertUsedItemType's families of item types (gamedata.cpp): which family table holds a type's
+/// entry, and how long its name may be. The engine numbers them as the comments say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Family {
+    /// 0: a type of no family.
+    None,
+    /// 1: usable items (ITEM).
+    Item,
+    /// 2: attachments (AT_ST blocks).
+    Attachment,
+    /// 3: weapons (WEP blocks).
+    Weapon,
+    /// 4: clothing (GRD, the guard table nothing reads).
+    Clothing,
+    /// 5: ridepod parts (RB_PARTS).
+    Ridepod,
+    /// 6: fish (FISH).
+    Fish,
+    /// 7: gift boxes, usable items.
+    GiftBox,
+    /// 8: boiled fish, usable items.
+    Boiled,
+}
+
+/// ConvertUsedItemType (gamedata.cpp): the family of an item type.
+pub fn family(item_type: i32) -> Family {
     match item_type {
-        0x1C => family = 7,
-        0x1E => family = 6,
-        0x23 => family = 8,
-        _ => {}
+        0x1C => Family::GiftBox,
+        0x1E => Family::Fish,
+        0x23 => Family::Boiled,
+        1..=4 => Family::Weapon,
+        5..=10 => Family::Clothing,
+        12..=15 => Family::Ridepod,
+        16..=19 | 0x22 => Family::Attachment,
+        11 => Family::Item,
+        t if t >= 20 => Family::Item,
+        _ => Family::None,
     }
-    family
 }
 
 /// Blocks of statements that fill one entry, ended by the tag that moves the engine's cursor on:
-/// {tag: statement index} each.
-fn blocks(script: &Script, tags: &[&str], last: &str) -> Vec<BTreeMap<&'static str, usize>> {
+/// {tag: statement index} each, keyed by the tags given.
+fn blocks<'t>(script: &Script, tags: &[&'t str], last: &str) -> Vec<BTreeMap<&'t str, usize>> {
     let mut out = Vec::new();
-    let mut current: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut current: BTreeMap<&'t str, usize> = BTreeMap::new();
     for (at, statement) in script.statements.iter().enumerate() {
-        let Some(tag) = tags.iter().find(|tag| **tag == statement.tag) else {
+        let Some(&tag) = tags.iter().find(|tag| **tag == statement.tag) else {
             continue;
         };
-        // the tag tables are 'static, so key by them
-        let tag: &'static str = Box::leak(tag.to_string().into_boxed_str());
         current.insert(tag, at);
         if statement.tag == last {
             out.push(std::mem::take(&mut current));
@@ -319,6 +403,125 @@ fn keyed(script: &Script, tag: &str) -> BTreeMap<i32, usize> {
     out
 }
 
+/// The English item names a `comdatmes` file gives (MES_SYS item, "name"), by item number: the
+/// labels of the item and shop tables.
+pub fn item_names(data: &[u8]) -> Result<BTreeMap<i32, String>> {
+    let mut out = BTreeMap::new();
+    for statement in
+        Script::parse(data).context(NAMES)?.statements.iter().filter(|statement| statement.tag == "MES_SYS")
+    {
+        if let [number, Arg::Str(text)] = &statement.values()[..] {
+            out.insert(number.int(), dc2tk_disc::text::decode_lossy(text));
+        }
+    }
+    Ok(out)
+}
+
+/// The family tables' entries as LoadData fills them, to find each item's: the weapons' and
+/// attachments' blocks by list number (as many as their counts say), the rest by item number.
+struct Entries<'s> {
+    scripts: &'s [Script],
+    weapons: Vec<BTreeMap<&'static str, usize>>,
+    attachments: Vec<BTreeMap<&'static str, usize>>,
+    effects: BTreeMap<i32, usize>,
+    ridepod: BTreeMap<i32, usize>,
+    fish: BTreeMap<i32, usize>,
+    guards: BTreeMap<i32, usize>,
+    weapon_specs: Vec<Spec>,
+    attach_specs: Vec<Spec>,
+}
+
+impl<'s> Entries<'s> {
+    fn read(scripts: &'s [Script]) -> Entries<'s> {
+        let weapon_tags = ["WEP", "WEP_ST", "WEP_ST_L", "WEP_ST2", "WEP_ST2_L", "WEP_SPE", "WEP_BUILD"];
+        let mut weapons = blocks(&scripts[WEPDAT], &weapon_tags, "WEP_BUILD");
+        weapons.truncate(count(&scripts[WEPDAT], "WEPNUM").unwrap_or(0).max(0) as usize);
+        let mut attachments = blocks(&scripts[ATDAT], &["AT_ST", "AT_ST2", "AT_ST_SP"], "AT_ST_SP");
+        attachments.truncate(count(&scripts[ATDAT], "AT_INIT").unwrap_or(0).max(0) as usize);
+        Entries {
+            scripts,
+            weapons,
+            attachments,
+            effects: keyed(&scripts[ITEMDAT], "ITEM"),
+            ridepod: keyed(&scripts[ROBODAT], "RB_PARTS"),
+            fish: keyed(&scripts[FISHDAT], "FISH"),
+            guards: keyed(&scripts[GRDDAT], "GRD"),
+            weapon_specs: weapon_specs(),
+            attach_specs: attach_specs(),
+        }
+    }
+
+    /// The fields of specs a statement has the arguments of.
+    fn add(&self, fields: &mut Vec<Located>, group: usize, file: usize, statement: usize, specs: &[Spec]) {
+        let args = self.scripts[file].statements[statement].args().len();
+        for spec in specs.iter().filter(|spec| spec.arg + spec.len <= args) {
+            fields.push(Located { group, spec: *spec, file, statement });
+        }
+    }
+
+    /// The fields of a block's statements, each spec in the statement of its tag; the block's
+    /// span (file, first, last).
+    fn add_block(
+        &self,
+        fields: &mut Vec<Located>,
+        group: usize,
+        file: usize,
+        block: &BTreeMap<&str, usize>,
+        specs: &[Spec],
+    ) -> Option<(usize, usize, usize)> {
+        for spec in specs {
+            if let Some(&statement) = block.get(spec.tag) {
+                self.add(fields, group, file, statement, std::slice::from_ref(spec));
+            }
+        }
+        Some((file, *block.values().min()?, *block.values().max()?))
+    }
+
+    /// The record of a COM statement: its common fields, and those of its family's entry.
+    fn record(&self, com: usize, names: &BTreeMap<i32, String>) -> Record {
+        let values = self.scripts[COMDAT].statements[com].values();
+        let item = values.first().map_or(0, Arg::int);
+        let item_type = values.get(1).map_or(0, Arg::int);
+        let list = usize::try_from(values.get(2).map_or(-1, Arg::int)).ok();
+        let mut fields = Vec::new();
+        self.add(&mut fields, COMMON, COMDAT, com, &COMMON_SPECS);
+        let family = family(item_type);
+        let mut block = None;
+        match family {
+            Family::Weapon => {
+                if let Some(found) = list.and_then(|at| self.weapons.get(at)) {
+                    block = self.add_block(&mut fields, WEAPON, WEPDAT, found, &self.weapon_specs);
+                }
+            }
+            Family::Attachment => {
+                if let Some(found) = list.and_then(|at| self.attachments.get(at)) {
+                    block = self.add_block(&mut fields, ATTACH, ATDAT, found, &self.attach_specs);
+                }
+            }
+            Family::Clothing => block = self.guards.get(&item).map(|&at| (GRDDAT, at, at)),
+            _ => {}
+        }
+        if matches!(family, Family::Item | Family::GiftBox | Family::Boiled) {
+            if let Some(&at) = self.effects.get(&item) {
+                self.add(&mut fields, EFFECT, ITEMDAT, at, &EFFECT_SPECS);
+                block = Some((ITEMDAT, at, at));
+            }
+        }
+        if let Some(&at) = self.ridepod.get(&item) {
+            let kind = self.scripts[ROBODAT].statements[at].values().get(1).map_or(-1, Arg::int);
+            self.add(&mut fields, RIDEPOD, ROBODAT, at, &ridepod_specs(kind));
+            block = Some((ROBODAT, at, at));
+        }
+        if family == Family::Fish {
+            if let Some(&at) = self.fish.get(&item) {
+                self.add(&mut fields, FISH, FISHDAT, at, &FISH_SPECS);
+                block = Some((FISHDAT, at, at));
+            }
+        }
+        Record { item, name: names.get(&item).cloned(), fields, com, block }
+    }
+}
+
 impl Items {
     /// The tables from the seven scripts (by [`FILES`]) and the English names, as the engine
     /// fills them.
@@ -328,101 +531,21 @@ impl Items {
         }
         let mut scripts = Vec::new();
         for (file, data) in FILES.iter().chain(&NAME_FILES).zip(files) {
-            scripts.push(Script::parse(data).map_err(|error| crate::Error::invalid(format!("{file}: {error}")))?);
+            scripts.push(Script::parse(data).context(file)?);
         }
-        let names = names.or_else(|| files.get(FILES.len() + 1).map(Vec::as_slice));
-        let mut shown: BTreeMap<i32, String> = BTreeMap::new();
-        if let Some(names) = names {
-            for statement in Script::parse(names)?.statements.iter().filter(|statement| statement.tag == "MES_SYS") {
-                if let [number, Arg::Str(text)] = &statement.values()[..] {
-                    shown.insert(number.int(), dc2tk_disc::text::decode_lossy(text));
-                }
-            }
-        }
-        let weapon_tags = ["WEP", "WEP_ST", "WEP_ST_L", "WEP_ST2", "WEP_ST2_L", "WEP_SPE", "WEP_BUILD"];
-        let weapons = blocks(&scripts[1], &weapon_tags, "WEP_BUILD");
-        let weapon_count = count(&scripts[1], "WEPNUM").unwrap_or(0).max(0) as usize;
-        let attachments = blocks(&scripts[3], &["AT_ST", "AT_ST2", "AT_ST_SP"], "AT_ST_SP");
-        let attach_count = count(&scripts[3], "AT_INIT").unwrap_or(0).max(0) as usize;
-        let effects = keyed(&scripts[2], "ITEM");
-        let ridepod = keyed(&scripts[4], "RB_PARTS");
-        let fish = keyed(&scripts[5], "FISH");
-        let guards = keyed(&scripts[6], "GRD");
-        let span = |block: &BTreeMap<&str, usize>| -> Option<(usize, usize)> {
-            Some((*block.values().min()?, *block.values().max()?))
+        let names = names.or_else(|| files.get(FILES.len() + ENGLISH).map(Vec::as_slice));
+        let shown = match names {
+            Some(names) => item_names(names)?,
+            None => BTreeMap::new(),
         };
-        let mut records = Vec::new();
-        let weapon_specs = weapon_specs();
-        let attach_specs = attach_specs();
-        for (statement_at, statement) in scripts[0].statements.iter().enumerate() {
-            if statement.tag != "COM" {
-                continue;
-            }
-            let values = statement.values();
-            let item = values.first().map_or(0, Arg::int);
-            let item_type = values.get(1).map_or(0, Arg::int);
-            let list = values.get(2).map_or(-1, Arg::int);
-            let mut fields = Vec::new();
-            let add = |fields: &mut Vec<Located>, group: usize, file: usize, statement: usize, specs: &[Spec]| {
-                for spec in specs.iter().filter(|spec| !spec.name.is_empty()) {
-                    let args = scripts[file].statements[statement].args().len();
-                    if spec.arg + spec.len <= args {
-                        fields.push(Located { group, spec: *spec, file, statement });
-                    }
-                }
-            };
-            add(&mut fields, COMMON, 0, statement_at, &COMMON_SPECS);
-            let block_fields = |fields: &mut Vec<Located>,
-                                group: usize,
-                                file: usize,
-                                block: &BTreeMap<&str, usize>,
-                                specs: &[Spec]| {
-                for spec in specs {
-                    if let Some(&statement) = block.get(spec.tag) {
-                        if spec.arg + spec.len <= scripts[file].statements[statement].args().len() {
-                            fields.push(Located { group, spec: *spec, file, statement });
-                        }
-                    }
-                }
-            };
-            let family = family(item_type);
-            let list_index = usize::try_from(list).ok();
-            let mut block = None;
-            match family {
-                3 => {
-                    if let Some(found) = list_index.filter(|&at| at < weapon_count).and_then(|at| weapons.get(at)) {
-                        block_fields(&mut fields, WEAPON, 1, found, &weapon_specs);
-                        block = span(found).map(|(first, last)| (1, first, last));
-                    }
-                }
-                2 => {
-                    if let Some(found) = list_index.filter(|&at| at < attach_count).and_then(|at| attachments.get(at)) {
-                        block_fields(&mut fields, ATTACH, 3, found, &attach_specs);
-                        block = span(found).map(|(first, last)| (3, first, last));
-                    }
-                }
-                4 => block = guards.get(&item).map(|&at| (6, at, at)),
-                _ => {}
-            }
-            if matches!(family, 1 | 7 | 8) {
-                if let Some(&at) = effects.get(&item) {
-                    add(&mut fields, EFFECT, 2, at, &EFFECT_SPECS);
-                    block = Some((2, at, at));
-                }
-            }
-            if let Some(&at) = ridepod.get(&item) {
-                let kind = scripts[4].statements[at].values().get(1).map_or(-1, Arg::int);
-                add(&mut fields, RIDEPOD, 4, at, &ridepod_specs(kind));
-                block = Some((4, at, at));
-            }
-            if family == 6 {
-                if let Some(&at) = fish.get(&item) {
-                    add(&mut fields, FISH, 5, at, &FISH_SPECS);
-                    block = Some((5, at, at));
-                }
-            }
-            records.push(Record { item, name: shown.get(&item).cloned(), fields, com: statement_at, block });
-        }
+        let entries = Entries::read(&scripts);
+        let records = scripts[COMDAT]
+            .statements
+            .iter()
+            .enumerate()
+            .filter(|(_, statement)| statement.tag == "COM")
+            .map(|(com, _)| entries.record(com, &shown))
+            .collect();
         Ok(Items { scripts, records })
     }
 
@@ -435,26 +558,24 @@ impl Items {
         self.records.is_empty()
     }
 
+    /// One argument of a field as the JSON shows it: float arguments widened to f64, as this
+    /// table has always written them (data_table::widened_float_value), the rest as data_table
+    /// reads them.
+    fn arg_value(&self, field: &Located, at: usize) -> Value {
+        let arg = self.scripts[field.file].statements[field.statement].args()[at].value();
+        match (field.spec.kind, arg) {
+            (Kind::Float, Arg::Float(value)) => data_table::widened_float_value(value),
+            (kind, arg) => data_table::arg_value(arg, kind),
+        }
+    }
+
     fn value(&self, field: &Located) -> Value {
-        let args = self.scripts[field.file].statements[field.statement].args();
-        let one = |at: usize| -> Value {
-            let arg = args[at].value();
-            match field.spec.kind {
-                Kind::Int(..) => Value::from(arg.int()),
-                Kind::Float => match arg {
-                    Arg::Float(value) => serde_json::Number::from_f64(value as f64).map_or(Value::Null, Value::Number),
-                    other => Value::from(other.int()),
-                },
-                Kind::Text(_) => match arg {
-                    Arg::Str(text) => Value::from(dc2tk_disc::text::decode_lossy(&text)),
-                    _ => Value::Null,
-                },
-            }
-        };
         if field.spec.len == 1 {
-            one(field.spec.arg)
+            self.arg_value(field, field.spec.arg)
         } else {
-            Value::Array((field.spec.arg..field.spec.arg + field.spec.len).map(one).collect())
+            Value::Array(
+                (field.spec.arg..field.spec.arg + field.spec.len).map(|at| self.arg_value(field, at)).collect(),
+            )
         }
     }
 
@@ -492,53 +613,6 @@ impl Items {
     }
 }
 
-fn value_text(spec: &Spec, value: &Value, what: &str) -> Result<Vec<u8>> {
-    match spec.kind {
-        Kind::Int(low, high) => {
-            let Some(number) = value.as_i64() else {
-                bail!("{what} is a whole number");
-            };
-            if number < low || number > high {
-                bail!("{what} is {number}; the game keeps {low} to {high}");
-            }
-            Ok(cfg_text::int_text(number))
-        }
-        Kind::Float => {
-            if let Some(number) = value.as_i64().filter(|number| i32::try_from(*number).is_ok()) {
-                return Ok(cfg_text::int_text(number));
-            }
-            let Some(number) = value.as_f64().filter(|number| number.is_finite()) else {
-                bail!("{what} is a number");
-            };
-            let mut text = format!("{}", number as f32);
-            if !text.contains('.') {
-                text.push_str(".0");
-            }
-            Ok(text.into_bytes())
-        }
-        Kind::Text(limit) => {
-            let Some(text) = value.as_str() else {
-                bail!("{what} is a string");
-            };
-            let Some(bytes) = dc2tk_disc::text::encode(text) else {
-                bail!("{what}: {text:?} has characters the game's text cannot hold");
-            };
-            if bytes.len() > limit {
-                bail!("{what}: {text:?} is {} bytes; the game keeps {limit}", bytes.len());
-            }
-            Ok(cfg_text::str_text(&bytes))
-        }
-    }
-}
-
-/// Whether two values are the same to the engine (an int and the float of it are).
-fn same(old: &Value, new: &Value) -> bool {
-    match (old.as_f64(), new.as_f64()) {
-        (Some(a), Some(b)) if old.is_number() && new.is_number() => (a as f32) == (b as f32),
-        _ => old == new,
-    }
-}
-
 /// The members of an item record that are not fields: the key, the item a new one copies, and
 /// its text.
 const TEXT_KEYS: [&str; 4] = ["name", "names", "description", "descriptions"];
@@ -549,10 +623,10 @@ const TEXT_KEYS: [&str; 4] = ["name", "names", "description", "descriptions"];
 /// boiled fish, the last a NUL.
 pub fn name_most(item_type: i32) -> usize {
     match family(item_type) {
-        3 | 5 => 0x1F,
-        2 => 0x19,
-        6 => 0x14,
-        8 => 0x15,
+        Family::Weapon | Family::Ridepod => 0x1F,
+        Family::Attachment => 0x19,
+        Family::Fish => 0x14,
+        Family::Boiled => 0x15,
         _ => 0xFF,
     }
 }
@@ -576,7 +650,7 @@ fn texts_by_language(
                 out.insert(language, text.to_string());
             }
         } else {
-            out.insert(1, text.to_string());
+            out.insert(ENGLISH, text.to_string());
         }
     }
     if let Some(value) = object.get(many) {
@@ -647,34 +721,48 @@ impl Items {
         let mut texts = Vec::new();
         let mut added: BTreeMap<i64, (&str, &Map<String, Value>)> = BTreeMap::new();
         for (module, table) in tables {
-            let Some(records) = table.get("items").and_then(Value::as_array) else {
-                bail!("an item table is {{\"items\": [records]}}, as mod asset writes it");
-            };
-            for record in records {
-                let Some(object) = record.as_object() else {
-                    bail!("each item is an object with \"item\" and the fields it changes");
-                };
-                let Some(item) = object.get("item").and_then(Value::as_i64) else {
-                    bail!("each item names its item number: {{\"item\": 1, ...}}");
-                };
-                match self.records.iter().rev().find(|found| found.item as i64 == item) {
-                    Some(found) => self.record_changes(found, object, module, &mut edits, &mut texts)?,
-                    None => {
-                        if let Some((other, given)) = added.get(&item) {
-                            if *given != object {
-                                bail!("new item {item} is given two ways, by mod {other} and mod {module}");
-                            }
-                            continue;
-                        }
-                        added.insert(item, (module, object));
-                    }
-                }
-            }
+            self.module_changes(table, module, &mut edits, &mut texts, &mut added)
+                .with_context(|| format!("mod {module}"))?;
         }
         if !added.is_empty() {
             self.additions(&added, &mut edits, &mut texts)?;
         }
         Ok((edits, texts))
+    }
+
+    /// One mod's changes of the game's items; the items it adds go into `added`, once each.
+    fn module_changes<'a>(
+        &self,
+        table: &'a Value,
+        module: &'a str,
+        edits: &mut Vec<Edit>,
+        texts: &mut Vec<ItemText>,
+        added: &mut BTreeMap<i64, (&'a str, &'a Map<String, Value>)>,
+    ) -> Result<()> {
+        let Some(records) = table.get("items").and_then(Value::as_array) else {
+            bail!("an item table is {{\"items\": [records]}}, as mod asset writes it");
+        };
+        for record in records {
+            let Some(object) = record.as_object() else {
+                bail!("each item is an object with \"item\" and the fields it changes");
+            };
+            let Some(item) = object.get("item").and_then(Value::as_i64) else {
+                bail!("each item names its item number: {{\"item\": 1, ...}}");
+            };
+            match self.records.iter().rev().find(|found| found.item as i64 == item) {
+                Some(found) => self.record_changes(found, object, module, edits, texts)?,
+                None => match added.get(&item) {
+                    Some((other, given)) if *given != object => {
+                        return Err(crate::given_two_ways(format!("new item {item}"), other, module));
+                    }
+                    Some(_) => {}
+                    None => {
+                        added.insert(item, (module, object));
+                    }
+                },
+            }
+        }
+        Ok(())
     }
 
     fn record_changes(
@@ -694,12 +782,13 @@ impl Items {
             bail!("{label} is the game's own; \"like\" makes a new item from it");
         }
         let mut names = texts_by_language(object, "name", "names", false, &label)?;
-        if names.get(&1) == found.name.as_ref() && !object.contains_key("names") {
+        if names.get(&ENGLISH) == found.name.as_ref() && !object.contains_key("names") {
             names.clear();
         }
         let message = self.common_value(found, "message").as_i64().unwrap_or(item as i64);
         let item_type = self.common_value(found, "type").as_i64().unwrap_or(0) as i32;
-        self.text_changes(item, item_type, message, &label, &names, object, None, module, out, texts)?;
+        let text = TextChange { item, item_type, message, label: &label, like: None };
+        self.text_changes(&text, &names, object, module, out, texts)?;
         for (key, value) in object {
             if key == "item" || TEXT_KEYS.contains(&key.as_str()) {
                 continue;
@@ -732,20 +821,13 @@ impl Items {
                 if group == RIDEPOD && name == "kind" {
                     bail!("{what}: the kind says which fields a part has and does not change");
                 }
-                let values: Vec<&Value> = if field.spec.len == 1 {
-                    vec![value]
-                } else {
-                    match value.as_array() {
-                        Some(list) if list.len() == field.spec.len => list.iter().collect(),
-                        _ => bail!("{what} is a list of {}", field.spec.len),
-                    }
-                };
                 let olds: Vec<Value> = match &old {
                     Value::Array(list) => list.clone(),
                     other => vec![other.clone()],
                 };
-                for (offset, (value, old)) in values.into_iter().zip(olds).enumerate() {
-                    let text = value_text(&field.spec, value, &what)?;
+                let values = values_of(value, field.spec.len, &what)?;
+                for (offset, ((what, value), old)) in values.into_iter().zip(olds).enumerate() {
+                    let text = value_text(field.spec.kind, value, &what)?;
                     if same(&old, value) {
                         continue;
                     }
@@ -754,7 +836,7 @@ impl Items {
                         statement: field.statement,
                         arg: field.spec.arg + offset,
                         to: To::Arg(text),
-                        what: if field.spec.len == 1 { what.clone() } else { format!("{what}[{offset}]") },
+                        what,
                         module: module.to_string(),
                     });
                 }
@@ -775,20 +857,16 @@ impl Items {
     /// changed one rewritten, a missing one added) and system message, and its allmenu message;
     /// `like`, the message number of the item a new one is like, copies that item's description
     /// where none is given.
-    #[allow(clippy::too_many_arguments)]
     fn text_changes(
         &self,
-        item: i32,
-        item_type: i32,
-        message: i64,
-        label: &str,
+        change: &TextChange,
         names: &BTreeMap<usize, String>,
         object: &Map<String, Value>,
-        like: Option<i64>,
         module: &str,
         out: &mut Vec<Edit>,
         texts: &mut Vec<ItemText>,
     ) -> Result<()> {
+        let TextChange { item, item_type, message, label, like } = *change;
         let descriptions = texts_by_language(object, "description", "descriptions", like.is_some(), label)?;
         if names.is_empty() && descriptions.is_empty() && like.is_none() {
             return Ok(());
@@ -882,17 +960,25 @@ impl Items {
                 COMMON_MOST - self.records.len()
             );
         }
-        let Some(last_com) = self.last_tagged(0, "COM") else {
+        let Some(last_com) = self.last_tagged(COMDAT, "COM") else {
             bail!("comdat.cfg has no COM statement to add after");
         };
-        // the next list number of each family table, and the edits of its count
-        let mut next: Vec<(i64, usize)> = Vec::new();
-        for (_, file, count_tag, _, _) in FAMILY_TABLES {
-            let count = count(&self.scripts[file], count_tag).unwrap_or(0) as i64;
-            next.push((count, 0));
-        }
+        // each family table's count, and how many entries the new items add to it
+        let mut counts: Vec<(i64, usize)> = FAMILY_TABLES
+            .iter()
+            .map(|table| (count(&self.scripts[table.file], table.count).unwrap_or(0) as i64, 0))
+            .collect();
         for (&item, &(module, object)) in added {
-            let label = format!("new item {item}");
+            let new = self.new_item(item, object, module)?;
+            self.addition(&new, last_com, &mut counts, out, texts).with_context(|| format!("mod {module}"))?;
+        }
+        self.count_edits(&counts, out)
+    }
+
+    /// A new item's number checked, and the item it is like found.
+    fn new_item<'a>(&'a self, item: i64, object: &'a Map<String, Value>, module: &'a str) -> Result<NewItem<'a>> {
+        let label = format!("new item {item}");
+        let found = || -> Result<NewItem<'a>> {
             if !(1..=ITEM_MOST).contains(&item) {
                 bail!("{label}: item numbers go from 1 to {ITEM_MOST} (local_itemdatano_converttable)");
             }
@@ -902,153 +988,181 @@ impl Items {
             let Some(like) = self.records.iter().rev().find(|found| found.item as i64 == like_number) else {
                 bail!("{label}: like {like_number}: the game has no such item");
             };
-            let like_type = self.common_value(like, "type").as_i64().unwrap_or(0) as i32;
-            let like_family = family(like_type);
-            // the COM statement: the like item's, with the new number, list and message
-            let mut com = self.scripts[0].statements[like.com].clone();
-            let set = |statement: &mut cfg_text::Statement, arg: usize, text: Vec<u8>, what: &str| -> Result<()> {
-                let Some(piece) = statement.pieces.get(arg) else {
-                    bail!("{what}: the copied statement has no argument {arg}");
-                };
-                statement.pieces[arg] = piece.with_text(text);
-                Ok(())
+            Ok(NewItem { item, label: label.clone(), module, object, like, like_number })
+        };
+        found().with_context(|| format!("mod {module}"))
+    }
+
+    /// One new item: its COM statement, its family's entry and its names and description.
+    fn addition(
+        &self,
+        new: &NewItem,
+        last_com: usize,
+        counts: &mut [(i64, usize)],
+        out: &mut Vec<Edit>,
+        texts: &mut Vec<ItemText>,
+    ) -> Result<()> {
+        let label = &new.label;
+        let (mut com, common) = self.new_common(new)?;
+        let like_type = self.common_value(new.like, "type").as_i64().unwrap_or(0) as i32;
+        let like_family = family(like_type);
+        if family(common.item_type) != like_family {
+            bail!(
+                "{label} type {}: an item of another family than item {}'s (type {like_type}) is made like one of that family",
+                common.item_type,
+                new.like_number
+            );
+        }
+        let spectrum_items = crate::exe_tables::SPECTRUM_ITEMS as i64;
+        let spectrumised = !matches!(like_family, Family::Attachment | Family::Weapon);
+        if new.item > spectrum_items && common.attribute & 2 != 0 && spectrumised {
+            bail!(
+                "{label}: spectrumising an item reads etcitem_spectol_table, which has items 1 to {spectrum_items}; clear the attribute's 2 (spectrumisable) or use a number up to {spectrum_items}"
+            );
+        }
+        let list = match FAMILY_TABLES.iter().position(|table| table.families.contains(&like_family)) {
+            Some(table) => self.family_entry(new, table, counts, out)?,
+            None if GROUPS.iter().skip(1).any(|key| new.object.contains_key(*key)) => {
+                bail!("{label}: item {}, which it is like, has no family data", new.like_number);
+            }
+            None => self.common_value(new.like, "list").as_i64().unwrap_or(0),
+        };
+        set_piece(&mut com, COM_LIST, cfg_text::int_text(list), label)?;
+        set_piece(&mut com, COM_MESSAGE, cfg_text::int_text(common.message), label)?;
+        out.push(Edit {
+            file: COMDAT,
+            statement: last_com,
+            arg: 0,
+            to: To::Insert(cfg_text::block_text(std::slice::from_ref(&com))),
+            what: format!("{label} common data"),
+            module: new.module.into(),
+        });
+        let names = texts_by_language(new.object, "name", "names", true, label)?;
+        if names.len() < LANGUAGE_NAMES.len() {
+            bail!(
+                "{label}: a new item has a \"name\" (every language) or \"names\" in all of {}",
+                LANGUAGE_NAMES.join(", ")
+            );
+        }
+        // the description the like item shows is the message its own `message` numbers (the
+        // game's tables give every item its item number, but a table need not)
+        let like_message = self.common_value(new.like, "message").as_i64().unwrap_or(new.like_number);
+        let item = new.item as i32;
+        let text =
+            TextChange { item, item_type: common.item_type, message: common.message, label, like: Some(like_message) };
+        self.text_changes(&text, &names, new.object, new.module, out, texts)
+    }
+
+    /// A new item's COM statement: the like item's, with the new number and the common fields
+    /// given (its list and message numbers are set once known).
+    fn new_common(&self, new: &NewItem) -> Result<(cfg_text::Statement, NewCommon)> {
+        let mut com = self.scripts[COMDAT].statements[new.like.com].clone();
+        set_piece(&mut com, 0, cfg_text::int_text(new.item), &new.label)?;
+        let mut common = NewCommon {
+            message: new.item,
+            attribute: self.common_value(new.like, "attribute").as_i64().unwrap_or(0),
+            item_type: self.common_value(new.like, "type").as_i64().unwrap_or(0) as i32,
+        };
+        for (key, value) in new.object {
+            if key == "item" || key == "like" || TEXT_KEYS.contains(&key.as_str()) || GROUPS.contains(&key.as_str()) {
+                continue;
+            }
+            let what = format!("{} {key}", new.label);
+            let Some(spec) = COMMON_SPECS.iter().find(|spec| spec.name == key) else {
+                bail!("{what}: no such field");
             };
-            set(&mut com, 0, cfg_text::int_text(item), &label)?;
-            let mut message = item;
-            let mut attribute = self.common_value(like, "attribute").as_i64().unwrap_or(0);
-            let mut item_type = like_type;
-            for (key, value) in object {
-                if key == "item" || key == "like" || TEXT_KEYS.contains(&key.as_str()) || GROUPS.contains(&key.as_str())
-                {
-                    continue;
-                }
-                let what = format!("{label} {key}");
-                let Some(spec) = COMMON_SPECS.iter().find(|spec| spec.name == key) else {
+            if key == "list" {
+                bail!("{what}: build gives a new item its list number");
+            }
+            set_piece(&mut com, spec.arg, value_text(spec.kind, value, &what)?, &what)?;
+            match key.as_str() {
+                "message" => common.message = value.as_i64().unwrap_or(new.item),
+                "attribute" => common.attribute = value.as_i64().unwrap_or(0),
+                "type" => common.item_type = value.as_i64().unwrap_or(0) as i32,
+                _ => {}
+            }
+        }
+        Ok((com, common))
+    }
+
+    /// A new item's entry in its family's table: the next list number, and the like item's entry
+    /// copied with the fields given, after the table's last.
+    fn family_entry(
+        &self,
+        new: &NewItem,
+        table: usize,
+        counts: &mut [(i64, usize)],
+        out: &mut Vec<Edit>,
+    ) -> Result<i64> {
+        let label = &new.label;
+        let FamilyTable { file, count, last, most, by_item, .. } = FAMILY_TABLES[table];
+        let list = counts[table].0 + counts[table].1 as i64;
+        counts[table].1 += 1;
+        if list as usize >= most {
+            bail!("{label}: {} entries in {}; the game holds {most} ({count})", list + 1, FILES[file]);
+        }
+        let Some((block_file, first, end)) = new.like.block else {
+            return Ok(list);
+        };
+        let mut block: Vec<cfg_text::Statement> = self.scripts[block_file].statements[first..=end].to_vec();
+        if by_item {
+            set_piece(&mut block[0], 0, cfg_text::int_text(new.item), label)?;
+        }
+        for (group, key) in GROUPS.iter().enumerate().skip(1) {
+            let Some(given) = new.object.get(*key) else {
+                continue;
+            };
+            let Some(nested) = given.as_object() else {
+                bail!("{label}: \"{key}\" is an object of fields");
+            };
+            for (name, value) in nested {
+                let what = format!("{label} {key}.{name}");
+                let Some(field) = new.like.fields.iter().find(|field| field.group == group && field.spec.name == name)
+                else {
+                    if !new.like.fields.iter().any(|field| field.group == group) {
+                        bail!("{label}: item {}, which it is like, has no {key} data", new.like_number);
+                    }
                     bail!("{what}: no such field");
                 };
-                if key == "list" {
-                    bail!("{what}: build gives a new item its list number");
+                if group == RIDEPOD && name == "kind" {
+                    bail!("{what}: the kind says which fields a part has; make the part like one of that kind");
                 }
-                set(&mut com, spec.arg, value_text(spec, value, &what)?, &what)?;
-                match key.as_str() {
-                    "message" => message = value.as_i64().unwrap_or(item),
-                    "attribute" => attribute = value.as_i64().unwrap_or(0),
-                    "type" => item_type = value.as_i64().unwrap_or(0) as i32,
-                    _ => {}
+                for (offset, (what, value)) in values_of(value, field.spec.len, &what)?.into_iter().enumerate() {
+                    let text = value_text(field.spec.kind, value, &what)?;
+                    set_piece(&mut block[field.statement - first], field.spec.arg + offset, text, &what)?;
                 }
             }
-            if family(item_type) != like_family {
-                bail!("{label} type {item_type}: an item of another family than item {like_number}'s (type {like_type}) is made like one of that family");
-            }
-            if item > exe_spectrum_items() && attribute & 2 != 0 && !matches!(like_family, 2 | 3) {
-                bail!(
-                    "{label}: spectrumising an item reads etcitem_spectol_table, which has items 1 to {}; clear the attribute's 2 (spectrumisable) or use a number up to {}",
-                    exe_spectrum_items(),
-                    exe_spectrum_items()
-                );
-            }
-            // the family's entry, copied
-            let table = FAMILY_TABLES.iter().position(|(families, ..)| families.contains(&like_family));
-            let mut list = self.common_value(like, "list").as_i64().unwrap_or(0);
-            if let Some(table) = table {
-                let (_, file, count_tag, last_tag, most) = FAMILY_TABLES[table];
-                list = next[table].0 + next[table].1 as i64;
-                next[table].1 += 1;
-                if list as usize >= most {
-                    bail!("{label}: {} entries in {}; the game holds {most} ({count_tag})", list + 1, FILES[file]);
-                }
-                if let Some((block_file, first, last)) = like.block {
-                    let mut block: Vec<cfg_text::Statement> =
-                        self.scripts[block_file].statements[first..=last].to_vec();
-                    if last_tag != "WEP_BUILD" && last_tag != "AT_ST_SP" {
-                        set(&mut block[0], 0, cfg_text::int_text(item), &label)?;
-                    }
-                    for (group, key) in GROUPS.iter().enumerate().skip(1) {
-                        let Some(given) = object.get(*key) else {
-                            continue;
-                        };
-                        let Some(nested) = given.as_object() else {
-                            bail!("{label}: \"{key}\" is an object of fields");
-                        };
-                        for (name, value) in nested {
-                            let what = format!("{label} {key}.{name}");
-                            let Some(field) =
-                                like.fields.iter().find(|field| field.group == group && field.spec.name == name)
-                            else {
-                                if !like.fields.iter().any(|field| field.group == group) {
-                                    bail!("{label}: item {like_number}, which it is like, has no {key} data");
-                                }
-                                bail!("{what}: no such field");
-                            };
-                            if group == RIDEPOD && name == "kind" {
-                                bail!("{what}: the kind says which fields a part has; make the part like one of that kind");
-                            }
-                            let values: Vec<&Value> = if field.spec.len == 1 {
-                                vec![value]
-                            } else {
-                                match value.as_array() {
-                                    Some(list) if list.len() == field.spec.len => list.iter().collect(),
-                                    _ => bail!("{what} is a list of {}", field.spec.len),
-                                }
-                            };
-                            for (offset, value) in values.into_iter().enumerate() {
-                                let text = value_text(&field.spec, value, &what)?;
-                                set(&mut block[field.statement - first], field.spec.arg + offset, text, &what)?;
-                            }
-                        }
-                    }
-                    let Some(after) = self.last_tagged(block_file, last_tag) else {
-                        bail!("{label}: {} has no {last_tag} to add after", FILES[block_file]);
-                    };
-                    out.push(Edit {
-                        file: block_file,
-                        statement: after,
-                        arg: 0,
-                        to: To::Insert(cfg_text::block_text(&block)),
-                        what: format!("{label} {}", FILES[block_file]),
-                        module: module.into(),
-                    });
-                }
-            } else if GROUPS.iter().skip(1).any(|key| object.contains_key(*key)) {
-                bail!("{label}: item {like_number}, which it is like, has no family data");
-            }
-            set(&mut com, 2, cfg_text::int_text(list), &label)?;
-            set(&mut com, 8, cfg_text::int_text(message), &label)?;
-            out.push(Edit {
-                file: 0,
-                statement: last_com,
-                arg: 0,
-                to: To::Insert(cfg_text::block_text(std::slice::from_ref(&com))),
-                what: format!("{label} common data"),
-                module: module.into(),
-            });
-            let names = texts_by_language(object, "name", "names", true, &label)?;
-            if names.len() < LANGUAGE_NAMES.len() {
-                bail!(
-                    "{label}: a new item has a \"name\" (every language) or \"names\" in all of {}",
-                    LANGUAGE_NAMES.join(", ")
-                );
-            }
-            // the description the like item shows is the message its own `message` numbers (the
-            // game's tables give every item its item number, but a table need not)
-            let like_message = self.common_value(like, "message").as_i64().unwrap_or(like_number);
-            let like = Some(like_message);
-            self.text_changes(item as i32, item_type, message, &label, &names, object, like, module, out, texts)?;
         }
-        for (table, &(count_old, added)) in next.iter().enumerate() {
+        let Some(after) = self.last_tagged(block_file, last) else {
+            bail!("{label}: {} has no {last} to add after", FILES[block_file]);
+        };
+        out.push(Edit {
+            file: block_file,
+            statement: after,
+            arg: 0,
+            to: To::Insert(cfg_text::block_text(&block)),
+            what: format!("{label} {}", FILES[block_file]),
+            module: new.module.into(),
+        });
+        Ok(list)
+    }
+
+    /// The family tables' counts raised by the entries the new items add.
+    fn count_edits(&self, counts: &[(i64, usize)], out: &mut Vec<Edit>) -> Result<()> {
+        for (table, &(count_old, added)) in counts.iter().enumerate() {
             if added == 0 {
                 continue;
             }
-            let (_, file, count_tag, ..) = FAMILY_TABLES[table];
-            let Some(at) = self.last_tagged(file, count_tag) else {
-                bail!("{} has no {count_tag} to count the new entries in", FILES[file]);
+            let FamilyTable { file, count, .. } = FAMILY_TABLES[table];
+            let Some(at) = self.last_tagged(file, count) else {
+                bail!("{} has no {count} to count the new entries in", FILES[file]);
             };
             out.push(Edit {
                 file,
                 statement: at,
                 arg: 0,
                 to: To::Arg(cfg_text::int_text(count_old + added as i64)),
-                what: format!("{} {count_tag}", FILES[file]),
+                what: format!("{} {count}", FILES[file]),
                 module: "build".into(),
             });
         }
@@ -1102,11 +1216,6 @@ fn name_units(script: &Script, items: &std::collections::BTreeSet<i32>, language
             _ => None,
         })
         .sum()
-}
-
-/// The items etcitem_spectol_table has (exe_tables::SPECTRUM_ITEMS).
-fn exe_spectrum_items() -> i64 {
-    crate::exe_tables::SPECTRUM_ITEMS as i64
 }
 
 #[cfg(test)]
@@ -1275,6 +1384,17 @@ mod tests {
     }
 
     #[test]
+    fn whole_numbers_compare_exactly_not_as_f32() {
+        // 16777217 and 16777216 are one f32: the item table compared them so, and dropped the edit
+        let mut files = sample();
+        files[0] = String::from_utf8(files[0].clone()).unwrap().replace("\"wm001\",3;", "\"wm001\",16777216;").into();
+        let items = Items::read(&files, None).unwrap();
+        let edits = items.changes(&serde_json::json!({"items": [{"item": 1, "attribute": 16777217}]}), "m").unwrap();
+        assert_eq!(edits.len(), 1);
+        assert!(String::from_utf8_lossy(&items.apply(&edits).unwrap()[0]).contains("\"wm001\",16777217;"));
+    }
+
+    #[test]
     fn renaming_an_item_whose_name_line_has_no_name_is_refused_not_a_panic() {
         let mut files = sample_named();
         files[FILES.len() + 1] = b"MES_SYS 1;\r\n".to_vec();
@@ -1286,8 +1406,12 @@ mod tests {
 
     #[test]
     fn families_follow_convert_used_item_type() {
-        let families: Vec<i32> = [1, 5, 11, 12, 16, 0x1C, 0x1E, 0x22, 0x23, 40].iter().map(|&t| family(t)).collect();
-        assert_eq!(families, [3, 4, 1, 5, 2, 7, 6, 2, 8, 1]);
+        use Family::{Attachment, Boiled, Clothing, Fish, GiftBox, Item, Ridepod, Weapon};
+        let families: Vec<Family> =
+            [0, 1, 5, 11, 12, 16, 0x1C, 0x1E, 0x22, 0x23, 40].iter().map(|&t| family(t)).collect();
+        let wanted =
+            [Family::None, Weapon, Clothing, Item, Ridepod, Attachment, GiftBox, Fish, Attachment, Boiled, Item];
+        assert_eq!(families, wanted);
     }
 
     /// Every version of the item data on an extracted disc (C2S_CORPUS: menu/cfg5, cfg6 and the
@@ -1311,9 +1435,9 @@ mod tests {
                 for field in &record.fields {
                     let args = items.scripts[field.file].statements[field.statement].args();
                     for at in field.spec.arg..field.spec.arg + field.spec.len {
-                        let value = items.value(&Located { spec: one("", "", at, field.spec.kind), ..field.clone() });
+                        let value = items.arg_value(field, at);
                         let what = format!("{} item {} {}", folder.display(), record.item, field.spec.name);
-                        let text = value_text(&field.spec, &value, &what).unwrap();
+                        let text = value_text(field.spec.kind, &value, &what).unwrap();
                         assert_eq!(
                             text,
                             args[at].text,
@@ -1348,7 +1472,7 @@ mod tests {
         assert_eq!(items.write(), files);
         assert_eq!(items.apply(&[]).unwrap(), files);
         let json = items.to_json();
-        let like = |wanted: i32| -> i64 {
+        let like = |wanted: Family| -> i64 {
             json["items"]
                 .as_array()
                 .unwrap()
@@ -1358,7 +1482,11 @@ mod tests {
                 .as_i64()
                 .unwrap()
         };
-        let likes = [like(3), like(3), like(3), like(3), like(1), like(1), like(2), like(2), like(6)];
+        use Family::{Attachment, Clothing, Fish, Item, Weapon};
+        let likes = [like(Weapon), like(Weapon), like(Weapon), like(Weapon), like(Item), like(Item)]
+            .into_iter()
+            .chain([like(Attachment), like(Attachment), like(Fish)])
+            .collect::<Vec<_>>();
         let mut records: Vec<Value> = likes
             .iter()
             .enumerate()
@@ -1375,7 +1503,7 @@ mod tests {
         assert_eq!(again.to_json()["items"][431]["name"], "New 8");
         assert_eq!(count(&again.scripts[1], "WEPNUM"), Some(116));
         assert_eq!(texts.iter().filter(|text| text.file == "system").count(), 9 * 7);
-        records.push(serde_json::json!({"item": 500, "like": like(4), "name": "One too many"}));
+        records.push(serde_json::json!({"item": 500, "like": like(Clothing), "name": "One too many"}));
         let error = items.changes_all(&[("m".into(), serde_json::json!({ "items": records }))]).unwrap_err();
         assert!(error.to_string().contains("432"), "{error}");
     }

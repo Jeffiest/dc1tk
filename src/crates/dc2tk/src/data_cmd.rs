@@ -20,7 +20,6 @@ use dc2tk_assets::dungeon_layout::{self, Layouts};
 use dc2tk_assets::elf::{self, Patch};
 use dc2tk_assets::idea_data::{self, Ideas};
 use dc2tk_assets::item_data::{self, ItemText, Items};
-use dc2tk_assets::monster_data::Monsters;
 use dc2tk_assets::shop_data::{self, Shops};
 use dc2tk_assets::{exe_tables, game_data, json, text};
 use dc2tk_disc::{iso, rebuild, Image};
@@ -60,7 +59,7 @@ fn names_path() -> String {
 enum Table {
     Items(Items, Vec<String>, DataTable),
     Shops(Shops, Vec<String>, DataTable),
-    Monsters(Monsters),
+    /// A game_data kind's table, by the paths it read (none for one of the executable alone).
     Data(DataTable, Vec<String>),
     /// The inventions (recipes and scoops) and the ideas, by the paths of both, the recipes' first.
     Inventions(DataTable, Ideas, Vec<String>),
@@ -96,22 +95,22 @@ fn load(table: &str, elf: &[u8], current: &dyn Fn(&str) -> Result<Vec<u8>>) -> R
             let names = current(&names_path()).ok();
             Table::Shops(Shops::read(&read_all(&paths)?, names.as_deref())?, paths, exe_tables::donny(elf)?)
         }
-        "monsters" => Table::Monsters(Monsters::read(elf)?),
         "layouts" => Table::Layouts(Layouts::read(&read_all(&dungeon_layout::paths())?, dungeon_layout::parts(elf)?)?),
-        "parts" => Table::Data(dungeon_layout::parts_table(elf)?, Vec::new()),
         "chests" => Table::Chests(Chests::read(&read_all(&chest_data::paths())?)?),
-        "inventions" => {
-            let mut paths = game_data::paths(table);
-            let inventions = game_data::read(table, &read_all(&paths)?, elf)?;
-            let ideas = Ideas::read(&read_all(&idea_data::paths())?)?;
-            paths.extend(idea_data::paths());
-            Table::Inventions(inventions, ideas, paths)
+        _ => {
+            let Ok(kind) = game_data::kind(table) else {
+                bail!("no data table {table} (the tables are {})", replace::DATA_TABLES.join(", "));
+            };
+            let mut paths = (kind.paths)();
+            let read = (kind.read)(&read_all(&paths)?, elf)?;
+            if table == "inventions" {
+                let ideas = Ideas::read(&read_all(&idea_data::paths())?)?;
+                paths.extend(idea_data::paths());
+                Table::Inventions(read, ideas, paths)
+            } else {
+                Table::Data(read, paths)
+            }
         }
-        kind if game_data::KINDS.contains(&kind) => {
-            let paths = game_data::paths(kind);
-            Table::Data(game_data::read(kind, &read_all(&paths)?, elf)?, paths)
-        }
-        _ => bail!("no data table {table} (the tables are {})", replace::DATA_TABLES.join(", ")),
     })
 }
 
@@ -180,7 +179,6 @@ impl Table {
                 }
                 json
             }
-            Table::Monsters(monsters) => monsters.to_json(),
             Table::Data(table, _) => table.to_json(),
             Table::Inventions(table, ideas, _) => {
                 let mut json = table.to_json();
@@ -219,12 +217,6 @@ impl Table {
                 }
                 (shops.changes_all(&tables)?, patches, Vec::new())
             }
-            Table::Monsters(monsters) => {
-                for (module, table) in given {
-                    patches.extend(monsters.changes(table, module).with_context(|| format!("mod {module}"))?);
-                }
-                (Vec::new(), patches, Vec::new())
-            }
             Table::Data(table, _) => {
                 let (edits, patches) = table.changes_all(given)?;
                 (edits, patches, Vec::new())
@@ -253,7 +245,7 @@ impl Table {
         Ok(match self {
             Table::Items(items, paths, _) => (items.apply(edits)?, paths),
             Table::Shops(shops, paths, _) => (shops.apply(edits)?, paths),
-            Table::Monsters(_) | Table::Layouts(_) | Table::Chests(_) => (Vec::new(), &[]),
+            Table::Layouts(_) | Table::Chests(_) => (Vec::new(), &[]),
             Table::Data(table, paths) => (table.apply(edits)?, paths),
             Table::Inventions(table, ideas, paths) => {
                 let first = paths.len() - idea_data::paths().len();

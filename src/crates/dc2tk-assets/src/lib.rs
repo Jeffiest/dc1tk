@@ -119,6 +119,12 @@ impl<T, E: std::fmt::Display> Context<T> for std::result::Result<T, E> {
     }
 }
 
+/// The error of one thing two mods give differently, the way every table says it: "{what} is
+/// given two ways, by mod {first} and mod {second}".
+pub(crate) fn given_two_ways(what: impl std::fmt::Display, first: &str, second: &str) -> Error {
+    Error::Invalid(format!("{what} is given two ways, by mod {first} and mod {second}"))
+}
+
 /// Returns early with an Error::Invalid of the formatted message.
 #[macro_export]
 macro_rules! bail {
