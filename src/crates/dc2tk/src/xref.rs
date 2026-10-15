@@ -10,12 +10,16 @@ use clap::{Args, ValueEnum};
 use dc2tk_script::index::{self, Folded};
 use dc2tk_script::{maps, xref};
 
-use crate::{files, Common};
+use crate::files;
+use crate::options::Common;
 
 #[derive(Clone, Copy, ValueEnum)]
 pub enum Kind {
+    /// What starts or requests a program.
     Event,
+    /// Every way into a map.
     Map,
+    /// A monster's model, AI script, sharers and placements.
     Monster,
 }
 
@@ -23,6 +27,7 @@ pub enum Kind {
 pub struct XrefArgs {
     /// A decompiled source tree.
     source: PathBuf,
+    /// What to look up.
     kind: Kind,
     /// A program number or name, a map name (s51), or a monster number, constant or name.
     #[arg(allow_negative_numbers = true)]

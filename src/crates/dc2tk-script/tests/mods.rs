@@ -203,3 +203,14 @@ fn a_header_change_makes_build_compile_everything_and_say_why() {
     assert_eq!(found.compiled, 2);
     assert!(found.all_because.as_deref().unwrap().contains("include/disc.h"));
 }
+
+#[test]
+fn a_mod_name_is_one_folder_inside_the_mods_folder() {
+    let mods_dir = Path::new("mods");
+    assert_eq!(mods::folder(mods_dir, "fish-room_2.1").unwrap(), mods_dir.join("fish-room_2.1"));
+    for wrong in ["..", ".", "a/b", "a\nb", "fish\n", ""] {
+        assert!(mods::folder(mods_dir, wrong).is_err(), "{wrong:?}");
+    }
+    assert_eq!(mods::name(&mods_dir.join("fish-room")), "fish-room");
+    assert_eq!(mods::name(Path::new("/")), "");
+}

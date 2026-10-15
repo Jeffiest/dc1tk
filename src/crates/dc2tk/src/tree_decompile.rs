@@ -158,11 +158,6 @@ pub fn run(
     }
     tree::record(&out, &written, Some(&tree::headers_hash(&headers_used)), &removed)?;
     pathnames::record(&out, &renamed)?;
-    println!(
-        "{} scripts and {} library files written to {}",
-        paths.len(),
-        library_paths.len(),
-        files::shown_path(&out.to_string_lossy())
-    );
+    println!("{} scripts and {} library files written to {}", paths.len(), library_paths.len(), files::shown_path(out));
     Ok(())
 }

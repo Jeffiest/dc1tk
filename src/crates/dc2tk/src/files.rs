@@ -34,9 +34,10 @@ pub fn default_defs() -> PathBuf {
 
 /// A path as messages show it. On Windows that is with \ throughout, so a path the tools joined
 /// with "/" reads as one path, and without empty or "." parts; elsewhere it is as it is.
-pub fn shown_path(path: &str) -> String {
+pub fn shown_path(path: impl AsRef<Path>) -> String {
+    let path = path.as_ref().to_string_lossy();
     if !cfg!(windows) {
-        return path.to_string();
+        return path.into_owned();
     }
     let rooted = path.starts_with('/') || path.starts_with('\\');
     let parts: Vec<&str> = path.split(['/', '\\']).filter(|part| !part.is_empty() && *part != ".").collect();
@@ -86,6 +87,6 @@ pub fn rename_hint<'a>(sets: &[PathBuf], errors: impl IntoIterator<Item = &'a st
     Some(format!(
         "note: renamed since the tree was made: {}; dc2tk defs migrate {} gives it the new names",
         names.join(", "),
-        shown_path(&tree.to_string_lossy())
+        shown_path(tree)
     ))
 }

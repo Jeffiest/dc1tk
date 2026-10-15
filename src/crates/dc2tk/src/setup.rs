@@ -2,7 +2,7 @@
 //! write the asset tree, all under extracted/;
 //! and dc2tk natives CHRONICLETWO: the native tables from a ChronicleTwo checkout.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::Result;
@@ -11,7 +11,8 @@ use clap::Args;
 use dc2tk_disc::{extract, Image};
 use dc2tk_script::natives;
 
-use crate::{files, tree_decompile, Common};
+use crate::options::Common;
+use crate::{files, tree_decompile};
 
 #[derive(Args)]
 pub struct SetupArgs {
@@ -22,7 +23,7 @@ pub struct SetupArgs {
     output: PathBuf,
     /// Where to extract the disc (reused when already there).
     #[arg(long, default_value = "extracted/disc")]
-    extracted: String,
+    extracted: PathBuf,
     /// Where to write the asset tree (replaced when already there).
     #[arg(long, default_value = "extracted/assets")]
     assets: PathBuf,
@@ -37,17 +38,17 @@ pub struct SetupArgs {
 }
 
 pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
-    let extracted = Path::new(&args.extracted);
+    let extracted = &args.extracted;
     {
         let image = Image::open(&args.iso)?;
-        if !extracted.join("manifest.json").is_file() {
+        if !extracted.join(extract::MANIFEST).is_file() {
             let manifest = extract::extract(image.bytes(), extracted)?;
-            println!("{} files extracted to {}", manifest.files.len(), files::shown_path(&args.extracted));
+            println!("{} files extracted to {}", manifest.files.len(), files::shown_path(extracted));
         } else {
             extract::extract_boot(image.bytes(), extracted)?;
             if !extracted.join(dc2tk_disc::layout::LAYOUT).is_file() {
                 dc2tk_disc::layout::record(image.bytes(), extracted)?;
-                println!("the disc's other files and layout written to {}", files::shown_path(&args.extracted));
+                println!("the disc's other files and layout written to {}", files::shown_path(extracted));
             }
         }
     }
@@ -70,20 +71,20 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
 pub struct NativesArgs {
     /// A ChronicleTwo checkout.
     chronicletwo: PathBuf,
-    /// Directory for the table JSON files.
+    /// Directory for the table JSON files; src/natives when omitted.
     #[arg(long)]
-    out: Option<String>,
+    out: Option<PathBuf>,
 }
 
 pub fn run_natives(args: &NativesArgs) -> Result<ExitCode> {
-    let out = args.out.clone().unwrap_or_else(|| files::natives_dir().to_string_lossy().into_owned());
-    let tables = match natives::generate(&args.chronicletwo, Path::new(&out)) {
+    let out = args.out.clone().unwrap_or_else(files::natives_dir);
+    let tables = match natives::generate(&args.chronicletwo, &out) {
         // an error, printed as "error: ..."
         Err(error) if error.is_input() => anyhow::bail!("error: {error}"),
         other => other?,
     };
     for table in &tables {
-        let path = files::shown_path(&format!("{out}/{}.json", table.table));
+        let path = files::shown_path(out.join(format!("{}.json", table.table)));
         println!("{:<8} {:>4} natives  {}", table.table, table.natives.len(), path);
     }
     Ok(ExitCode::SUCCESS)
@@ -93,6 +94,7 @@ pub fn run_natives(args: &NativesArgs) -> Result<ExitCode> {
 mod tests {
     use super::*;
     use dc2tk_script::{source, tree};
+    use std::path::Path;
 
     /// A fresh folder for a test, emptied first.
     fn scratch(name: &str) -> PathBuf {
@@ -103,10 +105,10 @@ mod tests {
     }
 
     fn no_definitions() -> Common {
-        Common { natives: None, sdk: None, defs: vec![PathBuf::from("none")] }
+        Common { no_defs: true, ..Common::default() }
     }
 
-    // decompile EXTRACTED -o OUT --defs none, extracting the sample disc
+    // decompile EXTRACTED -o OUT --no-defs, extracting the sample disc
     // first when needed.
     fn decompiled(folder: &Path, force: bool) -> Result<PathBuf> {
         let extracted = folder.join("extracted");
@@ -153,14 +155,14 @@ mod tests {
         let args = SetupArgs {
             iso,
             output: folder.join("source"),
-            extracted: extracted.to_string_lossy().into_owned(),
+            extracted: extracted.clone(),
             assets: folder.join("assets"),
             no_assets: true,
             force: false,
             common: no_definitions(),
         };
         run_setup(&args).unwrap();
-        assert!(extracted.join("manifest.json").is_file());
+        assert!(extracted.join(extract::MANIFEST).is_file());
         assert!(folder.join("source/map/t01.c").is_file());
         // a second setup decompiles the extraction already there, without writing it again
         std::fs::remove_file(extracted.join("readme.txt")).unwrap();
@@ -172,7 +174,7 @@ mod tests {
     #[test]
     fn natives_from_a_folder_without_the_sources_is_an_error() {
         let folder = scratch("natives");
-        let out = Some(folder.join("out").to_string_lossy().into_owned());
+        let out = Some(folder.join("out"));
         assert!(run_natives(&NativesArgs { chronicletwo: folder.join("missing"), out }).is_err());
         std::fs::remove_dir_all(&folder).unwrap();
     }

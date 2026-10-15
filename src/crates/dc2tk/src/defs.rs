@@ -11,8 +11,8 @@ use rayon::prelude::*;
 use dc2tk_script::{constants, coverage, definitions, learn, paths, sdk};
 
 use crate::files;
+use crate::options::Common;
 use crate::tree_decompile::disc_match_text;
-use crate::Common;
 
 #[derive(Subcommand)]
 pub enum DefsCommand {
@@ -27,16 +27,18 @@ pub enum DefsCommand {
     },
     /// Report how much of a disc a definition set names.
     Check {
+        /// An extracted disc directory.
         extracted: PathBuf,
         #[command(flatten)]
         common: Common,
     },
     /// List unnamed functions, most called first.
     Todo {
+        /// An extracted disc directory.
         extracted: PathBuf,
         /// Rows to print.
-        #[arg(long, default_value_t = 50, allow_negative_numbers = true)]
-        limit: i64,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
         #[command(flatten)]
         common: Common,
     },
@@ -66,6 +68,7 @@ pub enum DefsCommand {
     },
     /// Record which disc a definition set is for: its scripts' hashes.
     Disc {
+        /// An extracted disc directory.
         extracted: PathBuf,
         /// Definition set directory to write disc.json into.
         into: PathBuf,
@@ -89,7 +92,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
             }
             println!("{} scripts with globals or docs learned", result.scripts);
             for (path, error) in &result.failures {
-                println!("skipped {}: {}", files::shown_path(&path.to_string_lossy()), error);
+                println!("skipped {}: {}", files::shown_path(path), error);
             }
             Ok(if result.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
         }
@@ -109,14 +112,14 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
             let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
             let renamed = constants::rename(set, old, new, &headers, folders)?;
             for file in &renamed.set_files {
-                println!("renamed in {}", files::shown_path(&file.to_string_lossy()));
+                println!("renamed in {}", files::shown_path(file));
             }
             for (folder, changed) in &renamed.folders {
                 println!(
                     "{} file{} renamed in {}",
                     changed.len(),
                     if changed.len() == 1 { "" } else { "s" },
-                    files::shown_path(&folder.to_string_lossy())
+                    files::shown_path(folder)
                 );
             }
             Ok(ExitCode::SUCCESS)
@@ -127,7 +130,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
                     "{} file{} given new names in {}",
                     changed.len(),
                     if changed.len() == 1 { "" } else { "s" },
-                    files::shown_path(&folder.to_string_lossy())
+                    files::shown_path(folder)
                 );
             }
             Ok(ExitCode::SUCCESS)
@@ -137,7 +140,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
             let paths = paths::scripts_under(extracted)?;
             let count = coverage::write_disc(extracted, &paths, into)?;
             let written = into.join(definitions::DISC);
-            println!("{} script hashes written to {}", count, files::shown_path(&written.to_string_lossy()));
+            println!("{} script hashes written to {}", count, files::shown_path(written));
             Ok(ExitCode::SUCCESS)
         }
         DefsCommand::Todo { extracted, limit, common } => {

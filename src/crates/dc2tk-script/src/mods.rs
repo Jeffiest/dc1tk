@@ -48,12 +48,21 @@ pub const INDEX: &str = "mod.json";
 pub const FILES: &str = "files";
 const SOURCE_SUFFIXES: [&str; 2] = ["c", "h"];
 
+/// The folder of the mod of that name in the mods folder. A name is letters, digits, '.', '_' and
+/// '-', and not only dots ("." and ".." would be the mods folder itself or the one above it).
 pub fn folder(mods_dir: &Path, name: &str) -> Result<PathBuf> {
-    static MOD_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.-]+\n?$").unwrap());
-    if !MOD_NAME.is_match(name) {
-        return Err(Error::invalid(format!("a mod name uses letters, digits, '.', '_' and '-' only: {name}")));
+    static MOD_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.-]+$").unwrap());
+    if !MOD_NAME.is_match(name) || name.chars().all(|c| c == '.') {
+        return Err(Error::invalid(format!(
+            "a mod name uses letters, digits, '.', '_' and '-' only, and not only dots: {name}"
+        )));
     }
     Ok(mods_dir.join(name))
+}
+
+/// A mod's name: its folder's ("" for a path without a last part, which folder never makes).
+pub fn name(mod_dir: &Path) -> String {
+    paths::file_name(mod_dir)
 }
 
 /// The mod's mod.json, with "files" and "includes" always there.

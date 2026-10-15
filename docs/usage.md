@@ -61,8 +61,8 @@ game's own files are marked ignored; with `C2S_CORPUS` set to an extracted disc
 ## Options shared by most commands
 
 - `--defs DIR` applies a definition set. Repeat it to layer sets, later ones
-  winning. Without it the shipped `definitions/pal` set is used; `--defs
-  none` uses no definitions at all.
+  winning. Without it the shipped `definitions/pal` set is used; `--no-defs`
+  uses no definitions at all.
 - `--sdk DIR` points at the SDK headers and shared libraries (default
   `sdk/`).
 - `--natives DIR` points at the native tables (default `src/natives/`).

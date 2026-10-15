@@ -19,7 +19,7 @@ pub struct DiscFunction {
     pub loose: String,
 }
 
-/// Every function of the disc's scripts (paths from find_scripts), script by script.
+/// Every function of the disc's scripts (paths from paths::scripts_under), script by script.
 pub fn disc_functions(root: &Path, paths: &[String], defs: &Definitions) -> Result<Vec<DiscFunction>> {
     let per_script: Vec<Vec<DiscFunction>> = paths
         .par_iter()
@@ -139,16 +139,6 @@ pub struct Unnamed {
     pub name: String,
 }
 
-/// How many of `length` items a limit keeps: up to the limit, or with a negative limit all but
-/// that many.
-fn slice_end(length: usize, limit: i64) -> usize {
-    if limit < 0 {
-        length.saturating_sub(limit.unsigned_abs() as usize)
-    } else {
-        length.min(limit as usize)
-    }
-}
-
 /// The functions the definitions leave unnamed (language variants counted once, by loose
 /// fingerprint), most called first, up to limit; and how many there are.
 pub fn todo(
@@ -157,7 +147,7 @@ pub fn todo(
     defs: &Definitions,
     tables: &BTreeMap<String, Table>,
     headers: &IndexMap<String, String>,
-    limit: i64,
+    limit: usize,
 ) -> Result<(Vec<Unnamed>, usize)> {
     let model = library::model_for(root, paths, tables, defs, headers)?;
     let known_entries = names::Known::new(names::merged(&defs.names));
@@ -199,15 +189,15 @@ pub fn todo(
     let count = |loose: &String| calls.get(loose).copied().unwrap_or(0);
     let mut ranked: Vec<&String> = seen.keys().collect();
     ranked.sort_by(|a, b| count(b).cmp(&count(a)).then_with(|| seen[*a].cmp(&seen[*b])));
-    let end = slice_end(ranked.len(), limit);
-    let rows = ranked[..end]
+    let rows = ranked
         .iter()
+        .take(limit)
         .map(|loose| Unnamed { calls: count(loose), path: seen[*loose].0.clone(), name: seen[*loose].1.clone() })
         .collect();
     Ok((rows, seen.len()))
 }
 
-/// The hashes of an extracted disc's scripts (paths from find_scripts), by path.
+/// The hashes of an extracted disc's scripts (paths from paths::scripts_under), by path.
 pub fn disc_hashes(root: &Path, paths: &[String]) -> Result<Vec<(String, String)>> {
     paths
         .par_iter()
@@ -258,14 +248,5 @@ mod tests {
         };
         assert_eq!(differences, want);
         let _ = std::fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn a_limit_keeps_up_to_it_and_a_negative_one_drops_that_many() {
-        assert_eq!(slice_end(10, 50), 10);
-        assert_eq!(slice_end(10, 3), 3);
-        assert_eq!(slice_end(10, 0), 0);
-        assert_eq!(slice_end(10, -3), 7);
-        assert_eq!(slice_end(2, -5), 0);
     }
 }

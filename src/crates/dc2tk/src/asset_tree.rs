@@ -33,7 +33,7 @@ pub enum Command {
         force: bool,
         /// Definition set whose header names sound entries; repeat to layer sets (later ones win);
         /// the shipped PAL set when omitted.
-        #[arg(long)]
+        #[arg(long, value_name = "DIR")]
         defs: Vec<PathBuf>,
     },
     /// Check an asset tree against the disc: every file has the manifest's hash, every asset

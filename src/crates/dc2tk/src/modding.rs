@@ -10,13 +10,12 @@ use clap::{Args, Subcommand};
 use indexmap::IndexMap;
 
 use dc2tk_disc::rebuild;
-use dc2tk_script::compile::Toolchain;
 use dc2tk_script::{
     build, definitions, discfiles, editor, index, loads, memory, migrate, mods, patches, paths, renames, replace, sdk,
     slim, startat, tree,
 };
 
-use crate::Common;
+use crate::options::{Common, ModsDir};
 use crate::{asset_tree, files};
 
 #[derive(Args)]
@@ -36,9 +35,8 @@ pub struct BuildArgs {
     /// mods each requires are layered in too, and "requires" and "after" set the order.
     #[arg(long = "mod", value_name = "NAME")]
     mod_names: Vec<String>,
-    /// The folder that holds the mods.
-    #[arg(long, default_value = "mods")]
-    mods: PathBuf,
+    #[command(flatten)]
+    mods: ModsDir,
     /// Ignore a chosen mod's start_at.
     #[arg(long)]
     no_start_at: bool,
@@ -66,8 +64,8 @@ pub enum ModCommand {
         /// Tree files to copy into the mod, relative to the tree.
         #[arg(required = true)]
         files: Vec<String>,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         #[command(flatten)]
         common: Common,
     },
@@ -77,8 +75,8 @@ pub enum ModCommand {
         source: PathBuf,
         /// The mod's name, a folder in the mods folder.
         name: String,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         #[command(flatten)]
         common: Common,
     },
@@ -90,8 +88,8 @@ pub enum ModCommand {
         source: PathBuf,
         /// The mod's name.
         name: String,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         #[command(flatten)]
         common: Common,
     },
@@ -99,8 +97,8 @@ pub enum ModCommand {
     List {
         /// The decompiled source tree.
         source: PathBuf,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
     },
     /// Run the test_ functions of a mod's tests.c without the game.
     Test {
@@ -108,8 +106,8 @@ pub enum ModCommand {
         source: PathBuf,
         /// The mod's name.
         name: String,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         #[command(flatten)]
         common: Common,
     },
@@ -123,8 +121,8 @@ pub enum ModCommand {
         /// Replace files edited in the tree too.
         #[arg(long)]
         force: bool,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
     },
     /// Start a patch: copy functions of a script into the mod, marked to replace the script's.
     Override {
@@ -147,8 +145,8 @@ pub enum ModCommand {
         /// Patch every script that includes a library (lib/...).
         #[arg(long)]
         library: Option<String>,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         #[command(flatten)]
         common: Common,
     },
@@ -159,8 +157,8 @@ pub enum ModCommand {
         source: PathBuf,
         /// The mod's name.
         name: String,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         #[command(flatten)]
         common: Common,
     },
@@ -185,10 +183,10 @@ pub enum ModCommand {
         /// music, with its instruments as a SoundFont).
         #[arg(long = "as")]
         form: Option<String>,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         /// Definition set naming the sound entries; the shipped PAL set when omitted.
-        #[arg(long)]
+        #[arg(long, value_name = "DIR")]
         defs: Vec<PathBuf>,
     },
     /// Compile what mods change, without a disc, and show their numbers and the assets they
@@ -199,8 +197,8 @@ pub enum ModCommand {
         /// Mods to check together, in build order.
         #[arg(required = true)]
         names: Vec<String>,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         /// The disc image (or extracted disc), to check every asset id resolves and no two mods
         /// change one place.
         #[arg(long)]
@@ -212,7 +210,6 @@ pub enum ModCommand {
         #[command(flatten)]
         common: Common,
     },
-    /// Turn a mod's disc/ folder into mod.json lines by asset id, moving its files out of disc/.
     /// Make a mod of everything changed in the extracted folder since extracting: edited and added
     /// scripts, changed assets (by id) and changed or added disc files. dc2tk diff lists them first.
     Make {
@@ -223,20 +220,21 @@ pub enum ModCommand {
         /// The extracted folder (disc/, scripts/, assets/).
         #[arg(long, default_value = "extracted")]
         extracted: PathBuf,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         #[command(flatten)]
         common: Common,
     },
+    /// Turn a mod's disc/ folder into mod.json lines by asset id, moving its files out of disc/.
     Migrate {
         /// The disc image the mod's files replace.
         iso: PathBuf,
         /// The mod's name.
         name: String,
-        #[arg(long, default_value = "mods")]
-        mods: PathBuf,
+        #[command(flatten)]
+        mods: ModsDir,
         /// Definition set naming the sound entries; the shipped PAL set when omitted.
-        #[arg(long)]
+        #[arg(long, value_name = "DIR")]
         defs: Vec<PathBuf>,
     },
 }
@@ -255,8 +253,7 @@ fn mod_folders(mods_dir: &Path, names: &[String]) -> Result<Vec<PathBuf>> {
     for (added, by) in &found.added {
         println!("mod {by} requires {added}, so it is built in too");
     }
-    let order: Vec<String> =
-        found.dirs.iter().map(|dir| dir.file_name().unwrap_or_default().to_string_lossy().into_owned()).collect();
+    let order: Vec<String> = found.dirs.iter().map(|dir| mods::name(dir)).collect();
     if order != names {
         println!("mods applied in this order: {}", order.join(", "));
     }
@@ -270,25 +267,17 @@ fn shown(path: &Path) -> String {
 /// The headers of a patch mod's targets and its compile_commands.json (editor), for clangd.
 /// Returns the headers.
 fn write_editor_files(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Result<Vec<PathBuf>> {
-    let defs = common.definitions()?;
-    let sdk_dir = common.sdk_dir();
-    let headers = sdk::header_texts(&defs, &sdk_dir)?;
-    let tables = common.tables()?;
-    let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
-    Ok(editor::write(mod_dir, tree_dir, &tools, &sdk_dir, &defs.sets)?)
+    let tools = common.tools()?;
+    Ok(editor::write(mod_dir, tree_dir, &tools.toolchain(), &tools.sdk_dir, &tools.defs.sets)?)
 }
 
 /// The fingerprints of the functions a mod's patches override, kept in its renames::LOCK so build
 /// finds them when a later decompile renames them.
 fn record_fingerprints(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Result<()> {
-    let defs = common.definitions()?;
-    let sdk_dir = common.sdk_dir();
-    let headers = sdk::header_texts(&defs, &sdk_dir)?;
-    let tables = common.tables()?;
-    let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    let tools = common.tools()?;
     let dirs = [mod_dir.to_path_buf()];
     let mut plan = mods::patch_plan(&dirs, tree_dir, &default_constants(tree_dir)?, false)?;
-    renames::follow(&dirs, &mut plan, tree_dir, &tools, &IndexMap::new())?;
+    renames::follow(&dirs, &mut plan, tree_dir, &tools.toolchain(), &IndexMap::new())?;
     Ok(())
 }
 
@@ -346,7 +335,7 @@ fn missing_loads(
         texts.push((patch.module.clone(), patch.file_name(), patch.text.clone(), patch.scripts.clone()));
     }
     for mod_dir in mod_dirs {
-        let module = mod_dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let module = mods::name(mod_dir);
         for (path, text) in mods::contents(mod_dir, tree_dir)? {
             texts.push((module.clone(), path.clone(), text, vec![path]));
         }
@@ -433,10 +422,9 @@ fn memory_check(iso: &Path, files: &discfiles::Files) -> Result<bool> {
 
 pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     let common = &args.common;
-    let defs = common.definitions()?;
-    let sdk_dir = common.sdk_dir();
-    let tables = common.tables()?;
-    let mod_dirs = mod_folders(&args.mods, &args.mod_names)?;
+    let loaded = common.tools()?;
+    let (defs, sdk_dir) = (&loaded.defs, &loaded.sdk_dir);
+    let mod_dirs = mod_folders(args.mods.path(), &args.mod_names)?;
     let (mut overrides, clashes) = mods::overlay(&mod_dirs, &args.source, &default_constants(&args.source)?)?;
     if !clashes.is_empty() {
         bail!(mods::clash_text(&clashes));
@@ -450,22 +438,21 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     if !id_clashes.is_empty() {
         bail!("the chosen mods cannot be built together:\n  {}", id_clashes.join("\n  "));
     }
-    let consts = index::constants(index::tree_headers(&args.source, &defs, &sdk_dir)?.values());
+    let consts = index::constants(index::tree_headers(&args.source, defs, sdk_dir)?.values());
     let mut plan = mods::patch_plan(&mod_dirs, &args.source, &consts, true)?;
     with_added(&mut plan, &replace::sound_constants(&mod_dirs, &consts, &resolved.added)?);
-    let language = dc2tk_script::disc::language_code(&defs);
+    let language = dc2tk_script::disc::language_code(defs);
     // the chosen mods' new maps, numbered after the disc's; every mod's scripts see MAP_<NAME>
     let all_lines = replace::all_lines(&mod_dirs)?;
     let new_maps = dc2tk_script::maptable::new_maps(&all_lines)?;
     if !new_maps.is_empty() {
         let numbers = dc2tk_script::maptable::disc_numbers_with(&args.iso, language, &new_maps)?;
         let constants = dc2tk_script::mapscript::map_constants(&new_maps, &numbers);
-        let by_mod =
-            mod_dirs.iter().map(|dir| (dir.file_name().unwrap().to_string_lossy().into_owned(), constants.clone()));
+        let by_mod = mod_dirs.iter().map(|dir| (mods::name(dir), constants.clone()));
         with_added(&mut plan, &by_mod.collect());
     }
     for mod_dir in &mod_dirs {
-        let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
+        let name = mods::name(mod_dir);
         let mine: Vec<&patches::Patch> = plan.patches.iter().filter(|patch| patch.module == name).collect();
         println!(
             "mod {}: {} patches, {} files, {} game files",
@@ -567,8 +554,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             println!("note: {note}");
         }
     }
-    let headers = sdk::header_texts(&defs, &sdk_dir)?;
-    let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
+    let tools = loaded.toolchain();
     let following = renames::follow(&mod_dirs, &mut plan, &args.source, &tools, &overrides)?;
     for followed in &following.followed {
         println!("note: {}; dc2tk mod check --rename writes the new name into the mod", renames::describe(followed));
@@ -683,25 +669,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         // place, its size kept
         rebuild::overwrite_iso_file(&args.output, dc2tk_assets::elf::EXECUTABLE, executable)?;
     }
-    for item in &written.placed {
-        let how = if item.added {
-            "new"
-        } else if item.moved {
-            "moved"
-        } else {
-            "in place"
-        };
-        println!("{} {} ({} bytes)", how, item.path, item.size);
-    }
-    if written.grown > 0 {
-        println!("the image grew by {} sectors", written.grown);
-    }
-    if written.placed.iter().any(|item| item.added) {
-        println!(
-            "the game's file index has {} bytes free for more new files (each takes 13 plus its path)",
-            written.index_free
-        );
-    }
+    print_written(&written);
     let mut wrong = build::check(&args.output, &found.scripts)?;
     wrong.extend(discfiles::check(&args.output, &replaced)?);
     wrong.extend(replace::check(&args.output, &changed)?);
@@ -737,12 +705,9 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
 pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
     match command {
         ModCommand::Test { source, name, mods: mods_dir, common } => {
-            let defs = common.definitions()?;
-            let sdk_dir = common.sdk_dir();
-            let headers = sdk::header_texts(&defs, &sdk_dir)?;
-            let tables = common.tables()?;
-            let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
-            let results = mods::run_tests(&mods::folder(mods_dir, name)?, source, &tools, &default_constants(source)?)?;
+            let loaded = common.tools()?;
+            let tools = loaded.toolchain();
+            let results = mods::run_tests(&mods_dir.folder(name)?, source, &tools, &default_constants(source)?)?;
             for result in &results {
                 println!("{:<5} {}", if result.passed { "ok" } else { "FAIL" }, result.name);
                 if !result.passed {
@@ -759,12 +724,12 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(if failed > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS })
         }
         ModCommand::List { source, mods: mods_dir } => {
-            println!("{}", mods::listing(mods_dir, source, &default_constants(source)?)?);
+            println!("{}", mods::listing(mods_dir.path(), source, &default_constants(source)?)?);
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Apply { source, names, force, mods: mods_dir } => {
             let (applied, warnings) =
-                mods::apply(&mod_folders(mods_dir, names)?, source, *force, &default_constants(source)?)?;
+                mods::apply(&mod_folders(mods_dir.path(), names)?, source, *force, &default_constants(source)?)?;
             for warning in warnings {
                 println!("warning: {warning}");
             }
@@ -772,14 +737,11 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Check { source, names, mods: mods_dir, disc, rename, common } => {
-            let defs = common.definitions()?;
-            let sdk_dir = common.sdk_dir();
-            let headers = sdk::header_texts(&defs, &sdk_dir)?;
-            let tables = common.tables()?;
-            let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
-            let mod_dirs = mod_folders(mods_dir, names)?;
+            let loaded = common.tools()?;
+            let tools = loaded.toolchain();
+            let mod_dirs = mod_folders(mods_dir.path(), names)?;
             for mod_dir in &mod_dirs {
-                let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
+                let name = mods::name(mod_dir);
                 for (key, word) in [("requires", "requires"), ("after", "is built after")] {
                     let named = mods::named(mod_dir, key)?;
                     if !named.is_empty() {
@@ -804,7 +766,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                     let given = raw.keys().map(|path| (path.clone(), Vec::new())).collect();
                     let (_, new_music) = replace::add_music(disc, &lines, &given)?;
                     for mod_dir in &mod_dirs {
-                        let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
+                        let name = mods::name(mod_dir);
                         for line in reached_lines(&resolved, &name) {
                             println!("{name}: {line}");
                         }
@@ -878,7 +840,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 let numbers = match disc.as_ref().filter(|disc| disc.is_file()) {
                     Some(disc) => dc2tk_script::maptable::disc_numbers_with(
                         disc,
-                        dc2tk_script::disc::language_code(&defs),
+                        dc2tk_script::disc::language_code(&loaded.defs),
                         &new_maps,
                     )?,
                     None => dc2tk_script::maptable::assumed_numbers(&new_maps),
@@ -888,7 +850,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                     println!("new map {constant} = {number}");
                 }
                 for mod_dir in &mod_dirs {
-                    let name = mod_dir.file_name().unwrap().to_string_lossy().into_owned();
+                    let name = mods::name(mod_dir);
                     added
                         .entry(name)
                         .or_default()
@@ -957,7 +919,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(if result.errors.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
         }
         ModCommand::Make { iso, name, extracted, mods: mods_dir, common } => {
-            let mod_dir = mods::folder(mods_dir, name)?;
+            let mod_dir = mods_dir.folder(name)?;
             let found = dc2tk_script::capture::changes(extracted, iso)?;
             println!("{}", dc2tk_script::capture::report(&found));
             if found.is_empty() {
@@ -988,7 +950,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Migrate { iso, name, mods: mods_dir, defs } => {
-            let mod_dir = mods::folder(mods_dir, name)?;
+            let mod_dir = mods_dir.folder(name)?;
             let found = migrate::migrate(&mod_dir, iso, &asset_tree::index_of(iso, defs)?)?;
             for (key, value) in &found.lines {
                 println!("{key}: {value}");
@@ -1000,7 +962,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Asset { iso, name, paths, form, mods: mods_dir, defs } => {
-            let mod_dir = mods::folder(mods_dir, name)?;
+            let mod_dir = mods_dir.folder(name)?;
             let (tables, paths): (Vec<String>, Vec<String>) =
                 paths.iter().cloned().partition(|path| path.to_lowercase().starts_with(replace::DATA));
             for (id, file, written) in crate::data_cmd::copy_out(iso, &mod_dir, &tables)? {
@@ -1035,7 +997,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Override { source, name, functions, map, script, monster, library, mods: mods_dir, common } => {
-            let mod_dir = mods::folder(mods_dir, name)?;
+            let mod_dir = mods_dir.folder(name)?;
             use dc2tk_script::patches::TargetKind;
             let kinds: Vec<(TargetKind, &String)> = [
                 (TargetKind::Map, map),
@@ -1064,7 +1026,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Header { source, name, mods: mods_dir, common } => {
-            let mod_dir = mods::folder(mods_dir, name)?;
+            let mod_dir = mods_dir.folder(name)?;
             if !mods::exists(&mod_dir) {
                 bail!("no mod at {}", shown(&mod_dir));
             }
@@ -1081,23 +1043,20 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::New { source, name, files: paths, mods: mods_dir, common } => {
-            let mod_dir = mods::folder(mods_dir, name)?;
+            let mod_dir = mods_dir.folder(name)?;
             let copied = mods::new(source, &mod_dir, paths)?;
             println!("{} files copied into {}; edit them there", copied.len(), shown(&mod_dir.join(mods::FILES)));
             mods::write_editor_flags(&mod_dir, source, &common.sdk_dir(), &common.definitions()?.sets)?;
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Slim { source, name, mods: mods_dir, common } => {
-            let mod_dir = mods::folder(mods_dir, name)?;
+            let mod_dir = mods_dir.folder(name)?;
             if !mods::exists(&mod_dir) {
                 bail!("no mod at {}", shown(&mod_dir));
             }
-            let defs = common.definitions()?;
-            let sdk_dir = common.sdk_dir();
-            let headers = sdk::header_texts(&defs, &sdk_dir)?;
-            let tables = common.tables()?;
-            let tools = Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
-            let outcome = slim::slim(mods_dir, name, source, &tools, &default_constants(source)?)?;
+            let loaded = common.tools()?;
+            let tools = loaded.toolchain();
+            let outcome = slim::slim(mods_dir.path(), name, source, &tools, &default_constants(source)?)?;
             for slimmed in &outcome.slimmed {
                 println!("{}", slim::describe(slimmed, &mod_dir));
             }
@@ -1118,7 +1077,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ModCommand::Save { source, name, mods: mods_dir, common } => {
-            let mod_dir = mods::folder(mods_dir, name)?;
+            let mod_dir = mods_dir.folder(name)?;
             let (saved, removed) = mods::save(source, &mod_dir)?;
             println!("{} files saved to {}", saved.len(), shown(&mod_dir));
             for path in removed {
@@ -1192,6 +1151,30 @@ pub fn launch(image: &Path, pcsx2: Option<&Path>, fast_boot: bool) -> Result<Pat
     let parts = command(&found, image, fast_boot);
     std::process::Command::new(&parts[0]).args(&parts[1..]).spawn()?;
     Ok(found)
+}
+
+/// Where the build put each file it wrote into the image, and what room the file index has left.
+fn print_written(written: &rebuild::Written) {
+    for item in &written.placed {
+        let how = if item.added {
+            "new"
+        } else if item.moved {
+            "moved"
+        } else {
+            "in place"
+        };
+        println!("{} {} ({} bytes)", how, item.path, item.size);
+    }
+    if written.grown > 0 {
+        println!("the image grew by {} sectors", written.grown);
+    }
+    if written.placed.iter().any(|item| item.added) {
+        println!(
+            "the game's file index has {} bytes free for more new files (each takes {} plus its path)",
+            written.index_free,
+            dc2tk_disc::archive::INDEX_COST_PER_FILE
+        );
+    }
 }
 
 /// A set's texts, in order, with ", " between.
