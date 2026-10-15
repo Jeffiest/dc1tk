@@ -126,7 +126,7 @@ pub fn pack_pictures(data: &[u8]) -> Result<Pictures> {
         if name.to_lowercase().ends_with(".img") {
             for image in im3::read(&content)? {
                 if !image.no_image {
-                    let png = im3::to_png(&image, true)?;
+                    let png = im3::to_png(&image)?;
                     if !out.iter().any(|(picture, _)| *picture == image.name) {
                         out.push((image.name.clone(), (name.clone(), png)));
                     }
@@ -939,7 +939,7 @@ mod tests {
         assert_eq!(names, ["c.bin", "c.gltf", "textures/tex01.png"]);
         // the texture is the pack's own picture, not a placeholder
         let img = rebuild::read_member(&pack, &["c.img".to_string()]).unwrap();
-        assert_eq!(get(&exported, "textures/tex01.png"), im3::to_png(&im3::read(img).unwrap()[0], true).unwrap());
+        assert_eq!(get(&exported, "textures/tex01.png"), im3::to_png(&im3::read(img).unwrap()[0]).unwrap());
         let folder = written(&exported, "unedited");
         let built = build(&folder, &pack).unwrap();
         std::fs::remove_dir_all(folder).unwrap();
@@ -1841,7 +1841,7 @@ mod tests {
         let paths: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
         assert_eq!(paths, ["piece.bin", "piece.gltf", "textures/leaf01.png", "textures/wall01.png"]);
         let pictures = im3::read(&img).unwrap();
-        assert_eq!(get(&files, "textures/wall01.png"), im3::to_png(&pictures[0], true).unwrap());
+        assert_eq!(get(&files, "textures/wall01.png"), im3::to_png(&pictures[0]).unwrap());
         let json = crate::from_gltf::load_json(std::str::from_utf8(get(&files, "piece.gltf")).unwrap()).unwrap();
         let list = |key: &str| json.get(key).unwrap().as_array().unwrap().clone();
         let names: Vec<String> =

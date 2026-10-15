@@ -510,7 +510,7 @@ impl TextureSearch {
         if let Some(png) = self.pngs.lock().unwrap().get(&i) {
             return Ok(Some(png.clone()));
         }
-        let png = im3::to_png(image, true)?;
+        let png = im3::to_png(image)?;
         self.pngs.lock().unwrap().insert(i, png.clone());
         Ok(Some(png))
     }
@@ -528,7 +528,7 @@ impl TextureSearch {
             let png = match cached {
                 Some(png) => png,
                 None => {
-                    let png = im3::to_png(image, true)?;
+                    let png = im3::to_png(image)?;
                     self.pngs.lock().unwrap().insert(i, png.clone());
                     png
                 }

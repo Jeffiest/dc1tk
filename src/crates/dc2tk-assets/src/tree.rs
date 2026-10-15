@@ -1091,7 +1091,7 @@ fn export_textures(textures: &[Asset], files: &[GameFile], write: &Write) -> Res
                 let Some(image) = images.iter().find(|image| image.index == Some(entry)) else {
                     return Err(Error::invalid(format!("{}: no picture {entry}", files[*file].place.display())));
                 };
-                let png = im3::to_png(image, true)?;
+                let png = im3::to_png(image)?;
                 let path = format!("{TEXTURES}/{}/{}.png", files[*file].place.group(), file_stem(&asset.id));
                 write(&path, &png)?;
                 out.push((index, TextureOut { file: path, hash: sha256(&[&png]) }));

@@ -99,23 +99,12 @@ fn fresh_name(base: &str, taken: &mut HashSet<String>) -> String {
     unreachable!()
 }
 
-/// The map the scene describes, built on the original: templates folded back from the
-/// placements' copies, placements kept in their slots, the map's own points, settings and cameras
-/// from the scene.
-pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
-    let mut out = original.clone();
-    out.settings = scene.settings.clone();
-    out.cameras = scene.cameras.clone();
-    out.points = scene.points.clone();
-    for point in out.points.iter().flatten() {
+/// Every name the scene gives (placements, pieces, points) is one the engine keeps whole.
+fn check_names(scene: &SceneEdit) -> Result<()> {
+    for point in scene.points.iter().flatten() {
         check_name("point", &point.name)?;
     }
-
-    let mut taken: HashSet<String> = original.templates.iter().map(|template| template.name.to_lowercase()).collect();
-    let first = template_index(original);
-    // the placements of each template, in scene order
-    let mut by_template: Vec<(String, Vec<usize>)> = Vec::new();
-    for (at, edit) in scene.placements.iter().enumerate() {
+    for edit in &scene.placements {
         check_name("placement", &edit.placement.name)?;
         for piece in &edit.pieces {
             check_name("piece", &piece.name)?;
@@ -123,41 +112,65 @@ pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
         for point in edit.points.iter().flatten() {
             check_name("point", &point.name)?;
         }
+    }
+    Ok(())
+}
+
+/// The placements of each template, by the scene's numbers, in scene order.
+fn placements_by_template(scene: &SceneEdit) -> Vec<(String, Vec<usize>)> {
+    let mut by_template: Vec<(String, Vec<usize>)> = Vec::new();
+    for (at, edit) in scene.placements.iter().enumerate() {
         let name = &edit.placement.template;
         match by_template.iter_mut().find(|(template, _)| template == name) {
             Some((_, list)) => list.push(at),
             None => by_template.push((name.clone(), vec![at])),
         }
     }
-    // the template each placement ends up placing
-    let mut placed: Vec<String> = scene.placements.iter().map(|edit| edit.placement.template.clone()).collect();
-    for (name, list) in by_template {
+    by_template
+}
+
+/// A map being rebuilt from its scene: the map so far, the template each placement ends up
+/// placing, and the template names taken.
+struct Rebuild<'a> {
+    original: &'a MapFile,
+    scene: &'a SceneEdit,
+    out: MapFile,
+    placed: Vec<String>,
+    taken: HashSet<String>,
+}
+
+impl Rebuild<'_> {
+    /// The placements of template `name` (`list`) folded back into templates: placements with the
+    /// same contents share one; the group still the same as the template (else the first) keeps
+    /// it, and every other group gets a copy named after it.
+    fn fold(&mut self, name: &str, list: &[usize], original_at: Option<usize>) -> Result<()> {
+        let scene = self.scene;
+        // a placement's copy of its template's contents
         let contents = |at: usize| (&scene.placements[at].pieces, &scene.placements[at].points);
         // placements with the same contents, in first-seen order
         let mut groups: Vec<Vec<usize>> = Vec::new();
-        for &at in &list {
+        for &at in list {
             match groups.iter_mut().find(|group| contents(group[0]) == contents(at)) {
                 Some(group) => group.push(at),
                 None => groups.push(vec![at]),
             }
         }
-        let original_at = first.get(name.as_str()).copied();
         // a template the map does not define (an add map's, or a name nothing defines) stays
         // where it is unless the scene gives its placements something to place
         if original_at.is_none() && groups.iter().all(|group| contents(group[0]) == (&Vec::new(), &None)) {
-            continue;
+            return Ok(());
         }
         let base = match original_at {
-            Some(index) => out.templates[index].clone(),
+            Some(index) => self.out.templates[index].clone(),
             None => {
                 // a template another map defines (the add map's, which the engine finds first)
                 // cannot be changed from here: its edited copy gets a name of its own
-                let external = original.placements.iter().any(|placement| placement.template == name);
-                let own = if external { fresh_name(&name, &mut taken) } else { name.clone() };
+                let external = self.original.placements.iter().any(|placement| placement.template == name);
+                let own = if external { fresh_name(name, &mut self.taken) } else { name.to_string() };
                 check_name("template", &own)?;
-                taken.insert(own.to_lowercase());
-                for &at in &list {
-                    placed[at] = own.clone();
+                self.taken.insert(own.to_lowercase());
+                for &at in list {
+                    self.placed[at] = own.clone();
                 }
                 Template {
                     name: own,
@@ -178,47 +191,57 @@ pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
             let template = Template { pieces: pieces.clone(), points: points.clone(), ..base.clone() };
             if number == keeper {
                 match original_at {
-                    Some(index) => out.templates[index] = template,
-                    None => out.templates.push(template),
+                    Some(index) => self.out.templates[index] = template,
+                    None => self.out.templates.push(template),
                 }
                 continue;
             }
-            let fork = fresh_name(&name, &mut taken);
-            out.templates.push(Template { name: fork.clone(), ..template });
+            let fork = fresh_name(name, &mut self.taken);
+            self.out.templates.push(Template { name: fork.clone(), ..template });
             for &at in group {
-                placed[at] = fork.clone();
+                self.placed[at] = fork.clone();
             }
         }
+        Ok(())
     }
 
-    // placements: edited ones in their slots, new ones appended, missing ones hidden
-    let mut seen = vec![false; original.placements.len()];
-    let mut appended = Vec::new();
-    for (at, edit) in scene.placements.iter().enumerate() {
-        if edit.preview {
-            continue;
-        }
-        let placement = Placement { template: placed[at].clone(), ..edit.placement.clone() };
-        match edit.slot {
-            Some(slot) if slot < seen.len() => {
-                if seen[slot] {
-                    return Err(Error::invalid(format!(
-                        "two placements of the scene came from slot {slot} ({}); give a copy no slot",
-                        original.placements[slot].name
-                    )));
-                }
-                seen[slot] = true;
-                out.placements[slot] = placement;
+    /// The placements: edited ones in their slots, new ones appended, missing ones hidden.
+    fn place(&mut self) -> Result<()> {
+        let (original, scene) = (self.original, self.scene);
+        let mut seen = vec![false; original.placements.len()];
+        let mut appended = Vec::new();
+        for (at, edit) in scene.placements.iter().enumerate() {
+            if edit.preview {
+                continue;
             }
-            _ => appended.push(placement),
+            let placement = Placement { template: self.placed[at].clone(), ..edit.placement.clone() };
+            match edit.slot {
+                Some(slot) if slot < seen.len() => {
+                    if seen[slot] {
+                        return Err(Error::invalid(format!(
+                            "two placements of the scene came from slot {slot} ({}); give a copy no slot",
+                            original.placements[slot].name
+                        )));
+                    }
+                    seen[slot] = true;
+                    self.out.placements[slot] = placement;
+                }
+                _ => appended.push(placement),
+            }
         }
-    }
-    for (slot, kept) in seen.iter().enumerate() {
-        if !kept {
-            out.placements[slot].show = 0.into();
+        for (slot, kept) in seen.iter().enumerate() {
+            if !kept {
+                self.out.placements[slot].show = 0.into();
+            }
         }
+        self.out.placements.extend(appended);
+        Ok(())
     }
-    out.placements.extend(appended);
+}
+
+/// The rebuilt map's placements: each new name given once (scripts find placements by name), and
+/// no more than a map has room for.
+fn check_placements(out: &MapFile, original: &MapFile) -> Result<()> {
     let mut names = HashSet::new();
     for placement in &out.placements {
         if !names.insert(placement.name.to_lowercase())
@@ -233,7 +256,28 @@ pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
             out.placements.len()
         )));
     }
-    Ok(out)
+    Ok(())
+}
+
+/// The map the scene describes, built on the original: templates folded back from the
+/// placements' copies, placements kept in their slots, the map's own points, settings and cameras
+/// from the scene.
+pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
+    check_names(scene)?;
+    let mut out = original.clone();
+    out.settings = scene.settings.clone();
+    out.cameras = scene.cameras.clone();
+    out.points = scene.points.clone();
+    let taken = original.templates.iter().map(|template| template.name.to_lowercase()).collect();
+    let placed = scene.placements.iter().map(|edit| edit.placement.template.clone()).collect();
+    let mut rebuild = Rebuild { original, scene, out, placed, taken };
+    let first = template_index(original);
+    for (name, list) in placements_by_template(scene) {
+        rebuild.fold(&name, &list, first.get(name.as_str()).copied())?;
+    }
+    rebuild.place()?;
+    check_placements(&rebuild.out, original)?;
+    Ok(rebuild.out)
 }
 
 #[cfg(test)]

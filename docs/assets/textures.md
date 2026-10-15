@@ -16,7 +16,8 @@ Sources: engine `ps2/include/mg_texture.hpp` (structs, lines 54-174) and
 `block_table32_1267`). The corpus is all 5,217 `*.img` files under
 `extracted/disc/`; the counts below come from scripts run over all of them
 while the format was worked out. `im3.rs` (in `src/crates/dc2tk-assets/src/`)
-implements it, and `textures.rs` turns it into the PNG folders mods use.
+implements it, with `png.rs` (the PNG codec) and `quantise.rs` (the palettes of PNGs of more
+colours), and `textures.rs` turns it into the PNG folders mods use.
 
 All values are little-endian.
 
@@ -338,7 +339,7 @@ exposes entries by index (for example `character.cpp:2625`).
   alpha), `indices` (paletted, one byte per pixel) or `pixels` (RGBA bytes),
   `rgba()` (base level expanded), `mips`, `swizzled`, `no_image`, `block`,
   `clamp`, and `tim2` (the original bytes). An empty file gives no pictures.
-* `to_png(image, indexed) -> Result<Vec<u8>>` writes the base level. Paletted
+* `to_png(image) -> Result<Vec<u8>>` writes the base level. Paletted
   pictures become indexed PNGs (PLTE + tRNS, in index order), and the rest
   become RGBA, or RGB when there is no meaningful alpha. Alpha mapping
   (`alpha_mode`, an `AlphaMode`):

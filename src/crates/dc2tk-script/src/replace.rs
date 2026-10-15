@@ -1548,7 +1548,7 @@ pub fn copy_out(
                         .find(|image| image.index == *at)
                         .ok_or_else(|| Error::invalid(format!("{}: no picture at {}", asset.id, place.display())))?;
                     let target = format!("textures/{stem}.png");
-                    (target.clone(), vec![(target, im3::to_png(image, true)?)])
+                    (target.clone(), vec![(target, im3::to_png(image)?)])
                 }
                 Kind::Model => {
                     let target = format!("models/{stem}");

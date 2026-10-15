@@ -29,7 +29,7 @@ pub fn export(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
         if out.iter().any(|(existing, _)| *existing == name) {
             name = file_name(&format!("{}_{}", image.name, image.index.unwrap_or(0)));
         }
-        let png = im3::to_png(&image, true)?;
+        let png = im3::to_png(&image)?;
         match out.iter_mut().find(|(existing, _)| *existing == name) {
             Some(slot) => slot.1 = png,
             None => out.push((name, png)),

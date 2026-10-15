@@ -521,7 +521,7 @@ c01_base on its own would only give placeholder triangles.
 
 ### 7.1 `from_gltf.rs`
 
-`from_gltf::import_gltf` takes a glTF, the template .mds and optionally the template .bbp and .wgt,
+`from_gltf::import_gltf` takes a glTF, the template .mds and `ImportOptions` (optionally the template .bbp and .wgt and the meshes to replace),
 and gives the new .mds, .wgt and .bbp; `build` runs it, through `models.rs`, for a mod's glTF
 folder, with only the meshes that differ from the export. It keeps the template's nodes and
 replaces the MDT block of the frame each glTF mesh node stands for (`from_gltf::frames_of`): the
@@ -590,7 +590,7 @@ What Blender does to a character that is no edit, and how the build tells:
 
 **Map models** (`models::build_map_model(given, original, options)`): the same, against an export
 with the same `to_gltf::Options`. With `options.collision` the import runs in collision mode
-(`from_gltf::ImportOptions { collision }`, `import_with`): only positions are read (Blender's
+(`from_gltf::ImportOptions::collision`): only positions are read (Blender's
 normals, uvs and colours are dropped) and every prim is a type 0x213 triangle list of stride 1;
 each material's attributes come from its name (`col_ground0_foot5_area9_mask4`, `.001` allowed;
 missing parts are 0), written as k/0.7 and 1-mask as float32 (which decode back exactly for every

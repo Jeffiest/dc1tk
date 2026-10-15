@@ -703,17 +703,17 @@ fn build_header(image: &Image, old: Option<&[u8]>) -> Result<(Vec<u8>, Vec<usize
         _ => old_total,
     };
     let mut out = file_header;
-    out.extend(checked::<u32>(total, "I")?.to_le_bytes());
-    out.extend(checked::<u32>(clut_size, "I")?.to_le_bytes());
-    out.extend(checked::<u32>(image_size, "I")?.to_le_bytes());
-    out.extend(checked::<u16>(header_size, "H")?.to_le_bytes());
-    out.extend(checked::<u16>(colours, "H")?.to_le_bytes());
+    out.extend(checked::<u32>(total, "total size")?.to_le_bytes());
+    out.extend(checked::<u32>(clut_size, "palette size")?.to_le_bytes());
+    out.extend(checked::<u32>(image_size, "pixels' size")?.to_le_bytes());
+    out.extend(checked::<u16>(header_size, "header size")?.to_le_bytes());
+    out.extend(checked::<u16>(colours, "colour count")?.to_le_bytes());
     out.push(pf);
-    out.push(checked::<u8>(levels, "B")?);
+    out.push(checked::<u8>(levels, "mipmap count")?);
     out.push(clut_type);
     out.push(format.image_type());
-    out.extend(checked::<u16>(w, "H")?.to_le_bytes());
-    out.extend(checked::<u16>(h, "H")?.to_le_bytes());
+    out.extend(checked::<u16>(w, "width")?.to_le_bytes());
+    out.extend(checked::<u16>(h, "height")?.to_le_bytes());
     out.extend(tex0.to_le_bytes());
     out.extend(tex1.to_le_bytes());
     out.extend(regs.to_le_bytes());
@@ -729,7 +729,7 @@ fn build_header(image: &Image, old: Option<&[u8]>) -> Result<(Vec<u8>, Vec<usize
             }
         }
         for (k, size) in sizes.iter().enumerate() {
-            mip[0x10 + 4 * k..0x14 + 4 * k].copy_from_slice(&checked::<u32>(*size, "I")?.to_le_bytes());
+            mip[0x10 + 4 * k..0x14 + 4 * k].copy_from_slice(&checked::<u32>(*size, "mipmap size")?.to_le_bytes());
         }
         out.extend(mip);
     }
@@ -946,7 +946,9 @@ pub fn write(images: &[Image], like: Option<&[u8]>) -> Result<Vec<u8>> {
 }
 
 fn checked_i32(value: i64) -> Result<i32> {
-    i32::try_from(value).map_err(|_| Error::invalid(format!("{value} does not fit in a 32-bit int")))
+    i32::try_from(value).map_err(|_| {
+        Error::invalid(format!("the archive would need an offset or size of {value}, past the 2 GB its entries reach"))
+    })
 }
 
 fn entry_bytes(image: &Image, offset: usize, size: usize) -> Result<Vec<u8>> {
@@ -1040,9 +1042,9 @@ pub fn alpha_mode(image: &Image) -> AlphaMode {
     }
 }
 
-/// The picture's base level as a PNG. Paletted pictures become indexed PNGs (palette in index
-/// order) unless indexed is false.
-pub fn to_png(image: &Image, indexed: bool) -> Result<Vec<u8>> {
+/// The picture's base level as a PNG: an indexed one (palette in index order) for a paletted
+/// picture.
+pub fn to_png(image: &Image) -> Result<Vec<u8>> {
     if image.no_image {
         bail!("{} has no pixels (no_image)", image.name);
     }
@@ -1054,7 +1056,7 @@ pub fn to_png(image: &Image, indexed: bool) -> Result<Vec<u8>> {
         ("im3:alpha", mode.name()),
     ];
     let flat = matches!(mode, AlphaMode::Zero | AlphaMode::Opaque);
-    if image.paletted() && indexed {
+    if image.paletted() {
         let palette: Vec<[u8; 4]> = image
             .palette
             .as_deref()
@@ -1248,7 +1250,7 @@ mod tests {
         assert_eq!(images[0].indices.as_deref().unwrap()[..4], [0, 1, 2, 3]);
         assert_eq!(write(&images, Some(&data)).unwrap(), data);
         for image in &images {
-            let png = to_png(image, true).unwrap();
+            let png = to_png(image).unwrap();
             let back = from_png(&png, image).unwrap();
             assert_eq!(back.indices, image.indices);
             assert_eq!(back.pixels, image.pixels);

@@ -109,14 +109,14 @@ fn malformed_texture_archives_are_errors_not_panics() {
     sweep("IM3", &data, |data| {
         if let Ok(images) = im3::read(data) {
             for image in &images {
-                if let Ok(png) = im3::to_png(image, true) {
+                if let Ok(png) = im3::to_png(image) {
                     let _ = im3::from_png(&png, image);
                 }
             }
             let _ = im3::write(&images, Some(data));
         }
     });
-    let png = im3::to_png(&im3::read(&data).unwrap()[0], true).unwrap();
+    let png = im3::to_png(&im3::read(&data).unwrap()[0]).unwrap();
     sweep("PNG", &png, |data| {
         if let Ok(png) = crate::png::read_png(data) {
             let _ = png.rgba();
