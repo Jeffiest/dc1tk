@@ -281,7 +281,7 @@ pub fn warp_overrides(
     texts: &IndexMap<String, String>,
 ) -> Result<IndexMap<String, String>> {
     let mut found = IndexMap::new();
-    for relative in sdk::files_under(tree, &source::EXTENSION[1..]) {
+    for relative in sdk::files_under(tree, &source::EXTENSION[1..])? {
         if new_game_script(&pathnames::unnamed(tree, &relative)?) {
             let text = match texts.get(&relative).filter(|text| !text.is_empty()) {
                 Some(text) => text.clone(),

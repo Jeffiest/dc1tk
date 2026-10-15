@@ -21,7 +21,7 @@ use serde_json::Value;
 
 use crate::discfiles::{self, DISC};
 use crate::replace::{self, FILE};
-use crate::{mods, Error, Result};
+use crate::{mods, paths, Error, Result};
 
 /// A line migrate writes: the key, the file in the mod, the old files it comes from, and the
 /// places the old files covered.
@@ -40,10 +40,6 @@ pub struct Migrated {
     pub notes: Vec<String>,
 }
 
-fn joined(root: &Path, relative: &str) -> PathBuf {
-    relative.split('/').fold(root.to_path_buf(), |path, part| path.join(part))
-}
-
 fn same_content(a: &Path, b: &Path) -> Result<bool> {
     if a.is_dir() != b.is_dir() {
         return Ok(false);
@@ -51,12 +47,12 @@ fn same_content(a: &Path, b: &Path) -> Result<bool> {
     if !a.is_dir() {
         return Ok(fs::read(a)? == fs::read(b)?);
     }
-    let (left, right) = (discfiles::files_in(a), discfiles::files_in(b));
+    let (left, right) = (discfiles::files_in(a)?, discfiles::files_in(b)?);
     if left != right {
         return Ok(false);
     }
     for path in &left {
-        if fs::read(joined(a, path))? != fs::read(joined(b, path))? {
+        if fs::read(paths::join_relative(a, path))? != fs::read(paths::join_relative(b, path))? {
             return Ok(false);
         }
     }
@@ -94,8 +90,8 @@ fn by_id(
                     .entry(textures::file_name(&format!("{}_{}", image.name, image.index.unwrap_or(0))))
                     .or_insert(position);
             }
-            for name in discfiles::files_in(source) {
-                let file = joined(source, &name);
+            for name in discfiles::files_in(source)? {
+                let file = paths::join_relative(source, &name);
                 if name.contains('/') || !name.to_lowercase().ends_with(textures::SUFFIX) {
                     continue;
                 }
@@ -134,7 +130,7 @@ fn by_id(
         ".mid" => {
             // each MIDI file a sequence of the bank (BG_000_000.mid for its BG_000_000.sq); the
             // SoundFont beside them is only for listening
-            for name in discfiles::files_in(source) {
+            for name in discfiles::files_in(source)? {
                 let lower = name.to_lowercase();
                 if name.contains('/') || !lower.ends_with(dc2tk_assets::music::SUFFIX) {
                     continue;
@@ -150,7 +146,7 @@ fn by_id(
                 out.push((
                     id.clone(),
                     format!("music/{}{}", stem(id), dc2tk_assets::music::SUFFIX),
-                    joined(source, &name),
+                    paths::join_relative(source, &name),
                 ));
             }
         }
@@ -226,7 +222,7 @@ pub fn migrate(mod_dir: &Path, iso_path: &Path, index: &Index) -> Result<Migrate
         if known.contains(&plan.key.to_lowercase()) {
             return Err(Error::invalid(format!("{} has a line for {} already", mods::INDEX, plan.key)));
         }
-        let target = joined(mod_dir, &plan.target);
+        let target = paths::join_relative(mod_dir, &plan.target);
         if target.exists() {
             return Err(Error::invalid(format!(
                 "{} is there already; move it away and migrate again",
@@ -267,18 +263,19 @@ pub fn migrate(mod_dir: &Path, iso_path: &Path, index: &Index) -> Result<Migrate
 
     // move the files, then whatever disc/ still holds into unused/
     for plan in &planned {
-        let target = joined(mod_dir, &plan.target);
+        let target = paths::join_relative(mod_dir, &plan.target);
         fs::create_dir_all(target.parent().unwrap())?;
         fs::rename(&plan.sources[0], &target)?;
     }
-    let rest: Vec<String> = discfiles::files_in(&root);
+    let rest: Vec<String> = discfiles::files_in(&root)?;
     for relative in &rest {
-        let from = joined(&root, relative);
+        let from = paths::join_relative(&root, relative);
         if !from.is_file() {
             continue;
         }
         let duplicate = used.iter().any(|file| from.starts_with(file));
-        let target = joined(&mod_dir.join(if duplicate { "unused/duplicates" } else { "unused" }), relative);
+        let target =
+            paths::join_relative(&mod_dir.join(if duplicate { "unused/duplicates" } else { "unused" }), relative);
         fs::create_dir_all(target.parent().unwrap())?;
         fs::rename(&from, &target)?;
         let why = if duplicate { "a copy of a file a line has" } else { "used by no line" };

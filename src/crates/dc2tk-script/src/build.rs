@@ -74,8 +74,8 @@ pub fn compiled(
 }
 
 /// The tree's scripts (outside lib/), by path from it, sorted.
-pub fn source_scripts(tree: &Path) -> BTreeSet<String> {
-    index::source_files(tree).into_iter().filter(|path| !index::is_library(path)).collect()
+pub fn source_scripts(tree: &Path) -> Result<BTreeSet<String>> {
+    Ok(index::source_files(tree)?.into_iter().filter(|path| !index::is_library(path)).collect())
 }
 
 /// Where a script is on the disc: the file of DATA.DAT and the pack members down to it.
@@ -212,7 +212,7 @@ pub fn changes(
     let image = Image::open(iso_path)?;
     let disc = Archive::open(image.bytes())?;
     let entries: HashMap<&str, &Entry> = disc.entries.iter().map(|entry| (entry.path.as_str(), entry)).collect();
-    let mut scripts = source_scripts(tree_dir);
+    let mut scripts = source_scripts(tree_dir)?;
     scripts
         .extend(overrides.keys().filter(|path| path.ends_with(source::EXTENSION) && !index::is_library(path)).cloned());
     let mut skipped = Vec::new();

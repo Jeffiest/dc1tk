@@ -141,13 +141,7 @@ pub fn with_header(generated: Option<String>, asset_names: &IndexMap<(String, St
     if asset_names.is_empty() {
         return Some(generated);
     }
-    let position = generated.rfind("#endif").expect("disc.h ends with #endif");
-    Some(format!(
-        "{}\n{}\n{}",
-        generated[..position].trim_end_matches('\n'),
-        header_text(asset_names),
-        &generated[position..]
-    ))
+    Some(crate::disc::with_lines_before_endif(&generated, &header_text(asset_names)))
 }
 
 /// Puts the names in for the asset strings a function passes to natives (before the natives are

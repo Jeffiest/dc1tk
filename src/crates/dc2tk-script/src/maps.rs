@@ -194,7 +194,7 @@ pub fn point_programs(point: &Point) -> Vec<(i64, String)> {
 /// folder of its .map file.
 pub fn folder_triggers(extracted: &Path) -> Result<BTreeMap<String, IndexMap<i64, Vec<String>>>> {
     let mut found: BTreeMap<String, IndexMap<i64, Vec<String>>> = BTreeMap::new();
-    for relative in crate::sdk::files_under(extracted, "map") {
+    for relative in crate::sdk::files_under(extracted, "map")? {
         let folder = match relative.rfind('/') {
             Some(at) => relative[..at].to_string(),
             None => ".".to_string(),

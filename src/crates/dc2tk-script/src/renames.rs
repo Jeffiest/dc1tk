@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use crate::compile::Toolchain;
 use crate::patches::{self, Plan};
-use crate::{definitions, fingerprint, library, mods, natives, parse, pathnames, source, stb, Error, Result};
+use crate::{definitions, fingerprint, library, mods, natives, parse, pathnames, paths, source, stb, Error, Result};
 
 pub const LOCK: &str = "fingerprints.json";
 
@@ -150,10 +150,6 @@ pub struct Following {
     pub notes: Vec<String>,
 }
 
-fn name_of(path: &Path) -> String {
-    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
 /// Records the fingerprints of the functions the chosen mods' patches override, where their
 /// LOCK lacks them, and sets each patch's follow for the overridden names a target no longer has
 /// but has the code of under another name. A name found neither way is left for the merge to
@@ -172,7 +168,7 @@ pub fn follow(
         cache.entry(script.to_string()).or_insert_with(|| script_prints(tree, script, tools, overlay).ok()).clone()
     };
     for mod_dir in mod_dirs {
-        let module = name_of(mod_dir);
+        let module = paths::file_name(mod_dir);
         let mut recorded = read_lock(mod_dir)?;
         let before = recorded.clone();
         for patch in plan.patches.iter_mut().filter(|patch| patch.module == module) {
@@ -260,7 +256,7 @@ pub fn describe(followed: &Followed) -> String {
 /// Writes the new names of followed overrides into the mod's own source files (every whole word
 /// of the old name) and moves their fingerprints to the new names. Returns the files changed.
 pub fn rename(mod_dir: &Path, followed: &[Followed]) -> Result<Vec<PathBuf>> {
-    let module = name_of(mod_dir);
+    let module = paths::file_name(mod_dir);
     let mine: Vec<&Followed> = followed.iter().filter(|item| item.module == module).collect();
     let mut changed = Vec::new();
     if mine.is_empty() {

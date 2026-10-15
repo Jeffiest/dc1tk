@@ -15,8 +15,8 @@ use crate::natives::Table;
 use crate::node;
 use crate::node::{Map, Node};
 use crate::{
-    asm, compile, decompile, definitions, fingerprint, library, names, natives, parse, pathnames, sdk, stb, Error,
-    Result,
+    asm, compile, decompile, definitions, fingerprint, library, names, natives, parse, pathnames, paths, sdk, stb,
+    Error, Result,
 };
 
 static DEFAULT_NAME: LazyLock<Regex> =
@@ -290,38 +290,23 @@ pub fn resolved(copies: &[Node], existing: &Node) -> Node {
 
 /// The source files to learn from: the file, or every .c of a tree outside its lib/ folder, sorted
 /// by their parts (lowercased on Windows, whose names ignore case).
-pub fn source_files(tree: &Path) -> Vec<PathBuf> {
+pub fn source_files(tree: &Path) -> Result<Vec<PathBuf>> {
     if tree.is_file() {
-        return vec![tree.to_path_buf()];
+        return Ok(vec![tree.to_path_buf()]);
     }
-    let mut found: Vec<String> = Vec::new();
-    let mut folders = vec![tree.to_path_buf()];
-    while let Some(folder) = folders.pop() {
-        let Ok(listing) = fs::read_dir(&folder) else {
-            continue;
-        };
-        for entry in listing.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                folders.push(path);
-            } else if path.extension().is_some_and(|ext| {
-                let ext = ext.to_string_lossy();
-                if cfg!(windows) {
-                    ext.eq_ignore_ascii_case("c")
+    let mut found =
+        paths::walk(
+            tree,
+            |entry| {
+                if entry.is_dir {
+                    entry.relative != "lib"
                 } else {
-                    ext == "c"
+                    paths::has_extension(entry.path, "c")
                 }
-            }) {
-                found.push(path.strip_prefix(tree).unwrap().to_string_lossy().replace('\\', "/"));
-            }
-        }
-    }
-    found.retain(|path| path.split('/').next() != Some("lib"));
-    found.sort_by_key(|path| -> Vec<String> {
-        let path = if cfg!(windows) { path.to_lowercase() } else { path.clone() };
-        path.split('/').map(str::to_string).collect()
-    });
-    found.into_iter().map(|relative| tree.join(relative)).collect()
+            },
+        )?;
+    paths::sort_by_parts(&mut found);
+    Ok(found.into_iter().map(|relative| tree.join(relative)).collect())
 }
 
 /// Path.with_suffix(suffix) for a path with "/".
@@ -395,7 +380,7 @@ pub fn learn(
     let mut collected: IndexMap<String, IndexMap<String, Vec<Node>>> = IndexMap::new();
     let mut found_libraries: IndexMap<String, Node> = IndexMap::new();
     let mut result = Learned::default();
-    for path in source_files(source) {
+    for path in source_files(source)? {
         let found = match script_entries(&path, tables, headers, rules, sdk_dir) {
             Ok(found) => found,
             Err(error) if error.is_input() => {

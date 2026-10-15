@@ -6,8 +6,7 @@
 //! entries play_se plays named for the bank they come from.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use indexmap::IndexMap;
 
@@ -15,7 +14,7 @@ use crate::definitions::Definitions;
 use crate::natives::Table;
 use crate::node;
 use crate::node::{Map, Node};
-use crate::{assets, names, Error, Result};
+use crate::{assets, names, paths, Error, Result};
 
 pub use crate::soundpass::{library_sounds, Passed, Seed, Sounds};
 
@@ -30,29 +29,11 @@ const DECLARATION_KEYS: [&str; 5] = ["natives", "programs", "inlines", "constant
 
 /// Files under a folder with an extension, sorted by their parts (lowercased on Windows, whose
 /// names ignore case), as paths from the folder with "/".
-pub fn files_under(base: &Path, extension: &str) -> Vec<String> {
-    let mut found: Vec<PathBuf> = Vec::new();
-    let mut folders = vec![base.to_path_buf()];
-    while let Some(folder) = folders.pop() {
-        let Ok(listing) = fs::read_dir(&folder) else {
-            continue;
-        };
-        for entry in listing.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                folders.push(path);
-            } else if path.extension().is_some_and(|ext| ext == extension) {
-                found.push(path);
-            }
-        }
-    }
-    let mut relative: Vec<String> =
-        found.iter().map(|path| path.strip_prefix(base).unwrap().to_string_lossy().replace('\\', "/")).collect();
-    relative.sort_by_key(|path| -> Vec<String> {
-        let path = if cfg!(windows) { path.to_lowercase() } else { path.clone() };
-        path.split('/').map(str::to_string).collect()
-    });
-    relative
+pub fn files_under(base: &Path, extension: &str) -> Result<Vec<String>> {
+    let mut found =
+        paths::walk(base, |entry| entry.is_dir || entry.path.extension().is_some_and(|ext| ext == extension))?;
+    paths::sort_by_parts(&mut found);
+    Ok(found)
 }
 
 /// Path.read_text(): UTF-8 with \r\n and \r read as \n.
@@ -63,7 +44,7 @@ pub fn read_text(path: &Path) -> Result<String> {
 /// Every header under a folder, by path from it.
 pub fn load_texts(directory: &Path) -> Result<IndexMap<String, String>> {
     let mut texts = IndexMap::new();
-    for relative in files_under(directory, "h") {
+    for relative in files_under(directory, "h")? {
         let text = read_text(&directory.join(&relative))?;
         texts.insert(relative, text);
     }

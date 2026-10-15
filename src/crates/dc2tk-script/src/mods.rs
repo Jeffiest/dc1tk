@@ -42,19 +42,11 @@ use crate::compile::Toolchain;
 use crate::discfiles::Clashes;
 use crate::node::Node;
 use crate::patches::{self, ModTexts, Plan, Scripts, Target};
-use crate::{additions, discfiles, index, numbers, pathnames, renames, source, tree, Error, Result};
+use crate::{additions, discfiles, index, numbers, pathnames, paths, renames, source, tree, Error, Result};
 
 pub const INDEX: &str = "mod.json";
 pub const FILES: &str = "files";
 const SOURCE_SUFFIXES: [&str; 2] = ["c", "h"];
-
-fn name_of(path: &Path) -> String {
-    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
-fn joined(root: &Path, relative: &str) -> PathBuf {
-    relative.split('/').fold(root.to_path_buf(), |path, part| path.join(part))
-}
 
 pub fn folder(mods_dir: &Path, name: &str) -> Result<PathBuf> {
     static CELL: OnceLock<Regex> = OnceLock::new();
@@ -184,7 +176,7 @@ pub fn chosen(mods_dir: &Path, names: &[String]) -> Result<Chosen> {
 /// The mods a mod requires, directly or through the mods they require, among those given.
 fn required_among(mod_dirs: &[PathBuf]) -> Result<HashMap<String, Vec<String>>> {
     let given: HashMap<String, Vec<String>> =
-        mod_dirs.iter().map(|dir| Ok((name_of(dir), named(dir, "requires")?))).collect::<Result<_>>()?;
+        mod_dirs.iter().map(|dir| Ok((paths::file_name(dir), named(dir, "requires")?))).collect::<Result<_>>()?;
     let mut result = HashMap::new();
     for name in given.keys() {
         let mut found: Vec<String> = Vec::new();
@@ -207,7 +199,7 @@ pub fn sources(mod_dir: &Path) -> Result<Vec<(PathBuf, String)>> {
         return Ok(Vec::new());
     }
     let mut found = Vec::new();
-    for relative in discfiles::files_in(mod_dir) {
+    for relative in discfiles::files_in(mod_dir)? {
         let parts: Vec<&str> = relative.split('/').collect();
         let suffix = relative.rsplit_once('.').map(|(_, suffix)| suffix);
         let hidden = parts.iter().any(|part| part.starts_with('.'));
@@ -218,7 +210,7 @@ pub fn sources(mod_dir: &Path) -> Result<Vec<(PathBuf, String)>> {
             && parts[0] != discfiles::DISC
             && !hidden
         {
-            let path = joined(mod_dir, &relative);
+            let path = paths::join_relative(mod_dir, &relative);
             let text = dc2tk_disc::textfile::read_text(&path)?;
             found.push((path, text));
         }
@@ -235,10 +227,10 @@ pub fn patch_plan(mod_dirs: &[PathBuf], tree_dir: &Path, consts: &IndexMap<Strin
     let mut required = required_among(mod_dirs)?;
     for mod_dir in mod_dirs {
         mod_list.push(ModTexts {
-            name: name_of(mod_dir),
+            name: paths::file_name(mod_dir),
             texts: sources(mod_dir)?,
             written: contents(mod_dir, tree_dir)?.into_values().collect(),
-            requires: required.remove(&name_of(mod_dir)).unwrap_or_default(),
+            requires: required.remove(&paths::file_name(mod_dir)).unwrap_or_default(),
         });
     }
     let parent = mod_dirs.first().map(|first| first.parent().map(Path::to_path_buf).unwrap_or_default());
@@ -341,7 +333,7 @@ pub fn override_functions(
     let mut text = if path.is_file() {
         dc2tk_disc::textfile::read_text(&path)?
     } else {
-        patches::patch_header(&name_of(mod_dir), kind, value, &model_text)
+        patches::patch_header(&paths::file_name(mod_dir), kind, value, &model_text)
     };
     let added: Vec<String> = functions
         .iter()
@@ -464,20 +456,12 @@ pub fn write_entries(mod_dir: &Path, found: &Value) -> Result<()> {
 }
 
 /// The mod's whole files, by path in files/, sorted.
-pub fn mod_files(mod_dir: &Path) -> Vec<String> {
-    let root = mod_dir.join(FILES);
-    if !root.is_dir() {
-        return Vec::new();
-    }
-    let mut found: Vec<String> = discfiles::files_in(&root)
-        .into_iter()
-        .filter(|path| {
-            let parts: Vec<&str> = path.split('/').collect();
-            *parts.last().unwrap() != source::EDITOR_FLAGS && !parts.iter().any(|part| part.starts_with('.'))
-        })
-        .collect();
+pub fn mod_files(mod_dir: &Path) -> Result<Vec<String>> {
+    let mut found = paths::walk(&mod_dir.join(FILES), |entry| {
+        !entry.name.starts_with('.') && (entry.is_dir || entry.name != source::EDITOR_FLAGS)
+    })?;
     found.sort();
-    found
+    Ok(found)
 }
 
 pub fn write_editor_flags(mod_dir: &Path, tree_dir: &Path, sdk_dir: &Path, definition_sets: &[PathBuf]) -> Result<()> {
@@ -498,12 +482,12 @@ pub fn add(tree_dir: &Path, mod_dir: &Path, paths: &[String], overwrite: bool) -
     let recorded = tree::originals(tree_dir)?.unwrap_or_default();
     let mut copied = Vec::new();
     for path in paths {
-        let target = joined(&mod_dir.join(FILES), path);
+        let target = paths::join_relative(&mod_dir.join(FILES), path);
         if target.exists() && !overwrite {
             continue;
         }
         fs::create_dir_all(target.parent().unwrap())?;
-        fs::copy(joined(tree_dir, path), &target)?;
+        fs::copy(paths::join_relative(tree_dir, path), &target)?;
         copied.push(path.clone());
         found["files"][path] = serde_json::json!({
             "original": recorded.get(path),
@@ -522,7 +506,7 @@ pub fn add(tree_dir: &Path, mod_dir: &Path, paths: &[String], overwrite: bool) -
 /// Starts or extends a mod with tree files to edit; files the mod already has are kept.
 pub fn new(tree_dir: &Path, mod_dir: &Path, paths: &[String]) -> Result<Vec<String>> {
     let missing: Vec<&str> =
-        paths.iter().filter(|path| !joined(tree_dir, path).is_file()).map(String::as_str).collect();
+        paths.iter().filter(|path| !paths::join_relative(tree_dir, path).is_file()).map(String::as_str).collect();
     if !missing.is_empty() {
         return Err(Error::invalid(format!("not in {}:\n  {}", tree_dir.display(), missing.join("\n  "))));
     }
@@ -582,7 +566,7 @@ pub fn contents(mod_dir: &Path, tree_dir: &Path) -> Result<IndexMap<String, Stri
     }
     let mut result = IndexMap::new();
     for (path, target) in targets(mod_dir, tree_dir)? {
-        let text = dc2tk_disc::textfile::read_text(&joined(&mod_dir.join(FILES), &path))?;
+        let text = dc2tk_disc::textfile::read_text(&paths::join_relative(&mod_dir.join(FILES), &path))?;
         let text = if path.ends_with(source::EXTENSION) { with_includes(&text, &includes, tree_dir)? } else { text };
         result.insert(target, text);
     }
@@ -593,7 +577,7 @@ pub fn contents(mod_dir: &Path, tree_dir: &Path) -> Result<IndexMap<String, Stri
 pub fn targets(mod_dir: &Path, tree_dir: &Path) -> Result<IndexMap<String, String>> {
     let found = entries(mod_dir)?;
     let mut result = IndexMap::new();
-    for path in mod_files(mod_dir) {
+    for path in mod_files(mod_dir)? {
         let plain = found["files"][&path]["unnamed"].as_str().unwrap_or(&path).to_string();
         result.insert(path, pathnames::named(tree_dir, &plain)?);
     }
@@ -637,7 +621,7 @@ pub fn overlay(
             return Err(Error::invalid(format!("no mod at {}", mod_dir.display())));
         }
         for (path, text) in contents(mod_dir, tree_dir)? {
-            owners.entry(path.clone()).or_default().push(name_of(mod_dir));
+            owners.entry(path.clone()).or_default().push(paths::file_name(mod_dir));
             texts.insert(path, text);
         }
     }
@@ -653,7 +637,7 @@ pub fn overlay(
             continue;
         }
         if scripts.is_none() {
-            let mut all: BTreeSet<String> = index::source_files(tree_dir).into_iter().collect();
+            let mut all: BTreeSet<String> = index::source_files(tree_dir)?.into_iter().collect();
             all.extend(texts.keys().cloned());
             scripts = Some(all);
         }
@@ -664,9 +648,9 @@ pub fn overlay(
                 if additions::matches(addition, &plain) {
                     let base = match texts.get(path) {
                         Some(text) => text.clone(),
-                        None => dc2tk_disc::textfile::read_text(&joined(tree_dir, path))?,
+                        None => dc2tk_disc::textfile::read_text(&paths::join_relative(tree_dir, path))?,
                     };
-                    let text = additions::applied(&base, addition, &name_of(mod_dir), consts, &place)?;
+                    let text = additions::applied(&base, addition, &paths::file_name(mod_dir), consts, &place)?;
                     texts.insert(path.clone(), text);
                 }
             }
@@ -696,7 +680,7 @@ pub fn apply(
         tree::status(tree_dir)?.map(|found| found.edited.into_iter().chain(found.added).collect()).unwrap_or_default();
     let mut conflicts = Vec::new();
     for (path, text) in &texts {
-        if edited.contains(path) && dc2tk_disc::textfile::read_text(&joined(tree_dir, path))? != *text {
+        if edited.contains(path) && dc2tk_disc::textfile::read_text(&paths::join_relative(tree_dir, path))? != *text {
             conflicts.push(path.clone());
         }
     }
@@ -709,7 +693,7 @@ pub fn apply(
         )));
     }
     for (path, text) in &texts {
-        let target = joined(tree_dir, path);
+        let target = paths::join_relative(tree_dir, path);
         fs::create_dir_all(target.parent().unwrap())?;
         dc2tk_disc::textfile::write_text(&target, text)?;
     }
@@ -719,7 +703,7 @@ pub fn apply(
             warnings.push(format!(
                 "{} changed in the decompiler's output since {} was made; compare them",
                 path,
-                name_of(mod_dir)
+                paths::file_name(mod_dir)
             ));
         }
     }
@@ -728,8 +712,8 @@ pub fn apply(
             if patches::is_patch(&text) {
                 warnings.push(format!(
                     "{}'s patch {} is merged in by build only, not written into the tree",
-                    name_of(mod_dir),
-                    name_of(&path)
+                    paths::file_name(mod_dir),
+                    paths::file_name(&path)
                 ));
             }
         }
@@ -756,7 +740,7 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
     let mut lines = Vec::new();
     let held = numbers::read_lock(Some(&mods_dir.join(numbers::LOCK)))?;
     for mod_dir in &mods {
-        let name = name_of(mod_dir);
+        let name = paths::file_name(mod_dir);
         let texts = contents(mod_dir, tree_dir)?;
         let found = entries(mod_dir)?;
         let own = sources(mod_dir)?;
@@ -775,7 +759,7 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
             let names = named(mod_dir, key)?;
             if !names.is_empty() {
                 let missing: Vec<&String> =
-                    names.iter().filter(|other| !mods.iter().any(|dir| name_of(dir) == **other)).collect();
+                    names.iter().filter(|other| !mods.iter().any(|dir| paths::file_name(dir) == **other)).collect();
                 let note = if missing.is_empty() || key == "after" {
                     String::new()
                 } else {
@@ -843,7 +827,7 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         let sorted: BTreeMap<&String, &Vec<String>> = clashes.iter().collect();
         lines.extend(sorted.iter().map(|(path, names)| format!("  {}: {}", path, names.join(", "))));
     }
-    let all: Vec<String> = mods.iter().map(|dir| name_of(dir)).collect();
+    let all: Vec<String> = mods.iter().map(|dir| paths::file_name(dir)).collect();
     if let Err(error) = chosen(mods_dir, &all) {
         lines.push(String::new());
         lines.push(error.to_string());
@@ -880,14 +864,14 @@ pub fn run_tests(
             TESTS
         )));
     }
-    let name = name_of(mod_dir);
+    let name = paths::file_name(mod_dir);
     let mods_dir = mod_dir.parent().map(Path::to_path_buf).unwrap_or_default();
     let dirs = chosen(&mods_dir, std::slice::from_ref(&name))?.dirs;
     let (texts, _) = overlay(&dirs, tree_dir, consts)?;
     // the mods it requires come first, and their numbers before its own
     let numbers = patch_plan(&dirs, tree_dir, consts, true)?.numbers;
     let given: IndexMap<String, i64> =
-        dirs.iter().flat_map(|dir| numbers.get(&name_of(dir)).cloned().unwrap_or_default()).collect();
+        dirs.iter().flat_map(|dir| numbers.get(&paths::file_name(dir)).cloned().unwrap_or_default()).collect();
     let standing_in = tree_dir.join(TESTS);
     let mut headers = tools.headers.clone();
     headers.extend(crate::definitions::source_headers(&standing_in)?);

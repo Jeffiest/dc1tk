@@ -477,7 +477,7 @@ fn with_globals(mut model: Model) -> Model {
                 let global_name =
                     name.len() > 1 && name.starts_with('g') && name[1..].bytes().all(|b| b.is_ascii_digit());
                 slots[&library.path].contains(*slot)
-                    && names::is_identifier(name)
+                    && names::is_name(name)
                     && !global_name
                     && !taken.contains(*name)
                     && !variables.contains(*name)

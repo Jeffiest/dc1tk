@@ -434,7 +434,7 @@ pub fn variant_key(path: &str) -> String {
 }
 
 /// The tree's source files, by path from it, sorted.
-pub fn source_files(tree: &Path) -> Vec<String> {
+pub fn source_files(tree: &Path) -> Result<Vec<String>> {
     sdk::files_under(tree, &source::EXTENSION[1..])
 }
 
@@ -459,7 +459,7 @@ pub fn calls(tree: &Path, names: &BTreeSet<String>) -> Result<Vec<Call>> {
     let alternatives: Vec<String> = names.iter().map(|name| regex::escape(name)).collect();
     let pattern = Regex::new(&format!(r"\b({})\s*\(", alternatives.join("|"))).unwrap();
     let mut found = Vec::new();
-    for relative in source_files(tree) {
+    for relative in source_files(tree)? {
         let text = code(&tree.join(&relative))?;
         if !pattern.is_match(&text) {
             continue;
@@ -512,7 +512,7 @@ pub struct Outline {
 /// Every file's outline, by path from the tree.
 pub fn outlines(tree: &Path) -> Result<IndexMap<String, Outline>> {
     let mut found = IndexMap::new();
-    for relative in source_files(tree) {
+    for relative in source_files(tree)? {
         let text = code(&tree.join(&relative))?;
         let programs = program_pattern()
             .captures_iter(&text)

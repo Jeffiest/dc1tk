@@ -170,13 +170,8 @@ pub fn with_header(
     if folder_names.is_empty() && villagers.header.is_empty() && villagers.loaded.is_empty() {
         return Some(generated);
     }
-    let position = generated.rfind("#endif").expect("disc.h ends with #endif");
-    Some(format!(
-        "{}\n{}\n{}",
-        generated[..position].trim_end_matches('\n'),
-        header_text(folder_names) + &villager_header_text(villagers),
-        &generated[position..]
-    ))
+    let lines = header_text(folder_names) + &villager_header_text(villagers);
+    Some(crate::disc::with_lines_before_endif(&generated, &lines))
 }
 
 /// The context a script in the folder is presented with: its folder's slot names are the kind's.

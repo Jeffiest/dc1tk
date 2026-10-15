@@ -939,7 +939,7 @@ fn slim_turns_whole_files_into_patches_that_build_the_same() {
     }
     assert!(!patch.contains("void start(void)"), "{patch}");
     assert!(read(&module.join("greet.c")).contains("#pragma target library lib/map/s/s17/greet.c\n"));
-    assert_eq!(mods::mod_files(&module), [copied[1]]);
+    assert_eq!(mods::mod_files(&module).unwrap(), [copied[1]]);
     let listed: serde_json::Value = serde_json::from_str(&read(&module.join("mod.json"))).unwrap();
     assert_eq!(listed["files"].as_object().unwrap().keys().collect::<Vec<_>>(), [copied[1]]);
     // what a patch cannot say keeps the copy

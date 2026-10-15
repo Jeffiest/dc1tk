@@ -37,28 +37,12 @@ pub fn file_hash(path: &Path) -> Result<String> {
 
 /// Files of the tree, leaving out the record itself and hidden files and folders (clangd keeps its
 /// index in .cache/ beside compile_flags.txt).
-pub fn tracked(tree: &Path) -> Vec<String> {
-    let mut found = Vec::new();
-    let mut folders = vec![tree.to_path_buf()];
-    while let Some(folder) = folders.pop() {
-        let Ok(listing) = fs::read_dir(&folder) else {
-            continue;
-        };
-        for entry in listing.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                continue;
-            }
-            let path = entry.path();
-            if path.is_dir() {
-                folders.push(path);
-            } else if name != ORIGINALS && name != UNNAMED {
-                found.push(path.strip_prefix(tree).unwrap().to_string_lossy().replace('\\', "/"));
-            }
-        }
-    }
+pub fn tracked(tree: &Path) -> Result<Vec<String>> {
+    let mut found = crate::paths::walk(tree, |entry| {
+        !entry.name.starts_with('.') && (entry.is_dir || (entry.name != ORIGINALS && entry.name != UNNAMED))
+    })?;
     found.sort();
-    found
+    Ok(found)
 }
 
 /// The tree's record: {"note", "files": {path: hash}, "headers": hash}, or None.
@@ -183,7 +167,7 @@ pub fn status(tree: &Path) -> Result<Option<Status>> {
     let Some(recorded) = originals(tree)? else {
         return Ok(None);
     };
-    let present: BTreeSet<String> = tracked(tree).into_iter().collect();
+    let present: BTreeSet<String> = tracked(tree)?.into_iter().collect();
     let mut edited = Vec::new();
     for (path, hash) in &recorded {
         if present.contains(path) && file_hash(&tree.join(path))? != *hash {

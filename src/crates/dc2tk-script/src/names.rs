@@ -16,9 +16,18 @@ use crate::{Error, Result};
 /// The definition set's entries by fingerprint.
 pub type Entries = IndexMap<String, Node>;
 
-pub fn is_identifier(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphabetic()) && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+/// Whether text is a C identifier: ASCII letters, digits and '_', not starting with a digit.
+pub fn is_c_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Whether text is a name a definition set may give a function, a parameter or a variable: a C
+/// identifier starting with a letter (names starting with '_' are left to the compiler and the C
+/// library).
+pub fn is_name(text: &str) -> bool {
+    is_c_identifier(text) && text.starts_with(|c: char| c.is_ascii_alphabetic())
 }
 
 fn strings(node: &Node) -> Vec<String> {
@@ -52,7 +61,7 @@ pub fn load(directory: &Path) -> Result<IndexMap<String, Entries>> {
             all.extend(strings(&entry["params"]));
             all.extend(strings(&entry["locals"]));
             for name in all {
-                if !is_identifier(&name) {
+                if !is_name(&name) {
                     return Err(Error::invalid(format!("{file}: {name} is not a valid name for {fingerprint}")));
                 }
             }
@@ -602,11 +611,7 @@ pub fn global_mapping(
             None => wanted["name"].plain_text(),
         };
         let current = name_of(declared);
-        if protected.contains(&current)
-            || mapping.contains_key(&current)
-            || taken.contains(&name)
-            || !is_identifier(&name)
-        {
+        if protected.contains(&current) || mapping.contains_key(&current) || taken.contains(&name) || !is_name(&name) {
             continue;
         }
         mapping.insert(current, name.clone());

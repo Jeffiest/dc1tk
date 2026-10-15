@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::names::{self, Entries};
 use crate::node::{Map, Node};
-use crate::{notes, Error, Result};
+use crate::{notes, paths, Error, Result};
 
 pub const MANIFEST: &str = "definitions.json";
 /// The scripts of the disc a set was made from, by path and hash.
@@ -148,43 +148,20 @@ fn object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value
 }
 
 /// Every .json under a folder, sorted by their parts (lowercased on Windows, whose names ignore case).
-fn json_files(directory: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    let mut folders = vec![directory.to_path_buf()];
-    while let Some(folder) = folders.pop() {
-        let Ok(listing) = fs::read_dir(&folder) else {
-            continue;
-        };
-        for entry in listing.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                folders.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "json") {
-                found.push(path);
-            }
-        }
-    }
-    let key = |path: &PathBuf| -> Vec<String> {
-        let text = path.to_string_lossy().replace('/', "\\");
-        if cfg!(windows) {
-            text.to_lowercase().split('\\').map(str::to_string).collect()
-        } else {
-            text.split('\\').map(str::to_string).collect()
-        }
-    };
-    found.sort_by_key(key);
-    found
+fn json_files(directory: &Path) -> Result<Vec<String>> {
+    let mut found =
+        paths::walk(directory, |entry| entry.is_dir || entry.path.extension().is_some_and(|ext| ext == "json"))?;
+    paths::sort_by_parts(&mut found);
+    Ok(found)
 }
 
 /// A set's script entries, by disc path (scripts/map/s/s51/s51_1.json is map/s/s51/s51_1.stb).
 fn load_scripts(directory: &Path) -> Result<Vec<(String, Node)>> {
-    if !directory.is_dir() {
-        return Ok(Vec::new());
-    }
     let mut found = Vec::new();
-    for path in json_files(directory) {
-        let relative = path.strip_prefix(directory).unwrap().with_extension("stb");
-        found.push((relative.to_string_lossy().replace('\\', "/"), Node::from(read_json(&path)?)));
+    for relative in json_files(directory)? {
+        let entry = Node::from(read_json(&paths::join_relative(directory, &relative))?);
+        let stem = relative.strip_suffix(".json").unwrap_or(&relative);
+        found.push((format!("{stem}.stb"), entry));
     }
     Ok(found)
 }

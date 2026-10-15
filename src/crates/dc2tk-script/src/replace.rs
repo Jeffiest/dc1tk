@@ -67,7 +67,7 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::discfiles::{self, Files, Template, Templates, Wanted};
-use crate::{mods, Error, Result};
+use crate::{mods, names, paths, Error, Result};
 
 pub const REPLACE: &str = "replace";
 pub const ADD: &str = "add";
@@ -182,25 +182,15 @@ pub fn bgm_number(name: &str) -> Option<u32> {
     (digits.len() == 3 && digits.bytes().all(|c| c.is_ascii_digit())).then(|| digits.parse().ok())?
 }
 
-fn name_of(path: &Path) -> String {
-    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
-fn is_identifier(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
 fn suffix_is(path: &Path, suffix: &str) -> bool {
-    name_of(path).to_lowercase().ends_with(suffix)
+    paths::file_name(path).to_lowercase().ends_with(suffix)
 }
 
 /// A mod's replace and add lines, in the order mod.json gives them, each file checked to be in
 /// the mod.
 pub fn lines(mod_dir: &Path) -> Result<Vec<Line>> {
     let found = mods::entries(mod_dir)?;
-    let module = name_of(mod_dir);
+    let module = paths::file_name(mod_dir);
     let mut out = Vec::new();
     for (section, add) in [(REPLACE, false), (ADD, true)] {
         let listed = match &found[section] {
@@ -280,13 +270,8 @@ fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::
                 }
                 _ => return Err(line.fail(usage)),
             };
-            let inside = Path::new(&file)
-                .components()
-                .all(|part| matches!(part, std::path::Component::Normal(_) | std::path::Component::CurDir));
-            if !inside {
-                return Err(fail(&format!("{file} is not a path inside the mod's folder")));
-            }
-            zone.path = file.split(['/', '\\']).fold(mod_dir.to_path_buf(), |path, part| path.join(part));
+            zone.path = paths::inside_mod(mod_dir, &file)
+                .ok_or_else(|| fail(&format!("{file} is not a path inside the mod's folder")))?;
             if !(zone.path.is_file() && suffix_is(&zone.path, ".wav")) {
                 return Err(fail(&format!("{file} is not a WAV file in the mod's folder")));
             }
@@ -387,13 +372,8 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
                 let script = value.as_str().filter(|script| script.to_lowercase().ends_with(".c"));
                 let script =
                     script.ok_or_else(|| line.fail("\"script\" is a C file of the mod: the new map's event script"))?;
-                let inside = Path::new(script)
-                    .components()
-                    .all(|part| matches!(part, std::path::Component::Normal(_) | std::path::Component::CurDir));
-                let path = script.split(['/', '\\']).fold(mod_dir.to_path_buf(), |path, part| path.join(part));
-                if !inside || !path.is_file() {
-                    return Err(line.fail(format!("{script} is not a file in the mod's folder")));
-                }
+                let path = paths::inside_mod(mod_dir, script).filter(|path| path.is_file());
+                let path = path.ok_or_else(|| line.fail(format!("{script} is not a file in the mod's folder")))?;
                 line.script = Some(path);
             }
             "programs" if line.is_map() => {
@@ -401,7 +381,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
                     line.fail("\"programs\" gives event points programs: {\"door_park\": \"ENTER_PARK\"}")
                 })?;
                 for (point, program) in listed {
-                    if program.as_i64().is_none() && !program.as_str().is_some_and(is_identifier) {
+                    if program.as_i64().is_none() && !program.as_str().is_some_and(names::is_c_identifier) {
                         return Err(
                             line.fail(format!("\"programs\": {point}'s program is a number or a program's name"))
                         );
@@ -415,14 +395,8 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     if line.shown.is_empty() {
         return Err(line.fail("no \"file\""));
     }
-    let relative = Path::new(&line.shown);
-    let inside = relative
-        .components()
-        .all(|part| matches!(part, std::path::Component::Normal(_) | std::path::Component::CurDir));
-    if !inside {
-        return Err(line.fail(format!("{} is not a path inside the mod's folder", line.shown)));
-    }
-    line.file = line.shown.split(['/', '\\']).fold(mod_dir.to_path_buf(), |path, part| path.join(part));
+    line.file = paths::inside_mod(mod_dir, &line.shown)
+        .ok_or_else(|| line.fail(format!("{} is not a path inside the mod's folder", line.shown)))?;
     if !line.file.exists() {
         return Err(line.fail(format!("{} is not in the mod's folder", line.shown)));
     }
@@ -469,7 +443,7 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
             _ if line.is_file() => {}
             Some(Kind::Sound) => {
                 let name = &key[Kind::Sound.name().len() + 1..];
-                if !is_identifier(name) {
+                if !names::is_c_identifier(name) {
                     return Err(line.fail("an added sound is named as a C constant (sound:SE_MOD_BEEP)"));
                 }
                 if line.bank.is_none() {
@@ -780,7 +754,7 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                     if let Some((number, _, path)) = wavs.iter().find(|(number, _, _)| *number >= count) {
                         return Err(line.fail(format!(
                             "{}: the bank has entries 0 to {}; add new entries with \"add\" (entry {number})",
-                            name_of(path),
+                            paths::file_name(path),
                             count as i64 - 1
                         )));
                     }
@@ -1188,7 +1162,12 @@ pub fn apply_with(
                         return Err(fail(Error::invalid(format!("no picture {at}"))));
                     };
                     let picture = im3::from_png(&fs::read(png)?, &images[position]).map_err(|error| {
-                        Error::invalid(format!("{} (mod {}): {}: {error}", edit.key, edit.module, name_of(png)))
+                        Error::invalid(format!(
+                            "{} (mod {}): {}: {error}",
+                            edit.key,
+                            edit.module,
+                            paths::file_name(png)
+                        ))
                     })?;
                     images[position] = picture;
                 }
@@ -1482,10 +1461,10 @@ pub fn copy_out(
                 out.push((asset.id.clone(), target, false));
                 continue;
             }
-            let fresh = !joined(mod_dir, &target).exists();
+            let fresh = !paths::join_relative(mod_dir, &target).exists();
             if fresh {
                 for (path, content) in files {
-                    let file = joined(mod_dir, &path);
+                    let file = paths::join_relative(mod_dir, &path);
                     fs::create_dir_all(file.parent().unwrap())?;
                     fs::write(file, content)?;
                 }
@@ -1496,10 +1475,6 @@ pub fn copy_out(
     }
     add_lines(mod_dir, &new_lines)?;
     Ok(out)
-}
-
-fn joined(root: &Path, relative: &str) -> PathBuf {
-    relative.split('/').fold(root.to_path_buf(), |path, part| path.join(part))
 }
 
 /// What a mod's lines say, for mod list and build: one line each.
@@ -1566,8 +1541,8 @@ pub fn wav_constants(mod_dir: &Path) -> Result<IndexMap<String, i64>> {
                 Some(&known) if known != number as i64 => {
                     return Err(Error::invalid(format!(
                         "{}: {} names entry {number} {name}, which another WAV gives entry {known}",
-                        name_of(mod_dir),
-                        name_of(&path)
+                        paths::file_name(mod_dir),
+                        paths::file_name(&path)
                     )));
                 }
                 _ => {
@@ -1590,7 +1565,7 @@ pub fn sound_constants(
 ) -> Result<BTreeMap<String, IndexMap<String, i64>>> {
     let mut out = added.clone();
     for mod_dir in mod_dirs {
-        let module = name_of(mod_dir);
+        let module = paths::file_name(mod_dir);
         for (name, number) in wav_constants(mod_dir)? {
             match consts.get(&name) {
                 Some(&known) if known == number => continue,

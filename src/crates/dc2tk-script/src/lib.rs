@@ -51,6 +51,7 @@ pub mod startat;
 #[macro_use]
 pub mod node;
 pub mod parse;
+pub mod paths;
 pub mod stack;
 pub mod stb;
 pub mod tree;

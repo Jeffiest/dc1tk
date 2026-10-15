@@ -22,7 +22,7 @@ use regex::Regex;
 use crate::build::{self, Patched};
 use crate::compile::Toolchain;
 use crate::node::Node;
-use crate::{index, mods, parse, patches, pathnames, source, Error, Result};
+use crate::{index, mods, parse, patches, pathnames, paths, source, Error, Result};
 
 /// A copy made a patch: the file (by path in the mod's files/), the patch written (None when the
 /// copy changed nothing), and what the patch overrides and adds.
@@ -282,10 +282,6 @@ fn patch_path(mod_dir: &Path, tree_path: &str) -> PathBuf {
     path
 }
 
-fn joined(root: &Path, relative: &str) -> PathBuf {
-    relative.split('/').fold(root.to_path_buf(), |path, part| path.join(part))
-}
-
 /// Slims each whole file of the mod NAME in mods_dir into a patch, where the mod then builds to
 /// the same bytes; see the module's doc.
 pub fn slim(
@@ -305,7 +301,7 @@ pub fn slim(
             keep(&mut outcome, "it is not a C file, and patches change scripts and libraries");
             continue;
         }
-        if !joined(tree, &tree_path).is_file() {
+        if !paths::join_relative(tree, &tree_path).is_file() {
             keep(&mut outcome, "the tree has no such file: it is the mod's own");
             continue;
         }
@@ -324,7 +320,7 @@ pub fn slim(
             scripts.insert(tree_path.clone());
         }
         let copy = mods::contents(&mod_dir, tree)?.get(&tree_path).cloned().unwrap_or_default();
-        let original = dc2tk_disc::textfile::read_text(&joined(tree, &tree_path))?;
+        let original = dc2tk_disc::textfile::read_text(&paths::join_relative(tree, &tree_path))?;
         let plain = pathnames::unnamed(tree, &tree_path)?;
         let kind = if library { "library" } else { "script" };
         let draft = match draft(name, &original, &copy, kind, &plain) {
@@ -347,7 +343,7 @@ pub fn slim(
         if let Some(patch) = &patch {
             dc2tk_disc::textfile::write_text(patch, &draft.text)?;
         }
-        let place = joined(&mod_dir.join(mods::FILES), &file);
+        let place = paths::join_relative(&mod_dir.join(mods::FILES), &file);
         let held = fs::read(&place)?;
         fs::remove_file(&place)?;
         let after = compiled(&dirs, tree, tools, consts, &scripts);

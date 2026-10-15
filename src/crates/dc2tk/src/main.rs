@@ -358,8 +358,8 @@ fn run_compile(source_path: &Path, output: Option<&Path>, table: &Option<String>
 }
 
 /// The scripts of a decompiled tree (outside lib/), by path from it.
-fn source_scripts(tree: &Path) -> Vec<String> {
-    sdk::files_under(tree, "c").into_iter().filter(|path| !path.starts_with("lib/")).collect()
+fn source_scripts(tree: &Path) -> Result<Vec<String>> {
+    Ok(sdk::files_under(tree, "c")?.into_iter().filter(|path| !path.starts_with("lib/")).collect())
 }
 
 fn run_compile_tree(tree: &Path, extracted: &Path, common: &Common) -> Result<ExitCode> {
@@ -369,7 +369,7 @@ fn run_compile_tree(tree: &Path, extracted: &Path, common: &Common) -> Result<Ex
     let sdk_dir = common.sdk_dir();
     let tools =
         dc2tk_script::compile::Toolchain { headers: &headers, rules: &defs.tables, tables: &tables, sdk_dir: &sdk_dir };
-    let scripts = source_scripts(tree);
+    let scripts = source_scripts(tree)?;
     let results: Vec<(String, Option<String>)> = scripts
         .par_iter()
         .map(|relative| {

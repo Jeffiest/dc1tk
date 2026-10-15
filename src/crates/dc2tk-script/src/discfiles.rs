@@ -28,7 +28,7 @@ use dc2tk_disc::archive::{self, Archive, Entry};
 use dc2tk_disc::{rebuild, Image};
 use indexmap::IndexMap;
 
-use crate::{Error, Result};
+use crate::{paths, Error, Result};
 
 pub const DISC: &str = "disc";
 pub const PACK: &str = ".d/";
@@ -160,35 +160,10 @@ pub fn converter_folder(relative: &str) -> Option<String> {
 
 /// Files under a folder, sorted by their parts (lowercased on Windows, whose names ignore case),
 /// as paths from the folder with "/".
-pub fn files_in(root: &Path) -> Vec<String> {
-    let mut found = Vec::new();
-    let mut folders = vec![root.to_path_buf()];
-    while let Some(folder) = folders.pop() {
-        let Ok(listing) = fs::read_dir(&folder) else {
-            continue;
-        };
-        for entry in listing.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                folders.push(path);
-            } else {
-                found.push(path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/"));
-            }
-        }
-    }
-    found.sort_by_key(|path| -> Vec<String> {
-        let path = if cfg!(windows) { path.to_lowercase() } else { path.clone() };
-        path.split('/').map(str::to_string).collect()
-    });
-    found
-}
-
-fn name_of(path: &Path) -> String {
-    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
-fn joined(root: &Path, relative: &str) -> PathBuf {
-    relative.split('/').fold(root.to_path_buf(), |path, part| path.join(part))
+pub fn files_in(root: &Path) -> Result<Vec<String>> {
+    let mut found = paths::walk(root, |_| true)?;
+    paths::sort_by_parts(&mut found);
+    Ok(found)
 }
 
 /// {disc path: file or folder} for the game files a mod holds; a file or folder in a common format
@@ -199,9 +174,9 @@ pub fn mod_files(mod_dir: &Path) -> Result<IndexMap<String, PathBuf>> {
     if !root.is_dir() {
         return Ok(found);
     }
-    for relative in files_in(&root) {
+    for relative in files_in(&root)? {
         let folder = converter_folder(&relative);
-        let source = joined(&root, folder.as_deref().unwrap_or(&relative));
+        let source = paths::join_relative(&root, folder.as_deref().unwrap_or(&relative));
         let (target, _) = match &folder {
             Some(folder) => converter_for(folder, true),
             None => converter_for(&relative, false),
@@ -209,10 +184,10 @@ pub fn mod_files(mod_dir: &Path) -> Result<IndexMap<String, PathBuf>> {
         if let Some(existing) = found.get(&target).filter(|existing| **existing != source) {
             return Err(Error::invalid(format!(
                 "{}: {} is given twice, as {} and {}",
-                name_of(mod_dir),
+                paths::file_name(mod_dir),
                 target,
-                name_of(existing),
-                name_of(&source)
+                paths::file_name(existing),
+                paths::file_name(&source)
             )));
         }
         found.insert(target, source);
@@ -231,7 +206,8 @@ pub fn converter_of(source: &Path) -> Option<Converter> {
 /// another file is the game file itself.
 pub fn conversion(target: &str, source: &Path) -> Option<Converter> {
     let fits = |converter: &&Converter| lower(target).ends_with(converter.game) && converter.folder == source.is_dir();
-    let named = CONVERTERS.iter().filter(fits).find(|converter| lower(&name_of(source)).ends_with(converter.suffix));
+    let named =
+        CONVERTERS.iter().filter(fits).find(|converter| lower(&paths::file_name(source)).ends_with(converter.suffix));
     named.or_else(|| CONVERTERS.iter().filter(fits).find(|converter| converter.folder)).copied()
 }
 
@@ -256,7 +232,7 @@ pub fn game_files(mod_dir: &Path) -> Result<IndexMap<String, PathBuf>> {
         if found.keys().any(|known| lower(known) == lower(&path)) {
             return Err(Error::invalid(format!(
                 "{}: {path} is given twice, in {DISC}/ and as file:{path}",
-                name_of(mod_dir)
+                paths::file_name(mod_dir)
             )));
         }
         found.insert(path, file);
@@ -312,9 +288,9 @@ pub fn collect(mod_dirs: &[PathBuf]) -> Result<(Wanted, Clashes)> {
     for mod_dir in mod_dirs {
         for (path, file) in game_files(mod_dir)? {
             if let Some((owner, _)) = found.get(&path) {
-                clashes.entry(path).or_insert_with(|| vec![owner.clone()]).push(name_of(mod_dir));
+                clashes.entry(path).or_insert_with(|| vec![owner.clone()]).push(paths::file_name(mod_dir));
             } else {
-                found.insert(path, (name_of(mod_dir), file));
+                found.insert(path, (paths::file_name(mod_dir), file));
             }
         }
     }
@@ -530,7 +506,7 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
         let Some(data) = rebuild::read_member(disc.read(image.bytes(), entry), &members) else {
             return Err(Error::invalid(format!("{} has no member {}", top, members.join("/"))));
         };
-        let target = joined(&mod_dir.join(DISC), &path);
+        let target = paths::join_relative(&mod_dir.join(DISC), &path);
         if let Some(form) = form.filter(|form| !form.is_empty()) {
             let suffix = format!(".{}", lower(form).trim_start_matches('.'));
             let converter = CONVERTERS.iter().find(|converter| converter.suffix == suffix);
@@ -538,7 +514,7 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
                 return Err(Error::invalid(format!("{path} cannot be exported as {form}")));
             };
             let exported = converter.export(data, &path, &fonts, &others)?;
-            let folder = target.with_file_name(format!("{}{}", name_of(&target), suffix));
+            let folder = target.with_file_name(format!("{}{}", paths::file_name(&target), suffix));
             if !converter.folder {
                 fs::create_dir_all(target.parent().unwrap())?;
                 for (_, content) in exported {
@@ -549,7 +525,7 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
             }
             fs::create_dir_all(&folder)?;
             for (name, content) in exported {
-                let file = joined(&folder, &name);
+                let file = paths::join_relative(&folder, &name);
                 fs::create_dir_all(file.parent().unwrap())?;
                 fs::write(&file, content)?;
                 written.push(format!("{path}{suffix}/{name}"));

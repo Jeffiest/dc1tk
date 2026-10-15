@@ -166,7 +166,7 @@ fn a_mods_editor_flags_put_its_own_files_before_the_trees() {
     let lines: Vec<&str> = text.lines().collect();
     let base = definitions::resolved_posix(&root);
     assert_eq!(lines[lines.len() - 3..], [format!("-I{base}/include"), "-I.".to_string(), format!("-I{base}")]);
-    assert!(mods::mod_files(&module).is_empty());
+    assert!(mods::mod_files(&module).unwrap().is_empty());
 }
 
 #[test]

@@ -146,7 +146,7 @@ pub struct Scripts {
 impl Scripts {
     pub fn new(tree: &Path) -> Result<Scripts> {
         let mut paths: Vec<String> =
-            index::source_files(tree).into_iter().filter(|path| !index::is_library(path)).collect();
+            index::source_files(tree)?.into_iter().filter(|path| !index::is_library(path)).collect();
         paths.sort();
         let plain =
             paths.iter().map(|path| Ok((path.clone(), pathnames::unnamed(tree, path)?))).collect::<Result<_>>()?;

@@ -200,6 +200,13 @@ pub fn header(found: &IndexMap<String, NameTable>, taken: &HashSet<String>) -> O
     present.then(|| lines.join("\n"))
 }
 
+/// disc.h's text (from header) with more lines added before its closing #endif, a blank line
+/// apart from what comes before them.
+pub fn with_lines_before_endif(header: &str, lines: &str) -> String {
+    let position = header.rfind("#endif").expect("disc.h ends with #endif");
+    format!("{}\n{}\n{}", header[..position].trim_end_matches('\n'), lines, &header[position..])
+}
+
 /// The constants headers define (enum members and #defines), which disc.h's names must not take.
 pub fn header_constants(headers: &IndexMap<String, String>) -> HashSet<String> {
     let constant = Regex::new(r"(?m)^\s*(?:#define\s+)?([A-Z][A-Z0-9_]*)\b").unwrap();

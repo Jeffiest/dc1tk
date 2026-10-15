@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 
 use crate::discfiles;
 use crate::replace::{self, FILE};
-use crate::{mods, tree, Error, Result};
+use crate::{mods, paths, tree, Error, Result};
 
 /// The folders under the extracted folder.
 pub const DISC: &str = "disc";
@@ -73,24 +73,10 @@ fn hash(path: &Path) -> Option<String> {
 }
 
 /// Files under a folder, by path from it with "/", sorted.
-fn files_under(root: &Path) -> Vec<String> {
-    let mut found = Vec::new();
-    let mut folders = vec![root.to_path_buf()];
-    while let Some(folder) = folders.pop() {
-        let Ok(listing) = fs::read_dir(&folder) else {
-            continue;
-        };
-        for entry in listing.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                folders.push(path);
-            } else {
-                found.push(path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/"));
-            }
-        }
-    }
+fn files_under(root: &Path) -> Result<Vec<String>> {
+    let mut found = paths::walk(root, |_| true)?;
     found.sort();
-    found
+    Ok(found)
 }
 
 fn scripts(tree_dir: &Path, changes: &mut Changes) -> Result<()> {
@@ -138,7 +124,7 @@ fn assets(assets_dir: &Path, changes: &mut Changes) -> Result<()> {
             None => changes.assets_removed.push(file),
         }
     }
-    changes.assets_added = files_under(assets_dir)
+    changes.assets_added = files_under(assets_dir)?
         .into_iter()
         .filter(|file| file != "manifest.json" && !known.contains(&file.to_lowercase()))
         .collect();
@@ -255,7 +241,7 @@ fn disc(disc_dir: &Path, iso_path: &Path, changes: &mut Changes) -> Result<()> {
     };
     let known: HashSet<String> = listed.iter().map(|path| path.to_lowercase()).collect();
     let bookkeeping = ["manifest.json", layout::LAYOUT, layout::STRUCTURE, "map_index.txt"];
-    changes.disc_added = files_under(disc_dir)
+    changes.disc_added = files_under(disc_dir)?
         .into_iter()
         .filter(|path| {
             let lower = path.to_lowercase();

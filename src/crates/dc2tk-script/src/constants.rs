@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use regex::Regex;
 
-use crate::{names, tree, Error, Result};
+use crate::{names, paths, tree, Error, Result};
 
 /// The prefixes of the constants the decompiler names variables after, with the prefix dropped
 /// and the rest in lower case (sdk::subject_prefix).
@@ -38,28 +38,15 @@ pub struct Renamed {
 }
 
 /// Every file under a folder with one of the extensions, as paths relative to it with "/".
-fn files_under(folder: &Path, extensions: &[&str]) -> Vec<String> {
-    let mut found = Vec::new();
-    let mut folders = vec![folder.to_path_buf()];
-    while let Some(current) = folders.pop() {
-        let Ok(listing) = fs::read_dir(&current) else {
-            continue;
-        };
-        for entry in listing.flatten() {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                continue;
-            }
-            if path.is_dir() {
-                folders.push(path);
-            } else if path.extension().is_some_and(|ext| extensions.iter().any(|wanted| ext == *wanted)) {
-                found.push(path.strip_prefix(folder).unwrap().to_string_lossy().replace('\\', "/"));
-            }
-        }
-    }
+/// Hidden files and folders are left out.
+fn files_under(folder: &Path, extensions: &[&str]) -> Result<Vec<String>> {
+    let mut found = paths::walk(folder, |entry| {
+        !entry.name.starts_with('.')
+            && (entry.is_dir
+                || entry.path.extension().is_some_and(|ext| extensions.iter().any(|wanted| ext == *wanted)))
+    })?;
     found.sort();
-    found
+    Ok(found)
 }
 
 /// Rewrites a file with edit; true when it changed. Line endings are kept as they are.
@@ -84,7 +71,7 @@ pub fn rename(
     folders: &[PathBuf],
 ) -> Result<Renamed> {
     for name in [old, new] {
-        if !names::is_identifier(name) {
+        if !names::is_name(name) {
             return Err(Error::invalid(format!("{name} is not a valid name")));
         }
     }
@@ -94,7 +81,7 @@ pub fn rename(
         return Err(Error::invalid(format!("{new} is already used in {header}")));
     }
     let include = set.join("include");
-    let own = files_under(&include, &["h"]);
+    let own = files_under(&include, &["h"])?;
     let mut declared = false;
     for path in &own {
         let text = fs::read_to_string(include.join(path))?;
@@ -120,7 +107,7 @@ pub fn rename(
             renamed.set_files.push(file);
         }
     }
-    for path in files_under(set, &["json", "md"]) {
+    for path in files_under(set, &["json", "md"])? {
         if path.starts_with("include/")
             || path.starts_with("strings/")
             || path == crate::definitions::DISC
@@ -167,7 +154,7 @@ pub fn rename_in_folders(old: &str, new: &str, folders: &[PathBuf]) -> Result<Ve
             None => Vec::new(),
         };
         let mut changed = Vec::new();
-        for path in files_under(folder, &["c", "h"]) {
+        for path in files_under(folder, &["c", "h"])? {
             let edited = rewrite(&folder.join(&path), |text| {
                 let mut out = old_word.replace_all(text, new).into_owned();
                 if let (Some(variable), Some((_, to))) = (&variable_word, &variables) {

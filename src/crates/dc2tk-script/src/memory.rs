@@ -83,21 +83,10 @@ pub struct Folder {
 
 impl Folder {
     pub fn open(root: &Path) -> std::io::Result<Folder> {
-        let mut index = HashMap::new();
-        let mut folders = vec![root.to_path_buf()];
-        while let Some(folder) = folders.pop() {
-            for entry in fs::read_dir(&folder)?.flatten() {
-                let path = entry.path();
-                let relative = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
-                if path.is_dir() {
-                    if !relative.ends_with(".d") {
-                        folders.push(path);
-                    }
-                } else {
-                    index.insert(relative.to_lowercase(), relative);
-                }
-            }
-        }
+        // a folder that is not there is an error, not an empty disc
+        fs::read_dir(root)?;
+        let files = crate::paths::walk(root, |entry| !(entry.is_dir && entry.relative.ends_with(".d")))?;
+        let index = files.into_iter().map(|relative| (relative.to_lowercase(), relative)).collect();
         Ok(Folder { root: root.to_path_buf(), index })
     }
 }
