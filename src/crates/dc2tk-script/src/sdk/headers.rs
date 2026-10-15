@@ -12,7 +12,8 @@ pub fn files_under(base: &Path, extension: &str) -> Result<Vec<String>> {
     Ok(found)
 }
 
-/// Path.read_text(): UTF-8 with \r\n and \r read as \n.
+/// A text file's text (dc2tk_disc::textfile::read_text): UTF-8, its \r\n and \r line ends read as
+/// \n.
 pub fn read_text(path: &Path) -> Result<String> {
     Ok(dc2tk_disc::textfile::read_text(path)?)
 }

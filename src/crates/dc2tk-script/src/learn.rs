@@ -309,7 +309,7 @@ pub fn source_files(tree: &Path) -> Result<Vec<PathBuf>> {
     Ok(found.into_iter().map(|relative| tree.join(relative)).collect())
 }
 
-/// Path.with_suffix(suffix) for a path with "/".
+/// A path with "/" whose file's extension is replaced by suffix (added, for a name without one).
 fn with_suffix(path: &str, suffix: &str) -> String {
     let (folder, name) = match path.rsplit_once('/') {
         Some((folder, name)) => (Some(folder), name),

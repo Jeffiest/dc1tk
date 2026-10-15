@@ -40,10 +40,10 @@ fn record_body(data: &[u8], start: usize) -> &[u8] {
 
 fn without_comments(body: &[u8]) -> Vec<u8> {
     let text = replace_bytes(body, b"\r\n", b"\n");
-    // bytes.lstrip(): ASCII whitespace, vertical tab included
-    let lstrip = |line: &[u8]| -> usize { line.iter().take_while(|b| b" \t\n\r\x0b\x0c".contains(b)).count() };
+    // a line's leading ASCII whitespace, vertical tab and form feed included
+    let indent = |line: &[u8]| -> usize { line.iter().take_while(|b| b" \t\n\r\x0b\x0c".contains(b)).count() };
     let kept: Vec<&[u8]> =
-        text.split(|&b| b == b'\n').filter(|line| !line[lstrip(line)..].starts_with(b"//")).collect();
+        text.split(|&b| b == b'\n').filter(|line| !line[indent(line)..].starts_with(b"//")).collect();
     replace_bytes(&kept.join(&b'\n'), b"\\n", b"\n")
 }
 
@@ -117,7 +117,7 @@ pub fn read_messages(path: &Path, language: i64) -> IndexMap<i64, String> {
         return IndexMap::new();
     };
     let mut found = IndexMap::new();
-    // each @-N record number, as re.finditer(rb"@(-?\d+)") finds them
+    // each record number: @ and an integer (@12, @-1), anywhere in the file
     let mut position = 0;
     while let Some(at) = data[position..].iter().position(|&b| b == b'@').map(|at| position + at) {
         let sign = usize::from(data.get(at + 1) == Some(&b'-'));
@@ -531,4 +531,72 @@ pub fn annotate_functions(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str) -> std::path::PathBuf {
+        let folder = std::env::temp_dir().join(format!("dc2tk-messages-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    #[test]
+    fn a_message_file_is_read_by_record_number() {
+        let folder = temp("records");
+        let path = folder.join("e50_1.txt");
+        let text = b"@1\r\nHello[UNI00E9]\r\n@2\n// a note for the translator\nOne\\nTwo\n@1\nAgain\n@-3\nneg\x00ignored\n@x\n@4";
+        fs::write(&path, text).unwrap();
+        let found = read_messages(&path, 1);
+        let found: Vec<(i64, &str)> = found.iter().map(|(number, text)| (*number, text.as_str())).collect();
+        // the first of a number wins; a record ends at the next @ line or a NUL; comment lines go
+        // and \n is a line break; a number with no line after it has no record
+        assert_eq!(found, [(1, "Hello\u{e9}"), (2, "One\nTwo"), (-3, "neg")]);
+        assert!(read_messages(&folder.join("missing.txt"), 1).is_empty());
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn text_is_decoded_in_its_languages_encoding() {
+        assert_eq!(decoded(b"c\x9cur \xbd", 2), "c\u{153}ur \u{152}");
+        assert_eq!(decoded(b"caf\xe9", 3), "caf\u{e9}");
+        assert_eq!(decoded(b"\x83p\x81[\x83\x8b", 0), "\u{30d1}\u{30fc}\u{30eb}");
+        // the escapes the game draws otherwise, and one that is no escape
+        assert_eq!(expanded("[UNI011D]t[UNI00e9] [UNIZZ] [UNI00"), "\u{e8}t\u{e9} [UNIZZ] [UNI00");
+    }
+
+    #[test]
+    fn a_message_file_is_named_for_the_language() {
+        assert_eq!(localized("event/e50_1.txt", 3), "event/e50_3.txt");
+        assert_eq!(localized("names.txt", 3), "names_3.txt");
+        assert_eq!(localized("e50.bin", 3), "e50.bin");
+        assert_eq!(quoted("Hello <page> there\n  you "), "\"Hello there you\"");
+    }
+
+    #[test]
+    fn the_discs_tables_name_items_maps_characters_and_packs() {
+        let root = temp("tables");
+        fs::create_dir_all(root.join("menu/cfg7")).unwrap();
+        fs::create_dir_all(root.join("map")).unwrap();
+        fs::write(root.join("menu/cfg7/comdatmes1.cfg"), b"MES_SYS 5, \"Bread\";\nMES_SYS 6 , \"Cheese\";\n").unwrap();
+        let maps =
+            b"MAP_NAME_NUM 3;\nMAP_NAME \"g01\",\"Sindain\",\"g00/g00\",1,1;\n// MAP_NAME \"old\",\"Old\",\"\",1,1;\n\
+MAP_NAME \"\",\"\",\"\",0,0;\nMAP_NAME \"m05\",\"Park\",\"\";\n";
+        fs::write(root.join("map/map1.cfg"), maps).unwrap();
+        let npcs = b"NPC_INFO 1,\"Cedric\",\"p01_03a\",2;\nNPC_INFO 2,\"Donny\",\"p01_04a\",1;\nNPC_INFO 3,\"Donny's twin\",\"p01_04a\",1;\n";
+        fs::write(root.join("npc1.cfg"), npcs).unwrap();
+        let found = disc_names(&root, 1);
+        let text = |table: &str, key: NameKey| found[table].get(&key).cloned();
+        assert_eq!(text("item_id", NameKey::Int(6)), Some("Cheese".into()));
+        // a map by its row number (the commented row is no row) and by its code
+        assert_eq!(text("map_id", NameKey::Int(2)), Some("Park".into()));
+        assert_eq!(text("map_id", NameKey::Text("g01".into())), Some("Sindain".into()));
+        assert_eq!(found["map_id"].len(), 4);
+        assert_eq!(text("npc_id", NameKey::Int(3)), Some("Donny's twin".into()));
+        assert_eq!(text("chara_pack", NameKey::Text("p01_04a".into())), Some("Donny or Donny's twin".into()));
+        fs::remove_dir_all(&root).unwrap();
+    }
 }

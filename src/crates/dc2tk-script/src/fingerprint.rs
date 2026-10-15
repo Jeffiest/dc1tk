@@ -141,3 +141,78 @@ pub fn both_fingerprints(script: &Script, table: &str) -> Fingerprints {
     }
     found
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stb::{Instruction, FUNCDATA_SIZE, VMCODE_SIZE};
+
+    /// A function at offset (from a code section at 0) that pushes text, jumps forward within
+    /// itself and calls the function at callee.
+    fn function(offset: usize, text: &str, callee: i32) -> Function {
+        let start = offset + FUNCDATA_SIZE;
+        let instructions = vec![
+            Instruction::new(Op::PushConst, CONST_STR, (start + 4 * VMCODE_SIZE) as i32),
+            Instruction::new(Op::JmpFalse, (start + 3 * VMCODE_SIZE) as i32, 0),
+            Instruction::new(Op::Call, 0, callee),
+            Instruction::new(Op::FuncEnd, 0, 0),
+        ];
+        Function {
+            offset,
+            size: 0,
+            addr: start as i32,
+            name: 0,
+            local: 0,
+            arg: 0,
+            arg_types: Vec::new(),
+            instructions,
+            strings: vec![text.to_string()],
+            padding: Vec::new(),
+        }
+    }
+
+    fn prints(function: &Function, known: &BTreeMap<i64, String>) -> (String, String) {
+        let print = |loose| digest(&payload_json(function, 0, "event", known, loose));
+        (print(false), print(true))
+    }
+
+    #[test]
+    fn a_function_has_one_fingerprint_wherever_it_sits() {
+        let known = BTreeMap::new();
+        let (here, there) =
+            (prints(&function(0x100, "hello", 0x40), &known), prints(&function(0x900, "hello", 0x40), &known));
+        assert_eq!(here, there);
+        assert_eq!(here.0.len(), 16);
+        assert!(here.0.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn the_loose_fingerprint_ignores_the_text_of_strings() {
+        let known = BTreeMap::new();
+        let (english, french) =
+            (prints(&function(0x100, "hello", 0x40), &known), prints(&function(0x100, "bonjour", 0x40), &known));
+        assert_ne!(english.0, french.0);
+        assert_eq!(english.1, french.1);
+    }
+
+    #[test]
+    fn a_call_is_to_its_callees_fingerprint_where_it_is_known() {
+        // the same callee at two offsets: the callers agree once the callee is known
+        let at = |offset: i64| BTreeMap::from([(offset, "c0ffee".to_string())]);
+        let (first, second) =
+            (prints(&function(0x100, "hi", 0x40), &at(0x40)), prints(&function(0x100, "hi", 0x80), &at(0x80)));
+        assert_eq!(first, second);
+        // unknown, the call is to an offset, which tells them apart
+        let unknown = BTreeMap::new();
+        assert_ne!(prints(&function(0x100, "hi", 0x40), &unknown), prints(&function(0x100, "hi", 0x80), &unknown));
+    }
+
+    #[test]
+    fn strings_are_written_as_compact_json_writes_them() {
+        for text in ["plain", "quote \" and \\ back", "tab\there\nnew\r\u{8}\u{c}\u{1}", "ジ ü 😀"] {
+            let mut out = String::new();
+            push_string(&mut out, text);
+            assert_eq!(out, serde_json::to_string(text).unwrap(), "{text:?}");
+        }
+    }
+}

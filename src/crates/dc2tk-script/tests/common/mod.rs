@@ -23,17 +23,17 @@ pub fn tables() -> &'static BTreeMap<String, Table> {
     TABLES.get_or_init(|| natives::load(&root().join("src").join("natives")).unwrap())
 }
 
-/// sdk.SDK_DIR.
+/// The SDK folder of the repository.
 pub fn sdk_dir() -> PathBuf {
     root().join("sdk")
 }
 
-/// definitions.DEFAULT_SET.
+/// The default definition set of the repository.
 pub fn default_set() -> PathBuf {
     root().join("definitions").join("pal")
 }
 
-/// sdk.load_texts().
+/// The SDK's headers, by path from the SDK folder.
 pub fn sdk_texts() -> &'static IndexMap<String, String> {
     static TEXTS: OnceLock<IndexMap<String, String>> = OnceLock::new();
     TEXTS.get_or_init(|| sdk::load_texts(&sdk_dir()).unwrap())
@@ -289,13 +289,13 @@ pub fn sample_script() -> Vec<u8> {
 }
 
 // running C text in the test VM
-/// vm.functions(text): the text with the SDK's headers, compiled to the VM's function table.
+/// C text with the SDK's headers, compiled to the test VM's function table.
 pub fn functions(text: &str) -> dc2tk_script::Result<vm::Functions> {
     let program = library::expand(parse::parse(text)?, &no_texts(), sdk_texts())?;
     vm::lines_table(&compile::to_asm(&sdk::resolve(&program, tables())?, tables(), None)?)
 }
 
-/// vm.run_function: runs a function with 64 zero globals unless given.
+/// Runs a function in the test VM, with 64 zero globals unless given.
 pub fn run_function(
     table: &vm::Functions,
     name: &str,

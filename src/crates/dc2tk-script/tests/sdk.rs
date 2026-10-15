@@ -111,7 +111,7 @@ fn present(program: Node, found: &Context) -> Node {
     sdk::present(program, Some(found), &HashMap::new(), &[], &mut Sounds::default())
 }
 
-/// names.apply(program, {}, sdk.reserved(found), program_names).
+/// The program with its functions named, from no definitions, around the names found reserves.
 fn named(program: Node, found: &Context, program_names: &HashMap<i64, String>) -> Node {
     let known = Known::new(Default::default());
     let lookup = known.with_loose(&IndexMap::new());
@@ -431,7 +431,7 @@ fn sound_context(enums: &[(&str, i64, &str)], sound_set_banks: &[(i64, &str)]) -
     found
 }
 
-/// sdk.named_sounds(nodes, found, {}).
+/// The sound pass over statements, with no banks known to start with.
 fn named_sounds(nodes: &[Node], found: &Context) -> Node {
     soundpass::named_sounds(nodes, found, &mut soundpass::Banks::default(), None, None)
 }
