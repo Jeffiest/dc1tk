@@ -15,14 +15,15 @@
 //! As for the item table ([`crate::item_data`]), a mod's table holds only what it changes: a value
 //! the same as the disc's changes nothing, so an unedited table writes the files back unchanged
 //! and the executable keeps every byte. Several mods' tables merge; two giving one value different
-//! numbers are refused when the edits are made ([`cfg_text::apply_edits`], [`apply_patches`]).
+//! numbers are refused when the edits are made ([`cfg_text::apply_edits`],
+//! [`crate::elf::apply_patches`]).
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
 use crate::cfg_text::{self, Arg, Edit, Script, To};
-use crate::monster_data::Patch;
+use crate::elf::Patch;
 use crate::{bail, Result};
 
 /// What a value is and the values the engine's field takes.
@@ -694,10 +695,10 @@ impl Table {
                             continue;
                         };
                         let text = label_in(value, language, label_name, label)?;
-                        let Some(bytes) = crate::item_data::name_bytes(&text, language.unwrap_or(1)) else {
+                        let Some(bytes) = crate::lang::name_bytes(&text, language.unwrap_or(1)) else {
                             bail!("{label}: {label_name} {text:?} has characters the game's text cannot hold");
                         };
-                        if crate::item_data::converted_len(&bytes, language.unwrap_or(1)) > most {
+                        if crate::lang::converted_len(&bytes, language.unwrap_or(1)) > most {
                             bail!("{label}: {label_name} {text:?} is longer than the {most} bytes the game keeps");
                         }
                         set_piece(statement, arg, cfg_text::str_text(&bytes), label)?;
@@ -1014,7 +1015,7 @@ impl Table {
                 }
             }
         }
-        let json: Value = serde_json::from_str(&crate::item_data::json_text(&self.to_json())).unwrap();
+        let json: Value = serde_json::from_str(&crate::json::json_text(&self.to_json())).unwrap();
         match self.changes(&json, "check") {
             Ok((edits, patches)) if edits.is_empty() && patches.is_empty() => {}
             Ok((edits, patches)) => wrong.push(format!(
@@ -1052,7 +1053,7 @@ fn label_in(value: &Value, language: Option<usize>, name: &str, what: &str) -> R
     match (value, language) {
         (Value::String(text), _) => Ok(text.clone()),
         (Value::Object(by_language), language) => {
-            let short = crate::item_data::LANGUAGE_NAMES[language.unwrap_or(1)];
+            let short = crate::lang::LANGUAGE_NAMES[language.unwrap_or(1)];
             match by_language.get(short).or_else(|| by_language.get("en")) {
                 Some(Value::String(text)) => Ok(text.clone()),
                 _ => bail!("{what}: \"{name}\" has no text for {short} (nor en)"),
@@ -1124,32 +1125,6 @@ fn flatten<'a>(
     bail!("{label} {name}: no such field");
 }
 
-/// The executable with the patches made; two that give one value different bytes are refused,
-/// naming both mods.
-pub fn apply_patches(elf: &[u8], patches: &[Patch]) -> Result<Vec<u8>> {
-    let mut elf = elf.to_vec();
-    let mut done: BTreeMap<usize, &Patch> = BTreeMap::new();
-    for patch in patches {
-        if let Some(other) = done.get(&patch.offset) {
-            if other.bytes != patch.bytes {
-                bail!("{} is given two values, by mod {} and mod {}", patch.what, other.module, patch.module);
-            }
-            continue;
-        }
-        done.insert(patch.offset, patch);
-        elf[patch.offset..patch.offset + patch.bytes.len()].copy_from_slice(&patch.bytes);
-    }
-    Ok(elf)
-}
-
-/// A table of the executable at `address`: its offset in the file, checked to hold `size` bytes.
-pub fn elf_offset(elf: &[u8], address: u32, size: usize, what: &str) -> Result<usize> {
-    match crate::monster_data::file_offset(elf, address).filter(|start| start + size <= elf.len()) {
-        Some(start) => Ok(start),
-        None => bail!("{}: not the PAL executable (no {what} at 0x{address:X})", crate::monster_data::EXECUTABLE),
-    }
-}
-
 /// {key: statement indices} of the statements with this tag, by their first argument.
 pub fn by_first(script: &Script, tag: &str) -> BTreeMap<i32, Vec<usize>> {
     let mut out: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
@@ -1179,6 +1154,7 @@ pub fn parse_all(names: &[String], files: &[Vec<u8>]) -> Result<Vec<Script>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::elf::apply_patches;
     use serde_json::json;
 
     fn sample() -> Table {

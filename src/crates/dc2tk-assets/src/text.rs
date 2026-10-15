@@ -66,7 +66,7 @@ impl Language {
 
     /// The short name ids use (text:en/allmenu).
     pub fn short(self) -> &'static str {
-        ["ja", "en", "fr", "de", "it", "es", "ko"][self as usize]
+        crate::lang::LANGUAGE_NAMES[self as usize]
     }
 
     pub fn from_short(short: &str) -> Option<Language> {

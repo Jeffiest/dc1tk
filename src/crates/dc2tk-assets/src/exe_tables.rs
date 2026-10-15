@@ -6,6 +6,7 @@
 use serde_json::Value;
 
 use crate::data_table::{self, Kind, Record, Table, S16, S8};
+use crate::elf::table_offset;
 use crate::Result;
 
 /// etcitem_spectol_table: s8 {slot, value} by item number - 1 (SetItemSpectolPoint).
@@ -44,7 +45,7 @@ pub const FIRST_FISH: i64 = 0x136;
 /// attribute (flame to scale), 10 attack, 11 durability, any other nothing; `value` the points,
 /// times the item's count or level. As the `items` section of `data:items`, by `item`.
 pub fn spectrumise(elf: &[u8]) -> Result<Table> {
-    let start = data_table::elf_offset(elf, SPECTRUM_TABLE, SPECTRUM_ITEMS * 2, "spectrumising table")?;
+    let start = table_offset(elf, SPECTRUM_TABLE, SPECTRUM_ITEMS * 2, "spectrumising table")?;
     let mut records = Vec::new();
     for number in 0..SPECTRUM_ITEMS {
         let mut record = Record::new(&[("item", Value::from(number + 1))]);
@@ -60,7 +61,7 @@ pub fn spectrumise(elf: &[u8]) -> Result<Table> {
 /// Donny's shop: each row's item and the invention level Donny must be above to offer it. As the
 /// `donny` section of `data:shops`, by `row`.
 pub fn donny(elf: &[u8]) -> Result<Table> {
-    let start = data_table::elf_offset(elf, DONNY_TABLE, (DONNY_ROWS + 1) * 4, "Donny's shop")?;
+    let start = table_offset(elf, DONNY_TABLE, (DONNY_ROWS + 1) * 4, "Donny's shop")?;
     let mut records = Vec::new();
     for row in 0..DONNY_ROWS {
         let mut record = Record::new(&[("row", Value::from(row))]);
@@ -77,8 +78,8 @@ pub fn donny(elf: &[u8]) -> Result<Table> {
 /// The character tables (`data:characters`): starting HP and equipment, the WHP a weapon gains
 /// at a level-up, Monica's monster forms and the badges' forms.
 pub fn characters(elf: &[u8]) -> Result<Table> {
-    let life = data_table::elf_offset(elf, LIFE_TABLE, 8, "starting HP table")?;
-    let weapons = data_table::elf_offset(elf, WEAPON_TABLE, 40, "starting weapon table")?;
+    let life = table_offset(elf, LIFE_TABLE, 8, "starting HP table")?;
+    let weapons = table_offset(elf, WEAPON_TABLE, 40, "starting weapon table")?;
     let mut table = Table::new("a character table", Vec::new(), elf.to_vec());
     let mut characters = Vec::new();
     for (number, name) in CHARACTERS.iter().enumerate() {
@@ -89,11 +90,11 @@ pub fn characters(elf: &[u8]) -> Result<Table> {
         characters.push(record);
     }
     table.section("characters", &["character"], characters);
-    let whp = data_table::elf_offset(elf, WHP_TABLE, 10, "WHP gain table")?;
+    let whp = table_offset(elf, WHP_TABLE, 10, "WHP gain table")?;
     let mut level_up = Record::new(&[]);
     level_up.bytes("whp_gain", S8, whp, 10);
     table.section("weapon_level_up", &[], vec![level_up]);
-    let henge = data_table::elf_offset(elf, HENGE_TABLE, HENGE_ROWS * HENGE_RECORD, "monster form table")?;
+    let henge = table_offset(elf, HENGE_TABLE, HENGE_ROWS * HENGE_RECORD, "monster form table")?;
     let mut forms = Vec::new();
     for row in 0..HENGE_ROWS {
         let at = henge + row * HENGE_RECORD;
@@ -102,7 +103,7 @@ pub fn characters(elf: &[u8]) -> Result<Table> {
         forms.push(record);
     }
     table.section("monster_forms", &["monster"], forms);
-    let progress = data_table::elf_offset(elf, PROGRESS_TABLE, PROGRESS_ROWS * 10, "badge table")?;
+    let progress = table_offset(elf, PROGRESS_TABLE, PROGRESS_ROWS * 10, "badge table")?;
     let mut badges = Vec::new();
     for row in 0..PROGRESS_ROWS {
         let mut record = Record::new(&[("row", Value::from(row))]);
@@ -119,7 +120,7 @@ pub fn characters(elf: &[u8]) -> Result<Table> {
 /// gift type and takes a gift whose three gift slots all hold the item. The rows are the
 /// table's; none is added (the row after the last ends it).
 pub fn gifts(elf: &[u8]) -> Result<Table> {
-    let start = data_table::elf_offset(elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table")?;
+    let start = table_offset(elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table")?;
     let mut records = Vec::new();
     for row in 0..GIFT_ROWS {
         let at = start + row * 6;
@@ -138,7 +139,7 @@ pub fn gifts(elf: &[u8]) -> Result<Table> {
 /// shows and two values only event scripts read (_SPHIDA_GET_CULB_DEF), `unknown_4` and
 /// `unknown_8`.
 pub fn spheda(elf: &[u8]) -> Result<Table> {
-    let start = data_table::elf_offset(elf, CLUB_TABLE, 7 * 0xC, "Spheda club table")?;
+    let start = table_offset(elf, CLUB_TABLE, 7 * 0xC, "Spheda club table")?;
     let mut records = Vec::new();
     for club in CLUBS {
         let at = start + (club - CLUBS.start()) * 0xC;
@@ -157,7 +158,7 @@ pub fn spheda(elf: &[u8]) -> Result<Table> {
 /// 171 rows are all GetChildFishNo reads, in either order of the parents; a pair no row has
 /// breeds item 0x136.
 pub fn breeding(elf: &[u8]) -> Result<Table> {
-    let start = data_table::elf_offset(elf, BREEDING_TABLE, BREEDING_ROWS * 3, "breeding table")?;
+    let start = table_offset(elf, BREEDING_TABLE, BREEDING_ROWS * 3, "breeding table")?;
     let mut records = Vec::new();
     for row in 0..BREEDING_ROWS {
         let at = start + row * 3;
@@ -182,7 +183,7 @@ mod tests {
         let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
             return;
         };
-        let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::monster_data::EXECUTABLE)).unwrap();
+        let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::elf::EXECUTABLE)).unwrap();
         for table in [
             spectrumise(&elf).unwrap(),
             donny(&elf).unwrap(),
@@ -200,11 +201,11 @@ mod tests {
             .changes(&json!({"weapon_level_up": [{"whp_gain": [9, 9, 9, 9, 9, 9, 9, 9, 9, 9]}]}), "m")
             .unwrap();
         assert!(edits.is_empty() && !patches.is_empty());
-        let patched = data_table::apply_patches(&elf, &patches).unwrap();
+        let patched = crate::elf::apply_patches(&elf, &patches).unwrap();
         assert_eq!(super::characters(&patched).unwrap().to_json()["weapon_level_up"][0]["whp_gain"][3], 9);
         assert_eq!(donny(&elf).unwrap().to_json()["donny"].as_array().unwrap().len(), DONNY_ROWS);
         // the table after the gifts ends at a gift type of -1; the clubs and breeding as found
-        let start = data_table::elf_offset(&elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table").unwrap();
+        let start = table_offset(&elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table").unwrap();
         assert_eq!(&elf[start + GIFT_ROWS * 6..start + GIFT_ROWS * 6 + 2], &(-1i16).to_le_bytes());
         assert_eq!(
             gifts(&elf).unwrap().to_json()["gifts"][0],
@@ -217,7 +218,7 @@ mod tests {
         let breeding = breeding(&elf).unwrap();
         assert_eq!(breeding.to_json()["breeding"][170], json!({"row": 170, "parents": [0x1A, 0x1A], "child": 0x1A}));
         let (_, patches) = breeding.changes(&json!({"breeding": [{"row": 0, "child": 5}]}), "m").unwrap();
-        let patched = data_table::apply_patches(&elf, &patches).unwrap();
+        let patched = crate::elf::apply_patches(&elf, &patches).unwrap();
         assert_eq!(super::breeding(&patched).unwrap().to_json()["breeding"][0]["child"], 5);
         assert!(gifts(&elf).unwrap().changes(&json!({"gifts": [{"row": 0, "gift_type": -1}]}), "m").is_err());
     }

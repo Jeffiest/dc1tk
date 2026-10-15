@@ -527,7 +527,7 @@ mod tests {
         let names = std::fs::read(menu.join("cfg7").join(crate::item_data::NAMES)).ok();
         let shops = Shops::read(&files, names.as_deref()).unwrap();
         assert_eq!(shops.write(), files);
-        let json: Value = serde_json::from_str(&crate::item_data::json_text(&shops.to_json())).unwrap();
+        let json: Value = serde_json::from_str(&crate::json::json_text(&shops.to_json())).unwrap();
         assert!(shops.changes(&json, "m").unwrap().is_empty());
         for (item, places) in &shops.prices {
             for (file, at) in places.iter().enumerate() {

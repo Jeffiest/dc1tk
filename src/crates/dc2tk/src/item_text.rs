@@ -70,7 +70,7 @@ pub fn item_messages(
         english_extra: (!english_extra.is_empty()).then(|| english_extra.to_vec()),
     };
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
-    for language in 0..item_data::LANGUAGE_NAMES.len() {
+    for language in 0..dc2tk_assets::lang::LANGUAGE_NAMES.len() {
         let font = fonts.font(text::LANGUAGES[language]);
         for file in ["system", "allmenu"] {
             let mine: Vec<&ItemText> =

@@ -15,13 +15,14 @@ use serde_json::{Map, Value};
 
 use dc2tk_assets::cfg_text::Edit;
 use dc2tk_assets::chest_data::{self, Chests};
-use dc2tk_assets::data_table::{self, Table as DataTable};
+use dc2tk_assets::data_table::Table as DataTable;
 use dc2tk_assets::dungeon_layout::{self, Layouts};
+use dc2tk_assets::elf::{self, Patch};
 use dc2tk_assets::idea_data::{self, Ideas};
 use dc2tk_assets::item_data::{self, ItemText, Items};
-use dc2tk_assets::monster_data::{self, Monsters, Patch};
+use dc2tk_assets::monster_data::Monsters;
 use dc2tk_assets::shop_data::{self, Shops};
-use dc2tk_assets::{exe_tables, game_data, text};
+use dc2tk_assets::{exe_tables, game_data, json, text};
 use dc2tk_disc::{iso, rebuild, Image};
 use dc2tk_script::discfiles::{self, Files};
 use dc2tk_script::replace::{self, Line};
@@ -32,11 +33,11 @@ use crate::map_cmd::Disc;
 pub fn executable(iso_path: &Path) -> Result<Vec<u8>> {
     if iso_path.is_file() {
         let image = Image::open(iso_path)?;
-        let record = iso::find(image.bytes(), monster_data::EXECUTABLE)?
-            .with_context(|| format!("the disc has no {}", monster_data::EXECUTABLE))?;
+        let record = iso::find(image.bytes(), elf::EXECUTABLE)?
+            .with_context(|| format!("the disc has no {}", elf::EXECUTABLE))?;
         return Ok(iso::read_file(image.bytes(), &record).to_vec());
     }
-    let path = iso_path.join(monster_data::EXECUTABLE);
+    let path = iso_path.join(elf::EXECUTABLE);
     fs::read(&path).with_context(|| format!("cannot read {}", path.display()))
 }
 
@@ -271,7 +272,7 @@ impl Table {
 pub fn export(iso_path: &Path, table: &str) -> Result<String> {
     let disc = Disc::open(iso_path)?;
     let loaded = load(table, &executable(iso_path)?, &|path| disc.read(path))?;
-    Ok(item_data::json_text(&loaded.to_json()))
+    Ok(json::json_text(&loaded.to_json()))
 }
 
 /// Writes each data: key's table into the mod (data/<table>.json) and adds its line to mod.json;
@@ -384,11 +385,8 @@ pub fn apply_data(
             }
         };
         // the layouts name parts as a data:parts line of the build names them
-        let renamed = if table == "layouts" && !patches.is_empty() {
-            Some(data_table::apply_patches(&elf, &patches)?)
-        } else {
-            None
-        };
+        let renamed =
+            if table == "layouts" && !patches.is_empty() { Some(elf::apply_patches(&elf, &patches)?) } else { None };
         let loaded = load(table, renamed.as_deref().unwrap_or(&elf), &current)?;
         let mut change = DataChange { table: table.to_string(), changed: Vec::new(), files: Vec::new() };
         if let Table::Layouts(layouts) = &loaded {
@@ -464,7 +462,7 @@ pub fn apply_data(
             change.files.push((top.clone(), data.len(), current(top)?.len()));
         }
         if patched {
-            change.files.push((monster_data::EXECUTABLE.to_string(), elf.len(), elf.len()));
+            change.files.push((elf::EXECUTABLE.to_string(), elf.len(), elf.len()));
         }
         out.extend(rewritten);
         if !texts.is_empty() {
@@ -482,7 +480,7 @@ pub fn apply_data(
         }
         changes.push(change);
     }
-    let executable_out = if patches.is_empty() { None } else { Some(data_table::apply_patches(&elf, &patches)?) };
+    let executable_out = if patches.is_empty() { None } else { Some(elf::apply_patches(&elf, &patches)?) };
     Ok((out, executable_out, changes))
 }
 
@@ -505,13 +503,9 @@ pub fn check(out_path: &Path, changes: &[DataChange], files: &Files, executable:
     let disc = Disc::open(out_path)?;
     for change in changes {
         for (path, _, _) in &change.files {
-            let wanted = if path == monster_data::EXECUTABLE {
-                executable.map(<[u8]>::to_vec)
-            } else {
-                files.get(path).cloned()
-            };
-            let read =
-                if path == monster_data::EXECUTABLE { self::executable(out_path).ok() } else { disc.read(path).ok() };
+            let wanted =
+                if path == elf::EXECUTABLE { executable.map(<[u8]>::to_vec) } else { files.get(path).cloned() };
+            let read = if path == elf::EXECUTABLE { self::executable(out_path).ok() } else { disc.read(path).ok() };
             if wanted.is_none() || read != wanted {
                 wrong.push(path.clone());
             }

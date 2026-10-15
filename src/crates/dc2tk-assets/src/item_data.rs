@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use crate::cfg_text::{self, Arg, Edit, Script, To};
+use crate::lang::{converted_len, name_bytes, LANGUAGE_NAMES};
 use crate::{bail, Result};
 
 /// Where the engine reads the tables (`menu/cfg7/%s`, LoadGameDataAnalyze).
@@ -253,9 +254,6 @@ pub struct ItemText {
     pub what: String,
     pub module: String,
 }
-
-/// The language codes (text.rs' short names) by LanguageCode.
-pub const LANGUAGE_NAMES: [&str; 7] = ["ja", "en", "fr", "de", "it", "es", "ko"];
 
 /// ConvertUsedItemType (gamedata.cpp): the family of an item type, 3 weapon, 4 clothing, 5
 /// ridepod part, 2 attachment, 1 item, 7 gift box, 6 fish, 8 boiled.
@@ -545,37 +543,6 @@ fn same(old: &Value, new: &Value) -> bool {
 /// its text.
 const TEXT_KEYS: [&str; 4] = ["name", "names", "description", "descriptions"];
 
-/// An item name as a `comdatmes` string of a language: the engine's own characters (Shift-JIS),
-/// and in French, German, Italian and Spanish the Latin-1 letters as the `[UNI00xx]` codes
-/// ConvertFontCode turns into one byte. In English a letter Shift-JIS lacks that the build draws
-/// into the English font for the menus' names (font::drawable: é, ŷ) is its plain spelling
-/// (font::folded: e, y), as nothing turns codes into those glyphs there.
-pub fn name_bytes(text: &str, language: usize) -> Option<Vec<u8>> {
-    if language == 1 {
-        let mut out = Vec::new();
-        for c in text.chars() {
-            match dc2tk_disc::text::encode(c.encode_utf8(&mut [0; 4])) {
-                Some(bytes) => out.extend(bytes),
-                None if crate::font::drawable(c) => out.extend(crate::font::folded(c)?.bytes()),
-                None => return None,
-            }
-        }
-        return Some(out);
-    }
-    if !(2..=5).contains(&language) {
-        return dc2tk_disc::text::encode(text);
-    }
-    let mut out = Vec::new();
-    for c in text.chars() {
-        match c as u32 {
-            0x20..=0x7E => out.push(c as u8),
-            code @ 0xA0..=0xFF => out.extend(format!("[UNI00{code:02x}]").bytes()),
-            _ => return None,
-        }
-    }
-    Some(out)
-}
-
 /// The longest name an item keeps: _MES_SYS converts it in 256 bytes, and the copies an owned
 /// item takes (CopyDataWeapon, CopyDataRoboPart, CopyDataFish, CopyDataAttach) keep it in
 /// fixed fields: 0x20 bytes for weapons and ridepod parts, 0x1A attachments, 0x15 fish, 0x16
@@ -588,24 +555,6 @@ pub fn name_most(item_type: i32) -> usize {
         8 => 0x15,
         _ => 0xFF,
     }
-}
-
-/// The bytes a name takes once ConvertFontCode has turned each 9-character code into one byte.
-pub fn converted_len(bytes: &[u8], language: usize) -> usize {
-    if !(2..=5).contains(&language) {
-        return bytes.len();
-    }
-    let mut length = 0;
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] == b'[' && bytes.get(at + 8) == Some(&b']') && !bytes[at + 1..at + 8].contains(&b']') {
-            at += 9;
-        } else {
-            at += 1;
-        }
-        length += 1;
-    }
-    length
 }
 
 /// Per language, the text a record gives: `one` (a string, for `default_all` languages or English
@@ -1160,74 +1109,10 @@ fn exe_spectrum_items() -> i64 {
     crate::exe_tables::SPECTRUM_ITEMS as i64
 }
 
-/// The table as text: objects a field a line, lists of numbers on one line, as a person edits it.
-pub fn json_text(value: &Value) -> String {
-    let mut out = String::new();
-    write_value(value, 0, &mut out);
-    out.push('\n');
-    out
-}
-
-fn write_value(value: &Value, indent: usize, out: &mut String) {
-    let pad = |depth: usize| "  ".repeat(depth);
-    match value {
-        // a small entry of a list ({"item": 210, "count": 5}) on one line
-        Value::Object(map)
-            if indent > 2 && map.len() <= 3 && map.values().all(|item| !item.is_object() && !item.is_array()) =>
-        {
-            let members: Vec<String> = map
-                .iter()
-                .map(|(key, item)| {
-                    format!("{}: {}", serde_json::to_string(key).unwrap(), serde_json::to_string(item).unwrap())
-                })
-                .collect();
-            out.push_str(&format!("{{{}}}", members.join(", ")));
-        }
-        Value::Object(map) if !map.is_empty() => {
-            out.push_str("{\n");
-            for (number, (key, item)) in map.iter().enumerate() {
-                out.push_str(&pad(indent + 1));
-                out.push_str(&serde_json::to_string(key).unwrap());
-                out.push_str(": ");
-                write_value(item, indent + 1, out);
-                if number + 1 < map.len() {
-                    out.push(',');
-                }
-                out.push('\n');
-            }
-            out.push_str(&pad(indent));
-            out.push('}');
-        }
-        // rows of text, one a line (a dungeon layout's cells, dungeon_layout)
-        Value::Array(list)
-            if list.iter().any(|item| item.is_object() || item.is_array())
-                || (list.len() > 1 && list.iter().all(|item| item.as_str().is_some_and(|text| text.contains(' ')))) =>
-        {
-            out.push_str("[\n");
-            for (number, item) in list.iter().enumerate() {
-                out.push_str(&pad(indent + 1));
-                write_value(item, indent + 1, out);
-                if number + 1 < list.len() {
-                    out.push(',');
-                }
-                out.push('\n');
-            }
-            out.push_str(&pad(indent));
-            out.push(']');
-        }
-        Value::Array(list) => {
-            let items: Vec<String> = list.iter().map(|item| serde_json::to_string(item).unwrap()).collect();
-            out.push('[');
-            out.push_str(&items.join(", "));
-            out.push(']');
-        }
-        other => out.push_str(&serde_json::to_string(other).unwrap()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::json::json_text;
 
     fn sample() -> Vec<Vec<u8>> {
         let files: [&str; 7] = [

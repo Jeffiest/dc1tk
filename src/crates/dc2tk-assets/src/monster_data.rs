@@ -17,10 +17,9 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
+use crate::elf::{file_offset, Patch, EXECUTABLE};
 use crate::{bail, Result};
 
-/// The boot executable, as the disc's root names it.
-pub const EXECUTABLE: &str = "SCES_511.90";
 /// base_monster_define's address and the most records its 0xF740 bytes hold.
 pub const TABLE_ADDRESS: u32 = 0x341DA0;
 pub const RECORD: usize = 0xB8;
@@ -124,25 +123,6 @@ const SPECS: [Spec; 41] = [
     // kept last: the name, a label
     one("name", 0x04, Kind::Text(32)),
 ];
-
-/// Where a vaddr is in an ELF file: by the program header that loads it from the file.
-pub fn file_offset(elf: &[u8], vaddr: u32) -> Option<usize> {
-    if elf.len() < 0x34 || &elf[..4] != b"\x7fELF" {
-        return None;
-    }
-    let u16_at = |at: usize| u16::from_le_bytes([elf[at], elf[at + 1]]) as usize;
-    let u32_at = |at: usize| elf.get(at..at + 4).map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()));
-    let (table, size, count) = (u32_at(0x1C)? as usize, u16_at(0x2A), u16_at(0x2C));
-    for number in 0..count {
-        let header = table + number * size;
-        let (kind, offset, address, file_size) =
-            (u32_at(header)?, u32_at(header + 4)?, u32_at(header + 8)?, u32_at(header + 16)?);
-        if kind == 1 && vaddr >= address && vaddr - address < file_size {
-            return Some((offset + (vaddr - address)) as usize);
-        }
-    }
-    None
-}
 
 #[derive(Clone, Debug)]
 pub struct Monsters {
@@ -364,15 +344,6 @@ impl Monsters {
     }
 }
 
-/// Bytes a mod changes in the executable.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Patch {
-    pub offset: usize,
-    pub bytes: Vec<u8>,
-    pub what: String,
-    pub module: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,7 +450,7 @@ mod tests {
                 }
             }
         }
-        let json: Value = serde_json::from_str(&crate::item_data::json_text(&monsters.to_json())).unwrap();
+        let json: Value = serde_json::from_str(&crate::json::json_text(&monsters.to_json())).unwrap();
         assert!(monsters.changes(&json, "m").unwrap().is_empty());
         assert_eq!(monsters.apply(&[]).unwrap(), elf);
     }

@@ -14,6 +14,7 @@
 use serde_json::Value;
 
 use crate::data_table::{self, Adding, Kind, Place, Record, Table, S16, S8, U8};
+use crate::elf::table_offset;
 use crate::Result;
 
 /// The menu folders by language that hold copies.
@@ -83,7 +84,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
         .filter_map(|file| data_table::tagged(&table.scripts[file], "DATATABLESET").last().map(|&at| (file, at, 0)))
         .collect();
     table.adding(Adding { counts, most: RECIPES_MOST, why: RECIPES_WHY, place: Some("recipe"), ..Adding::default() });
-    let start = data_table::elf_offset(elf, SCOOP_TABLE, SCOOPS * SCOOP_RECORD, "scoop table")?;
+    let start = table_offset(elf, SCOOP_TABLE, SCOOPS * SCOOP_RECORD, "scoop table")?;
     let mut scoops = Vec::new();
     for number in 0..SCOOPS {
         let at = start + number * SCOOP_RECORD;
@@ -110,7 +111,7 @@ mod tests {
         };
         let root = std::path::Path::new(&corpus);
         let files: Vec<Vec<u8>> = paths().iter().map(|path| std::fs::read(root.join(path)).unwrap()).collect();
-        let elf = std::fs::read(root.join(crate::monster_data::EXECUTABLE)).unwrap();
+        let elf = std::fs::read(root.join(crate::elf::EXECUTABLE)).unwrap();
         let table = read(&files, &elf).unwrap();
         assert_eq!(table.write(), files);
         assert_eq!(table.check(), Vec::<String>::new());

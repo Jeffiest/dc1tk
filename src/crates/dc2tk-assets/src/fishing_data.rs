@@ -21,6 +21,7 @@ use serde_json::Value;
 
 use crate::cfg_text::Arg;
 use crate::data_table::{self, Adding, Kind, Place, Record, Table, B8, S16, S32};
+use crate::elf::table_offset;
 use crate::Result;
 
 pub const LANGUAGES: usize = 7;
@@ -46,7 +47,7 @@ pub fn paths() -> Vec<String> {
 
 /// The NUL-ended text a pointer of the executable points at.
 fn text_at(elf: &[u8], pointer: u32) -> Option<Value> {
-    let start = crate::monster_data::file_offset(elf, pointer)?;
+    let start = crate::elf::file_offset(elf, pointer)?;
     let end = start + elf.get(start..)?.iter().position(|&byte| byte == 0)?;
     Some(Value::from(dc2tk_disc::text::decode_lossy(&elf[start..end])))
 }
@@ -207,7 +208,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     table.section("race_fish", &["class", "number"], race_fish);
     table.section("prize_groups", &["contest", "group"], groups);
     table.section("prizes", &["contest", "group", "prize"], prizes);
-    let start = data_table::elf_offset(elf, SPECIES_TABLE, SPECIES * SPECIES_RECORD, "fish species table")?;
+    let start = table_offset(elf, SPECIES_TABLE, SPECIES * SPECIES_RECORD, "fish species table")?;
     let mut species = Vec::new();
     for row in 1..SPECIES {
         let at = start + row * SPECIES_RECORD;
@@ -230,7 +231,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
         species.push(record);
     }
     table.section("species", &["fish"], species);
-    let start = data_table::elf_offset(elf, RACE_TABLE, RACE_KINDS * RACE_RECORD, "fish race table")?;
+    let start = table_offset(elf, RACE_TABLE, RACE_KINDS * RACE_RECORD, "fish race table")?;
     let mut kinds = Vec::new();
     for row in 0..RACE_KINDS {
         let at = start + row * RACE_RECORD;
@@ -262,7 +263,7 @@ mod tests {
         };
         let root = std::path::Path::new(&corpus);
         let files: Vec<Vec<u8>> = paths().iter().map(|path| std::fs::read(root.join(path)).unwrap()).collect();
-        let elf = std::fs::read(root.join(crate::monster_data::EXECUTABLE)).unwrap();
+        let elf = std::fs::read(root.join(crate::elf::EXECUTABLE)).unwrap();
         let table = read(&files, &elf).unwrap();
         assert_eq!(table.write(), files);
         assert_eq!(table.check(), Vec::<String>::new());

@@ -683,7 +683,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     if let Some(executable) = &executable {
         // the executable tables (monsters, spectrumising, ...): the boot executable patched in
         // place, its size kept
-        rebuild::overwrite_iso_file(&args.output, dc2tk_assets::monster_data::EXECUTABLE, executable)?;
+        rebuild::overwrite_iso_file(&args.output, dc2tk_assets::elf::EXECUTABLE, executable)?;
     }
     for item in &written.placed {
         let how = if item.added {

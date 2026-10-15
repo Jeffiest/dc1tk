@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use crate::cfg_text::{self, Arg, Edit, Script, To};
-use crate::item_data::{self, LANGUAGE_NAMES};
+use crate::lang::{self, LANGUAGE_NAMES};
 use crate::{bail, Result};
 
 /// Every copy, the one in `menu/` (Japanese, read by nothing) first.
@@ -83,7 +83,7 @@ struct Given {
 /// The bytes a name takes in the heap: ConvertFontCode's for Spanish, the file's otherwise.
 pub fn stored_len(name: &[u8], language: usize) -> usize {
     if language >= 5 {
-        item_data::converted_len(name, language)
+        lang::converted_len(name, language)
     } else {
         name.len()
     }
@@ -538,7 +538,7 @@ fn name_bytes(text: &str, language: usize, label: &str) -> Result<Vec<u8>> {
     if text.chars().any(|c| c.is_control() || c == '\\') {
         bail!("{label}: its {short} name {text:?} has a control character or a backslash");
     }
-    match item_data::name_bytes(text, language) {
+    match lang::name_bytes(text, language) {
         Some(bytes) => Ok(bytes),
         None => bail!("{label}: its {short} name {text:?} has characters the game's {short} text cannot hold"),
     }

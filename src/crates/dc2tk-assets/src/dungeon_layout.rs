@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 use serde_json::{json, Map, Value};
 
 use crate::cfg_text::{Arg, Script, Statement};
-use crate::monster_data::file_offset;
+use crate::elf::file_offset;
 use crate::{bail, json, Context, Error, Result};
 
 /// The room scripts on the disc, by name (`dungeon/cfg_file/<name>.cfg`). d04f01 and d07f02 are
@@ -115,14 +115,15 @@ fn name_found_by_the_engine(part: usize) -> Option<&'static str> {
 /// section 2): each part's name (its string in place, 7 letters at most), kind, link, entrance and
 /// the eight tile numbers no code reads; each mini map's tile for each part.
 pub fn parts_table(elf: &[u8]) -> Result<crate::data_table::Table> {
-    use crate::data_table::{elf_offset, Kind, Record, Table, S16, U8};
-    let start = elf_offset(elf, PARTS_TABLE, PARTS_COUNT * PARTS_RECORD, "PartsInfoData")?;
+    use crate::data_table::{Kind, Record, Table, S16, U8};
+    use crate::elf::table_offset;
+    let start = table_offset(elf, PARTS_TABLE, PARTS_COUNT * PARTS_RECORD, "PartsInfoData")?;
     let mut table = Table::new("a parts table", Vec::new(), elf.to_vec());
     let mut parts = Vec::new();
     for number in 0..PARTS_COUNT {
         let at = start + number * PARTS_RECORD;
         let pointer = u32::from_le_bytes(elf[at..at + 4].try_into().unwrap());
-        let name_at = elf_offset(elf, pointer, PART_NAME_SLOT, "a part's name")?;
+        let name_at = table_offset(elf, pointer, PART_NAME_SLOT, "a part's name")?;
         let mut record = Record::new(&[("part", Value::from(number))]);
         record.bytes("name", Kind::Text(PART_NAME_SLOT), name_at, 1);
         if let Some(why) = name_found_by_the_engine(number) {
@@ -137,7 +138,7 @@ pub fn parts_table(elf: &[u8]) -> Result<crate::data_table::Table> {
         parts.push(record);
     }
     table.section("parts", &["part"], parts);
-    let minimap = elf_offset(elf, MINIMAP_TABLE, MINIMAP_MAPS * MINIMAP_RECORD, "MiniMapInfoData")?;
+    let minimap = table_offset(elf, MINIMAP_TABLE, MINIMAP_MAPS * MINIMAP_RECORD, "MiniMapInfoData")?;
     let mut maps = Vec::new();
     for number in 0..MINIMAP_MAPS {
         let at = minimap + number * MINIMAP_RECORD;
@@ -773,7 +774,7 @@ mod tests {
         let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
             return;
         };
-        let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::monster_data::EXECUTABLE)).unwrap();
+        let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::elf::EXECUTABLE)).unwrap();
         let table = parts_table(&elf).unwrap();
         assert_eq!(table.check(), Vec::<String>::new());
         let json = table.to_json();
@@ -791,7 +792,7 @@ mod tests {
         let (edits, patches) =
             table.changes(&json!({"parts": [{"part": 276, "name": "newp00", "kind": 4, "link": 15}]}), "m").unwrap();
         assert!(edits.is_empty() && patches.len() == 3);
-        let patched = crate::data_table::apply_patches(&elf, &patches).unwrap();
+        let patched = crate::elf::apply_patches(&elf, &patches).unwrap();
         let parts = super::parts(&patched).unwrap();
         assert_eq!((parts[276].name.as_str(), parts[276].kind, parts[276].link), ("newp00", 4, 15));
         assert!(table.changes(&json!({"parts": [{"part": 276, "name": "toolong8"}]}), "m").is_err());
@@ -805,7 +806,7 @@ mod tests {
         };
         let root = std::path::Path::new(&corpus);
         let files: Vec<Vec<u8>> = paths().iter().map(|path| std::fs::read(root.join(path)).unwrap()).collect();
-        let parts = super::parts(&std::fs::read(root.join(crate::monster_data::EXECUTABLE)).unwrap()).unwrap();
+        let parts = super::parts(&std::fs::read(root.join(crate::elf::EXECUTABLE)).unwrap()).unwrap();
         assert_eq!(parts.len(), 277);
         assert_eq!(
             (parts[0].name.as_str(), parts[52].name.as_str(), parts[275].name.as_str()),
