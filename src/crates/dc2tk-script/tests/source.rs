@@ -1,4 +1,5 @@
-//! Carried over from the Python tool's test_source.py
+//! Decompiled source: scripts written as C and compiled back to their bytes, the source writer's
+//! forms, and the functions the decompiler leaves as assembly.
 
 mod common;
 
@@ -169,7 +170,7 @@ fn source_round_trips_through_bytes() {
     assert_eq!(sorted_keys(&fingerprints), ["f_0000", "f_04d4"]);
     assert_eq!(sorted_keys(&loose), ["f_0000", "f_04d4"]);
     let (resolved, tree) = (without_lines(&resolved), without_lines(&tree));
-    assert!(resolved.py_eq(&tree), "{resolved}\n{tree}");
+    assert!(resolved.same_value(&tree), "{resolved}\n{tree}");
 }
 
 #[test]
@@ -260,7 +261,6 @@ fn fingerprints_ignore_names_and_position() {
     let first = prints(EVENT);
     let second = prints(NAMED);
     assert_eq!(values(&first), values(&second));
-    // (the Python also replaces "int g0;\n" with itself, which changes nothing)
     let changed = prints(&EVENT.replace("    v0 = 3;\n", "    v0 = 4;\n"));
     assert_ne!(changed["f_0000"], first["f_0000"]);
     assert_eq!(changed["f_04d4"], first["f_04d4"]);
@@ -299,4 +299,38 @@ fn a_string_pool_file_round_trips_without_pragmas_per_function() {
     assert!(again.contains("#pragma string_pool\n"));
     assert!(!again.contains("#pragma strings") && !again.contains("#pragma padding_of"));
     assert_eq!(built(&again), data);
+}
+
+/// A script of a function that decompiles, then one written as assembly lines that do not.
+fn with_broken(lines: &str) -> Vec<u8> {
+    let text = format!(
+        ".natives event\n.header SB2 main f_0000 globals 0\n.program 100 f_0000\n.code\n\n.function f_0000 local 0 arg 0\n    \
+         call broken\n    pop\n    push 0\n    ret\n\n.function broken local 0 arg 0\n{lines}"
+    );
+    asm::assemble(&text, tables()).unwrap()
+}
+
+#[test]
+fn a_function_the_decompiler_cannot_read_stays_assembly_and_builds_back_to_its_bytes() {
+    let cases = [
+        // an if whose jump goes to an offset between instructions
+        ("    push 1\n    .op 17 5 0\n    push 0\n    ret\n", "jump into the middle of an instruction"),
+        // an operator with nothing on the stack
+        ("    add\n    pop\n    push 0\n    ret\n", "stack underflow"),
+        // a short-circuit operand of two values
+        (
+            "    push 1\n    jf_push L_0001\n    push 2\n    push 3\nL_0001:\n    nop 0\n    pop\n    push 0\n    ret\n",
+            "short-circuit operand is not one expression",
+        ),
+    ];
+    for (lines, reason) in cases {
+        let data = with_broken(lines);
+        let program = decompile::decompile(&stb::read(&data), "event", tables());
+        let functions = program.list("functions");
+        assert_eq!(functions[0].kind(), "function", "{reason}");
+        assert_eq!((functions[1].kind(), functions[1].text("reason")), ("asm", reason));
+        let text = source::text(&program).unwrap();
+        assert!(text.contains(&format!("// {reason}\nasm f_")), "{text}");
+        assert_eq!(built(&text), data, "{reason}");
+    }
 }

@@ -1,4 +1,4 @@
-//! Carried over from the Python tool's test_stack.py
+//! What each instruction does to the VM stack, and the native calls that finds.
 
 mod common;
 

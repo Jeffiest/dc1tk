@@ -1,4 +1,4 @@
-//! Carried over from the Python tool's test_c_features.py
+//! C's features beyond the forms the decompiler writes, compiled and run in the test VM.
 
 mod common;
 

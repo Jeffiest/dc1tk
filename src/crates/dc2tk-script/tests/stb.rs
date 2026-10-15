@@ -1,4 +1,4 @@
-//! Carried over from the Python tool's test_stb.py
+//! The .stb format: files read and written back unchanged, and what the reader makes of them.
 
 mod common;
 

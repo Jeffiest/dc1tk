@@ -1,4 +1,5 @@
-//! Carried over from the Python tool's test_asm.py
+//! The text assembly: files disassemble and assemble back to their own bytes, and the
+//! assembler's forms.
 
 mod common;
 
