@@ -3,6 +3,8 @@
 //! with one skin over every frame, a material per MDT material with a placeholder texture, and an
 //! animation per KEY clip of motion set 0.
 
+use std::collections::{BTreeMap, HashMap, HashSet};
+
 use crate::folder::Folder;
 use crate::gltf::{AccessorType, ComponentType};
 use crate::info_cfg::Arg;
@@ -53,6 +55,7 @@ fn sample(list: &KeyList, frames: &[i64], f: i64, mixing: Mixing) -> Result<Vec<
 }
 
 /// The glTF being built: its JSON parts and its buffer.
+#[derive(Default)]
 struct Gltf {
     bin: Vec<u8>,
     scene_nodes: Vec<usize>,
@@ -72,6 +75,25 @@ const ARRAY_BUFFER: i64 = 34962;
 const ELEMENT_ARRAY_BUFFER: i64 = 34963;
 
 impl Gltf {
+    /// A sampler's index: linear filtering, with the wrap modes when given; without, the first
+    /// sampler (one without wrap modes when there is none yet).
+    fn sampler(&mut self, wrap: Option<(i64, i64)>) -> usize {
+        let Some((s, t)) = wrap else {
+            if self.samplers.is_empty() {
+                self.samplers.push(json!({"magFilter": 9729i64, "minFilter": 9729i64}));
+            }
+            return 0;
+        };
+        let wanted = json!({"magFilter": 9729i64, "minFilter": 9729i64, "wrapS": s, "wrapT": t});
+        match self.samplers.iter().position(|known| *known == wanted) {
+            Some(at) => at,
+            None => {
+                self.samplers.push(wanted);
+                self.samplers.len() - 1
+            }
+        }
+    }
+
     fn view(&mut self, data: &[u8], target: Option<i64>) -> usize {
         while !self.bin.len().is_multiple_of(4) {
             self.bin.push(0);
@@ -1003,7 +1025,9 @@ impl<'a> MeshMotion<'a> {
     }
 }
 
-/// export with the character's parts (info, weights, pose, motion) and the model to write.
+/// export with the character's parts (info, weights, pose, motion) and the model to write, in steps
+/// over the glTF they fill: the frames as nodes, each frame's mesh with its materials, the skin,
+/// the animations, then the asset's description.
 fn export_parts(
     character: &Character,
     model: &Mds,
@@ -1012,41 +1036,70 @@ fn export_parts(
     fps: f64,
     options: &Options,
 ) -> Result<Exported> {
-    let info = &character.info;
-    let deform: Vec<&str> = info.vertex_anime.iter().map(String::as_str).collect();
-    let mut missing_textures: Vec<String> = Vec::new();
-    let mut no_image_textures: Vec<String> = Vec::new();
-    let mut extensions_used: Vec<&str> = Vec::new();
     let flags_of = if options.blend_flags { FrameFlags::of_model(model) } else { Vec::new() };
-    let mut g = Gltf {
-        bin: Vec::new(),
-        scene_nodes: Vec::new(),
-        nodes: Vec::new(),
-        meshes: Vec::new(),
-        materials: Vec::new(),
-        textures: Vec::new(),
-        images: Vec::new(),
-        samplers: Vec::new(),
-        accessors: Vec::new(),
-        buffer_views: Vec::new(),
-        skins: Vec::new(),
-        animations: Vec::new(),
-    };
-    let world = model.world_matrices()?;
+    let mut g = Gltf::default();
     let nodes = &model.nodes;
-
-    let full_names = options.full_names;
-    fn name_of(node: &mds::Node, full: bool) -> &str {
-        if full {
-            node.name.as_str()
-        } else {
-            node.base_name()
+    let parts = Parts {
+        character,
+        nodes,
+        world: model.world_matrices()?,
+        deform: character.info.vertex_anime.iter().map(String::as_str).collect(),
+        primary: primary_set(&character.motions.iter().map(|m| &m.id).collect::<Vec<_>>()),
+        options,
+    };
+    let skeleton_root = add_frames(&mut g, nodes, options.full_names)?;
+    let mut materials = Materials::new(nodes, &flags_of, options);
+    // the morph targets of each frame's mesh: the node they are on, and its motion
+    let mut mesh_motions: BTreeMap<usize, (usize, MeshMotion)> = BTreeMap::new();
+    let mut any_skinned = false;
+    for (i, node) in nodes.iter().enumerate() {
+        let Some(t) = &node.mdt else {
+            continue;
+        };
+        let Some(mesh) = parts.add_mesh(&mut g, out, &mut materials, i, t)? else {
+            continue;
+        };
+        any_skinned |= mesh.skinned;
+        if let Some(motion) = mesh.motion {
+            mesh_motions.insert(i, motion);
         }
     }
-    let name_of = |node| name_of(node, full_names);
+    if let Some(message) = materials.failed {
+        bail!("{message}");
+    }
+    if any_skinned {
+        parts.add_skin(&mut g, skeleton_root)?;
+    }
+    parts.add_animations(&mut g, fps, &mesh_motions)?;
+    let asset = json!({"version": "2.0", "generator": "DC2-Toolkit dc2tk", "extras": asset_extras(options, fps)});
+    let (mut json, bin) = g.json(asset, base);
+    if !materials.extensions_used.is_empty() {
+        if let Value::Object(items) = &mut json {
+            let used = Value::Array(materials.extensions_used.iter().map(|&e| Value::from(e)).collect());
+            items.shift_insert(1, "extensionsUsed".to_string(), used);
+        }
+    }
+    out.write(&format!("{base}.bin"), bin);
+    out.write(&format!("{base}.gltf"), serde_json::to_string(&json).expect("a JSON value serializes").into_bytes());
+    Ok(Exported { missing_textures: materials.missing_textures, no_image_textures: materials.no_image_textures })
+}
+
+/// A frame's name in the glTF: whole (its `--` flags too) or its base name.
+fn frame_name(node: &mds::Node, full: bool) -> &str {
+    if full {
+        node.name.as_str()
+    } else {
+        node.base_name()
+    }
+}
+
+/// The frames as glTF nodes, node i frame i, under one root (a node of its own over a model's
+/// several roots); the root's node.
+fn add_frames(g: &mut Gltf, nodes: &[mds::Node], full_names: bool) -> Result<usize> {
     for (i, node) in nodes.iter().enumerate() {
         let (t, r, s) = decompose(&node.matrix)?;
-        let name = if name_of(node).is_empty() { format!("node{i}") } else { name_of(node).to_string() };
+        let name = frame_name(node, full_names);
+        let name = if name.is_empty() { format!("node{i}") } else { name.to_string() };
         let mut gn = json!({"name": name});
         if t.iter().any(|x| x.abs() > 0.0) {
             gn["translation"] = Value::from(t.to_vec());
@@ -1082,18 +1135,20 @@ fn export_parts(
     let Some(&skeleton_root) = g.scene_nodes.first() else {
         bail!("the model has no root frame");
     };
+    Ok(skeleton_root)
+}
 
-    let primary = primary_set(&character.motions.iter().map(|m| &m.id).collect::<Vec<_>>());
-    let mut texture_index: Vec<(String, usize)> = Vec::new();
-    let mut material_index: Vec<(MaterialKey, usize)> = Vec::new();
-    // the morph targets of each frame's mesh
-    let mut mesh_motions: std::collections::BTreeMap<usize, (usize, MeshMotion)> = Default::default();
-    // per frame: its own flag text, and its ancestors' flag texts that push flags down ('.')
-    let flag_text = |node: &mds::Node| node.name.split_once("--").map_or("", |(_, flags)| flags).to_string();
-    let mut inherited_text: Vec<String> = Vec::with_capacity(nodes.len());
+/// A frame's own name flags (after `--`).
+fn flag_text(node: &mds::Node) -> String {
+    node.name.split_once("--").map_or("", |(_, flags)| flags).to_string()
+}
+
+/// Per frame: its ancestors' flag texts that push flags down ('.').
+fn inherited_flag_texts(nodes: &[mds::Node]) -> Vec<String> {
+    let mut inherited: Vec<String> = Vec::with_capacity(nodes.len());
     for node in nodes {
-        let up = usize::try_from(node.parent).ok().filter(|&p| p < inherited_text.len());
-        let mut text = up.map(|p| inherited_text[p].clone()).unwrap_or_default();
+        let up = usize::try_from(node.parent).ok().filter(|&p| p < inherited.len());
+        let mut text = up.map(|p| inherited[p].clone()).unwrap_or_default();
         if let Some(p) = up {
             let parent_flags = flag_text(&nodes[p]);
             if parent_flags.contains('.') {
@@ -1103,178 +1158,339 @@ fn export_parts(
                 text.push_str(&parent_flags);
             }
         }
-        inherited_text.push(text);
+        inherited.push(text);
     }
-    // a texture name the file system cannot hold fails the export, as writing its file does
-    let mut failed: Option<String> = None;
-    let mut material =
-        |g: &mut Gltf, out: &mut Folder, m: &Material, origin: (usize, usize), textured: bool| -> Result<usize> {
-            let flags = flags_of.get(origin.0);
-            let flag_key = match flags {
-                Some(_) => format!("{}|{}", flag_text(&nodes[origin.0]), inherited_text[origin.0]),
-                None => String::new(),
-            };
-            let key = MaterialKey {
-                texture: if textured { m.texture.clone() } else { String::new() },
-                diffuse: m.diffuse.clone(),
-                ambient: m.ambient.clone(),
-                origin,
-                flags: flag_key,
-            };
-            if let Some((_, index)) = material_index.iter().find(|(k, _)| k.same(&key)) {
-                return Ok(*index);
-            }
-            let mut extras = json!({
-                "mdt_diffuse": Value::from(m.diffuse.to_vec()),
-                "mdt_ambient": Value::from(m.ambient.to_vec()),
-                "mdt_specular": Value::from(m.specular.to_vec()),
-                "mdt_power": m.power,
-                "texture": m.texture.as_str(),
-            });
-            if options.collision {
-                // untextured, named and coloured for the attributes the diffuse colour encodes
-                let attributes = CollisionAttributes::decode(&m.diffuse);
-                extras["collision"] = json!({
-                    "ground": attributes.ground,
-                    "foot": attributes.foot,
-                    "area": attributes.area,
-                    "mask": attributes.mask,
-                });
-                let pbr = json!({
-                    "baseColorFactor": Value::from(attributes.display_colour().to_vec()),
-                    "metallicFactor": 0.0,
-                    "roughnessFactor": 1.0,
-                });
-                g.materials.push(json!({"name": attributes.name(), "pbrMetallicRoughness": pbr, "extras": extras}));
-                material_index.push((key, g.materials.len() - 1));
-                return Ok(g.materials.len() - 1);
-            }
-            let factor: Vec<f64> = m.diffuse.iter().map(|&x| numeric::max(0.0, numeric::min(1.0, x))).collect();
-            let mut pbr =
-                json!({"baseColorFactor": Value::from(factor.to_vec()), "metallicFactor": 0.0, "roughnessFactor": 1.0});
-            if textured && !m.texture.is_empty() {
-                let index = match texture_index.iter().find(|(name, _)| *name == m.texture) {
-                    Some((_, index)) => *index,
-                    None => {
-                        if m.texture.chars().any(|c| "<>:\"/\\|?*".contains(c) || (c as u32) < 0x20) {
-                            failed = Some(format!("cannot write a texture named {:?}", m.texture));
-                        }
-                        let file = format!("{}.png", m.texture);
-                        let mut texture_extras = None;
-                        let sampler = match options.textures {
-                            None => {
-                                out.write(&format!("textures/{file}"), placeholder_png(&m.texture));
-                                None
-                            }
-                            Some(search) => match (search.png(&m.texture)?, search.find(&m.texture)) {
-                                (png, Some((img, image))) => {
-                                    let mut e = json!({"img": img});
-                                    if let Some(clamp) = image.clamp {
-                                        e["gs_clamp"] = Value::from(clamp as i64);
-                                    }
-                                    match png {
-                                        Some(png) => out.write(&format!("textures/{file}"), png),
-                                        None => {
-                                            // registered without pixels: a texture animation fills it
-                                            out.write(&format!("textures/{file}"), placeholder_png(&m.texture));
-                                            e["no_image"] = Value::Bool(true);
-                                            if !no_image_textures.contains(&m.texture) {
-                                                no_image_textures.push(m.texture.clone());
-                                            }
-                                        }
-                                    }
-                                    texture_extras = Some(e);
-                                    Some(wrap_of(image.clamp))
-                                }
-                                (_, None) => {
-                                    out.write(&format!("textures/{file}"), placeholder_png(&m.texture));
-                                    if !missing_textures.contains(&m.texture) {
-                                        missing_textures.push(m.texture.clone());
-                                    }
-                                    texture_extras = Some(json!({"missing": true}));
-                                    Some((REPEAT, REPEAT))
-                                }
-                            },
-                        };
-                        let sampler_index = match sampler {
-                            None => {
-                                if g.samplers.is_empty() {
-                                    g.samplers.push(json!({"magFilter": 9729i64, "minFilter": 9729i64}));
-                                }
-                                0
-                            }
-                            Some((s, t)) => {
-                                let wanted =
-                                    json!({"magFilter": 9729i64, "minFilter": 9729i64, "wrapS": s, "wrapT": t});
-                                match g.samplers.iter().position(|known| *known == wanted) {
-                                    Some(at) => at,
-                                    None => {
-                                        g.samplers.push(wanted);
-                                        g.samplers.len() - 1
-                                    }
-                                }
-                            }
-                        };
-                        g.images.push(json!({"uri": format!("textures/{file}"), "name": m.texture.as_str()}));
-                        let mut texture = json!({
-                            "source": g.images.len() - 1,
-                            "sampler": sampler_index,
-                            "name": m.texture.as_str(),
-                        });
-                        if let Some(e) = texture_extras {
-                            texture["extras"] = e;
-                        }
-                        g.textures.push(texture);
-                        texture_index.push((m.texture.clone(), g.textures.len() - 1));
-                        g.textures.len() - 1
-                    }
-                };
-                pbr["baseColorTexture"] = json!({"index": index});
-            }
-            let name = format!(
-                "{}{}",
-                if m.texture.is_empty() { "untextured" } else { &m.texture },
-                if textured { "" } else { "_notex" }
-            );
-            let alpha = m.diffuse.get(3).copied().unwrap_or(1.0);
-            let mode = match flags {
-                Some(flags) => {
-                    extras["frame_flags"] = flags.extras(&flag_text(&nodes[origin.0]), &inherited_text[origin.0]);
-                    flags.alpha_mode(alpha)
-                }
-                None => (alpha < 1.0).then_some(("BLEND", None)),
-            };
-            let mut gm = json!({"name": name, "pbrMetallicRoughness": pbr, "extras": extras});
-            if let Some((mode, cutoff)) = mode {
-                gm["alphaMode"] = Value::from(mode);
-                if let Some(cutoff) = cutoff {
-                    gm["alphaCutoff"] = Value::from(cutoff);
-                }
-            }
-            if flags.is_some_and(|f| f.lit == Some(false)) {
-                gm["extensions"] = json!({"KHR_materials_unlit": {}});
-                if !extensions_used.contains(&"KHR_materials_unlit") {
-                    extensions_used.push("KHR_materials_unlit");
-                }
-            }
-            g.materials.push(gm);
-            material_index.push((key, g.materials.len() - 1));
-            Ok(g.materials.len() - 1)
-        };
+    inherited
+}
 
-    let mut any_skinned = false;
-    for (i, node) in nodes.iter().enumerate() {
-        let Some(t) = &node.mdt else {
-            continue;
+/// The glTF materials and textures of an export, each made the first time a mesh asks for it: a
+/// material per MDT material, frame and flags (MaterialKey), a texture per picture name.
+struct Materials<'a> {
+    nodes: &'a [mds::Node],
+    /// The frames' name flags, when they become material settings (Options::blend_flags).
+    flags_of: &'a [FrameFlags],
+    inherited_text: Vec<String>,
+    options: &'a Options<'a>,
+    texture_index: Vec<(String, usize)>,
+    material_index: Vec<(MaterialKey, usize)>,
+    missing_textures: Vec<String>,
+    no_image_textures: Vec<String>,
+    extensions_used: Vec<&'static str>,
+    /// A texture name the file system cannot hold fails the export, as writing its file does.
+    failed: Option<String>,
+}
+
+impl<'a> Materials<'a> {
+    fn new(nodes: &'a [mds::Node], flags_of: &'a [FrameFlags], options: &'a Options<'a>) -> Materials<'a> {
+        Materials {
+            nodes,
+            flags_of,
+            inherited_text: inherited_flag_texts(nodes),
+            options,
+            texture_index: Vec::new(),
+            material_index: Vec::new(),
+            missing_textures: Vec::new(),
+            no_image_textures: Vec::new(),
+            extensions_used: Vec::new(),
+            failed: None,
+        }
+    }
+
+    /// The glTF material of MDT material m (material origin.1 of frame origin.0), textured or not.
+    fn material(
+        &mut self,
+        g: &mut Gltf,
+        out: &mut Folder,
+        m: &Material,
+        origin: (usize, usize),
+        textured: bool,
+    ) -> Result<usize> {
+        let flags_of = self.flags_of;
+        let flags = flags_of.get(origin.0);
+        let own_flags = flag_text(&self.nodes[origin.0]);
+        let flag_key = match flags {
+            Some(_) => format!("{own_flags}|{}", self.inherited_text[origin.0]),
+            None => String::new(),
         };
+        let key = MaterialKey {
+            texture: if textured { m.texture.clone() } else { String::new() },
+            diffuse: m.diffuse.clone(),
+            ambient: m.ambient.clone(),
+            origin,
+            flags: flag_key,
+        };
+        if let Some((_, index)) = self.material_index.iter().find(|(k, _)| k.same(&key)) {
+            return Ok(*index);
+        }
+        let mut extras = json!({
+            "mdt_diffuse": Value::from(m.diffuse.to_vec()),
+            "mdt_ambient": Value::from(m.ambient.to_vec()),
+            "mdt_specular": Value::from(m.specular.to_vec()),
+            "mdt_power": m.power,
+            "texture": m.texture.as_str(),
+        });
+        if self.options.collision {
+            g.materials.push(collision_material(m, extras));
+            self.material_index.push((key, g.materials.len() - 1));
+            return Ok(g.materials.len() - 1);
+        }
+        let factor: Vec<f64> = m.diffuse.iter().map(|&x| numeric::max(0.0, numeric::min(1.0, x))).collect();
+        let mut pbr =
+            json!({"baseColorFactor": Value::from(factor.to_vec()), "metallicFactor": 0.0, "roughnessFactor": 1.0});
+        if textured && !m.texture.is_empty() {
+            let index = self.texture(g, out, &m.texture)?;
+            pbr["baseColorTexture"] = json!({"index": index});
+        }
+        let name = format!(
+            "{}{}",
+            if m.texture.is_empty() { "untextured" } else { &m.texture },
+            if textured { "" } else { "_notex" }
+        );
+        let alpha = m.diffuse.get(3).copied().unwrap_or(1.0);
+        let mode = match flags {
+            Some(flags) => {
+                extras["frame_flags"] = flags.extras(&own_flags, &self.inherited_text[origin.0]);
+                flags.alpha_mode(alpha)
+            }
+            None => (alpha < 1.0).then_some(("BLEND", None)),
+        };
+        let mut gm = json!({"name": name, "pbrMetallicRoughness": pbr, "extras": extras});
+        if let Some((mode, cutoff)) = mode {
+            gm["alphaMode"] = Value::from(mode);
+            if let Some(cutoff) = cutoff {
+                gm["alphaCutoff"] = Value::from(cutoff);
+            }
+        }
+        if flags.is_some_and(|f| f.lit == Some(false)) {
+            gm["extensions"] = json!({"KHR_materials_unlit": {}});
+            if !self.extensions_used.contains(&"KHR_materials_unlit") {
+                self.extensions_used.push("KHR_materials_unlit");
+            }
+        }
+        g.materials.push(gm);
+        self.material_index.push((key, g.materials.len() - 1));
+        Ok(g.materials.len() - 1)
+    }
+
+    /// The glTF texture of a picture name: its PNG written to textures/ (a placeholder without
+    /// the export's texture files, or when none holds the name), with its sampler.
+    fn texture(&mut self, g: &mut Gltf, out: &mut Folder, name: &str) -> Result<usize> {
+        if let Some((_, index)) = self.texture_index.iter().find(|(known, _)| known == name) {
+            return Ok(*index);
+        }
+        if name.chars().any(|c| "<>:\"/\\|?*".contains(c) || (c as u32) < 0x20) {
+            self.failed = Some(format!("cannot write a texture named {name:?}"));
+        }
+        let file = format!("{name}.png");
+        let mut texture_extras = None;
+        let wrap = match self.options.textures {
+            None => {
+                out.write(&format!("textures/{file}"), placeholder_png(name));
+                None
+            }
+            Some(search) => match (search.png(name)?, search.find(name)) {
+                (png, Some((img, image))) => {
+                    let mut e = json!({"img": img});
+                    if let Some(clamp) = image.clamp {
+                        e["gs_clamp"] = Value::from(clamp as i64);
+                    }
+                    match png {
+                        Some(png) => out.write(&format!("textures/{file}"), png),
+                        None => {
+                            // registered without pixels: a texture animation fills it
+                            out.write(&format!("textures/{file}"), placeholder_png(name));
+                            e["no_image"] = Value::Bool(true);
+                            if !self.no_image_textures.iter().any(|known| known == name) {
+                                self.no_image_textures.push(name.to_string());
+                            }
+                        }
+                    }
+                    texture_extras = Some(e);
+                    Some(wrap_of(image.clamp))
+                }
+                (_, None) => {
+                    out.write(&format!("textures/{file}"), placeholder_png(name));
+                    if !self.missing_textures.iter().any(|known| known == name) {
+                        self.missing_textures.push(name.to_string());
+                    }
+                    texture_extras = Some(json!({"missing": true}));
+                    Some((REPEAT, REPEAT))
+                }
+            },
+        };
+        let sampler = g.sampler(wrap);
+        g.images.push(json!({"uri": format!("textures/{file}"), "name": name}));
+        let mut texture = json!({"source": g.images.len() - 1, "sampler": sampler, "name": name});
+        if let Some(e) = texture_extras {
+            texture["extras"] = e;
+        }
+        g.textures.push(texture);
+        self.texture_index.push((name.to_string(), g.textures.len() - 1));
+        Ok(g.textures.len() - 1)
+    }
+}
+
+/// A collision mesh's material: untextured, named and coloured for the attributes its diffuse
+/// colour encodes, which its extras hold too.
+fn collision_material(m: &Material, mut extras: Value) -> Value {
+    let attributes = CollisionAttributes::decode(&m.diffuse);
+    extras["collision"] = json!({
+        "ground": attributes.ground,
+        "foot": attributes.foot,
+        "area": attributes.area,
+        "mask": attributes.mask,
+    });
+    let pbr = json!({
+        "baseColorFactor": Value::from(attributes.display_colour().to_vec()),
+        "metallicFactor": 0.0,
+        "roughnessFactor": 1.0,
+    });
+    json!({"name": attributes.name(), "pbrMetallicRoughness": pbr, "extras": extras})
+}
+
+/// A primitive's kind of corners: its material and the attributes they carry besides the vertex.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct CornerKind {
+    material: u32,
+    normals: bool,
+    uvs: bool,
+    colours: bool,
+}
+
+/// The distinct corners of a kind (vertex, normal, uv and colour numbers, -1 for none), and the
+/// triangles' corners as their numbers.
+#[derive(Default)]
+struct Corners {
+    keys: Vec<[i64; 4]>,
+    numbers: HashMap<[i64; 4], usize>,
+    indices: Vec<i64>,
+}
+
+/// A mesh's triangles grouped into one primitive per kind of corner, degenerate ones (strip
+/// joins) left out.
+fn corner_groups(t: &mds::Mdt) -> BTreeMap<CornerKind, Corners> {
+    let mut groups: BTreeMap<CornerKind, Corners> = BTreeMap::new();
+    for p in &t.prims {
+        let (sv, sn, su, sc) =
+            (p.slot(Slot::Vertex).unwrap(), p.slot(Slot::Normal), p.slot(Slot::Uv), p.slot(Slot::Colour));
+        let kind = CornerKind { material: p.material, normals: sn.is_some(), uvs: su.is_some(), colours: sc.is_some() };
+        let group = groups.entry(kind).or_default();
+        for triangle in p.triangles() {
+            let corners: Vec<&Vec<i32>> = triangle.iter().map(|&c| &p.verts[c]).collect();
+            let distinct: HashSet<i32> = corners.iter().map(|c| c[sv]).collect();
+            if distinct.len() < 3 {
+                continue;
+            }
+            for c in corners {
+                let slot = |s: Option<usize>| s.map_or(-1, |s| c[s] as i64);
+                let k = [c[sv] as i64, slot(sn), slot(su), slot(sc)];
+                let next = group.keys.len();
+                let number = *group.numbers.entry(k).or_insert(next);
+                if number == next {
+                    group.keys.push(k);
+                }
+                group.indices.push(number as i64);
+            }
+        }
+    }
+    groups
+}
+
+/// The attributes of a primitive's corners: positions and normals (in the bind pose when skinned),
+/// uvs, colours, and the skin's joints and weights.
+fn corner_attributes(
+    g: &mut Gltf,
+    t: &mds::Mdt,
+    kind: CornerKind,
+    vs: &[[i64; 4]],
+    bind: Option<&Mat4>,
+    weights: Option<&[Vec<(i64, f64)>]>,
+) -> Result<Value> {
+    let mut pos: Vec<Vec<f64>> =
+        vs.iter().map(|k| Ok(at_index(&t.vertices, k[0])?[..3].to_vec())).collect::<Result<_>>()?;
+    if let Some(bind) = bind {
+        pos = pos.iter().map(|v| xform_point(bind, v).to_vec()).collect();
+    }
+    let mut attributes = json!({"POSITION": g.floats(&pos, AccessorType::Vec3, Some(ARRAY_BUFFER), true)?});
+    if kind.normals {
+        let mut normals: Vec<Vec<f64>> = vs
+            .iter()
+            .map(|k| {
+                Ok(normalize(&at_index(&t.normals, k[1])?[..3].try_into().expect("a normal has 4 numbers"), Z).to_vec())
+            })
+            .collect::<Result<_>>()?;
+        if let Some(bind) = bind {
+            normals = normals.iter().map(|v| normalize(&xform_dir(bind, v), Z).to_vec()).collect();
+        }
+        attributes["NORMAL"] = Value::from(g.floats(&normals, AccessorType::Vec3, Some(ARRAY_BUFFER), false)?);
+    }
+    if kind.uvs {
+        let uvs: Vec<Vec<f64>> = vs.iter().map(|k| Ok(at_index(&t.uvs, k[2])?[..2].to_vec())).collect::<Result<_>>()?;
+        attributes["TEXCOORD_0"] = Value::from(g.floats(&uvs, AccessorType::Vec2, Some(ARRAY_BUFFER), false)?);
+    }
+    if kind.colours {
+        let colours: Vec<Vec<f64>> = vs
+            .iter()
+            .map(|k| Ok(at_index(&t.colours, k[3])?.iter().map(|&x| numeric::max(0.0, numeric::min(1.0, x))).collect()))
+            .collect::<Result<_>>()?;
+        attributes["COLOR_0"] = Value::from(g.floats(&colours, AccessorType::Vec4, Some(ARRAY_BUFFER), false)?);
+    }
+    if let Some(weights) = weights {
+        let (mut joints, mut amounts) = (Vec::new(), Vec::new());
+        for k in vs {
+            let mut l = at_index(weights, k[0])?.clone();
+            l.resize(4.max(l.len()), (0, 0.0));
+            joints.push(l.iter().map(|(b, _)| *b).collect::<Vec<i64>>());
+            amounts.push(l.iter().map(|(_, w)| *w).collect::<Vec<f64>>());
+        }
+        attributes["JOINTS_0"] =
+            Value::from(g.unsigned(&joints, AccessorType::Vec4, ComponentType::UnsignedShort, Some(ARRAY_BUFFER))?);
+        attributes["WEIGHTS_0"] = Value::from(g.floats(&amounts, AccessorType::Vec4, Some(ARRAY_BUFFER), false)?);
+    }
+    Ok(attributes)
+}
+
+/// What export_parts builds the meshes, the skin and the animations from.
+struct Parts<'a> {
+    character: &'a Character,
+    nodes: &'a [mds::Node],
+    /// Each frame's world matrix.
+    world: Vec<Mat4>,
+    /// The frames whose meshes the character's weights skin (VERTEX_ANIME).
+    deform: Vec<&'a str>,
+    /// The motion set whose clips keep their own names.
+    primary: usize,
+    options: &'a Options<'a>,
+}
+
+/// A frame's mesh as added: whether it is skinned (on a node of its own), and its morph targets'
+/// node and motion.
+struct FrameMesh<'a> {
+    skinned: bool,
+    motion: Option<(usize, MeshMotion<'a>)>,
+}
+
+impl<'a> Parts<'a> {
+    /// Frame i's mesh, a primitive per kind of corner, on the frame's node or, skinned, on a node
+    /// of its own; None when it has no triangles.
+    fn add_mesh(
+        &self,
+        g: &mut Gltf,
+        out: &mut Folder,
+        materials: &mut Materials,
+        i: usize,
+        t: &mds::Mdt,
+    ) -> Result<Option<FrameMesh<'a>>> {
+        let character: &'a Character = self.character;
+        let node = &self.nodes[i];
         let mut weights = None;
         if let Some(wgt) = character.wgt.as_ref().filter(|w| !w.is_empty()) {
-            if deform.contains(&node.base_name()) {
+            if self.deform.contains(&node.base_name()) {
                 weights = vertex_weights(wgt, i, t.vertices.len());
             }
         }
         let skinned = weights.is_some();
-        let mut bind = world[i];
+        let mut bind = self.world[i];
         if skinned {
             if let Some(bbp) = character.bbp.as_ref().filter(|b| !b.is_empty() && i < b.len()) {
                 if mat_inv(&bbp[i]).is_some() {
@@ -1282,95 +1498,16 @@ fn export_parts(
                 }
             }
         }
-        // (material, has normals, has uvs, has colours) -> corner keys, their numbers, indices
-        type Group = (Vec<[i64; 4]>, std::collections::HashMap<[i64; 4], usize>, Vec<i64>);
-        let mut groups: std::collections::BTreeMap<(u32, bool, bool, bool), Group> = Default::default();
-        for p in &t.prims {
-            let (sv, sn, su, sc) =
-                (p.slot(Slot::Vertex).unwrap(), p.slot(Slot::Normal), p.slot(Slot::Uv), p.slot(Slot::Colour));
-            let group = groups.entry((p.material, sn.is_some(), su.is_some(), sc.is_some())).or_default();
-            for triangle in p.triangles() {
-                let corners: Vec<&Vec<i32>> = triangle.iter().map(|&c| &p.verts[c]).collect();
-                let distinct: std::collections::HashSet<i32> = corners.iter().map(|c| c[sv]).collect();
-                if distinct.len() < 3 {
-                    continue; // degenerate (strip joins)
-                }
-                for c in corners {
-                    let slot = |s: Option<usize>| s.map_or(-1, |s| c[s] as i64);
-                    let k = [c[sv] as i64, slot(sn), slot(su), slot(sc)];
-                    let next = group.0.len();
-                    let number = *group.1.entry(k).or_insert(next);
-                    if number == next {
-                        group.0.push(k);
-                    }
-                    group.2.push(number as i64);
-                }
-            }
-        }
+        let morph = MeshMotion::of(i, t, &character.motions, self.primary);
         let mut prims = Vec::new();
-        let morph = MeshMotion::of(i, t, &character.motions, primary);
-        for ((mat, hn, hu, hc), (vs, _, indices)) in &groups {
-            if indices.is_empty() {
+        for (kind, corners) in &corner_groups(t) {
+            if corners.indices.is_empty() {
                 continue;
             }
-            let mut pos: Vec<Vec<f64>> =
-                vs.iter().map(|k| Ok(at_index(&t.vertices, k[0])?[..3].to_vec())).collect::<Result<_>>()?;
-            if skinned {
-                pos = pos.iter().map(|v| xform_point(&bind, v).to_vec()).collect();
-            }
-            let mut attributes = json!({"POSITION": g.floats(&pos, AccessorType::Vec3, Some(ARRAY_BUFFER), true)?});
-            if *hn {
-                let mut normals: Vec<Vec<f64>> = vs
-                    .iter()
-                    .map(|k| {
-                        Ok(normalize(&at_index(&t.normals, k[1])?[..3].try_into().expect("a normal has 4 numbers"), Z)
-                            .to_vec())
-                    })
-                    .collect::<Result<_>>()?;
-                if skinned {
-                    normals = normals.iter().map(|v| normalize(&xform_dir(&bind, v), Z).to_vec()).collect();
-                }
-                attributes["NORMAL"] =
-                    Value::from(g.floats(&normals, AccessorType::Vec3, Some(ARRAY_BUFFER), false)?);
-            }
-            if *hu {
-                let uvs: Vec<Vec<f64>> =
-                    vs.iter().map(|k| Ok(at_index(&t.uvs, k[2])?[..2].to_vec())).collect::<Result<_>>()?;
-                attributes["TEXCOORD_0"] =
-                    Value::from(g.floats(&uvs, AccessorType::Vec2, Some(ARRAY_BUFFER), false)?);
-            }
-            if *hc {
-                let colours: Vec<Vec<f64>> = vs
-                    .iter()
-                    .map(|k| {
-                        Ok(at_index(&t.colours, k[3])?
-                            .iter()
-                            .map(|&x| numeric::max(0.0, numeric::min(1.0, x)))
-                            .collect())
-                    })
-                    .collect::<Result<_>>()?;
-                attributes["COLOR_0"] =
-                    Value::from(g.floats(&colours, AccessorType::Vec4, Some(ARRAY_BUFFER), false)?);
-            }
-            if let Some(weights) = &weights {
-                let (mut joints, mut amounts) = (Vec::new(), Vec::new());
-                for k in vs {
-                    let mut l = at_index(weights, k[0])?.clone();
-                    l.resize(4.max(l.len()), (0, 0.0));
-                    joints.push(l.iter().map(|(b, _)| *b).collect::<Vec<i64>>());
-                    amounts.push(l.iter().map(|(_, w)| *w).collect::<Vec<f64>>());
-                }
-                attributes["JOINTS_0"] = Value::from(g.unsigned(
-                    &joints,
-                    AccessorType::Vec4,
-                    ComponentType::UnsignedShort,
-                    Some(ARRAY_BUFFER),
-                )?);
-                attributes["WEIGHTS_0"] =
-                    Value::from(g.floats(&amounts, AccessorType::Vec4, Some(ARRAY_BUFFER), false)?);
-            }
+            let vs = &corners.keys;
+            let attributes = corner_attributes(g, t, *kind, vs, skinned.then_some(&bind), weights.as_deref())?;
             let big = vs.len() > 65535;
-            let index_values: Vec<Vec<i64>> = indices.iter().map(|&x| vec![x]).collect();
+            let index_values: Vec<Vec<i64>> = corners.indices.iter().map(|&x| vec![x]).collect();
             let indices = g.unsigned(
                 &index_values,
                 AccessorType::Scalar,
@@ -1378,29 +1515,26 @@ fn export_parts(
                 Some(ELEMENT_ARRAY_BUFFER),
             )?;
             let mut gp = json!({"attributes": attributes, "indices": indices, "mode": 4i64});
-            if (*mat as usize) < t.materials.len() {
+            let material = kind.material as usize;
+            if material < t.materials.len() {
                 gp["material"] =
-                    Value::from(material(&mut g, out, &t.materials[*mat as usize], (i, *mat as usize), *hu)?);
+                    Value::from(materials.material(g, out, &t.materials[material], (i, material), kind.uvs)?);
             }
             if let Some(morph) = &morph {
-                let bind = skinned.then_some(&bind);
-                let targets = morph.displacements(&mut g, t, vs, bind)?;
+                let targets = morph.displacements(g, t, vs, skinned.then_some(&bind))?;
                 gp["targets"] = Value::Array(targets);
             }
             prims.push(gp);
         }
         if prims.is_empty() {
-            continue;
+            return Ok(None);
         }
+        let name = frame_name(node, self.options.full_names);
         let mut mesh_extras = json!({"mdt_style": t.style.to_string()});
-        if options.full_names {
+        if self.options.full_names {
             mesh_extras["mds_index"] = Value::from(i);
         }
-        let mut gmesh = json!({
-            "name": name_of(node),
-            "primitives": Value::Array(prims),
-            "extras": mesh_extras,
-        });
+        let mut gmesh = json!({"name": name, "primitives": Value::Array(prims), "extras": mesh_extras});
         if let Some(morph) = &morph {
             gmesh["weights"] = Value::from(morph.rest_weights(t).to_vec());
             if let Some(extras) = gmesh.get_mut("extras") {
@@ -1410,9 +1544,8 @@ fn export_parts(
         g.meshes.push(gmesh);
         let mesh = g.meshes.len() - 1;
         if skinned {
-            any_skinned = true;
             g.nodes.push(json!({
-                "name": format!("{}_skin", name_of(node)),
+                "name": format!("{name}_skin"),
                 "mesh": mesh,
                 "skin": 0i64,
                 "extras": json!({"mds_index": i, "skinned_mesh_of": node.name.as_str()}),
@@ -1421,158 +1554,189 @@ fn export_parts(
         } else {
             g.nodes[i]["mesh"] = Value::from(mesh);
         }
-        if let Some(morph) = morph {
-            let node = if skinned { g.nodes.len() - 1 } else { i };
-            mesh_motions.insert(i, (node, morph));
-        }
+        let motion = morph.map(|morph| (if skinned { g.nodes.len() - 1 } else { i }, morph));
+        Ok(Some(FrameMesh { skinned, motion }))
     }
 
-    if let Some(message) = failed {
-        bail!("{message}");
-    }
-    if any_skinned {
-        let mut inverses = Vec::with_capacity(nodes.len());
-        for (i, w) in world.iter().enumerate() {
-            let m = character.bbp.as_ref().filter(|b| !b.is_empty() && i < b.len()).map(|b| b[i]);
+    /// The one skin, over every frame: each frame's inverse bind matrix from its .bbp pose, else
+    /// from its world matrix.
+    fn add_skin(&self, g: &mut Gltf, skeleton_root: usize) -> Result<()> {
+        let mut inverses = Vec::with_capacity(self.nodes.len());
+        for (i, w) in self.world.iter().enumerate() {
+            let m = self.character.bbp.as_ref().filter(|b| !b.is_empty() && i < b.len()).map(|b| b[i]);
             let inverse = m.and_then(|m| mat_inv(&m)).or_else(|| mat_inv(w)).unwrap_or(IDENT);
             inverses.push(inverse.to_vec());
         }
         let ibm = g.floats(&inverses, AccessorType::Mat4, None, false)?;
         g.skins.push(json!({
             "name": "skeleton",
-            "joints": Value::Array((0..nodes.len()).map(Value::from).collect()),
+            "joints": Value::Array((0..self.nodes.len()).map(Value::from).collect()),
             "skeleton": skeleton_root,
             "inverseBindMatrices": ibm,
         }));
+        Ok(())
     }
 
-    for (set, motion) in character.motions.iter().enumerate() {
-        if motion.lists.is_empty() || motion.keys.is_empty() {
+    /// An animation per KEY clip of each motion set: the frames its lists drive and the meshes'
+    /// morph weights, sampled at every frame of the clip.
+    fn add_animations(
+        &self,
+        g: &mut Gltf,
+        fps: f64,
+        mesh_motions: &BTreeMap<usize, (usize, MeshMotion)>,
+    ) -> Result<()> {
+        for (set, motion) in self.character.motions.iter().enumerate() {
+            if motion.lists.is_empty() || motion.keys.is_empty() {
+                continue;
+            }
+            let lists = driven_frames(motion, self.nodes.len());
+            let mut seen: Vec<Arg> = Vec::new();
+            for clip in &motion.keys {
+                let name = clip_name(&motion.id, set == self.primary, clip, &mut seen)?;
+                let (start, end) = clip_frames(clip)?;
+                let frames: Vec<i64> = (start..=end).collect();
+                let times: Vec<Vec<f64>> = frames.iter().map(|f| vec![(f - start) as f64 / fps]).collect();
+                let mut animation =
+                    Channels { times: g.floats(&times, AccessorType::Scalar, None, true)?, ..Default::default() };
+                for (&(node, path), list) in &lists {
+                    let output = sampled_list(g, list, path == "rotation", &frames)?;
+                    animation.add(output, node, path);
+                }
+                for (&frame, (node, morph)) in mesh_motions {
+                    let Some(t) = &self.nodes[frame].mdt else {
+                        continue;
+                    };
+                    if !morph.animated_by(set) {
+                        continue;
+                    }
+                    let weights: Vec<Vec<f64>> =
+                        frames.iter().flat_map(|&f| morph.weights(t, set, f)).map(|w| vec![w]).collect();
+                    let output = g.floats(&weights, AccessorType::Scalar, None, false)?;
+                    animation.add(output, *node, "weights");
+                }
+                let mut extras =
+                    json!({"start": clip.start.clone(), "end": clip.end.clone(), "step": clip.step.clone()});
+                if set != self.primary {
+                    extras["motion_set"] = json!(motion.id);
+                }
+                g.animations.push(json!({
+                    "name": name,
+                    "samplers": Value::Array(animation.samplers),
+                    "channels": Value::Array(animation.channels),
+                    "extras": extras,
+                }));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The key lists of a motion set by the frame and path they drive: a list drives the frame its
+/// number gives (MotionProc's GetFrame), whatever its name.
+fn driven_frames(motion: &SetMotion, frames: usize) -> BTreeMap<(usize, &'static str), &KeyList> {
+    let mut lists: BTreeMap<(usize, &'static str), &KeyList> = BTreeMap::new();
+    for list in &motion.lists {
+        let Some(frame) = usize::try_from(list.frame).ok().filter(|&f| f < frames) else {
+            continue;
+        };
+        if !(0..=2).contains(&list.kind) || list.keys.is_empty() {
             continue;
         }
-        // a list drives the frame its number gives (MotionProc's GetFrame), whatever its name
-        let mut channels_of: std::collections::BTreeMap<(usize, &str), &KeyList> = Default::default();
-        for list in &motion.lists {
-            let Some(frame) = usize::try_from(list.frame).ok().filter(|&f| f < nodes.len()) else {
-                continue;
-            };
-            if !(0..=2).contains(&list.kind) || list.keys.is_empty() {
-                continue;
-            }
-            let path = ["rotation", "scale", "translation"][list.kind as usize];
-            channels_of.insert((frame, path), list);
+        let path = ["rotation", "scale", "translation"][list.kind as usize];
+        lists.insert((frame, path), list);
+    }
+    lists
+}
+
+/// A clip's animation name: its KEY name, with its start frame when an earlier clip has the name,
+/// and its motion set's id outside the primary set.
+fn clip_name(id: &Arg, primary: bool, clip: &info_cfg::Key, seen: &mut Vec<Arg>) -> Result<Arg> {
+    let mut name = clip.name.clone();
+    if seen.iter().any(|s| info_cfg::same_value(s, &name)) {
+        let start = match clip.start {
+            Arg::Int(v) => v,
+            Arg::Float(v) => v.trunc() as i64,
+            _ => bail!("KEY {}: its start frame is not a number", name.text()),
+        };
+        name = Arg::Str(format!("{}_{}", name.text(), start));
+    }
+    seen.push(name.clone());
+    Ok(match name {
+        Arg::Str(text) => Arg::Str(set_animation_name(id, primary, &text)),
+        other if primary => other,
+        other => Arg::Str(set_animation_name(id, false, &other.text())),
+    })
+}
+
+/// A clip's first and last frames (the last no earlier than the first).
+fn clip_frames(clip: &info_cfg::Key) -> Result<(i64, i64)> {
+    let Arg::Int(start) = clip.start else {
+        bail!("KEY {}: its start frame is not a whole number", clip.name.text());
+    };
+    let end = match clip.end {
+        Arg::Int(end) => end.max(start),
+        Arg::Float(end) if end > start as f64 => {
+            bail!("KEY {}: its end frame is not a whole number", clip.name.text())
         }
-        let mut seen: Vec<Arg> = Vec::new();
-        for clip in &motion.keys {
-            let mut name = clip.name.clone();
-            if seen.iter().any(|s| info_cfg::same_value(s, &name)) {
-                let start = match clip.start {
-                    Arg::Int(v) => v,
-                    Arg::Float(v) => v.trunc() as i64,
-                    _ => bail!("KEY {}: its start frame is not a number", name.text()),
-                };
-                name = Arg::Str(format!("{}_{}", name.text(), start));
+        Arg::Float(_) => start,
+        _ => bail!("KEY {}: its end frame is not a number", clip.name.text()),
+    };
+    Ok((start, end))
+}
+
+/// A key list sampled at every frame of a clip, as an accessor; each rotation on the side of the
+/// one before, so the animation turns the short way.
+fn sampled_list(g: &mut Gltf, list: &KeyList, rotation: bool, frames: &[i64]) -> Result<usize> {
+    let key_frames: Vec<i64> = list.keys.iter().map(|(k, _)| *k).collect();
+    let mixing = if rotation { Mixing::Spherical } else { Mixing::Straight };
+    let mut values = frames.iter().map(|&f| sample(list, &key_frames, f, mixing)).collect::<Result<Vec<_>>>()?;
+    if rotation {
+        for a in 1..values.len() {
+            if numeric::compensated_sum(values[a - 1].iter().zip(&values[a]).map(|(x, y)| x * y)) < 0.0 {
+                values[a] = values[a].iter().map(|x| -x).collect();
             }
-            seen.push(name.clone());
-            let name = match name {
-                Arg::Str(text) => Arg::Str(set_animation_name(&motion.id, set == primary, &text)),
-                other if set == primary => other,
-                other => Arg::Str(set_animation_name(&motion.id, false, &other.text())),
-            };
-            let Arg::Int(s) = clip.start else {
-                bail!("KEY {}: its start frame is not a whole number", clip.name.text());
-            };
-            let e = match clip.end {
-                Arg::Int(end) => end.max(s),
-                Arg::Float(end) if end > s as f64 => {
-                    bail!("KEY {}: its end frame is not a whole number", clip.name.text())
-                }
-                Arg::Float(_) => s,
-                _ => bail!("KEY {}: its end frame is not a number", clip.name.text()),
-            };
-            let frames: Vec<i64> = (s..=e).collect();
-            let times: Vec<Vec<f64>> = frames.iter().map(|f| vec![(f - s) as f64 / fps]).collect();
-            let times = g.floats(&times, AccessorType::Scalar, None, true)?;
-            let (mut samplers, mut channels) = (Vec::new(), Vec::new());
-            for (&(node, path), list) in &channels_of {
-                let key_frames: Vec<i64> = list.keys.iter().map(|(k, _)| *k).collect();
-                let rotation = path == "rotation";
-                let mixing = if rotation { Mixing::Spherical } else { Mixing::Straight };
-                let mut values =
-                    frames.iter().map(|&f| sample(list, &key_frames, f, mixing)).collect::<Result<Vec<_>>>()?;
-                if rotation {
-                    for a in 1..values.len() {
-                        if numeric::compensated_sum(values[a - 1].iter().zip(&values[a]).map(|(x, y)| x * y)) < 0.0 {
-                            values[a] = values[a].iter().map(|x| -x).collect();
-                        }
-                    }
-                }
-                let output =
-                    g.floats(&values, if rotation { AccessorType::Vec4 } else { AccessorType::Vec3 }, None, false)?;
-                samplers.push(json!({"input": times, "output": output, "interpolation": "LINEAR"}));
-                channels.push(json!({
-                    "sampler": samplers.len() - 1,
-                    "target": {"node": node, "path": path},
-                }));
-            }
-            // the meshes' morph weights: vertex frames and the carriers of the other lists
-            for (&frame, (node, morph)) in &mesh_motions {
-                let Some(t) = &nodes[frame].mdt else {
-                    continue;
-                };
-                if !morph.animated_by(set) {
-                    continue;
-                }
-                let weights: Vec<Vec<f64>> =
-                    frames.iter().flat_map(|&f| morph.weights(t, set, f)).map(|w| vec![w]).collect();
-                let output = g.floats(&weights, AccessorType::Scalar, None, false)?;
-                samplers.push(json!({"input": times, "output": output, "interpolation": "LINEAR"}));
-                channels.push(json!({
-                    "sampler": samplers.len() - 1,
-                    "target": {"node": *node, "path": "weights"},
-                }));
-            }
-            let mut extras = json!({"start": clip.start.clone(), "end": clip.end.clone(), "step": clip.step.clone()});
-            if set != primary {
-                extras["motion_set"] = json!(motion.id);
-            }
-            g.animations.push(json!({
-                "name": name,
-                "samplers": Value::Array(samplers),
-                "channels": Value::Array(channels),
-                "extras": extras,
-            }));
         }
     }
+    g.floats(&values, if rotation { AccessorType::Vec4 } else { AccessorType::Vec3 }, None, false)
+}
+
+/// An animation's samplers over one input of times, and the channels they drive.
+#[derive(Default)]
+struct Channels {
+    times: usize,
+    samplers: Vec<Value>,
+    channels: Vec<Value>,
+}
+
+impl Channels {
+    fn add(&mut self, output: usize, node: usize, path: &str) {
+        self.samplers.push(json!({"input": self.times, "output": output, "interpolation": "LINEAR"}));
+        self.channels.push(json!({
+            "sampler": self.samplers.len() - 1,
+            "target": {"node": node, "path": path},
+        }));
+    }
+}
+
+/// The asset's extras: what the export was made from, and how its nodes stand for the MDS frames.
+fn asset_extras(options: &Options, fps: f64) -> Value {
     let character_export =
         !(options.full_names || options.textures.is_some() || options.blend_flags || options.collision);
-    let extras = if character_export {
-        json!({
+    if character_export {
+        return json!({
             "source": {"base": "pack"},
             "fps_assumed": fps,
             "note": "textures are placeholders; MDS node i = glTF node i",
-        })
-    } else {
-        let mut extras = json!({
-            "source": {"base": "mds"},
-            "note": "MDS node i = glTF node i (extras.mds_index); names are the MDS names whole",
         });
-        if options.collision {
-            extras["collision"] = Value::Bool(true);
-        }
-        extras
-    };
-    let asset = json!({"version": "2.0", "generator": "DC2-Toolkit dc2tk", "extras": extras});
-    let (mut json, bin) = g.json(asset, base);
-    if !extensions_used.is_empty() {
-        if let Value::Object(items) = &mut json {
-            let used = Value::Array(extensions_used.iter().map(|&e| Value::from(e)).collect());
-            items.shift_insert(1, "extensionsUsed".to_string(), used);
-        }
     }
-    out.write(&format!("{base}.bin"), bin);
-    out.write(&format!("{base}.gltf"), serde_json::to_string(&json).expect("a JSON value serializes").into_bytes());
-    Ok(Exported { missing_textures, no_image_textures })
+    let mut extras = json!({
+        "source": {"base": "mds"},
+        "note": "MDS node i = glTF node i (extras.mds_index); names are the MDS names whole",
+    });
+    if options.collision {
+        extras["collision"] = Value::Bool(true);
+    }
+    extras
 }
 
 #[cfg(test)]
