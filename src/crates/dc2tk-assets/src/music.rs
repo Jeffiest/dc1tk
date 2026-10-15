@@ -18,8 +18,8 @@ use std::path::Path;
 
 use crate::bytes::{be16_at, be32_at};
 use crate::sequence::{
-    Event, Message, Sequence, DATA_ENTRY, DATA_ENTRY_LSB, DIVISION, LOOP_END, LOOP_START, META_END, META_MARKER,
-    META_NAME, META_TEMPO, META_TEXT, NRPN_MSB,
+    read_vlq, Event, Message, Sequence, DATA_ENTRY, DATA_ENTRY_LSB, DIVISION, LOOP_END, LOOP_START, META_END,
+    META_MARKER, META_NAME, META_TEMPO, META_TEXT, NRPN_MSB,
 };
 use crate::soundbank::{self, Bank};
 use crate::{bail, Context, Error, Result};
@@ -45,21 +45,6 @@ pub struct Smf {
 pub struct Track {
     pub events: Vec<(u64, Message)>,
     pub end: u64,
-}
-
-fn read_vlq(data: &[u8], mut at: usize) -> Result<(u32, usize)> {
-    let mut value = 0u32;
-    for _ in 0..4 {
-        let Some(&byte) = data.get(at) else {
-            bail!("a track ends early");
-        };
-        at += 1;
-        value = value << 7 | (byte & 0x7F) as u32;
-        if byte & 0x80 == 0 {
-            return Ok((value, at));
-        }
-    }
-    bail!("a delta time of more than four bytes")
 }
 
 /// The MIDI data of a file: an SMF, or the SMF inside a RIFF MIDI file (.rmi).

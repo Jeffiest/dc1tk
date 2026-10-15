@@ -8,6 +8,7 @@ use dc2tk_disc::archive::{self, Pack};
 use dc2tk_disc::text;
 
 use crate::bytes::{clamped, u16_at, u32_at, Reader};
+use crate::sequence::Message;
 use crate::{bail, numeric, Error, Result};
 
 /// The Sony chunks' alignment: a table chunk is padded with 0xFF to a multiple of 16 bytes.
@@ -1010,77 +1011,23 @@ impl TextFile {
     }
 }
 
-fn vlq(b: &[u8], mut p: usize) -> Result<(usize, usize)> {
-    let mut v = 0usize;
-    loop {
-        let Some(&c) = b.get(p) else {
-            bail!("a variable-length number runs past the end of the data");
-        };
-        p += 1;
-        v = (v << 7) | (c & 0x7F) as usize;
-        if c & 0x80 == 0 {
-            return Ok((v, p));
-        }
-    }
-}
-
-fn byte_at(data: &[u8], p: usize) -> Result<u8> {
-    match data.get(p) {
-        Some(&b) => Ok(b),
-        None => bail!("the picture's data runs past the picture it is based on"),
-    }
-}
-
-/// (channel, program, key, velocity) of each note-on of an SMF format 0 file, as sndCSeSeq plays
-/// it: MIDI channels 0..7 only, program 0 until a program change, velocity 0 a note-off.
+/// (channel, program, key, velocity) of each note-on of an SMF format 0 file (its first track, as
+/// music::Smf reads it), as sndCSeSeq plays it: MIDI channels 0..7 only, program 0 until a program
+/// change, velocity 0 a note-off.
 pub fn midi_notes(data: &[u8]) -> Result<Vec<(u8, i64, u8, u8)>> {
-    if clamped(data, 0, 4) != b"MThd" {
-        bail!("not an SMF file");
-    }
-    let Some(hlen) = data.get(4..8) else {
-        bail!("unpack requires a buffer of 4 bytes");
+    let smf = crate::music::Smf::read(data)?;
+    let Some(track) = smf.tracks.first() else {
+        bail!("the MIDI file has no track");
     };
-    let mut p = 8 + u32::from_be_bytes(hlen.try_into().unwrap()) as usize;
-    if clamped(data, p, p + 4) != b"MTrk" {
-        bail!("no MTrk");
-    }
-    let Some(length) = data.get(p + 4..p + 8) else {
-        bail!("unpack requires a buffer of 4 bytes");
-    };
-    let end = p + 8 + u32::from_be_bytes(length.try_into().unwrap()) as usize;
-    p += 8;
     let mut programs = [0i64; 16];
-    let mut run = 0u8;
     let mut notes = Vec::new();
-    while p < end {
-        (_, p) = vlq(data, p)?;
-        if byte_at(data, p)? & 0x80 != 0 {
-            run = data[p];
-            p += 1;
-        }
-        let status = run;
-        if status == 0xFF {
-            let kind = byte_at(data, p)?;
-            let (n, q) = vlq(data, p + 1)?;
-            p = q + n;
-            if kind == 0x2F {
-                break;
+    for (_, message) in &track.events {
+        match *message {
+            Message::Program { channel, program } => programs[channel as usize] = program as i64,
+            Message::NoteOn { channel, key, velocity } if velocity != 0 && channel < 8 => {
+                notes.push((channel, programs[channel as usize], key, velocity));
             }
-            continue;
-        }
-        if status == 0xF0 || status == 0xF7 {
-            let (n, q) = vlq(data, p)?;
-            p = q + n;
-            continue;
-        }
-        let (hi, channel) = (status & 0xF0, (status & 15) as usize);
-        let n = if hi == 0xC0 || hi == 0xD0 { 1 } else { 2 };
-        let d = clamped(data, p, p + n).to_vec();
-        p += n;
-        if hi == 0xC0 {
-            programs[channel] = byte_at(&d, 0)? as i64;
-        } else if hi == 0x90 && byte_at(&d, 1)? != 0 && channel < 8 {
-            notes.push((channel as u8, programs[channel], d[0], d[1]));
+            _ => {}
         }
     }
     Ok(notes)
@@ -1838,6 +1785,23 @@ mod tests {
         let data = encode_adpcm(&prepared.samples, prepared.loop_start, false).unwrap();
         assert_eq!(decode_adpcm(&data, true).unwrap().1, Some(56));
         assert_eq!(vag_length(&data), data.len());
+    }
+
+    #[test]
+    fn midi_notes_are_the_note_ons_the_driver_plays() {
+        use crate::music::{Smf, Track};
+        let events = vec![
+            (0, Message::NoteOn { channel: 0, key: 60, velocity: 100 }),
+            (0, Message::Program { channel: 0, program: 5 }),
+            (10, Message::NoteOn { channel: 0, key: 62, velocity: 90 }),
+            // a note-off written as a note-on of velocity 0, and a channel the driver skips
+            (20, Message::NoteOn { channel: 0, key: 62, velocity: 0 }),
+            (20, Message::NoteOn { channel: 8, key: 64, velocity: 90 }),
+            (30, Message::NoteOn { channel: 7, key: 65, velocity: 1 }),
+        ];
+        let smf = Smf { format: 0, division: 480, tracks: vec![Track { events, end: 40 }] };
+        assert_eq!(midi_notes(&smf.write()).unwrap(), vec![(0, 0, 60, 100), (0, 5, 62, 90), (7, 0, 65, 1)]);
+        assert!(midi_notes(b"MThd").is_err());
     }
 
     #[test]

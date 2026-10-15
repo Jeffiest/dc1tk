@@ -173,28 +173,32 @@ pub fn vlq(value: u32) -> Vec<u8> {
     out
 }
 
-/// The value of a variable-length quantity at `at` and where it ends; refuses one of more bytes
-/// than it needs (which write would not give back) or more than four.
-fn read_vlq(data: &[u8], mut at: usize) -> Result<(u32, usize)> {
+/// The value of a variable-length quantity at `at` and where it ends: at most four bytes, as a
+/// MIDI file has them (the reader of sequences and of MIDI files).
+pub(crate) fn read_vlq(data: &[u8], mut at: usize) -> Result<(u32, usize)> {
     let start = at;
     let mut value = 0u32;
-    loop {
+    for _ in 0..4 {
         let Some(&byte) = data.get(at) else {
-            bail!("the events run past the end of the file at 0x{start:x}");
+            bail!("the data ends inside a variable-length number at 0x{start:x}");
         };
         at += 1;
         value = value << 7 | (byte & 0x7F) as u32;
         if byte & 0x80 == 0 {
-            break;
-        }
-        if at - start == 4 {
-            bail!("a delta time of more than four bytes at 0x{start:x}");
+            return Ok((value, at));
         }
     }
-    if at - start != vlq(value).len() {
-        bail!("a delta time written in more bytes than it needs at 0x{start:x}");
+    bail!("a variable-length number of more than four bytes at 0x{start:x}")
+}
+
+/// read_vlq, refusing a number written in more bytes than it needs, which write would not give
+/// back (a sequence is read only as the disc's are written).
+fn read_canonical_vlq(data: &[u8], at: usize) -> Result<(u32, usize)> {
+    let (value, end) = read_vlq(data, at)?;
+    if end - at != vlq(value).len() {
+        bail!("a variable-length number written in more bytes than it needs at 0x{at:x}");
     }
-    Ok((value, at))
+    Ok((value, end))
 }
 
 /// The bytes of the header up to the Midi chunk's data block, for a file of `size` bytes.
@@ -247,7 +251,7 @@ impl Sequence {
             let delta = if flagged {
                 0
             } else {
-                let (delta, next) = read_vlq(data, at)?;
+                let (delta, next) = read_canonical_vlq(data, at)?;
                 if could_flag && delta == 0 {
                     bail!("a delta time of 0 written out at 0x{start:x}, where the event before leaves it out");
                 }
@@ -271,7 +275,7 @@ impl Sequence {
                 let Some(&kind) = data.get(at) else {
                     bail!("the events run past the end of the file at 0x{at:x}");
                 };
-                let (length, next) = read_vlq(data, at + 1)?;
+                let (length, next) = read_canonical_vlq(data, at + 1)?;
                 let Some(body) = data.get(next..next + length as usize) else {
                     bail!("a meta event runs past the end of the file at 0x{at:x}");
                 };
@@ -457,6 +461,18 @@ mod tests {
         assert_eq!(&written[EVENTS..EVENTS + events.len()], events);
         assert!(written[EVENTS + events.len()..].iter().all(|&byte| byte == 0xFF));
         assert_eq!(Sequence::read(&written).unwrap(), sequence);
+    }
+
+    #[test]
+    fn variable_length_numbers_read_up_to_four_bytes_and_sequences_only_the_shortest() {
+        assert_eq!(read_vlq(&[0x81, 0x48, 0x40], 0).unwrap(), (200, 2));
+        assert_eq!(read_vlq(&[0xFF, 0xFF, 0xFF, 0x7F], 0).unwrap(), (0x0FFF_FFFF, 4));
+        assert!(read_vlq(&[0x80, 0x80, 0x80, 0x80, 0x00], 0).unwrap_err().to_string().contains("more than four"));
+        assert!(read_vlq(&[0x81], 0).unwrap_err().to_string().contains("ends inside"));
+        // 0 in two bytes: a MIDI file may have it, a sequence the disc's way may not
+        assert_eq!(read_vlq(&[0x80, 0x00], 0).unwrap(), (0, 2));
+        assert!(read_canonical_vlq(&[0x80, 0x00], 0).unwrap_err().to_string().contains("more bytes than it needs"));
+        assert_eq!(read_canonical_vlq(&[0x81, 0x48], 0).unwrap(), (200, 2));
     }
 
     #[test]
