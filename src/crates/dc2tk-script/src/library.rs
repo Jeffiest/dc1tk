@@ -1041,17 +1041,7 @@ impl Model {
         let lookup = self.lookup();
         let renamed =
             names::described(names::rename(program.clone(), &mapping)?, &order, &lookup, &self.shared.reserved);
-        // the parameters that carry kinds, under the names the script gives the functions
-        let mut params: HashMap<String, messages::ParamsByFunction> = HashMap::new();
-        for (kind, positions) in &self.survey.kind_params {
-            let mut by_name = messages::ParamsByFunction::new();
-            for (name, print) in &found {
-                if let Some(found_positions) = print.as_ref().and_then(|print| positions.get(print)) {
-                    by_name.insert(mapping[name].clone(), found_positions.clone());
-                }
-            }
-            params.insert(kind.clone(), by_name);
-        }
+        let params = self.kind_params_named(&found, &mapping);
         let mut functions = renamed.list("functions").to_vec();
         if let Some(context) = &context {
             functions = messages::annotate_functions(
@@ -1064,44 +1054,9 @@ impl Model {
         }
         functions = notes::annotate_siblings(functions, self.survey.siblings.get(path).unwrap_or(&HashMap::new()));
         let renamed = renamed.with("functions", functions.clone());
-        let mut included: HashMap<usize, (&Library, usize)> = HashMap::new();
-        let mut forced: HashMap<String, String> = HashMap::new();
-        let original_functions = program.list("functions");
-        for segment in self.survey.layouts.get(path).into_iter().flatten() {
-            let Some(library) = self.shared.libraries.get(&(natives_name.clone(), segment.fingerprints.clone())) else {
-                continue;
-            };
-            let span = segment.start..segment.start + segment.fingerprints.len();
-            let all_named = span.clone().all(|position| {
-                let name = original_functions[position].text("name");
-                found[name].as_ref().is_some_and(|print| self.shared.class_names.get(print) == mapping.get(name))
-            });
-            if all_named {
-                included.insert(segment.start, (library, span.len()));
-                forced.extend(library.globals.iter().map(|(slot, name)| (slot.clone(), name.clone())));
-            }
-        }
-        let mut shown = Vec::new();
-        let mut padding_of = Map::new();
-        let mut hidden: Vec<Node> = Vec::new();
-        let mut hidden_by_library: Vec<(&Library, Vec<Node>)> = Vec::new();
-        let mut position = 0;
-        while position < functions.len() {
-            let Some(&(library, count)) = included.get(&position) else {
-                shown.push(functions[position].clone());
-                position += 1;
-                continue;
-            };
-            shown.push(node!({"kind": "include", "path": library.path.clone(), "system": false}));
-            hidden_by_library.push((library, functions[position..position + count].to_vec()));
-            for function in &functions[position..position + count] {
-                hidden.push(function.clone());
-                if !function["padding"].is_null() {
-                    padding_of.insert(function.text("name").to_string(), function["padding"].clone());
-                }
-            }
-            position += count;
-        }
+        let Included { at: included, globals: forced } =
+            self.included_libraries(program, path, &natives_name, &found, &mapping);
+        let Split { shown, padding_of, hidden, hidden_by_library } = split_includes(&functions, &included);
         let split = renamed.with("functions", shown).with("padding_of", Node::Map(padding_of));
         let entry = definitions::script_entry(&self.source.defs, path).cloned().unwrap_or_default();
         let protected = names::global_uses(&hidden);
@@ -1114,22 +1069,7 @@ impl Model {
             .map(|function| function.clone().with("body", names::renamed_variables(&function["body"], &global_names)))
             .collect();
         let numbering = sdk::numbering_of(&entry);
-        let keys: HashMap<String, String> = hidden
-            .iter()
-            .filter(|function| function.kind() == "function")
-            .map(|function| {
-                let mut uses: Vec<(String, String)> = names::global_uses(std::slice::from_ref(function))
-                    .into_iter()
-                    .map(|name| {
-                        let to = global_names.get(&name).cloned().unwrap_or_else(|| name.clone());
-                        (name, to)
-                    })
-                    .collect();
-                uses.sort();
-                let name = function.text("name").to_string();
-                (name.clone(), format!("{natives_name}\u{0}{numbering:?}\u{0}{name}\u{0}{uses:?}"))
-            })
-            .collect();
+        let keys = sound_keys(&hidden, &global_names, &natives_name, numbering.as_deref());
         let mut sounds = sdk::Sounds { want_out: true, keys, ..sdk::Sounds::default() };
         let numbered = sdk::numbered(context, numbering.as_deref());
         let mut presented = sdk::present(scripted, numbered.as_ref(), &params, &shown_hidden, &mut sounds);
@@ -1144,19 +1084,140 @@ impl Model {
         }
         let folder = slots::folder(path);
         if let Some(triggers) = self.survey.triggers.get(&folder).filter(|triggers| !triggers.is_empty()) {
-            let programs: Vec<Node> = presented
-                .list("programs")
-                .iter()
-                .zip(program.list("programs"))
-                .map(|(entry, original)| match original["no"].as_i64().and_then(|no| triggers.get(&no)) {
-                    Some(notes) => entry.clone().with("note", notes.join("; ")),
-                    None => entry.clone(),
-                })
-                .collect();
-            presented = presented.with("programs", programs);
+            presented = with_trigger_notes(presented, program, triggers);
         }
         Ok(notes::annotate(presented, &self.source.defs.strings))
     }
+
+    /// The parameters that carry kinds, by kind, under the names the script gives the functions.
+    fn kind_params_named(
+        &self,
+        found: &IndexMap<String, Option<String>>,
+        mapping: &HashMap<String, String>,
+    ) -> HashMap<String, messages::ParamsByFunction> {
+        let mut params: HashMap<String, messages::ParamsByFunction> = HashMap::new();
+        for (kind, positions) in &self.survey.kind_params {
+            let mut by_name = messages::ParamsByFunction::new();
+            for (name, print) in found {
+                if let Some(found_positions) = print.as_ref().and_then(|print| positions.get(print)) {
+                    by_name.insert(mapping[name].clone(), found_positions.clone());
+                }
+            }
+            params.insert(kind.clone(), by_name);
+        }
+        params
+    }
+
+    /// The libraries a script includes: each run of its layout whose functions all keep the
+    /// library's names.
+    fn included_libraries(
+        &self,
+        program: &Node,
+        path: &str,
+        natives_name: &str,
+        found: &IndexMap<String, Option<String>>,
+        mapping: &HashMap<String, String>,
+    ) -> Included<'_> {
+        let mut included: HashMap<usize, (&Library, usize)> = HashMap::new();
+        let mut forced: HashMap<String, String> = HashMap::new();
+        let original_functions = program.list("functions");
+        for segment in self.survey.layouts.get(path).into_iter().flatten() {
+            let key = (natives_name.to_string(), segment.fingerprints.clone());
+            let Some(library) = self.shared.libraries.get(&key) else {
+                continue;
+            };
+            let span = segment.start..segment.start + segment.fingerprints.len();
+            let all_named = span.clone().all(|position| {
+                let name = original_functions[position].text("name");
+                found[name].as_ref().is_some_and(|print| self.shared.class_names.get(print) == mapping.get(name))
+            });
+            if all_named {
+                included.insert(segment.start, (library, span.len()));
+                forced.extend(library.globals.iter().map(|(slot, name)| (slot.clone(), name.clone())));
+            }
+        }
+        Included { at: included, globals: forced }
+    }
+}
+
+/// The libraries a script includes, by the position of their first function (with their function
+/// count), and the names they give their globals, by slot.
+struct Included<'a> {
+    at: HashMap<usize, (&'a Library, usize)>,
+    globals: HashMap<String, String>,
+}
+
+/// A script's functions with its included libraries' runs taken out: what it shows (an include in
+/// place of each run), the padding of the functions taken out, and those functions, all and by
+/// library.
+struct Split<'a> {
+    shown: Vec<Node>,
+    padding_of: Map,
+    hidden: Vec<Node>,
+    hidden_by_library: Vec<(&'a Library, Vec<Node>)>,
+}
+
+fn split_includes<'a>(functions: &[Node], included: &HashMap<usize, (&'a Library, usize)>) -> Split<'a> {
+    let mut split =
+        Split { shown: Vec::new(), padding_of: Map::new(), hidden: Vec::new(), hidden_by_library: Vec::new() };
+    let mut position = 0;
+    while position < functions.len() {
+        let Some(&(library, count)) = included.get(&position) else {
+            split.shown.push(functions[position].clone());
+            position += 1;
+            continue;
+        };
+        split.shown.push(node!({"kind": "include", "path": library.path.clone(), "system": false}));
+        split.hidden_by_library.push((library, functions[position..position + count].to_vec()));
+        for function in &functions[position..position + count] {
+            split.hidden.push(function.clone());
+            if !function["padding"].is_null() {
+                split.padding_of.insert(function.text("name").to_string(), function["padding"].clone());
+            }
+        }
+        position += count;
+    }
+    split
+}
+
+/// The key of each included function for the sound pass's cache: the function as the script
+/// sees it (its native table, numbering, name, and the globals it uses under the script's names).
+fn sound_keys(
+    hidden: &[Node],
+    global_names: &HashMap<String, String>,
+    natives_name: &str,
+    numbering: Option<&str>,
+) -> HashMap<String, String> {
+    hidden
+        .iter()
+        .filter(|function| function.kind() == "function")
+        .map(|function| {
+            let mut uses: Vec<(String, String)> = names::global_uses(std::slice::from_ref(function))
+                .into_iter()
+                .map(|name| {
+                    let to = global_names.get(&name).cloned().unwrap_or_else(|| name.clone());
+                    (name, to)
+                })
+                .collect();
+            uses.sort();
+            let name = function.text("name").to_string();
+            (name.clone(), format!("{natives_name}\u{0}{numbering:?}\u{0}{name}\u{0}{uses:?}"))
+        })
+        .collect()
+}
+
+/// The presented program with each entry noted with the trigger points that start its program.
+fn with_trigger_notes(presented: Node, program: &Node, triggers: &IndexMap<i64, Vec<String>>) -> Node {
+    let programs: Vec<Node> = presented
+        .list("programs")
+        .iter()
+        .zip(program.list("programs"))
+        .map(|(entry, original)| match original["no"].as_i64().and_then(|no| triggers.get(&no)) {
+            Some(notes) => entry.clone().with("note", notes.join("; ")),
+            None => entry.clone(),
+        })
+        .collect();
+    presented.with("programs", programs)
 }
 
 // ---- expanding includes, for the compiler --------------------------------------------------
