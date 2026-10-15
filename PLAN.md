@@ -143,7 +143,17 @@ was checked in the game. Left over:
   [fish-room](docs/examples/fish-room/) example clears a copy of `m07`,
   models a room, a door and a giant fish in Blender (New Model from
   Selection), spins the fish with a Piece animation point and plays a tune
-  of its own (checked in the game: `fish-room.iso`).
+  of its own (checked in the game: `fish-room.iso`). The
+  [spinning-cult](docs/examples/spinning-cult/) example, a whole eerie mod
+  on top of it, was played through in the game (`spinning-cult-3.iso`): a
+  new character made in Blender with a material fade (Brother Gill), new
+  motions added to five townspeople's own packs, their talks and town
+  lighting changed by a patch kept inside Palm Brinks' full script buffer,
+  three new ideas photographed from invent boxes that turn with the fish,
+  a new invention and item with its own icon, model and a composed letter
+  in its name (gŷros), a second music file of the mod's own with
+  synthesized instruments, and its state in a save counter read as
+  bit-fields.
 - **Dungeon floors** (done). Layouts are `data:layouts`, the part kinds
   `data:parts` (entries renamed in place; the table cannot grow, entry 276
   is free), chest items `data:chests`; the parts edit in Blender
