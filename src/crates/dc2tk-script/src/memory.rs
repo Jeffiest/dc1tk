@@ -1005,13 +1005,16 @@ fn texture(img: &[u8], at: usize, swizzled: bool, no_image: bool) -> Option<Text
 /// mgCTextureManager::EnterIMGFile (mg_texture.cpp:753) of a picture file at `block`: an IM3's
 /// pictures sorted by group as the engine sorts them, each entered at block + group + the blocks
 /// spilled so far, moving on to the next block when a block runs out ("texture over"); IMG and
-/// IM2 files go into one running block. Returns what the engine returns (the last block used
-/// minus the start), which CMap::LoadData adds to the next file's block.
+/// IM2 files go into one running block. Returns what the engine returns,
+/// `last_block_used - current_block`, which CMap::LoadData adds to the next file's block:
+/// - for an IM3, the blocks past `block` it used (`current_block` stays `block`);
+/// - for an IMG or IM2, always 0. A spill moves `current_block` on and sets the picture's block
+///   to it, and `last_block_used` follows the picture's block, so the two stay equal. The next
+///   file then starts one block on from this one's start, even when this one spilled past it.
 fn enter_img(blocks: &mut Blocks, img: &[u8], block: i64, block_max: i64) -> i64 {
     if img.get(..2) != Some(b"IM") {
         return 0;
     }
-    let mut last = block;
     if img.get(..3) == Some(b"IM3") {
         let count = u32_at(img, 8).unwrap_or(0) as usize;
         let mut entries: Vec<(Vec<u8>, usize, bool, i64, bool)> = Vec::new();
@@ -1036,6 +1039,7 @@ fn enter_img(blocks: &mut Blocks, img: &[u8], block: i64, block_max: i64) -> i64
             }
         }
         let mut spill = 0;
+        let mut last = block;
         for (name, offset, swizzled, group, no_image) in entries {
             if name.first() == Some(&b'#') || name.is_empty() {
                 continue;
@@ -1077,10 +1081,10 @@ fn enter_img(blocks: &mut Blocks, img: &[u8], block: i64, block_max: i64) -> i64
         if current < block_max - 1 && blocks.remain(current) < 0 {
             current += 1;
             blocks.spills += 1;
-            last = last.max(current);
         }
     }
-    last - current
+    // last_block_used - current_block, which are equal here (see above)
+    0
 }
 
 /// What a set of picture files takes of the texture blocks.
@@ -1901,6 +1905,44 @@ mod tests {
         let chain = texture(&tim2(3, 64, 64, 3), 0, false, false).unwrap();
         assert_eq!(chain.vram, 96);
         assert_eq!(chain.vram % PAGE_BLOCKS, 0);
+    }
+
+    /// An IMG (or IM2) file of pictures (name, picture).
+    fn img(magic: &[u8; 3], pictures: &[(&str, Vec<u8>)]) -> Vec<u8> {
+        let mut out = magic.to_vec();
+        out.push(0);
+        out.extend((pictures.len() as u32).to_le_bytes());
+        out.extend([0u8; 8]);
+        let mut body: Vec<u8> = Vec::new();
+        let start = 0x10 + 0x30 * pictures.len();
+        for (name, picture) in pictures {
+            let mut entry = vec![0u8; 0x30];
+            entry[..name.len()].copy_from_slice(name.as_bytes());
+            entry[0x20..0x24].copy_from_slice(&((start + body.len()) as i32).to_le_bytes());
+            out.extend(entry);
+            body.extend(picture);
+        }
+        out.extend(body);
+        out
+    }
+
+    #[test]
+    fn an_img_file_spills_but_enters_as_one_block() {
+        // five 1024-block pictures: the fifth goes on to block 1, yet EnterIMGFile returns 0 for an
+        // IMG file (its running block and its last block move together), so the next file is
+        // entered at block 1, beside the spilled picture
+        let big = tim2(3, 256, 256, 1);
+        let five: Vec<(&str, Vec<u8>)> = (0..5).map(|_| ("p", big.clone())).collect();
+        for magic in [b"IMG", b"IM2"] {
+            let mut blocks = Blocks::new();
+            assert_eq!(enter_img(&mut blocks, &img(magic, &five), 0, TOWN_BLOCKS), 0);
+            assert_eq!((blocks.used(), blocks.spills), (1, 1));
+            // the spilled picture stays in block 0's list, as the engine leaves it
+            assert_eq!(blocks.remain(0), BLOCK_VRAM - 5 * 1024);
+        }
+        // an IM3 file returns the blocks it went past
+        let three: Vec<(&str, i32, Vec<u8>)> = (0..5).map(|_| ("p", 0, big.clone())).collect();
+        assert_eq!(enter_img(&mut Blocks::new(), &im3(&three), 0, TOWN_BLOCKS), 1);
     }
 
     #[test]
