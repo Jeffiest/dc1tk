@@ -209,6 +209,7 @@ dependencies = [
  "indexmap",
  "mimalloc",
  "rayon",
+ "serde",
  "serde_json",
 ]
 

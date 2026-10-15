@@ -350,7 +350,7 @@ fn run_verify(extracted: &Path, json: Option<&Path>, limit: usize, common: &Comm
         dc2tk_disc::textfile::write_text(json, &dc2tk_disc::textfile::json_text(&report))
             .with_context(|| format!("cannot write {}", json.display()))?;
     }
-    Ok(if report["summary"]["ok"] == true { ExitCode::SUCCESS } else { ExitCode::from(1) })
+    Ok(if report.summary.ok { ExitCode::SUCCESS } else { ExitCode::from(1) })
 }
 
 /// The flags, or the counters when counters is set: a summary, the used list, or one number's uses.
