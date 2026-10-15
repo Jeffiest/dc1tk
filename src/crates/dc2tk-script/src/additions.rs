@@ -36,10 +36,12 @@ pub fn in_map(path: &str, map_name: &str) -> bool {
     parts[..parts.len() - 1].contains(&map_name)
         || stem == map_name
         || stem.starts_with(&format!("{map_name}_"))
-        || (stem.starts_with(map_name) && stem[map_name.len()..].chars().next().is_some_and(dc2tk_py::is_alpha))
+        || (stem.starts_with(map_name)
+            && stem[map_name.len()..].chars().next().is_some_and(|c| c.is_ascii_alphabetic()))
 }
 
-/// fnmatch.fnmatchcase: * any run, ? any one character, [...] a set.
+/// Whether a name matches a shell-style pattern: * any run of characters (/ too), ? any one, [...]
+/// one of a set and [!...] one not in it.
 pub fn fnmatch(name: &str, pattern: &str) -> bool {
     let mut regex = String::from("^(?s:");
     let chars: Vec<char> = pattern.chars().collect();
@@ -93,12 +95,12 @@ enum ProgramKey {
 fn number_of(text: &str, consts: &IndexMap<String, i64>) -> ProgramKey {
     match index::value(text, consts) {
         Some(Folded::Int(value)) => ProgramKey::Number(value),
-        _ => ProgramKey::Text(dc2tk_py::strip(text).to_string()),
+        _ => ProgramKey::Text(text.trim().to_string()),
     }
 }
 
 fn identifier(text: &str) -> String {
-    text.chars().map(|c| if dc2tk_py::is_word(c) { c } else { '_' }).collect()
+    text.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect()
 }
 
 fn insert_programs(text: &str, lines: &[String]) -> String {
@@ -186,7 +188,7 @@ pub fn applied(
                     "mod {mod_name} adds program {program}, which the script already has (as {written}); wrap it instead"
                 )));
             }
-            added.push(format!("PROGRAM({}, {});", program, crate::source::py_str(function)));
+            added.push(format!("PROGRAM({}, {});", program, function.plain_text()));
         }
     }
     if !added.is_empty() {
@@ -206,7 +208,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fnmatch_like_python() {
+    fn patterns_match_as_shell_globs() {
         assert!(fnmatch("map/s/s17/s17_1.c", "map/s/s17/s17_?.c"));
         assert!(fnmatch("dungeon/monster/e33a.c", "dungeon/*/e33a.c"));
         assert!(fnmatch("a/b.c", "*"));
@@ -216,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn in_map_like_python() {
+    fn a_script_is_in_a_map_by_folder_or_file_name() {
         assert!(in_map("map/s/s17/s17_1.c", "s17"));
         assert!(in_map("map/s17b_1.c", "s17"));
         assert!(!in_map("map/s/s170/s170_1.c", "s17"));

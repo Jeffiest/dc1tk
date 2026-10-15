@@ -15,7 +15,6 @@ use crate::definitions::Definitions;
 use crate::natives::Table;
 use crate::node;
 use crate::node::{Map, Node};
-use crate::source::{py_str, truthy};
 use crate::{assets, names, Error, Result};
 
 pub use crate::soundpass::{library_sounds, Passed, Seed, Sounds};
@@ -171,7 +170,7 @@ pub fn header_declarations(
     let mut table = header["natives"].as_str().map(str::to_string);
     declarations.add(&header["declarations"]);
     for item in header.list("functions") {
-        if item.kind() == "include" && truthy(&item["system"]) {
+        if item.kind() == "include" && item["system"].is_set() {
             let nested = header_declarations(item.text("path"), headers, declarations, seen, parse)?;
             if table.is_none() {
                 table = nested;
@@ -402,7 +401,7 @@ pub fn is_native(name: &str, found: &Context) -> bool {
 }
 
 pub fn has_result(declared: &Node) -> bool {
-    declared.list("params").last().is_some_and(|param| truthy(&param["result"]))
+    declared.list("params").last().is_some_and(|param| param["result"].is_set())
 }
 
 /// A native call as the VM makes it: its canonical name and group base.
@@ -461,8 +460,8 @@ fn expanded_inline(inline: &Node, args: &[Node]) -> Result<Vec<Node>> {
     let bindings: HashMap<String, Node> =
         params.iter().zip(args).map(|(param, arg)| (param.text("name").to_string(), arg.clone())).collect();
     let outs: HashSet<String> =
-        params.iter().filter(|param| truthy(&param["out"])).map(|param| param.text("name").to_string()).collect();
-    for param in params.iter().filter(|param| truthy(&param["out"])) {
+        params.iter().filter(|param| param["out"].is_set()).map(|param| param.text("name").to_string()).collect();
+    for param in params.iter().filter(|param| param["out"].is_set()) {
         let out = param.text("name");
         if bindings[out].kind() != "addr" {
             return Err(Error::invalid(format!("{name}: pass &variable for pointer parameter {out}")));
@@ -699,9 +698,9 @@ fn statement(node: &Node, found: &Context, temps: &mut Vec<String>) -> Result<Ve
     let resolved = resolved_statement(node, found, temps, &mut before)?;
     let mut result = before;
     result.extend(resolved);
-    if let Some(note) = node.get("note").filter(|note| truthy(note)) {
+    if let Some(note) = node.get("note").filter(|note| note.is_set()) {
         if let Some(first) = result.first_mut() {
-            if !first.get("note").is_some_and(truthy) {
+            if !first.get("note").is_some_and(Node::is_set) {
                 *first = std::mem::take(first).with("note", note.clone());
             }
         }
@@ -732,7 +731,7 @@ fn sized_locals(function: &Node, found: &Context) -> Result<Vec<Node>> {
     let mut sized = Vec::new();
     for declared in function.list("locals") {
         if let Some(size) = declared["size"].as_str() {
-            let value = found.constants.get(size).filter(|value| truthy(value) && value.kind() == "int");
+            let value = found.constants.get(size).filter(|value| value.is_set() && value.kind() == "int");
             let Some(value) = value else {
                 return Err(Error::invalid(format!(
                     "{}: array size {} is not a known integer constant",
@@ -760,7 +759,7 @@ fn is_base_type(kind: &str) -> bool {
 fn typed(variable: &Node, kinds: &Map) -> Result<Node> {
     let kind = variable.text("type");
     // void *p: a pointer parameter the function never reads through
-    if is_base_type(kind) || (kind == "void" && truthy(&variable["array"])) {
+    if is_base_type(kind) || (kind == "void" && variable["array"].is_set()) {
         return Ok(variable.clone());
     }
     let base = if kind.starts_with("enum ") { Some("int") } else { kinds.get(kind).and_then(Node::as_str) };
@@ -907,7 +906,7 @@ fn helper_call(inline: &Node, nodes: &[Node], position: usize) -> Option<(Node, 
         .list("params")
         .iter()
         .map(|param| {
-            let kind = if truthy(&param["out"]) {
+            let kind = if param["out"].is_set() {
                 Param::Out
             } else if param["type"] == "any" {
                 Param::Any
@@ -983,7 +982,7 @@ fn folded(nodes: &[Node], found: &Context, inlines: &[&Node], pointers: &HashSet
                 let mut call = call.with("expr", expr);
                 let comments: Vec<String> = nodes[position..position + size]
                     .iter()
-                    .filter_map(|node| node.get("comment").filter(|comment| truthy(comment)).map(py_str))
+                    .filter_map(|node| node.get("comment").filter(|comment| comment.is_set()).map(Node::plain_text))
                     .collect();
                 if !comments.is_empty() {
                     call = call.with("comment", comments.join("; "));
@@ -1066,17 +1065,17 @@ fn named_args(args: &[Node], params: &[Node], found: &Context) -> Vec<Node> {
             let kind = param.and_then(|param| {
                 param
                     .get("enum")
-                    .filter(|value| truthy(value))
-                    .or_else(|| param.get("kind").filter(|value| truthy(value)))
+                    .filter(|value| value.is_set())
+                    .or_else(|| param.get("kind").filter(|value| value.is_set()))
             });
-            let enumeration = param.and_then(|param| param.get("enum")).filter(|value| truthy(value));
+            let enumeration = param.and_then(|param| param.get("enum")).filter(|value| value.is_set());
             match (kind, enumeration) {
                 // an address where the native takes an enum (a call written for an older native
                 // table): C needs the conversion written out; it compiles to nothing
                 (_, Some(enumeration)) if arg.kind() == "addr" => {
-                    node!({"kind": "cast", "type": format!("enum {}", py_str(enumeration)), "operand": arg.clone()})
+                    node!({"kind": "cast", "type": format!("enum {}", enumeration.plain_text()), "operand": arg.clone()})
                 }
-                (Some(kind), _) => named_literal(arg, &py_str(kind), found),
+                (Some(kind), _) => named_literal(arg, &kind.plain_text(), found),
                 (None, _) => arg.clone(),
             }
         })
@@ -1178,7 +1177,7 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
                     .enumerate()
                     .filter(|(position, arg)| {
                         *position < params.len()
-                            && truthy(&params[*position]["out"])
+                            && params[*position]["out"].is_set()
                             && arg.kind() == "addr"
                             && arg["target"].kind() == "var"
                     })
@@ -1223,7 +1222,7 @@ fn in_uses(nodes: &[Node], found: &Context, out: &mut HashMap<String, String>) {
             for (position, arg) in node.list("args").iter().enumerate() {
                 if let Some(declared) = declared {
                     let params = declared.list("params");
-                    if position < params.len() && !truthy(&params[position]["out"]) && arg.kind() == "var" {
+                    if position < params.len() && !params[position]["out"].is_set() && arg.kind() == "var" {
                         out.entry(arg.text("name").to_string())
                             .or_insert_with(|| params[position].text("name").to_string());
                     }
@@ -1435,8 +1434,8 @@ fn variable_kinds(function: &Node) -> HashMap<String, String> {
         .list("params")
         .iter()
         .chain(function.list("locals"))
-        .filter(|variable| variable.get("kind").is_some_and(truthy))
-        .map(|variable| (variable.text("name").to_string(), kind_name(&py_str(&variable["kind"]))))
+        .filter(|variable| variable.get("kind").is_some_and(Node::is_set))
+        .map(|variable| (variable.text("name").to_string(), kind_name(&variable["kind"].plain_text())))
         .collect()
 }
 
@@ -1626,8 +1625,8 @@ fn old_numbered(nodes: &[Node], found: &Context) -> Node {
                 if notes.is_empty() {
                     return node.clone();
                 }
-                if let Some(comment) = node.get("comment").filter(|comment| truthy(comment)) {
-                    notes.push(py_str(comment));
+                if let Some(comment) = node.get("comment").filter(|comment| comment.is_set()) {
+                    notes.push(comment.plain_text());
                 }
                 node.clone().with("comment", notes.join("; "))
             }
@@ -1659,7 +1658,7 @@ pub fn present_inline(inline: &Node, found: &Context) -> Node {
     let pointers: HashSet<String> = inline
         .list("params")
         .iter()
-        .filter(|param| truthy(&param["out"]))
+        .filter(|param| param["out"].is_set())
         .map(|param| param.text("name").to_string())
         .collect();
     let body = folded(inline.list("body"), found, &[], &pointers);
@@ -1680,11 +1679,11 @@ pub fn present_functions(
     // parameters a definition set gives a value kind (types)
     for function in functions.iter().filter(|function| function.kind() == "function") {
         for (position, param) in function.list("params").iter().enumerate() {
-            if let Some(kind) = param.get("kind").filter(|kind| truthy(kind)) {
+            if let Some(kind) = param.get("kind").filter(|kind| kind.is_set()) {
                 function_kinds
                     .entry(function.text("name").to_string())
                     .or_default()
-                    .insert(position, kind_name(&py_str(kind)));
+                    .insert(position, kind_name(&kind.plain_text()));
             }
         }
     }

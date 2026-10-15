@@ -22,7 +22,6 @@ use regex::Regex;
 use crate::build::{self, Patched};
 use crate::compile::Toolchain;
 use crate::node::Node;
-use crate::source::py_str;
 use crate::{index, mods, parse, patches, pathnames, source, Error, Result};
 
 /// A copy made a patch: the file (by path in the mod's files/), the patch written (None when the
@@ -112,7 +111,7 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
         program
             .list("functions")
             .iter()
-            .filter(|item| !(item.kind() == "include" && crate::source::truthy(&item["system"])))
+            .filter(|item| !(item.kind() == "include" && item["system"].is_set()))
             .map(|item| (item_name(item), item.clone()))
             .collect()
     };
@@ -134,7 +133,7 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
         }
         match item.kind() {
             "include" => {
-                let system = crate::source::truthy(&item["system"]);
+                let system = item["system"].is_set();
                 let path = item.text("path");
                 includes.push(if system { format!("#include <{path}>") } else { format!("#include \"{path}\"") });
                 added.push(name.clone());
@@ -176,16 +175,16 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
     if let Some(gone) = tree_programs.iter().find(|entry| !my_programs.contains(entry)) {
         return refused(format!(
             "it changes or removes PROGRAM({}, {}); override its function instead",
-            py_str(&gone["no"]),
-            py_str(&gone["function"])
+            gone["no"].plain_text(),
+            gone["function"].plain_text()
         ));
     }
     let new_programs: Vec<&Node> = my_programs.iter().filter(|entry| !tree_programs.contains(entry)).collect();
     let programs: Vec<String> = new_programs
         .iter()
-        .map(|entry| format!("PROGRAM({}, {});", py_str(&entry["no"]), py_str(&entry["function"])))
+        .map(|entry| format!("PROGRAM({}, {});", entry["no"].plain_text(), entry["function"].plain_text()))
         .collect();
-    added.extend(new_programs.iter().map(|entry| format!("program {}", py_str(&entry["no"]))));
+    added.extend(new_programs.iter().map(|entry| format!("program {}", entry["no"].plain_text())));
     // the file's own constants: #define lines are copied, enums are refused
     let tree_constants: Vec<Node> = tree["declarations"].list("constants").iter().map(bare).collect();
     let mut defines = Vec::new();

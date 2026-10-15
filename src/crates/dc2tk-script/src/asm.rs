@@ -4,8 +4,6 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use dc2tk_py::{float_repr, format_g};
-
 use crate::natives::Table;
 use crate::stack;
 use crate::stb::{self, Compare, Function, Header, Instruction, Mode, Op, ProgramEntry, Region, Script};
@@ -75,21 +73,23 @@ pub fn quote(text: &str) -> String {
     out
 }
 
-/// The shortest decimal text (from 1 to 9 significant digits) that reads back as the float the
-/// bits hold, written as float_repr writes it; None for NaN and infinities.
+/// The shortest decimal text that reads back as the float the bits hold (0.1, 1.0, -0.0, 1e20,
+/// 1.5e-7), as the assembler and the compiler read a float literal: as a double, then rounded to
+/// a float. None for NaN and the infinities, which have no literal.
+///
+/// The float's own shortest text reads back so unless rounding it to a double first lands it
+/// beside a halfway point; then the double's shortest text, which is exact, does.
 pub fn float_text(bits: i32) -> Option<String> {
-    let value = f32::from_bits(bits as u32) as f64;
+    let value = f32::from_bits(bits as u32);
     if !value.is_finite() {
         return None;
     }
-    for precision in 1..10 {
-        let text = format_g(value, precision);
-        let parsed: f64 = text.parse().expect("%g text is a float");
-        if (parsed as f32).to_bits() == bits as u32 {
-            return Some(float_repr(parsed));
-        }
+    let reads_back = |text: &str| text.parse::<f64>().is_ok_and(|read| (read as f32).to_bits() == bits as u32);
+    let short = format!("{value:?}");
+    if reads_back(&short) {
+        return Some(short);
     }
-    None
+    Some(format!("{:?}", f64::from(value)))
 }
 
 pub fn hex_text(value: i64) -> String {

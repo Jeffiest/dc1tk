@@ -14,7 +14,6 @@ use regex::Regex;
 use crate::natives::Table;
 use crate::node;
 use crate::node::{Map, Node};
-use crate::source::truthy;
 use crate::{
     asm, compile, decompile, definitions, fingerprint, library, names, natives, parse, pathnames, sdk, stb, Error,
     Result,
@@ -77,7 +76,7 @@ pub fn learned_entry(function: &Node, program_names: &IndexMap<String, i64>, inf
     if any_named(&locals, &DEFAULT_VARIABLE) {
         entry.insert("locals", Node::List(locals));
     }
-    if function.get("doc").is_some_and(truthy) {
+    if function.get("doc").is_some_and(Node::is_set) {
         entry.insert("doc", function["doc"].clone());
     }
     Node::Map(entry)
@@ -90,7 +89,7 @@ pub fn script_entry(program: &Node) -> Node {
     if any_named(&globals, &DEFAULT_GLOBAL) {
         entry.insert("globals", Node::List(globals));
     }
-    if program.get("doc").is_some_and(truthy) {
+    if program.get("doc").is_some_and(Node::is_set) {
         entry.insert("doc", program["doc"].clone());
     }
     Node::Map(entry)
@@ -171,7 +170,7 @@ pub fn script_entries(
         }
         let returned = inferred.get(position).filter(|node| !node.is_null());
         let mut entry = learned_entry(function, &context.programs, returned);
-        if let Some(noted) = notes.get(function.text("name")).filter(|noted| truthy(noted)) {
+        if let Some(noted) = notes.get(function.text("name")).filter(|noted| noted.is_set()) {
             entry = entry.with("notes", noted.clone());
         }
         if !is_empty(&entry) {
@@ -219,7 +218,7 @@ pub fn library_entries(
     for (path, prints, members) in runs {
         let mut entry = Map::new();
         entry.insert("path", Node::from(path.as_str()));
-        if let Some(doc) = docs.get(&path).filter(|doc| truthy(doc)) {
+        if let Some(doc) = docs.get(&path).filter(|doc| doc.is_set()) {
             entry.insert("doc", doc.clone());
         }
         let mut used = HashSet::new();
@@ -478,12 +477,12 @@ pub fn write_libraries(target: &Path, found: &IndexMap<String, Node>) -> Result<
             updated = updated.with("path", path.as_str());
             taken.insert(Some(path));
         }
-        if let Some(doc) = entry.get("doc").filter(|doc| truthy(doc)) {
+        if let Some(doc) = entry.get("doc").filter(|doc| doc.is_set()) {
             if !updated.get("doc").is_some_and(|known| known.same_value(doc)) {
                 updated = updated.with("doc", doc.clone());
             }
         }
-        if let Some(globals) = entry.get("globals").filter(|globals| truthy(globals)) {
+        if let Some(globals) = entry.get("globals").filter(|globals| globals.is_set()) {
             let mut merged = updated.get("globals").cloned().unwrap_or_else(|| Node::Map(Map::new()));
             for (slot, name) in globals.as_object().into_iter().flat_map(Map::iter) {
                 merged = merged.with(slot.to_string(), name.clone());

@@ -8,7 +8,6 @@ description = "Dark Chronicle's scripts: the .stb format, its assembly, decompil
 [dependencies]
 dc2tk-assets.workspace = true
 dc2tk-disc.workspace = true
-dc2tk-py.workspace = true
 indexmap.workspace = true
 serde.workspace = true
 rayon.workspace = true
@@ -16,6 +15,7 @@ regex.workspace = true
 serde_json.workspace = true
 sha1_smol.workspace = true
 sha2.workspace = true
+strsim.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
 

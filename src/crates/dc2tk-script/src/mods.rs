@@ -904,7 +904,7 @@ pub fn run_tests(
             ..Default::default()
         },
     )?;
-    if !crate::source::truthy(&program["main"]) {
+    if !program["main"].is_set() {
         let first = program["functions"]
             .as_array()
             .into_iter()
@@ -935,7 +935,7 @@ pub fn run_tests(
         let mut machine = crate::vm::Machine::new(&table, vec![crate::vm::Value::Int(0); 256]);
         let outcome = machine.run(name, Vec::new());
         let (passed, error) = match outcome {
-            Ok(value) => (value.truthy(), None),
+            Ok(value) => (value.is_true(), None),
             Err(error) => (false, Some(error.to_string())),
         };
         results.push(TestResult { name: name.clone(), passed, printed: machine.printed, error });

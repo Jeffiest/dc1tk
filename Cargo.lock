@@ -252,7 +252,6 @@ version = "0.1.0"
 dependencies = [
  "dc2tk-assets",
  "dc2tk-disc",
- "dc2tk-py",
  "indexmap",
  "rayon",
  "regex",
@@ -260,6 +259,7 @@ dependencies = [
  "serde_json",
  "sha1_smol",
  "sha2",
+ "strsim",
  "thiserror",
  "unicode-normalization",
 ]

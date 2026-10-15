@@ -83,20 +83,11 @@ pub fn scripts_of<'a>(call: &'a Call, users: &'a Users) -> Vec<&'a String> {
     }
 }
 
-/// A Python value as %s writes it.
-pub fn folded_text(value: &Option<Folded>) -> String {
+/// A program number as a report writes it: the number, or the text a script passes instead, quoted.
+pub fn program_text(value: &Folded) -> String {
     match value {
-        Some(Folded::Int(number)) => number.to_string(),
-        Some(Folded::Text(text)) => text.clone(),
-        None => "None".into(),
-    }
-}
-
-/// A program number as %d writes it; Python stops on anything but a number.
-pub fn program_text(value: &Folded) -> Result<String> {
-    match value {
-        Folded::Int(number) => Ok(number.to_string()),
-        Folded::Text(_) => Err(Error::invalid("TypeError: %d format: a real number is required, not str")),
+        Folded::Int(number) => number.to_string(),
+        Folded::Text(text) => format!("{text:?}"),
     }
 }
 
@@ -169,7 +160,7 @@ pub fn map_entries(tree: &Path, consts: &IndexMap<String, i64>) -> Result<Vec<En
 
 /// The executable's monster table, read from the extracted disc (empty without it).
 pub fn monster_rows(extracted: &Path, defs: &Definitions) -> Rows {
-    let layout = defs.executable.get("monster_table").filter(|layout| crate::source::truthy(layout));
+    let layout = defs.executable.get("monster_table").filter(|layout| layout.is_set());
     let elf = if extracted.is_dir() { disc::executable(extracted, defs) } else { None };
     match (elf, layout) {
         (Some(elf), Some(layout)) => disc::monster_table(&elf, layout),
@@ -318,7 +309,7 @@ fn or_else(lines: Vec<String>, otherwise: &str) -> Vec<String> {
 pub fn starts_program(entry: &Entry) -> Result<Option<String>> {
     match &entry.program {
         None => Ok(None),
-        Some(program) => Ok(Some(format!("starts program {}", program_text(program)?))),
+        Some(program) => Ok(Some(format!("starts program {}", program_text(program)))),
     }
 }
 
@@ -346,20 +337,18 @@ pub fn map_report(tree: &Path, consts: &IndexMap<String, i64>, map_name: &str) -
 }
 
 pub fn monster_report(tree: &Path, consts: &IndexMap<String, i64>, rows: &Rows, wanted: &str) -> Result<String> {
-    let unsigned = wanted.trim_start_matches('-');
-    let mut number = if !unsigned.is_empty() && unsigned.chars().all(dc2tk_py::is_digit) {
-        match dc2tk_py::int_base(wanted, 10) {
-            Ok(value) => Some(value),
-            Err(_) => return Err(Error::invalid(format!("ValueError: invalid literal for int(): {wanted}"))),
-        }
-    } else {
-        match index::value(wanted, consts) {
+    // a number in decimal, or what folds to one (MONSTER_ constants), or else a name
+    let mut number = match wanted.parse::<i128>() {
+        Ok(value) => Some(value),
+        Err(_) => match index::value(wanted, consts) {
             Some(Folded::Int(value)) => Some(value),
             Some(Folded::Text(_)) => {
-                return Err(Error::invalid("TypeError: %d format: a real number is required, not str"))
+                return Err(Error::invalid(format!(
+                    "{wanted} is text; give a monster kind's number, its MONSTER_ constant or its name"
+                )))
             }
             None => None,
-        }
+        },
     };
     if number.is_none() {
         let lowered = wanted.to_lowercase();

@@ -281,8 +281,8 @@ fn docs_read_back_as_written() {
     let doc = "Plays a back flip, pushing backwards while the flip is mid-motion; ".repeat(3) + "\nA second paragraph.";
     let lines = source::doc_lines(&doc);
     let comments: Vec<(usize, String)> =
-        lines.iter().enumerate().map(|(at, line)| (at + 1, dc2tk_py::strip(&line[2..]).to_string())).collect();
-    assert_eq!(parse::comment_block(&comments, lines.len() + 1), dc2tk_py::strip(&doc.replace("; \n", ";\n")));
+        lines.iter().enumerate().map(|(at, line)| (at + 1, line[2..].trim().to_string())).collect();
+    assert_eq!(parse::comment_block(&comments, lines.len() + 1), doc.replace("; \n", ";\n").trim());
 }
 
 #[test]

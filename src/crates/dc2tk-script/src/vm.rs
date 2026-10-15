@@ -53,7 +53,7 @@ impl Value {
         }
     }
 
-    pub fn truthy(&self) -> bool {
+    pub fn is_true(&self) -> bool {
         match self {
             Value::Int(value) => *value != 0,
             Value::Float(value) => *value != 0.0,
@@ -62,15 +62,17 @@ impl Value {
         }
     }
 
-    /// The value as print shows it.
+    /// The value as print shows it: a float as the shortest text that reads back as it, a pointer
+    /// as the variable it points at (&globals[3], or &frame1[2] for a local of the second frame).
     pub fn text(&self) -> String {
         match self {
             Value::Int(value) => value.to_string(),
-            Value::Float(value) => dc2tk_py::float_repr(*value),
+            Value::Float(value) => format!("{value:?}"),
             Value::Text(text) => text.clone(),
-            Value::Pointer(frame, slot) => {
-                format!("({}, {})", frame.map_or("globals".into(), |frame| frame.to_string()), slot)
-            }
+            Value::Pointer(frame, slot) => match frame {
+                Some(frame) => format!("&frame{frame}[{slot}]"),
+                None => format!("&globals[{slot}]"),
+            },
         }
     }
 }
@@ -389,7 +391,7 @@ impl<'a> Machine<'a> {
             }
             "jmp" => call.pc = label(word(1))?,
             op @ ("jf" | "jt" | "jf_push" | "jt_push") => {
-                let truth = pop(stack)?.truthy();
+                let truth = pop(stack)?.is_true();
                 if truth == op.starts_with("jt") {
                     if op.ends_with("_push") {
                         stack.push(Value::Int(truth as i128));
@@ -447,7 +449,7 @@ fn unary_or_arithmetic(op: Op, stack: &mut Vec<Value>) -> std::result::Result<()
             Value::Float(value) => Value::Float(-value),
             other => return Err(format!("neg takes a number, not {}", other.shown())),
         },
-        Op::Not => Value::Int(!pop(stack)?.truthy() as i128),
+        Op::Not => Value::Int(!pop(stack)?.is_true() as i128),
         Op::Itof => Value::Float(pop(stack)?.number()?),
         Op::Ftoi => Value::Int(pop(stack)?.int()?),
         Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Mod | Op::And | Op::Or => {
@@ -468,6 +470,15 @@ fn pop(stack: &mut Vec<Value>) -> std::result::Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn print_shows_floats_shortest_and_pointers_as_their_variable() {
+        assert_eq!(Value::Float(0.1).text(), "0.1");
+        assert_eq!(Value::Float(2.0).text(), "2.0");
+        assert_eq!(Value::Float(1.5e-7).text(), "1.5e-7");
+        assert_eq!(Value::Pointer(None, 3).text(), "&globals[3]");
+        assert_eq!(Value::Pointer(Some(1), 2).text(), "&frame1[2]");
+    }
 
     fn run(text: &str, name: &str, limits: impl FnOnce(&mut Machine)) -> Result<Value> {
         let table = lines_table(text).unwrap();

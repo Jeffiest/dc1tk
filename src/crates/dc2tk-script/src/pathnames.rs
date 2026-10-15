@@ -56,7 +56,7 @@ pub fn lookups(root: &Path, defs: &Definitions) -> Lookups {
             }
         }
     }
-    let layout = defs.executable.get("monster_table").filter(|layout| crate::source::truthy(layout));
+    let layout = defs.executable.get("monster_table").filter(|layout| layout.is_set());
     let elf =
         defs.executable.get("name").and_then(|name| name.as_str()).and_then(|name| std::fs::read(root.join(name)).ok());
     let rows = match (elf, layout) {

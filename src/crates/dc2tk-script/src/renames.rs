@@ -95,13 +95,13 @@ pub fn script_prints(
     if program["natives"].is_null() {
         program = program.with("natives", natives::table_for(&pathnames::unnamed(tree, script)?, tools.rules));
     }
-    let table = source::py_str(&program["natives"]);
+    let table = program["natives"].plain_text();
     let names: Vec<String> = program["functions"]
         .as_array()
         .into_iter()
         .flatten()
         .filter(|function| matches!(function.kind(), "function" | "asm"))
-        .map(|function| source::py_str(&function["name"]))
+        .map(|function| function["name"].plain_text())
         .collect();
     let compiled = stb::read(&crate::compile::compile_program(&program, tools.tables)?);
     let prints = fingerprint::both_fingerprints(&compiled, &table);

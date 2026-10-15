@@ -88,7 +88,7 @@ fn identifier(gloss: &str) -> String {
     static CELL: OnceLock<Regex> = OnceLock::new();
     let separators = CELL.get_or_init(|| Regex::new("[^A-Za-z0-9]+").unwrap());
     let spaced = separators.replace_all(gloss, " ");
-    dc2tk_py::split(&spaced).into_iter().take(MOST_WORDS).collect::<Vec<_>>().join("_").to_uppercase()
+    spaced.split_whitespace().take(MOST_WORDS).collect::<Vec<_>>().join("_").to_uppercase()
 }
 
 /// {(prefix, text): name} for the asset names that have a gloss. Two names that would read the

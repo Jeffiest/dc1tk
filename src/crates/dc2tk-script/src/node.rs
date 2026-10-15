@@ -317,6 +317,33 @@ impl Node {
         }
     }
 
+    /// Whether the value says something: it is not null, false, zero or empty (text, list or
+    /// object). The tree writes a field it has nothing for either way ("doc": "", "note": null),
+    /// or leaves it out.
+    pub fn is_set(&self) -> bool {
+        match self {
+            Node::Null => false,
+            Node::Bool(value) => *value,
+            Node::Int(value) => *value != 0,
+            Node::Float(value) => *value != 0.0,
+            Node::Str(text) => !text.is_empty(),
+            Node::List(items) => !items.is_empty(),
+            Node::Map(map) => !map.is_empty(),
+        }
+    }
+
+    /// The value as source and messages write it: text as it is, a number in decimal (a float as
+    /// the shortest text that reads back as it), true, false and null as JSON writes them, and a
+    /// list or object as compact JSON.
+    pub fn plain_text(&self) -> String {
+        match self {
+            Node::Str(text) => text.clone(),
+            Node::Int(value) => value.to_string(),
+            Node::Float(value) => format!("{value:?}"),
+            other => other.to_string(),
+        }
+    }
+
     /// Whether a flag the parser sets is on: the key holds true. The parser writes a flag only
     /// when it is on ("pointer": true), so a missing key, false or any other value is off.
     pub fn flag(&self, key: &str) -> bool {

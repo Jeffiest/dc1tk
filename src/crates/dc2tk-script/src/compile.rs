@@ -11,7 +11,6 @@ use crate::ctype::IntType;
 use crate::natives::Table;
 use crate::node;
 use crate::node::{kinds, Node};
-use crate::source::py_str;
 use crate::stb::{self, Compare, Mode, Op, Place};
 use crate::{Error, Result};
 
@@ -263,7 +262,7 @@ fn narrowed(state: &mut State, node: &Node) -> Result<()> {
 /// An int, a float or a string pushed (the string into the function's block).
 fn constant(state: &mut State, node: &Node) -> Result<()> {
     match node.kind() {
-        kinds::INT => state.emit(format!("push {}", py_str(&node["value"]))),
+        kinds::INT => state.emit(format!("push {}", node["value"].plain_text())),
         kinds::FLOAT => state.emit(format!("push {}", float_literal(int(&node["bits"])?)?)),
         _ => {
             state.emit(format!("push string {}", state.strings.len()));
@@ -724,7 +723,7 @@ struct Context<'a> {
 }
 
 fn strings_of(node: &Node) -> Vec<String> {
-    node.as_array().map(|items| items.iter().map(py_str).collect()).unwrap_or_default()
+    node.as_array().map(|items| items.iter().map(Node::plain_text).collect()).unwrap_or_default()
 }
 
 fn function_lines(function: &Node, context: &mut Context) -> Result<Vec<String>> {
@@ -842,7 +841,7 @@ fn header_line(program: &Node) -> Result<String> {
     let mut line = format!(
         ".header {} main {} globals {}",
         magic_text(program.text("magic")),
-        py_str(&program["main"]),
+        program["main"].plain_text(),
         int(&program["global_num"])?
     );
     if int(&program["unk_14"])? != 0 {
@@ -863,7 +862,7 @@ pub fn to_asm(
     notes: Option<&mut IndexMap<String, Node>>,
 ) -> Result<String> {
     if let Some(assembly) = program.get("asm") {
-        return Ok(py_str(assembly));
+        return Ok(assembly.plain_text());
     }
     if program["main"].is_null() {
         return fail("no main function declared");
@@ -898,10 +897,10 @@ pub fn to_asm(
     for entry in program.list("programs") {
         let function = entry.text("function");
         if !context.functions.contains_key(function) {
-            return fail(format!("PROGRAM({}, {function}): no function {function}", py_str(&entry["no"])));
+            return fail(format!("PROGRAM({}, {function}): no function {function}", entry["no"].plain_text()));
         }
     }
-    let main = py_str(&program["main"]);
+    let main = program["main"].plain_text();
     if !context.functions.contains_key(&main) {
         return fail(format!("MAIN({main}): no function {main}"));
     }

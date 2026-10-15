@@ -101,7 +101,7 @@ pub fn tables(root: &Path, defs: &Definitions) -> IndexMap<String, NameTable> {
         Some(code) => messages::disc_names(root, code),
         None => IndexMap::new(),
     };
-    let layout = defs.executable.get("monster_table").filter(|layout| crate::source::truthy(layout));
+    let layout = defs.executable.get("monster_table").filter(|layout| layout.is_set());
     let monsters = match (executable(root, defs), layout) {
         (Some(elf), Some(layout)) => monster_table(&elf, layout),
         _ => IndexMap::new(),

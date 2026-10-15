@@ -71,8 +71,37 @@ fn float_text_is_shortest_exact() {
     assert_eq!(asm::float_text(bits(0.1)).as_deref(), Some("0.1"));
     assert_eq!(asm::float_text(bits(1.0)).as_deref(), Some("1.0"));
     assert_eq!(asm::float_text(bits(-0.0)).as_deref(), Some("-0.0"));
-    assert_eq!(asm::float_text(bits(1e20)).as_deref(), Some("1e+20"));
+    assert_eq!(asm::float_text(bits(1e20)).as_deref(), Some("1e20"));
+    assert_eq!(asm::float_text(bits(1.5e-7)).as_deref(), Some("1.5e-7"));
+    assert_eq!(asm::float_text(bits(0.0001)).as_deref(), Some("0.0001"));
     assert_eq!(asm::float_text(0x7FC00000), None);
+    assert_eq!(asm::float_text(0x7F800000), None);
+}
+
+/// Every float the decompiler writes is a C decimal floating constant that the assembler and the
+/// compiler (which share float_bits) read back as the same bits.
+#[test]
+fn float_text_reads_back_as_the_same_bits_and_is_a_c_literal() {
+    let literal = regex::Regex::new(r"^-?[0-9]+(\.[0-9]+)?(e-?[0-9]+)?$").unwrap();
+    let mut patterns: Vec<u32> = (0..=u32::MAX).step_by(65_521).collect();
+    patterns.extend([1, 0x007F_FFFF, 0x0080_0000, 0x7F7F_FFFF, 0x8000_0001, 0x3DCC_CCCD, 0x4B80_0001]);
+    for bits in patterns {
+        let Some(text) = asm::float_text(bits as i32) else {
+            assert!(!f32::from_bits(bits).is_finite(), "{bits:08x} has no text");
+            continue;
+        };
+        assert!(literal.is_match(&text) && (text.contains('.') || text.contains('e')), "{text}");
+        assert_eq!(asm::float_bits(&text).unwrap() as u32, bits, "{text}");
+    }
+}
+
+/// The C parser reads the exponent forms float_text writes.
+#[test]
+fn the_parser_reads_floats_with_an_exponent_and_no_point() {
+    let program = dc2tk_script::parse::parse("void f() { x = 1e20; y = 1.5e-7; }").unwrap();
+    let body = program["functions"][0].list("body");
+    let bits: Vec<i64> = body.iter().map(|line| line["expr"]["value"]["bits"].as_i64().unwrap()).collect();
+    assert_eq!(bits, [1e20f32.to_bits() as i64, 1.5e-7f32.to_bits() as i64]);
 }
 
 #[test]

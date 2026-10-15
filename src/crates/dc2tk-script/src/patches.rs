@@ -48,7 +48,6 @@ use crate::asm::{self, Token};
 use crate::index;
 use crate::node;
 use crate::node::{Map, Node};
-use crate::source::py_str;
 use crate::{additions, library, names, numbers, parse, pathnames, sdk, Error, Result};
 
 pub const LANGUAGES: [(&str, i64); 6] = [
@@ -74,10 +73,6 @@ fn variant() -> &'static Regex {
 fn target_line() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
     regex(&CELL, r"(?m)^[ \t]*#[ \t]*pragma[ \t]+target\b(.*)$")
-}
-
-fn truthy(node: &Node) -> bool {
-    crate::source::truthy(node)
 }
 
 pub fn language_of(plain: &str) -> i64 {
@@ -111,7 +106,7 @@ pub fn targets_in(text: &str) -> Result<Vec<Target>> {
             return Err(Error::invalid(format!(
                 "#pragma target takes {}, then what to pick: {}",
                 parse::TARGET_KINDS.join(", "),
-                dc2tk_py::strip(line)
+                line.trim()
             )));
         }
         found.push(Target { kind: words[0].clone(), values: words[1..].to_vec() });
@@ -418,7 +413,7 @@ pub fn prepared(
             .map(|function| {
                 let name = function.text("name");
                 let mut out = renamed(function, follow, &IndexMap::new(), &own_names(function));
-                if truthy(&function["override"]) {
+                if function["override"].is_set() {
                     if let Some(to) = follow.get(name) {
                         out["name"] = to.as_str().into();
                     }
@@ -462,8 +457,20 @@ fn fresh_name(base: &str, taken: &mut HashSet<String>) -> String {
     name
 }
 
+/// The names most like a name that is not there, closest first, for a "did you mean" hint: at most
+/// three, each close by Jaro-Winkler similarity (which favours a shared start, as a misspelt or
+/// renamed function usually has).
+fn close_names<'a>(name: &str, known: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut scored: Vec<(f64, &str)> = known
+        .map(|candidate| (strsim::jaro_winkler(name, candidate), candidate))
+        .filter(|&(score, _)| score >= 0.8)
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(b.1)));
+    scored.into_iter().take(3).map(|(_, candidate)| candidate).collect()
+}
+
 fn mod_identifier(module: &str) -> String {
-    module.chars().map(|c| if dc2tk_py::is_word(c) { c } else { '_' }).collect()
+    module.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect()
 }
 
 fn renamed(
@@ -602,11 +609,11 @@ pub fn merged(
     consts: &IndexMap<String, Node>,
     module: &str,
 ) -> Result<Node> {
-    if truthy(&patch["natives"]) && truthy(&program["natives"]) && !patch["natives"].same_value(&program["natives"]) {
+    if patch["natives"].is_set() && program["natives"].is_set() && !patch["natives"].same_value(&program["natives"]) {
         return Err(Error::invalid(format!(
             "the patch uses {} natives, but the script is an {} script",
-            py_str(&patch["natives"]),
-            py_str(&program["natives"])
+            patch["natives"].plain_text(),
+            program["natives"].plain_text()
         )));
     }
     let mut functions: Vec<Node> = program.list("functions").to_vec();
@@ -638,7 +645,7 @@ pub fn merged(
             libraries.entry(source.to_string()).or_default();
         }
     }
-    let is_override = |function: &Node| truthy(&function["override"]);
+    let is_override = |function: &Node| function["override"].is_set();
     for function in &mine {
         let name = function.text("name");
         if is_override(function) || !taken.contains(name) {
@@ -740,7 +747,7 @@ pub fn merged(
     let mut appended = Vec::new();
     for function in &mine {
         let name = function.text("name");
-        if truthy(&function["every_frame"]) {
+        if function["every_frame"].is_set() {
             if !function.list("params").is_empty() || is_override(function) {
                 return Err(Error::invalid(format!(
                     "#pragma every_frame {name}: an every-frame function takes no parameters and overrides nothing"
@@ -782,9 +789,7 @@ pub fn merged(
             )));
         }
         let Some(&at) = position.get(name) else {
-            let mut known: Vec<String> = position.keys().cloned().collect();
-            known.sort();
-            let close = dc2tk_py::difflib::get_close_matches(name, &known, 3, 0.6);
+            let close = close_names(name, position.keys().map(String::as_str));
             let hint = if close.is_empty() {
                 String::new()
             } else {
@@ -830,11 +835,11 @@ pub fn merged(
     }
     let mut present: HashMap<Option<i64>, String> = HashMap::new();
     for entry in program.list("programs") {
-        present.insert(program_number(&entry["no"], &numbering, &IndexMap::new()), py_str(&entry["function"]));
+        present.insert(program_number(&entry["no"], &numbering, &IndexMap::new()), entry["function"].plain_text());
     }
     let mut programs: Vec<Node> = program.list("programs").to_vec();
     for entry in patch.list("programs") {
-        let (written, function) = (py_str(&entry["no"]), py_str(&entry["function"]));
+        let (written, function) = (entry["no"].plain_text(), entry["function"].plain_text());
         let Some(number) = program_number(&entry["no"], &numbering, consts) else {
             return Err(Error::invalid(format!(
                 "PROGRAM({written}, {function}): {written} is not a program number or name"
@@ -866,7 +871,7 @@ pub fn merged(
     done.libraries.extend(libraries);
     let count = if count.is_null() { Node::from(slots(&globals)) } else { count };
     functions.extend(appended);
-    let natives = if truthy(&program["natives"]) { program["natives"].clone() } else { patch["natives"].clone() };
+    let natives = if program["natives"].is_set() { program["natives"].clone() } else { patch["natives"].clone() };
     let declarations = merged_declarations(&program["declarations"], &patch["declarations"]);
     Ok(with_structs(program, patch, module)?
         .with("functions", functions)
@@ -949,8 +954,8 @@ pub fn applied(
 /// The arguments a native takes: how many a call must give, how many it names, and whether it
 /// takes more (...).
 fn native_shape(native: &Node) -> (usize, usize, bool) {
-    let params: Vec<&Node> = native.list("params").iter().filter(|param| !truthy(&param["result"])).collect();
-    (params.iter().filter(|param| !truthy(&param["optional"])).count(), params.len(), truthy(&native["variadic"]))
+    let params: Vec<&Node> = native.list("params").iter().filter(|param| !param["result"].is_set()).collect();
+    (params.iter().filter(|param| !param["optional"].is_set()).count(), params.len(), native["variadic"].is_set())
 }
 
 /// Refuses a wrapper that cannot stand in for its native: one taking fewer parameters than a call
@@ -1295,7 +1300,7 @@ pub fn native_wrapper(headers: &IndexMap<String, String>, included: &[String], n
         .replace("OPTIONAL(", "")
         .replace(')', "")
         .split(',')
-        .map(|param| dc2tk_py::strip(param).to_string())
+        .map(|param| param.trim().to_string())
         .filter(|param| !param.is_empty() && param != "..." && param != "void")
         .map(|param| match param.strip_prefix("any ") {
             Some(rest) => format!("int {rest}"),
@@ -1422,6 +1427,13 @@ pub fn summary(patch: &Patch) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn close_names_are_the_most_alike_first_and_at_most_three() {
+        let known = ["greet", "great_hall", "greeting", "farewell", "regret", "greets"];
+        assert_eq!(close_names("greeet", known.into_iter()), ["greet", "greets", "greeting"]);
+        assert!(close_names("xyzzy", known.into_iter()).is_empty());
+    }
 
     #[test]
     fn languages() {

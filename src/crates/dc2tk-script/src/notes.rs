@@ -65,7 +65,7 @@ fn translated(texts: &[String], translations: &IndexMap<String, String>) -> Stri
 }
 
 fn comment_of(node: &Node) -> Option<String> {
-    node.get("comment").filter(|comment| crate::source::truthy(comment)).map(crate::source::py_str)
+    node.get("comment").filter(|comment| comment.is_set()).map(Node::plain_text)
 }
 
 fn joined(parts: [Option<String>; 2]) -> String {
@@ -108,8 +108,7 @@ fn sibling_note(node: &Node, siblings: &HashMap<String, String>) -> String {
         if let Some(english) = siblings.get(&text) {
             if *english != text {
                 let replaced = english.replace("<page>", "\n");
-                let flat: Vec<&str> =
-                    replaced.split('\n').map(dc2tk_py::strip).filter(|part| !part.is_empty()).collect();
+                let flat: Vec<&str> = replaced.split('\n').map(str::trim).filter(|part| !part.is_empty()).collect();
                 let quoted = format!("\"{}\"", flat.join(" "));
                 if !flat.is_empty() && !found.contains(&quoted) {
                     found.push(quoted);

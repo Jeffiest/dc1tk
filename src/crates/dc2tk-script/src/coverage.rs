@@ -10,7 +10,6 @@ use rayon::prelude::*;
 use crate::definitions::{self, Definitions};
 use crate::natives::{self, Table};
 use crate::node::Node;
-use crate::source::truthy;
 use crate::{fingerprint, library, names, stb, Result};
 
 /// One function of a disc script: its table and fingerprints.
@@ -105,7 +104,9 @@ pub fn check(root: &Path, paths: &[String], defs: &Definitions) -> Result<Report
     stale_scripts.sort();
     let scripts_documented = on_disc
         .iter()
-        .filter(|path| definitions::script_entry(defs, path).is_some_and(|entry| entry.get("doc").is_some_and(truthy)))
+        .filter(|path| {
+            definitions::script_entry(defs, path).is_some_and(|entry| entry.get("doc").is_some_and(Node::is_set))
+        })
         .count();
     Ok(Report { tables, stale_names, stale_scripts, scripts_documented, scripts: on_disc.len() })
 }

@@ -123,7 +123,7 @@ const ACCESSORS: [(&str, &str); 7] = [
     ("SetStackVector", "out_vector"),
 ];
 
-/// A generated table, written with its keys in the Python's order.
+/// A generated table, as src/natives/<table>.json holds it.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Generated {
     pub table: String,
@@ -132,7 +132,7 @@ pub struct Generated {
     pub natives: Vec<GeneratedNative>,
 }
 
-/// Ordered as the Python sorts its (number, name, accessors) tuples.
+/// Ordered by number, then name, then accessors (the derived order of the fields).
 #[derive(Clone, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GeneratedNative {
     pub no: i128,
@@ -141,57 +141,30 @@ pub struct GeneratedNative {
     pub accessors: Option<Vec<String>>,
 }
 
-/// A regex character class of the characters a predicate holds for: the re module's \w, \d and \s
-/// go by str.isalnum() and friends, which Rust's classes do not quite follow.
-fn class_of(predicate: fn(char) -> bool) -> String {
-    let mut out = String::from("[");
-    let mut start = None;
-    for code in 0..=0x11_0000u32 {
-        let inside = char::from_u32(code).is_some_and(predicate);
-        match (inside, start) {
-            (true, None) => start = Some(code),
-            (false, Some(first)) => {
-                out.push_str(&format!("\\x{{{first:X}}}-\\x{{{:X}}}", code - 1));
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    out.push(']');
-    out
-}
-
-/// The patterns natives.py reads a checkout with, with Python's \w, \d and \s.
+/// The patterns a checkout's C++ is read with; names are C identifiers, ASCII.
 struct Patterns {
     enum_value: regex::Regex,
     table_row: regex::Regex,
     accessor_call: regex::Regex,
-    digit: String,
 }
 
 impl Patterns {
     fn new() -> Patterns {
-        let word = class_of(dc2tk_py::is_word);
-        let digit = class_of(dc2tk_py::is_decimal);
-        let space = class_of(dc2tk_py::is_space);
-        let build = |pattern: String| regex::Regex::new(&pattern).expect("the natives patterns compile");
+        let build = |pattern: &str| regex::Regex::new(pattern).expect("the natives patterns compile");
         let names: Vec<&str> = ACCESSORS.iter().map(|(name, _)| *name).collect();
         Patterns {
-            enum_value: build(format!(
-                r"(?m)^{space}*([A-Z][A-Z0-9_]*){space}*={space}*(-?(?:0x[0-9a-fA-F]+|{digit}+)){space}*,"
-            )),
-            table_row: build(format!(r"\{{{space}*({word}+){space}*,{space}*({word}+){space}*\}}")),
-            // the \b before the name is checked by hand (accessors)
-            accessor_call: build(format!(r"({}){space}*\(", names.join("|"))),
-            digit,
+            enum_value: build(r"(?m)^\s*([A-Z][A-Z0-9_]*)\s*=\s*(-?(?:0x[0-9a-fA-F]+|[0-9]+))\s*,"),
+            table_row: build(r"\{\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\}"),
+            // the word boundary before the name is checked by hand (accessors)
+            accessor_call: build(&format!(r"({})\s*\(", names.join("|"))),
         }
     }
 }
 
-/// Path.read_text(encoding="utf-8", errors="replace"): \r\n and \r read as \n.
+/// A source file's text, with what is not UTF-8 replaced and \r\n read as \n.
 fn read_source(path: &Path) -> Result<String> {
     let bytes = fs::read(path)?;
-    Ok(String::from_utf8_lossy(&bytes).replace("\r\n", "\n").replace('\r', "\n"))
+    Ok(String::from_utf8_lossy(&bytes).replace("\r\n", "\n"))
 }
 
 /// The enum constants a header defines (NAME = value,), by name; a later one wins.
@@ -199,21 +172,17 @@ fn parse_enum_values(patterns: &Patterns, text: &str) -> Result<HashMap<String, 
     let mut values = HashMap::new();
     for found in patterns.enum_value.captures_iter(text) {
         let value = &found[2];
-        let number = dc2tk_py::int_base(value, 0).map_err(|error| match error {
-            dc2tk_py::IntError::Invalid => {
-                crate::Error::invalid(format!("invalid literal for int() with base 0: {}", dc2tk_py::repr(value)))
-            }
-            dc2tk_py::IntError::TooLarge => crate::Error::invalid(format!("{value} is too large")),
+        let number = crate::index::integer(value).ok_or_else(|| {
+            crate::Error::invalid(format!("{} = {value}: not an integer the tools can hold", &found[1]))
         })?;
-        values.insert(found[1].to_string(), number);
+        values.insert(found[1].to_string(), number as i128);
     }
     Ok(values)
 }
 
 /// The (function, number) rows of an RS_EXTFUNC_INFO array, without the NULL that ends it.
 fn parse_table_rows(patterns: &Patterns, text: &str, array: &str) -> Result<Vec<(String, String)>> {
-    let pattern =
-        format!(r"(?s)static RS_EXTFUNC_INFO {}\[{}*\] = \{{(.*?)\n\}};", regex::escape(array), patterns.digit);
+    let pattern = format!(r"(?s)static RS_EXTFUNC_INFO {}\[[0-9]*\] = \{{(.*?)\n\}};", regex::escape(array));
     let table = regex::Regex::new(&pattern).expect("the table pattern compiles");
     let Some(found) = table.captures(text) else {
         return Err(crate::Error::invalid(format!("table {array} not found")));
@@ -226,13 +195,14 @@ fn parse_table_rows(patterns: &Patterns, text: &str, array: &str) -> Result<Vec<
         .collect())
 }
 
-/// Whether the character before a byte offset is a word character, as \b reads it.
+/// Whether the character before a byte offset is a C identifier's, so a name there would not
+/// start a word.
 fn word_before(text: &str, at: usize) -> bool {
-    text[..at].chars().next_back().is_some_and(dc2tk_py::is_word)
+    text[..at].chars().next_back().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn skip_space(text: &str, at: usize) -> usize {
-    text[at..].find(|c: char| !dc2tk_py::is_space(c)).map_or(text.len(), |offset| at + offset)
+    text[at..].find(|c: char| !c.is_whitespace()).map_or(text.len(), |offset| at + offset)
 }
 
 /// Where `\s+NAME\s*\(\s*RS_STACKDATA[^)]*\)\s*\{` matches from the start of rest, as the offset
@@ -257,8 +227,7 @@ fn function_header(rest: &str, name: &str) -> Option<usize> {
 }
 
 /// The body of `int NAME(RS_STACKDATA ...) { ... }`, by matching braces; None when there is no
-/// such function. A body whose braces never close runs to the text's end, less its last character,
-/// as the Python's slice has it.
+/// such function. A body whose braces never close runs to the text's end.
 pub fn function_body<'a>(text: &'a str, name: &str) -> Option<&'a str> {
     let mut from = 0;
     let start = loop {
@@ -283,8 +252,7 @@ pub fn function_body<'a>(text: &'a str, name: &str) -> Option<&'a str> {
             return Some(&text[start..start + offset]);
         }
     }
-    let end = text[start..].char_indices().next_back().map_or(start, |(offset, _)| start + offset);
-    Some(&text[start..end])
+    Some(&text[start..])
 }
 
 /// What a body reads and writes with the stack accessors, in the order it calls them.
@@ -350,8 +318,6 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-
-    // tests/test_natives.py
 
     const HEADER: &str = "
 enum TestCommand {
@@ -425,7 +391,7 @@ static RS_EXTFUNC_INFO ext_func_info[3] = {
     #[test]
     fn function_body_without_its_closing_brace_runs_to_the_end() {
         assert_eq!(function_body("int _F(RS_STACKDATA *s) { a(); }", "_F"), Some(" a(); "));
-        assert_eq!(function_body("int _F(RS_STACKDATA *s) { a(); {", "_F"), Some(" a(); "));
+        assert_eq!(function_body("int _F(RS_STACKDATA *s) { a(); {", "_F"), Some(" a(); {"));
         assert_eq!(function_body("int _F(RS_STACKDATA *s) {", "_F"), Some(""));
         assert_eq!(function_body("uint _F(RS_STACKDATA *s) { }", "_F"), None);
     }

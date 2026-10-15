@@ -11,7 +11,6 @@ use indexmap::IndexMap;
 
 use crate::node;
 use crate::node::Node;
-use crate::source::truthy;
 use crate::{Error, Result};
 
 /// The definition set's entries by fingerprint.
@@ -366,7 +365,7 @@ fn with_notes(nodes: &[Node], notes: &crate::node::Map) -> Node {
         .iter()
         .map(|node| {
             let mut node = node.clone();
-            let start = crate::source::py_str(node.get("start").unwrap_or(&Node::Null));
+            let start = node.get("start").unwrap_or(&Node::Null).plain_text();
             if let Some(note) = notes.get(&start) {
                 node = node.with("note", note.clone());
             }
@@ -390,7 +389,7 @@ fn with_notes(nodes: &[Node], notes: &crate::node::Map) -> Node {
 }
 
 pub fn with_variables(mut function: Node, entry: &Node, reserved: &HashSet<String>) -> Node {
-    if let Some(doc) = entry.get("doc").filter(|doc| truthy(doc)) {
+    if let Some(doc) = entry.get("doc").filter(|doc| doc.is_set()) {
         function = function.with("doc", doc.clone());
     }
     // a declared return type; void only where no return gives a value
@@ -401,7 +400,7 @@ pub fn with_variables(mut function: Node, entry: &Node, reserved: &HashSet<Strin
         }
     }
     function = with_types(function, entry);
-    if let Some(notes) = entry.get("notes").filter(|notes| truthy(notes)).and_then(Node::as_object) {
+    if let Some(notes) = entry.get("notes").filter(|notes| notes.is_set()).and_then(Node::as_object) {
         let body = with_notes(function.list("body"), notes);
         function = function.with("body", body);
     }
@@ -441,7 +440,7 @@ fn entry_names(program: &Node, program_names: &HashMap<i64, String>) -> HashMap<
         let no = entry["no"].as_i64();
         let name = match no.and_then(|no| program_names.get(&no)) {
             Some(name) => format!("on_{name}"),
-            None => format!("program_{}", crate::source::py_str(&entry["no"])),
+            None => format!("program_{}", entry["no"].plain_text()),
         };
         found.entry(function).or_insert(name);
     }
@@ -600,7 +599,7 @@ pub fn global_mapping(
     for (declared, wanted) in globals.iter().zip(entry.list("globals")) {
         let name = match wanted.as_str() {
             Some(name) => name.to_string(),
-            None => crate::source::py_str(&wanted["name"]),
+            None => wanted["name"].plain_text(),
         };
         let current = name_of(declared);
         if protected.contains(&current)
@@ -618,7 +617,7 @@ pub fn global_mapping(
 
 /// The program with the script entry's global names and doc.
 pub fn with_script(program: Node, entry: &Node, protected: &HashSet<String>, forced: &HashMap<String, String>) -> Node {
-    if program.get("asm").is_some() || !(truthy(entry) || !forced.is_empty()) {
+    if program.get("asm").is_some() || !(entry.is_set() || !forced.is_empty()) {
         return program;
     }
     let mapping = global_mapping(&program, entry, protected, forced);
@@ -642,7 +641,7 @@ pub fn with_script(program: Node, entry: &Node, protected: &HashSet<String>, for
         })
         .collect();
     let mut out = program.with("functions", functions).with("globals", globals);
-    if let Some(doc) = entry.get("doc").filter(|doc| truthy(doc)) {
+    if let Some(doc) = entry.get("doc").filter(|doc| doc.is_set()) {
         out = out.with("doc", doc.clone());
     }
     out

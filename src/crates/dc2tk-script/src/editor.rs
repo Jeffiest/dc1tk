@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::compile::Toolchain;
 use crate::node::Node;
 use crate::patches::{self, Scripts};
-use crate::source::{self, py_str, truthy};
+use crate::source;
 use crate::{definitions, library, mods, parse, sdk, Error, Result};
 
 pub const FOLDER: &str = ".editor";
@@ -26,8 +26,8 @@ pub const COMMANDS: &str = "compile_commands.json";
 /// A value kind (message, flag) where the source gives one, else the type.
 fn kind_of(declared: &Node) -> String {
     match declared.get("kind") {
-        Some(value) if truthy(value) && value.as_str().is_some() => py_str(value),
-        _ => py_str(&declared["type"]),
+        Some(value) if value.is_set() && value.as_str().is_some() => value.plain_text(),
+        _ => declared["type"].plain_text(),
     }
 }
 
@@ -68,19 +68,19 @@ impl Declared {
             }
         }
         for declared in program.list("globals") {
-            let name = py_str(&declared["name"]);
+            let name = declared["name"].plain_text();
             let size =
-                if declared["size"].is_null() { String::new() } else { format!("[{}]", py_str(&declared["size"])) };
+                if declared["size"].is_null() { String::new() } else { format!("[{}]", declared["size"].plain_text()) };
             self.globals.entry(name.clone()).or_insert_with(|| format!("extern {} {name}{size};", kind_of(declared)));
         }
         for function in program.list("functions") {
-            let name = py_str(&function["name"]);
+            let name = function["name"].plain_text();
             if self.functions.contains_key(&name) {
                 continue;
             }
             let mut lines = Vec::new();
-            if let Some(doc) = function.get("doc").filter(|doc| truthy(doc)) {
-                lines.extend(source::doc_lines(&py_str(doc)));
+            if let Some(doc) = function.get("doc").filter(|doc| doc.is_set()) {
+                lines.extend(source::doc_lines(&doc.plain_text()));
             }
             match function.kind() {
                 "function" => {
@@ -89,11 +89,11 @@ impl Declared {
                         .iter()
                         .map(|param| {
                             let array = if param.flag("array") { "[]" } else { "" };
-                            format!("{} {}{array}", kind_of(param), py_str(&param["name"]))
+                            format!("{} {}{array}", kind_of(param), param["name"].plain_text())
                         })
                         .collect();
                     let params = if params.is_empty() { "void".to_string() } else { params.join(", ") };
-                    let returns = function.get("returns").map_or_else(|| "int".to_string(), py_str);
+                    let returns = function.get("returns").map_or_else(|| "int".to_string(), Node::plain_text);
                     lines.push(format!("{returns} {name}({params});"));
                 }
                 "asm" => {
@@ -108,7 +108,7 @@ impl Declared {
             self.functions.insert(name, lines);
         }
         for entry in program.list("programs") {
-            let line = format!("//   PROGRAM({}, {});", py_str(&entry["no"]), py_str(&entry["function"]));
+            let line = format!("//   PROGRAM({}, {});", entry["no"].plain_text(), entry["function"].plain_text());
             if !self.programs.contains(&line) {
                 self.programs.push(line);
             }

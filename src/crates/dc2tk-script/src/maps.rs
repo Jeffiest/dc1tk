@@ -431,8 +431,9 @@ pub fn detail(code: &str, found: &Catalog, tree: &Path, extracted: &Path, progra
     for point in &points {
         let place = match &point.position {
             Some(position) if !position.is_empty() => {
-                // + 0.0 writes -0 as 0
-                let values: Vec<String> = position.iter().map(|value| dc2tk_py::format_g(value + 0.0, 6)).collect();
+                // to the hundredth of a unit, where + 0.0 writes -0 as 0
+                let values: Vec<String> =
+                    position.iter().map(|value| ((value * 100.0).round() / 100.0 + 0.0).to_string()).collect();
                 format!("at {}", values.join(", "))
             }
             _ => String::new(),

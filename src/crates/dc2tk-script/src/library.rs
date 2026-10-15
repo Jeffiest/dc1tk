@@ -15,7 +15,6 @@ use crate::messages::{self, NameTable};
 use crate::natives::{self, Table};
 use crate::node::{Map, Node};
 use crate::sdk::{self, Context, Passed};
-use crate::source::{py_str, truthy};
 use crate::{assets, decompile, disc, maps, names, node, notes, parse, slots, source, stb, Error, Result};
 
 pub const MINIMUM_USERS: usize = 2;
@@ -142,8 +141,8 @@ fn segments(files: &[FileEntry]) -> Vec<Vec<Segment>> {
 
 /// A folder name as a C identifier part.
 fn identifier(text: &str) -> String {
-    let out: String = text.chars().map(|c| if dc2tk_py::is_word(c) { c } else { '_' }).collect();
-    if out.chars().next().is_some_and(dc2tk_py::is_digit) {
+    let out: String = text.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         format!("l{out}")
     } else {
         out
@@ -274,7 +273,7 @@ fn build(files: &[FileEntry], library_defs: &IndexMap<String, Node>) -> Built {
         }
         let globals = chosen["globals"]
             .as_object()
-            .map(|globals| globals.iter().map(|(slot, name)| (slot.to_string(), py_str(name))).collect())
+            .map(|globals| globals.iter().map(|(slot, name)| (slot.to_string(), name.plain_text())).collect())
             .unwrap_or_default();
         libraries.insert(
             key.clone(),
@@ -286,7 +285,7 @@ fn build(files: &[FileEntry], library_defs: &IndexMap<String, Node>) -> Built {
                 users: users[&key].len(),
                 user_paths: users[&key].clone(),
                 fingerprint: identity,
-                doc: chosen.get("doc").map(py_str).unwrap_or_default(),
+                doc: chosen.get("doc").map(Node::plain_text).unwrap_or_default(),
                 globals,
             },
         );
@@ -520,7 +519,7 @@ fn with_names(mut model: Model) -> Model {
     for (fingerprint, entry) in &entries {
         if class_names.contains_key(fingerprint) {
             if let Some(name) = entry.get("name") {
-                class_names.insert(fingerprint.clone(), py_str(name));
+                class_names.insert(fingerprint.clone(), name.plain_text());
             }
         }
     }
@@ -540,9 +539,9 @@ fn with_names(mut model: Model) -> Model {
         .iter()
         .filter(|(fingerprint, entry)| {
             !class_names.contains_key(*fingerprint)
-                && entry.get("name").is_some_and(|name| !taken.contains(&py_str(name)))
+                && entry.get("name").is_some_and(|name| !taken.contains(&name.plain_text()))
         })
-        .map(|(fingerprint, entry)| (fingerprint.clone(), py_str(&entry["name"])))
+        .map(|(fingerprint, entry)| (fingerprint.clone(), entry["name"].plain_text()))
         .collect();
     model.class_names = class_names;
     model.entries = names::Known::new(entries);
@@ -1118,7 +1117,7 @@ impl Expansion<'_> {
         let mut inner_chain = chain.to_vec();
         inner_chain.push(path.to_string());
         for sub in included.list("functions") {
-            if sub.kind() == "include" && truthy(&sub["system"]) {
+            if sub.kind() == "include" && sub["system"].is_set() {
                 let header_table = self.absorbed_header(sub.text("path"))?;
                 if table.is_none() {
                     table = header_table;
@@ -1165,7 +1164,7 @@ pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMa
     for item in program.list("functions") {
         if item.kind() != "include" {
             state.functions.push(item.clone());
-        } else if truthy(&item["system"]) {
+        } else if item["system"].is_set() {
             let header_table = state.absorbed_header(item.text("path"))?;
             if table.is_none() {
                 table = header_table;
@@ -1258,7 +1257,7 @@ pub fn read_includes(
     let includes = |node: &Node| -> Vec<String> {
         node.list("functions")
             .iter()
-            .filter(|item| item.kind() == "include" && !truthy(&item["system"]))
+            .filter(|item| item.kind() == "include" && !item["system"].is_set())
             .map(|item| item.text("path").to_string())
             .collect()
     };

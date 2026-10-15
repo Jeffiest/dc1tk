@@ -21,18 +21,18 @@ fn constant_pattern() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
     regex(
         &CELL,
-        r"(?m)^\s*(?:#define\s+([A-Za-z_]\w*)\s+|([A-Za-z_]\w*)\s*=\s*)(-?(?:0x[0-9A-Fa-f]+|\d+))\s*,?\s*(?://.*)?$",
+        r"(?m)^\s*(?:#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+|([A-Za-z_][A-Za-z0-9_]*)\s*=\s*)(-?(?:0x[0-9A-Fa-f]+|[0-9]+))\s*,?\s*(?://.*)?$",
     )
 }
 
 fn definition_pattern() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"(?m)^(?:void|int|float|string)\s+\**(\w+)\s*\(")
+    regex(&CELL, r"(?m)^(?:void|int|float|string)\s+\**([A-Za-z0-9_]+)\s*\(")
 }
 
 fn program_pattern() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*(\w+)\s*\);")
+    regex(&CELL, r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*([A-Za-z0-9_]+)\s*\);")
 }
 
 pub fn include_pattern() -> &'static Regex {
@@ -44,7 +44,7 @@ pub fn include_pattern() -> &'static Regex {
 /// native the call names, but the script meant another.
 fn old_numbering() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"//.*\bold numbering, meant as (\w+)")
+    regex(&CELL, r"//.*\bold numbering, meant as ([A-Za-z0-9_]+)")
 }
 
 /// Every integer constant the headers define: enum members (including program names such as
@@ -54,7 +54,7 @@ pub fn constants<'a>(texts: impl IntoIterator<Item = &'a String>) -> IndexMap<St
     for text in texts {
         for capture in constant_pattern().captures_iter(text) {
             let name = capture.get(1).or_else(|| capture.get(2)).unwrap().as_str();
-            if let Some(value) = dc2tk_py::parse_int(&capture[3]) {
+            if let Some(value) = integer(&capture[3]) {
                 found.insert(name.to_string(), value);
             }
         }
@@ -128,11 +128,11 @@ pub fn split_args(text: &str) -> Vec<String> {
         } else if bytes[position] == b')' {
             depth -= 1;
         } else if bytes[position] == b',' && depth == 0 {
-            args.push(dc2tk_py::strip(&text[start..position]).to_string());
+            args.push(text[start..position].trim().to_string());
             start = position + 1;
         }
     }
-    let last = dc2tk_py::strip(&text[start..]).to_string();
+    let last = text[start..].trim().to_string();
     if !last.is_empty() || !args.is_empty() {
         args.push(last);
     }
@@ -143,9 +143,7 @@ pub fn closing_paren(text: &str, start: usize) -> Option<usize> {
     let bytes = text.as_bytes();
     let (mut depth, mut quoted) = (0, false);
     for position in start..bytes.len() {
-        // the byte before the first one is the text's last, as Python's text[-1]
-        let before = if position == 0 { bytes[bytes.len() - 1] } else { bytes[position - 1] };
-        if bytes[position] == b'"' && before != b'\\' {
+        if is_quote(bytes, position) {
             quoted = !quoted;
         } else if quoted {
             continue;
@@ -168,24 +166,33 @@ pub enum Folded {
     Text(String),
 }
 
-/// The value of a constant expression as the compiler would fold it: integer literals, header
-/// constants, + - * / % & | << >> and parentheses, or a string literal. None when it depends on a
-/// variable or anything else. (The Python tools read the expression as Python; this reads the
-/// part of Python's expression syntax that can fold to a value, which gives the same values.)
+/// The value of a constant expression as C folds it: integer and character constants, header
+/// constants, and parentheses, with C's arithmetic, bitwise, shift, comparison and logical
+/// operators at C's precedence (parse::precedence); or string literals, adjacent ones joined. None
+/// when it depends on a variable or anything else, or does not read as C.
 pub fn value(expr: &str, consts: &IndexMap<String, i64>) -> Option<Folded> {
-    let tokens = pyexpr::tokens(dc2tk_py::strip(expr))?;
-    let mut parser = pyexpr::Parser { tokens, position: 0, consts };
-    let found = parser.or_expr()?;
-    if parser.position != parser.tokens.len() {
+    let tokens = constant::tokens(expr)?;
+    let mut folder = constant::Folder { tokens, position: 0, consts };
+    let found = folder.binary(0)?;
+    if folder.position != folder.tokens.len() {
         return None;
     }
     found
 }
 
-mod pyexpr {
-    //! The part of Python's expression grammar index::value folds, with Python's precedence:
-    //! | then & then << >> then + - then * / % then unary - (the rest of Python's operators,
-    //! which fold to nothing, are refused, as is anything else).
+/// An integer constant as C writes one: decimal, 0x hexadecimal or 0 octal, with any u and l
+/// suffixes, after an optional minus; None for anything else, or one beyond an i64.
+pub fn integer(text: &str) -> Option<i64> {
+    let (negative, unsigned) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    let value = constant::integer(unsigned)?;
+    i64::try_from(if negative { -value } else { value }).ok()
+}
+
+mod constant {
+    //! Reading and folding the constant expressions index::value takes, by C's rules.
 
     use indexmap::IndexMap;
 
@@ -201,97 +208,49 @@ mod pyexpr {
         Close,
     }
 
-    fn string_literal(chars: &[char], at: &mut usize) -> Option<String> {
-        let quote = chars[*at];
-        let triple = chars.get(*at + 1) == Some(&quote) && chars.get(*at + 2) == Some(&quote);
-        let width = if triple { 3 } else { 1 };
-        *at += width;
+    /// The operators that fold, the two-character ones first so they are read whole.
+    const OPERATORS: [&str; 20] =
+        ["<<", ">>", "<=", ">=", "==", "!=", "&&", "||", "+", "-", "*", "/", "%", "&", "|", "^", "~", "!", "<", ">"];
+
+    /// An integer constant without a sign: decimal, 0x hexadecimal or 0 octal, with any u and l
+    /// suffixes.
+    pub fn integer(word: &str) -> Option<i128> {
+        let digits = word.trim_end_matches(['u', 'U', 'l', 'L']);
+        let (radix, digits) = match digits.strip_prefix("0x").or_else(|| digits.strip_prefix("0X")) {
+            Some(hexadecimal) => (16, hexadecimal),
+            None if digits.len() > 1 && digits.starts_with('0') => (8, &digits[1..]),
+            None => (10, digits),
+        };
+        if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
+            return None;
+        }
+        i128::from_str_radix(digits, radix).ok()
+    }
+
+    /// A string literal from its opening quote: its text with C's escapes read, and where it ends.
+    fn string_literal(chars: &[char], mut at: usize) -> Option<(String, usize)> {
+        at += 1;
         let mut out = String::new();
         loop {
-            let c = *chars.get(*at)?;
-            if c == quote && (!triple || (chars.get(*at + 1) == Some(&quote) && chars.get(*at + 2) == Some(&quote))) {
-                *at += width;
-                return Some(out);
-            }
-            if c == '\n' && !triple {
-                return None;
-            }
-            if c != '\\' {
-                out.push(c);
-                *at += 1;
-                continue;
-            }
-            let escape = *chars.get(*at + 1)?;
-            *at += 2;
-            match escape {
-                '\n' => {}
-                '\\' => out.push('\\'),
-                '\'' => out.push('\''),
-                '"' => out.push('"'),
-                'a' => out.push('\u{7}'),
-                'b' => out.push('\u{8}'),
-                'f' => out.push('\u{c}'),
-                'n' => out.push('\n'),
-                'r' => out.push('\r'),
-                't' => out.push('\t'),
-                'v' => out.push('\u{b}'),
-                'x' | 'u' | 'U' => {
-                    let count = match escape {
-                        'x' => 2,
-                        'u' => 4,
-                        _ => 8,
-                    };
-                    let digits: String = chars.get(*at..*at + count)?.iter().collect();
-                    let value = u32::from_str_radix(&digits, 16).ok()?;
+            match *chars.get(at)? {
+                '"' => return Some((out, at + 1)),
+                '\n' => return None,
+                '\\' => {
+                    let (value, length) = crate::cpp::escape_value(&chars[at + 1..])?;
                     out.push(char::from_u32(value)?);
-                    *at += count;
+                    at += 1 + length;
                 }
-                '0'..='7' => {
-                    let mut value = escape.to_digit(8)?;
-                    for _ in 0..2 {
-                        match chars.get(*at).and_then(|c| c.to_digit(8)) {
-                            Some(digit) => {
-                                value = value * 8 + digit;
-                                *at += 1;
-                            }
-                            None => break,
-                        }
-                    }
-                    out.push(char::from_u32(value)?);
-                }
-                'N' => return None,
-                other => {
-                    // an unknown escape keeps its backslash
-                    out.push('\\');
-                    out.push(other);
+                c => {
+                    out.push(c);
+                    at += 1;
                 }
             }
         }
     }
 
-    /// A raw string: backslashes kept, though one still stops a quote from ending it.
-    fn raw_literal(chars: &[char], at: &mut usize) -> Option<String> {
-        let quote = chars[*at];
-        let triple = chars.get(*at + 1) == Some(&quote) && chars.get(*at + 2) == Some(&quote);
-        let width = if triple { 3 } else { 1 };
-        *at += width;
-        let mut out = String::new();
-        loop {
-            let c = *chars.get(*at)?;
-            if c == quote && (!triple || (chars.get(*at + 1) == Some(&quote) && chars.get(*at + 2) == Some(&quote))) {
-                *at += width;
-                return Some(out);
-            }
-            if c == '\n' && !triple {
-                return None;
-            }
-            out.push(c);
-            *at += 1;
-            if c == '\\' {
-                out.push(*chars.get(*at)?);
-                *at += 1;
-            }
-        }
+    /// Where a run of characters that pass ends.
+    fn run_end(chars: &[char], at: usize, passes: impl Fn(char) -> bool) -> usize {
+        chars[at..].iter().position(|&c| !passes(c)).map_or(chars.len(), |length| at + length)
     }
 
     pub fn tokens(text: &str) -> Option<Vec<Token>> {
@@ -300,74 +259,29 @@ mod pyexpr {
         let mut at = 0;
         while at < chars.len() {
             let c = chars[at];
-            if c == ' ' || c == '\t' || c == '\x0c' {
+            if c.is_whitespace() {
                 at += 1;
-            } else if c == '"' || c == '\'' {
-                let text = string_literal(&chars, &mut at)?;
-                // adjacent literals join
+            } else if c == '"' {
+                let (text, end) = string_literal(&chars, at)?;
+                at = end;
                 match out.last_mut() {
                     Some(Token::Text(previous)) => previous.push_str(&text),
                     _ => out.push(Token::Text(text)),
                 }
-            } else if c.is_ascii_digit() || (c == '.' && chars.get(at + 1).is_some_and(char::is_ascii_digit)) {
-                let start = at;
-                while at < chars.len() && (chars[at].is_alphanumeric() || chars[at] == '_' || chars[at] == '.') {
-                    if (chars[at] == 'e' || chars[at] == 'E')
-                        && matches!(chars.get(at + 1), Some('+') | Some('-'))
-                        && !chars[start..at].iter().any(|c| matches!(c, 'x' | 'X' | 'b' | 'B' | 'o' | 'O'))
-                    {
-                        at += 1;
-                    }
-                    at += 1;
-                }
-                let literal: String = chars[start..at].iter().collect();
-                // a float or imaginary literal folds to nothing
-                let value = dc2tk_py::parse_int(&literal);
-                if value.is_none() || literal.contains(['.', 'j', 'J']) {
-                    return None;
-                }
-                out.push(Token::Int(value? as i128));
-            } else if c.is_alphabetic() || c == '_' {
-                let start = at;
-                while at < chars.len() && (chars[at].is_alphanumeric() || chars[at] == '_') {
-                    at += 1;
-                }
-                let name: String = chars[start..at].iter().collect();
-                // a u or r prefix still makes a str; other prefixes (b, f) and keywords make other
-                // kinds of expression
-                if matches!(chars.get(at), Some('"') | Some('\'')) && matches!(name.as_str(), "u" | "U" | "r" | "R") {
-                    let text = if matches!(name.as_str(), "r" | "R") {
-                        raw_literal(&chars, &mut at)?
-                    } else {
-                        string_literal(&chars, &mut at)?
-                    };
-                    match out.last_mut() {
-                        Some(Token::Text(previous)) => previous.push_str(&text),
-                        _ => out.push(Token::Text(text)),
-                    }
-                    continue;
-                }
-                if matches!(chars.get(at), Some('"') | Some('\''))
-                    || matches!(
-                        name.as_str(),
-                        "and"
-                            | "or"
-                            | "not"
-                            | "if"
-                            | "else"
-                            | "lambda"
-                            | "in"
-                            | "is"
-                            | "None"
-                            | "True"
-                            | "False"
-                            | "await"
-                            | "yield"
-                    )
-                {
-                    return None;
-                }
-                out.push(Token::Name(name));
+            } else if c == '\'' {
+                let (value, length) = crate::cpp::character_constant(&chars[at..]).ok()?;
+                out.push(Token::Int(value as i128));
+                at += length;
+            } else if c.is_ascii_digit() || c == '.' {
+                // a number runs on through letters and points, so a float does not read as an int
+                let end = run_end(&chars, at, |c| c.is_ascii_alphanumeric() || c == '.' || c == '_');
+                let word: String = chars[at..end].iter().collect();
+                out.push(Token::Int(integer(&word)?));
+                at = end;
+            } else if c.is_ascii_alphabetic() || c == '_' {
+                let end = run_end(&chars, at, |c| c.is_ascii_alphanumeric() || c == '_');
+                out.push(Token::Name(chars[at..end].iter().collect()));
+                at = end;
             } else if c == '(' {
                 out.push(Token::Open);
                 at += 1;
@@ -375,15 +289,8 @@ mod pyexpr {
                 out.push(Token::Close);
                 at += 1;
             } else {
-                let rest: String = chars[at..chars.len().min(at + 2)].iter().collect();
-                let op = ["<<", ">>", "**", "//"].into_iter().find(|op| rest.starts_with(op)).or_else(|| {
-                    [
-                        "+", "-", "*", "/", "%", "&", "|", "^", "~", "<", ">", "@", "=", "!", ",", "[", "]", "{", "}",
-                        ".", ":",
-                    ]
-                    .into_iter()
-                    .find(|op| rest.starts_with(op))
-                })?;
+                let next: String = chars[at..chars.len().min(at + 2)].iter().collect();
+                let op = OPERATORS.into_iter().find(|op| next.starts_with(op))?;
                 out.push(Token::Op(op));
                 at += op.len();
             }
@@ -391,13 +298,13 @@ mod pyexpr {
         Some(out)
     }
 
-    pub struct Parser<'a> {
+    pub struct Folder<'a> {
         pub tokens: Vec<Token>,
         pub position: usize,
         pub consts: &'a IndexMap<String, i64>,
     }
 
-    /// An expression's value: None for one that parses but does not fold.
+    /// An expression's value: None for one that reads but does not fold.
     type Value = Option<Folded>;
 
     fn ints(left: Value, right: Value) -> Option<(i128, i128)> {
@@ -407,7 +314,33 @@ mod pyexpr {
         }
     }
 
-    impl Parser<'_> {
+    /// a op b, as C folds it: / and % towards zero; None for a division by zero or an overflow.
+    fn apply(op: &str, a: i128, b: i128) -> Option<i128> {
+        let truth = |holds: bool| holds as i128;
+        Some(match op {
+            "*" => a.checked_mul(b)?,
+            "/" => a.checked_div(b)?,
+            "%" => a.checked_rem(b)?,
+            "+" => a.checked_add(b)?,
+            "-" => a.checked_sub(b)?,
+            "<<" => a.checked_shl(u32::try_from(b).ok()?)?,
+            ">>" => a >> u32::try_from(b).ok()?.min(127),
+            "<" => truth(a < b),
+            "<=" => truth(a <= b),
+            ">" => truth(a > b),
+            ">=" => truth(a >= b),
+            "==" => truth(a == b),
+            "!=" => truth(a != b),
+            "&" => a & b,
+            "^" => a ^ b,
+            "|" => a | b,
+            "&&" => truth(a != 0 && b != 0),
+            "||" => truth(a != 0 || b != 0),
+            _ => return None,
+        })
+    }
+
+    impl Folder<'_> {
         fn peek_op(&self) -> Option<&'static str> {
             match self.tokens.get(self.position) {
                 Some(Token::Op(op)) => Some(op),
@@ -415,83 +348,38 @@ mod pyexpr {
             }
         }
 
-        /// Binary levels from loosest: returns None when the text does not parse.
-        pub fn or_expr(&mut self) -> Option<Value> {
-            let mut left = self.and_expr()?;
-            while self.peek_op() == Some("|") {
-                self.position += 1;
-                let right = self.and_expr()?;
-                left = ints(left, right).map(|(a, b)| Folded::Int(a | b));
-            }
-            Some(left)
+        /// A binary operator next, binding at least as tightly as lowest, and its precedence.
+        fn binary_op(&self, lowest: u32) -> Option<(&'static str, u32)> {
+            let op = self.peek_op()?;
+            crate::parse::precedence(op).filter(|&level| level >= lowest).map(|level| (op, level))
         }
 
-        fn and_expr(&mut self) -> Option<Value> {
-            let mut left = self.shift_expr()?;
-            while self.peek_op() == Some("&") {
-                self.position += 1;
-                let right = self.shift_expr()?;
-                left = ints(left, right).map(|(a, b)| Folded::Int(a & b));
-            }
-            Some(left)
-        }
-
-        fn shift_expr(&mut self) -> Option<Value> {
-            let mut left = self.sum()?;
-            while let Some(op @ ("<<" | ">>")) = self.peek_op() {
-                self.position += 1;
-                let right = self.sum()?;
-                left = ints(left, right).and_then(|(a, b)| {
-                    let shift = u32::try_from(b).ok()?;
-                    Some(Folded::Int(if op == "<<" { a.checked_shl(shift)? } else { a >> shift.min(127) }))
-                });
-            }
-            Some(left)
-        }
-
-        fn sum(&mut self) -> Option<Value> {
-            let mut left = self.term()?;
-            while let Some(op @ ("+" | "-")) = self.peek_op() {
-                self.position += 1;
-                let right = self.term()?;
-                left = ints(left, right).map(|(a, b)| Folded::Int(if op == "+" { a + b } else { a - b }));
-            }
-            Some(left)
-        }
-
-        fn term(&mut self) -> Option<Value> {
+        /// The operators binding at least as tightly as lowest, left to right; None when the text
+        /// does not read.
+        pub fn binary(&mut self, lowest: u32) -> Option<Value> {
             let mut left = self.unary()?;
-            while let Some(op @ ("*" | "/" | "%")) = self.peek_op() {
+            while let Some((op, level)) = self.binary_op(lowest) {
                 self.position += 1;
-                let right = self.unary()?;
-                left = ints(left, right).and_then(|(a, b)| match op {
-                    "*" => Some(Folded::Int(a * b)),
-                    // int(a / b): true division, then towards zero
-                    "/" => (b != 0).then(|| Folded::Int((a as f64 / b as f64) as i128)),
-                    // Python's % takes the sign of the divisor
-                    _ => (b != 0).then(|| Folded::Int(((a % b) + b) % b)),
-                });
+                let right = self.binary(level + 1)?;
+                left = ints(left, right).and_then(|(a, b)| apply(op, a, b)).map(Folded::Int);
             }
             Some(left)
         }
 
         fn unary(&mut self) -> Option<Value> {
-            match self.peek_op() {
-                Some("-") => {
-                    self.position += 1;
-                    let inner = self.unary()?;
-                    Some(match inner {
-                        Some(Folded::Int(value)) => Some(Folded::Int(-value)),
-                        _ => None,
-                    })
-                }
-                Some("+") | Some("~") => {
-                    self.position += 1;
-                    self.unary()?;
-                    Some(None)
-                }
-                _ => self.atom(),
-            }
+            let Some(op @ ("-" | "+" | "~" | "!")) = self.peek_op() else {
+                return self.atom();
+            };
+            self.position += 1;
+            Some(match self.unary()? {
+                Some(Folded::Int(value)) => Some(Folded::Int(match op {
+                    "-" => -value,
+                    "+" => value,
+                    "~" => !value,
+                    _ => (value == 0) as i128,
+                })),
+                _ => None,
+            })
         }
 
         fn atom(&mut self) -> Option<Value> {
@@ -502,7 +390,7 @@ mod pyexpr {
                 Token::Text(text) => Some(Folded::Text(text)),
                 Token::Name(name) => self.consts.get(&name).map(|value| Folded::Int(*value as i128)),
                 Token::Open => {
-                    let inner = self.or_expr()?;
+                    let inner = self.binary(0)?;
                     if self.tokens.get(self.position) != Some(&Token::Close) {
                         return None;
                     }
@@ -511,8 +399,8 @@ mod pyexpr {
                 }
                 _ => return None,
             };
-            // a call, subscript, attribute or power makes something that does not fold
-            if matches!(self.tokens.get(self.position), Some(Token::Open) | Some(Token::Op("[" | "." | "**"))) {
+            // a call makes something that does not fold
+            if self.tokens.get(self.position) == Some(&Token::Open) {
                 return None;
             }
             Some(found)
@@ -628,7 +516,7 @@ pub fn outlines(tree: &Path) -> Result<IndexMap<String, Outline>> {
         let text = code(&tree.join(&relative))?;
         let programs = program_pattern()
             .captures_iter(&text)
-            .map(|capture| (dc2tk_py::strip(&capture[1]).to_string(), capture[2].to_string()))
+            .map(|capture| (capture[1].trim().to_string(), capture[2].to_string()))
             .collect();
         let includes = include_pattern().captures_iter(&text).map(|capture| capture[1].to_string()).collect();
         found.insert(relative, Outline { programs, includes });
@@ -667,25 +555,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn folds_like_python() {
+    fn constant_expressions_fold_as_c_folds_them() {
         let consts = IndexMap::from([("STORY".to_string(), 50), ("FLAG".to_string(), 3)]);
         let cases = [
             ("1 + 2 * 3", Some(Folded::Int(7))),
             ("(1 + 2) * 3", Some(Folded::Int(9))),
             ("1 | 2 << 3", Some(Folded::Int(17))),
-            ("STORY + 1", Some(Folded::Int(51))),
-            ("-7 % 3", Some(Folded::Int(2))),
+            ("6 ^ 3 & 1", Some(Folded::Int(7))),
+            (" STORY + 1 ", Some(Folded::Int(51))),
+            ("-7 % 3", Some(Folded::Int(-1))),
             ("7 / -2", Some(Folded::Int(-3))),
             ("0x10 - 1", Some(Folded::Int(15))),
+            ("010 + 1u", Some(Folded::Int(9))),
+            ("'A' + 1", Some(Folded::Int(66))),
+            ("~1", Some(Folded::Int(-2))),
+            ("!FLAG || 2 < 3", Some(Folded::Int(1))),
             ("\"e50_1.txt\"", Some(Folded::Text("e50_1.txt".into()))),
-            ("\"a\" \"b\"", Some(Folded::Text("ab".into()))),
+            ("\"a\\n\" \"b\"", Some(Folded::Text("a\nb".into()))),
             ("x + 1", None),
-            ("1 ^ 2", None),
+            ("\"a\" + 1", None),
             ("f(1)", None),
             ("1 +", None),
             ("1.5", None),
+            ("1e3", None),
+            ("1 / 0", None),
             ("2 ** 3", None),
-            ("~1", None),
+            ("a = 1", None),
         ];
         for (text, expected) in cases {
             assert_eq!(value(text, &consts), expected, "{text}");
@@ -696,5 +591,17 @@ mod tests {
     fn splits_arguments() {
         assert_eq!(split_args(r#" 1, f(2, 3), "a, b" "#), vec!["1", "f(2, 3)", "\"a, b\""]);
         assert_eq!(split_args("  "), Vec::<String>::new());
+    }
+
+    #[test]
+    fn header_constants_are_read_as_c_integers() {
+        let header = "#define A 0x10\n#define B -3\n    C = 010,\n    D = 12, // twelve\n#define E 1.5\n".to_string();
+        let found = constants([&header]);
+        assert_eq!(
+            found.into_iter().collect::<Vec<_>>(),
+            [("A".into(), 16), ("B".into(), -3), ("C".into(), 8), ("D".into(), 12)]
+        );
+        assert_eq!(integer("9223372036854775808"), None);
+        assert_eq!(integer("0x"), None);
     }
 }

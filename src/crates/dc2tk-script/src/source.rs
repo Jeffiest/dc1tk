@@ -24,36 +24,11 @@ fn precedence(op: &str) -> Option<i32> {
     crate::parse::precedence(op).map(|level| level as i32)
 }
 
-/// A value as Python's str() or "%s" writes it.
-pub fn py_str(node: &Node) -> String {
-    match node {
-        Node::Null => "None".into(),
-        Node::Bool(value) => if *value { "True" } else { "False" }.into(),
-        Node::Int(value) => value.to_string(),
-        Node::Float(value) => dc2tk_py::float_repr(*value),
-        Node::Str(text) => text.clone(),
-        other => other.to_string(),
-    }
-}
-
-/// Python's truthiness of a value.
-pub fn truthy(node: &Node) -> bool {
-    match node {
-        Node::Null => false,
-        Node::Bool(value) => *value,
-        Node::Int(value) => *value != 0,
-        Node::Float(value) => *value != 0.0,
-        Node::Str(text) => !text.is_empty(),
-        Node::List(items) => !items.is_empty(),
-        Node::Map(map) => !map.is_empty(),
-    }
-}
-
-/// node.get(first) or node[second], as text.
+/// node[first] as text when it is set, else node[second].
 fn first_or(node: &Node, first: &str, second: &str) -> String {
     match node.get(first) {
-        Some(value) if truthy(value) => py_str(value),
-        _ => py_str(&node[second]),
+        Some(value) if value.is_set() => value.plain_text(),
+        _ => node[second].plain_text(),
     }
 }
 
@@ -113,11 +88,11 @@ fn arguments(nodes: &[Node]) -> Result<String> {
 pub fn expression(node: &Node) -> Result<(String, i32)> {
     let kind = node.kind();
     Ok(match kind {
-        "int" => (py_str(&node["value"]), PRIMARY),
+        "int" => (node["value"].plain_text(), PRIMARY),
         "float" => (float_literal(int(&node["bits"])?)?, PRIMARY),
         "string" => (asm::quote(text_of(node, "text")?), PRIMARY),
-        "var" => (py_str(&node["name"]), PRIMARY),
-        "index" => (format!("{}[{}]", py_str(&node["name"]), expression(&node["index"])?.0), PRIMARY),
+        "var" => (node["name"].plain_text(), PRIMARY),
+        "index" => (format!("{}[{}]", node["name"].plain_text(), expression(&node["index"])?.0), PRIMARY),
         "addr" => {
             if node["target"].kind() == "deref" {
                 return expression(&node["target"]["operand"]);
@@ -145,14 +120,14 @@ pub fn expression(node: &Node) -> Result<(String, i32)> {
             if operand.starts_with(['-', '!']) {
                 found = 0;
             }
-            (format!("{}{}", py_str(&node["op"]), wrap(operand, found, UNARY)), UNARY)
+            (format!("{}{}", node["op"].plain_text(), wrap(operand, found, UNARY)), UNARY)
         }
         "cast" => {
             let (operand, found) = expression(&node["operand"])?;
-            (format!("({}){}", py_str(&node["type"]), wrap(operand, found, UNARY)), UNARY)
+            (format!("({}){}", node["type"].plain_text(), wrap(operand, found, UNARY)), UNARY)
         }
-        "builtin" => (format!("{}({})", py_str(&node["name"]), expression(&node["operand"])?.0), PRIMARY),
-        "call" => (format!("{}({})", py_str(&node["name"]), arguments(node.list("args"))?), PRIMARY),
+        "builtin" => (format!("{}({})", node["name"].plain_text(), expression(&node["operand"])?.0), PRIMARY),
+        "call" => (format!("{}({})", node["name"].plain_text(), arguments(node.list("args"))?), PRIMARY),
         _ => return Err(Error::invalid(format!("unknown expression {kind}"))),
     })
 }
@@ -160,20 +135,20 @@ pub fn expression(node: &Node) -> Result<(String, i32)> {
 pub fn statement(node: &Node, depth: usize) -> Result<Vec<String>> {
     let pad = INDENT.repeat(depth);
     let mut lines = bare_statement(node, depth)?;
-    let note = node.get("note").filter(|note| truthy(note));
+    let note = node.get("note").filter(|note| note.is_set());
     if let Some(note) = note {
         let width = 100 - pad.len() - "// ".len();
-        let rows = dc2tk_py::wrap(&format!("note: {}", py_str(note)), width);
+        let rows = wrap_words(&format!("note: {}", note.plain_text()), width);
         let mut noted: Vec<String> = rows.into_iter().map(|row| format!("{pad}// {row}")).collect();
         noted.extend(lines);
         lines = noted;
     }
-    if let Some(comment) = node.get("comment").filter(|comment| truthy(comment)) {
+    if let Some(comment) = node.get("comment").filter(|comment| comment.is_set()) {
         if lines.len() == 1 {
-            lines = vec![format!("{}  // {}", lines[0], py_str(comment))];
+            lines = vec![format!("{}  // {}", lines[0], comment.plain_text())];
         } else {
             // a blank comment line keeps a note its own paragraph, which is how the parser finds it
-            let mut commented = vec![format!("{pad}// {}", py_str(comment))];
+            let mut commented = vec![format!("{pad}// {}", comment.plain_text())];
             if note.is_some() {
                 commented.push(format!("{pad}//"));
             }
@@ -217,7 +192,7 @@ pub fn native_text(node: &Node) -> Result<String> {
         _ if base == "direct" => "DIRECT ".to_string(),
         _ => format!("AT({}) ", int(base)?),
     };
-    let mut call = format!("{}({});", py_str(&node["name"]), arguments(node.list("args"))?);
+    let mut call = format!("{}({});", node["name"].plain_text(), arguments(node.list("args"))?);
     if let Some(result) = node.get("result").filter(|result| !result.is_null()) {
         call = format!("{} = {}", expression(result)?.0, call);
     }
@@ -253,10 +228,10 @@ pub fn block(statements: &[Node], depth: usize) -> Result<Vec<String>> {
 
 fn parameter(param: &Node) -> String {
     if param.flag("array") && param["type"] == "void" {
-        return format!("void *{}", py_str(&param["name"]));
+        return format!("void *{}", param["name"].plain_text());
     }
     let array = if param.flag("array") { "[]" } else { "" };
-    format!("{} {}{}", first_or(param, "kind", "type"), py_str(&param["name"]), array)
+    format!("{} {}{}", first_or(param, "kind", "type"), param["name"].plain_text(), array)
 }
 
 fn parameter_list(texts: Vec<String>) -> String {
@@ -267,6 +242,32 @@ fn parameter_list(texts: Vec<String>) -> String {
     }
 }
 
+/// Text in lines of at most width characters, broken at whitespace, which a break takes the place
+/// of; the words of a line are one space apart. A word longer than a line has a line of its own,
+/// so no word is broken.
+fn wrap_words(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut length = 0;
+    for word in text.split_whitespace() {
+        let size = word.chars().count();
+        if length > 0 && length + 1 + size > width {
+            lines.push(std::mem::take(&mut line));
+            length = 0;
+        }
+        if length > 0 {
+            line.push(' ');
+            length += 1;
+        }
+        line.push_str(word);
+        length += size;
+    }
+    if length > 0 {
+        lines.push(line);
+    }
+    lines
+}
+
 pub fn doc_lines(text: &str) -> Vec<String> {
     let mut lines = Vec::new();
     for paragraph in text.split('\n') {
@@ -275,7 +276,7 @@ pub fn doc_lines(text: &str) -> Vec<String> {
         }
         // Breaking only at spaces lets the parser join the lines back with spaces (mid-motion,
         // not mid- motion).
-        lines.extend(dc2tk_py::wrap(paragraph, 96).into_iter().map(|row| format!("// {row}")));
+        lines.extend(wrap_words(paragraph, 96).into_iter().map(|row| format!("// {row}")));
     }
     lines
 }
@@ -284,20 +285,20 @@ pub fn function_text(function: &Node) -> Result<Vec<String>> {
     let mut lines = Vec::new();
     let unused = function.list("unused_strings");
     if !unused.is_empty() {
-        let quoted: Vec<String> = unused.iter().map(|text| asm::quote(&py_str(text))).collect();
+        let quoted: Vec<String> = unused.iter().map(|text| asm::quote(&text.plain_text())).collect();
         lines.push(format!("#pragma strings {}", quoted.join(" ")));
     }
-    if let Some(doc) = function.get("doc").filter(|doc| truthy(doc)) {
-        lines.extend(doc_lines(&py_str(doc)));
+    if let Some(doc) = function.get("doc").filter(|doc| doc.is_set()) {
+        lines.extend(doc_lines(&doc.plain_text()));
     }
     let params = parameter_list(function.list("params").iter().map(parameter).collect());
-    let returns = function.get("returns").map_or_else(|| "int".to_string(), py_str);
-    lines.push(format!("{} {}({})", returns, py_str(&function["name"]), params));
+    let returns = function.get("returns").map_or_else(|| "int".to_string(), Node::plain_text);
+    lines.push(format!("{} {}({})", returns, function["name"].plain_text(), params));
     lines.push("{".into());
     let locals = function.list("locals");
     for declared in locals {
         let size = if declared["size"].is_null() { String::new() } else { format!("[{}]", int(&declared["size"])?) };
-        lines.push(format!("{INDENT}{} {}{size};", first_or(declared, "kind", "type"), py_str(&declared["name"])));
+        lines.push(format!("{INDENT}{} {}{size};", first_or(declared, "kind", "type"), declared["name"].plain_text()));
     }
     let body = function.list("body");
     if !locals.is_empty() && !body.is_empty() {
@@ -310,10 +311,10 @@ pub fn function_text(function: &Node) -> Result<Vec<String>> {
 
 fn asm_text(function: &Node) -> Vec<String> {
     let mut lines = vec![
-        format!("// {}", py_str(&function["reason"])),
-        format!("asm {} arg {} {{", py_str(&function["name"]), py_str(&function["arg"])),
+        format!("// {}", function["reason"].plain_text()),
+        format!("asm {} arg {} {{", function["name"].plain_text(), function["arg"].plain_text()),
     ];
-    lines.extend(function.list("lines").iter().map(py_str));
+    lines.extend(function.list("lines").iter().map(Node::plain_text));
     lines.push("}".into());
     lines
 }
@@ -330,21 +331,21 @@ fn magic_text(magic: &str) -> String {
 /// A program as source text.
 pub fn text(program: &Node) -> Result<String> {
     if let Some(assembly) = program.get("asm") {
-        return Ok(format!("#pragma assembly\n{}", py_str(assembly)));
+        return Ok(format!("#pragma assembly\n{}", assembly.plain_text()));
     }
     let functions = program.list("functions");
     let mut leading = 0;
-    while leading < functions.len() && functions[leading].kind() == "include" && truthy(&functions[leading]["system"]) {
+    while leading < functions.len() && functions[leading].kind() == "include" && functions[leading]["system"].is_set() {
         leading += 1;
     }
     let mut lines = Vec::new();
-    if let Some(doc) = program.get("doc").filter(|doc| truthy(doc)) {
-        lines.extend(doc_lines(&py_str(doc)));
+    if let Some(doc) = program.get("doc").filter(|doc| doc.is_set()) {
+        lines.extend(doc_lines(&doc.plain_text()));
         lines.push(String::new());
     }
     lines.extend(functions[..leading].iter().map(include_line));
     if !program["natives"].is_null() {
-        lines.push(format!("#pragma natives {}", py_str(&program["natives"])));
+        lines.push(format!("#pragma natives {}", program["natives"].plain_text()));
     }
     let magic = magic_text(text_of(program, "magic")?);
     if magic != "SB2" {
@@ -361,37 +362,37 @@ pub fn text(program: &Node) -> Result<String> {
     if int(&program["global_num"])? != globals.len() as i64 {
         lines.push(format!("#pragma globals {}", int(&program["global_num"])?));
     }
-    if program.get("string_pool").is_some_and(truthy) {
+    if program.get("string_pool").is_some_and(Node::is_set) {
         // built by a compiler that never reset its string buffer between functions (stb::pool_block)
         lines.push("#pragma string_pool".into());
     }
     lines.push(String::new());
     for declared in globals {
-        lines.push(format!("{} {};", py_str(&declared["type"]), py_str(&declared["name"])));
+        lines.push(format!("{} {};", declared["type"].plain_text(), declared["name"].plain_text()));
     }
     if !globals.is_empty() {
         lines.push(String::new());
     }
     for entry in program.list("programs") {
-        let line = format!("PROGRAM({}, {});", py_str(&entry["no"]), py_str(&entry["function"]));
-        match entry.get("note").filter(|note| truthy(note)) {
-            Some(note) => lines.push(format!("{line}  // {}", py_str(note))),
+        let line = format!("PROGRAM({}, {});", entry["no"].plain_text(), entry["function"].plain_text());
+        match entry.get("note").filter(|note| note.is_set()) {
+            Some(note) => lines.push(format!("{line}  // {}", note.plain_text())),
             None => lines.push(line),
         }
     }
-    lines.push(format!("MAIN({});", py_str(&program["main"])));
+    lines.push(format!("MAIN({});", program["main"].plain_text()));
     lines.extend(function_lines(&functions[leading..])?);
     let mut padding_of: Map = program["padding_of"].as_object().cloned().unwrap_or_default();
     for function in functions {
         if function.kind() == "function" && !function["padding"].is_null() {
-            padding_of.insert(py_str(&function["name"]), function["padding"].clone());
+            padding_of.insert(function["name"].plain_text(), function["padding"].clone());
         }
     }
     if !padding_of.is_empty() {
         lines.push(String::new());
         for (name, padding) in padding_of.iter() {
-            let line = format!("#pragma padding_of {} {}", name, py_str(padding));
-            lines.push(line.trim_end_matches(dc2tk_py::is_space).to_string());
+            let line = format!("#pragma padding_of {} {}", name, padding.plain_text());
+            lines.push(line.trim_end().to_string());
         }
     }
     Ok(lines.join("\n") + "\n")
@@ -420,10 +421,10 @@ pub fn function_lines(functions: &[Node]) -> Result<Vec<String>> {
 }
 
 pub fn include_line(item: &Node) -> String {
-    if truthy(&item["system"]) {
-        format!("#include <{}>", py_str(&item["path"]))
+    if item["system"].is_set() {
+        format!("#include <{}>", item["path"].plain_text())
     } else {
-        format!("#include \"{}\"", py_str(&item["path"]))
+        format!("#include \"{}\"", item["path"].plain_text())
     }
 }
 
@@ -443,31 +444,31 @@ pub fn library_text(table: &str, functions: &[Node], header: Option<&str>, doc: 
 }
 
 pub fn typed_parameter(param: &Node) -> String {
-    let pointer = if truthy(&param["out"]) { "*" } else { "" };
-    let kind = match param.get("enum").filter(|value| truthy(value)) {
-        Some(name) => format!("enum {}", py_str(name)),
+    let pointer = if param["out"].is_set() { "*" } else { "" };
+    let kind = match param.get("enum").filter(|value| value.is_set()) {
+        Some(name) => format!("enum {}", name.plain_text()),
         None => first_or(param, "kind", "type"),
     };
     // a pointer to any is void * in C, which takes int * and float * alike
     let kind = if kind == "any" && !pointer.is_empty() { "void".to_string() } else { kind };
-    format!("{} {}{}", kind, pointer, py_str(&param["name"]))
+    format!("{} {}{}", kind, pointer, param["name"].plain_text())
 }
 
 pub fn inline_text(inline: &Node) -> Result<Vec<String>> {
     let params = parameter_list(inline.list("params").iter().map(typed_parameter).collect());
-    let mut lines = vec![format!("static inline void {}({})", py_str(&inline["name"]), params), "{".to_string()];
+    let mut lines = vec![format!("static inline void {}({})", inline["name"].plain_text(), params), "{".to_string()];
     lines.extend(block(inline.list("body"), 1)?);
     lines.push("}".into());
     Ok(lines)
 }
 
 pub fn native_declaration(declared: &Node) -> Result<String> {
-    let params: Vec<&Node> = declared.list("params").iter().filter(|param| !truthy(&param["result"])).collect();
+    let params: Vec<&Node> = declared.list("params").iter().filter(|param| !param["result"].is_set()).collect();
     let mut texts: Vec<String> =
-        params.iter().filter(|param| !truthy(&param["optional"])).map(|param| typed_parameter(param)).collect();
+        params.iter().filter(|param| !param["optional"].is_set()).map(|param| typed_parameter(param)).collect();
     let mut optional: Vec<String> =
-        params.iter().filter(|param| truthy(&param["optional"])).map(|param| typed_parameter(param)).collect();
-    let variadic = truthy(&declared["variadic"]);
+        params.iter().filter(|param| param["optional"].is_set()).map(|param| typed_parameter(param)).collect();
+    let variadic = declared["variadic"].is_set();
     if !optional.is_empty() {
         if variadic {
             optional.push("...".into());
@@ -477,15 +478,15 @@ pub fn native_declaration(declared: &Node) -> Result<String> {
         texts.push("...".into());
     }
     let number = if declared["base"].is_null() {
-        py_str(&declared["no"])
+        declared["no"].plain_text()
     } else {
         let base = int(&declared["base"])?;
         format!("{}, {}", base, int(&declared["no"])? - base)
     };
     Ok(format!(
         "extern {} {}({}) NATIVE({});",
-        py_str(&declared["returns"]),
-        py_str(&declared["name"]),
+        declared["returns"].plain_text(),
+        declared["name"].plain_text(),
         parameter_list(texts),
         number
     ))
@@ -502,5 +503,13 @@ mod tests {
         let written: Vec<String> =
             program["functions"][0].list("body").iter().map(|line| expression(&line["expr"]).unwrap().0).collect();
         assert_eq!(written, ["x = (a ^ b) & c << 2", "y = a - (b - c)", "z = (a | b) == c"]);
+    }
+
+    #[test]
+    fn text_wraps_at_whitespace_and_never_inside_a_word() {
+        assert_eq!(wrap_words("note: a b c", 7), ["note: a", "b c"]);
+        assert_eq!(wrap_words("  lead and\tdouble  spaces ", 10), ["lead and", "double", "spaces"]);
+        assert_eq!(wrap_words("abcdefghij mid-motion", 4), ["abcdefghij", "mid-motion"]);
+        assert!(wrap_words(" \t ", 10).is_empty());
     }
 }

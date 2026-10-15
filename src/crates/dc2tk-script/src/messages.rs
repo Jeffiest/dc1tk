@@ -12,7 +12,6 @@ use regex::Regex;
 
 use crate::node::Node;
 use crate::sdk::Context;
-use crate::source::{py_str, truthy};
 
 pub const MESSAGE_KINDS: [&str; 1] = ["message"];
 pub const NAME_KINDS: [&str; 5] = ["item_id", "map_id", "npc_id", "chara_pack", "monster_kind"];
@@ -282,7 +281,7 @@ pub fn texts_for(
 
 fn quoted(text: &str) -> String {
     let replaced = text.replace("<page>", "\n");
-    let parts: Vec<&str> = replaced.split('\n').map(dc2tk_py::strip).filter(|part| !part.is_empty()).collect();
+    let parts: Vec<&str> = replaced.split('\n').map(str::trim).filter(|part| !part.is_empty()).collect();
     format!("\"{}\"", parts.join(" "))
 }
 
@@ -405,7 +404,7 @@ fn annotated(nodes: &[Node], found: &Context, lookups: &[Lookup]) -> Node {
                 if comment.is_empty() {
                     return node.clone();
                 }
-                let old = node.get("comment").filter(|old| truthy(old)).map(py_str);
+                let old = node.get("comment").filter(|old| old.is_set()).map(Node::plain_text);
                 let joined: Vec<String> =
                     [old, Some(comment)].into_iter().flatten().filter(|part| !part.is_empty()).collect();
                 node.clone().with("comment", joined.join("; "))
@@ -423,9 +422,9 @@ fn declared_kinds(declared: &Node) -> IndexMap<usize, String> {
         .filter_map(|(position, param)| {
             let kind = param
                 .get("kind")
-                .filter(|kind| truthy(kind))
-                .or_else(|| param.get("enum").filter(|kind| truthy(kind)))?;
-            (!truthy(&param["out"])).then(|| (position, py_str(kind)))
+                .filter(|kind| kind.is_set())
+                .or_else(|| param.get("enum").filter(|kind| kind.is_set()))?;
+            (!param["out"].is_set()).then(|| (position, kind.plain_text()))
         })
         .collect()
 }
