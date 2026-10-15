@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for the Black Dragon (kind 605, model e219e), a Demon Shaft boss version of the Dragon. It swipes with claws, spits fire balls, taunts and runs at the player, and its death runs event script 502.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Boss script for the Black Dragon (kind 605, model e219e), a Demon Shaft boss version of the Dragon. It swipes with claws, spits fire balls, taunts and runs at the player, and its death runs event script 502.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

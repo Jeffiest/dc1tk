@@ -1,8 +1,8 @@
 {
- "doc": "Unused melee AI named after a Mimic model (identical to e230a and e232a): shared melee routines with backstep and sidestep dodges and attacks 1 and 2. The monster table runs e228a for every Mimic kind, including the one with model e234a.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Unused melee AI named after a Mimic model (identical to e230a and e232a): shared melee routines with backstep and sidestep dodges and attacks 1 and 2. The monster table runs e228a for every Mimic kind, including the one with model e234a.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

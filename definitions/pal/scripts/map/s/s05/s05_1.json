@@ -1,7 +1,7 @@
 {
- "doc": "Map script for the swamp story map s05. It handles the fisherman who trades a Fishing Rod and bait for Grape Juice (event 220), the Holy One of the swamps and the Priscleen Fish (events 240, 245, 253), and talks with the swamp villagers who do not want to go back.",
- "globals": [
-  "left_speaker_value",
-  "right_speaker_value"
- ]
+  "doc": "Map script for the swamp story map s05. It handles the fisherman who trades a Fishing Rod and bait for Grape Juice (event 220), the Holy One of the swamps and the Priscleen Fish (events 240, 245, 253), and talks with the swamp villagers who do not want to go back.",
+  "globals": [
+    "left_speaker_value",
+    "right_speaker_value"
+  ]
 }

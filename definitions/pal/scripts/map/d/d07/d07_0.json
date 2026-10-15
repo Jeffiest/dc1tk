@@ -1,3 +1,3 @@
 {
- "doc": "Main script for dungeon d07, the Zelmite Mine. It picks what each floor loads (ordinary floors, the s52 and s54 story maps, the d07b01 Dark Genie room), plays the floor entry scene with the seal warnings, and handles exits unlocked with Trolley Oil, the rusted key door (Donny can open it) and the Spheda stage 7 score view. Story and debug warps jump to the Metal Flotsam and Dark Genie fights."
+  "doc": "Main script for dungeon d07, the Zelmite Mine. It picks what each floor loads (ordinary floors, the s52 and s54 story maps, the d07b01 Dark Genie room), plays the floor entry scene with the seal warnings, and handles exits unlocked with Trolley Oil, the rusted key door (Donny can open it) and the Spheda stage 7 score view. Story and debug warps jump to the Metal Flotsam and Dark Genie fights."
 }

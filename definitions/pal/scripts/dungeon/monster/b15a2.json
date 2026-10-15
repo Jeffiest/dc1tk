@@ -1,9 +1,9 @@
 {
- "doc": "Monster script for the machine gun turrets on Gaspard's battleship (map part p01_battleship). Eight turrets, selected by monster handle, are each bound to a mount on the hull, aim at the player within their half of the ship and fire bursts. Their combined life forms a shared hull pool in monster variable 64, and a destroyed turret stays as a smoking wreck.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z",
-  "monster_handle"
- ]
+  "doc": "Monster script for the machine gun turrets on Gaspard's battleship (map part p01_battleship). Eight turrets, selected by monster handle, are each bound to a mount on the hull, aim at the player within their half of the ship and fire bursts. Their combined life forms a shared hull pool in monster variable 64, and a destroyed turret stays as a smoking wreck.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z",
+    "monster_handle"
+  ]
 }

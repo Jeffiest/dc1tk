@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for the Sea Dragon (kind 612, model e54e), a Demon Shaft boss version of the Killer Snake. It attacks in melee and dodges or guards by vanishing and reappearing at the player's position, idling until the player is within 500 units.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Boss script for the Sea Dragon (kind 612, model e54e), a Demon Shaft boss version of the Killer Snake. It attacks in melee and dodges or guards by vanishing and reappearing at the player's position, idling until the player is within 500 units.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

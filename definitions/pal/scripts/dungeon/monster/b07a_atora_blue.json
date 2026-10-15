@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the blue light orb that accompanies a host monster (the host's index is in monster var 31). The orb floats up to the host, hovers and wobbles around it, then on command spirals around the host for 150 frames with the Atla light effect before returning. It cannot be hurt in the air, ignores map and body collisions and only reacts when thrown or killed.",
- "globals": [
-  "scratch_x",
-  "scratch_y",
-  "scratch_z"
- ]
+  "doc": "Monster script for the blue light orb that accompanies a host monster (the host's index is in monster var 31). The orb floats up to the host, hovers and wobbles around it, then on command spirals around the host for 150 frames with the Atla light effect before returning. It cannot be hurt in the air, ignores map and body collisions and only reacts when thrown or killed.",
+  "globals": [
+    "scratch_x",
+    "scratch_y",
+    "scratch_z"
+  ]
 }

@@ -1,7 +1,7 @@
 {
- "doc": "Event script for map s67. Story event 732 plays the scene in which a dying villain warns that the moon will fall and the hero remembers he is the Guardian of the Stars and how to stop the Star of Oblivion, then jumps to map s44, the Moonflower Palace flashback. The other entries do nothing.",
- "globals": [
-  "main_chara_id",
-  "partner_chara_id"
- ]
+  "doc": "Event script for map s67. Story event 732 plays the scene in which a dying villain warns that the moon will fall and the hero remembers he is the Guardian of the Stars and how to stop the Star of Oblivion, then jumps to map s44, the Moonflower Palace flashback. The other entries do nothing.",
+  "globals": [
+    "main_chara_id",
+    "partner_chara_id"
+  ]
 }

@@ -1,9 +1,9 @@
 {
- "doc": "Monster script for one of the two cannons on the battleship boss, attached to the ship's map piece. It aims at the player, fires cannonballs with muzzle flashes and adds its life to the ship total; when destroyed it damages the ship by 900.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3",
-  "cannon_handle"
- ]
+  "doc": "Monster script for one of the two cannons on the battleship boss, attached to the ship's map piece. It aims at the player, fires cannonballs with muzzle flashes and adds its life to the ship total; when destroyed it damages the ship by 900.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "cannon_handle"
+  ]
 }

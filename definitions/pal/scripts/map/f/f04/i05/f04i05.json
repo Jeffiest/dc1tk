@@ -1,3 +1,3 @@
 {
- "doc": "Tool shop interior in the Gundorada Workshop (f04i05). It only resets the camera behind the player on entry; the shopkeeper's talk goes through the shared villager talk handler."
+  "doc": "Tool shop interior in the Gundorada Workshop (f04i05). It only resets the camera behind the player on entry; the shopkeeper's talk goes through the shared villager talk handler."
 }

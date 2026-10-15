@@ -1,7 +1,7 @@
 {
- "doc": "Map script for the Luna Lab at f03 i04. It handles the lab entrances, talking to villagers, the Ixion explanation scene that sends the party to map s09, and the story jump to s53.",
- "globals": [
-  "main_chara_id",
-  "partner_chara_id"
- ]
+  "doc": "Map script for the Luna Lab at f03 i04. It handles the lab entrances, talking to villagers, the Ixion explanation scene that sends the party to map s09, and the story jump to s53.",
+  "globals": [
+    "main_chara_id",
+    "partner_chara_id"
+  ]
 }

@@ -1,7 +1,7 @@
 {
- "doc": "Fish Monster Swamp (s05), floor 6 of Rainbow Butterfly Wood (dungeon stage 1). The party meets the fisherman Noam, who gives them a Fishing Rod for Grape Juice, finds the villagers bewitched and meets the swamp master Mardan, who sends them to catch a Priscleen Fish before he turns the three back. Story events 215 to 253 drive this, with events 230, 235 and 247 and Utan moving the boulder in the s05b script.",
- "globals": [
-  "max_scene_slot",
-  "monica_scene_slot"
- ]
+  "doc": "Fish Monster Swamp (s05), floor 6 of Rainbow Butterfly Wood (dungeon stage 1). The party meets the fisherman Noam, who gives them a Fishing Rod for Grape Juice, finds the villagers bewitched and meets the swamp master Mardan, who sends them to catch a Priscleen Fish before he turns the three back. Story events 215 to 253 drive this, with events 230, 235 and 247 and Utan moving the boulder in the s05b script.",
+  "globals": [
+    "max_scene_slot",
+    "monica_scene_slot"
+  ]
 }

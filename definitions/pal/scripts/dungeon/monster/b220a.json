@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for Nightmare (kind 604, model e220e), the Demon Shaft boss version of the Memo Eater. It charges with a Vanguard shockwave slam and fires nose bullets, and its death runs event script 501.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Boss script for Nightmare (kind 604, model e220e), the Demon Shaft boss version of the Memo Eater. It charges with a Vanguard shockwave slam and fires nose bullets, and its death runs event script 501.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

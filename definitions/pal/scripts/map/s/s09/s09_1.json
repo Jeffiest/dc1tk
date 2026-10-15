@@ -1,7 +1,7 @@
 {
- "doc": "Train stop map s09, the station before Heim Rada Stop. The player can board the train, which goes to the locomotive, Ixion or the train cars depending on the chapter, or talk to Cedric, Borneo and Erik. Talking to Cedric can start the departure to s10.",
- "globals": [
-  "max_chara_slot",
-  "monica_chara_slot"
- ]
+  "doc": "Train stop map s09, the station before Heim Rada Stop. The player can board the train, which goes to the locomotive, Ixion or the train cars depending on the chapter, or talk to Cedric, Borneo and Erik. Talking to Cedric can start the departure to s10.",
+  "globals": [
+    "max_chara_slot",
+    "monica_chara_slot"
+  ]
 }

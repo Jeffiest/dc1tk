@@ -1,7 +1,7 @@
 {
- "doc": "The Firbits' house interior in map g01. It plays the scenes where the Firbits ask Max and Monica for help, Holly may be the mother, and the Firbits' return deal, and handles villager talk about the Rainbow Butterfly and Holly's potato pie.",
- "globals": [
-  "player_slot",
-  "partner_slot"
- ]
+  "doc": "The Firbits' house interior in map g01. It plays the scenes where the Firbits ask Max and Monica for help, Holly may be the mother, and the Firbits' return deal, and handles villager talk about the Rainbow Butterfly and Holly's potato pie.",
+  "globals": [
+    "player_slot",
+    "partner_slot"
+  ]
 }

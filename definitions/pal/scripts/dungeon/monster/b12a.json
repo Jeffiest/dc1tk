@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for b12a, a jet-powered flying drill boss. It takes off with jets, drops pirate bombs, charges with its drill, runs along waypoint routes to reach a target on raised ground, and gets out of breath when worn out. On death it runs event script 500.",
- "globals": [
-  "unused_float",
-  "unused_float2",
-  "unused_float3"
- ]
+  "doc": "Monster script for b12a, a jet-powered flying drill boss. It takes off with jets, drops pirate bombs, charges with its drill, runs along waypoint routes to reach a target on raised ground, and gets out of breath when worn out. On death it runs event script 500.",
+  "globals": [
+    "unused_float",
+    "unused_float2",
+    "unused_float3"
+  ]
 }

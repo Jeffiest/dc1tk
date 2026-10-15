@@ -1,9 +1,9 @@
 {
- "doc": "Map script for story map s18 around the Yorda Tree. It plays the arrival at the tree (event 332), the meat-grabbing scene and event 336 and 340 scenes, lets the player enter dungeon d03 and has the Memo Eater boss fight.",
- "globals": [
-  "left_speaker_value",
-  "right_speaker_value",
-  "left_actor_id",
-  "right_actor_id"
- ]
+  "doc": "Map script for story map s18 around the Yorda Tree. It plays the arrival at the tree (event 332), the meat-grabbing scene and event 336 and 340 scenes, lets the player enter dungeon d03 and has the Memo Eater boss fight.",
+  "globals": [
+    "left_speaker_value",
+    "right_speaker_value",
+    "left_actor_id",
+    "right_actor_id"
+  ]
 }

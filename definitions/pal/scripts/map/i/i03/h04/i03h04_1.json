@@ -1,7 +1,7 @@
 {
- "doc": "Map script for the Finny Frenzy hall (h04) in Palm Brinks, the fish racing event. Max talks to the host to enter a fish in the Beginner, Junior, Senior or Master class, picks a preparation tank, and after each of the three heats sees a ranking board and, in the final, the prize. Leaving returns to Palm Brinks Square (s45).",
- "globals": [
-  "enemy_sound_id",
-  "menu_sound_id"
- ]
+  "doc": "Map script for the Finny Frenzy hall (h04) in Palm Brinks, the fish racing event. Max talks to the host to enter a fish in the Beginner, Junior, Senior or Master class, picks a preparation tank, and after each of the three heats sees a ranking board and, in the final, the prize. Leaving returns to Palm Brinks Square (s45).",
+  "globals": [
+    "enemy_sound_id",
+    "menu_sound_id"
+  ]
 }

@@ -1,7 +1,7 @@
 {
- "doc": "Rainbow Butterfly boss floor of dungeon d02 (b02). It holds the hint boxes about defeating the seven butterflies in rainbow order, the Lafrescia clue, the party character swap and the Holly rainbow butterfly scene, and returns to d02b01 after story events 255 and 256.",
- "globals": [
-  "max_chara_id",
-  "monica_chara_id"
- ]
+  "doc": "Rainbow Butterfly boss floor of dungeon d02 (b02). It holds the hint boxes about defeating the seven butterflies in rainbow order, the Lafrescia clue, the party character swap and the Holly rainbow butterfly scene, and returns to d02b01 after story events 255 and 256.",
+  "globals": [
+    "max_chara_id",
+    "monica_chara_id"
+  ]
 }

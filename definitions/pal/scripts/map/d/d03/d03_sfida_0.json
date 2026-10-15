@@ -1,3 +1,3 @@
 {
- "doc": "Spheda mini-game script for the d03 bonus course (sfida). It holds the aiming guide, power gauge, club handling, stroke counting, hole changes and ball reset offers, and on_spheda_bonus_menu shows the score list for the bonus course."
+  "doc": "Spheda mini-game script for the d03 bonus course (sfida). It holds the aiming guide, power gauge, club handling, stroke counting, hole changes and ball reset offers, and on_spheda_bonus_menu shows the score list for the bonus course."
 }

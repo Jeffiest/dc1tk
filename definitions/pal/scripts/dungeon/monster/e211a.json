@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster e211a, a clown soldier. It keeps a short distance from the target, slashes at melee range, throws a knife from afar (a knife-throw effect), and ignores the player while the player is disguised.",
- "globals": [
-  "pos_x",
-  "pos_y",
-  "pos_z"
- ]
+  "doc": "Dungeon monster e211a, a clown soldier. It keeps a short distance from the target, slashes at melee range, throws a knife from afar (a knife-throw effect), and ignores the player while the player is disguised.",
+  "globals": [
+    "pos_x",
+    "pos_y",
+    "pos_z"
+  ]
 }

@@ -1,8 +1,8 @@
 {
- "doc": "Older stand-alone AI for the Wind Gemron model: a flying enemy that hovers, circles and fires wind shots at close and medium range. The monster table runs eJema for every Gemron kind (112 to 131), so this script appears unused.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Older stand-alone AI for the Wind Gemron model: a flying enemy that hovers, circles and fires wind shots at close and medium range. The monster table runs eJema for every Gemron kind (112 to 131), so this script appears unused.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

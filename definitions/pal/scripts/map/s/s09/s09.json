@@ -1,7 +1,7 @@
 {
- "doc": "Map script for the train station map s09 serving Veniccio. It picks the start scene from the previous map and chapter (train arrivals, the ocean breeze and broken bridge scene of event 400), lets the player board the train, talks to the station NPCs, and plays the departure to Mt. Gundor and Heim Rada Stop.",
- "globals": [
-  "left_speaker_value",
-  "right_speaker_value"
- ]
+  "doc": "Map script for the train station map s09 serving Veniccio. It picks the start scene from the previous map and chapter (train arrivals, the ocean breeze and broken bridge scene of event 400), lets the player board the train, talks to the station NPCs, and plays the departure to Mt. Gundor and Heim Rada Stop.",
+  "globals": [
+    "left_speaker_value",
+    "right_speaker_value"
+  ]
 }

@@ -1,3 +1,3 @@
 {
- "doc": "System script for dungeon d02. It loads the floor chosen on the dungeon map menu, plays the entry cutscene, and handles the floor gates, including the Fairy Saw gate-open scene and a star-shaped gate. It also holds the treasure chest, Spheda shot and Geostone handlers from the shared dungeon library."
+  "doc": "System script for dungeon d02. It loads the floor chosen on the dungeon map menu, plays the entry cutscene, and handles the floor gates, including the Fairy Saw gate-open scene and a star-shaped gate. It also holds the treasure chest, Spheda shot and Geostone handlers from the shared dungeon library."
 }

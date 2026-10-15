@@ -1,7 +1,7 @@
 {
- "doc": "Event script for the end of the fight in Moon Flower Palace (map s67). It plays event 732, in which the dark foe falls, Sirus uses his memory to break the moon that threatened the world, and the party watches the light rain fall. Afterwards it jumps to the Moon Flower Palace flashback map s44.",
- "globals": [
-  "max_slot",
-  "monica_slot"
- ]
+  "doc": "Event script for the end of the fight in Moon Flower Palace (map s67). It plays event 732, in which the dark foe falls, Sirus uses his memory to break the moon that threatened the world, and the party watches the light rain fall. Afterwards it jumps to the Moon Flower Palace flashback map s44.",
+  "globals": [
+    "max_slot",
+    "monica_slot"
+  ]
 }

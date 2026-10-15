@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for the flame stone (maseki) fire. It places a flame model at the work position, plays a fire sound, and creates a small fire attack that stays up to 114 frames and is removed at frame 30 or after its first hit."
+  "doc": "Effect script for the flame stone (maseki) fire. It places a flame model at the work position, plays a fire sound, and creates a small fire attack that stays up to 114 frames and is removed at frame 30 or after its first hit."
 }

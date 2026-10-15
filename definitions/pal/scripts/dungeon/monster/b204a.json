@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for Kortlenn (kind 610), the walking bomb that Trentos (b205a) summons. It charges at the player and blows itself up on contact; when the last one explodes, the dungeon runs event script 510.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script for Kortlenn (kind 610), the walking bomb that Trentos (b205a) summons. It charges at the player and blows itself up on contact; when the last one explodes, the dungeon runs event script 510.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

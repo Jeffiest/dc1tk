@@ -1,3 +1,3 @@
 {
- "doc": "Event script for a small house interior (i04h01e). It has no setup of its own and just routes conversation to the shared villager talk handler."
+  "doc": "Event script for a small house interior (i04h01e). It has no setup of its own and just routes conversation to the shared villager talk handler."
 }

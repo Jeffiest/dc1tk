@@ -1,3 +1,3 @@
 {
- "doc": "Event script for house h01 in map i04. It gives item 357 at the save point, plays the Underground Channel narration (events 102 and 610) before entering dungeon 3, and holds the event 736 letter scene and the ending movie that leads to the chapter 8 start save."
+  "doc": "Event script for house h01 in map i04. It gives item 357 at the save point, plays the Underground Channel narration (events 102 and 610) before entering dungeon 3, and holds the event 736 letter scene and the ending movie that leads to the chapter 8 start save."
 }

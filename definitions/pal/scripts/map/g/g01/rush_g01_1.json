@@ -1,9 +1,9 @@
 {
- "doc": "Script for the g01 area with the Rococo encounter. Event 500 fades in, plays Max and Monica meeting Rococo and loads g01. It also holds the time gate scenes, including the red gate warp and the blue gate warp with the glowing Atlamillia, and the shared voice message and NPC talk routines.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "max_scene_slot",
-  "monica_scene_slot"
- ]
+  "doc": "Script for the g01 area with the Rococo encounter. Event 500 fades in, plays Max and Monica meeting Rococo and loads g01. It also holds the time gate scenes, including the red gate warp and the blue gate warp with the glowing Atlamillia, and the shared voice message and NPC talk routines.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "max_scene_slot",
+    "monica_scene_slot"
+  ]
 }

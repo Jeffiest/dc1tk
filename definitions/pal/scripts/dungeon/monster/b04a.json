@@ -1,7 +1,7 @@
 {
- "doc": "Unused rose boss AI (no monster kind runs it; the executable never names b04a.stb): a floating boss that hovers over a ring of six roses, casts San's tornado and commands the roses, and is defeated by hitting the rose it faces three times, after which event script 501 runs. Boss kind 515 (b06a) has a fuller version of this fight.",
- "globals": [
-  "current_ring_slot",
-  "hits_remaining"
- ]
+  "doc": "Unused rose boss AI (no monster kind runs it; the executable never names b04a.stb): a floating boss that hovers over a ring of six roses, casts San's tornado and commands the roses, and is defeated by hitting the rose it faces three times, after which event script 501 runs. Boss kind 515 (b06a) has a fuller version of this fight.",
+  "globals": [
+    "current_ring_slot",
+    "hits_remaining"
+  ]
 }

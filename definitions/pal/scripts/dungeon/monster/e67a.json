@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for enemy e67, a stationary venom spitter that never guards and ignores hit push. Up close it attacks repeatedly, at range it spits venom with varying arcs, and it dodges shots by playing attack 1 invulnerably when the target is far. Once its rage counter is used up it uses a simpler loop.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for enemy e67, a stationary venom spitter that never guards and ignores hit push. Up close it attacks repeatedly, at range it spits venom with varying arcs, and it dodges shots by playing attack 1 invulnerably when the target is far. Once its rage counter is used up it uses a simpler loop.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

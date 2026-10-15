@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the Electric Fish (kind 1001) spawned by Shingala (b07a). It cannot be damaged or locked on to, attacks and threatens in a cycle, and dies when thrown or on landing, which is how it is used against Shingala.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for the Electric Fish (kind 1001) spawned by Shingala (b07a). It cannot be damaged or locked on to, attacks and threatens in a cycle, and dies when thrown or on landing, which is how it is used against Shingala.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

@@ -1,7 +1,7 @@
 {
- "doc": "Boss floor d06b03 of the Moonflower Palace dungeon, a timed boss battle against the Dark Element. It sets up the floor, plays the timed battle and handles the game over, the jump to s66 after the boss and the entry to the boss arena d06b02.",
- "globals": [
-  "player_slot",
-  "partner_slot"
- ]
+  "doc": "Boss floor d06b03 of the Moonflower Palace dungeon, a timed boss battle against the Dark Element. It sets up the floor, plays the timed battle and handles the game over, the jump to s66 after the boss and the entry to the boss arena d06b02.",
+  "globals": [
+    "player_slot",
+    "partner_slot"
+  ]
 }

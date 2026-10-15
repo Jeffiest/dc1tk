@@ -1,7 +1,7 @@
 {
- "doc": "Map script for f02, the Starlight Temple town. It handles story events 364 (Lao Chao's Bistro), 368 (the Starglass idea), 372 (the reunion with Lin as the Great Sage Crest and her lecture on Griffon and the Luna Lab) and 376 (the restored temple reward), shows doors and NPCs by Georama analysis flags, and has a gate to Balance Valley.",
- "globals": [
-  "max_chara_slot",
-  "monica_chara_slot"
- ]
+  "doc": "Map script for f02, the Starlight Temple town. It handles story events 364 (Lao Chao's Bistro), 368 (the Starglass idea), 372 (the reunion with Lin as the Great Sage Crest and her lecture on Griffon and the Luna Lab) and 376 (the restored temple reward), shows doors and NPCs by Georama analysis flags, and has a gate to Balance Valley.",
+  "globals": [
+    "max_chara_slot",
+    "monica_chara_slot"
+  ]
 }

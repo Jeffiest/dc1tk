@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster e24a, a sticky creature that charges while swinging, spits sticky goo and plays idle motions. It behaves differently before and after being enraged, and steps away from melee attacks and shots.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Dungeon monster e24a, a sticky creature that charges while swinging, spits sticky goo and plays idle motions. It behaves differently before and after being enraged, and steps away from melee attacks and shots.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

@@ -1,7 +1,7 @@
 {
- "doc": "Rainbow Falls pond room of dungeon d02 (Rainbow Butterfly Wood), loaded for floor 15 before the boss. The player throws a Lafrescia Seed and then a Sundrop into the pond (events 255a and 255b, flags 23 and 24) to grow a giant Lafrescia flower, and touching its vine (event 256) carries the party up to the d02b02 boss floor. Also handles the exit back out of the dungeon.",
- "globals": [
-  "max_chara_slot",
-  "monica_chara_slot"
- ]
+  "doc": "Rainbow Falls pond room of dungeon d02 (Rainbow Butterfly Wood), loaded for floor 15 before the boss. The player throws a Lafrescia Seed and then a Sundrop into the pond (events 255a and 255b, flags 23 and 24) to grow a giant Lafrescia flower, and touching its vine (event 256) carries the party up to the d02b02 boss floor. Also handles the exit back out of the dungeon.",
+  "globals": [
+    "max_chara_slot",
+    "monica_chara_slot"
+  ]
 }

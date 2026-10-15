@@ -1,3 +1,3 @@
 {
- "doc": "Main script for dungeon d04. It picks floor maps (the high platform floor d04f00, d04f01, d04f02 with rain chance), sends floors 9, 14, 17 and 20 to story maps s19, s15, s45 and d04b01 or Shigura Village, handles Luna Stone gates, a star-shaped gate and a key door that Donny can open, and the transition between the ground area and a high walkway. Also holds debug warps to story events and bosses."
+  "doc": "Main script for dungeon d04. It picks floor maps (the high platform floor d04f00, d04f01, d04f02 with rain chance), sends floors 9, 14, 17 and 20 to story maps s19, s15, s45 and d04b01 or Shigura Village, handles Luna Stone gates, a star-shaped gate and a key door that Donny can open, and the transition between the ground area and a high walkway. Also holds debug warps to story events and bosses."
 }

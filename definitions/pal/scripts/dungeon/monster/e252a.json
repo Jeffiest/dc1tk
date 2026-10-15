@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for e252a, a monster that fires ultrasonic wave bursts and charges with a spinning knockback attack. It idles near its home point until aggroed and then closes in on the player.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for e252a, a monster that fires ultrasonic wave bursts and charges with a spinning knockback attack. It idles near its home point until aggroed and then closes in on the player.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

@@ -1,8 +1,8 @@
 {
- "doc": "Older stand-alone AI for the Fire Gemron model: a flying enemy that shoots fire balls, charges behind a guard and dodges sideways. The monster table runs eJema for every Gemron kind (112 to 131), so this script appears unused.",
- "globals": [
-  "saved_x",
-  "saved_y",
-  "saved_z"
- ]
+  "doc": "Older stand-alone AI for the Fire Gemron model: a flying enemy that shoots fire balls, charges behind a guard and dodges sideways. The monster table runs eJema for every Gemron kind (112 to 131), so this script appears unused.",
+  "globals": [
+    "saved_x",
+    "saved_y",
+    "saved_z"
+  ]
 }

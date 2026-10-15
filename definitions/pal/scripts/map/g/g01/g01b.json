@@ -1,9 +1,9 @@
 {
- "doc": "Event script for the small house outside Sindain in map g01, home of the Firbit Rococo. It plays the scene where Max and Monica first meet him (flag 208) and holds the follow-up scene about grape juice (flag 209).",
- "globals": [
-  "e209_max_slot",
-  "e209_monica_slot",
-  "e208_max_slot",
-  "e208_monica_slot"
- ]
+  "doc": "Event script for the small house outside Sindain in map g01, home of the Firbit Rococo. It plays the scene where Max and Monica first meet him (flag 208) and holds the follow-up scene about grape juice (flag 209).",
+  "globals": [
+    "e209_max_slot",
+    "e209_monica_slot",
+    "e208_max_slot",
+    "e208_monica_slot"
+  ]
 }

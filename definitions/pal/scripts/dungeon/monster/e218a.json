@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster script for a flying swordsman that shoots fireballs. It hovers near the ground, charges with a spinning sword attack 2, fires a fire shot effect from its sword frame, steps back from the player and fights harder once enraged.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Dungeon monster script for a flying swordsman that shoots fireballs. It hovers near the ground, charges with a spinning sword attack 2, fires a fire shot effect from its sword frame, steps back from the player and fights harder once enraged.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

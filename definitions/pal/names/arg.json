@@ -1,31 +1,31 @@
 {
- "functions": {
-  "086b99ebe73d33bf": {
-   "name": "setup_chest_open_camera",
-   "loose": "478798007e3052ca",
-   "doc": "Queues the camera and actor records for the treasure chest opening: an actor plays the get motion while the camera moves in."
-  },
-  "1aee32045ddb111e": {
-   "name": "do_nothing",
-   "loose": "1aee32045ddb111e",
-   "params": [],
-   "locals": [],
-   "doc": "Empty placeholder used where a script needs a call that does nothing."
-  },
-  "4f8ace1933a7211a": {
-   "name": "register_scene_camera_records",
-   "loose": "4f8ace1933a7211a",
-   "doc": "Registers argument records for event scenes 700 to 3200: two camera points per scene id plus actor start positions and yaw. Pure data setup, no waiting."
-  },
-  "79cb6c3780138c77": {
-   "name": "define_scene_placements",
-   "loose": "79cb6c3780138c77",
-   "doc": "Defines, for each scene id from 700 to 3200, two camera point records and the actor placement records (actor slot, position and facing) used by the event."
-  },
-  "a9ea35f2079308d6": {
-   "name": "build_test_args",
-   "loose": "61aa8fec2a1a1afe",
-   "doc": "Adds four argument records under ids 0 to 3, each holding 0 and a point with x 50, 60, 70 or 80 at height 104.2, then sets the record id to 100 and adds a record holding 0, the walk motion name and 2."
+  "functions": {
+    "086b99ebe73d33bf": {
+      "name": "setup_chest_open_camera",
+      "loose": "478798007e3052ca",
+      "doc": "Queues the camera and actor records for the treasure chest opening: an actor plays the get motion while the camera moves in."
+    },
+    "1aee32045ddb111e": {
+      "name": "do_nothing",
+      "loose": "1aee32045ddb111e",
+      "params": [],
+      "locals": [],
+      "doc": "Empty placeholder used where a script needs a call that does nothing."
+    },
+    "4f8ace1933a7211a": {
+      "name": "register_scene_camera_records",
+      "loose": "4f8ace1933a7211a",
+      "doc": "Registers argument records for event scenes 700 to 3200: two camera points per scene id plus actor start positions and yaw. Pure data setup, no waiting."
+    },
+    "79cb6c3780138c77": {
+      "name": "define_scene_placements",
+      "loose": "79cb6c3780138c77",
+      "doc": "Defines, for each scene id from 700 to 3200, two camera point records and the actor placement records (actor slot, position and facing) used by the event."
+    },
+    "a9ea35f2079308d6": {
+      "name": "build_test_args",
+      "loose": "61aa8fec2a1a1afe",
+      "doc": "Adds four argument records under ids 0 to 3, each holding 0 and a point with x 50, 60, 70 or 80 at height 104.2, then sets the record id to 100 and adds a record holding 0, the walk motion name and 2."
+    }
   }
- }
 }

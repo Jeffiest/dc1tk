@@ -1,6 +1,6 @@
 {
- "doc": "Event script for Max's childhood home (s46), used for flashbacks to his mother Eina: the potato pie (event 209), the sick child scene (307) and the sea story (406). Each is played before moving to another map or starting a dungeon, with voiced lines streamed with lip sync.",
- "globals": [
-  "frame_counter"
- ]
+  "doc": "Event script for Max's childhood home (s46), used for flashbacks to his mother Eina: the potato pie (event 209), the sick child scene (307) and the sea story (406). Each is played before moving to another map or starting a dungeon, with voiced lines streamed with lip sync.",
+  "globals": [
+    "frame_counter"
+  ]
 }

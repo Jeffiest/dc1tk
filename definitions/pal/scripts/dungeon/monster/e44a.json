@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster e44a, a support monster that heals the most hurt ally within range with a recover animation, attacks with a single swing and can guard. It wanders when idle and runs at the target once aggro is set.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Dungeon monster e44a, a support monster that heals the most hurt ally within range with a recover animation, attacks with a single swing and can guard. It wanders when idle and runs at the target once aggro is set.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

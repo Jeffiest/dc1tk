@@ -1,4 +1,4 @@
 {
- "doc": "Old build of Max's dungeon action script (wrench combo, charge attack, kick, gun, guard and throw, backflip, victory pose) compiled against a different native numbering. Its native calls decode as the wrong functions (flash_chara_color where object slots are set) or as _EXT_ calls that do nothing, so it is probably leftover data and not a working template.",
- "numbering": "raw"
+  "doc": "Old build of Max's dungeon action script (wrench combo, charge attack, kick, gun, guard and throw, backflip, victory pose) compiled against a different native numbering. Its native calls decode as the wrong functions (flash_chara_color where object slots are set) or as _EXT_ calls that do nothing, so it is probably leftover data and not a working template.",
+  "numbering": "raw"
 }

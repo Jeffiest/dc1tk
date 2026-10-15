@@ -1,3 +1,3 @@
 {
- "doc": "Action script for Monica's Sewer Rat monster transformation (e201a). Confirm does a standing attack and square a forward-lunging dodge attack; damage, knockdown and death use the shared act script libraries."
+  "doc": "Action script for Monica's Sewer Rat monster transformation (e201a). Confirm does a standing attack and square a forward-lunging dodge attack; damage, knockdown and death use the shared act script libraries."
 }

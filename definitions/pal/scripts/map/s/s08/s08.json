@@ -1,6 +1,6 @@
 {
- "doc": "Train map (s08) used at stations and during the train trips. It handles boarding and leaving through the doors and the jump to the station maps, plus events 203 and 205 when the train is under attack: the crew tell Max the history of Emperor Griffon and the stone, then react to an attack outside. It ends with a jump to the Forest Tunnel map s03.",
- "globals": [
-  "train_sound_id"
- ]
+  "doc": "Train map (s08) used at stations and during the train trips. It handles boarding and leaving through the doors and the jump to the station maps, plus events 203 and 205 when the train is under attack: the crew tell Max the history of Emperor Griffon and the stone, then react to an attack outside. It ends with a jump to the Forest Tunnel map s03.",
+  "globals": [
+    "train_sound_id"
+  ]
 }

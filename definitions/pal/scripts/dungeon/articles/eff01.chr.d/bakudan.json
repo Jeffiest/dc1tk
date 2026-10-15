@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for a bomb item: it follows the owner's item point while held, and the shared thrown-item code lobs it to the target."
+  "doc": "Effect script for a bomb item: it follows the owner's item point while held, and the shared thrown-item code lobs it to the target."
 }

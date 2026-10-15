@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for Gaja Zwei (kind 608, model e117g), partner of Gaja Ein (b117b). It guards, recoils, gets knocked down and starts an event on the second death through shared routines; dodging melee steps aside or back, dodging shots raises a guard.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Boss script for Gaja Zwei (kind 608, model e117g), partner of Gaja Ein (b117b). It guards, recoils, gets knocked down and starts an event on the second death through shared routines; dodging melee steps aside or back, dodging shots raises a guard.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

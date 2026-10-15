@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for Gaja Ein (kind 607, model e117f), fought alongside Gaja Zwei (b117c). It dodges melee attacks with a sideways step and blocks shots with a guard motion; most of its behaviour comes from shared monster includes.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Boss script for Gaja Ein (kind 607, model e117f), fought alongside Gaja Zwei (b117c). It dodges melee attacks with a sideways step and blocks shots with a guard motion; most of its behaviour comes from shared monster includes.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

@@ -1,9 +1,9 @@
 {
- "doc": "Unused passive monster stub (identical to e09a, and no monster kind runs it): a looping sound on init, a brief guard, get-up reactions after knockdown and stun, struggling when lifted, and no attack. Its old-numbered helpers end up changing the floor's visible monster limit.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ],
- "numbering": "old"
+  "doc": "Unused passive monster stub (identical to e09a, and no monster kind runs it): a looping sound on init, a brief guard, get-up reactions after knockdown and stun, struggling when lifted, and no attack. Its old-numbered helpers end up changing the floor's visible monster limit.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ],
+  "numbering": "old"
 }

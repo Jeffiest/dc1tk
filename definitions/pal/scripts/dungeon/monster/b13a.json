@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for the Arch Demon (kind 629), which flies and swims around the arena center on a ring. It alternates a red invincible phase, summoning Arch Demon minions (kind 630, b13b), with a blue vulnerable phase, and periodically flies to the center to fire a sweeping demon beam. Its death plays event script 510.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Boss script for the Arch Demon (kind 629), which flies and swims around the arena center on a ring. It alternates a red invincible phase, summoning Arch Demon minions (kind 630, b13b), with a blue vulnerable phase, and periodically flies to the center to fire a sweeping demon beam. Its death plays event script 510.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

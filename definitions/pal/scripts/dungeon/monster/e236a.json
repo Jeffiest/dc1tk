@@ -1,9 +1,9 @@
 {
- "doc": "Unused melee AI named after a Mimic model, with its own copies of the movement helpers in the raw numbering (so many native calls decompile with unrelated names). It lunges (attack 1), charges with knockback (attack 2), steps back or aside and guards, circling while calm and attacking within 175 units. The monster table runs e228a for every Mimic kind, including model e236a.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ],
- "numbering": "raw"
+  "doc": "Unused melee AI named after a Mimic model, with its own copies of the movement helpers in the raw numbering (so many native calls decompile with unrelated names). It lunges (attack 1), charges with knockback (attack 2), steps back or aside and guards, circling while calm and attacking within 175 units. The monster table runs e228a for every Mimic kind, including model e236a.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ],
+  "numbering": "raw"
 }

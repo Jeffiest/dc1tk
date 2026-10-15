@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for Shingala's second fight (kind 516), the fish-like boss that spits (Shigu spit), swings and threatens. It keeps a 'sakana' fish frame and spawns an Electric Fish (kind 1001, f20a); bringing the two together hurts it. Event scripts 500, 510 (death) and 550 (stall timeout) run from here.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Boss script for Shingala's second fight (kind 516), the fish-like boss that spits (Shigu spit), swings and threatens. It keeps a 'sakana' fish frame and spawns an Electric Fish (kind 1001, f20a); bringing the two together hurts it. Event scripts 500, 510 (death) and 550 (stall timeout) run from here.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

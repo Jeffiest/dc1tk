@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for Inferno (kind 613, model e117e), a Demon Shaft boss version of the Bone Lord. It idles until the player comes near, then chases and picks sword swings, a thrown red wave, dodges and guards by distance and random rolls.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Boss script for Inferno (kind 613, model e117e), a Demon Shaft boss version of the Bone Lord. It idles until the player comes near, then chases and picks sword swings, a thrown red wave, dodges and guards by distance and random rolls.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

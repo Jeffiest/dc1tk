@@ -1,3 +1,3 @@
 {
- "doc": "System script for dungeon d05. It handles treasure chests (including the Happy Clown two-chest event), random coin-flip circles, the Spheda minigame, the four floor exits and a star barrier, the clear-floor victory scene and the robot breakdown on a defeat. Its map menu entry loads map d05b01."
+  "doc": "System script for dungeon d05. It handles treasure chests (including the Happy Clown two-chest event), random coin-flip circles, the Spheda minigame, the four floor exits and a star barrier, the clear-floor victory scene and the robot breakdown on a defeat. Its map menu entry loads map d05b01."
 }

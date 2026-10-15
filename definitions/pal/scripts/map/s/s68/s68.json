@@ -1,9 +1,9 @@
 {
- "doc": "Map script s68, the entrance of the Moon Flower Palace. Max or Monica and their partner arrive; Alexandra appears and welcomes them. The script then moves the player to map g05. Other events send the player to s70, s26 or s12 or s32.",
- "globals": [
-  "event_616_max_chara",
-  "event_616_monica_chara",
-  "event_616b_max_chara",
-  "event_616b_monica_chara"
- ]
+  "doc": "Map script s68, the entrance of the Moon Flower Palace. Max or Monica and their partner arrive; Alexandra appears and welcomes them. The script then moves the player to map g05. Other events send the player to s70, s26 or s12 or s32.",
+  "globals": [
+    "event_616_max_chara",
+    "event_616_monica_chara",
+    "event_616b_max_chara",
+    "event_616b_monica_chara"
+  ]
 }

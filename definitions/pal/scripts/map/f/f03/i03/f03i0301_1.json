@@ -1,3 +1,3 @@
 {
- "doc": "Event script for the Osmond lab interior (f03 i03, floor 1 of the building). It sets up the entry, the exit back to the f03 map, the Nova cannon and electric worm events, and the villager talk handler."
+  "doc": "Event script for the Osmond lab interior (f03 i03, floor 1 of the building). It sets up the entry, the exit back to the f03 map, the Nova cannon and electric worm events, and the villager talk handler."
 }

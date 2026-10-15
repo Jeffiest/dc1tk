@@ -1,8 +1,8 @@
 {
- "doc": "Older stand-alone AI for the Fire Element model: it hovers, swoops for a melee hit, spits fire shots, circles and strafes, and falls when killed or stunned. The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Older stand-alone AI for the Fire Element model: it hovers, swoops for a melee hit, spits fire shots, circles and strafes, and falls when killed or stunned. The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

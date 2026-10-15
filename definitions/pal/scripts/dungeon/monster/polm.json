@@ -1,3 +1,3 @@
 {
- "doc": "Monster script polm.stb, which no kind in the monster table runs, so it appears unused (polm is otherwise the name of the robot missile effect). It ignores every reaction, loads the foot water splash effect and spawns it once 50 units above itself, then idles."
+  "doc": "Monster script polm.stb, which no kind in the monster table runs, so it appears unused (polm is otherwise the name of the robot missile effect). It ignores every reaction, loads the foot water splash effect and spawns it once 50 units above itself, then idles."
 }

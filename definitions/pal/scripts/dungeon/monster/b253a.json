@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for Lapis Garter (kind 611, model e253e), a Demon Shaft boss version of the Yoyo Barrel. It waits until the player comes close, then fights by distance and rage with two swing attacks and a spinning charge.",
- "globals": [
-  "spawn_x",
-  "unused_value",
-  "spawn_z"
- ]
+  "doc": "Boss script for Lapis Garter (kind 611, model e253e), a Demon Shaft boss version of the Yoyo Barrel. It waits until the player comes close, then fights by distance and rage with two swing attacks and a spinning charge.",
+  "globals": [
+    "spawn_x",
+    "unused_value",
+    "spawn_z"
+  ]
 }

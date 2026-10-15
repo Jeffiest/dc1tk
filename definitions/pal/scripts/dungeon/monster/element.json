@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the elemental flying enemies, monster kinds 76 to 95 in groups of four: fire (76-79), ice (80-83), thunder (84-87), water (88-91) and wind (92-95). They hover near the ground, swoop at the player with a melee attack and shoot an elemental ball of their own element; the kind check selects which effect is loaded and spawned. Behaviour changes with distance and with rage hits left.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for the elemental flying enemies, monster kinds 76 to 95 in groups of four: fire (76-79), ice (80-83), thunder (84-87), water (88-91) and wind (92-95). They hover near the ground, swoop at the player with a melee attack and shoot an elemental ball of their own element; the kind check selects which effect is loaded and spawned. Behaviour changes with distance and with rage hits left.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

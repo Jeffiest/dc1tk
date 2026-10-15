@@ -1,3 +1,3 @@
 {
- "doc": "Map script for the Balance Valley village map g02. It plays the arrival scene (event 302) and the height warning scene before Starlight Canyon (event 306), handles epilogue talk with the villagers and the train departure, and lets the player go to the Balance Valley station, Starlight Canyon or Starlight Temple."
+  "doc": "Map script for the Balance Valley village map g02. It plays the arrival scene (event 302) and the height warning scene before Starlight Canyon (event 306), handles epilogue talk with the villagers and the train departure, and lets the player go to the Balance Valley station, Starlight Canyon or Starlight Temple."
 }

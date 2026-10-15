@@ -1,3 +1,3 @@
 {
- "doc": "Monster script for the Evil Flames (kind 513) that Gaspard (b03a) summons: they burst out of the ground in a ring of eight positions at radius 400 and leap toward the center. Each takes a free slot in a shared bit mask in monster var 8, then wanders and fights; events 510 run at 10 and 20 kills and a new Evil Flame is spawned as they die."
+  "doc": "Monster script for the Evil Flames (kind 513) that Gaspard (b03a) summons: they burst out of the ground in a ring of eight positions at radius 400 and leap toward the center. Each takes a free slot in a shared bit mask in monster var 8, then wanders and fights; events 510 run at 10 and 20 kills and a new Evil Flame is spawned as they die."
 }

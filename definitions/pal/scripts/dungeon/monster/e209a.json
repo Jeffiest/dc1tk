@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for enemy e209, a melee enemy with two attacks: attack 1 up close and attack 2 farther away. It wanders near its home point, notices the player, charges, spins to face the player and attacks, and sometimes counters with an attack when hit or knocked down.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for enemy e209, a melee enemy with two attacks: attack 1 up close and attack 2 farther away. It wanders near its home point, notices the player, charges, spins to face the player and attacks, and sometimes counters with an attack when hit or knocked down.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

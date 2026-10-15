@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster script for a heavy charger that guards between attacks. It winds up and rushes the target with a knockback attack 1, circles at close range, and stands guarding when the target is far.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Dungeon monster script for a heavy charger that guards between attacks. It winds up and rushes the target with a knockback attack 1, circles at close range, and stands guarding when the target is far.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

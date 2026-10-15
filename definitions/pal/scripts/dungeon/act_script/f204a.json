@@ -1,4 +1,4 @@
 {
- "doc": "Action script for Monica's Kotore monster transformation (e204a): a suicide charge on confirm, guard, lift and throw, and damage reactions. Like c01win.c it uses an older native numbering, so many calls decode as the wrong natives or as _EXT_ calls.",
- "numbering": "raw"
+  "doc": "Action script for Monica's Kotore monster transformation (e204a): a suicide charge on confirm, guard, lift and throw, and damage reactions. Like c01win.c it uses an older native numbering, so many calls decode as the wrong natives or as _EXT_ calls.",
+  "numbering": "raw"
 }

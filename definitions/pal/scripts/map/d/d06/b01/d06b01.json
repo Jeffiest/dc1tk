@@ -1,9 +1,9 @@
 {
- "doc": "Map script for d06b01, the Moon Flower Palace boss floor where Emperor Griffon is fought in several phases. It plays the confrontation and phase-change scenes (events 716, 720, 724), a dark power scene (728) and a Griffon challenge scene (640), places the boss for each phase, and sends the player to maps s64, s31, s44, s32 or dungeon d06b03 between fights.",
- "globals": [
-  "defeat_scene_max_slot",
-  "defeat_scene_monica_slot",
-  "dark_scene_max_slot",
-  "dark_scene_monica_slot"
- ]
+  "doc": "Map script for d06b01, the Moon Flower Palace boss floor where Emperor Griffon is fought in several phases. It plays the confrontation and phase-change scenes (events 716, 720, 724), a dark power scene (728) and a Griffon challenge scene (640), places the boss for each phase, and sends the player to maps s64, s31, s44, s32 or dungeon d06b03 between fights.",
+  "globals": [
+    "defeat_scene_max_slot",
+    "defeat_scene_monica_slot",
+    "dark_scene_max_slot",
+    "dark_scene_monica_slot"
+  ]
 }

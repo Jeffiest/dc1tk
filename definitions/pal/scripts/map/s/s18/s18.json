@@ -1,9 +1,9 @@
 {
- "doc": "Map script for s18, the Yorda Tree area where the dungeon d03 path begins. It handles events 332 (arrival at the holy tree), 336 (Crest tells Lin why he wants to be a sage, then the Memo Eater boss fight) and 340 (Lin remembers the lighthouse attack), plus the prompts for entering the dungeon.",
- "globals": [
-  "scene_336_slot_a",
-  "scene_336_slot_b",
-  "event_332_slot_a",
-  "event_332_slot_b"
- ]
+  "doc": "Map script for s18, the Yorda Tree area where the dungeon d03 path begins. It handles events 332 (arrival at the holy tree), 336 (Crest tells Lin why he wants to be a sage, then the Memo Eater boss fight) and 340 (Lin remembers the lighthouse attack), plus the prompts for entering the dungeon.",
+  "globals": [
+    "scene_336_slot_a",
+    "scene_336_slot_b",
+    "event_332_slot_a",
+    "event_332_slot_b"
+  ]
 }

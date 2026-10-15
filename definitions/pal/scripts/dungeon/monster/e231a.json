@@ -1,8 +1,8 @@
 {
- "doc": "Unused melee AI named after a King Mimic model (identical to e233a and e235a): shared routines that fight without guarding, plus its own step-back and sidestep dodges. The monster table runs e229a for every King Mimic kind, including the one with model e231a.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Unused melee AI named after a King Mimic model (identical to e233a and e235a): shared routines that fight without guarding, plus its own step-back and sidestep dodges. The monster table runs e229a for every King Mimic kind, including the one with model e231a.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

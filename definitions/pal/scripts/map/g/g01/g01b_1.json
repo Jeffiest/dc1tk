@@ -1,9 +1,9 @@
 {
- "doc": "Event script for the Dwarves' village side of g01 (Rococo's house). With flag 207 set and 208 not set it plays the Rococo scene on map start, and program 502 plays the knocking-at-the-house scene and enters the house.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3",
-  "unused4"
- ]
+  "doc": "Event script for the Dwarves' village side of g01 (Rococo's house). With flag 207 set and 208 not set it plays the Rococo scene on map start, and program 502 plays the knocking-at-the-house scene and enters the house.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "unused4"
+  ]
 }

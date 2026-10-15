@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the Golem family (Golem, Rave Golem, Rock Taster, Titan; kinds 168 to 171). It swings, slams a Vanguard shockwave into the ground, guards and taunts, and acts differently when it has aggro or is enraged.",
- "globals": [
-  "saved_x",
-  "saved_y",
-  "saved_z"
- ]
+  "doc": "Monster script for the Golem family (Golem, Rave Golem, Rock Taster, Titan; kinds 168 to 171). It swings, slams a Vanguard shockwave into the ground, guards and taunts, and acts differently when it has aggro or is enraged.",
+  "globals": [
+    "saved_x",
+    "saved_y",
+    "saved_z"
+  ]
 }

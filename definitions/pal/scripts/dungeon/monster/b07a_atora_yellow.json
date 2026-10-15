@@ -1,9 +1,9 @@
 {
- "doc": "Unused flying boss AI (no monster kind runs it; the yellow Atramilia kind 620 runs b07a_atora_yel). It flies to its home position and loops three attacks: a Griffon feather volley, a feather rain from its wings and an energy absorb, much like the Emperor Griffon in b08a, with a large set of movement helpers.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ],
- "numbering": "old"
+  "doc": "Unused flying boss AI (no monster kind runs it; the yellow Atramilia kind 620 runs b07a_atora_yel). It flies to its home position and loops three attacks: a Griffon feather volley, a feather rain from its wings and an energy absorb, much like the Emperor Griffon in b08a, with a large set of movement helpers.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ],
+  "numbering": "old"
 }

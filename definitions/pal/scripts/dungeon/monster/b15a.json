@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the battleship boss fight (map part p01_battleship). It tracks the ship's combined life, flies the ship around the target and, when it dies, resets the camera and runs event script 503.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for the battleship boss fight (map part p01_battleship). It tracks the ship's combined life, flies the ship around the target and, when it dies, resets the camera and runs event script 503.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

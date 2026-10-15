@@ -1,3 +1,3 @@
 {
- "doc": "Panel puzzle room (i01 h07) with 14 pressable panels, events 401 to 414. Each event handles one panel press through the shared panel library."
+  "doc": "Panel puzzle room (i01 h07) with 14 pressable panels, events 401 to 414. Each event handles one panel press through the shared panel library."
 }

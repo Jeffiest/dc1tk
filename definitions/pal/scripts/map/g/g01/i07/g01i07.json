@@ -1,7 +1,7 @@
 {
- "doc": "Interior script for the Firbit house (g01i07) in Rainbow Butterfly Wood. It plays the Firbit meeting scene where Conda, Rococo and Tobo tell the story of Holly, the follow-up reflection, and the later scene where the Firbits strike a deal to help in return for Max and Monica searching for Holly. Villagers talk with short lines.",
- "globals": [
-  "chara_slot_a",
-  "chara_slot_b"
- ]
+  "doc": "Interior script for the Firbit house (g01i07) in Rainbow Butterfly Wood. It plays the Firbit meeting scene where Conda, Rococo and Tobo tell the story of Holly, the follow-up reflection, and the later scene where the Firbits strike a deal to help in return for Max and Monica searching for Holly. Villagers talk with short lines.",
+  "globals": [
+    "chara_slot_a",
+    "chara_slot_b"
+  ]
 }

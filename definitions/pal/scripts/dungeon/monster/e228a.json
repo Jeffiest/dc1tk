@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for e228a, a walking melee monster with a poison attack and a knockback attack, guard in and out motions, backing and sidestepping dodges, wandering when unaware and distance-based fight logic.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for e228a, a walking melee monster with a poison attack and a knockback attack, guard in and out motions, backing and sidestepping dodges, wandering when unaware and distance-based fight logic.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

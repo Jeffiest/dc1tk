@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the Arch Demon minions (kind 630) that the Arch Demon boss (b13a) summons in its red phase. They drop in from above and fight with a sticky goo shot and a body attack, stepping or running around the target by distance; its own frame-wait helpers check a death flag.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for the Arch Demon minions (kind 630) that the Arch Demon boss (b13a) summons in its red phase. They drop in from above and fight with a sticky goo shot and a body attack, stepping or running around the target by distance; its own frame-wait helpers check a death flag.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

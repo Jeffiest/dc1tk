@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for e76a, a flying monster that hovers above the ground, dives and swipes at the player, and shoots paralysis shots. It lifts off after being knocked down or stunned.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for e76a, a flying monster that hovers above the ground, dives and swipes at the player, and shoots paralysis shots. It lifts off after being knocked down or stunned.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

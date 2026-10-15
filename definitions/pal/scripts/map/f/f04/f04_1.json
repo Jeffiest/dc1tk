@@ -1,3 +1,3 @@
 {
- "doc": "Event script for the Gundorada Workshop map f04. It handles the two elevators (three floors), the jump gates that move the player between spots in the workshop, the sun-warp trip to Paznos Bridge (s30), the story events 508, 540, 548, 552 and 556 and the gate back to Heim Rada via the time gate. The villagers use French text."
+  "doc": "Event script for the Gundorada Workshop map f04. It handles the two elevators (three floors), the jump gates that move the player between spots in the workshop, the sun-warp trip to Paznos Bridge (s30), the story events 508, 540, 548, 552 and 556 and the gate back to Heim Rada via the time gate. The villagers use French text."
 }

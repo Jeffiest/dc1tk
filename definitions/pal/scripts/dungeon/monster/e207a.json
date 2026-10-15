@@ -1,8 +1,8 @@
 {
- "doc": "Monster AI for e207a, a runner that charges at the player and pounces or bites. It wanders near its spawn until it notices the player, dodges attacks with a counterattack and gets more aggressive once enraged.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster AI for e207a, a runner that charges at the player and pounces or bites. It wanders near its spawn until it notices the player, dodges attacks with a counterattack and gets more aggressive once enraged.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

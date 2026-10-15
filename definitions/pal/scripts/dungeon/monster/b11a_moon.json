@@ -1,8 +1,8 @@
 {
- "doc": "Monster script b11a_moon for the Moon (kind 622, model b15a1), placed with the Dark Element in the timed boss fight on the d06b03 palace terrace. It is attached to map part p06_d06b03-0 and has no map or body collision and no lock-on. It slowly closes in on the arena, moving toward the point 5000 units from the origin along its own direction, and when the 5 minute stopwatch runs out it stops and runs map program 1201, the game over.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script b11a_moon for the Moon (kind 622, model b15a1), placed with the Dark Element in the timed boss fight on the d06b03 palace terrace. It is attached to map part p06_d06b03-0 and has no map or body collision and no lock-on. It slowly closes in on the arena, moving toward the point 5000 units from the origin along its own direction, and when the 5 minute stopwatch runs out it stops and runs map program 1201, the game over.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

@@ -1,8 +1,8 @@
 {
- "doc": "Older stand-alone AI for the Wind Element model, a sibling of e222a that spits wind shots and fights at shorter distances (190 units). The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Older stand-alone AI for the Wind Element model, a sibling of e222a that spits wind shots and fights at shorter distances (190 units). The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

@@ -1,3 +1,3 @@
 {
- "doc": "Argument data script for event e209. It only registers scene camera points and actor start positions through shared event data code."
+  "doc": "Argument data script for event e209. It only registers scene camera points and actor start positions through shared event data code."
 }

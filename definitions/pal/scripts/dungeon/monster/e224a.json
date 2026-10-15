@@ -1,8 +1,8 @@
 {
- "doc": "Older stand-alone AI for the Zappy (thunder element) model: it dives with a normal attack and fires thunder shots from its face, with a separate enraged loop. The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Older stand-alone AI for the Zappy (thunder element) model: it dives with a normal attack and fires thunder shots from its face, with a separate enraged loop. The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

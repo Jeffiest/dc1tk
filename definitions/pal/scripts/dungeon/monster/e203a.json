@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster AI for a melee enemy that lunges at the player, spits poison and dodges forward with an attack. It idles until it notices the player.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Dungeon monster AI for a melee enemy that lunges at the player, spits poison and dodges forward with an attack. It idles until it notices the player.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

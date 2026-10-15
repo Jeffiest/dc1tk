@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for Elfas, Moonflowephant and Behemoth (kinds 49 to 51), melee elephants with a quick weak combo (attack 1) and a shockwave swing (attack 2) that sends a Vanguard shockwave. They wander and close in at different ranges depending on distance.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for Elfas, Moonflowephant and Behemoth (kinds 49 to 51), melee elephants with a quick weak combo (attack 1) and a shockwave swing (attack 2) that sends a Vanguard shockwave. They wander and close in at different ranges depending on distance.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

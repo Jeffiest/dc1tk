@@ -1,3 +1,3 @@
 {
- "doc": "Event script for building h01 in map i03. It plays the event 109a cutscene (flag 109), starts the dungeon from the talk handler afterwards, plays the play_need_confession_scene scene and leaves for map i02h01 through the door."
+  "doc": "Event script for building h01 in map i03. It plays the event 109a cutscene (flag 109), starts the dungeon from the talk handler afterwards, plays the play_need_confession_scene scene and leaves for map i02h01 through the door."
 }

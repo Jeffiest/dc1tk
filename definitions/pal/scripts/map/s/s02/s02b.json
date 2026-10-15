@@ -1,7 +1,7 @@
 {
- "doc": "Event script for Sindain Station (s02b) and its train, where the Spirit Forest train stops. It holds the train arrival and departure scenes, the rock blocking the tracks, the train staff talk handlers, and the entries 501 to 503 that restore the station after the story events before returning to the s02 script.",
- "globals": [
-  "max_chara_slot",
-  "partner_chara_slot"
- ]
+  "doc": "Event script for Sindain Station (s02b) and its train, where the Spirit Forest train stops. It holds the train arrival and departure scenes, the rock blocking the tracks, the train staff talk handlers, and the entries 501 to 503 that restore the station after the story events before returning to the s02 script.",
+  "globals": [
+    "max_chara_slot",
+    "partner_chara_slot"
+  ]
 }

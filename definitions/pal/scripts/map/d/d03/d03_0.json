@@ -1,3 +1,3 @@
 {
- "doc": "Main script for dungeon d03. It picks the floor map to load, with a one in eight chance of rain, sends special floors to the story maps s17, s14, s18, s56 and d03b01, handles condor perches that carry the player to the next floor in return for Giant Meat, and a star-shaped gate. Also holds debug warps to story events and bosses."
+  "doc": "Main script for dungeon d03. It picks the floor map to load, with a one in eight chance of rain, sends special floors to the story maps s17, s14, s18, s56 and d03b01, handles condor perches that carry the player to the next floor in return for Giant Meat, and a star-shaped gate. Also holds debug warps to story events and bosses."
 }

@@ -1,12 +1,12 @@
 {
- "doc": "Boss script for Monster Gaspard (kind 511; its effects are named M Gil), fought on a circular arena of radius 600 with eight magma pools. It alternates a surface phase (walks to the ring, slams Vanguard shockwaves, fires flame shots) with a magma phase (dives into the nearest pool, fires flame volleys and surfaces to rest), adding flame shots below 50% and 20% life. Its skin heats and cools with the phase, and event 570 plays on its death.",
- "globals": [
-  "scratch_x",
-  "scratch_y",
-  "scratch_z",
-  "surface_step",
-  "magma_step",
-  "drip_effect",
-  "smoke_effect"
- ]
+  "doc": "Boss script for Monster Gaspard (kind 511; its effects are named M Gil), fought on a circular arena of radius 600 with eight magma pools. It alternates a surface phase (walks to the ring, slams Vanguard shockwaves, fires flame shots) with a magma phase (dives into the nearest pool, fires flame volleys and surfaces to rest), adding flame shots below 50% and 20% life. Its skin heats and cools with the phase, and event 570 plays on its death.",
+  "globals": [
+    "scratch_x",
+    "scratch_y",
+    "scratch_z",
+    "surface_step",
+    "magma_step",
+    "drip_effect",
+    "smoke_effect"
+  ]
 }

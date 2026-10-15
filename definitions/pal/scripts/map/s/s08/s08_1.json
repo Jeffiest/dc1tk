@@ -1,6 +1,6 @@
 {
- "doc": "Map script for the inside of the locomotive (s08). It sets up the train sounds and crew, plays the scene where the world is explained on the train, and lets the player leave by the left or right door or continue to s07 or s03 (Forest Tunnel) depending on the story event.",
- "globals": [
-  "train_sound_bank"
- ]
+  "doc": "Map script for the inside of the locomotive (s08). It sets up the train sounds and crew, plays the scene where the world is explained on the train, and lets the player leave by the left or right door or continue to s07 or s03 (Forest Tunnel) depending on the story event.",
+  "globals": [
+    "train_sound_bank"
+  ]
 }

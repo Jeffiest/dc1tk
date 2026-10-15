@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for e229a, a ground enemy with three melee attacks, two of which inflict poison and thirst (dryness). It wanders, walks up to the player, strafes, and uses back and side steps as dodges.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Monster script for e229a, a ground enemy with three melee attacks, two of which inflict poison and thirst (dryness). It wanders, walks up to the player, strafes, and uses back and side steps as dodges.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

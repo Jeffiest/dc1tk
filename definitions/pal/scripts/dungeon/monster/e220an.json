@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the Memo Eater family's Burger, Stormy and Ladha (kinds 69 to 71). They charge the player and release a Vanguard shockwave, shoot bullets from the nose, fight by distance (circling or approaching when far) and charge instead of dodging ranged attacks.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script for the Memo Eater family's Burger, Stormy and Ladha (kinds 69 to 71). They charge the player and release a Vanguard shockwave, shoot bullets from the nose, fight by distance (circling or approaching when far) and charge instead of dodging ranged attacks.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

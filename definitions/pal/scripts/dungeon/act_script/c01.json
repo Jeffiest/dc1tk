@@ -1,3 +1,3 @@
 {
- "doc": "Max's dungeon action script (c01.stb). It defines his five-hit wrench combo (with a kick as the third hit when the stick points at the target), mid-range lunge, charge attack, backflip, gun (sub weapon), guard with catch and throw, lift and throw, and the main input loop that moves between them."
+  "doc": "Max's dungeon action script (c01.stb). It defines his five-hit wrench combo (with a kick as the third hit when the stick points at the target), mid-range lunge, charge attack, backflip, gun (sub weapon), guard with catch and throw, lift and throw, and the main input loop that moves between them."
 }

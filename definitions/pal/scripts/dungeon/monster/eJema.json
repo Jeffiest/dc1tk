@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster eJema, a flying caster family covering monster kinds 112 to 131. It shoots fire, ice, thunder, wind or holy bolts depending on the kind, charges with a knockback hit, and flies around the target to dodge.",
- "globals": [
-  "pos_x",
-  "pos_y",
-  "pos_z"
- ]
+  "doc": "Dungeon monster eJema, a flying caster family covering monster kinds 112 to 131. It shoots fire, ice, thunder, wind or holy bolts depending on the kind, charges with a knockback hit, and flies around the target to dodge.",
+  "globals": [
+    "pos_x",
+    "pos_y",
+    "pos_z"
+  ]
 }

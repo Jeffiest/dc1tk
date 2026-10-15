@@ -1,3 +1,3 @@
 {
- "doc": "Effect named for Pumpkinhead's pumpkin bomb (e10 kabobomb) that flies as a curse shot with knockback whose damage comes from effect value 0. It has no entry in the game executable's effect table, so nothing can spawn it by name; probably unused."
+  "doc": "Effect named for Pumpkinhead's pumpkin bomb (e10 kabobomb) that flies as a curse shot with knockback whose damage comes from effect value 0. It has no entry in the game executable's effect table, so nothing can spawn it by name; probably unused."
 }

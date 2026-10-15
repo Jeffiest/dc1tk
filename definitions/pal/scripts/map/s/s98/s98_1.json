@@ -1,7 +1,7 @@
 {
- "doc": "Cutscene map s98 with the endgame scenes: the Paznos bridge scenes (jumping to map s30 at events 610 to 650), the farewell at the Chrono Union and the Max's Room flashback (jumping to map s46 at event 530). Global variables hold the character slots of Max and Monica for restoring the player afterwards.",
- "globals": [
-  "max_chara",
-  "monica_chara"
- ]
+  "doc": "Cutscene map s98 with the endgame scenes: the Paznos bridge scenes (jumping to map s30 at events 610 to 650), the farewell at the Chrono Union and the Max's Room flashback (jumping to map s46 at event 530). Global variables hold the character slots of Max and Monica for restoring the player afterwards.",
+  "globals": [
+    "max_chara",
+    "monica_chara"
+  ]
 }

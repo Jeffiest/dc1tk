@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster script for a sword-wielding charger. It wanders near its home, circles and sidesteps, charges with a knockback attack 1 and swings attack 2, becomes more aggressive when enraged and keeps a library of waiting and walking helpers for its AI.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Dungeon monster script for a sword-wielding charger. It wanders near its home, circles and sidesteps, charges with a knockback attack 1 and swings attack 2, becomes more aggressive when enraged and keeps a library of waiting and walking helpers for its AI.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

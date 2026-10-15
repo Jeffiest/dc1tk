@@ -1,7 +1,7 @@
 {
- "doc": "Event script for Balance Valley Station in map s04. It plays the train arrival and the scenes with Borneo (events 300, 360 and 372), lets the player talk to Cedric, Borneo and Erik, and handles boarding the train, with Ixion destinations in the later chapters.",
- "globals": [
-  "max_chara_slot",
-  "monica_chara_slot"
- ]
+  "doc": "Event script for Balance Valley Station in map s04. It plays the train arrival and the scenes with Borneo (events 300, 360 and 372), lets the player talk to Cedric, Borneo and Erik, and handles boarding the train, with Ixion destinations in the later chapters.",
+  "globals": [
+    "max_chara_slot",
+    "monica_chara_slot"
+  ]
 }

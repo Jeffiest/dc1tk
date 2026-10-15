@@ -1,8 +1,8 @@
 {
- "doc": "Monster script b06a for boss kind 515 (named '???' in the monster table), the Emperor Griffon fight in the Flower Palace foyer (d06e01). He flies about the arena, teleports with the San warp, circles six roses around himself and fires them at the player, dashes in to cast San's tornado and guards behind the Giltoni shield. At half life he runs map program 502 (the mid-fight vision scene), and his death runs 504, which warps to s31.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script b06a for boss kind 515 (named '???' in the monster table), the Emperor Griffon fight in the Flower Palace foyer (d06e01). He flies about the arena, teleports with the San warp, circles six roses around himself and fires them at the player, dashes in to cast San's tornado and guards behind the Giltoni shield. At half life he runs map program 502 (the mid-fight vision scene), and his death runs 504, which warps to s31.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

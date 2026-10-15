@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for Mammo (kind 603, model e214e), the Demon Shaft elephant boss. It walks and runs at the player and attacks with a claw swipe or a Vanguard shockwave stomp, with a different approach per distance band, and runs event script 500 when it dies.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Boss script for Mammo (kind 603, model e214e), the Demon Shaft elephant boss. It walks and runs at the player and attacks with a claw swipe or a Vanguard shockwave stomp, with a different approach per distance band, and runs event script 500 when it dies.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

@@ -1,3 +1,3 @@
 {
- "doc": "Map script for the fish race arena. It shows the race title card (qualifier, main or final race) with a camera sweep and then starts the fish race minigame; when the race ends it returns to map i03h04 (Finny Frenzy Races), with separate returns for the normal and bonus race."
+  "doc": "Map script for the fish race arena. It shows the race title card (qualifier, main or final race) with a camera sweep and then starts the fish race minigame; when the race ends it returns to map i03h04 (Finny Frenzy Races), with separate returns for the normal and bonus race."
 }

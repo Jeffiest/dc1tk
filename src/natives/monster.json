@@ -1,1533 +1,1533 @@
 {
- "table": "monster",
- "source": "ps2/src/runscript_opcodes.cpp",
- "array": "ext_func_info",
- "natives": [
-  {
-   "no": 0,
-   "name": "_NORMAL_VECTOR",
-   "accessors": [
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 1,
-   "name": "_COPY_VECTOR",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 2,
-   "name": "_ADD_VECTOR",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 3,
-   "name": "_SUB_VECTOR",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 4,
-   "name": "_SCALE_VECTOR",
-   "accessors": [
-    "float",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 5,
-   "name": "_DIV_VECTOR",
-   "accessors": [
-    "float",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 6,
-   "name": "_ANGLE_CMP",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 7,
-   "name": "_ANGLE_LIMIT",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 8,
-   "name": "_SQRT",
-   "accessors": [
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 9,
-   "name": "_ATAN2F",
-   "accessors": [
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 10,
-   "name": "_ND_TEST",
-   "accessors": []
-  },
-  {
-   "no": 11,
-   "name": "_GET_DIST_VECTOR",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 12,
-   "name": "_GET_DIST_VECTOR2",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 13,
-   "name": "_CALC_IP_CIRCLE_LINE",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "out",
-    "out",
-    "out",
-    "out",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 14,
-   "name": "_GET_ANGLE_INNER",
-   "accessors": [
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 21,
-   "name": "_MY_SE_PLAY",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 22,
-   "name": "_MY_SE_STOP",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 23,
-   "name": "_MONS_SE_PLAY",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 24,
-   "name": "_MONS_SE_STOP",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 25,
-   "name": "_SET_CAMERA_NEXT_REF",
-   "accessors": [
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 26,
-   "name": "_SET_CAMERA_FOLLOW",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 27,
-   "name": "_SET_CAMERA_NEXT_POS",
-   "accessors": [
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 28,
-   "name": "_SET_CAMERA_MODE",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 29,
-   "name": "_SET_CAMERA_SPEED",
-   "accessors": [
-    "float"
-   ]
-  },
-  {
-   "no": 30,
-   "name": "_CAMERA_QUAKE",
-   "accessors": [
-    "float",
-    "int"
-   ]
-  },
-  {
-   "no": 31,
-   "name": "_SET_CAMERA_CTRL_PARAM1",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 32,
-   "name": "_SET_CAMERA_CTRL_PARAM2",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 33,
-   "name": "_RESET_CAMERA_CTRL_PARAM",
-   "accessors": []
-  },
-  {
-   "no": 35,
-   "name": "_GET_RND",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 36,
-   "name": "_GET_RNDF",
-   "accessors": [
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 37,
-   "name": "_V_PUSH",
-   "accessors": [
-    "int",
-    "int",
-    "int",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 38,
-   "name": "_V_POP",
-   "accessors": [
-    "int",
-    "out",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 39,
-   "name": "_GET_MONSTER_NUM",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 40,
-   "name": "_GET_MONSTER_INDEX",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 41,
-   "name": "_GET_MONSTER_ID",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 42,
-   "name": "_GET_USERID",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 43,
-   "name": "_GET_USER_MONS_ID",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 44,
-   "name": "_RESET_TIMER",
-   "accessors": []
-  },
-  {
-   "no": 45,
-   "name": "_GET_TIMER",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 46,
-   "name": "_CREATE_MONSTER",
-   "accessors": [
-    "int",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 47,
-   "name": "_RUN_EVENT_SCRIPT",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 48,
-   "name": "_GET_FRAME_POS",
-   "accessors": [
-    "string",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 49,
-   "name": "_GET_OBJ_POS",
-   "accessors": [
-    "string",
-    "string",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 50,
-   "name": "_GET_MAPOBJ_POS",
-   "accessors": [
-    "string",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 51,
-   "name": "_SET_PAUSE",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 52,
-   "name": "_CHECK_PAUSE",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 53,
-   "name": "_GET_BIT_FLAG",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 54,
-   "name": "_SET_BIT_FLAG",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 55,
-   "name": "_GET_ATT_TYPE",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 56,
-   "name": "_GET_USER_ATTR",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 57,
-   "name": "_TRANS_RESERV_IMG",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 58,
-   "name": "_GET_STS_ATTR",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 59,
-   "name": "_V_PUSH2",
-   "accessors": [
-    "int",
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 60,
-   "name": "_V_POP2",
-   "accessors": [
-    "int",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 61,
-   "name": "_SET_LOCKON_MODE",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 62,
-   "name": "_SET_MOTION_BLUR",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 63,
-   "name": "_SET_MAPOBJ_SHOW",
-   "accessors": [
-    "string",
-    "string",
-    "int"
-   ]
-  },
-  {
-   "no": 64,
-   "name": "_GET_EVENT_INFO",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 65,
-   "name": "_MONS_SE_LOOP",
-   "accessors": [
-    "int",
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 66,
-   "name": "_MONS_VOL_CTRL",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 70,
-   "name": "_GET_DIST",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 71,
-   "name": "_SEARCH_AREA",
-   "accessors": [
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 72,
-   "name": "_GET_PLACE_POS",
-   "accessors": [
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 73,
-   "name": "_SET_PLACE_POS",
-   "accessors": [
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 74,
-   "name": "_GET_INDEX_POS",
-   "accessors": [
-    "int",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 75,
-   "name": "_GET_POS",
-   "accessors": [
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 76,
-   "name": "_SET_POS",
-   "accessors": [
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 77,
-   "name": "_GET_ROT",
-   "accessors": [
-    "int",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 78,
-   "name": "_SET_ROT",
-   "accessors": [
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 79,
-   "name": "_SET_NEXT_ROT",
-   "accessors": [
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 80,
-   "name": "_SET_NEXT_POS",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 81,
-   "name": "_CHK_MOVE_END",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 82,
-   "name": "_RESET_MOVE",
-   "accessors": []
-  },
-  {
-   "no": 83,
-   "name": "_GET_TARGET_POS",
-   "accessors": [
-    "out",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 84,
-   "name": "_GET_TARGET_DIST",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 85,
-   "name": "_GET_TARGET_ANGLE",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 86,
-   "name": "_GET_TARGET_REF_POS",
-   "accessors": [
-    "float",
-    "float",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 87,
-   "name": "_GET_REF_DIR",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 88,
-   "name": "_GET_REFANGLE_POS",
-   "accessors": [
-    "float",
-    "float",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 89,
-   "name": "_GET_TARGET_ROT",
-   "accessors": [
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 90,
-   "name": "_GET_REF_ANGLE",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 91,
-   "name": "_GET_HIGH",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 92,
-   "name": "_GET_NEAR_MONS_POS",
-   "accessors": [
-    "out",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 93,
-   "name": "_GET_TARGET_OLD_POS",
-   "accessors": [
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 94,
-   "name": "_GET_TARGET_SPEED",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 95,
-   "name": "_CALC_MOVE_NEXT_POS",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "out",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 96,
-   "name": "_GET_POSREF_ANGLE",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "float",
-    "out",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 97,
-   "name": "_GET_ACTIVE_MONS_POS",
-   "accessors": [
-    "int",
-    "out",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 98,
-   "name": "_GET_ACTIVE_MONS_ROT",
-   "accessors": [
-    "int",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 99,
-   "name": "_GET_ACTIVE_MONS_DIST",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 100,
-   "name": "_GET_ACTIVE_MONS_ANGLE",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 101,
-   "name": "_GET_REF_ROT",
-   "accessors": [
-    "vector",
-    "out_vector"
-   ]
-  },
-  {
-   "no": 102,
-   "name": "_GET_REF_ROT2",
-   "accessors": [
-    "vector",
-    "vector",
-    "out",
-    "out_vector"
-   ]
-  },
-  {
-   "no": 103,
-   "name": "_FLYING_SEARCH_AREA",
-   "accessors": [
-    "float",
-    "float",
-    "out"
-   ]
-  },
-  {
-   "no": 104,
-   "name": "_GET_HIGH2",
-   "accessors": [
-    "vector",
-    "out"
-   ]
-  },
-  {
-   "no": 105,
-   "name": "_GET_RANGE_MONS_ID",
-   "accessors": [
-    "float",
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 106,
-   "name": "_GET_ENTRY_OBJ_POS",
-   "accessors": [
-    "int",
-    "int",
-    "out_vector"
-   ]
-  },
-  {
-   "no": 108,
-   "name": "_SEARCH_AREA2",
-   "accessors": [
-    "vector",
-    "vector",
-    "out"
-   ]
-  },
-  {
-   "no": 110,
-   "name": "_SET_OBJ",
-   "accessors": [
-    "int",
-    "string"
-   ]
-  },
-  {
-   "no": 111,
-   "name": "_SET_BODY",
-   "accessors": []
-  },
-  {
-   "no": 112,
-   "name": "_SET_DMG",
-   "accessors": []
-  },
-  {
-   "no": 113,
-   "name": "_SET_DMG2",
-   "accessors": [
-    "string",
-    "float",
-    "string",
-    "float",
-    "float",
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 114,
-   "name": "_LINK_MAP_TO_OBJECT",
-   "accessors": [
-    "string"
-   ]
-  },
-  {
-   "no": 115,
-   "name": "_LINK_OBJECT_TO_PIECE",
-   "accessors": [
-    "string",
-    "string"
-   ]
-  },
-  {
-   "no": 116,
-   "name": "_LOAD_EFFECT_SCRIPT",
-   "accessors": [
-    "any",
-    "int",
-    "int",
-    "string",
-    "int",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 117,
-   "name": "_SET_SCOOP",
-   "accessors": [
-    "int",
-    "string",
-    "float",
-    "float",
-    "int"
-   ]
-  },
-  {
-   "no": 118,
-   "name": "_LOAD_RESERV_IMG",
-   "accessors": [
-    "int",
-    "string",
-    "any"
-   ]
-  },
-  {
-   "no": 119,
-   "name": "_SET_PRIORITY_LIMMIT",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 120,
-   "name": "_SET_MODEL_LIGHT_SWITCH",
-   "accessors": [
-    "int",
-    "string"
-   ]
-  },
-  {
-   "no": 121,
-   "name": "_SET_MODEL_LIGHT_COLOR",
-   "accessors": [
-    "float",
-    "float",
-    "float",
-    "float",
-    "string"
-   ]
-  },
-  {
-   "no": 122,
-   "name": "_SET_ALPHA",
-   "accessors": [
-    "float"
-   ]
-  },
-  {
-   "no": 123,
-   "name": "_SET_SCALE",
-   "accessors": [
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 124,
-   "name": "_SET_INDEX_ALPHA",
-   "accessors": [
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 125,
-   "name": "_SET_PALLET_ANIM",
-   "accessors": [
-    "int",
-    "int",
-    "int",
-    "int",
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 126,
-   "name": "_RESET_PALLET_ANIM",
-   "accessors": []
-  },
-  {
-   "no": 127,
-   "name": "_SET_ATTRIB",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 128,
-   "name": "_SET_STATUS",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 129,
-   "name": "_SET_INT_FLAG",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 130,
-   "name": "_SET_ACT_STATUS",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 131,
-   "name": "_SET_MUTEKI",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 132,
-   "name": "_SET_GRAVITY",
-   "accessors": []
-  },
-  {
-   "no": 133,
-   "name": "_SET_COLLISION",
-   "accessors": []
-  },
-  {
-   "no": 134,
-   "name": "_GET_GEKIRIN",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 135,
-   "name": "_GET_PRIORITY",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 136,
-   "name": "_SET_CLIP_DIST",
-   "accessors": [
-    "float"
-   ]
-  },
-  {
-   "no": 137,
-   "name": "_SET_PIYORI_MARK",
-   "accessors": []
-  },
-  {
-   "no": 138,
-   "name": "_CHECK_PIYORI",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 139,
-   "name": "_GET_SCALE",
-   "accessors": [
-    "out_vector"
-   ]
-  },
-  {
-   "no": 140,
-   "name": "_GET_MONS_WIDTH",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 150,
-   "name": "_BLOW_START",
-   "accessors": [
-    "float",
-    "float",
-    "int"
-   ]
-  },
-  {
-   "no": 151,
-   "name": "_SET_DEAD_START",
-   "accessors": []
-  },
-  {
-   "no": 152,
-   "name": "_SET_DEAD_OFF",
-   "accessors": []
-  },
-  {
-   "no": 153,
-   "name": "_SET_SHROW_END",
-   "accessors": []
-  },
-  {
-   "no": 160,
-   "name": "_GET_BASE_ATTACK",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 161,
-   "name": "_SET_DEF_RATE",
-   "accessors": [
-    "float"
-   ]
-  },
-  {
-   "no": 162,
-   "name": "_SET_MONSTER_LIFE",
-   "accessors": [
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 163,
-   "name": "_GET_MONSTER_LIFE",
-   "accessors": [
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 164,
-   "name": "_GET_NO_DAMAGE_CNT",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 165,
-   "name": "_GET_ACTIVE_MONS_LIFEI",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 166,
-   "name": "_GET_ACTIVE_MONS_LIFEF",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 167,
-   "name": "_SET_ACTIVE_MONS_LIFEI",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 168,
-   "name": "_SET_ACTIVE_MONS_LIFEF",
-   "accessors": [
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 169,
-   "name": "_GET_ACTIVE_MONS_MAX_LIFE",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 170,
-   "name": "_SET_DAMAGE_SCORE",
-   "accessors": [
-    "int",
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 171,
-   "name": "_GET_MONS_GRADE",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 172,
-   "name": "_SET_GUARD_RATE",
-   "accessors": [
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 173,
-   "name": "_SET_ESCAPE_RATE",
-   "accessors": [
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 174,
-   "name": "_SET_EXT_PARAM_RATE",
-   "accessors": [
-    "int",
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 175,
-   "name": "_GET_BOSS_FLAG",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 176,
-   "name": "_SET_INDEXOBJ_SIZE",
-   "accessors": [
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 177,
-   "name": "_GET_INDEXOBJ_SIZE",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 180,
-   "name": "_RESET_MOTION",
-   "accessors": []
-  },
-  {
-   "no": 182,
-   "name": "_SET_MOS",
-   "accessors": [
-    "string",
-    "float",
-    "int"
-   ]
-  },
-  {
-   "no": 183,
-   "name": "_CHECK_MOS_END",
-   "accessors": [
-    "string",
-    "out"
-   ]
-  },
-  {
-   "no": 184,
-   "name": "_NOW_MOS_WAIT",
-   "accessors": [
-    "string",
-    "out"
-   ]
-  },
-  {
-   "no": 185,
-   "name": "_GET_MOS_STATUS",
-   "accessors": [
-    "string",
-    "out"
-   ]
-  },
-  {
-   "no": 191,
-   "name": "_ESM_CREATE",
-   "accessors": [
-    "string",
-    "out"
-   ]
-  },
-  {
-   "no": 192,
-   "name": "_ESM_FINISH",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 193,
-   "name": "_ESM_DELETE",
-   "accessors": [
-    "int"
-   ]
-  },
-  {
-   "no": 194,
-   "name": "_ESM_SET_VECT1",
-   "accessors": [
-    "int",
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 195,
-   "name": "_ESM_GET_VECT1",
-   "accessors": [
-    "int",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 196,
-   "name": "_ESM_SET_VECT2",
-   "accessors": [
-    "int",
-    "float",
-    "float",
-    "float"
-   ]
-  },
-  {
-   "no": 197,
-   "name": "_ESM_GET_VECT2",
-   "accessors": [
-    "int",
-    "out",
-    "out",
-    "out"
-   ]
-  },
-  {
-   "no": 198,
-   "name": "_ESM_SET_TARGET_ID",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 199,
-   "name": "_ESM_GET_TARGET_ID",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 200,
-   "name": "_ESM_SET_USER_ID",
-   "accessors": [
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 201,
-   "name": "_ESM_GET_USER_ID",
-   "accessors": [
-    "int",
-    "out"
-   ]
-  },
-  {
-   "no": 202,
-   "name": "_ESM_SET_VALUE",
-   "accessors": [
-    "int",
-    "int",
-    "int",
-    "float"
-   ]
-  },
-  {
-   "no": 203,
-   "name": "_SW_EFFECT",
-   "accessors": [
-    "int",
-    "string",
-    "float",
-    "float",
-    "string",
-    "string",
-    "int",
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 204,
-   "name": "_ESM_GET_NOTUESD_TEXB",
-   "accessors": [
-    "out"
-   ]
-  },
-  {
-   "no": 205,
-   "name": "_ESM_ADD_TEXB",
-   "accessors": []
-  },
-  {
-   "no": 206,
-   "name": "_SHOT_ROCKET_LAUNCHER",
-   "accessors": [
-    "vector",
-    "vector",
-    "float",
-    "int",
-    "int",
-    "int"
-   ]
-  },
-  {
-   "no": 207,
-   "name": "_ESM_ALL_CLEAR",
-   "accessors": [
-    "int"
-   ]
+  "table": "monster",
+  "source": "ps2/src/runscript_opcodes.cpp",
+  "array": "ext_func_info",
+  "natives": [
+    {
+      "no": 0,
+      "name": "_NORMAL_VECTOR",
+      "accessors": [
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 1,
+      "name": "_COPY_VECTOR",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 2,
+      "name": "_ADD_VECTOR",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 3,
+      "name": "_SUB_VECTOR",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 4,
+      "name": "_SCALE_VECTOR",
+      "accessors": [
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 5,
+      "name": "_DIV_VECTOR",
+      "accessors": [
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 6,
+      "name": "_ANGLE_CMP",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 7,
+      "name": "_ANGLE_LIMIT",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 8,
+      "name": "_SQRT",
+      "accessors": [
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 9,
+      "name": "_ATAN2F",
+      "accessors": [
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 10,
+      "name": "_ND_TEST",
+      "accessors": []
+    },
+    {
+      "no": 11,
+      "name": "_GET_DIST_VECTOR",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 12,
+      "name": "_GET_DIST_VECTOR2",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 13,
+      "name": "_CALC_IP_CIRCLE_LINE",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "out",
+        "out",
+        "out",
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 14,
+      "name": "_GET_ANGLE_INNER",
+      "accessors": [
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 21,
+      "name": "_MY_SE_PLAY",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 22,
+      "name": "_MY_SE_STOP",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 23,
+      "name": "_MONS_SE_PLAY",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 24,
+      "name": "_MONS_SE_STOP",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 25,
+      "name": "_SET_CAMERA_NEXT_REF",
+      "accessors": [
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 26,
+      "name": "_SET_CAMERA_FOLLOW",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 27,
+      "name": "_SET_CAMERA_NEXT_POS",
+      "accessors": [
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 28,
+      "name": "_SET_CAMERA_MODE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 29,
+      "name": "_SET_CAMERA_SPEED",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 30,
+      "name": "_CAMERA_QUAKE",
+      "accessors": [
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 31,
+      "name": "_SET_CAMERA_CTRL_PARAM1",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 32,
+      "name": "_SET_CAMERA_CTRL_PARAM2",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 33,
+      "name": "_RESET_CAMERA_CTRL_PARAM",
+      "accessors": []
+    },
+    {
+      "no": 35,
+      "name": "_GET_RND",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 36,
+      "name": "_GET_RNDF",
+      "accessors": [
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 37,
+      "name": "_V_PUSH",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 38,
+      "name": "_V_POP",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 39,
+      "name": "_GET_MONSTER_NUM",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 40,
+      "name": "_GET_MONSTER_INDEX",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 41,
+      "name": "_GET_MONSTER_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 42,
+      "name": "_GET_USERID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 43,
+      "name": "_GET_USER_MONS_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 44,
+      "name": "_RESET_TIMER",
+      "accessors": []
+    },
+    {
+      "no": 45,
+      "name": "_GET_TIMER",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 46,
+      "name": "_CREATE_MONSTER",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 47,
+      "name": "_RUN_EVENT_SCRIPT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 48,
+      "name": "_GET_FRAME_POS",
+      "accessors": [
+        "string",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 49,
+      "name": "_GET_OBJ_POS",
+      "accessors": [
+        "string",
+        "string",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 50,
+      "name": "_GET_MAPOBJ_POS",
+      "accessors": [
+        "string",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 51,
+      "name": "_SET_PAUSE",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 52,
+      "name": "_CHECK_PAUSE",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 53,
+      "name": "_GET_BIT_FLAG",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 54,
+      "name": "_SET_BIT_FLAG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 55,
+      "name": "_GET_ATT_TYPE",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 56,
+      "name": "_GET_USER_ATTR",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 57,
+      "name": "_TRANS_RESERV_IMG",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 58,
+      "name": "_GET_STS_ATTR",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 59,
+      "name": "_V_PUSH2",
+      "accessors": [
+        "int",
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 60,
+      "name": "_V_POP2",
+      "accessors": [
+        "int",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 61,
+      "name": "_SET_LOCKON_MODE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 62,
+      "name": "_SET_MOTION_BLUR",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 63,
+      "name": "_SET_MAPOBJ_SHOW",
+      "accessors": [
+        "string",
+        "string",
+        "int"
+      ]
+    },
+    {
+      "no": 64,
+      "name": "_GET_EVENT_INFO",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 65,
+      "name": "_MONS_SE_LOOP",
+      "accessors": [
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 66,
+      "name": "_MONS_VOL_CTRL",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 70,
+      "name": "_GET_DIST",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 71,
+      "name": "_SEARCH_AREA",
+      "accessors": [
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 72,
+      "name": "_GET_PLACE_POS",
+      "accessors": [
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 73,
+      "name": "_SET_PLACE_POS",
+      "accessors": [
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 74,
+      "name": "_GET_INDEX_POS",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 75,
+      "name": "_GET_POS",
+      "accessors": [
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 76,
+      "name": "_SET_POS",
+      "accessors": [
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 77,
+      "name": "_GET_ROT",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 78,
+      "name": "_SET_ROT",
+      "accessors": [
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 79,
+      "name": "_SET_NEXT_ROT",
+      "accessors": [
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 80,
+      "name": "_SET_NEXT_POS",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 81,
+      "name": "_CHK_MOVE_END",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 82,
+      "name": "_RESET_MOVE",
+      "accessors": []
+    },
+    {
+      "no": 83,
+      "name": "_GET_TARGET_POS",
+      "accessors": [
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 84,
+      "name": "_GET_TARGET_DIST",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 85,
+      "name": "_GET_TARGET_ANGLE",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 86,
+      "name": "_GET_TARGET_REF_POS",
+      "accessors": [
+        "float",
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 87,
+      "name": "_GET_REF_DIR",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 88,
+      "name": "_GET_REFANGLE_POS",
+      "accessors": [
+        "float",
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 89,
+      "name": "_GET_TARGET_ROT",
+      "accessors": [
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 90,
+      "name": "_GET_REF_ANGLE",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 91,
+      "name": "_GET_HIGH",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 92,
+      "name": "_GET_NEAR_MONS_POS",
+      "accessors": [
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 93,
+      "name": "_GET_TARGET_OLD_POS",
+      "accessors": [
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 94,
+      "name": "_GET_TARGET_SPEED",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 95,
+      "name": "_CALC_MOVE_NEXT_POS",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 96,
+      "name": "_GET_POSREF_ANGLE",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 97,
+      "name": "_GET_ACTIVE_MONS_POS",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 98,
+      "name": "_GET_ACTIVE_MONS_ROT",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 99,
+      "name": "_GET_ACTIVE_MONS_DIST",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 100,
+      "name": "_GET_ACTIVE_MONS_ANGLE",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 101,
+      "name": "_GET_REF_ROT",
+      "accessors": [
+        "vector",
+        "out_vector"
+      ]
+    },
+    {
+      "no": 102,
+      "name": "_GET_REF_ROT2",
+      "accessors": [
+        "vector",
+        "vector",
+        "out",
+        "out_vector"
+      ]
+    },
+    {
+      "no": 103,
+      "name": "_FLYING_SEARCH_AREA",
+      "accessors": [
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 104,
+      "name": "_GET_HIGH2",
+      "accessors": [
+        "vector",
+        "out"
+      ]
+    },
+    {
+      "no": 105,
+      "name": "_GET_RANGE_MONS_ID",
+      "accessors": [
+        "float",
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 106,
+      "name": "_GET_ENTRY_OBJ_POS",
+      "accessors": [
+        "int",
+        "int",
+        "out_vector"
+      ]
+    },
+    {
+      "no": 108,
+      "name": "_SEARCH_AREA2",
+      "accessors": [
+        "vector",
+        "vector",
+        "out"
+      ]
+    },
+    {
+      "no": 110,
+      "name": "_SET_OBJ",
+      "accessors": [
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 111,
+      "name": "_SET_BODY",
+      "accessors": []
+    },
+    {
+      "no": 112,
+      "name": "_SET_DMG",
+      "accessors": []
+    },
+    {
+      "no": 113,
+      "name": "_SET_DMG2",
+      "accessors": [
+        "string",
+        "float",
+        "string",
+        "float",
+        "float",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 114,
+      "name": "_LINK_MAP_TO_OBJECT",
+      "accessors": [
+        "string"
+      ]
+    },
+    {
+      "no": 115,
+      "name": "_LINK_OBJECT_TO_PIECE",
+      "accessors": [
+        "string",
+        "string"
+      ]
+    },
+    {
+      "no": 116,
+      "name": "_LOAD_EFFECT_SCRIPT",
+      "accessors": [
+        "any",
+        "int",
+        "int",
+        "string",
+        "int",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 117,
+      "name": "_SET_SCOOP",
+      "accessors": [
+        "int",
+        "string",
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 118,
+      "name": "_LOAD_RESERV_IMG",
+      "accessors": [
+        "int",
+        "string",
+        "any"
+      ]
+    },
+    {
+      "no": 119,
+      "name": "_SET_PRIORITY_LIMMIT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 120,
+      "name": "_SET_MODEL_LIGHT_SWITCH",
+      "accessors": [
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 121,
+      "name": "_SET_MODEL_LIGHT_COLOR",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "string"
+      ]
+    },
+    {
+      "no": 122,
+      "name": "_SET_ALPHA",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 123,
+      "name": "_SET_SCALE",
+      "accessors": [
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 124,
+      "name": "_SET_INDEX_ALPHA",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 125,
+      "name": "_SET_PALLET_ANIM",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 126,
+      "name": "_RESET_PALLET_ANIM",
+      "accessors": []
+    },
+    {
+      "no": 127,
+      "name": "_SET_ATTRIB",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 128,
+      "name": "_SET_STATUS",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 129,
+      "name": "_SET_INT_FLAG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 130,
+      "name": "_SET_ACT_STATUS",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 131,
+      "name": "_SET_MUTEKI",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 132,
+      "name": "_SET_GRAVITY",
+      "accessors": []
+    },
+    {
+      "no": 133,
+      "name": "_SET_COLLISION",
+      "accessors": []
+    },
+    {
+      "no": 134,
+      "name": "_GET_GEKIRIN",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 135,
+      "name": "_GET_PRIORITY",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 136,
+      "name": "_SET_CLIP_DIST",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 137,
+      "name": "_SET_PIYORI_MARK",
+      "accessors": []
+    },
+    {
+      "no": 138,
+      "name": "_CHECK_PIYORI",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 139,
+      "name": "_GET_SCALE",
+      "accessors": [
+        "out_vector"
+      ]
+    },
+    {
+      "no": 140,
+      "name": "_GET_MONS_WIDTH",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 150,
+      "name": "_BLOW_START",
+      "accessors": [
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 151,
+      "name": "_SET_DEAD_START",
+      "accessors": []
+    },
+    {
+      "no": 152,
+      "name": "_SET_DEAD_OFF",
+      "accessors": []
+    },
+    {
+      "no": 153,
+      "name": "_SET_SHROW_END",
+      "accessors": []
+    },
+    {
+      "no": 160,
+      "name": "_GET_BASE_ATTACK",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 161,
+      "name": "_SET_DEF_RATE",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 162,
+      "name": "_SET_MONSTER_LIFE",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 163,
+      "name": "_GET_MONSTER_LIFE",
+      "accessors": [
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 164,
+      "name": "_GET_NO_DAMAGE_CNT",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 165,
+      "name": "_GET_ACTIVE_MONS_LIFEI",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 166,
+      "name": "_GET_ACTIVE_MONS_LIFEF",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 167,
+      "name": "_SET_ACTIVE_MONS_LIFEI",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 168,
+      "name": "_SET_ACTIVE_MONS_LIFEF",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 169,
+      "name": "_GET_ACTIVE_MONS_MAX_LIFE",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 170,
+      "name": "_SET_DAMAGE_SCORE",
+      "accessors": [
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 171,
+      "name": "_GET_MONS_GRADE",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 172,
+      "name": "_SET_GUARD_RATE",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 173,
+      "name": "_SET_ESCAPE_RATE",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 174,
+      "name": "_SET_EXT_PARAM_RATE",
+      "accessors": [
+        "int",
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 175,
+      "name": "_GET_BOSS_FLAG",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 176,
+      "name": "_SET_INDEXOBJ_SIZE",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 177,
+      "name": "_GET_INDEXOBJ_SIZE",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 180,
+      "name": "_RESET_MOTION",
+      "accessors": []
+    },
+    {
+      "no": 182,
+      "name": "_SET_MOS",
+      "accessors": [
+        "string",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 183,
+      "name": "_CHECK_MOS_END",
+      "accessors": [
+        "string",
+        "out"
+      ]
+    },
+    {
+      "no": 184,
+      "name": "_NOW_MOS_WAIT",
+      "accessors": [
+        "string",
+        "out"
+      ]
+    },
+    {
+      "no": 185,
+      "name": "_GET_MOS_STATUS",
+      "accessors": [
+        "string",
+        "out"
+      ]
+    },
+    {
+      "no": 191,
+      "name": "_ESM_CREATE",
+      "accessors": [
+        "string",
+        "out"
+      ]
+    },
+    {
+      "no": 192,
+      "name": "_ESM_FINISH",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 193,
+      "name": "_ESM_DELETE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 194,
+      "name": "_ESM_SET_VECT1",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 195,
+      "name": "_ESM_GET_VECT1",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 196,
+      "name": "_ESM_SET_VECT2",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 197,
+      "name": "_ESM_GET_VECT2",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 198,
+      "name": "_ESM_SET_TARGET_ID",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 199,
+      "name": "_ESM_GET_TARGET_ID",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 200,
+      "name": "_ESM_SET_USER_ID",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 201,
+      "name": "_ESM_GET_USER_ID",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 202,
+      "name": "_ESM_SET_VALUE",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 203,
+      "name": "_SW_EFFECT",
+      "accessors": [
+        "int",
+        "string",
+        "float",
+        "float",
+        "string",
+        "string",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 204,
+      "name": "_ESM_GET_NOTUESD_TEXB",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 205,
+      "name": "_ESM_ADD_TEXB",
+      "accessors": []
+    },
+    {
+      "no": 206,
+      "name": "_SHOT_ROCKET_LAUNCHER",
+      "accessors": [
+        "vector",
+        "vector",
+        "float",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 207,
+      "name": "_ESM_ALL_CLEAR",
+      "accessors": [
+        "int"
+      ]
+    }
+  ],
+  "old_groups": {
+    "60": 70
+  },
+  "old_table_groups": {
+    "110": 120,
+    "140": 150,
+    "160": 180
+  },
+  "old_direct": {
+    "10": 35,
+    "11": 36,
+    "13": 110,
+    "14": 111,
+    "17": 37,
+    "18": 38,
+    "20": 8,
+    "21": 9,
+    "23": 40,
+    "28": 180,
+    "49": 163,
+    "50": 75,
+    "51": 76,
+    "52": 77,
+    "53": 78,
+    "54": 79,
+    "55": 80,
+    "56": 81,
+    "57": 82,
+    "58": 83,
+    "59": 84,
+    "60": 85,
+    "61": 86,
+    "64": 89,
+    "65": 90,
+    "66": 91,
+    "67": 127,
+    "79": 137,
+    "80": 138,
+    "100": 182,
+    "101": 183,
+    "103": 185,
+    "151": 130,
+    "152": 129,
+    "153": 151,
+    "154": 152,
+    "155": 153,
+    "157": 134,
+    "159": 135,
+    "160": 136,
+    "164": 113
   }
- ],
- "old_groups": {
-  "60": 70
- },
- "old_table_groups": {
-  "110": 120,
-  "140": 150,
-  "160": 180
- },
- "old_direct": {
-  "10": 35,
-  "11": 36,
-  "13": 110,
-  "14": 111,
-  "17": 37,
-  "18": 38,
-  "20": 8,
-  "21": 9,
-  "23": 40,
-  "28": 180,
-  "49": 163,
-  "50": 75,
-  "51": 76,
-  "52": 77,
-  "53": 78,
-  "54": 79,
-  "55": 80,
-  "56": 81,
-  "57": 82,
-  "58": 83,
-  "59": 84,
-  "60": 85,
-  "61": 86,
-  "64": 89,
-  "65": 90,
-  "66": 91,
-  "67": 127,
-  "79": 137,
-  "80": 138,
-  "100": 182,
-  "101": 183,
-  "103": 185,
-  "151": 130,
-  "152": 129,
-  "153": 151,
-  "154": 152,
-  "155": 153,
-  "157": 134,
-  "159": 135,
-  "160": 136,
-  "164": 113
- }
 }

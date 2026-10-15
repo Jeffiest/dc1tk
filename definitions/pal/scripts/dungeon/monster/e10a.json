@@ -1,8 +1,8 @@
 {
- "doc": "Monster script e10a, a bomb thrower. It throws a bomb chosen by its grade (pumpkin bomb, gooey peach, stone berry or final bomb), sidesteps, guards, and runs after the player. Once rage hits are used up it dashes past the target and faints.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script e10a, a bomb thrower. It throws a bomb chosen by its grade (pumpkin bomb, gooey peach, stone berry or final bomb), sidesteps, guards, and runs after the player. Once rage hits are used up it dashes past the target and faints.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

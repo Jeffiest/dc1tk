@@ -1,3 +1,3 @@
 {
- "doc": "Effect script for the chill stone, the cold magic stone item. It plays the cold air motion and makes a radius 15 attack that is removed on first hit or after 30 frames."
+  "doc": "Effect script for the chill stone, the cold magic stone item. It plays the cold air motion and makes a radius 15 attack that is removed on first hit or after 30 frames."
 }

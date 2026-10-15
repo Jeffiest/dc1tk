@@ -1,3 +1,3 @@
 {
- "doc": "Event script for the exit door at the end of a floor in map s06. Before flag 7 the door will not open. Afterwards it asks to go on, marks the floor cleared and enters the next floor, or starts Georama edit mode 12 the first time. Ride Pod characters cannot use it and a Ride Pod defeat loads scene 503."
+  "doc": "Event script for the exit door at the end of a floor in map s06. Before flag 7 the door will not open. Afterwards it asks to go on, marks the floor cleared and enters the next floor, or starts Georama edit mode 12 the first time. Ride Pod characters cannot use it and a Ride Pod defeat loads scene 503."
 }

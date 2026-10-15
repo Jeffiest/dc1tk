@@ -1,9 +1,9 @@
 {
- "doc": "Event script for the Moon Flower Palace approach (s68). It places the player on entry, offers the save point, and has exits to s70, s26, s12 and s32 with short scenes, and the palace arrival scenes before jumping to g05.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3",
-  "unused4"
- ]
+  "doc": "Event script for the Moon Flower Palace approach (s68). It places the player on entry, offers the save point, and has exits to s70, s26, s12 and s32 with short scenes, and the palace arrival scenes before jumping to g05.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3",
+    "unused4"
+  ]
 }

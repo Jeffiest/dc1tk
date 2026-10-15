@@ -1,7 +1,7 @@
 {
- "doc": "Map script for Balance Valley Station (s04). It plays the train arrival and departure scenes, the e300 scene where Max and Monica first reach the station, event 372 where Cedric waits for them to be ready, and event 360 where Cedric calls all aboard for the trip. The player can talk to Cedric, Borneo and Erik, board the train or go to Balance Valley (g02).",
- "globals": [
-  "max_chara_slot",
-  "monica_chara_slot"
- ]
+  "doc": "Map script for Balance Valley Station (s04). It plays the train arrival and departure scenes, the e300 scene where Max and Monica first reach the station, event 372 where Cedric waits for them to be ready, and event 360 where Cedric calls all aboard for the trip. The player can talk to Cedric, Borneo and Erik, board the train or go to Balance Valley (g02).",
+  "globals": [
+    "max_chara_slot",
+    "monica_chara_slot"
+  ]
 }

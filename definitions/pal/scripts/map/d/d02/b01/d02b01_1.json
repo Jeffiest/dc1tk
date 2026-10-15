@@ -1,7 +1,7 @@
 {
- "doc": "Event script for floor d02b01, a room with a swamp. Using Lafrescia Seed and then Sundrop on the swamp grows a sprout (flags 23 and 24) through explosion and light cutscenes, opening the way to d02b02.",
- "globals": [
-  "max_chara_id",
-  "monica_chara_id"
- ]
+  "doc": "Event script for floor d02b01, a room with a swamp. Using Lafrescia Seed and then Sundrop on the swamp grows a sprout (flags 23 and 24) through explosion and light cutscenes, opening the way to d02b02.",
+  "globals": [
+    "max_chara_id",
+    "monica_chara_id"
+  ]
 }

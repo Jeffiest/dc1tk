@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the e06a enemy. It wanders, then fights with a claw swipe and a rolling charge, stepping back or sideways to dodge, and picks behaviour by distance to the player.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Monster script for the e06a enemy. It wanders, then fights with a claw swipe and a rolling charge, stepping back or sideways to dodge, and picks behaviour by distance to the player.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

@@ -1,3 +1,3 @@
 {
- "doc": "Entry file of the s58 train rush scene. Event 500 plays the train rush then jumps to s31, and the debug entry replays it."
+  "doc": "Entry file of the s58 train rush scene. Event 500 plays the train rush then jumps to s31, and the debug entry replays it."
 }

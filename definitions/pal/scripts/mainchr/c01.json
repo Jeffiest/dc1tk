@@ -1,7 +1,7 @@
 {
- "doc": "Action script of the playable character Max (c01) in dungeons. It handles the sword combo for three weapon models, charge attack, backflip dodge, gun fire modes, guarding and catching, item throws, and the damage and death reactions, driven by a saved action value that selects the state.",
- "globals": [
-  "weapon_model",
-  "machine_gun_shot_counter"
- ]
+  "doc": "Action script of the playable character Max (c01) in dungeons. It handles the sword combo for three weapon models, charge attack, backflip dodge, gun fire modes, guarding and catching, item throws, and the damage and death reactions, driven by a saved action value that selects the state.",
+  "globals": [
+    "weapon_model",
+    "machine_gun_shot_counter"
+  ]
 }

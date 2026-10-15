@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster AI for a sword-swinging walker. It idles until it notices the player, then fights by distance with attack 1, attack 2 and combos, dodges by stepping and counters after guarding.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Dungeon monster AI for a sword-swinging walker. It idles until it notices the player, then fights by distance with attack 1, attack 2 and combos, dodges by stepping and counters after guarding.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

@@ -1,3 +1,3 @@
 {
- "doc": "Companion script for the elephant boss floor s06. It handles the floor exit door, the game over or load event, and loads the s06 boss monster and the s06c event scripts at entry 500."
+  "doc": "Companion script for the elephant boss floor s06. It handles the floor exit door, the game over or load event, and loads the s06 boss monster and the s06c event scripts at entry 500."
 }

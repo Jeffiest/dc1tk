@@ -1,3 +1,3 @@
 {
- "doc": "Map script for map g05. It places the player on map start, offers events for going to s44, s34 or dungeon d06 when ready, and has progress arrival setups and an item reward for items 198 and 199."
+  "doc": "Map script for map g05. It places the player on map start, offers events for going to s44, s34 or dungeon d06 when ready, and has progress arrival setups and an item reward for items 198 and 199."
 }

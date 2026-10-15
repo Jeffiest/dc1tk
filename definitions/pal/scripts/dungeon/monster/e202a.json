@@ -1,8 +1,8 @@
 {
- "doc": "Monster script e202a, a Vanguard. It walks at the player, attacks with a weak hit, a ground shockwave and a spinning charge, and the first time it is hit it triggers event script 2510 once (dungeon flag 51).",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script e202a, a Vanguard. It walks at the player, attacks with a weak hit, a ground shockwave and a spinning charge, and the first time it is hit it triggers event script 2510 once (dungeon flag 51).",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

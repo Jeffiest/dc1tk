@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for enemy e254, a melee enemy with a two-hit combo (attack 1) and a heavier swing (attack 2), both with a forward lunge. It can back-step out of danger, sidesteps around the target, and switches to a more aggressive fight loop once its rage counter is used up.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Monster script for enemy e254, a melee enemy with a two-hit combo (attack 1) and a heavier swing (attack 2), both with a forward lunge. It can back-step out of danger, sidesteps around the target, and switches to a more aggressive fight loop once its rage counter is used up.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

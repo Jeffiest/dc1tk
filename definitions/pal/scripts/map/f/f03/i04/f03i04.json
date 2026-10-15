@@ -1,7 +1,7 @@
 {
- "doc": "Map script for the Central Lab (i04) in Luna Lab, map f03. It plays the arrival scene (event 464), the Ixion plan scene where Chap explains how the party will travel back ten thousand years (event 448), and routes the player to the four lab wings, to Veniccio Station (s09) and to the Central Lab event map (s53).",
- "globals": [
-  "max_slot",
-  "monica_slot"
- ]
+  "doc": "Map script for the Central Lab (i04) in Luna Lab, map f03. It plays the arrival scene (event 464), the Ixion plan scene where Chap explains how the party will travel back ten thousand years (event 448), and routes the player to the four lab wings, to Veniccio Station (s09) and to the Central Lab event map (s53).",
+  "globals": [
+    "max_slot",
+    "monica_slot"
+  ]
 }

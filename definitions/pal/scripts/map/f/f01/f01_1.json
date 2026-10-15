@@ -1,15 +1,15 @@
 {
- "doc": "Event script for the forest village of Jurak (map f01). It handles the villagers' dialogue, which changes as Jurak is revived, the shops, the story events 270 to 285 that play on arrival (including the Rainbow Butterfly and Lafrescia Seed scene and the Jurak Gun), the egg that gives Gold Paint and the blue time gate to Sindain.",
- "globals": [
-  "event_275_max_slot",
-  "event_275_monica_slot",
-  "event_270_max_slot",
-  "event_270_monica_slot",
-  "event_272_max_slot",
-  "event_272_monica_slot",
-  "event_280_max_slot",
-  "event_280_monica_slot",
-  "event_285_max_slot",
-  "event_285_monica_slot"
- ]
+  "doc": "Event script for the forest village of Jurak (map f01). It handles the villagers' dialogue, which changes as Jurak is revived, the shops, the story events 270 to 285 that play on arrival (including the Rainbow Butterfly and Lafrescia Seed scene and the Jurak Gun), the egg that gives Gold Paint and the blue time gate to Sindain.",
+  "globals": [
+    "event_275_max_slot",
+    "event_275_monica_slot",
+    "event_270_max_slot",
+    "event_270_monica_slot",
+    "event_272_max_slot",
+    "event_272_monica_slot",
+    "event_280_max_slot",
+    "event_280_monica_slot",
+    "event_285_max_slot",
+    "event_285_monica_slot"
+  ]
 }

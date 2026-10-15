@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster e103a, a guarding monster. It holds a guard stance, charges at the target with a knockback attack when it comes close, steps away, and blocks shots.",
- "globals": [
-  "pos_x",
-  "pos_y",
-  "pos_z"
- ]
+  "doc": "Dungeon monster e103a, a guarding monster. It holds a guard stance, charges at the target with a knockback attack when it comes close, steps away, and blocks shots.",
+  "globals": [
+    "pos_x",
+    "pos_y",
+    "pos_z"
+  ]
 }

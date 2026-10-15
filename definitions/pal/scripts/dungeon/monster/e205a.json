@@ -1,8 +1,8 @@
 {
- "doc": "Monster script e205a, a summoner. It walks and attacks with attack 1, steps back and sidesteps, and casts Tore's smoke to create three more monsters of a type picked by its grade, as long as fewer than 18 monsters are on the floor. It idles until the player gets near.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script e205a, a summoner. It walks and attacks with attack 1, steps back and sidesteps, and casts Tore's smoke to create three more monsters of a type picked by its grade, as long as fewer than 18 monsters are on the floor. It idles until the player gets near.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

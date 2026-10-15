@@ -1,23 +1,23 @@
 {
- "table": "arg",
- "source": "ps2/src/event_func.cpp",
- "array": "esa_ext_func_info",
- "natives": [
-  {
-   "no": 0,
-   "name": "_DATA",
-   "accessors": [
-    "int",
-    "float",
-    "string"
-   ]
-  },
-  {
-   "no": 1,
-   "name": "_ID_OFFSET",
-   "accessors": [
-    "int"
-   ]
-  }
- ]
+  "table": "arg",
+  "source": "ps2/src/event_func.cpp",
+  "array": "esa_ext_func_info",
+  "natives": [
+    {
+      "no": 0,
+      "name": "_DATA",
+      "accessors": [
+        "int",
+        "float",
+        "string"
+      ]
+    },
+    {
+      "no": 1,
+      "name": "_ID_OFFSET",
+      "accessors": [
+        "int"
+      ]
+    }
+  ]
 }

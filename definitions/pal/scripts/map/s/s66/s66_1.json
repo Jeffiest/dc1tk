@@ -1,7 +1,7 @@
 {
- "doc": "Map script for s66, Kazarov Stonehenge. It plays the end-game story scenes that jump to s30 and s11: the Lapis beam, Nova Driver cannon, the palace falling, the Paznos robot, the palace thrown aside and the farewell scene before i04h01.",
- "globals": [
-  "unused_value",
-  "unused2"
- ]
+  "doc": "Map script for s66, Kazarov Stonehenge. It plays the end-game story scenes that jump to s30 and s11: the Lapis beam, Nova Driver cannon, the palace falling, the Paznos robot, the palace thrown aside and the farewell scene before i04h01.",
+  "globals": [
+    "unused_value",
+    "unused2"
+  ]
 }

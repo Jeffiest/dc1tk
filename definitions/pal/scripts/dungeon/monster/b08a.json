@@ -1,9 +1,9 @@
 {
- "doc": "Boss script for the first Emperor Griffon fight (kind 615). He glides around the arena with three Atramilia lights (kinds 618 to 620), fires barrages of Griffon feathers and absorbs energy while the lights are charged, and runs event 500 when he drops below 67 percent life or is the last one left. Every wait goes through a per-frame check that triggers that event.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z",
-  "flicker_counter"
- ]
+  "doc": "Boss script for the first Emperor Griffon fight (kind 615). He glides around the arena with three Atramilia lights (kinds 618 to 620), fires barrages of Griffon feathers and absorbs energy while the lights are charged, and runs event 500 when he drops below 67 percent life or is the last one left. Every wait goes through a per-frame check that triggers that event.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z",
+    "flicker_counter"
+  ]
 }

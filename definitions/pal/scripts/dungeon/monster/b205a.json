@@ -1,8 +1,8 @@
 {
- "doc": "Boss script for Trentos (kind 609), the Demon Shaft tree boss. It swings at the player and, from a puff of Tore's smoke, summons Kortlenns (kind 610, b204a) while fewer than 7 monsters exist. Death runs event script 600.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Boss script for Trentos (kind 609), the Demon Shaft tree boss. It swings at the player and, from a puff of Tore's smoke, summons Kortlenns (kind 610, b204a) while fewer than 7 monsters exist. Death runs event script 600.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

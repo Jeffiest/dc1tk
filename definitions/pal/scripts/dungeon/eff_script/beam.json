@@ -1,3 +1,3 @@
 {
- "doc": "Effect for the giant butterfly boss's beam (b02a): a line of 600 additive sparkle sprites between two work vectors. The finish handler keeps the line following its endpoints while it fades out."
+  "doc": "Effect for the giant butterfly boss's beam (b02a): a line of 600 additive sparkle sprites between two work vectors. The finish handler keeps the line following its endpoints while it fades out."
 }

@@ -1,6 +1,6 @@
 {
- "doc": "Max's house scenes on story map s46: Eina brings Max a potato pie at noon, young Max is sick in bed with a fever, and she tells him a bedtime story about the sea turtle Tak. The programs play them and then jump to g01i07, d03 or d04.",
- "globals": [
-  "frame_counter"
- ]
+  "doc": "Max's house scenes on story map s46: Eina brings Max a potato pie at noon, young Max is sick in bed with a fever, and she tells him a bedtime story about the sea turtle Tak. The programs play them and then jump to g01i07, d03 or d04.",
+  "globals": [
+    "frame_counter"
+  ]
 }

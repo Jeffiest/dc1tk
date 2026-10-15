@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster script for a melee monster with a single swing attack 1 (weak attack hit). It chases the target on foot, circles, steps back, and fights harder once enraged.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Dungeon monster script for a melee monster with a single swing attack 1 (weak attack hit). It chases the target on foot, circles, steps back, and fights harder once enraged.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

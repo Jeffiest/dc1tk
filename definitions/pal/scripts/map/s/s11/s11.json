@@ -1,7 +1,7 @@
 {
- "doc": "Map script for the Kazarov Stonehenge station where the Ixion train stops. It handles boarding the train (to the Ixion engine room s37 or guest room s38), the arrival scenes, the Osmond hologram scene that explains the Chrono Union and the four gems, the four gem altars that raise the pillars (all four lead to the Chrono Union at s66), the scene of Paznos appearing, and the departure to the Moonflower Palace stop (s12).",
- "globals": [
-  "max_chara_slot",
-  "monica_chara_slot"
- ]
+  "doc": "Map script for the Kazarov Stonehenge station where the Ixion train stops. It handles boarding the train (to the Ixion engine room s37 or guest room s38), the arrival scenes, the Osmond hologram scene that explains the Chrono Union and the four gems, the four gem altars that raise the pillars (all four lead to the Chrono Union at s66), the scene of Paznos appearing, and the departure to the Moonflower Palace stop (s12).",
+  "globals": [
+    "max_chara_slot",
+    "monica_chara_slot"
+  ]
 }

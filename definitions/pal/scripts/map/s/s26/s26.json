@@ -1,7 +1,7 @@
 {
- "doc": "The Firbits' control room with the Carpenterion Georama machine. It plays the scenes introducing Carpenterion and Geostones, Holly's farewell, and the give cover scene, and jumps on to Sindain, s02 or the Moon Flower Palace.",
- "globals": [
-  "player_slot",
-  "partner_slot"
- ]
+  "doc": "The Firbits' control room with the Carpenterion Georama machine. It plays the scenes introducing Carpenterion and Geostones, Holly's farewell, and the give cover scene, and jumps on to Sindain, s02 or the Moon Flower Palace.",
+  "globals": [
+    "player_slot",
+    "partner_slot"
+  ]
 }

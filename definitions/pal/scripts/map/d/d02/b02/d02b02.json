@@ -1,7 +1,7 @@
 {
- "doc": "Boss floor of the d02 dungeon, the home of the Rainbow Butterfly (Holly). Event 257 shows the ambush, then the butterfly splits into seven colored butterflies that must be defeated in rainbow order, with hint messages on programs 502 to 507. Afterwards event 260 has Holly thank the heroes and give them a Teal Envelope.",
- "globals": [
-  "max_chara_slot",
-  "monica_chara_slot"
- ]
+  "doc": "Boss floor of the d02 dungeon, the home of the Rainbow Butterfly (Holly). Event 257 shows the ambush, then the butterfly splits into seven colored butterflies that must be defeated in rainbow order, with hint messages on programs 502 to 507. Afterwards event 260 has Holly thank the heroes and give them a Teal Envelope.",
+  "globals": [
+    "max_chara_slot",
+    "monica_chara_slot"
+  ]
 }

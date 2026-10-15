@@ -1,9 +1,9 @@
 {
- "doc": "Event script for the Rush entrance into map g01. Entry 500 plays the scene of Max and Monica walking up to Rococo on the roof and then loads g01. The file also holds the time gate warp cutscenes (red and blue gates) used when the party travels through time.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "max_slot",
-  "monica_slot"
- ]
+  "doc": "Event script for the Rush entrance into map g01. Entry 500 plays the scene of Max and Monica walking up to Rococo on the roof and then loads g01. The file also holds the time gate warp cutscenes (red and blue gates) used when the party travels through time.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "max_slot",
+    "monica_slot"
+  ]
 }

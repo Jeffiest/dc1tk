@@ -1,7 +1,7 @@
 {
- "doc": "Map s71, a small copy of the Moon Flower Palace station scene. Event 590 plays the train leaving under the Moon Flower beam and jumps to Kazarov Stonehenge (s11).",
- "globals": [
-  "max_scene_slot",
-  "monica_scene_slot"
- ]
+  "doc": "Map s71, a small copy of the Moon Flower Palace station scene. Event 590 plays the train leaving under the Moon Flower beam and jumps to Kazarov Stonehenge (s11).",
+  "globals": [
+    "max_scene_slot",
+    "monica_scene_slot"
+  ]
 }

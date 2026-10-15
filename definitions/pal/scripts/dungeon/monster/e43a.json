@@ -1,8 +1,8 @@
 {
- "doc": "Dungeon monster AI for a sword and fireball enemy. It guards and dodges, attacks with attack 1 at close range and shoots flame shots from a distance.",
- "globals": [
-  "unused_value",
-  "unused2",
-  "unused3"
- ]
+  "doc": "Dungeon monster AI for a sword and fireball enemy. It guards and dodges, attacks with attack 1 at close range and shoots flame shots from a distance.",
+  "globals": [
+    "unused_value",
+    "unused2",
+    "unused3"
+  ]
 }

@@ -1,8 +1,8 @@
 {
- "doc": "Player action script for Monica (c02). It defines her sword combos for each of the four sword models, the charge attack, mid-range attack, back flip, magic charge and cast, guard, grab and throw, plus the damage, knockdown and death reactions.",
- "globals": [
-  "magic_charge_effect",
-  "magic_charge_level",
-  "weapon_model"
- ]
+  "doc": "Player action script for Monica (c02). It defines her sword combos for each of the four sword models, the charge attack, mid-range attack, back flip, magic charge and cast, guard, grab and throw, plus the damage, knockdown and death reactions.",
+  "globals": [
+    "magic_charge_effect",
+    "magic_charge_level",
+    "weapon_model"
+  ]
 }

@@ -1,3 +1,3 @@
 {
- "doc": "Boss script for Gaspard (kind 510, b03a; Giltoni in the Japanese effect names), a sword knight fighting in an arena centered at (-2195, 488, -475). He uses a double slash, a lunge, a moonsault and Giltoni magic; at 70% and 40% life he runs event 510 and changes phase, the first time summoning five Evil Flames (kind 513). On death it runs event 501."
+  "doc": "Boss script for Gaspard (kind 510, b03a; Giltoni in the Japanese effect names), a sword knight fighting in an arena centered at (-2195, 488, -475). He uses a double slash, a lunge, a moonsault and Giltoni magic; at 70% and 40% life he runs event 510 and changes phase, the first time summoning five Evil Flames (kind 513). On death it runs event 501."
 }

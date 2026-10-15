@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for the event Griffon Soldiers (kind 523, a separate kind from the regular e254a ones), sword fighters that come in a group of four. Each death adds to a shared counter, and when the fourth dies event script 510 runs; they wander, run at the player, slash, swing and dodge backward.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script for the event Griffon Soldiers (kind 523, a separate kind from the regular e254a ones), sword fighters that come in a group of four. Each death adds to a shared counter, and when the fourth dies event script 510 runs; they wander, run at the player, slash, swing and dodge backward.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }

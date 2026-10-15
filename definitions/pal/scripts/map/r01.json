@@ -1,3 +1,3 @@
 {
- "doc": "Shared message and conversation routines compiled into a test map r01. The map itself only loads four test characters at map start, and its debug entry waits for a confirm press."
+  "doc": "Shared message and conversation routines compiled into a test map r01. The map itself only loads four test characters at map start, and its debug entry waits for a confirm press."
 }

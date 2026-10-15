@@ -1,8 +1,8 @@
 {
- "doc": "Older stand-alone AI for the Ice Element model: a flyer that shoots ice shots and swoops, deciding by distance bands (120, 200, 300) and floating about 20 units above its start. The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
- "globals": [
-  "home_x",
-  "home_y",
-  "home_z"
- ]
+  "doc": "Older stand-alone AI for the Ice Element model: a flyer that shoots ice shots and swoops, deciding by distance bands (120, 200, 300) and floating about 20 units above its start. The monster table runs the shared element script for all elemental kinds (76 to 95), so this one appears unused.",
+  "globals": [
+    "home_x",
+    "home_y",
+    "home_z"
+  ]
 }

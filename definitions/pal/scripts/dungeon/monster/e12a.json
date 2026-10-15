@@ -1,8 +1,8 @@
 {
- "doc": "Monster script for e12a, a melee monster that lunges at the player and shoots curse bullets. It has a calm mode and an enraged mode after being hit, each with its own set of range-based actions, and answers attacks with a guard.",
- "globals": [
-  "spawn_x",
-  "spawn_y",
-  "spawn_z"
- ]
+  "doc": "Monster script for e12a, a melee monster that lunges at the player and shoots curse bullets. It has a calm mode and an enraged mode after being hit, each with its own set of range-based actions, and answers attacks with a guard.",
+  "globals": [
+    "spawn_x",
+    "spawn_y",
+    "spawn_z"
+  ]
 }
