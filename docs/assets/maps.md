@@ -553,7 +553,7 @@ lacks only `e05g01_01` and s17 nothing.
 `dc2tk_assets::map_import::import_map(gltf, read, map, packs, textures)` takes
 an edited scene and the map's files as the disc (or an earlier mod) has them,
 and gives what to write; `dc2tk build` does so for each `"map:NAME":
-"maps/NAME/NAME.gltf"` line of a chosen mod (`dc2tk/src/map_cmd.rs`):
+"maps/NAME/NAME.gltf"` line of a chosen mod (`dc2tk_script::mapedit::apply_maps`):
 
 - **The `.map`:** the scene tree is read back (`map_scene::read_scene`,
   section 8.1) and the map rebuilt (`map_edit::rebuild`): a template is

@@ -125,6 +125,25 @@ impl From<dc2tk_assets::Error> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// An error said with what was being done when it happened: `.context("map:s17 (mod fish)")`
+/// makes it an Error::Context, shown as "map:s17 (mod fish): <the error>", which keeps whether it
+/// was one of the input.
+pub trait Context<T> {
+    fn context(self, what: impl std::fmt::Display) -> Result<T>;
+    /// context, with the description made only on an error.
+    fn with_context<D: std::fmt::Display>(self, what: impl FnOnce() -> D) -> Result<T>;
+}
+
+impl<T, E: Into<Error>> Context<T> for std::result::Result<T, E> {
+    fn context(self, what: impl std::fmt::Display) -> Result<T> {
+        self.map_err(|error| Error::Context { what: what.to_string(), error: Box::new(error.into()) })
+    }
+
+    fn with_context<D: std::fmt::Display>(self, what: impl FnOnce() -> D) -> Result<T> {
+        self.map_err(|error| Error::Context { what: what().to_string(), error: Box::new(error.into()) })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -628,10 +628,14 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             println!("{warning}");
         }
     }
-    let program_of = |line: &replace::Line, value: &serde_json::Value| -> Result<i64> {
-        Ok(dc2tk_script::mapscript::program_number(value, &line.module, &plan.numbers, &consts)?)
+    let program_of = |line: &replace::Line, value: &serde_json::Value| {
+        dc2tk_script::mapscript::program_number(value, &line.module, &plan.numbers, &consts)
     };
-    let (mut files, map_changes) = crate::map_cmd::apply_maps(&args.iso, &mod_dirs, &files, &program_of)?;
+    let maps = dc2tk_script::mapedit::apply_maps(&args.iso, &mod_dirs, &files, &program_of)?;
+    for line in &maps.said {
+        println!("{line}");
+    }
+    let (mut files, map_changes) = (maps.files, maps.changes);
     for built in dc2tk_script::mapscript::build_all(&all_lines, &mod_dirs, &args.source, &tools, &plan.numbers)? {
         for (path, data) in built.files {
             println!(
