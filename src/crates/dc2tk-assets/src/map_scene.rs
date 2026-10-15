@@ -186,33 +186,53 @@ fn data_json(data: &PointData) -> Value {
     }
 }
 
-/// A point's data read back; fields the scene leaves out keep the original's (or zero).
-fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Result<PointData> {
-    let field = |name: &str| &value[name];
-    let num = |name: &str, old: Option<Num>| -> Result<Num> {
-        match field(name) {
+/// A point's fields as the scene gives them: one the scene leaves out keeps the original's (or
+/// zero).
+struct Fields<'a>(&'a Value);
+
+impl<'a> Fields<'a> {
+    fn get(&self, name: &str) -> &'a Value {
+        &self.0[name]
+    }
+
+    fn num(&self, name: &str, old: Option<Num>) -> Result<Num> {
+        match self.get(name) {
             Value::Null => Ok(old.unwrap_or(Num::Int(0))),
             found => num_from(found, old, name),
         }
-    };
-    fn nums<const N: usize>(found: &Value, name: &str, old: Option<&[Num; N]>) -> Result<[Num; N]> {
-        match found {
-            Value::Null => Ok(old.copied().unwrap_or([Num::Int(0); N])),
-            found => nums_from(found, old, name),
-        }
     }
-    let text = |name: &str, old: Option<&String>| -> Result<String> {
-        match field(name) {
+
+    fn nums<const N: usize>(&self, name: &str, old: Option<&[Num; N]>) -> Result<[Num; N]> {
+        nums_or_old(self.get(name), name, old)
+    }
+
+    fn text(&self, name: &str, old: Option<&String>) -> Result<String> {
+        match self.get(name) {
             Value::Null => Ok(old.cloned().unwrap_or_default()),
             found => text_from(found, name),
         }
-    };
-    let extra = |old: Option<&Option<[Num; 2]>>| -> Result<Option<[Num; 2]>> {
-        match field("extra") {
+    }
+
+    /// A fire's extra numbers: none when the scene gives none.
+    fn extra(&self, old: Option<&Option<[Num; 2]>>) -> Result<Option<[Num; 2]>> {
+        match self.get("extra") {
             Value::Null => Ok(None),
             found => Ok(Some(nums_from(found, old.and_then(Option::as_ref), "extra")?)),
         }
-    };
+    }
+}
+
+/// N numbers read back, or the original's (or zeros) when the scene leaves them out.
+fn nums_or_old<const N: usize>(found: &Value, name: &str, old: Option<&[Num; N]>) -> Result<[Num; N]> {
+    match found {
+        Value::Null => Ok(old.copied().unwrap_or([Num::Int(0); N])),
+        found => nums_from(found, old, name),
+    }
+}
+
+/// A point's data read back; fields the scene leaves out keep the original's (or zero).
+fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Result<PointData> {
+    let fields = Fields(value);
     Ok(match kind {
         PointKind::Pos => PointData::None,
         PointKind::Invent => {
@@ -221,12 +241,12 @@ fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Re
                 _ => None,
             };
             PointData::Invent(InventData {
-                id: num("id", o.map(|o| o.id))?,
-                min: nums(field("min"), "min", o.map(|o| &o.min))?,
-                max: nums(field("max"), "max", o.map(|o| &o.max))?,
-                int_param: num("unknown_int", o.map(|o| o.int_param))?,
-                float_param: num("unknown_float", o.map(|o| o.float_param))?,
-                angle: num("angle", o.map(|o| o.angle))?,
+                id: fields.num("id", o.map(|o| o.id))?,
+                min: fields.nums("min", o.map(|o| &o.min))?,
+                max: fields.nums("max", o.map(|o| &o.max))?,
+                int_param: fields.num("unknown_int", o.map(|o| o.int_param))?,
+                float_param: fields.num("unknown_float", o.map(|o| o.float_param))?,
+                angle: fields.num("angle", o.map(|o| o.angle))?,
             })
         }
         PointKind::Event => {
@@ -234,13 +254,13 @@ fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Re
                 Some(PointData::Event(o)) => Some(o),
                 _ => None,
             };
-            let flags = nums(field("flags"), "flags", o.map(|o| [o.action_button, o.use_item, o.flag_100]).as_ref())?;
+            let flags = fields.nums("flags", o.map(|o| [o.action_button, o.use_item, o.flag_100]).as_ref())?;
             PointData::Event(EventData {
-                kind: text("kind", o.map(|o| &o.kind))?,
-                event_no: num("event_no", o.map(|o| o.event_no))?,
-                program: num("program", o.map(|o| o.program))?,
-                args: nums(field("args"), "args", o.map(|o| &o.args))?,
-                target: text("target", o.map(|o| &o.target))?,
+                kind: fields.text("kind", o.map(|o| &o.kind))?,
+                event_no: fields.num("event_no", o.map(|o| o.event_no))?,
+                program: fields.num("program", o.map(|o| o.program))?,
+                args: fields.nums("args", o.map(|o| &o.args))?,
+                target: fields.text("target", o.map(|o| &o.target))?,
                 action_button: flags[0],
                 use_item: flags[1],
                 flag_100: flags[2],
@@ -252,9 +272,9 @@ fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Re
                 _ => None,
             };
             PointData::Fire(FireData {
-                color: nums(field("color"), "color", o.map(|o| &o.color))?,
-                draw: num("draw", o.map(|o| o.draw))?,
-                extra: extra(o.map(|o| &o.extra))?,
+                color: fields.nums("color", o.map(|o| &o.color))?,
+                draw: fields.num("draw", o.map(|o| o.draw))?,
+                extra: fields.extra(o.map(|o| &o.extra))?,
             })
         }
         PointKind::Plight => {
@@ -263,13 +283,13 @@ fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Re
                 _ => None,
             };
             PointData::Plight(PlightData {
-                power: num("power", o.map(|o| o.power))?,
-                color: nums(field("color"), "color", o.map(|o| &o.color))?,
-                mode: num("mode", o.map(|o| o.mode))?,
-                ints: nums(field("args"), "args", o.map(|o| &o.ints))?,
-                flicker_type: num("flicker", o.map(|o| o.flicker_type))?,
-                flicker_depth: num("depth", o.map(|o| o.flicker_depth))?,
-                flicker_period: num("period", o.map(|o| o.flicker_period))?,
+                power: fields.num("power", o.map(|o| o.power))?,
+                color: fields.nums("color", o.map(|o| &o.color))?,
+                mode: fields.num("mode", o.map(|o| o.mode))?,
+                ints: fields.nums("args", o.map(|o| &o.ints))?,
+                flicker_type: fields.num("flicker", o.map(|o| o.flicker_type))?,
+                flicker_depth: fields.num("depth", o.map(|o| o.flicker_depth))?,
+                flicker_period: fields.num("period", o.map(|o| o.flicker_period))?,
             })
         }
         PointKind::Effect => {
@@ -277,7 +297,7 @@ fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Re
                 Some(PointData::Effect(o)) => Some(o),
                 _ => None,
             };
-            PointData::Effect(text("effect", o)?)
+            PointData::Effect(fields.text("effect", o)?)
         }
         PointKind::Sound => {
             let o = match original {
@@ -285,13 +305,13 @@ fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Re
                 _ => None,
             };
             PointData::Sound(SoundData {
-                number: num("number", o.map(|o| o.number))?,
-                near: num("near", o.map(|o| o.near))?,
-                far: num("far", o.map(|o| o.far))?,
-                int_param: num("unknown_int", o.map(|o| o.int_param))?,
-                shape: num("shape", o.map(|o| o.shape))?,
-                start: nums(field("start"), "start", o.map(|o| &o.start))?,
-                end: nums(field("end"), "end", o.map(|o| &o.end))?,
+                number: fields.num("number", o.map(|o| o.number))?,
+                near: fields.num("near", o.map(|o| o.near))?,
+                far: fields.num("far", o.map(|o| o.far))?,
+                int_param: fields.num("unknown_int", o.map(|o| o.int_param))?,
+                shape: fields.num("shape", o.map(|o| o.shape))?,
+                start: fields.nums("start", o.map(|o| &o.start))?,
+                end: fields.nums("end", o.map(|o| &o.end))?,
             })
         }
         PointKind::Anime => {
@@ -299,40 +319,44 @@ fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Re
                 Some(PointData::Anime(o)) => Some(o),
                 _ => None,
             };
-            // Scenes exported before the fields were decoded name them kind, unknown_int, v0, v1,
-            // v2 and extra.
-            let named = |name: &str, old: &str| match field(name) {
-                Value::Null => field(old),
-                found => found,
-            };
-            let num = |name: &str, old_name: &str, old: Option<Num>| match named(name, old_name) {
-                Value::Null => Ok(old.unwrap_or(Num::Int(0))),
-                found => num_from(found, old, name),
-            };
-            let flags = o.and_then(|o| o.flags);
-            let flags = match (field("uniform"), field("relative"), field("extra")) {
-                (Value::Null, Value::Null, Value::Null) => None,
-                (Value::Null, Value::Null, extra) => Some(nums_from(extra, flags.as_ref(), "extra")?),
-                (uniform, relative, _) => {
-                    let one = |found: &Value, name: &str, at: usize| match found {
-                        Value::Null => Ok(flags.map_or(Num::Int(0), |flags| flags[at])),
-                        found => num_from(found, flags.map(|flags| flags[at]), name),
-                    };
-                    Some([one(uniform, "uniform", 0)?, one(relative, "relative", 1)?])
-                }
-            };
-            PointData::Anime(AnimeData {
-                placement: text("placement", o.map(|o| &o.placement))?,
-                piece: text("piece", o.map(|o| &o.piece))?,
-                frame: text("frame", o.map(|o| &o.frame))?,
-                drives: num("drives", "kind", o.map(|o| o.drives))?,
-                mode: num("mode", "unknown_int", o.map(|o| o.mode))?,
-                start: nums(named("start", "v0"), "start", o.map(|o| &o.start))?,
-                step: nums(named("step", "v1"), "step", o.map(|o| &o.step))?,
-                end: nums(named("end", "v2"), "end", o.map(|o| &o.end))?,
-                flags,
-            })
+            PointData::Anime(anime_from(&fields, o)?)
         }
+    })
+}
+
+/// An anime point's data read back. Scenes exported before the fields were decoded name them kind,
+/// unknown_int, v0, v1, v2 and extra.
+fn anime_from(fields: &Fields, o: Option<&AnimeData>) -> Result<AnimeData> {
+    let named = |name: &str, old: &str| match fields.get(name) {
+        Value::Null => fields.get(old),
+        found => found,
+    };
+    let num = |name: &str, old_name: &str, old: Option<Num>| match named(name, old_name) {
+        Value::Null => Ok(old.unwrap_or(Num::Int(0))),
+        found => num_from(found, old, name),
+    };
+    let flags = o.and_then(|o| o.flags);
+    let flags = match (fields.get("uniform"), fields.get("relative"), fields.get("extra")) {
+        (Value::Null, Value::Null, Value::Null) => None,
+        (Value::Null, Value::Null, extra) => Some(nums_from(extra, flags.as_ref(), "extra")?),
+        (uniform, relative, _) => {
+            let one = |found: &Value, name: &str, at: usize| match found {
+                Value::Null => Ok(flags.map_or(Num::Int(0), |flags| flags[at])),
+                found => num_from(found, flags.map(|flags| flags[at]), name),
+            };
+            Some([one(uniform, "uniform", 0)?, one(relative, "relative", 1)?])
+        }
+    };
+    Ok(AnimeData {
+        placement: fields.text("placement", o.map(|o| &o.placement))?,
+        piece: fields.text("piece", o.map(|o| &o.piece))?,
+        frame: fields.text("frame", o.map(|o| &o.frame))?,
+        drives: num("drives", "kind", o.map(|o| o.drives))?,
+        mode: num("mode", "unknown_int", o.map(|o| o.mode))?,
+        start: nums_or_old(named("start", "v0"), "start", o.map(|o| &o.start))?,
+        step: nums_or_old(named("step", "v1"), "step", o.map(|o| &o.step))?,
+        end: nums_or_old(named("end", "v2"), "end", o.map(|o| &o.end))?,
+        flags,
     })
 }
 
