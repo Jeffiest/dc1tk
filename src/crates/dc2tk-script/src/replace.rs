@@ -61,8 +61,7 @@ use dc2tk_assets::sounds::{self, Given};
 use dc2tk_assets::text::{self, Fonts};
 use dc2tk_assets::tree::{self, Kind, Place};
 use dc2tk_assets::{music, soundfont};
-use dc2tk_disc::archive::{Archive, Entry};
-use dc2tk_disc::{rebuild, Image};
+use dc2tk_disc::{rebuild, DiscSource};
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 
@@ -1090,10 +1089,8 @@ pub fn english_letters(
         })
         .collect();
     if !texts.is_empty() {
-        let image = Image::open(iso_path)?;
-        let disc = Archive::open(image.bytes())?;
-        let index = discfiles::disc_index(&disc);
-        let fonts = discfiles::disc_fonts(&disc, &image, &index);
+        let disc = DiscSource::open(iso_path)?;
+        let fonts = discfiles::disc_fonts(&disc);
         let mut seen = HashSet::new();
         for edit in texts {
             let Change::Text(source, reference) = &edit.change else { unreachable!() };
@@ -1105,11 +1102,10 @@ pub fn english_letters(
                 Error::invalid(format!("{} (mod {}) at {}: {error}", edit.key, edit.module, edit.place.display()))
             };
             let written = dc2tk_disc::textfile::read_text(source)?;
-            let original = index
-                .get(&reference.path.to_lowercase())
-                .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
+            let original = disc
+                .member(&reference.path, &reference.members)?
                 .ok_or_else(|| fail(format!("{} is not on the disc", reference.display())))?;
-            let letters = text::changed_letters(&written, original, &edit.place.display(), &fonts)
+            let letters = text::changed_letters(&written, &original, &edit.place.display(), &fonts)
                 .map_err(|error| fail(error.to_string()))?;
             users.push((edit.id.clone(), edit.module.clone(), letters));
         }
@@ -1149,9 +1145,7 @@ impl Change {
 
 /// What apply_with builds from: the disc and its fonts, and what it has built so far.
 struct Applying<'a> {
-    image: &'a Image,
-    disc: &'a Archive,
-    index: &'a HashMap<String, &'a Entry>,
+    disc: &'a DiscSource,
     fonts: Fonts,
     /// Where models are built.
     temp: PathBuf,
@@ -1166,12 +1160,6 @@ struct Applying<'a> {
 type Fail<'a> = dyn Fn(Error) -> Error + 'a;
 
 impl Applying<'_> {
-    /// The disc's own bytes of a place.
-    fn disc_member(&self, place: &Place) -> Option<&[u8]> {
-        let entry = self.index.get(&place.path.to_lowercase())?;
-        rebuild::read_member(self.disc.read(self.image.bytes(), entry), &place.members)
-    }
-
     /// The model a line gives, built on the pack it replaces.
     fn model(&mut self, edit: &Edit, source: &Path, old: &[u8], fail: &Fail) -> Result<Vec<u8>> {
         if let Some((_, _, built)) = self.models.iter().find(|(id, from, _)| *id == edit.id && from == old) {
@@ -1195,12 +1183,13 @@ impl Applying<'_> {
     ) -> Result<Vec<u8>> {
         let written = dc2tk_disc::textfile::read_text(source)?;
         let original = self
-            .disc_member(reference)
+            .disc
+            .member(&reference.path, &reference.members)?
             .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
         let place = place.display();
-        let built = text::build(&written, old, original, &place, &self.fonts).map_err(|error| fail(error.into()))?;
+        let built = text::build(&written, old, &original, &place, &self.fonts).map_err(|error| fail(error.into()))?;
         let widths =
-            text::width_warnings(&written, original, &place, &self.fonts).map_err(|error| fail(error.into()))?;
+            text::width_warnings(&written, &original, &place, &self.fonts).map_err(|error| fail(error.into()))?;
         self.warnings.extend(widths.into_iter().map(|warning| (shown.to_string(), format!("warning: {warning}"))));
         Ok(built)
     }
@@ -1282,11 +1271,9 @@ pub fn apply_with(
     files: &Files,
     english: &EnglishLetters,
 ) -> Result<(Files, Vec<Changed>)> {
-    let image = Image::open(iso_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let index = discfiles::disc_index(&disc);
+    let disc = DiscSource::open(iso_path)?;
     let mut files = files.clone();
-    let mut fonts = discfiles::disc_fonts(&disc, &image, &index);
+    let mut fonts = discfiles::disc_fonts(&disc);
     if !english.slots.is_empty() {
         fonts = fonts.with_english_extra(&english.slots);
     }
@@ -1298,20 +1285,19 @@ pub fn apply_with(
     static BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let build = BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let temp = std::env::temp_dir().join(format!("dc2tk-build-model-{}-{build}", std::process::id()));
-    let mut applying =
-        Applying { image: &image, disc: &disc, index: &index, fonts, temp, models: Vec::new(), warnings: Vec::new() };
+    let mut applying = Applying { disc: &disc, fonts, temp, models: Vec::new(), warnings: Vec::new() };
     let mut touched: IndexMap<String, Changed> = IndexMap::new();
     for ((stage, _, shown), edits) in groups {
         let first = edits[0];
         let place = &first.place;
         let what = format!("{} (mod {}) at {}", first.key, first.module, place.display());
         let fail = |error: Error| Error::Context { what: what.clone(), error: Box::new(error) };
-        let Some(entry) = index.get(&place.path.to_lowercase()) else {
+        let Some(top) = disc.spelling(&place.path).map(str::to_string) else {
             return Err(fail(Error::invalid(format!("{} is not a file on the disc", place.path))));
         };
-        let mut data = match files.get(&entry.path) {
+        let mut data = match files.get(&top) {
             Some(data) => data.clone(),
-            None => disc.read(image.bytes(), entry).to_vec(),
+            None => disc.read(&top)?.into_owned(),
         };
         let Some(old) = rebuild::read_member(&data, &place.members).map(<[u8]>::to_vec) else {
             return Err(fail(Error::invalid("the pack has no such member".to_string())));
@@ -1325,9 +1311,9 @@ pub fn apply_with(
                 applying.sequence(place, source, instruments, &old, &mut data, &shown, &fail)?
             }
         };
-        files.insert(entry.path.clone(), rebuild::replaced_member(&data, &place.members, &new)?);
+        files.insert(top.clone(), rebuild::replaced_member(&data, &place.members, &new)?);
         let changed = touched.entry(shown).or_insert_with(|| Changed {
-            place: Place { path: entry.path.clone(), members: place.members.clone() },
+            place: Place { path: top, members: place.members.clone() },
             ids: IndexSet::new(),
             modules: IndexSet::new(),
             old: old.len(),
@@ -1367,8 +1353,8 @@ pub fn apply_with(
 /// (english_letters). Its path, its change and its bytes.
 fn english_font(applying: &Applying, files: &Files, english: &EnglishLetters) -> Result<(String, Changed, Vec<u8>)> {
     let read = |path: &str| {
-        let entry = applying.index.get(&path.to_lowercase())?;
-        Some((entry.path.clone(), applying.disc.read(applying.image.bytes(), entry).to_vec()))
+        let spelling = applying.disc.spelling(path)?;
+        Some((spelling.to_string(), applying.disc.read(spelling).ok()?.into_owned()))
     };
     let (Some((path, english_texture)), Some((_, european))) =
         (read(font::ENGLISH_TEXTURE), read(font::EUROPEAN_TEXTURE))
@@ -1399,19 +1385,14 @@ fn english_font(applying: &Applying, files: &Files, english: &EnglishLetters) ->
 
 /// The changed places that read back out of a built image differently.
 pub fn check(out_path: &Path, changed: &[Changed]) -> Result<Vec<String>> {
-    let image = Image::open(out_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let index = discfiles::disc_index(&disc);
-    Ok(changed
-        .iter()
-        .filter(|item| {
-            let found = index
-                .get(&item.place.path.to_lowercase())
-                .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &item.place.members));
-            found != Some(&item.data[..])
-        })
-        .map(|item| item.place.display())
-        .collect())
+    let disc = DiscSource::open(out_path)?;
+    let mut wrong = Vec::new();
+    for item in changed {
+        if disc.member(&item.place.path, &item.place.members)?.as_deref() != Some(&item.data[..]) {
+            wrong.push(item.place.display());
+        }
+    }
+    Ok(wrong)
 }
 
 /// Puts the music files the lines add (music:BG_200 under "add") into the disc files build writes,
@@ -1425,9 +1406,7 @@ pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(File
     if wanted.is_empty() {
         return Ok((files, Vec::new()));
     }
-    let image = Image::open(iso_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let index = discfiles::disc_index(&disc);
+    let disc = DiscSource::open(iso_path)?;
     let mut added: BTreeMap<u32, &Line> = BTreeMap::new();
     let mut out = Vec::new();
     for line in wanted {
@@ -1440,7 +1419,7 @@ pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(File
                 other.key, other.module, line.key, line.module
             )));
         }
-        if index.contains_key(&path.to_lowercase()) {
+        if disc.spelling(&path).is_some() {
             return Err(line.fail(format!(
                 "the disc has {path} already: pick a number it lacks, or replace its tune with a music:{name}_000 line"
             )));
@@ -1453,13 +1432,12 @@ pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(File
             LineKind::Music { instruments, .. } => instruments.as_slice(),
             _ => &[],
         };
-        let Some(entry) = index.get(&like.to_lowercase()) else {
+        let Some(like_bank) = disc.member(&like, &[])? else {
             return Err(line.fail(format!("the disc has no {like} to make it like")));
         };
         let midi = fs::read(&line.file)?;
-        let (data, notes) =
-            music::new_bank(&midi, disc.read(image.bytes(), entry), &name, instruments, Some(music::MUSIC_REGION))
-                .map_err(|error| line.fail(error))?;
+        let (data, notes) = music::new_bank(&midi, &like_bank, &name, instruments, Some(music::MUSIC_REGION))
+            .map_err(|error| line.fail(error))?;
         files.insert(path.clone(), data.clone());
         out.push(Changed {
             place: Place { path, members: Vec::new() },
@@ -1515,10 +1493,8 @@ pub fn copy_out(
     keys: &[String],
     index: &Index,
 ) -> Result<Vec<(String, String, bool)>> {
-    let image = Image::open(iso_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let disc_index = discfiles::disc_index(&disc);
-    let fonts = discfiles::disc_fonts(&disc, &image, &disc_index);
+    let disc = DiscSource::open(iso_path)?;
+    let fonts = discfiles::disc_fonts(&disc);
     let known: Vec<String> = if mod_dir.join(mods::INDEX).is_file() {
         lines(mod_dir)?.into_iter().map(|line| line.key.to_lowercase()).collect()
     } else {
@@ -1535,10 +1511,10 @@ pub fn copy_out(
         for asset in found {
             let stem = tree::file_stem(asset.id.split_once(':').map_or("", |(_, name)| name));
             let (place, at) = &asset.places[0];
-            let data = disc_index
-                .get(&place.path.to_lowercase())
-                .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &place.members))
+            let data = disc
+                .member(&place.path, &place.members)?
                 .ok_or_else(|| Error::invalid(format!("{}: {} is not on the disc", asset.id, place.display())))?;
+            let data = &data[..];
             let bank_stem = |bank: &str| tree::file_stem(bank.split_once(':').map_or(bank, |(_, name)| name));
             let (target, files): (String, Vec<(String, Vec<u8>)>) = match asset.kind {
                 Kind::Texture => {
@@ -1588,13 +1564,12 @@ pub fn copy_out(
                     let target = format!("music/{stem}{}", music::SUFFIX);
                     let mut files = vec![(target.clone(), music::export(data, &asset.name)?)];
                     if let Some((_, members)) = place.members.split_last() {
-                        let top = disc_index.get(&place.path.to_lowercase());
-                        let bank = top.and_then(|top| rebuild::read_member(disc.read(image.bytes(), top), members));
+                        let bank = disc.member(&place.path, members)?;
                         let file = members.last().unwrap_or(&place.path);
                         let file = file.rsplit('/').next().unwrap_or(file);
                         let name = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
                         if let Some(bank) = bank {
-                            let font = soundfont::write(&Bank::from_bytes(bank)?, name)?;
+                            let font = soundfont::write(&Bank::from_bytes(&bank)?, name)?;
                             files.push((format!("music/{}{}", tree::file_stem(name), soundfont::SUFFIX), font));
                         }
                     }

@@ -24,13 +24,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use dc2tk_disc::archive::Archive;
-use dc2tk_disc::{rebuild, Image};
+use dc2tk_disc::DiscSource;
 use indexmap::IndexMap;
 use regex::Regex;
 
 use crate::index::{self, Folded};
-use crate::{discfiles, maptable, mods, pathnames, sdk, source, Error, Result};
+use crate::{maptable, mods, pathnames, sdk, source, Error, Result};
 
 pub const START_PROGRAM: &str = "floor_start";
 pub const START_FLAG: i64 = 2047;
@@ -107,17 +106,11 @@ pub fn map_table_path(language: Option<i64>) -> String {
     format!("map/map{}.cfg", language.unwrap_or(1))
 }
 
-/// map_numbers of a disc image's map table; empty when the image has none.
-pub fn disc_map_numbers(iso: &Path, language: Option<i64>) -> Result<IndexMap<String, i64>> {
-    let image = Image::open(iso)?;
-    let disc = Archive::open(image.bytes())?;
-    let index = discfiles::disc_index(&disc);
-    let (top, members) = discfiles::location(&map_table_path(language));
-    Ok(index
-        .get(&top.to_lowercase())
-        .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &members))
-        .map(map_numbers)
-        .unwrap_or_default())
+/// map_numbers of a disc's map table (the disc image or an extracted disc); empty when the disc
+/// has none.
+pub fn disc_map_numbers(disc: &Path, language: Option<i64>) -> Result<IndexMap<String, i64>> {
+    let disc = DiscSource::open(disc)?;
+    Ok(disc.member(&map_table_path(language), &[])?.map(|table| map_numbers(&table)).unwrap_or_default())
 }
 
 /// How many calls in the tree load map with load_dungeon_map.

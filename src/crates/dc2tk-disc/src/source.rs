@@ -10,13 +10,15 @@ use std::path::{Path, PathBuf};
 
 use crate::archive::Archive;
 use crate::extract::{Manifest, MANIFEST};
-use crate::{iso, Error, Image, Result, WithPath};
+use crate::{iso, rebuild, Error, Image, Result, WithPath};
 
 /// A disc image or an extracted disc.
 pub struct DiscSource {
     form: Form,
-    /// Each DATA.DAT file's path, lowercased, to its place in `paths`: the game's paths ignore case.
-    index: HashMap<String, usize>,
+    /// Each DATA.DAT file's path, lowercased, to its places in `paths`: the game's paths ignore
+    /// case, and the index can list one path twice in different case (the first is the one the
+    /// game finds).
+    index: HashMap<String, Vec<usize>>,
     /// The DATA.DAT files (not the packs' members), as the disc spells them, in its order.
     paths: Vec<String>,
 }
@@ -51,10 +53,9 @@ impl DiscSource {
                 manifest.files.iter().filter(|item| !item.packed).map(|item| item.path.clone()).collect()
             }
         };
-        let mut index = HashMap::with_capacity(paths.len());
+        let mut index: HashMap<String, Vec<usize>> = HashMap::with_capacity(paths.len());
         for (at, path) in paths.iter().enumerate() {
-            // the first of two spellings of one path, as the index lookup finds it
-            index.entry(path.to_lowercase()).or_insert(at);
+            index.entry(path.to_lowercase()).or_default().push(at);
         }
         Ok(DiscSource { form, index, paths })
     }
@@ -66,12 +67,24 @@ impl DiscSource {
 
     /// The disc's spelling of a DATA.DAT path given in any case, when the disc has it.
     pub fn spelling(&self, path: &str) -> Option<&str> {
-        self.index.get(&path.to_lowercase()).map(|&at| self.paths[at].as_str())
+        self.index.get(&path.to_lowercase()).map(|places| self.paths[places[0]].as_str())
     }
 
     /// A DATA.DAT file's bytes, by its path in any case.
     pub fn read(&self, path: &str) -> Result<Cow<'_, [u8]>> {
-        let at = *self.index.get(&path.to_lowercase()).ok_or_else(|| Error::Missing(path.to_string()))?;
+        let places = self.index.get(&path.to_lowercase()).ok_or_else(|| Error::Missing(path.to_string()))?;
+        self.read_at(places[0])
+    }
+
+    /// Every DATA.DAT file of a path in any case, in the disc's order: the index can list a path
+    /// twice in different case (an extracted disc holds one file for both, so reads it twice).
+    /// Empty when the disc lacks it.
+    pub fn copies(&self, path: &str) -> Result<Vec<Cow<'_, [u8]>>> {
+        let places = self.index.get(&path.to_lowercase()).map_or(&[][..], Vec::as_slice);
+        places.iter().map(|&at| self.read_at(at)).collect()
+    }
+
+    fn read_at(&self, at: usize) -> Result<Cow<'_, [u8]>> {
         match &self.form {
             Form::Image { image, archive } => Ok(Cow::Borrowed(archive.read(image.bytes(), &archive.entries[at]))),
             Form::Folder { root, .. } => {
@@ -79,6 +92,21 @@ impl DiscSource {
                 Ok(Cow::Owned(fs::read(&file).with_path("read", &file)?))
             }
         }
+    }
+
+    /// A DATA.DAT file, or a member inside its packs (`members` outermost first, none for the
+    /// file itself), by the file's path in any case; None when the disc lacks the file or a pack
+    /// the member.
+    pub fn member(&self, path: &str, members: &[String]) -> Result<Option<Cow<'_, [u8]>>> {
+        let data = match self.read(path) {
+            Ok(data) => data,
+            Err(Error::Missing(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        Ok(match data {
+            Cow::Borrowed(data) => rebuild::read_member(data, members).map(Cow::Borrowed),
+            Cow::Owned(data) => rebuild::read_member(&data, members).map(|member| Cow::Owned(member.to_vec())),
+        })
     }
 
     /// A file of the disc's own directory tree (the boot executable, SYSTEM.CNF), which extract
@@ -136,6 +164,13 @@ mod tests {
         assert_eq!(extracted.read("MAP/T01.STB").unwrap(), samples::sample_script());
         assert!(matches!(image.read("map/none.stb"), Err(Error::Missing(_))));
         assert_eq!(image.disc_file("DATA.HD4").unwrap(), extracted.disc_file("DATA.HD4").unwrap());
+        // a pack's members, from either
+        for disc in [&image, &extracted] {
+            let member = disc.member("CHARA/C01.CHR", &["c01.stb".to_string()]).unwrap().unwrap();
+            assert_eq!(member, samples::sample_script());
+            assert!(disc.member("chara/c01.chr", &["none.stb".to_string()]).unwrap().is_none());
+            assert!(disc.member("chara/none.chr", &[]).unwrap().is_none());
+        }
         fs::remove_dir_all(&folder).unwrap();
     }
 

@@ -15,8 +15,7 @@ use std::path::{Path, PathBuf};
 use dc2tk_assets::ids::Index;
 use dc2tk_assets::tree::{self, Kind};
 use dc2tk_assets::{im3, sounds, textures};
-use dc2tk_disc::archive::Archive;
-use dc2tk_disc::{rebuild, Image};
+use dc2tk_disc::DiscSource;
 use indexmap::IndexMap;
 use serde_json::Value;
 
@@ -197,19 +196,14 @@ fn planned(
     index: &Index,
 ) -> Result<(Vec<Planned>, Vec<PathBuf>)> {
     let root = mod_dir.join(DISC);
-    let image = Image::open(iso_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let disc_index = discfiles::disc_index(&disc);
+    let disc = DiscSource::open(iso_path)?;
     let at = index.at();
     let mut planned: Vec<Planned> = Vec::new();
     let mut used: Vec<PathBuf> = Vec::new();
     for (path, source) in found {
         let (top, members) = discfiles::location(path);
-        let data = disc_index
-            .get(&top.to_lowercase())
-            .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &members));
-        let lines = match data {
-            Some(data) => by_id(path, source, data, index, &at)?,
+        let lines = match disc.member(&top, &members)? {
+            Some(data) => by_id(path, source, &data, index, &at)?,
             None => None,
         };
         let lines = lines.unwrap_or_else(|| {

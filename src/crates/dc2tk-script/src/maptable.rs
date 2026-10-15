@@ -14,8 +14,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use dc2tk_assets::info_cfg::{self, Arg, Statement};
-use dc2tk_disc::archive::Archive;
-use dc2tk_disc::{text, Image};
+use dc2tk_disc::{text, DiscSource};
 use indexmap::IndexMap;
 use regex::bytes::Regex;
 
@@ -233,15 +232,14 @@ pub fn assumed_numbers(maps: &[NewMap]) -> IndexMap<String, i64> {
 }
 
 /// startat::disc_map_numbers with the new maps after the disc's own.
-pub fn disc_numbers_with(iso: &Path, language: Option<i64>, maps: &[NewMap]) -> Result<IndexMap<String, i64>> {
+pub fn disc_numbers_with(disc: &Path, language: Option<i64>, maps: &[NewMap]) -> Result<IndexMap<String, i64>> {
     if maps.is_empty() {
-        return startat::disc_map_numbers(iso, language);
+        return startat::disc_map_numbers(disc, language);
     }
-    let image = Image::open(iso)?;
-    let disc = Archive::open(image.bytes())?;
+    let disc = DiscSource::open(disc)?;
     let path = startat::map_table_path(language);
-    let entry = disc.entry(&path).ok_or_else(|| Error::invalid(format!("the disc has no {path}")))?;
-    numbers_with(disc.read(image.bytes(), entry), maps)
+    let table = disc.member(&path, &[])?.ok_or_else(|| Error::invalid(format!("the disc has no {path}")))?;
+    numbers_with(&table, maps)
 }
 
 #[cfg(test)]

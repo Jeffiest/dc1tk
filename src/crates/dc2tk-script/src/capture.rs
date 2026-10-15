@@ -13,16 +13,17 @@
 //! The disc's own files beside DATA.DAT (movies, SOUND.DAT, the indexes, the boot program) are
 //! reported but cannot go in a mod: build writes DATA.DAT's files.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::Path;
 
 use dc2tk_assets::manifest::Manifest;
 use dc2tk_assets::tree::MANIFEST as ASSET_MANIFEST;
-use dc2tk_disc::archive::{Archive, Entry};
+use dc2tk_disc::archive;
 use dc2tk_disc::extract::{self, MANIFEST};
 use dc2tk_disc::layout::{self, Layout};
-use dc2tk_disc::Image;
+use dc2tk_disc::DiscSource;
 use rayon::prelude::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -142,26 +143,26 @@ fn assets(assets_dir: &Path, changes: &mut Changes) -> Result<()> {
 /// Every copy of the bytes the disc has at a path of the extracted disc: a DATA.DAT file, or a
 /// member of a pack (a.chr.d/b.img). A pack can hold two members of one name (and the index two
 /// files differing in case), which extract writes as one file holding the last.
-fn disc_copies<'a>(
-    image: &'a [u8],
-    disc: &Archive,
-    entries: &HashMap<String, Vec<&Entry>>,
-    path: &str,
-) -> Vec<&'a [u8]> {
+fn disc_copies<'a>(disc: &'a DiscSource, path: &str) -> Result<Vec<Cow<'a, [u8]>>> {
     let (top, members) = discfiles::location(path);
-    let mut found: Vec<&'a [u8]> =
-        entries.get(&top.to_lowercase()).into_iter().flatten().map(|entry| disc.read(image, entry)).collect();
+    let mut found = disc.copies(&top)?;
     for name in members {
-        let wanted = name.to_lowercase();
-        found = found
-            .into_iter()
-            .filter_map(dc2tk_disc::archive::parse_pack_with_data)
-            .flat_map(|members| {
-                members.into_iter().filter(|(name, _)| name.to_lowercase() == wanted).map(|(_, data)| data)
-            })
-            .collect();
+        found = found.into_iter().flat_map(|pack| members_named(pack, &name)).collect();
     }
-    found
+    Ok(found)
+}
+
+/// A pack's members of a name in any case; none when it is not a pack.
+fn members_named<'a>(pack: Cow<'a, [u8]>, name: &str) -> Vec<Cow<'a, [u8]>> {
+    fn named<'b>(pack: &'b [u8], wanted: &str) -> Vec<&'b [u8]> {
+        let members = archive::parse_pack_with_data(pack).unwrap_or_default();
+        members.into_iter().filter(|(member, _)| member.to_lowercase() == wanted).map(|(_, data)| data).collect()
+    }
+    let wanted = name.to_lowercase();
+    match pack {
+        Cow::Borrowed(pack) => named(pack, &wanted).into_iter().map(Cow::Borrowed).collect(),
+        Cow::Owned(pack) => named(&pack, &wanted).into_iter().map(|data| Cow::Owned(data.to_vec())).collect(),
+    }
 }
 
 fn disc(disc_dir: &Path, iso_path: &Path, changes: &mut Changes) -> Result<()> {
@@ -174,12 +175,7 @@ fn disc(disc_dir: &Path, iso_path: &Path, changes: &mut Changes) -> Result<()> {
     let manifest: extract::Manifest = serde_json::from_slice(&text)
         .map_err(|error| Error::invalid(format!("{}: {error}", manifest_path.display())))?;
     let listed: Vec<String> = manifest.files.iter().map(|item| item.path.clone()).collect();
-    let image = Image::open(iso_path)?;
-    let archive = Archive::open(image.bytes())?;
-    let mut entries: HashMap<String, Vec<&Entry>> = HashMap::new();
-    for entry in &archive.entries {
-        entries.entry(entry.path.to_lowercase()).or_default().push(entry);
-    }
+    let original = DiscSource::open(iso_path)?;
     let layout: Option<Layout> = layout::read_layout(disc_dir).ok();
     // files the disc lists twice in other case are one file on a case-insensitive file system
     let mut unique: Vec<&String> = Vec::new();
@@ -192,13 +188,13 @@ fn disc(disc_dir: &Path, iso_path: &Path, changes: &mut Changes) -> Result<()> {
     let compared: Vec<(String, Option<bool>)> = unique
         .par_iter()
         .map(|path| {
-            let local = fs::read(disc_dir.join(path)).ok();
-            let changed = local.map(|local| {
-                !disc_copies(image.bytes(), &archive, &entries, path).iter().any(|copy| *copy == &local[..])
-            });
-            ((*path).clone(), changed)
+            let changed = match fs::read(disc_dir.join(path)) {
+                Ok(local) => Some(!disc_copies(&original, path)?.iter().any(|copy| copy[..] == local[..])),
+                Err(_) => None,
+            };
+            Ok(((*path).clone(), changed))
         })
-        .collect();
+        .collect::<Result<_>>()?;
     let mut changed = Vec::new();
     for (path, outcome) in compared {
         match outcome {
@@ -223,12 +219,8 @@ fn disc(disc_dir: &Path, iso_path: &Path, changes: &mut Changes) -> Result<()> {
     let own: HashSet<String> = match &layout {
         Some(layout) => {
             for file in &layout.files {
-                let bytes = dc2tk_disc::iso::read_at(
-                    image.bytes(),
-                    file.extent as u64 * dc2tk_disc::iso::SECTOR,
-                    file.size as u64,
-                );
-                if fs::read(disc_dir.join(&file.path)).ok().as_deref() != Some(bytes) {
+                let bytes = original.disc_file(&file.path).ok();
+                if fs::read(disc_dir.join(&file.path)).ok().as_deref() != bytes.as_deref() {
                     changes.unsupported.push(file.path.clone());
                 }
             }

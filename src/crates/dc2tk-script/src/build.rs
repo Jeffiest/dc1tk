@@ -4,8 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
-use dc2tk_disc::archive::{Archive, Entry};
-use dc2tk_disc::{rebuild, Image};
+use dc2tk_disc::{rebuild, DiscSource};
 use indexmap::IndexMap;
 use rayon::prelude::*;
 
@@ -85,20 +84,17 @@ pub struct Location {
     pub members: Vec<String>,
 }
 
-pub fn disc_location(relative: &str, entries: &HashMap<&str, &Entry>) -> Option<Location> {
+pub fn disc_location(relative: &str, disc: &DiscSource) -> Option<Location> {
     let stem = relative.strip_suffix(source::EXTENSION).unwrap_or(relative);
     let parts: Vec<&str> = stem.split(".d/").collect();
     if parts.len() == 1 {
         return rebuild::SCRIPT_SUFFIXES
             .iter()
-            .map(|suffix| format!("{stem}{suffix}"))
-            .find(|top| entries.contains_key(top.as_str()))
-            .map(|top| Location { top, members: Vec::new() });
+            .find_map(|suffix| disc.spelling(&format!("{stem}{suffix}")))
+            .map(|top| Location { top: top.to_string(), members: Vec::new() });
     }
-    if !entries.contains_key(parts[0]) {
-        return None;
-    }
-    Some(Location { top: parts[0].to_string(), members: parts[1..].iter().map(|part| part.to_string()).collect() })
+    let top = disc.spelling(parts[0])?;
+    Some(Location { top: top.to_string(), members: parts[1..].iter().map(|part| part.to_string()).collect() })
 }
 
 /// Scripts that cannot differ from the disc: unchanged since the decompiler wrote them, as are the
@@ -209,9 +205,7 @@ pub fn changes(
     if let Some(plan) = plan {
         skip.retain(|path| !plan.scripts.contains_key(path));
     }
-    let image = Image::open(iso_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let entries: HashMap<&str, &Entry> = disc.entries.iter().map(|entry| (entry.path.as_str(), entry)).collect();
+    let disc = DiscSource::open(iso_path)?;
     let mut scripts = source_scripts(tree_dir)?;
     scripts
         .extend(overrides.keys().filter(|path| path.ends_with(source::EXTENSION) && !index::is_library(path)).cloned());
@@ -219,15 +213,14 @@ pub fn changes(
     let mut wanted = Vec::new();
     for relative in &scripts {
         let plain = pathnames::unnamed(tree_dir, relative)?;
-        let Some(location) = disc_location(&plain, &entries) else {
+        let Some(location) = disc_location(&plain, &disc) else {
             skipped.push(relative.clone());
             continue;
         };
         if skip.contains(relative) {
             continue;
         }
-        let top = disc.read(image.bytes(), entries[location.top.as_str()]);
-        if rebuild::read_member(top, &location.members).is_none() {
+        if disc.member(&location.top, &location.members)?.is_none() {
             skipped.push(relative.clone());
             continue;
         }
@@ -251,9 +244,8 @@ pub fn changes(
                 patched.as_ref(),
             )
             .map_err(|error| Error::invalid(format!("{relative}: {error}")))?;
-            let top = disc.read(image.bytes(), entries[location.top.as_str()]);
-            let original = rebuild::read_member(top, &location.members).unwrap();
-            Ok((new != original).then(|| Change {
+            let original = disc.member(&location.top, &location.members)?;
+            Ok((original.as_deref() != Some(&new[..])).then(|| Change {
                 top: location.top.clone(),
                 members: location.members.clone(),
                 source: (*relative).clone(),
@@ -271,7 +263,7 @@ pub fn changes(
     for change in &found {
         let data = match files.get(&change.top) {
             Some(data) => data.clone(),
-            None => disc.read(image.bytes(), entries[change.top.as_str()]).to_vec(),
+            None => disc.read(&change.top)?.into_owned(),
         };
         files.insert(change.top.clone(), rebuild::replaced_member(&data, &change.members, &change.data)?);
     }
@@ -280,13 +272,12 @@ pub fn changes(
 
 /// The changed scripts that read back out of a built image differently.
 pub fn check(out_path: &Path, found: &[Change]) -> Result<Vec<String>> {
-    let image = Image::open(out_path)?;
-    let disc = Archive::open(image.bytes())?;
-    Ok(found
-        .iter()
-        .filter(|change| {
-            rebuild::read_back(image.bytes(), &disc, &change.top, &change.members).as_deref() != Some(&change.data[..])
-        })
-        .map(|change| change.source.clone())
-        .collect())
+    let disc = DiscSource::open(out_path)?;
+    let mut wrong = Vec::new();
+    for change in found {
+        if disc.member(&change.top, &change.members)?.as_deref() != Some(&change.data[..]) {
+            wrong.push(change.source.clone());
+        }
+    }
+    Ok(wrong)
 }

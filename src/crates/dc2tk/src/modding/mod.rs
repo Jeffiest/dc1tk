@@ -136,7 +136,7 @@ pub enum ModCommand {
     /// Copy game assets off the disc (models, textures, sounds, text, data tables) into a mod, to
     /// replace them there.
     Asset {
-        /// The disc image.
+        /// The disc: its image, or an extracted disc folder.
         iso: PathBuf,
         /// The mod's name.
         name: String,
@@ -170,8 +170,8 @@ pub enum ModCommand {
         names: Vec<String>,
         #[command(flatten)]
         mods: ModsDir,
-        /// The disc image, to check every asset id resolves, no two mods change one place and
-        /// every file the scripts load is there.
+        /// The disc (its image, or an extracted disc folder), to check every asset id resolves,
+        /// no two mods change one place and every file the scripts load is there.
         #[arg(long)]
         disc: Option<PathBuf>,
         /// Write the new names of overridden functions the tree has renamed (found by their
@@ -184,7 +184,7 @@ pub enum ModCommand {
     /// Make a mod of everything changed in the extracted folder since extracting: edited and added
     /// scripts, changed assets (by id) and changed or added disc files. dc2tk diff lists them first.
     Make {
-        /// The disc image the extracted folder came from.
+        /// The disc the extracted folder came from: its image, or an untouched extraction of it.
         iso: PathBuf,
         /// The mod's name, a new folder in the mods folder.
         name: String,
@@ -198,7 +198,7 @@ pub enum ModCommand {
     },
     /// Turn a mod's disc/ folder into mod.json lines by asset id, moving its files out of disc/.
     Migrate {
-        /// The disc image the mod's files replace.
+        /// The disc the mod's files replace: its image, or an extracted disc folder.
         iso: PathBuf,
         /// The mod's name.
         name: String,

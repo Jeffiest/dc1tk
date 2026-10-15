@@ -324,6 +324,36 @@ fn a_text_changes_its_messages_at_every_place() {
 }
 
 #[test]
+fn an_extracted_disc_serves_as_its_image_does() {
+    let disc = disc("extracted");
+    let extracted = disc._folder.path().join("extracted");
+    dc2tk_disc::extract::extract(&fs::read(&disc.iso).unwrap(), &extracted).unwrap();
+    // copied off either, the mod is the same
+    let keys = ["texture:wall".to_string(), "text:en/names".to_string()];
+    let (from_image, from_folder) = (disc.mods.join("image"), disc.mods.join("folder"));
+    let written = replace::copy_out(&disc.iso, &from_image, &keys, &disc.index).unwrap();
+    assert_eq!(replace::copy_out(&extracted, &from_folder, &keys, &disc.index).unwrap(), written);
+    for (_, file, _) in &written {
+        assert_eq!(fs::read(from_image.join(file)).unwrap(), fs::read(from_folder.join(file)).unwrap(), "{file}");
+    }
+    let paths = ["menu/1/b.pac.d/names.mes".to_string()];
+    let written = discfiles::copy_out(&disc.iso, &from_image, &paths, Some("txt")).unwrap();
+    assert_eq!(discfiles::copy_out(&extracted, &from_folder, &paths, Some("txt")).unwrap(), written);
+    // built on either, an edited texture and text give the same files
+    write(&from_image.join("textures/wall.png"), &png([7, 7, 7]));
+    let text = from_image.join("text/en/names.txt");
+    write(&text, fs::read_to_string(&text).unwrap().replace("Pot", "Kettle").as_bytes());
+    let resolved = replace::resolve(&replace::lines(&from_image).unwrap(), &disc.index).unwrap();
+    let (files, changed) = replace::apply(&disc.iso, &resolved, &BTreeMap::new()).unwrap();
+    assert_eq!(changed.len(), 4, "{changed:?}");
+    let (same, _) = replace::apply(&extracted, &resolved, &BTreeMap::new()).unwrap();
+    assert_eq!(same, files);
+    // and the map table a build numbers new maps from is read from either too
+    let numbers = dc2tk_script::startat::disc_map_numbers(&extracted, None).unwrap();
+    assert_eq!(numbers, dc2tk_script::startat::disc_map_numbers(&disc.iso, None).unwrap());
+}
+
+#[test]
 fn two_mods_changing_one_asset_or_place_are_refused() {
     let disc = disc("clash");
     for name in ["a", "b"] {

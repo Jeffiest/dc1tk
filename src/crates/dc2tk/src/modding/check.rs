@@ -80,7 +80,7 @@ pub fn run_mod_check(
                 println!("warning: {line}");
             }
         }
-        None => println!("files the scripts load not looked up: pass --disc with the disc image to check them"),
+        None => println!("files the scripts load not looked up: pass --disc with the disc to check them"),
     }
     println!("{} scripts compiled, {} failed", result.compiled, result.errors.len());
     Ok(if result.errors.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
@@ -141,7 +141,7 @@ fn assets_without_disc(mod_dirs: &[PathBuf], lines: &[replace::Line]) -> Result<
         println!("{}: {} {}: {}", line.module, if line.add { "adds" } else { "replaces" }, line.key, line.shown);
     }
     if replace::needs_index(lines) {
-        println!("asset ids not looked up: pass --disc with the disc image to check they resolve");
+        println!("asset ids not looked up: pass --disc with the disc to check they resolve");
     }
     Ok(replace::unnumbered_sounds(lines))
 }
@@ -168,7 +168,7 @@ fn mod_constants(
     }
     let new_maps = maptable::new_maps(lines)?;
     if !new_maps.is_empty() {
-        let numbers = match disc.filter(|disc| disc.is_file()) {
+        let numbers = match disc {
             Some(disc) => maptable::disc_numbers_with(disc, disc::language_code(&tools.defs), &new_maps)?,
             None => maptable::assumed_numbers(&new_maps),
         };

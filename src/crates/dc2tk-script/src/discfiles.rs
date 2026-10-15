@@ -24,8 +24,7 @@ use std::path::{Path, PathBuf};
 
 use dc2tk_assets::text::{self, Fonts};
 use dc2tk_assets::tree::Place;
-use dc2tk_disc::archive::{Archive, Entry};
-use dc2tk_disc::{rebuild, Image};
+use dc2tk_disc::{rebuild, DiscSource};
 use indexmap::IndexMap;
 
 use crate::{paths, Error, Result};
@@ -116,17 +115,22 @@ impl Converter {
 /// The disc's files as a converter reads others (a pack of motions alone, the model it plays on).
 pub use dc2tk_assets::models::DiscFiles;
 
-/// A disc file or pack member (`a.chr.d/b.chr`) by path, as the disc has it.
-pub fn disc_file(disc: &Archive, image: &Image, index: &HashMap<String, &Entry>, path: &str) -> Option<Vec<u8>> {
+/// A disc file or pack member (`a.chr.d/b.chr`) by path in any case, as the disc has it; None
+/// when the disc lacks it or cannot be read.
+pub fn disc_file(disc: &DiscSource, path: &str) -> Option<Vec<u8>> {
     let (top, members) = location(path);
-    let entry = index.get(&lower(&top))?;
-    rebuild::read_member(disc.read(image.bytes(), entry), &members).map(<[u8]>::to_vec)
+    disc.member(&top, &members).ok().flatten().map(std::borrow::Cow::into_owned)
+}
+
+/// The disc's files as a converter reads them, its paths and a reader of any path.
+fn disc_files<'a>(disc: &DiscSource, read: &'a (dyn Fn(&str) -> Option<Vec<u8>> + Sync)) -> DiscFiles<'a> {
+    DiscFiles { paths: disc.paths().to_vec(), read }
 }
 
 /// The fonts the disc's message files are drawn with: the English and Korean fonts' tables from
 /// the disc.
-pub fn disc_fonts(disc: &Archive, image: &Image, index: &HashMap<String, &Entry>) -> Fonts {
-    let read = |path: &str| index.get(&path.to_lowercase()).map(|entry| disc.read(image.bytes(), entry).to_vec());
+pub fn disc_fonts(disc: &DiscSource) -> Fonts {
+    let read = |path: &str| disc.read(path).ok().map(std::borrow::Cow::into_owned);
     Fonts {
         english_table: read(text::ENGLISH_FONT),
         korean_table: read(dc2tk_assets::font::KOREAN_TABLE),
@@ -315,11 +319,6 @@ pub fn clash_text(clashes: &IndexMap<String, Vec<String>>) -> String {
         .join("\n")
 }
 
-/// The disc's files by path ignoring case, as the game finds them (SearchFile in dataread.cpp).
-pub fn disc_index(disc: &Archive) -> HashMap<String, &Entry> {
-    disc.entries.iter().map(|entry| (lower(&entry.path), entry)).collect()
-}
-
 /// A game file a mod put on the disc: its path, mod, old size (None for a new file or member) and
 /// bytes.
 #[derive(Clone, Debug)]
@@ -347,12 +346,10 @@ pub fn replaced(
 ) -> Result<(Files, Vec<Replaced>)> {
     let mut files = files.clone();
     let mut report = Vec::new();
-    let image = Image::open(iso_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let index = disc_index(&disc);
-    let fonts = disc_fonts(&disc, &image, &index);
-    let read = |path: &str| disc_file(&disc, &image, &index, path);
-    let others = DiscFiles { paths: disc.entries.iter().map(|entry| entry.path.clone()).collect(), read: &read };
+    let disc = DiscSource::open(iso_path)?;
+    let fonts = disc_fonts(&disc);
+    let read = |path: &str| disc_file(&disc, path);
+    let others = disc_files(&disc, &read);
     let sorted: BTreeMap<&String, &(String, PathBuf)> = wanted.iter().collect();
     for (path, (module, file)) in sorted {
         let (top, members) = location(path);
@@ -361,14 +358,14 @@ pub fn replaced(
         let made = match templates.get(&lower(path)) {
             None => None,
             Some(template) => {
-                let data = index
-                    .get(&lower(&template.place.path))
-                    .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &template.place.members))
+                let data = disc
+                    .member(&template.place.path, &template.place.members)?
                     .ok_or_else(|| fail(format!("{} is not on the disc", template.place.display())))?;
-                Some(self::made(path, file, template, data).map_err(|error| fail(error.to_string()))?)
+                Some(self::made(path, file, template, &data).map_err(|error| fail(error.to_string()))?)
             }
         };
-        if !index.contains_key(&lower(&top)) && members.is_empty() {
+        let spelling = disc.spelling(&top);
+        if spelling.is_none() && members.is_empty() {
             // a new file: build gives it a record in the game's file index (rebuild::write_disc)
             let new = match made {
                 Some(new) => new,
@@ -390,10 +387,9 @@ pub fn replaced(
             });
             continue;
         }
-        let Some(entry) = index.get(&lower(&top)) else {
+        let Some(top) = spelling.map(str::to_string) else {
             return Err(fail(format!("{top} is not a file on the disc")));
         };
-        let top = entry.path.clone();
         if members.is_empty() && script_tops.contains(&top) {
             return Err(fail(format!(
                 "the build also changes scripts inside {top}; replace its members one by one instead"
@@ -401,7 +397,7 @@ pub fn replaced(
         }
         let data = match files.get(&top) {
             Some(data) => data.clone(),
-            None => disc.read(image.bytes(), entry).to_vec(),
+            None => disc.read(&top)?.into_owned(),
         };
         let old = rebuild::read_member(&data, &members).map(<[u8]>::to_vec);
         let step = || -> Result<(Vec<u8>, Vec<u8>)> {
@@ -463,19 +459,17 @@ pub fn replaced(
 /// in a common format when form names one (png). Returns the paths written.
 pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<&str>) -> Result<Vec<String>> {
     let mut written = Vec::new();
-    let image = Image::open(iso_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let index = disc_index(&disc);
-    let fonts = disc_fonts(&disc, &image, &index);
-    let read = |path: &str| disc_file(&disc, &image, &index, path);
-    let others = DiscFiles { paths: disc.entries.iter().map(|entry| entry.path.clone()).collect(), read: &read };
+    let disc = DiscSource::open(iso_path)?;
+    let fonts = disc_fonts(&disc);
+    let read = |path: &str| disc_file(&disc, path);
+    let others = disc_files(&disc, &read);
     for path in paths {
         let path = path.replace('\\', "/").trim_matches('/').to_string();
         let (top, members) = location(&path);
-        let Some(entry) = index.get(&lower(&top)) else {
+        if disc.spelling(&top).is_none() {
             return Err(Error::invalid(format!("{top} is not a file on the disc")));
-        };
-        let Some(data) = rebuild::read_member(disc.read(image.bytes(), entry), &members) else {
+        }
+        let Some(data) = disc.member(&top, &members)? else {
             return Err(Error::invalid(format!("{} has no member {}", top, members.join("/"))));
         };
         let target = paths::join_relative(&mod_dir.join(DISC), &path);
@@ -485,7 +479,7 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
             let Some(converter) = converter.filter(|converter| lower(&path).ends_with(converter.game)) else {
                 return Err(Error::invalid(format!("{path} cannot be exported as {form}")));
             };
-            let exported = converter.export(data, &path, &fonts, &others)?;
+            let exported = converter.export(&data, &path, &fonts, &others)?;
             let folder = target.with_file_name(format!("{}{}", paths::file_name(&target), suffix));
             if !converter.folder {
                 fs::create_dir_all(target.parent().unwrap())?;
@@ -505,7 +499,7 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
             continue;
         }
         fs::create_dir_all(target.parent().unwrap())?;
-        fs::write(&target, data)?;
+        fs::write(&target, &data)?;
         written.push(path);
     }
     Ok(written)
@@ -513,15 +507,11 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
 
 /// The replaced files that read back out of a built image differently.
 pub fn check(out_path: &Path, report: &[Replaced]) -> Result<Vec<String>> {
-    let image = Image::open(out_path)?;
-    let disc = Archive::open(image.bytes())?;
-    let index = disc_index(&disc);
+    let disc = DiscSource::open(out_path)?;
     let mut wrong = Vec::new();
     for item in report {
         let (top, members) = location(&item.path);
-        let found =
-            index.get(&lower(&top)).and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &members));
-        if found != Some(&item.data[..]) {
+        if disc.member(&top, &members)?.as_deref() != Some(&item.data[..]) {
             wrong.push(item.path.clone());
         }
     }

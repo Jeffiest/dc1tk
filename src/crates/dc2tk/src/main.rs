@@ -57,7 +57,7 @@ enum Command {
     MapExport(map_cmd::MapExportArgs),
     /// What changed in the extracted folder since extracting: scripts, assets and disc files.
     Diff {
-        /// The disc image the extracted folder came from.
+        /// The disc the extracted folder came from: its image, or an untouched extraction of it.
         iso: PathBuf,
         /// The extracted folder (disc/, scripts/, assets/).
         #[arg(long, default_value = "extracted")]
