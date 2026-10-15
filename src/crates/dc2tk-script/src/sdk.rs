@@ -501,87 +501,125 @@ fn truth(value: Node) -> Node {
     node!({"kind": "unary", "op": "!", "operand": {"kind": "unary", "op": "!", "operand": value}})
 }
 
+/// Whether an operand C evaluates only some of the time holds a native call, so that strict mode
+/// calls it only when C would (sequenced).
+fn is_sequenced(node: &Node, found: &Context) -> bool {
+    match node.kind() {
+        "logical" | "comma" => calls_native(&node["right"], found),
+        "ternary" => calls_native(&node["then"], found) || calls_native(&node["else"], found),
+        _ => false,
+    }
+}
+
 /// An operand C evaluates only some of the time, holding a native call, in strict mode: the
 /// operands it depends on are worked out first into a hidden local, and the native is called in an
 /// if, so it runs only when C would evaluate it. a && b is t = !!a; if (t) { t = !!b; } and a || b
 /// the same with if (!t); c ? x : y is if (c) { t = x; } else { t = y; }; in a, b the a is a
-/// statement of its own before b's natives. None when the node is none of these.
-fn sequenced(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Option<Node>> {
-    let branch = |part: &Node, temps: &mut Vec<String>, value: &str, made: fn(Node) -> Node| -> Result<Vec<Node>> {
-        let mut inner = Vec::new();
-        let part = hoisted(part, found, temps, &mut inner)?;
-        inner.push(assigned(value, made(part)));
-        Ok(inner)
-    };
+/// statement of its own before b's natives. The node is one is_sequenced takes. Each form is
+/// lowered by a function of its own, so the frames of a deep expression stay small.
+fn sequenced(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
     match node.kind() {
-        "logical" if calls_native(&node["right"], found) => {
-            let left = hoisted(&node["left"], found, temps, before)?;
-            let value = hidden_value(temps);
-            before.push(assigned(&value, truth(left)));
-            let then = branch(&node["right"], temps, &value, truth)?;
-            let tested = node!({"kind": "var", "name": value.clone()});
-            let cond = if node["op"] == "&&" { tested } else { node!({"kind": "unary", "op": "!", "operand": tested}) };
-            before.push(node!({"kind": "if", "cond": cond, "then": then, "else": null}));
-            Ok(Some(node!({"kind": "var", "name": value})))
-        }
-        "ternary" if calls_native(&node["then"], found) || calls_native(&node["else"], found) => {
-            let cond = hoisted(&node["cond"], found, temps, before)?;
-            let value = hidden_value(temps);
-            let then = branch(&node["then"], temps, &value, |part| part)?;
-            let otherwise = branch(&node["else"], temps, &value, |part| part)?;
-            before.push(node!({"kind": "if", "cond": cond, "then": then, "else": otherwise}));
-            Ok(Some(node!({"kind": "var", "name": value})))
-        }
-        "comma" if calls_native(&node["right"], found) => {
-            let left = hoisted(&node["left"], found, temps, before)?;
-            before.push(node!({"kind": "expr", "expr": left}));
-            Ok(Some(hoisted(&node["right"], found, temps, before)?))
-        }
-        _ => Ok(None),
+        "logical" => sequenced_logical(node, found, temps, before),
+        "ternary" => sequenced_ternary(node, found, temps, before),
+        _ => sequenced_comma(node, found, temps, before),
     }
+}
+
+/// One branch of a sequenced operand: its natives called, then its value (made into what the
+/// operator gives) put in the hidden local.
+fn sequenced_branch(
+    part: &Node,
+    found: &Context,
+    temps: &mut Vec<String>,
+    value: &str,
+    made: fn(Node) -> Node,
+) -> Result<Vec<Node>> {
+    let mut inner = Vec::new();
+    let part = hoisted(part, found, temps, &mut inner)?;
+    inner.push(assigned(value, made(part)));
+    Ok(inner)
+}
+
+fn sequenced_logical(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
+    let left = hoisted(&node["left"], found, temps, before)?;
+    let value = hidden_value(temps);
+    before.push(assigned(&value, truth(left)));
+    let then = sequenced_branch(&node["right"], found, temps, &value, truth)?;
+    let tested = node!({"kind": "var", "name": value.clone()});
+    let cond = if node["op"] == "&&" { tested } else { node!({"kind": "unary", "op": "!", "operand": tested}) };
+    before.push(node!({"kind": "if", "cond": cond, "then": then, "else": null}));
+    Ok(node!({"kind": "var", "name": value}))
+}
+
+fn sequenced_ternary(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
+    let cond = hoisted(&node["cond"], found, temps, before)?;
+    let value = hidden_value(temps);
+    let then = sequenced_branch(&node["then"], found, temps, &value, |part| part)?;
+    let otherwise = sequenced_branch(&node["else"], found, temps, &value, |part| part)?;
+    before.push(node!({"kind": "if", "cond": cond, "then": then, "else": otherwise}));
+    Ok(node!({"kind": "var", "name": value}))
+}
+
+fn sequenced_comma(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
+    let left = hoisted(&node["left"], found, temps, before)?;
+    before.push(node!({"kind": "expr", "expr": left}));
+    hoisted(&node["right"], found, temps, before)
 }
 
 /// Native calls inside an expression. The VM's natives push no value, so each one is called
 /// first, into a hidden local (__value_N), and the expression reads that local. The calls are
 /// added to before, in the order the expression would make them; one in a condition therefore runs
 /// before the condition is tested, even on the right of && or || or in a branch of ?:, except in
-/// strict mode (sequenced).
+/// strict mode (sequenced). This only dispatches, so the frames of a deep expression stay small.
 fn hoisted(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
-    if found.strict {
-        if let Some(lowered) = sequenced(node, found, temps, before)? {
-            return Ok(lowered);
-        }
-    }
     match node {
-        Node::List(items) => {
-            Ok(Node::List(items.iter().map(|item| hoisted(item, found, temps, before)).collect::<Result<_>>()?))
-        }
-        Node::Map(map) => {
-            let name = node.text("name");
-            if node.kind() == "call" && found.inlines.contains_key(name) {
-                return Err(Error::invalid(format!("helper {name} is a statement; call it on a line of its own")));
-            }
-            if node.kind() == "call" && is_native(name, found) {
-                if !found.natives.get(name).is_some_and(has_result) {
-                    return Err(Error::invalid(format!("native {name} returns nothing, so it has no value to use")));
-                }
-                let mut args = hoisted(&node["args"], found, temps, before)?;
-                let value = hidden_value(temps);
-                let target = node!({"kind": "addr", "target": {"kind": "var", "name": value.clone()}});
-                if let Some(items) = args.as_array_mut() {
-                    items.push(target);
-                }
-                before.push(canonical_native(name, &Node::Null, args, found));
-                return Ok(node!({"kind": "var", "name": value}));
-            }
-            let mut out = Map::with_capacity(map.len());
-            for (key, value) in map.entries() {
-                out.insert(key.clone(), hoisted(value, found, temps, before)?);
-            }
-            Ok(Node::Map(out))
-        }
+        _ if found.strict && is_sequenced(node, found) => sequenced(node, found, temps, before),
+        Node::List(items) => hoisted_list(items, found, temps, before),
+        Node::Map(map) if node.kind() == "call" => hoisted_call(node, map, found, temps, before),
+        Node::Map(map) => hoisted_map(map, found, temps, before),
         other => Ok(other.clone()),
     }
+}
+
+fn hoisted_list(items: &[Node], found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
+    Ok(Node::List(items.iter().map(|item| hoisted(item, found, temps, before)).collect::<Result<_>>()?))
+}
+
+fn hoisted_map(map: &Map, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
+    let mut out = Map::with_capacity(map.len());
+    for (key, value) in map.entries() {
+        out.insert(key.clone(), hoisted(value, found, temps, before)?);
+    }
+    Ok(Node::Map(out))
+}
+
+/// A call in an expression: a native's is called first into a hidden local the expression then
+/// reads; a helper's is refused (helpers are statements); a function's stays.
+fn hoisted_call(
+    node: &Node,
+    map: &Map,
+    found: &Context,
+    temps: &mut Vec<String>,
+    before: &mut Vec<Node>,
+) -> Result<Node> {
+    let name = node.text("name");
+    if found.inlines.contains_key(name) {
+        return Err(Error::invalid(format!("helper {name} is a statement; call it on a line of its own")));
+    }
+    if !is_native(name, found) {
+        return hoisted_map(map, found, temps, before);
+    }
+    if !found.natives.get(name).is_some_and(has_result) {
+        return Err(Error::invalid(format!("native {name} returns nothing, so it has no value to use")));
+    }
+    let mut args = hoisted(&node["args"], found, temps, before)?;
+    let value = hidden_value(temps);
+    let target = node!({"kind": "addr", "target": {"kind": "var", "name": value.clone()}});
+    if let Some(items) = args.as_array_mut() {
+        items.push(target);
+    }
+    before.push(canonical_native(name, &Node::Null, args, found));
+    Ok(node!({"kind": "var", "name": value}))
 }
 
 fn resolved_statement(

@@ -176,6 +176,16 @@ fn scalar_base(name: &str, kinds: &Map) -> String {
     kinds.get(name).and_then(Node::as_str).map_or_else(|| name.to_string(), str::to_string)
 }
 
+/// A number or string literal and its type.
+fn literal(node: &Node) -> Typed {
+    let ty = match node.kind() {
+        "int" if node.get("unsigned").is_some() => "unsigned int",
+        "int" => "int",
+        other => other,
+    };
+    Typed::new(node.clone(), Ty::Scalar(ty.into()))
+}
+
 fn is_integer(ty: &Ty) -> bool {
     matches!(ty, Ty::Scalar(name) if name != "float" && name != "string" && name != "any")
 }
@@ -816,96 +826,113 @@ impl Lowering<'_> {
 
     // ---- values ----------------------------------------------------------------------------
 
+    /// An expression's value and type. Each kind is lowered by a function of its own and this
+    /// only dispatches (no `?`, no temporaries), so that a debug build keeps the frames of a
+    /// deeply nested expression small (parse::NESTING).
     fn rvalue(&mut self, node: &Node) -> Result<Typed> {
-        Ok(match node.kind() {
-            "int" => Typed::new(
-                node.clone(),
-                Ty::Scalar(if node.get("unsigned").is_some() { "unsigned int" } else { "int" }.into()),
-            ),
-            "float" => Typed::new(node.clone(), Ty::Scalar("float".into())),
-            "string" => Typed::new(node.clone(), Ty::Scalar("string".into())),
-            "wide" => self.literal_array(node)?,
-            "var" => self.variable(node)?,
-            "deref" if self.plain_deref(node).is_none() => {
-                let operand = self.pointed(&node["operand"])?;
-                if operand.ty.is_function_pointer() || matches!(operand.ty, Ty::Function(..)) {
-                    // *f is the function, which is its pointer again
-                    return Ok(operand);
-                }
-                let (place, ty) = self.deref_place(operand)?;
-                self.load(&place, ty)
-            }
-            "index" | "deref" | "subscript" | "member" | "field" => {
-                let (place, ty) = self.place(node)?;
-                if let Ty::Function(..) = ty {
-                    return fail("a function is called, not read");
-                }
-                self.load(&place, ty)
-            }
-            "addr" => self.address_value(node)?,
-            "assign" => self.assignment(node)?,
-            "compound" => self.compound(node)?,
-            "binary" => self.binary(node)?,
-            "unary" => {
-                let operand = self.scalar(&node["operand"], "an operand")?;
-                let ty = if node["op"] == "!" { ctype::int() } else { operand.ty.clone() };
-                if node["op"] != "!" && !matches!(operand.ty, Ty::Scalar(_)) {
-                    return fail(format!("unary {} of {}", node.text("op"), operand.ty.shown()));
-                }
-                Typed::new(node.clone().with("operand", operand.node), ty)
-            }
-            "logical" => {
-                let left = self.scalar(&node["left"], "an operand of && or ||")?;
-                let right = self.scalar(&node["right"], "an operand of && or ||")?;
-                Typed::new(node.clone().with("left", left.node).with("right", right.node), ctype::int())
-            }
-            "ternary" => {
-                let cond = self.scalar(&node["cond"], "a condition")?;
-                let then = self.rvalue(&node["then"])?;
-                let otherwise = self.rvalue(&node["else"])?;
-                if then.ty.is_struct() || otherwise.ty.is_struct() {
-                    // each branch's value is its struct's address, so the ?: gives one of the two
-                    self.same_struct(&then.ty, &otherwise.ty, "a ?: of")?;
-                    let node =
-                        node.clone().with("cond", cond.node).with("then", then.node).with("else", otherwise.node);
-                    return Ok(Typed::new(node, then.ty));
-                }
-                let ty = if then.ty.is_pointer() || matches!(then.ty, Ty::Scalar(ref name) if name == "float") {
-                    then.ty.clone()
-                } else {
-                    otherwise.ty.clone()
-                };
-                Typed::new(
-                    node.clone().with("cond", cond.node).with("then", then.node).with("else", otherwise.node),
-                    ty,
-                )
-            }
-            "cast" => self.cast(node)?,
-            "comma" => {
-                let left = self.rvalue(&node["left"])?;
-                let right = self.rvalue(&node["right"])?;
-                Typed::new(node.clone().with("left", left.node).with("right", right.node), right.ty)
-            }
-            "call" => self.call(node)?,
-            "call_ptr" => self.call_through(node)?,
-            "builtin" => {
-                let operand = self.scalar(&node["operand"], "sin's or cos's angle")?;
-                Typed::new(node.clone().with("operand", operand.node), Ty::Scalar("float".into()))
-            }
-            "va_arg" => self.va_arg(node)?,
-            "va_start" => {
-                let (place, ty) = self.place(&node["list"])?;
-                if self.lookup("__va").is_none() {
-                    return fail("va_start belongs in a function whose parameters end in ...");
-                }
-                Typed::new(assign(self.access(&place, &ty), var("__va")), Ty::Void)
-            }
-            "narrow" => {
-                let operand = self.rvalue(&node["operand"])?;
-                Typed::new(node.clone().with("operand", operand.node), Ty::Scalar(node.text("type").into()))
-            }
-            _ => Typed::new(node.clone(), ctype::int()),
-        })
+        match node.kind() {
+            "int" | "float" | "string" => Ok(literal(node)),
+            "wide" => self.literal_array(node),
+            "var" => self.variable(node),
+            "deref" if self.plain_deref(node).is_none() => self.deref_value(node),
+            "index" | "deref" | "subscript" | "member" | "field" => self.place_value(node),
+            "addr" => self.address_value(node),
+            "assign" => self.assignment(node),
+            "compound" => self.compound(node),
+            "binary" => self.binary(node),
+            "unary" => self.unary(node),
+            "logical" => self.logical(node),
+            "ternary" => self.ternary(node),
+            "cast" => self.cast(node),
+            "comma" => self.comma(node),
+            "call" => self.call(node),
+            "call_ptr" => self.call_through(node),
+            "builtin" => self.builtin(node),
+            "va_arg" => self.va_arg(node),
+            "va_start" => self.va_start(node),
+            "narrow" => self.narrow(node),
+            _ => Ok(Typed::new(node.clone(), ctype::int())),
+        }
+    }
+
+    /// What a pointer that is not a plain variable points at; a function pointer's target is the
+    /// function, which is its pointer again.
+    fn deref_value(&mut self, node: &Node) -> Result<Typed> {
+        let operand = self.pointed(&node["operand"])?;
+        if operand.ty.is_function_pointer() || matches!(operand.ty, Ty::Function(..)) {
+            // *f is the function, which is its pointer again
+            return Ok(operand);
+        }
+        let (place, ty) = self.deref_place(operand)?;
+        Ok(self.load(&place, ty))
+    }
+
+    /// The value at a place: an element, a member, what a pointer points at.
+    fn place_value(&mut self, node: &Node) -> Result<Typed> {
+        let (place, ty) = self.place(node)?;
+        if let Ty::Function(..) = ty {
+            return fail("a function is called, not read");
+        }
+        Ok(self.load(&place, ty))
+    }
+
+    fn unary(&mut self, node: &Node) -> Result<Typed> {
+        let operand = self.scalar(&node["operand"], "an operand")?;
+        let ty = if node["op"] == "!" { ctype::int() } else { operand.ty.clone() };
+        if node["op"] != "!" && !matches!(operand.ty, Ty::Scalar(_)) {
+            return fail(format!("unary {} of {}", node.text("op"), operand.ty.shown()));
+        }
+        Ok(Typed::new(node.clone().with("operand", operand.node), ty))
+    }
+
+    fn logical(&mut self, node: &Node) -> Result<Typed> {
+        let left = self.scalar(&node["left"], "an operand of && or ||")?;
+        let right = self.scalar(&node["right"], "an operand of && or ||")?;
+        Ok(Typed::new(node.clone().with("left", left.node).with("right", right.node), ctype::int()))
+    }
+
+    fn ternary(&mut self, node: &Node) -> Result<Typed> {
+        let cond = self.scalar(&node["cond"], "a condition")?;
+        let then = self.rvalue(&node["then"])?;
+        let otherwise = self.rvalue(&node["else"])?;
+        if then.ty.is_struct() || otherwise.ty.is_struct() {
+            // each branch's value is its struct's address, so the ?: gives one of the two
+            self.same_struct(&then.ty, &otherwise.ty, "a ?: of")?;
+            let node = node.clone().with("cond", cond.node).with("then", then.node).with("else", otherwise.node);
+            return Ok(Typed::new(node, then.ty));
+        }
+        let ty = if then.ty.is_pointer() || matches!(then.ty, Ty::Scalar(ref name) if name == "float") {
+            then.ty.clone()
+        } else {
+            otherwise.ty.clone()
+        };
+        Ok(Typed::new(node.clone().with("cond", cond.node).with("then", then.node).with("else", otherwise.node), ty))
+    }
+
+    fn comma(&mut self, node: &Node) -> Result<Typed> {
+        let left = self.rvalue(&node["left"])?;
+        let right = self.rvalue(&node["right"])?;
+        Ok(Typed::new(node.clone().with("left", left.node).with("right", right.node), right.ty))
+    }
+
+    /// sin or cos of an angle.
+    fn builtin(&mut self, node: &Node) -> Result<Typed> {
+        let operand = self.scalar(&node["operand"], "sin's or cos's angle")?;
+        Ok(Typed::new(node.clone().with("operand", operand.node), Ty::Scalar("float".into())))
+    }
+
+    fn va_start(&mut self, node: &Node) -> Result<Typed> {
+        let (place, ty) = self.place(&node["list"])?;
+        if self.lookup("__va").is_none() {
+            return fail("va_start belongs in a function whose parameters end in ...");
+        }
+        Ok(Typed::new(assign(self.access(&place, &ty), var("__va")), Ty::Void))
+    }
+
+    /// A value narrowed to one of the narrow integer types.
+    fn narrow(&mut self, node: &Node) -> Result<Typed> {
+        let operand = self.rvalue(&node["operand"])?;
+        Ok(Typed::new(node.clone().with("operand", operand.node), Ty::Scalar(node.text("type").into())))
     }
 
     /// A name's value: a variable's (an array's or struct's address), a function's number (its
@@ -1075,64 +1102,56 @@ impl Lowering<'_> {
         Ok(self.address(&moved))
     }
 
+    /// A binary operation: its operands lowered, then the operation on their types (a postfix
+    /// step of a pointer or a bit-field first). The operands' frames are kept small, as rvalue's.
     fn binary(&mut self, node: &Node) -> Result<Typed> {
-        let op = node.text("op");
         if node.get("postfix").is_some() && node["left"].kind() == "compound" {
-            // p++: the old value, kept in a hidden local, and the pointer stepped
-            let target = &node["left"]["target"];
-            let (place, ty) = self.place(target)?;
-            if let Place::Bits(slot, bits) = place {
-                // the old value, kept in a hidden local, and the field stepped
-                let step = if node["left"]["op"] == "-" { "-" } else { "+" };
-                let old = self.hidden_int();
-                let mut stepped = self.store_bits(*slot, bits, &ty, |current| {
-                    let kept = assign(var(&old), current);
-                    node!({"kind": "binary", "op": step, "left": kept, "right": int_node(1)})
-                });
-                stepped.node = sequence(vec![stepped.node, var(&old)]);
+            if let Some(stepped) = self.postfix_step(node)? {
                 return Ok(stepped);
-            }
-            if ty.is_pointer() {
-                let old = self.hidden_pointer(&ty);
-                let read = self.access(&place, &ty);
-                let step = if node["left"]["op"] == "-" { int_node(-1) } else { int_node(1) };
-                let stepped = self.stepped(&place, &ty, step)?;
-                let parts = vec![assign(var(&old), read), assign(self.access(&place, &ty), stepped), var(&old)];
-                return Ok(Typed::new(sequence(parts), ty));
             }
         }
         let left = self.scalar(&node["left"], "an operand")?;
         let right = self.scalar(&node["right"], "an operand")?;
+        self.binary_of(node, left, right)
+    }
+
+    /// p++ or p-- of a pointer or a bit-field: the old value, kept in a hidden local, and the
+    /// place stepped. None for any other place.
+    fn postfix_step(&mut self, node: &Node) -> Result<Option<Typed>> {
+        let target = &node["left"]["target"];
+        let (place, ty) = self.place(target)?;
+        if let Place::Bits(slot, bits) = place {
+            // the old value, kept in a hidden local, and the field stepped
+            let step = if node["left"]["op"] == "-" { "-" } else { "+" };
+            let old = self.hidden_int();
+            let mut stepped = self.store_bits(*slot, bits, &ty, |current| {
+                let kept = assign(var(&old), current);
+                node!({"kind": "binary", "op": step, "left": kept, "right": int_node(1)})
+            });
+            stepped.node = sequence(vec![stepped.node, var(&old)]);
+            return Ok(Some(stepped));
+        }
+        if ty.is_pointer() {
+            let old = self.hidden_pointer(&ty);
+            let read = self.access(&place, &ty);
+            let step = if node["left"]["op"] == "-" { int_node(-1) } else { int_node(1) };
+            let stepped = self.stepped(&place, &ty, step)?;
+            let parts = vec![assign(var(&old), read), assign(self.access(&place, &ty), stepped), var(&old)];
+            return Ok(Some(Typed::new(sequence(parts), ty)));
+        }
+        Ok(None)
+    }
+
+    /// The operation of a binary node on its lowered operands.
+    fn binary_of(&mut self, node: &Node, left: Typed, right: Typed) -> Result<Typed> {
+        let op = node.text("op");
         let compared = matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=");
         let (left_pointer, right_pointer) = (left.ty.is_pointer(), right.ty.is_pointer());
         if compared && (left_pointer || right_pointer) {
             return self.pointer_comparison(op, left, right);
         }
         if (op == "+" || op == "-") && (left_pointer || right_pointer) {
-            if left_pointer && right_pointer {
-                return fail(
-                    "the difference of two pointers is not supported: the VM gives no address as a number; keep an index",
-                );
-            }
-            let (pointer, count) = if left_pointer { (left, right) } else { (right, left) };
-            if op == "-" && !left_pointer {
-                return fail("an integer minus a pointer");
-            }
-            if !is_integer(&count.ty) {
-                return fail(format!("a pointer moves by an integer, not {}", count.ty.shown()));
-            }
-            let element = self.element(&pointer.ty)?;
-            let ty = pointer.ty.clone();
-            let (base, _) = self.deref_place(pointer)?;
-            let size = self.slots(&element);
-            let count = if op == "-" { node!({"kind": "unary", "op": "-", "operand": count.node}) } else { count.node };
-            let moved = match count.kind() {
-                "int" if count.get("unsigned").is_none() => {
-                    self.offset(base, count["value"].as_i64().unwrap_or(0) * size, None)
-                }
-                _ => self.offset(base, 0, Some(times(count, size))),
-            };
-            return Ok(Typed::new(self.address(&moved), ty));
+            return self.pointer_moved(op, left, right);
         }
         if left_pointer || right_pointer {
             return fail(format!("{op} of a pointer"));
@@ -1145,6 +1164,35 @@ impl Lowering<'_> {
             left.ty.clone()
         };
         Ok(Typed::new(node.clone().with("left", left.node).with("right", right.node), ty))
+    }
+
+    /// A pointer plus or minus an integer: the address that many elements on.
+    fn pointer_moved(&mut self, op: &str, left: Typed, right: Typed) -> Result<Typed> {
+        let left_pointer = left.ty.is_pointer();
+        if left_pointer && right.ty.is_pointer() {
+            return fail(
+                "the difference of two pointers is not supported: the VM gives no address as a number; keep an index",
+            );
+        }
+        let (pointer, count) = if left_pointer { (left, right) } else { (right, left) };
+        if op == "-" && !left_pointer {
+            return fail("an integer minus a pointer");
+        }
+        if !is_integer(&count.ty) {
+            return fail(format!("a pointer moves by an integer, not {}", count.ty.shown()));
+        }
+        let element = self.element(&pointer.ty)?;
+        let ty = pointer.ty.clone();
+        let (base, _) = self.deref_place(pointer)?;
+        let size = self.slots(&element);
+        let count = if op == "-" { node!({"kind": "unary", "op": "-", "operand": count.node}) } else { count.node };
+        let moved = match count.kind() {
+            "int" if count.get("unsigned").is_none() => {
+                self.offset(base, count["value"].as_i64().unwrap_or(0) * size, None)
+            }
+            _ => self.offset(base, 0, Some(times(count, size))),
+        };
+        Ok(Typed::new(self.address(&moved), ty))
     }
 
     /// Whether a value is a null pointer constant: 0, a constant that is 0, either cast.
