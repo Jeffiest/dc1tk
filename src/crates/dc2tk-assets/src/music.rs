@@ -750,11 +750,14 @@ pub fn new_bank(
 ) -> Result<(Vec<u8>, Vec<String>)> {
     let like = Bank::from_bytes(like_data)?;
     let entries = like.entries()?;
-    let Some(first) = entries.first().filter(|entry| entry.kind == crate::soundbank::EntryKind::Sq) else {
+    let Some((first, seq)) = entries.first().and_then(|entry| match entry.kind {
+        soundbank::EntryKind::Sq { seq } => Some((entry, seq)),
+        _ => None,
+    }) else {
         bail!("the bank's entry 0 plays no sequence, so it is not a music bank");
     };
     let sequences = soundbank::find(&like.pack, "sq");
-    let kept = sequences[first.seq_index.unwrap_or(0)];
+    let kept = sequences[seq];
     let old_sequence = like.pack.members[kept].name.clone();
     let sequence = format!("{name}_000.sq");
     let mut pack = like.pack.clone();
@@ -1106,7 +1109,9 @@ mod tests {
             }
             let data = std::fs::read(&path).unwrap();
             let like = Bank::from_bytes(&data).unwrap();
-            let first = like.entries().unwrap()[0].seq_index.unwrap();
+            let crate::soundbank::EntryKind::Sq { seq: first } = like.entries().unwrap()[0].kind else {
+                panic!("entry 0 plays no sequence")
+            };
             let original = &like.pack.members[soundbank::find(&like.pack, "sq")[first]];
             let midi = export(&original.data, stem(&original.name)).unwrap();
             let (built, _) = new_bank(&midi, &data, "BG_999", &[], Some(MUSIC_REGION))
@@ -1188,13 +1193,12 @@ mod tests {
         assert!(notes[0].starts_with("instrument: program 100 added (2 samples)"), "{notes:?}");
         let bank = Bank::from_bytes(&built).unwrap();
         let program = bank.hd.programs[100].as_ref().unwrap();
-        let ranges: Vec<(i64, i64)> =
-            program.splits.iter().map(|s| (s.get("range_low"), s.get("range_high"))).collect();
+        let ranges: Vec<(u8, u8)> = program.splits.iter().map(|s| (s.range_low, s.range_high)).collect();
         assert_eq!(ranges, [(0, 59), (60, 127)]);
         let voices = bank.resolve(100, 67, 90);
         assert_eq!(voices.len(), 1);
         let sample = bank.hd.samples[voices[0].sample].as_ref().unwrap();
-        assert_eq!((sample.get("base_note"), sample.get("volume")), (60, 128));
+        assert_eq!((sample.base_note, sample.volume), (60, 128));
         let played = bank.decode_vag(voices[0].vag).unwrap();
         assert_eq!((played.rate, played.loop_start), (22050, None));
         let low_voice = bank.resolve(100, 40, 90)[0];
@@ -1255,7 +1259,7 @@ mod tests {
         let like = music_bank();
         let old = Bank::from_bytes(&like).unwrap();
         let program_vag = |bank: &Bank, program: i64| bank.resolve(program, 60, 90)[0].vag;
-        let stub_size = crate::soundbank::encode_adpcm(&[0; 28], None, true).unwrap().len();
+        let stub_size = crate::soundbank::encode_adpcm(&[0; 28], None, soundbank::Search::Exhaustive).unwrap().len();
         assert!(old.vag_data[program_vag(&old, 1)].len() > stub_size);
         // a tune on program 2, the bank's second tune's instrument
         let midi = tune_playing(2);
@@ -1268,8 +1272,8 @@ mod tests {
         let entries = bank.entries().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(
-            (entries[0].kind, entries[0].seq_index, entries[0].file.as_str()),
-            (crate::soundbank::EntryKind::Sq, Some(0), "BG_200_000.sq")
+            (entries[0].kind, entries[0].file.as_str()),
+            (crate::soundbank::EntryKind::Sq { seq: 0 }, "BG_200_000.sq")
         );
         let sq = &bank.pack.members[4].data;
         assert_eq!(*sq, build(&midi, &tune().write().unwrap(), Some(&old)).unwrap());

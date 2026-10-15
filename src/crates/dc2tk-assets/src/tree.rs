@@ -652,20 +652,20 @@ pub(crate) fn entry_sounds(data: &[u8]) -> Option<Vec<String>> {
     let bank = Bank::from_bytes(data).ok()?;
     let mut out = Vec::new();
     for entry in bank.entries().ok()? {
-        let mut parts: Vec<Vec<u8>> = vec![format!("{:?}", entry.kind).into_bytes()];
-        let ext = match entry.kind {
-            EntryKind::SeSeq => Some("mid"),
-            EntryKind::Sq => Some("sq"),
+        let mut parts: Vec<Vec<u8>> = vec![entry.kind.name().as_bytes().to_vec()];
+        let sequence = match entry.kind {
+            EntryKind::SeSeq { seq } => Some(("mid", seq)),
+            EntryKind::Sq { seq } => Some(("sq", seq)),
             _ => None,
         };
-        if let (Some(ext), Some(at)) = (ext, entry.seq_index) {
+        if let Some((ext, at)) = sequence {
             let member = *crate::soundbank::find(&bank.pack, ext).get(at)?;
             parts.push(bank.pack.members[member].data.clone());
         }
         for voice in bank.voices(&entry).ok()? {
             let vag = &bank.hd.vags[voice.vag];
-            let base = bank.hd.samples[voice.sample].as_ref().map_or(0, |sample| sample.get("base_note"));
-            parts.push(format!("{} {} {} {}", vag.get("rate"), vag.get("attribute"), voice.key, base).into_bytes());
+            let base = bank.hd.samples[voice.sample].as_ref().map_or(0, |sample| sample.base_note);
+            parts.push(format!("{} {} {} {}", vag.rate, vag.attribute, voice.key, base).into_bytes());
             parts.push(bank.vag_data[voice.vag].clone());
         }
         let refs: Vec<&[u8]> = parts.iter().map(Vec::as_slice).collect();
@@ -1358,11 +1358,11 @@ fn export_bank(asset: &Asset, files: &[GameFile], names: &SoundNames, write: &Wr
         let bank = Bank::from_bytes(files[asset.first()].data)?;
         let mut out = Vec::new();
         for entry in bank.entries()? {
-            let voices = if entry.kind == EntryKind::KeyOn { bank.voices(&entry)? } else { Vec::new() };
+            let voices = if entry.kind.is_key_on() { bank.voices(&entry)? } else { Vec::new() };
             let plays = match entry.kind {
-                EntryKind::KeyOn if !voices.is_empty() => "sample",
-                EntryKind::Sq => "sq",
-                EntryKind::SeSeq => "seseq",
+                EntryKind::KeyOn { .. } if !voices.is_empty() => "sample",
+                EntryKind::Sq { .. } => "sq",
+                EntryKind::SeSeq { .. } => "seseq",
                 _ => "nothing",
             };
             let mut wav = None;

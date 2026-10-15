@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 use rayon::prelude::*;
 use serde_json::Value;
 
-use crate::soundbank::{Bank, EntryKind};
+use crate::soundbank::Bank;
 use crate::tree::{self, DiscFile, Kind, Place, SoundNames};
 use crate::{Error, Result};
 
@@ -225,7 +225,7 @@ fn bank_entries(data: &[u8]) -> Option<Vec<usize>> {
     let bank = Bank::from_bytes(data).ok()?;
     let entries = bank.entries().ok()?;
     for entry in &entries {
-        if entry.kind == EntryKind::KeyOn {
+        if entry.kind.is_key_on() {
             bank.voices(entry).ok()?;
         }
     }

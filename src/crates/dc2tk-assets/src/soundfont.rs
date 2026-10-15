@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::soundbank::Bank;
+use crate::soundbank::{Bank, Program, Sample, SampleSet, Split};
 use crate::Result;
 
 pub const SUFFIX: &str = ".sf2";
@@ -64,8 +64,8 @@ fn centibels(level: f64, full: f64) -> i16 {
 }
 
 /// (attack, decay, sustain level in cB, release) of the SPU2's ADSR1 and ADSR2 registers.
-fn envelope(adsr1: i64, adsr2: i64) -> (i16, i16, i16, i16) {
-    let (adsr1, adsr2) = (adsr1 as u32, adsr2 as u32);
+fn envelope(adsr1: u16, adsr2: u16) -> (i16, i16, i16, i16) {
+    let (adsr1, adsr2) = (u32::from(adsr1), u32::from(adsr2));
     let attack = envelope_seconds((adsr1 >> 8) & 0x7F, false, adsr1 & 0x8000 != 0, 0, LEVEL_MAX);
     let sustain_level = (((adsr1 & 0xF) + 1) * 0x800).min(LEVEL_MAX as u32) as i32;
     let decay = envelope_seconds(((adsr1 >> 4) & 0xF) * 4, true, true, LEVEL_MAX, sustain_level);
@@ -106,6 +106,26 @@ fn list(kind: &[u8; 4], parts: &[Vec<u8>]) -> Vec<u8> {
     chunk(b"LIST", &body)
 }
 
+/// The SoundFont generators the zones set (SoundFont 2.04, section 8.1.2).
+mod generator {
+    pub const PAN: u16 = 17;
+    pub const ATTACK_VOL_ENV: u16 = 34;
+    pub const DECAY_VOL_ENV: u16 = 36;
+    pub const SUSTAIN_VOL_ENV: u16 = 37;
+    pub const RELEASE_VOL_ENV: u16 = 38;
+    pub const INSTRUMENT: u16 = 41;
+    pub const KEY_RANGE: u16 = 43;
+    pub const VEL_RANGE: u16 = 44;
+    pub const INITIAL_ATTENUATION: u16 = 48;
+    pub const COARSE_TUNE: u16 = 51;
+    pub const FINE_TUNE: u16 = 52;
+    pub const SAMPLE_ID: u16 = 53;
+    pub const SAMPLE_MODES: u16 = 54;
+    pub const OVERRIDING_ROOT_KEY: u16 = 58;
+    /// The generator of a list's terminal record (all zeros).
+    pub const END: u16 = 0;
+}
+
 /// A generator: its number and 16-bit amount.
 fn generator(out: &mut Vec<u8>, number: u16, amount: i16) {
     out.extend(number.to_le_bytes());
@@ -116,153 +136,192 @@ fn range(low: i64, high: i64) -> i16 {
     i16::from_le_bytes([low.clamp(0, 127) as u8, high.clamp(0, 127) as u8])
 }
 
-/// The SoundFont of a bank's programs (see the module's doc).
-pub fn write(bank: &Bank, name: &str) -> Result<Vec<u8>> {
-    let hd = &bank.hd;
-    // each VAG a program plays, decoded once: its sample header and whether it loops
-    let mut samples: BTreeMap<usize, (usize, bool)> = BTreeMap::new();
-    let (mut smpl, mut shdr) = (Vec::<u8>::new(), Vec::<u8>::new());
-    let (mut inst, mut ibag, mut igen) = (Vec::new(), Vec::new(), Vec::new());
-    let (mut phdr, mut pbag, mut pgen) = (Vec::new(), Vec::new(), Vec::new());
-    let mut instruments = 0u16;
-    let (mut ibags, mut igens, mut pbags, mut pgens) = (0u16, 0u16, 0u16, 0u16);
-    let mut presets = Vec::new();
-    for (number, program) in hd.programs.iter().enumerate() {
-        let Some(program) = program else {
-            continue;
-        };
-        inst.extend(name_field(&format!("{name} {number}")));
-        inst.extend(ibags.to_le_bytes());
+/// The SoundFont's sample data and lists as they are built: an instrument per program, a zone per
+/// sample a split plays, a sample header per VAG.
+#[derive(Default)]
+struct Font {
+    /// Each VAG a zone plays, decoded once: its sample header's number and whether it loops.
+    samples: BTreeMap<usize, (usize, bool)>,
+    smpl: Vec<u8>,
+    shdr: Vec<u8>,
+    inst: Vec<u8>,
+    ibag: Vec<u8>,
+    igen: Vec<u8>,
+    ibags: u16,
+    igens: u16,
+    /// (program number, instrument) of every program.
+    presets: Vec<(u16, u16)>,
+}
+
+impl Font {
+    /// The sample header of a VAG (decoded and added on its first use): its number and whether it
+    /// loops.
+    fn sample(&mut self, bank: &Bank, vag: usize, name: &str) -> Result<(usize, bool)> {
+        if let Some(&found) = self.samples.get(&vag) {
+            return Ok(found);
+        }
+        let sound = bank.decode_vag(vag)?;
+        let found = (self.samples.len(), sound.loop_start.is_some());
+        self.samples.insert(vag, found);
+        let start = (self.smpl.len() / 2) as u32;
+        let mut frames: Vec<i16> = sound.samples.iter().map(|&s| s.clamp(-32768, 32767) as i16).collect();
+        // a SoundFont sample has at least 48 frames past its loop
+        while frames.len() < 48 {
+            frames.push(0);
+        }
+        for frame in &frames {
+            self.smpl.extend(frame.to_le_bytes());
+        }
+        self.smpl.extend([0u8; 92]);
+        let end = start + frames.len() as u32;
+        let loop_start = start + sound.loop_start.map_or(0, |at| at.clamp(0, frames.len() as i64 - 8) as u32);
+        self.shdr.extend(name_field(&format!("{name} vag {vag}")));
+        for value in [start, end, loop_start, end] {
+            self.shdr.extend(value.to_le_bytes());
+        }
+        self.shdr.extend((sound.rate as u32).to_le_bytes());
+        self.shdr.extend([60, 0]);
+        self.shdr.extend(0u16.to_le_bytes());
+        self.shdr.extend(1u16.to_le_bytes());
+        Ok(found)
+    }
+
+    /// The zone of one sample of a split's sample set: its keys and velocities, the program's,
+    /// split's and sample's volume, pan and tuning added up, the envelope, and the sample.
+    fn zone(&mut self, program: &Program, split: &Split, set: &SampleSet, sample: &Sample, sample_id: (usize, bool)) {
+        let (sample_id, looped) = sample_id;
+        let record = &program.record;
+        let (attack, decay, sustain, release) = envelope(sample.adsr1, sample.adsr2);
+        let volume = |value: u8| value.min(128) as f64 / 128.0;
+        let gain = volume(record.volume) * volume(split.volume) * volume(sample.volume);
+        let centred = |panpot: u8| i64::from(panpot) - 64;
+        let pan = centred(record.panpot) + centred(split.panpot) + centred(sample.panpot);
+        let coarse = i64::from(record.transpose) + i64::from(split.transpose);
+        let fine = i64::from(record.detune) + i64::from(split.detune) + i64::from(sample.detune);
+        self.ibag.extend(self.igens.to_le_bytes());
+        self.ibag.extend(0u16.to_le_bytes());
+        self.ibags += 1;
+        let mut zone = Vec::new();
+        generator(&mut zone, generator::KEY_RANGE, range(split.range_low.into(), split.range_high.into()));
+        let velocity_low = sample.vel_range_low.max(set.vel_limit_low);
+        let velocity_high = sample.vel_range_high.min(set.vel_limit_high);
+        generator(&mut zone, generator::VEL_RANGE, range(velocity_low.into(), velocity_high.into()));
+        generator(&mut zone, generator::PAN, ((pan * 500) / 64).clamp(-500, 500) as i16);
+        generator(&mut zone, generator::ATTACK_VOL_ENV, attack);
+        generator(&mut zone, generator::DECAY_VOL_ENV, decay);
+        generator(&mut zone, generator::SUSTAIN_VOL_ENV, sustain);
+        generator(&mut zone, generator::RELEASE_VOL_ENV, release);
+        generator(&mut zone, generator::INITIAL_ATTENUATION, centibels(gain, 1.0));
+        generator(&mut zone, generator::COARSE_TUNE, coarse.clamp(-120, 120) as i16);
+        generator(&mut zone, generator::FINE_TUNE, (fine * 100 / 128).clamp(-99, 99) as i16);
+        generator(&mut zone, generator::SAMPLE_MODES, i16::from(looped));
+        generator(&mut zone, generator::OVERRIDING_ROOT_KEY, sample.base_note.min(127) as i16);
+        generator(&mut zone, generator::SAMPLE_ID, sample_id as i16);
+        self.igens += (zone.len() / 4) as u16;
+        self.igen.extend(zone);
+    }
+
+    /// The instrument of program `number`: a zone for every sample its splits play.
+    fn instrument(&mut self, bank: &Bank, number: usize, program: &Program, name: &str) -> Result<()> {
+        let hd = &bank.hd;
+        self.inst.extend(name_field(&format!("{name} {number}")));
+        self.inst.extend(self.ibags.to_le_bytes());
         for split in &program.splits {
-            let Some(Some(set)) = hd.sample_sets.get(split.get("sample_set") as usize) else {
+            let Some(Some(set)) = hd.sample_sets.get(split.sample_set as usize) else {
                 continue;
             };
             for &index in &set.samples {
                 let Some(Some(sample)) = hd.samples.get(index as usize) else {
                     continue;
                 };
-                let vag = sample.get("vag_index") as usize;
+                let vag = sample.vag_index as usize;
                 if vag >= hd.vags.len() {
                     continue;
                 }
-                if !samples.contains_key(&vag) {
-                    let sound = bank.decode_vag(vag)?;
-                    samples.insert(vag, (samples.len(), sound.loop_start.is_some()));
-                    let start = (smpl.len() / 2) as u32;
-                    let mut frames: Vec<i16> = sound.samples.iter().map(|&s| s.clamp(-32768, 32767) as i16).collect();
-                    // a SoundFont sample has at least 48 frames past its loop
-                    while frames.len() < 48 {
-                        frames.push(0);
-                    }
-                    for frame in &frames {
-                        smpl.extend(frame.to_le_bytes());
-                    }
-                    smpl.extend([0u8; 92]);
-                    let end = start + frames.len() as u32;
-                    let loop_start =
-                        start + sound.loop_start.map_or(0, |at| at.clamp(0, frames.len() as i64 - 8) as u32);
-                    shdr.extend(name_field(&format!("{name} vag {vag}")));
-                    for value in [start, end, loop_start, end] {
-                        shdr.extend(value.to_le_bytes());
-                    }
-                    shdr.extend((sound.rate as u32).to_le_bytes());
-                    shdr.extend([60, 0]);
-                    shdr.extend(0u16.to_le_bytes());
-                    shdr.extend(1u16.to_le_bytes());
-                }
-                let (sample_id, looped) = samples[&vag];
-                let (attack, decay, sustain, release) = envelope(sample.get("adsr1"), sample.get("adsr2"));
-                let volume = |value: i64| value.clamp(0, 128) as f64 / 128.0;
-                let gain =
-                    volume(program.record.get("volume")) * volume(split.get("volume")) * volume(sample.get("volume"));
-                let pan =
-                    (program.record.get("panpot") - 64) + (split.get("panpot") - 64) + (sample.get("panpot") - 64);
-                let coarse = program.record.get("transpose") + split.get("transpose");
-                let fine = program.record.get("detune") + split.get("detune") + sample.get("detune");
-                ibag.extend(igens.to_le_bytes());
-                ibag.extend(0u16.to_le_bytes());
-                ibags += 1;
-                let mut zone = Vec::new();
-                generator(&mut zone, 43, range(split.get("range_low"), split.get("range_high")));
-                let velocity_low = sample.get("vel_range_low").max(set.vel_limit_low);
-                let velocity_high = sample.get("vel_range_high").min(set.vel_limit_high);
-                generator(&mut zone, 44, range(velocity_low, velocity_high));
-                generator(&mut zone, 17, ((pan * 500) / 64).clamp(-500, 500) as i16);
-                generator(&mut zone, 34, attack);
-                generator(&mut zone, 36, decay);
-                generator(&mut zone, 37, sustain);
-                generator(&mut zone, 38, release);
-                generator(&mut zone, 48, centibels(gain, 1.0));
-                generator(&mut zone, 51, coarse.clamp(-120, 120) as i16);
-                generator(&mut zone, 52, (fine * 100 / 128).clamp(-99, 99) as i16);
-                generator(&mut zone, 54, i16::from(looped));
-                generator(&mut zone, 58, sample.get("base_note").clamp(0, 127) as i16);
-                generator(&mut zone, 53, sample_id as i16);
-                igens += (zone.len() / 4) as u16;
-                igen.extend(zone);
+                let sample_id = self.sample(bank, vag, name)?;
+                self.zone(program, split, set, sample, sample_id);
             }
         }
-        presets.push((number as u16, instruments));
-        instruments += 1;
+        let instrument = self.presets.len() as u16;
+        self.presets.push((number as u16, instrument));
+        Ok(())
     }
-    for drum_bank in [0u16, 128] {
-        for &(number, instrument) in &presets {
-            phdr.extend(name_field(&format!("{name} {number}")));
-            phdr.extend(number.to_le_bytes());
-            phdr.extend(drum_bank.to_le_bytes());
-            phdr.extend(pbags.to_le_bytes());
-            phdr.extend([0u8; 12]);
-            pbag.extend(pgens.to_le_bytes());
-            pbag.extend(0u16.to_le_bytes());
-            pbags += 1;
-            generator(&mut pgen, 41, instrument as i16);
-            pgens += 1;
+
+    /// The whole file: a preset of each program in banks 0 and 128, each list's terminal record,
+    /// the RIFF chunks.
+    fn finish(mut self, name: &str) -> Vec<u8> {
+        let (mut phdr, mut pbag, mut pgen) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut pbags, mut pgens) = (0u16, 0u16);
+        for drum_bank in [0u16, 128] {
+            for &(number, instrument) in &self.presets {
+                phdr.extend(name_field(&format!("{name} {number}")));
+                phdr.extend(number.to_le_bytes());
+                phdr.extend(drum_bank.to_le_bytes());
+                phdr.extend(pbags.to_le_bytes());
+                phdr.extend([0u8; 12]);
+                pbag.extend(pgens.to_le_bytes());
+                pbag.extend(0u16.to_le_bytes());
+                pbags += 1;
+                generator(&mut pgen, generator::INSTRUMENT, instrument as i16);
+                pgens += 1;
+            }
+        }
+        // the terminal records
+        phdr.extend(name_field("EOP"));
+        phdr.extend([0u8; 4]);
+        phdr.extend(pbags.to_le_bytes());
+        phdr.extend([0u8; 12]);
+        pbag.extend(pgens.to_le_bytes());
+        pbag.extend(0u16.to_le_bytes());
+        generator(&mut pgen, generator::END, 0);
+        self.inst.extend(name_field("EOI"));
+        self.inst.extend(self.ibags.to_le_bytes());
+        self.ibag.extend(self.igens.to_le_bytes());
+        self.ibag.extend(0u16.to_le_bytes());
+        generator(&mut self.igen, generator::END, 0);
+        self.shdr.extend(name_field("EOS"));
+        self.shdr.extend([0u8; 26]);
+        let info = list(
+            b"INFO",
+            &[
+                chunk(b"ifil", &[2, 0, 1, 0]),
+                chunk(b"isng", b"EMU8000\0"),
+                chunk(b"INAM", format!("{name}\0").as_bytes()),
+                chunk(b"ISFT", b"dc2tk\0"),
+            ],
+        );
+        let sdta = list(b"sdta", &[chunk(b"smpl", &self.smpl)]);
+        let pdta = list(
+            b"pdta",
+            &[
+                chunk(b"phdr", &phdr),
+                chunk(b"pbag", &pbag),
+                chunk(b"pmod", &[0; 10]),
+                chunk(b"pgen", &pgen),
+                chunk(b"inst", &self.inst),
+                chunk(b"ibag", &self.ibag),
+                chunk(b"imod", &[0; 10]),
+                chunk(b"igen", &self.igen),
+                chunk(b"shdr", &self.shdr),
+            ],
+        );
+        let mut body = b"sfbk".to_vec();
+        body.extend(info);
+        body.extend(sdta);
+        body.extend(pdta);
+        chunk(b"RIFF", &body)
+    }
+}
+
+/// The SoundFont of a bank's programs (see the module's doc).
+pub fn write(bank: &Bank, name: &str) -> Result<Vec<u8>> {
+    let mut font = Font::default();
+    for (number, program) in bank.hd.programs.iter().enumerate() {
+        if let Some(program) = program {
+            font.instrument(bank, number, program, name)?;
         }
     }
-    // the terminal records
-    phdr.extend(name_field("EOP"));
-    phdr.extend([0u8; 4]);
-    phdr.extend(pbags.to_le_bytes());
-    phdr.extend([0u8; 12]);
-    pbag.extend(pgens.to_le_bytes());
-    pbag.extend(0u16.to_le_bytes());
-    generator(&mut pgen, 0, 0);
-    inst.extend(name_field("EOI"));
-    inst.extend(ibags.to_le_bytes());
-    ibag.extend(igens.to_le_bytes());
-    ibag.extend(0u16.to_le_bytes());
-    generator(&mut igen, 0, 0);
-    shdr.extend(name_field("EOS"));
-    shdr.extend([0u8; 26]);
-    let info = list(
-        b"INFO",
-        &[
-            chunk(b"ifil", &[2, 0, 1, 0]),
-            chunk(b"isng", b"EMU8000\0"),
-            chunk(b"INAM", format!("{name}\0").as_bytes()),
-            chunk(b"ISFT", b"dc2tk\0"),
-        ],
-    );
-    let sdta = list(b"sdta", &[chunk(b"smpl", &smpl)]);
-    let pdta = list(
-        b"pdta",
-        &[
-            chunk(b"phdr", &phdr),
-            chunk(b"pbag", &pbag),
-            chunk(b"pmod", &[0; 10]),
-            chunk(b"pgen", &pgen),
-            chunk(b"inst", &inst),
-            chunk(b"ibag", &ibag),
-            chunk(b"imod", &[0; 10]),
-            chunk(b"igen", &igen),
-            chunk(b"shdr", &shdr),
-        ],
-    );
-    let mut body = b"sfbk".to_vec();
-    body.extend(info);
-    body.extend(sdta);
-    body.extend(pdta);
-    Ok(chunk(b"RIFF", &body))
+    Ok(font.finish(name))
 }
 
 #[cfg(test)]

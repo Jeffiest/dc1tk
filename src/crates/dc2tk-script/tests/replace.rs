@@ -864,7 +864,7 @@ fn a_mod_adds_a_music_file_made_like_a_bank_of_the_disc() {
     let bank = Bank::from_bytes(archive.read(image.bytes(), entry)).unwrap();
     let entries = bank.entries().unwrap();
     assert_eq!(entries.len(), 1);
-    assert_eq!((entries[0].kind, entries[0].file.as_str()), (EntryKind::Sq, "BG_200_000.sq"));
+    assert_eq!((entries[0].kind, entries[0].file.as_str()), (EntryKind::Sq { seq: 0 }, "BG_200_000.sq"));
     let sq = &bank.pack.members[dc2tk_assets::soundbank::find(&bank.pack, "sq")[0]].data;
     let old = Bank::from_bytes(&like).unwrap();
     let template = &old.pack.members[dc2tk_assets::soundbank::find(&old.pack, "sq")[0]].data;

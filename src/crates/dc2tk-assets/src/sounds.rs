@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::soundbank::{self, Bank, EntryKind, Mode, Sound};
+use crate::soundbank::{self, Bank, Mode, Sound};
 use crate::{bail, Error, Result};
 
 pub const SUFFIX: &str = ".wav";
@@ -24,7 +24,7 @@ pub fn export(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
     let mut out = Vec::new();
     for entry in bank.entries()? {
         let voices = bank.voices(&entry)?;
-        if entry.kind == EntryKind::KeyOn && !voices.is_empty() {
+        if entry.kind.is_key_on() && !voices.is_empty() {
             out.push((file_name(entry.index), soundbank::wav_bytes(&bank.decode_vag(voices[0].vag)?)?));
         }
     }
@@ -123,7 +123,7 @@ pub fn build_entries(given: &[Given], original: &[u8]) -> Result<Vec<u8>> {
             continue;
         }
         let entry = &entries[number];
-        let voices = if entry.kind == EntryKind::KeyOn { bank.voices(entry)? } else { Vec::new() };
+        let voices = if entry.kind.is_key_on() { bank.voices(entry)? } else { Vec::new() };
         if !voices.is_empty() && same_sound(&bank.decode_vag(voices[0].vag)?, &sound) {
             if let Some(volume) = volume {
                 bank.set_volume(number, volume);
@@ -157,11 +157,11 @@ pub fn build_entries(given: &[Given], original: &[u8]) -> Result<Vec<u8>> {
 /// Cuts the samples an entry played before it got samples of its own down to a silent stub when no
 /// entry plays them any more, a sequence's notes included (Bank::voices follows them).
 pub fn free_unused(bank: &mut Bank, vags: &BTreeSet<usize>) -> Result<()> {
-    let stub = soundbank::encode_adpcm(&[0; 28], None, true)?;
+    let stub = soundbank::encode_adpcm(&[0; 28], None, soundbank::Search::Exhaustive)?;
     for &vag in vags {
         if bank.vag_data[vag].len() > stub.len() && bank.users_of_vag(vag)?.is_empty() {
             bank.vag_data[vag] = stub.clone();
-            bank.hd.vags[vag].set("attribute", 0);
+            bank.hd.vags[vag].attribute = 0;
         }
     }
     Ok(())
@@ -220,8 +220,11 @@ mod tests {
     #[test]
     fn adpcm_encodes_and_decodes_close_to_the_source() {
         let samples: Vec<i64> = (0..28 * 40).map(|i| (10000.0 * (i as f64 / 7.0).sin()) as i64).collect();
-        let (decoded, loop_start) =
-            soundbank::decode_adpcm(&soundbank::encode_adpcm(&samples, None, true).unwrap(), true).unwrap();
+        let (decoded, loop_start) = soundbank::decode_adpcm(
+            &soundbank::encode_adpcm(&samples, None, soundbank::Search::Exhaustive).unwrap(),
+            true,
+        )
+        .unwrap();
         assert_eq!(loop_start, None);
         assert!(soundbank::snr_db(&samples, &decoded[..samples.len()]) > 30.0);
     }

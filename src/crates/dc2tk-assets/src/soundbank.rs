@@ -50,265 +50,256 @@ pub fn find(pack: &Pack, ext: &str) -> Vec<usize> {
     (0..pack.members.len()).filter(|&i| extension(&pack.members[i].name) == ext).collect()
 }
 
-/// The layout of a fixed little-endian record: field names and struct format characters.
-pub struct Layout {
-    pub fields: &'static [(&'static str, u8)],
-}
-
-impl Layout {
-    pub fn size(&self) -> usize {
-        self.fields.iter().map(|(_, f)| format_size(*f)).sum()
-    }
-
-    fn position(&self, name: &str) -> usize {
-        self.fields.iter().position(|(n, _)| *n == name).unwrap_or_else(|| panic!("no field {name}"))
-    }
-}
-
-fn format_size(format: u8) -> usize {
-    match format {
-        b'B' | b'b' => 1,
-        b'H' | b'h' => 2,
-        _ => 4,
-    }
-}
-
-/// A record of a Layout, its values as wide ints (each field's range is checked when written).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Record {
-    pub values: Vec<i64>,
-    layout: LayoutKind,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LayoutKind {
-    VagInfo,
-    Sample,
-    Split,
-    Program,
-}
-
-impl LayoutKind {
-    fn layout(self) -> &'static Layout {
-        match self {
-            LayoutKind::VagInfo => &VAG_INFO,
-            LayoutKind::Sample => &SAMPLE,
-            LayoutKind::Split => &SPLIT,
-            LayoutKind::Program => &PROGRAM,
+/// A fixed little-endian record of the .hd file: a struct of its fields in file order, each read
+/// and written by its type, the record's size the sum of theirs.
+macro_rules! record {
+    ($(#[$meta:meta])* $name:ident { $($(#[$field_meta:meta])* $field:ident: $ty:ident,)* }) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+        pub struct $name {
+            $($(#[$field_meta])* pub $field: $ty,)*
         }
-    }
-}
 
-/// Vagi record, 8 bytes.
-pub static VAG_INFO: Layout =
-    Layout { fields: &[("offset", b'I'), ("rate", b'H'), ("attribute", b'B'), ("reserved", b'B')] };
+        impl $name {
+            /// The record's size in the file.
+            pub const SIZE: usize = 0 $(+ std::mem::size_of::<$ty>())*;
 
-/// Smpl record (sceHardSynthSampleParam), 0x2A bytes; vag_index 0xFFFF means no VAG.
-pub static SAMPLE: Layout = Layout {
-    fields: &[
-        ("vag_index", b'H'),
-        ("vel_range_low", b'B'),
-        ("vel_cross_fade", b'B'),
-        ("vel_range_high", b'B'),
-        ("vel_follow_pitch", b'b'),
-        ("vel_follow_pitch_center", b'B'),
-        ("vel_follow_pitch_curve", b'B'),
-        ("vel_follow_amp", b'b'),
-        ("vel_follow_amp_center", b'B'),
-        ("vel_follow_amp_curve", b'B'),
-        ("base_note", b'B'),
-        ("detune", b'b'),
-        ("panpot", b'B'),
-        ("group", b'B'),
-        ("priority", b'B'),
-        ("volume", b'B'),
-        ("reserved", b'B'),
-        ("adsr1", b'H'),
-        ("adsr2", b'H'),
-        ("key_follow_ar", b'b'),
-        ("key_follow_ar_center", b'B'),
-        ("key_follow_dr", b'b'),
-        ("key_follow_dr_center", b'B'),
-        ("key_follow_sr", b'b'),
-        ("key_follow_sr_center", b'B'),
-        ("key_follow_rr", b'b'),
-        ("key_follow_rr_center", b'B'),
-        ("key_follow_sl", b'b'),
-        ("key_follow_sl_center", b'B'),
-        ("pitch_lfo_delay", b'H'),
-        ("pitch_lfo_fade", b'H'),
-        ("amp_lfo_delay", b'H'),
-        ("amp_lfo_fade", b'H'),
-        ("lfo_attribute", b'B'),
-        ("spu_attribute", b'B'),
-    ],
-};
-
-/// Split block of a program (sceHardSynthSplitBlock), 0x14 bytes.
-pub static SPLIT: Layout = Layout {
-    fields: &[
-        ("sample_set", b'H'),
-        ("range_low", b'B'),
-        ("cross_fade", b'B'),
-        ("range_high", b'B'),
-        ("number", b'B'),
-        ("bend_range_low", b'H'),
-        ("bend_range_high", b'H'),
-        ("key_follow_pitch", b'b'),
-        ("key_follow_pitch_center", b'B'),
-        ("key_follow_amp", b'b'),
-        ("key_follow_amp_center", b'B'),
-        ("key_follow_pan", b'b'),
-        ("key_follow_pan_center", b'B'),
-        ("volume", b'B'),
-        ("panpot", b'B'),
-        ("transpose", b'b'),
-        ("detune", b'b'),
-    ],
-};
-
-/// Prog record (sceHardSynthProgramParam), 0x24 bytes.
-pub static PROGRAM: Layout = Layout {
-    fields: &[
-        ("split_block_addr", b'I'),
-        ("n_split", b'B'),
-        ("split_block_size", b'B'),
-        ("volume", b'B'),
-        ("panpot", b'B'),
-        ("transpose", b'b'),
-        ("detune", b'b'),
-        ("key_follow_pan", b'b'),
-        ("key_follow_pan_center", b'B'),
-        ("attribute", b'B'),
-        ("reserved", b'B'),
-        ("lfo_wave", b'B'),
-        ("lfo_wave2", b'B'),
-        ("lfo_start_phase", b'B'),
-        ("lfo_start_phase2", b'B'),
-        ("lfo_phase_random", b'B'),
-        ("lfo_phase_random2", b'B'),
-        ("lfo_cycle", b'H'),
-        ("lfo_cycle2", b'H'),
-        ("lfo_pitch_depth", b'h'),
-        ("lfo_pitch_depth2", b'h'),
-        ("lfo_midi_pitch_depth", b'h'),
-        ("lfo_midi_pitch_depth2", b'h'),
-        ("lfo_amp_depth", b'b'),
-        ("lfo_amp_depth2", b'b'),
-        ("lfo_midi_amp_depth", b'b'),
-        ("lfo_midi_amp_depth2", b'b'),
-    ],
-};
-
-impl Record {
-    fn new(layout: LayoutKind, values: &[(&str, i64)]) -> Record {
-        let mut record = Record { values: vec![0; layout.layout().fields.len()], layout };
-        for (name, value) in values {
-            record.set(name, *value);
-        }
-        record
-    }
-
-    fn unpack(layout: LayoutKind, data: &[u8], at: usize) -> Result<Record> {
-        let fields = layout.layout().fields;
-        let mut values = Vec::with_capacity(fields.len());
-        let mut reader = Reader::at(data, at, "the .hd file");
-        for (_, format) in fields {
-            values.push(match format {
-                b'B' => reader.u8()? as i64,
-                b'b' => reader.u8()? as i8 as i64,
-                b'H' => reader.u16()? as i64,
-                b'h' => reader.i16()? as i64,
-                b'I' => reader.u32()? as i64,
-                _ => reader.i32()? as i64,
-            });
-        }
-        Ok(Record { values, layout })
-    }
-
-    pub fn pack(&self) -> Result<Vec<u8>> {
-        let mut out = Vec::with_capacity(self.layout.layout().size());
-        for ((_, format), &v) in self.layout.layout().fields.iter().zip(&self.values) {
-            let (low, high) = match format {
-                b'B' => (0, 0xFF),
-                b'b' => (-0x80, 0x7F),
-                b'H' => (0, 0xFFFF),
-                b'h' => (-0x8000, 0x7FFF),
-                b'I' => (0, 0xFFFF_FFFF),
-                _ => (-0x8000_0000, 0x7FFF_FFFF),
-            };
-            if v < low || v > high {
-                bail!("a value does not fit the record's field, which holds {low} to {high}");
+            fn read(data: &[u8], at: usize) -> Result<$name> {
+                let mut reader = Reader::at(data, at, "the .hd file");
+                Ok($name { $($field: reader.$ty()?,)* })
             }
-            out.extend(&(v as u32).to_le_bytes()[..format_size(*format)]);
+
+            fn write(&self, out: &mut Vec<u8>) {
+                $(out.extend(self.$field.to_le_bytes());)*
+            }
         }
-        Ok(out)
-    }
+    };
+}
 
-    pub fn get(&self, name: &str) -> i64 {
-        self.values[self.layout.layout().position(name)]
+record! {
+    /// Vagi record (sceHardSynthVagParam): where a VAG is in the .bd, its rate, and whether it
+    /// loops (attribute 1).
+    VagInfo {
+        offset: u32,
+        rate: u16,
+        attribute: u8,
+        reserved: u8,
     }
+}
 
-    pub fn set(&mut self, name: &str, value: i64) {
-        let at = self.layout.layout().position(name);
-        self.values[at] = value;
+record! {
+    /// Smpl record (sceHardSynthSampleParam); vag_index 0xFFFF means no VAG.
+    Sample {
+        vag_index: u16,
+        vel_range_low: u8,
+        vel_cross_fade: u8,
+        vel_range_high: u8,
+        vel_follow_pitch: i8,
+        vel_follow_pitch_center: u8,
+        vel_follow_pitch_curve: u8,
+        vel_follow_amp: i8,
+        vel_follow_amp_center: u8,
+        vel_follow_amp_curve: u8,
+        base_note: u8,
+        detune: i8,
+        panpot: u8,
+        group: u8,
+        priority: u8,
+        volume: u8,
+        reserved: u8,
+        adsr1: u16,
+        adsr2: u16,
+        key_follow_ar: i8,
+        key_follow_ar_center: u8,
+        key_follow_dr: i8,
+        key_follow_dr_center: u8,
+        key_follow_sr: i8,
+        key_follow_sr_center: u8,
+        key_follow_rr: i8,
+        key_follow_rr_center: u8,
+        key_follow_sl: i8,
+        key_follow_sl_center: u8,
+        pitch_lfo_delay: u16,
+        pitch_lfo_fade: u16,
+        amp_lfo_delay: u16,
+        amp_lfo_fade: u16,
+        lfo_attribute: u8,
+        spu_attribute: u8,
     }
+}
 
-    /// A copy with some fields changed.
-    fn with(&self, changes: &[(&str, i64)]) -> Record {
-        let mut new = self.clone();
-        for (name, value) in changes {
-            new.set(name, *value);
+record! {
+    /// Split block of a program (sceHardSynthSplitBlock): the keys it plays and the sample set
+    /// it plays them with.
+    Split {
+        sample_set: u16,
+        range_low: u8,
+        cross_fade: u8,
+        range_high: u8,
+        number: u8,
+        bend_range_low: u16,
+        bend_range_high: u16,
+        key_follow_pitch: i8,
+        key_follow_pitch_center: u8,
+        key_follow_amp: i8,
+        key_follow_amp_center: u8,
+        key_follow_pan: i8,
+        key_follow_pan_center: u8,
+        volume: u8,
+        panpot: u8,
+        transpose: i8,
+        detune: i8,
+    }
+}
+
+record! {
+    /// Prog record (sceHardSynthProgramParam); its split blocks follow it.
+    ProgramRecord {
+        split_block_addr: u32,
+        n_split: u8,
+        split_block_size: u8,
+        volume: u8,
+        panpot: u8,
+        transpose: i8,
+        detune: i8,
+        key_follow_pan: i8,
+        key_follow_pan_center: u8,
+        attribute: u8,
+        reserved: u8,
+        lfo_wave: u8,
+        lfo_wave2: u8,
+        lfo_start_phase: u8,
+        lfo_start_phase2: u8,
+        lfo_phase_random: u8,
+        lfo_phase_random2: u8,
+        lfo_cycle: u16,
+        lfo_cycle2: u16,
+        lfo_pitch_depth: i16,
+        lfo_pitch_depth2: i16,
+        lfo_midi_pitch_depth: i16,
+        lfo_midi_pitch_depth2: i16,
+        lfo_amp_depth: i8,
+        lfo_amp_depth2: i8,
+        lfo_midi_amp_depth: i8,
+        lfo_midi_amp_depth2: i8,
+    }
+}
+
+impl Sample {
+    /// A new sample's settings: every velocity, at its own pitch at key 60 and its own level,
+    /// the default envelope (no attack, full sustain, a short release).
+    fn fresh() -> Sample {
+        Sample {
+            vel_range_low: 1,
+            vel_cross_fade: 64,
+            vel_range_high: 127,
+            vel_follow_pitch_center: 1,
+            vel_follow_amp_center: 1,
+            base_note: 60,
+            panpot: 64,
+            priority: 10,
+            volume: 128,
+            reserved: 0xFF,
+            adsr1: 0x80FF,
+            adsr2: 0x5FEC,
+            key_follow_ar_center: 60,
+            key_follow_dr_center: 60,
+            key_follow_sr_center: 60,
+            key_follow_rr_center: 60,
+            key_follow_sl_center: 60,
+            spu_attribute: 0x2F,
+            ..Sample::default()
         }
-        new
+    }
+}
+
+impl Split {
+    /// A new split's settings: every key, centred, at full volume.
+    fn fresh() -> Split {
+        Split {
+            range_low: 0,
+            cross_fade: 60,
+            range_high: 127,
+            bend_range_low: 256,
+            bend_range_high: 256,
+            key_follow_pitch_center: 60,
+            key_follow_amp_center: 60,
+            key_follow_pan_center: 60,
+            volume: 128,
+            panpot: 64,
+            ..Split::default()
+        }
+    }
+}
+
+impl ProgramRecord {
+    /// A new program's settings: its splits right after it, centred, at full volume.
+    fn fresh() -> ProgramRecord {
+        ProgramRecord {
+            split_block_addr: ProgramRecord::SIZE as u32,
+            split_block_size: Split::SIZE as u8,
+            volume: 128,
+            panpot: 64,
+            key_follow_pan_center: 60,
+            reserved: 0xFF,
+            lfo_cycle: 100,
+            lfo_cycle2: 100,
+            lfo_pitch_depth: 128,
+            lfo_pitch_depth2: 128,
+            lfo_midi_pitch_depth: 128,
+            lfo_midi_pitch_depth2: 128,
+            ..ProgramRecord::default()
+        }
     }
 }
 
 /// A Prog record and the split blocks after it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Program {
-    pub record: Record,
-    pub splits: Vec<Record>,
+    pub record: ProgramRecord,
+    pub splits: Vec<Split>,
 }
 
 /// Sset record: vel_curve, vel_limit_low, vel_limit_high, count, then count u16 sample indices.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SampleSet {
-    pub samples: Vec<i64>,
-    pub vel_curve: i64,
-    pub vel_limit_low: i64,
-    pub vel_limit_high: i64,
+    pub samples: Vec<u16>,
+    pub vel_curve: u8,
+    pub vel_limit_low: u8,
+    pub vel_limit_high: u8,
 }
 
 impl SampleSet {
-    fn unpack(data: &[u8], at: usize) -> Result<SampleSet> {
-        let Some(head) = data.get(at..at + 4) else {
-            bail!("the data is shorter than the {} bytes read here", at + 4);
-        };
-        let samples = (0..head[3] as usize).map(|i| Ok(u16_at(data, at + 4 + 2 * i)? as i64)).collect::<Result<_>>()?;
-        Ok(SampleSet {
-            samples,
-            vel_curve: head[0] as i64,
-            vel_limit_low: head[1] as i64,
-            vel_limit_high: head[2] as i64,
-        })
+    /// A set of one sample, played at every velocity.
+    fn of(sample: u16) -> SampleSet {
+        SampleSet { samples: vec![sample], vel_curve: 0, vel_limit_low: 1, vel_limit_high: 127 }
     }
 
-    fn pack(&self) -> Result<Vec<u8>> {
-        let mut out = Vec::new();
-        for v in [self.vel_curve, self.vel_limit_low, self.vel_limit_high, self.samples.len() as i64] {
-            if !(0..=0xFF).contains(&v) {
-                bail!("a value does not fit in a byte");
-            }
-            out.push(v as u8);
-        }
-        for &s in &self.samples {
-            if !(0..=0xFFFF).contains(&s) {
-                bail!("a value does not fit in an unsigned 16-bit int");
-            }
-            out.extend((s as u16).to_le_bytes());
+    fn read(data: &[u8], at: usize) -> Result<SampleSet> {
+        let mut reader = Reader::at(data, at, "the .hd file");
+        let (vel_curve, vel_limit_low, vel_limit_high, count) =
+            (reader.u8()?, reader.u8()?, reader.u8()?, reader.u8()?);
+        let samples = (0..count).map(|_| reader.u16()).collect::<Result<_>>()?;
+        Ok(SampleSet { samples, vel_curve, vel_limit_low, vel_limit_high })
+    }
+
+    fn write(&self) -> Result<Vec<u8>> {
+        let Ok(count) = u8::try_from(self.samples.len()) else {
+            bail!("a sample set of {} samples; a set holds at most 255", self.samples.len());
+        };
+        let mut out = vec![self.vel_curve, self.vel_limit_low, self.vel_limit_high, count];
+        for sample in &self.samples {
+            out.extend(sample.to_le_bytes());
         }
         Ok(out)
+    }
+}
+
+/// The index of the item last pushed onto a table of the .hd, as the u16 the records hold.
+fn last_index<T>(table: &[T], what: &str) -> Result<u16> {
+    match u16::try_from(table.len().wrapping_sub(1)) {
+        Ok(index) if index != u16::MAX => Ok(index),
+        _ => bail!("the bank would have {} {what}; its tables hold at most 65535", table.len()),
     }
 }
 
@@ -385,8 +376,8 @@ pub struct Hd {
     pub se_timbre_addr: u32,
     pub head_reserved: Vec<u8>,
     pub body_size: u32,
-    pub vags: Vec<Record>,
-    pub samples: Vec<Option<Record>>,
+    pub vags: Vec<VagInfo>,
+    pub samples: Vec<Option<Sample>>,
     pub sample_sets: Vec<Option<SampleSet>>,
     pub programs: Vec<Option<Program>>,
 }
@@ -396,8 +387,7 @@ impl Hd {
         let found = chunks(data)?;
         let names: Vec<&str> = found.iter().map(|(name, _, _)| name.as_str()).collect();
         if names != CHUNK_ORDER {
-            let quoted: Vec<String> = names.iter().map(|n| format!("'{n}'")).collect();
-            bail!("unexpected chunk order ({}{})", quoted.join(", "), if quoted.len() == 1 { "," } else { "" });
+            bail!("the .hd's chunks are {}, not {}", names.join(", "), CHUNK_ORDER.join(", "));
         }
         let pos = |name: &str| found.iter().find(|(n, _, _)| n == name).unwrap().1;
         let h = pos("Head");
@@ -411,26 +401,16 @@ impl Hd {
             bail!("Head chunk does not match the file");
         }
         let o = pos("Vagi");
-        let vags = table(data, o)?
-            .into_iter()
-            .map(|x| Record::unpack(LayoutKind::VagInfo, data, o + x as usize))
-            .collect::<Result<_>>()?;
+        let vags = table(data, o)?.into_iter().map(|x| VagInfo::read(data, o + x as usize)).collect::<Result<_>>()?;
         let o = pos("Smpl");
-        let samples =
-            table(data, o)?
-                .into_iter()
-                .map(|x| {
-                    if x == NONE {
-                        Ok(None)
-                    } else {
-                        Record::unpack(LayoutKind::Sample, data, o + x as usize).map(Some)
-                    }
-                })
-                .collect::<Result<_>>()?;
+        let samples = table(data, o)?
+            .into_iter()
+            .map(|x| if x == NONE { Ok(None) } else { Sample::read(data, o + x as usize).map(Some) })
+            .collect::<Result<_>>()?;
         let o = pos("Sset");
         let sample_sets = table(data, o)?
             .into_iter()
-            .map(|x| if x == NONE { Ok(None) } else { SampleSet::unpack(data, o + x as usize).map(Some) })
+            .map(|x| if x == NONE { Ok(None) } else { SampleSet::read(data, o + x as usize).map(Some) })
             .collect::<Result<_>>()?;
         let o = pos("Prog");
         let mut programs = Vec::new();
@@ -439,12 +419,11 @@ impl Hd {
                 programs.push(None);
                 continue;
             }
-            let record = Record::unpack(LayoutKind::Program, data, o + x as usize)?;
-            let base = o + x as usize + record.get("split_block_addr") as usize;
-            let size = record.get("split_block_size") as usize;
-            let splits = (0..record.get("n_split") as usize)
-                .map(|i| Record::unpack(LayoutKind::Split, data, base + i * size))
-                .collect::<Result<_>>()?;
+            let record = ProgramRecord::read(data, o + x as usize)?;
+            let base = o + x as usize + record.split_block_addr as usize;
+            let size = record.split_block_size as usize;
+            let splits =
+                (0..record.n_split as usize).map(|i| Split::read(data, base + i * size)).collect::<Result<_>>()?;
             programs.push(Some(Program { record, splits }));
         }
         Ok(Hd {
@@ -465,17 +444,23 @@ impl Hd {
         vers.extend(tag("Vers"));
         vers.extend(16u32.to_le_bytes());
         vers.extend(&self.version);
-        let vagi = table_chunk("Vagi", &self.vags.iter().map(|v| v.pack().map(Some)).collect::<Result<Vec<_>>>()?)?;
+        let bytes = |write: &dyn Fn(&mut Vec<u8>)| {
+            let mut out = Vec::new();
+            write(&mut out);
+            out
+        };
+        let vagi =
+            table_chunk("Vagi", &self.vags.iter().map(|v| Some(bytes(&|out| v.write(out)))).collect::<Vec<_>>())?;
         let smpl = table_chunk(
             "Smpl",
-            &self.samples.iter().map(|s| s.as_ref().map(Record::pack).transpose()).collect::<Result<Vec<_>>>()?,
+            &self.samples.iter().map(|s| s.as_ref().map(|s| bytes(&|out| s.write(out)))).collect::<Vec<_>>(),
         )?;
         let sset = table_chunk(
             "Sset",
             &self
                 .sample_sets
                 .iter()
-                .map(|s| s.as_ref().map(SampleSet::pack).transpose())
+                .map(|s| s.as_ref().map(SampleSet::write).transpose())
                 .collect::<Result<Vec<_>>>()?,
         )?;
         let mut progs = Vec::new();
@@ -484,15 +469,19 @@ impl Hd {
                 progs.push(None);
                 continue;
             };
-            if program.record.get("split_block_addr") != PROGRAM.size() as i64
-                || program.record.get("split_block_size") != SPLIT.size() as i64
+            if program.record.split_block_addr != ProgramRecord::SIZE as u32
+                || program.record.split_block_size as usize != Split::SIZE
             {
                 bail!("only programs with splits right after them can be written");
             }
-            program.record.set("n_split", program.splits.len() as i64);
-            let mut bytes = program.record.pack()?;
+            let Ok(n_split) = u8::try_from(program.splits.len()) else {
+                bail!("a program of {} splits; a program has at most 255", program.splits.len());
+            };
+            program.record.n_split = n_split;
+            let mut bytes = Vec::with_capacity(ProgramRecord::SIZE + Split::SIZE * program.splits.len());
+            program.record.write(&mut bytes);
             for split in &program.splits {
-                bytes.extend(split.pack()?);
+                split.write(&mut bytes);
             }
             progs.push(Some(bytes));
         }
@@ -611,12 +600,20 @@ fn quantize(
     (err, nibs, h1, h2)
 }
 
-/// Filter and shift for 28 samples by closed-loop squared error. full: all 5 filters x 13 shifts;
-/// otherwise the shift from the open-loop residual peak and one more bit of range.
-fn encode_block(block: &[i64], h1: i64, h2: i64, full: bool) -> ([u8; 16], i64, i64) {
+/// How encode_adpcm searches for each block's filter and shift, by closed-loop squared error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Search {
+    /// Every filter with every shift (5 x 13), the least error kept.
+    Exhaustive,
+    /// Each filter with the shift its open-loop residual's peak needs, and one more bit of range.
+    Quick,
+}
+
+/// Filter and shift for 28 samples by closed-loop squared error, searched as `search` says.
+fn encode_block(block: &[i64], h1: i64, h2: i64, search: Search) -> ([u8; 16], i64, i64) {
     let mut best: Option<(i64, usize, u32)> = None;
     for (f, &(c1, c2)) in COEFS.iter().enumerate() {
-        let shifts: Vec<u32> = if full {
+        let shifts: Vec<u32> = if search == Search::Exhaustive {
             (0..13).collect()
         } else {
             let (mut p1, mut p2, mut peak) = (h1, h2, 0i64);
@@ -660,7 +657,7 @@ fn encode_block(block: &[i64], h1: i64, h2: i64, full: bool) -> ([u8; 16], i64, 
 /// PCM encoded to a VAG body in the layout every VAG of the game has. One-shot: zero block, first
 /// block flags 4, last flags 1, then the 00 07 77.. block. Looped: zero block, every block flags
 /// 2, the loop block 6, the last 3.
-pub fn encode_adpcm(samples: &[i64], loop_start: Option<i64>, full: bool) -> Result<Vec<u8>> {
+pub fn encode_adpcm(samples: &[i64], loop_start: Option<i64>, search: Search) -> Result<Vec<u8>> {
     let mut samples: Vec<i64> = samples.iter().map(|&s| s.clamp(-32768, 32767)).collect();
     if samples.is_empty() {
         samples.push(0);
@@ -677,7 +674,7 @@ pub fn encode_adpcm(samples: &[i64], loop_start: Option<i64>, full: bool) -> Res
     let mut out = vec![0u8; 16];
     let (mut h1, mut h2) = (0, 0);
     for i in 0..blocks {
-        let (mut block, n1, n2) = encode_block(&samples[i * 28..(i + 1) * 28], h1, h2, full);
+        let (mut block, n1, n2) = encode_block(&samples[i * 28..(i + 1) * 28], h1, h2, search);
         (h1, h2) = (n1, n2);
         let end = if i == blocks - 1 { FLAG_END } else { 0 };
         block[1] = match loop_start {
@@ -1036,10 +1033,30 @@ pub fn midi_notes(data: &[u8]) -> Result<Vec<(u8, i64, u8, u8)>> {
 /// What an entry plays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryKind {
+    /// A file the bank does not have: nothing.
     None,
-    KeyOn,
-    Sq,
-    SeSeq,
+    /// A key-on of a program at a key (each as the .cfg's columns give it, a signed byte).
+    KeyOn { prog: i64, key: i64 },
+    /// The bank's seq-th .sq member, in pack order.
+    Sq { seq: usize },
+    /// The bank's seq-th .mid member, which sndCSeSeq plays.
+    SeSeq { seq: usize },
+}
+
+impl EntryKind {
+    /// The kind's name ("KeyOn"), as tree's fingerprints of what an entry plays write it.
+    pub fn name(&self) -> &'static str {
+        match self {
+            EntryKind::None => "None",
+            EntryKind::KeyOn { .. } => "KeyOn",
+            EntryKind::Sq { .. } => "Sq",
+            EntryKind::SeSeq { .. } => "SeSeq",
+        }
+    }
+
+    pub fn is_key_on(&self) -> bool {
+        matches!(self, EntryKind::KeyOn { .. })
+    }
 }
 
 /// One play_se entry: the n-th line of the .cfg before END starting with a digit.
@@ -1052,9 +1069,6 @@ pub struct Entry {
     pub name: String,
     pub file: String,
     pub kind: EntryKind,
-    pub seq_index: Option<usize>,
-    pub prog: i64,
-    pub key: i64,
     pub flag: bool,
     pub volume: Option<i64>,
 }
@@ -1071,53 +1085,6 @@ pub struct Voice {
     pub key: i64,
     pub velocity: i64,
 }
-
-const DEFAULT_SAMPLE: &[(&str, i64)] = &[
-    ("vel_range_low", 1),
-    ("vel_cross_fade", 64),
-    ("vel_range_high", 127),
-    ("vel_follow_pitch_center", 1),
-    ("vel_follow_amp_center", 1),
-    ("base_note", 60),
-    ("panpot", 64),
-    ("priority", 10),
-    ("volume", 128),
-    ("reserved", 0xFF),
-    ("adsr1", 0x80FF),
-    ("adsr2", 0x5FEC),
-    ("key_follow_ar_center", 60),
-    ("key_follow_dr_center", 60),
-    ("key_follow_sr_center", 60),
-    ("key_follow_rr_center", 60),
-    ("key_follow_sl_center", 60),
-    ("spu_attribute", 0x2F),
-];
-const DEFAULT_SPLIT: &[(&str, i64)] = &[
-    ("range_low", 0),
-    ("cross_fade", 60),
-    ("range_high", 127),
-    ("bend_range_low", 256),
-    ("bend_range_high", 256),
-    ("key_follow_pitch_center", 60),
-    ("key_follow_amp_center", 60),
-    ("key_follow_pan_center", 60),
-    ("volume", 128),
-    ("panpot", 64),
-];
-const DEFAULT_PROGRAM: &[(&str, i64)] = &[
-    ("split_block_addr", 0x24),
-    ("split_block_size", 0x14),
-    ("volume", 128),
-    ("panpot", 64),
-    ("key_follow_pan_center", 60),
-    ("reserved", 0xFF),
-    ("lfo_cycle", 100),
-    ("lfo_cycle2", 100),
-    ("lfo_pitch_depth", 128),
-    ("lfo_pitch_depth2", 128),
-    ("lfo_midi_pitch_depth", 128),
-    ("lfo_midi_pitch_depth2", 128),
-];
 
 /// SE_Play sends the program as a 7-bit MIDI value.
 pub const MAX_PROGRAMS: usize = 128;
@@ -1182,7 +1149,7 @@ impl Bank {
         if hd.body_size as usize != bd.len() {
             bail!("Head body size {} != bd size {}", hd.body_size, bd.len());
         }
-        let starts: Vec<i64> = hd.vags.iter().map(|v| v.get("offset")).collect();
+        let starts: Vec<u32> = hd.vags.iter().map(|v| v.offset).collect();
         let mut unique = starts.clone();
         unique.sort_unstable();
         unique.dedup();
@@ -1206,7 +1173,10 @@ impl Bank {
             if data.len() % BLOCK != 0 {
                 bail!("VAG length not a multiple of 16");
             }
-            info.set("offset", out.len() as i64);
+            let Ok(offset) = u32::try_from(out.len()) else {
+                bail!("the bank's samples are more than 4 GB");
+            };
+            info.offset = offset;
             out.extend(data);
         }
         Ok(out)
@@ -1268,19 +1238,17 @@ impl Bank {
             cols.resize(cols.len().max(8), Vec::new());
             let f = &cols[4];
             let lower = decode(f)?.to_lowercase();
-            let mut seq = None;
+            let key_on = EntryKind::KeyOn { prog: s8(atoi(&cols[5])), key: s8(atoi(&cols[6])) };
             let kind = if f == b"KeyOn" {
-                EntryKind::KeyOn
-            } else if let Some(i) = sq_names.iter().position(|n| *n == lower) {
-                seq = Some(i);
-                EntryKind::Sq
-            } else if let Some(i) = mid_names.iter().position(|n| *n == lower) {
-                seq = Some(i);
-                EntryKind::SeSeq
+                key_on
+            } else if let Some(seq) = sq_names.iter().position(|n| *n == lower) {
+                EntryKind::Sq { seq }
+            } else if let Some(seq) = mid_names.iter().position(|n| *n == lower) {
+                EntryKind::SeSeq { seq }
             } else if lower.contains('.') {
                 EntryKind::None
             } else {
-                EntryKind::KeyOn
+                key_on
             };
             let index = out.len();
             out.push(Entry {
@@ -1291,13 +1259,6 @@ impl Bank {
                 name: text::decode_lossy(&cols[2]),
                 file: text::decode_lossy(f),
                 kind,
-                seq_index: seq,
-                prog: if matches!(kind, EntryKind::Sq | EntryKind::SeSeq) {
-                    seq.unwrap() as i64
-                } else {
-                    s8(atoi(&cols[5]))
-                },
-                key: s8(atoi(&cols[6])),
                 flag: !cols[7].is_empty(),
                 volume: volumes.get(index).copied(),
             });
@@ -1313,14 +1274,14 @@ impl Bank {
             return voices;
         };
         for (si, split) in program.splits.iter().enumerate() {
-            if !(split.get("range_low") <= key && key <= split.get("range_high")) {
+            if !(i64::from(split.range_low) <= key && key <= i64::from(split.range_high)) {
                 continue;
             }
-            let set_index = split.get("sample_set") as usize;
+            let set_index = split.sample_set as usize;
             let Some(Some(set)) = self.hd.sample_sets.get(set_index) else {
                 continue;
             };
-            if !(set.vel_limit_low <= velocity && velocity <= set.vel_limit_high) {
+            if !(i64::from(set.vel_limit_low) <= velocity && velocity <= i64::from(set.vel_limit_high)) {
                 continue;
             }
             for &smi in &set.samples {
@@ -1328,16 +1289,16 @@ impl Bank {
                     continue;
                 };
                 // vag_index 0xFFFF marks a sample without a VAG
-                if sample.get("vel_range_low") <= velocity
-                    && velocity <= sample.get("vel_range_high")
-                    && (sample.get("vag_index") as usize) < self.hd.vags.len()
+                if i64::from(sample.vel_range_low) <= velocity
+                    && velocity <= i64::from(sample.vel_range_high)
+                    && (sample.vag_index as usize) < self.hd.vags.len()
                 {
                     voices.push(Voice {
                         prog,
                         split: si,
                         sample_set: set_index,
                         sample: smi as usize,
-                        vag: sample.get("vag_index") as usize,
+                        vag: sample.vag_index as usize,
                         key,
                         velocity,
                     });
@@ -1349,36 +1310,35 @@ impl Bank {
 
     /// Voices an entry plays: KeyOn resolves (prog, key, 127); a .mid or .sq every note-on.
     pub fn voices(&self, entry: &Entry) -> Result<Vec<Voice>> {
-        match entry.kind {
-            EntryKind::KeyOn => Ok(self.resolve(entry.prog, entry.key, 127)),
-            EntryKind::SeSeq | EntryKind::Sq => {
-                let notes = if entry.kind == EntryKind::Sq {
-                    let member = find(&self.pack, "sq")[entry.seq_index.unwrap()];
-                    crate::sequence::Sequence::read(&self.pack.members[member].data)?.notes()
-                } else {
-                    let member = find(&self.pack, "mid")[entry.seq_index.unwrap()];
-                    midi_notes(&self.pack.members[member].data)?.into_iter().map(|(_, p, k, v)| (p, k, v)).collect()
-                };
-                let mut seen = Vec::new();
-                for (prog, key, velocity) in notes {
-                    for v in self.resolve(prog, key as i64, velocity as i64) {
-                        if !seen.contains(&v) {
-                            seen.push(v);
-                        }
-                    }
-                }
-                Ok(seen)
+        let notes = match entry.kind {
+            EntryKind::None => return Ok(Vec::new()),
+            EntryKind::KeyOn { prog, key } => return Ok(self.resolve(prog, key, 127)),
+            EntryKind::Sq { seq } => {
+                let member = find(&self.pack, "sq")[seq];
+                crate::sequence::Sequence::read(&self.pack.members[member].data)?.notes()
             }
-            _ => Ok(Vec::new()),
+            EntryKind::SeSeq { seq } => {
+                let member = find(&self.pack, "mid")[seq];
+                midi_notes(&self.pack.members[member].data)?.into_iter().map(|(_, p, k, v)| (p, k, v)).collect()
+            }
+        };
+        let mut seen = Vec::new();
+        for (prog, key, velocity) in notes {
+            for v in self.resolve(prog, key as i64, velocity as i64) {
+                if !seen.contains(&v) {
+                    seen.push(v);
+                }
+            }
         }
+        Ok(seen)
     }
 
     /// Programs named by KeyOn rows, .mid program changes and .sq program changes.
     pub fn referenced_programs(&self) -> Result<BTreeSet<i64>> {
         let mut used = BTreeSet::new();
         for e in self.entries()? {
-            if e.kind == EntryKind::KeyOn {
-                used.insert(e.prog & 0x7F);
+            if let EntryKind::KeyOn { prog, .. } = e.kind {
+                used.insert(prog & 0x7F);
             }
         }
         for m in find(&self.pack, "mid") {
@@ -1396,12 +1356,12 @@ impl Bank {
     /// The VAG as a Sound (rate from Vagi, loop from the block flags).
     pub fn decode_vag(&self, index: usize) -> Result<Sound> {
         let (samples, loop_start) = decode_adpcm(&self.vag_data[index], true)?;
-        Ok(Sound { rate: self.hd.vags[index].get("rate"), samples, loop_start })
+        Ok(Sound { rate: i64::from(self.hd.vags[index].rate), samples, loop_start })
     }
 
     /// ADPCM bytes, rate and whether it loops for a Sound: resampled to `rate` (default the
     /// sound's, at most 48000); loop Some(true/false), or None for the sound's own loop point.
-    fn encode(&self, sound: &Sound, rate: Option<i64>, wanted: Option<bool>) -> Result<(Vec<u8>, i64, bool)> {
+    fn encode(&self, sound: &Sound, rate: Option<i64>, wanted: Option<bool>) -> Result<(Vec<u8>, u16, bool)> {
         let rate = rate.unwrap_or(sound.rate.min(48000));
         let samples =
             if rate != sound.rate { resample(&sound.samples, sound.rate, rate) } else { sound.samples.clone() };
@@ -1418,10 +1378,10 @@ impl Bank {
             ls = None;
         }
         let s = prepare_loop(&Sound { rate, samples, loop_start: ls })?;
-        if !(1..=0xFFFF).contains(&rate) {
-            bail!("rate out of range");
-        }
-        Ok((encode_adpcm(&s.samples, s.loop_start, true)?, rate, s.loop_start.is_some()))
+        let Some(rate) = u16::try_from(rate).ok().filter(|&rate| rate > 0) else {
+            bail!("a sample rate of {rate} Hz; a VAG plays at 1 to 65535");
+        };
+        Ok((encode_adpcm(&s.samples, s.loop_start, Search::Exhaustive)?, rate, s.loop_start.is_some()))
     }
 
     /// One VAG replaced in place: every sample, program and entry using it plays the new sound.
@@ -1432,13 +1392,13 @@ impl Bank {
         rate: Option<i64>,
         mut wanted: Option<bool>,
     ) -> Result<()> {
-        if wanted.is_none() && sound.loop_start.is_none() && self.hd.vags[index].get("attribute") != 0 {
+        if wanted.is_none() && sound.loop_start.is_none() && self.hd.vags[index].attribute != 0 {
             wanted = Some(true);
         }
         let (data, rate, looped) = self.encode(sound, rate, wanted)?;
         self.vag_data[index] = data;
-        self.hd.vags[index].set("rate", rate);
-        self.hd.vags[index].set("attribute", looped as i64);
+        self.hd.vags[index].rate = rate;
+        self.hd.vags[index].attribute = looped as u8;
         Ok(())
     }
 
@@ -1466,58 +1426,47 @@ impl Bank {
         let number = self.free_program()?;
         if wanted.is_none()
             && sound.loop_start.is_none()
-            && template.is_some_and(|t| self.hd.vags[t.vag].get("attribute") != 0)
+            && template.is_some_and(|t| self.hd.vags[t.vag].attribute != 0)
         {
             wanted = Some(true);
         }
         let (data, rate, looped) = self.encode(sound, rate, wanted)?;
+        let vag = self.push_vag(data, rate, looped)?;
         let hd = &mut self.hd;
-        hd.vags.push(Record::new(
-            LayoutKind::VagInfo,
-            &[("offset", 0), ("rate", rate), ("attribute", looped as i64), ("reserved", 0xFF)],
-        ));
-        self.vag_data.push(data);
-        let vag = hd.vags.len() as i64 - 1;
         let (sample, split, program) = match template {
             Some(t) => {
-                let program = hd.programs[t.prog].clone().unwrap();
-                (hd.samples[t.sample].clone().unwrap(), program.splits[t.split].clone(), program)
+                let program = hd.programs[t.prog].clone().expect("a voice's program is one of the bank's");
+                let sample = hd.samples[t.sample].expect("a voice's sample is one of the bank's");
+                (sample, program.splits[t.split], program.record)
             }
-            None => (
-                Record::new(LayoutKind::Sample, DEFAULT_SAMPLE),
-                Record::new(LayoutKind::Split, DEFAULT_SPLIT),
-                Program { record: Record::new(LayoutKind::Program, DEFAULT_PROGRAM), splits: Vec::new() },
-            ),
+            None => (Sample::fresh(), Split::fresh(), ProgramRecord::fresh()),
         };
         // plays at the VAG's own rate for `key`: base note = key, no transpose or detune
-        let sample = sample.with(&[
-            ("vag_index", vag),
-            ("vel_range_low", 1),
-            ("vel_range_high", 127),
-            ("base_note", key.clamp(0, 127)),
-            ("detune", 0),
-        ]);
-        hd.samples.push(Some(sample));
-        hd.sample_sets.push(Some(SampleSet {
-            samples: vec![hd.samples.len() as i64 - 1],
-            vel_curve: 0,
-            vel_limit_low: 1,
-            vel_limit_high: 127,
+        let base_note = key.clamp(0, 127) as u8;
+        hd.samples.push(Some(Sample {
+            vag_index: vag,
+            vel_range_low: 1,
+            vel_range_high: 127,
+            base_note,
+            detune: 0,
+            ..sample
         }));
-        let split = split.with(&[
-            ("sample_set", hd.sample_sets.len() as i64 - 1),
-            ("range_low", 0),
-            ("range_high", 127),
-            ("number", 0),
-            ("transpose", 0),
-            ("detune", 0),
-        ]);
+        hd.sample_sets.push(Some(SampleSet::of(last_index(&hd.samples, "samples")?)));
+        let sample_set = last_index(&hd.sample_sets, "sample sets")?;
+        let split = Split { sample_set, range_low: 0, range_high: 127, number: 0, transpose: 0, detune: 0, ..split };
         if hd.programs.len() < number + 1 {
             hd.programs.resize(number + 1, None);
         }
         hd.programs[number] =
-            Some(Program { record: program.record.with(&[("transpose", 0), ("detune", 0)]), splits: vec![split] });
+            Some(Program { record: ProgramRecord { transpose: 0, detune: 0, ..program }, splits: vec![split] });
         Ok(number)
+    }
+
+    /// A new VAG of the bank: its bytes, rate and loop; returns its index.
+    fn push_vag(&mut self, data: Vec<u8>, rate: u16, looped: bool) -> Result<u16> {
+        self.hd.vags.push(VagInfo { offset: 0, rate, attribute: looped as u8, reserved: 0xFF });
+        self.vag_data.push(data);
+        last_index(&self.hd.vags, "VAGs")
     }
 
     /// Program `number` made of zones, one split each, in place of any program of that number
@@ -1533,10 +1482,10 @@ impl Bank {
         let mut old = BTreeSet::new();
         if let Some(Some(program)) = self.hd.programs.get(number) {
             for split in &program.splits {
-                if let Some(Some(set)) = self.hd.sample_sets.get(split.get("sample_set") as usize) {
+                if let Some(Some(set)) = self.hd.sample_sets.get(split.sample_set as usize) {
                     for &sample in &set.samples {
                         if let Some(Some(sample)) = self.hd.samples.get(sample as usize) {
-                            old.insert(sample.get("vag_index") as usize);
+                            old.insert(sample.vag_index as usize);
                         }
                     }
                 }
@@ -1547,14 +1496,13 @@ impl Bank {
                 let Some(Some(program)) = self.hd.programs.get(like) else {
                     bail!("program {number}: \"like\" names program {like}, which the bank lacks");
                 };
-                let split = program.splits.first().cloned();
+                let split = program.splits.first().copied();
                 let sample = split
-                    .as_ref()
-                    .and_then(|split| self.hd.sample_sets.get(split.get("sample_set") as usize).cloned().flatten())
+                    .and_then(|split| self.hd.sample_sets.get(split.sample_set as usize).cloned().flatten())
                     .and_then(|set| {
-                        set.samples.first().and_then(|&at| self.hd.samples.get(at as usize).cloned().flatten())
+                        set.samples.first().and_then(|&at| self.hd.samples.get(at as usize).copied().flatten())
                     });
-                Some((program.record.clone(), split, sample))
+                Some((program.record, split, sample))
             }
             None => None,
         };
@@ -1566,49 +1514,39 @@ impl Bank {
             if !(0..=128).contains(&zone.volume) {
                 bail!("program {number}: a volume is 0 to 128 (128 plays the sample at its own level)");
             }
+            let Ok(number_in_program) = u8::try_from(at) else {
+                bail!("program {number}: a program has at most 255 zones");
+            };
             let (data, rate, looped) = self.encode(&zone.sound, None, zone.looped)?;
-            self.hd.vags.push(Record::new(
-                LayoutKind::VagInfo,
-                &[("offset", 0), ("rate", rate), ("attribute", looped as i64), ("reserved", 0xFF)],
-            ));
-            self.vag_data.push(data);
-            let vag = self.hd.vags.len() as i64 - 1;
-            let sample = template
-                .as_ref()
-                .and_then(|(_, _, sample)| sample.clone())
-                .unwrap_or_else(|| Record::new(LayoutKind::Sample, DEFAULT_SAMPLE));
-            let sample = sample.with(&[
-                ("vag_index", vag),
-                ("vel_range_low", 1),
-                ("vel_range_high", 127),
-                ("base_note", zone.root),
-                ("detune", 0),
-                ("volume", zone.volume),
-            ]);
+            let vag = self.push_vag(data, rate, looped)?;
+            let sample = template.and_then(|(_, _, sample)| sample).unwrap_or_else(Sample::fresh);
+            // the keys and volume were checked above: they fit a byte
+            let (low, high, root, volume) = (zone.low as u8, zone.high as u8, zone.root as u8, zone.volume as u8);
+            let sample = Sample {
+                vag_index: vag,
+                vel_range_low: 1,
+                vel_range_high: 127,
+                base_note: root,
+                detune: 0,
+                volume,
+                ..sample
+            };
             self.hd.samples.push(Some(sample));
-            self.hd.sample_sets.push(Some(SampleSet {
-                samples: vec![self.hd.samples.len() as i64 - 1],
-                vel_curve: 0,
-                vel_limit_low: 1,
-                vel_limit_high: 127,
-            }));
-            let split = template
-                .as_ref()
-                .and_then(|(_, split, _)| split.clone())
-                .unwrap_or_else(|| Record::new(LayoutKind::Split, DEFAULT_SPLIT));
-            splits.push(split.with(&[
-                ("sample_set", self.hd.sample_sets.len() as i64 - 1),
-                ("range_low", zone.low),
-                ("range_high", zone.high),
-                ("number", at as i64),
-                ("transpose", 0),
-                ("detune", 0),
-            ]));
+            self.hd.sample_sets.push(Some(SampleSet::of(last_index(&self.hd.samples, "samples")?)));
+            let sample_set = last_index(&self.hd.sample_sets, "sample sets")?;
+            let split = template.and_then(|(_, split, _)| split).unwrap_or_else(Split::fresh);
+            splits.push(Split {
+                sample_set,
+                range_low: low,
+                range_high: high,
+                number: number_in_program,
+                transpose: 0,
+                detune: 0,
+                ..split
+            });
         }
-        let record = template
-            .map(|(record, _, _)| record)
-            .unwrap_or_else(|| Record::new(LayoutKind::Program, DEFAULT_PROGRAM))
-            .with(&[("transpose", 0), ("detune", 0)]);
+        let record = template.map_or_else(ProgramRecord::fresh, |(record, _, _)| record);
+        let record = ProgramRecord { transpose: 0, detune: 0, ..record };
         if self.hd.programs.len() < number + 1 {
             self.hd.programs.resize(number + 1, None);
         }
@@ -1681,7 +1619,10 @@ impl Bank {
                 }
             }
             Mode::Detach => {
-                let key = if entry.kind == EntryKind::KeyOn && (0..=127).contains(&entry.key) { entry.key } else { 60 };
+                let key = match entry.kind {
+                    EntryKind::KeyOn { key, .. } if (0..=127).contains(&key) => key,
+                    _ => 60,
+                };
                 let prog = self.new_chain(sound, key, voices.first().copied(), None, None)?;
                 self.set_columns(entry.line, &[(4, "KeyOn".into()), (5, prog.to_string()), (6, key.to_string())])?;
             }
@@ -1728,22 +1669,16 @@ impl Bank {
 /// crates' tests.
 #[doc(hidden)]
 pub fn test_bank(rates: &[i64], volume: i64) -> Vec<u8> {
-    let vag = encode_adpcm(&[0; 28], None, true).unwrap();
+    let vag = encode_adpcm(&[0; 28], None, Search::Exhaustive).unwrap();
     let mut hd = Hd {
         version: vec![0, 0, 2, 0],
         se_timbre_addr: u32::MAX,
         head_reserved: vec![0xFF; 24],
         body_size: vag.len() as u32,
-        vags: vec![Record::new(
-            LayoutKind::VagInfo,
-            &[("offset", 0), ("rate", 22050), ("attribute", 0), ("reserved", 0xFF)],
-        )],
-        samples: vec![Some(Record::new(LayoutKind::Sample, DEFAULT_SAMPLE))],
-        sample_sets: vec![Some(SampleSet { samples: vec![0], vel_curve: 0, vel_limit_low: 1, vel_limit_high: 127 })],
-        programs: vec![Some(Program {
-            record: Record::new(LayoutKind::Program, DEFAULT_PROGRAM),
-            splits: vec![Record::new(LayoutKind::Split, DEFAULT_SPLIT)],
-        })],
+        vags: vec![VagInfo { offset: 0, rate: 22050, attribute: 0, reserved: 0xFF }],
+        samples: vec![Some(Sample::fresh())],
+        sample_sets: vec![Some(SampleSet::of(0))],
+        programs: vec![Some(Program { record: ProgramRecord::fresh(), splits: vec![Split::fresh()] })],
     };
     let members = [
         ("x.hd".to_string(), hd.build(vag.len()).unwrap()),
@@ -1772,7 +1707,8 @@ mod tests {
     #[test]
     fn adpcm_encodes_and_decodes_close_to_the_source() {
         let samples: Vec<i64> = (0..28 * 40).map(|i| (10000.0 * (i as f64 / 7.0).sin()) as i64).collect();
-        let (decoded, loop_start) = decode_adpcm(&encode_adpcm(&samples, None, true).unwrap(), true).unwrap();
+        let (decoded, loop_start) =
+            decode_adpcm(&encode_adpcm(&samples, None, Search::Exhaustive).unwrap(), true).unwrap();
         assert_eq!(loop_start, None);
         assert!(snr_db(&samples, &decoded[..samples.len()]) > 30.0);
     }
@@ -1782,7 +1718,7 @@ mod tests {
         let samples: Vec<i64> = (0..28 * 4).map(|i| (i % 50) * 100).collect();
         let prepared = prepare_loop(&Sound { rate: 22050, samples, loop_start: Some(30) }).unwrap();
         assert_eq!(prepared.loop_start, Some(56));
-        let data = encode_adpcm(&prepared.samples, prepared.loop_start, false).unwrap();
+        let data = encode_adpcm(&prepared.samples, prepared.loop_start, Search::Quick).unwrap();
         assert_eq!(decode_adpcm(&data, true).unwrap().1, Some(56));
         assert_eq!(vag_length(&data), data.len());
     }
@@ -1802,6 +1738,18 @@ mod tests {
         let smf = Smf { format: 0, division: 480, tracks: vec![Track { events, end: 40 }] };
         assert_eq!(midi_notes(&smf.write()).unwrap(), vec![(0, 0, 60, 100), (0, 5, 62, 90), (7, 0, 65, 1)]);
         assert!(midi_notes(b"MThd").is_err());
+    }
+
+    #[test]
+    fn records_are_the_sizes_sony_gives_and_a_bank_writes_back_the_same() {
+        assert_eq!((VagInfo::SIZE, Sample::SIZE, Split::SIZE, ProgramRecord::SIZE), (8, 0x2A, 0x14, 0x24));
+        let data = test_bank(&[22050, 11025], 90);
+        let mut bank = Bank::from_bytes(&data).unwrap();
+        assert_eq!(bank.build().unwrap(), data);
+        let entries = bank.entries().unwrap();
+        assert_eq!(entries[1].kind, EntryKind::KeyOn { prog: 1, key: 60 });
+        let voice = bank.voices(&entries[1]).unwrap()[0];
+        assert_eq!((bank.hd.vags[voice.vag].rate, bank.hd.samples[voice.sample].unwrap().base_note), (22050, 60));
     }
 
     #[test]

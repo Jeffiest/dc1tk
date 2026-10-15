@@ -101,6 +101,10 @@ impl<'a> Reader<'a> {
         Ok(self.array::<1>()?[0])
     }
 
+    pub(crate) fn i8(&mut self) -> Result<i8> {
+        Ok(self.u8()? as i8)
+    }
+
     pub(crate) fn u16(&mut self) -> Result<u16> {
         self.array().map(u16::from_le_bytes)
     }
