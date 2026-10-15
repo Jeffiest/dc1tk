@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Args;
 
 use dc2tk_disc::{extract, Image};
@@ -39,7 +39,7 @@ pub struct SetupArgs {
 pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
     let extracted = Path::new(&args.extracted);
     {
-        let image = Image::open(&args.iso).with_context(|| format!("cannot read {}", args.iso.display()))?;
+        let image = Image::open(&args.iso)?;
         if !extracted.join("manifest.json").is_file() {
             let manifest = extract::extract(image.bytes(), extracted)?;
             println!("{} files extracted to {}", manifest.files.len(), files::python_path(&args.extracted));

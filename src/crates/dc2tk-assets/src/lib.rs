@@ -67,6 +67,8 @@ impl From<dc2tk_disc::Error> for Error {
         match error {
             dc2tk_disc::Error::Invalid(message) => Error::Invalid(message),
             dc2tk_disc::Error::Io(error) => Error::Io(error),
+            // the message names the file, and what was missing or wrong
+            other => Error::Invalid(other.to_string()),
         }
     }
 }

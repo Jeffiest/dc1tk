@@ -3,11 +3,11 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use crate::archive::{self, Archive, Member};
-use crate::{iso, Error, Result};
+use crate::{iso, Error, Result, WithPath};
 
 pub const SCRIPT_SUFFIXES: [&str; 2] = [".stb", ".STB"];
 const VOLUME_SIZE: usize = 80;
@@ -143,22 +143,42 @@ pub struct Written {
     pub index_free: i64,
 }
 
-fn write_padded(file: &mut File, lba: u64, data: &[u8]) -> Result<()> {
+fn write_padded(file: &mut File, lba: u64, data: &[u8]) -> io::Result<()> {
     file.seek(SeekFrom::Start(lba * iso::SECTOR))?;
     file.write_all(data)?;
     let pad = sectors(data.len() as u64) * iso::SECTOR - data.len() as u64;
-    file.write_all(&vec![0u8; pad as usize])?;
-    Ok(())
+    file.write_all(&vec![0u8; pad as usize])
 }
 
 fn u32_at(data: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap())
 }
 
+/// A file's size as its index record holds it.
+fn record_size(path: &str, data: &[u8]) -> Result<i32> {
+    i32::try_from(data.len()).map_err(|_| {
+        Error::invalid(format!("{path} is {} bytes, more than the game's file index can hold", data.len()))
+    })
+}
+
+/// Where a file at the image's sector lba starts, as its index record holds it: in sectors from the
+/// start of DATA.DAT.
+fn record_sector(path: &str, lba: u64, data_extent: u64) -> Result<i32> {
+    i32::try_from(lba as i64 - data_extent as i64).map_err(|_| {
+        Error::invalid(format!("{path} would start at sector {lba}, past what the game's file index holds"))
+    })
+}
+
+/// A sector count as ISO 9660 holds it.
+fn sector_count(count: u64) -> Result<u32> {
+    u32::try_from(count)
+        .map_err(|_| Error::invalid(format!("the image would be {count} sectors, more than ISO 9660 can hold")))
+}
+
 /// A copy of the image with files of DATA.DAT replaced, by path as the index spells it, and new
 /// files added. A file that fits its sectors stays where it is; one that grows moves into the DMMY
 /// filler, then past the end of the volume. New files get index records, and an index that
-/// outgrows its sectors moves too.
+/// outgrows its sectors moves too. The output must be another file than the input.
 ///
 /// The copy comes first, before the source is mapped: Windows clones a file's blocks for a copy
 /// (seconds for 4.7 GB) but not while the file is mapped (half a minute), so callers should not
@@ -167,10 +187,8 @@ pub fn write_disc(iso_path: &Path, out_path: &Path, files: &BTreeMap<String, Vec
     let mut out = write_copy(iso_path, out_path)?;
     let source = crate::Image::open(iso_path)?;
     let image = source.bytes();
-    let index_record =
-        iso::find(image, "DATA.HD4")?.ok_or_else(|| Error::invalid("DATA.HD4 is missing from the disc"))?;
-    let data_record =
-        iso::find(image, "DATA.DAT")?.ok_or_else(|| Error::invalid("DATA.DAT is missing from the disc"))?;
+    let index_record = iso::find(image, "DATA.HD4")?.ok_or_else(|| Error::Missing("DATA.HD4".into()))?;
+    let data_record = iso::find(image, "DATA.DAT")?.ok_or_else(|| Error::Missing("DATA.DAT".into()))?;
     let filler = iso::find(image, FILLER)?;
     let mut index_data = iso::read_file(image, &index_record).to_vec();
     let entries = archive::parse_index(&index_data)?;
@@ -191,24 +209,24 @@ pub fn write_disc(iso_path: &Path, out_path: &Path, files: &BTreeMap<String, Vec
 
     let mut placed = Vec::new();
     let mut added = Vec::new();
-    let data_extent = data_record.extent as i64;
+    let data_extent = data_record.extent as u64;
     for (path, data) in files {
         let count = sectors(data.len() as u64);
         let Some(&number) = position.get(path.as_str()) else {
             // a file the disc does not have: into free space, with a new index record
             let lba = space.allocate(count);
-            write_padded(&mut out, lba, data)?;
-            added.push((path.clone(), data.len() as i32, (lba as i64 - data_extent) as i32));
+            write_padded(&mut out, lba, data).with_path("write", out_path)?;
+            added.push((path.clone(), record_size(path, data)?, record_sector(path, lba, data_extent)?));
             placed.push(Placed { path: path.clone(), size: data.len(), moved: true, added: true });
             continue;
         };
         let entry = &entries[number];
         let moved = count > sectors(entry.size.max(0) as u64);
-        let lba = if moved { space.allocate(count) } else { (data_extent + entry.sector as i64) as u64 };
-        write_padded(&mut out, lba, data)?;
+        let lba = if moved { space.allocate(count) } else { (data_extent as i64 + entry.sector as i64) as u64 };
+        write_padded(&mut out, lba, data).with_path("write", out_path)?;
         let at = number * archive::INDEX_RECORD + 4;
-        index_data[at..at + 4].copy_from_slice(&(data.len() as i32).to_le_bytes());
-        index_data[at + 4..at + 8].copy_from_slice(&((lba as i64 - data_extent) as i32).to_le_bytes());
+        index_data[at..at + 4].copy_from_slice(&record_size(path, data)?.to_le_bytes());
+        index_data[at + 4..at + 8].copy_from_slice(&record_sector(path, lba, data_extent)?.to_le_bytes());
         placed.push(Placed { path: path.clone(), size: data.len(), moved, added: false });
     }
     if !added.is_empty() {
@@ -227,18 +245,21 @@ pub fn write_disc(iso_path: &Path, out_path: &Path, files: &BTreeMap<String, Vec
     if sectors(index_data.len() as u64) > sectors(index_record.size as u64) {
         index_extent = space.allocate(sectors(index_data.len() as u64));
     }
-    write_padded(&mut out, index_extent, &index_data)?;
+    write_padded(&mut out, index_extent, &index_data).with_path("write", out_path)?;
     if !added.is_empty() {
-        // the engine sizes the index by its directory record (sceLseek in InitCDFile)
-        iso::set_extent(&mut out, &index_record, index_extent as u32, index_data.len() as u32)?;
+        // the engine sizes the index by its directory record (sceLseek in InitCDFile); the index is
+        // at most INDEX_LIMIT bytes, checked above
+        let size = index_data.len() as u32;
+        iso::set_extent(&mut out, out_path, &index_record, sector_count(index_extent)?, size)?;
     }
     if space.volume > volume {
-        pvd[VOLUME_SIZE..VOLUME_SIZE + 4].copy_from_slice(&(space.volume as u32).to_le_bytes());
-        pvd[VOLUME_SIZE + 4..VOLUME_SIZE + 8].copy_from_slice(&(space.volume as u32).to_be_bytes());
-        out.seek(SeekFrom::Start(iso::PVD_SECTOR * iso::SECTOR))?;
-        out.write_all(&pvd)?;
+        let count = sector_count(space.volume)?;
+        pvd[VOLUME_SIZE..VOLUME_SIZE + 4].copy_from_slice(&count.to_le_bytes());
+        pvd[VOLUME_SIZE + 4..VOLUME_SIZE + 8].copy_from_slice(&count.to_be_bytes());
+        out.seek(SeekFrom::Start(iso::PVD_SECTOR * iso::SECTOR)).with_path("write", out_path)?;
+        out.write_all(&pvd).with_path("write", out_path)?;
     }
-    out.flush()?;
+    out.flush().with_path("write", out_path)?;
     Ok(Written {
         placed,
         grown: space.volume - volume,
@@ -246,13 +267,29 @@ pub fn write_disc(iso_path: &Path, out_path: &Path, files: &BTreeMap<String, Vec
     })
 }
 
+/// Refuses to write an image over the one it is made from: copying a file onto itself empties it,
+/// so `build ... game.iso -o game.iso` would destroy the image. Both paths are resolved (links,
+/// "..", case on Windows); an output that does not exist yet cannot be the input.
+fn refuse_output_over_input(iso_path: &Path, out_path: &Path) -> Result<()> {
+    match (fs::canonicalize(iso_path), fs::canonicalize(out_path)) {
+        (Ok(input), Ok(output)) if input == output => Err(Error::invalid(format!(
+            "{} is the image the build reads; write the new image to another file",
+            out_path.display()
+        ))),
+        _ => Ok(()),
+    }
+}
+
 /// The output image, a copy of the input to change in place.
 fn write_copy(iso_path: &Path, out_path: &Path) -> Result<File> {
+    // first, so an image that is not there is named as such, not as a copy that failed
+    fs::metadata(iso_path).with_path("read", iso_path)?;
+    refuse_output_over_input(iso_path, out_path)?;
     if let Some(parent) = out_path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).with_path("create", parent)?;
     }
-    fs::copy(iso_path, out_path)?;
-    Ok(OpenOptions::new().read(true).write(true).open(out_path)?)
+    fs::copy(iso_path, out_path).with_path("copy the image to", out_path)?;
+    OpenOptions::new().read(true).write(true).open(out_path).with_path("write", out_path)
 }
 
 /// Overwrites a file of the image's own directory tree (outside DATA.DAT, such as the boot
@@ -260,7 +297,7 @@ fn write_copy(iso_path: &Path, out_path: &Path) -> Result<File> {
 pub fn overwrite_iso_file(image_path: &Path, path: &str, data: &[u8]) -> Result<()> {
     let record = {
         let image = crate::Image::open(image_path)?;
-        iso::find(image.bytes(), path)?.ok_or_else(|| Error::invalid(format!("the disc has no {path}")))?
+        iso::find(image.bytes(), path)?.ok_or_else(|| Error::Missing(path.to_string()))?
     };
     if record.size as usize != data.len() {
         return Err(Error::invalid(format!(
@@ -269,11 +306,11 @@ pub fn overwrite_iso_file(image_path: &Path, path: &str, data: &[u8]) -> Result<
             data.len()
         )));
     }
-    let mut file = OpenOptions::new().write(true).open(image_path)?;
-    file.seek(SeekFrom::Start(record.extent as u64 * iso::SECTOR))?;
-    file.write_all(data)?;
-    file.flush()?;
-    Ok(())
+    let mut file = OpenOptions::new().write(true).open(image_path).with_path("write", image_path)?;
+    file.seek(SeekFrom::Start(record.extent as u64 * iso::SECTOR))
+        .and_then(|_| file.write_all(data))
+        .and_then(|()| file.flush())
+        .with_path("write", image_path)
 }
 
 /// The bytes a disc file, or a member inside it, reads back as from an image.
@@ -285,22 +322,73 @@ pub fn read_back(image: &[u8], archive: &Archive, top: &str, members: &[String])
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::samples::{self, pack};
 
-    fn pack(members: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut out = Vec::new();
-        for (name, data) in members {
-            let mut slot = vec![0u8; archive::PACK_SLOT];
-            slot[..name.len()].copy_from_slice(name.as_bytes());
-            slot[64..68].copy_from_slice(&(archive::PACK_SLOT as i32).to_le_bytes());
-            slot[68..72].copy_from_slice(&(data.len() as i32).to_le_bytes());
-            let next = archive::PACK_SLOT + data.len() + archive::padding(data.len());
-            slot[72..76].copy_from_slice(&(next as i32).to_le_bytes());
-            out.extend(slot);
-            out.extend(*data);
-            out.extend(vec![0u8; archive::padding(data.len())]);
+    /// A fresh folder for a test, emptied first.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let folder = std::env::temp_dir().join(format!("dc2tk-rebuild-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    fn read_back_file(image_path: &Path, path: &str) -> Option<Vec<u8>> {
+        let image = crate::Image::open(image_path).unwrap();
+        let archive = Archive::open(image.bytes()).unwrap();
+        read_back(image.bytes(), &archive, path, &[])
+    }
+
+    #[test]
+    fn writes_a_disc_with_files_replaced_moved_and_added() {
+        let folder = scratch("write");
+        let iso = folder.join("disc.iso");
+        fs::write(&iso, samples::sample_disc()).unwrap();
+        let mut files = BTreeMap::new();
+        files.insert("readme.txt".to_string(), b"HELLO".to_vec());
+        files.insert("map/t01.stb".to_string(), vec![7u8; 5000]);
+        files.insert("new/file.bin".to_string(), b"new".to_vec());
+        // into a folder that does not exist yet
+        let out = folder.join("out").join("new.iso");
+        let written = write_disc(&iso, &out, &files).unwrap();
+        let how: Vec<(&str, bool, bool)> =
+            written.placed.iter().map(|item| (item.path.as_str(), item.moved, item.added)).collect();
+        assert_eq!(how, [("map/t01.stb", true, false), ("new/file.bin", true, true), ("readme.txt", false, false)]);
+        assert!(written.grown > 0);
+        for (path, data) in &files {
+            assert_eq!(read_back_file(&out, path).as_ref(), Some(data), "{path}");
         }
-        out.extend(vec![0u8; archive::PACK_SLOT]);
-        out
+        // the source is untouched
+        assert_eq!(fs::read(&iso).unwrap(), samples::sample_disc());
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_disc_is_not_written_over_the_image_it_is_made_from() {
+        let folder = scratch("same");
+        let iso = folder.join("disc.iso");
+        fs::write(&iso, samples::sample_disc()).unwrap();
+        let files = BTreeMap::from([("readme.txt".to_string(), b"HELLO".to_vec())]);
+        // the same file, however its path is spelled
+        for out in [iso.clone(), folder.join(".").join("disc.iso"), folder.join("out").join("..").join("disc.iso")] {
+            let error = write_disc(&iso, &out, &files).unwrap_err();
+            assert!(error.to_string().contains("is the image the build reads"), "{error}");
+            assert_eq!(fs::read(&iso).unwrap(), samples::sample_disc());
+        }
+        if cfg!(windows) {
+            assert!(write_disc(&iso, &folder.join("DISC.ISO"), &files).is_err());
+        }
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn errors_name_the_file() {
+        let folder = scratch("missing");
+        let missing = folder.join("no such disc.iso");
+        let error = write_disc(&missing, &folder.join("out.iso"), &BTreeMap::new()).unwrap_err().to_string();
+        assert!(error.contains("no such disc.iso"), "{error}");
+        let error = crate::Image::open(&missing).err().unwrap().to_string();
+        assert!(error.starts_with(&format!("cannot read {}: ", missing.display())), "{error}");
+        fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
@@ -346,7 +434,7 @@ mod tests {
         let folder = std::env::temp_dir().join(format!("dc2tk-overwrite-{}", std::process::id()));
         fs::create_dir_all(&folder).unwrap();
         let path = folder.join("disc.iso");
-        fs::write(&path, crate::samples::iso_image(&[("SCES_511.90", b"executable"), ("OTHER", b"kept")])).unwrap();
+        fs::write(&path, samples::iso_image(&[("SCES_511.90", b"executable"), ("OTHER", b"kept")])).unwrap();
         overwrite_iso_file(&path, "SCES_511.90", b"EXECUTABLE").unwrap();
         assert!(overwrite_iso_file(&path, "SCES_511.90", b"longer than it was").is_err());
         let image = crate::Image::open(&path).unwrap();

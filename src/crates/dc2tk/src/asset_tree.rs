@@ -64,7 +64,7 @@ enum Source {
 impl Source {
     fn open(path: &Path) -> Result<Source> {
         if path.is_file() {
-            return Ok(Source::Image(Image::open(path).with_context(|| format!("cannot read {}", path.display()))?));
+            return Ok(Source::Image(Image::open(path)?));
         }
         if !path.is_dir() {
             bail!("{} is neither a disc image nor an extracted disc", path.display());

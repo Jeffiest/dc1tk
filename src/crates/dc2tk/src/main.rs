@@ -345,7 +345,7 @@ enum Command {
 }
 
 fn run_extract(iso: &Path, out: &str) -> Result<ExitCode> {
-    let image = Image::open(iso).with_context(|| format!("cannot read {}", iso.display()))?;
+    let image = Image::open(iso)?;
     let manifest = extract::extract(image.bytes(), Path::new(out))?;
     let packed = manifest.files.iter().filter(|item| item.packed).count();
     println!("{} files written to {} ({} from packs)", manifest.files.len(), out, packed);

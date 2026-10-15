@@ -40,7 +40,7 @@ pub enum Disc {
 impl Disc {
     pub fn open(path: &Path) -> Result<Disc> {
         if path.is_file() {
-            let image = Image::open(path).with_context(|| format!("cannot read {}", path.display()))?;
+            let image = Image::open(path)?;
             let archive = Archive::open(image.bytes())?;
             return Ok(Disc::Image(image, archive));
         }

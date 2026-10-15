@@ -2,7 +2,8 @@
 //! a pack X keeps its bytes as X and its members under X.d/. The disc's other files and its layout
 //! go beside them (layout), so the folder packs back into the image.
 
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +11,7 @@ use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::archive::{self, Archive};
-use crate::{iso, Result};
+use crate::{iso, Result, WithPath};
 
 pub const MAX_PACK_DEPTH: usize = 4;
 pub const PACK_SUFFIX: &str = ".d";
@@ -93,10 +94,9 @@ pub fn extract_boot(image: &[u8], out_dir: &Path) -> Result<Option<String>> {
 
 fn write_file(path: &Path, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).with_path("create", parent)?;
     }
-    fs::write(path, data)?;
-    Ok(())
+    fs::write(path, data).with_path("write", path)
 }
 
 /// The key two paths share when the file system takes them for one file.
@@ -115,28 +115,30 @@ fn write_all(out: &Path, items: &[(String, &[u8], bool)]) -> Result<()> {
     let mut slot: HashMap<String, usize> = HashMap::new();
     let mut files: Vec<(&str, &[u8])> = Vec::new();
     let mut folders: Vec<PathBuf> = Vec::new();
-    let mut seen_folders: HashMap<String, ()> = HashMap::new();
+    let mut seen_folders: HashSet<String> = HashSet::new();
     for (path, data, _) in items {
-        match slot.get(&file_key(path)) {
-            Some(&at) => files[at].1 = data,
-            None => {
-                slot.insert(file_key(path), files.len());
+        match slot.entry(file_key(path)) {
+            Entry::Occupied(at) => files[*at.get()].1 = data,
+            Entry::Vacant(free) => {
+                free.insert(files.len());
                 files.push((path, data));
             }
         }
         if let Some((folder, _)) = path.rsplit_once('/') {
-            if seen_folders.insert(file_key(folder), ()).is_none() {
+            if seen_folders.insert(file_key(folder)) {
                 folders.push(out.join(folder));
             }
         }
     }
     // folders in order, so each keeps the spelling it is first met with
-    fs::create_dir_all(out)?;
+    fs::create_dir_all(out).with_path("create", out)?;
     for folder in folders {
-        fs::create_dir_all(folder)?;
+        fs::create_dir_all(&folder).with_path("create", &folder)?;
     }
-    files.par_iter().try_for_each(|(path, data)| fs::write(out.join(path), data))?;
-    Ok(())
+    files.par_iter().try_for_each(|(path, data)| {
+        let path = out.join(path);
+        fs::write(&path, data).with_path("write", &path)
+    })
 }
 
 pub fn extract(image: &[u8], out_dir: &Path) -> Result<Manifest> {
@@ -158,8 +160,9 @@ pub fn extract(image: &[u8], out_dir: &Path) -> Result<Manifest> {
     // The manifest marks a finished extraction (setup reuses a folder that has one), so it is written
     // whole or not at all.
     let partial = out_dir.join("manifest.json.partial");
-    fs::write(&partial, python_json(&manifest)?)?;
-    fs::rename(&partial, out_dir.join("manifest.json"))?;
+    fs::write(&partial, python_json(&manifest)?).with_path("write", &partial)?;
+    let done = out_dir.join("manifest.json");
+    fs::rename(&partial, &done).with_path("write", &done)?;
     Ok(manifest)
 }
 

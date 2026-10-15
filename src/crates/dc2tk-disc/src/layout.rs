@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::archive;
 use crate::iso::{self, Record, SECTOR};
-use crate::{Error, Result};
+use crate::{Error, Result, WithPath};
 
 pub const LAYOUT: &str = "disc.json";
 pub const STRUCTURE: &str = "disc-structure.bin";
@@ -79,7 +79,7 @@ pub fn record(image: &[u8], out_dir: &Path) -> Result<Layout> {
     let found = iso_files(image)?;
     let is_data = |path: &str| path.eq_ignore_ascii_case(DATA);
     let Some((data_path, data)) = found.iter().find(|(path, _)| is_data(path)) else {
-        return Err(Error::invalid("the disc has no DATA.DAT"));
+        return Err(Error::Missing(DATA.into()));
     };
     let files: Vec<DiscFile> = found
         .iter()
@@ -89,11 +89,10 @@ pub fn record(image: &[u8], out_dir: &Path) -> Result<Layout> {
     files.par_iter().try_for_each(|file| -> Result<()> {
         let target = out_dir.join(&file.path);
         if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).with_path("create", parent)?;
         }
         let bytes = iso::read_at(image, file.extent as u64 * SECTOR, file.size as u64);
-        fs::write(target, bytes)?;
-        Ok(())
+        fs::write(&target, bytes).with_path("write", &target)
     })?;
     let mut layout = Layout {
         note: "Where each file of the disc goes, for dc2tk pack; disc-structure.bin holds the sectors no file \
@@ -148,8 +147,10 @@ pub fn record(image: &[u8], out_dir: &Path) -> Result<Layout> {
             _ => layout.structure.push((sector, 1)),
         }
     }
-    fs::write(out_dir.join(STRUCTURE), structure)?;
-    fs::write(out_dir.join(LAYOUT), crate::extract::python_json(&layout)?)?;
+    let structure_path = out_dir.join(STRUCTURE);
+    fs::write(&structure_path, structure).with_path("write", &structure_path)?;
+    let layout_path = out_dir.join(LAYOUT);
+    fs::write(&layout_path, crate::extract::python_json(&layout)?).with_path("write", &layout_path)?;
     Ok(layout)
 }
 
@@ -192,8 +193,12 @@ fn write_at(file: &File, data: &[u8], offset: u64) -> std::io::Result<()> {
 /// their sectors, the structure sectors, zeros elsewhere.
 pub fn pack(dir: &Path, out_path: &Path) -> Result<Packed> {
     let layout = read_layout(dir)?;
-    let entries = archive::parse_index(&fs::read(dir.join(INDEX))?)?;
-    let structure = fs::read(dir.join(STRUCTURE))?;
+    let read = |name: &str| {
+        let path = dir.join(name);
+        fs::read(&path).with_path("read", &path)
+    };
+    let entries = archive::parse_index(&read(INDEX)?)?;
+    let structure = read(STRUCTURE)?;
     let base = layout.data.extent as u64 * SECTOR;
     let mut jobs: Vec<(u64, PathBuf, u64)> =
         layout.files.iter().map(|file| (file.extent as u64 * SECTOR, dir.join(&file.path), file.size as u64)).collect();
@@ -203,13 +208,13 @@ pub fn pack(dir: &Path, out_path: &Path) -> Result<Packed> {
             .map(|entry| (base + entry.sector.max(0) as u64 * SECTOR, dir.join(&entry.path), entry.size.max(0) as u64)),
     );
     if let Some(parent) = out_path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).with_path("create", parent)?;
     }
-    let out = File::create(out_path)?;
+    let out = File::create(out_path).with_path("write", out_path)?;
     let size = layout.sectors * SECTOR;
-    out.set_len(size)?;
+    out.set_len(size).with_path("write", out_path)?;
     jobs.par_iter().try_for_each(|(offset, path, expected)| -> Result<()> {
-        let bytes = fs::read(path).map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?;
+        let bytes = fs::read(path).with_path("read", path)?;
         if bytes.len() as u64 != *expected {
             return Err(Error::invalid(format!(
                 "{} is {} bytes, and the disc's layout has room for {}; pack writes the disc as it was laid out",
@@ -218,8 +223,7 @@ pub fn pack(dir: &Path, out_path: &Path) -> Result<Packed> {
                 expected
             )));
         }
-        write_at(&out, &bytes, *offset)?;
-        Ok(())
+        write_at(&out, &bytes, *offset).with_path("write", out_path)
     })?;
     let mut at = 0usize;
     let mut sectors = 0;
@@ -227,7 +231,7 @@ pub fn pack(dir: &Path, out_path: &Path) -> Result<Packed> {
         let length = (count * SECTOR) as usize;
         let bytes =
             structure.get(at..at + length).ok_or_else(|| Error::invalid(format!("{STRUCTURE} is cut short")))?;
-        write_at(&out, bytes, first * SECTOR)?;
+        write_at(&out, bytes, first * SECTOR).with_path("write", out_path)?;
         at += length;
         sectors += count;
     }

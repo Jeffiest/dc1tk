@@ -100,7 +100,9 @@ pub fn with_entries(data: &[u8], added: &[(String, i32, i32)]) -> Result<Vec<u8>
     let mut table = Vec::with_capacity(start);
     let mut names = Vec::new();
     for (name, size, sector) in &rows {
-        table.extend(((start + names.len()) as i32).to_le_bytes());
+        let offset =
+            i32::try_from(start + names.len()).map_err(|_| Error::invalid("the file index would be more than 2 GB"))?;
+        table.extend(offset.to_le_bytes());
         table.extend(size.to_le_bytes());
         table.extend(sector.to_le_bytes());
         names.extend(name);
@@ -120,15 +122,9 @@ pub struct Archive {
 
 impl Archive {
     pub fn open(image: &[u8]) -> Result<Archive> {
-        let index = iso::find(image, "DATA.HD4")?;
-        let dat = iso::find(image, "DATA.DAT")?;
-        match (index, dat) {
-            (Some(index), Some(dat)) => Ok(Archive {
-                entries: parse_index(iso::read_file(image, &index))?,
-                base: dat.extent as u64 * iso::SECTOR,
-            }),
-            _ => Err(Error::invalid("DATA.HD4 or DATA.DAT is missing from the disc")),
-        }
+        let index = iso::find(image, "DATA.HD4")?.ok_or_else(|| Error::Missing("DATA.HD4".into()))?;
+        let dat = iso::find(image, "DATA.DAT")?.ok_or_else(|| Error::Missing("DATA.DAT".into()))?;
+        Ok(Archive { entries: parse_index(iso::read_file(image, &index))?, base: dat.extent as u64 * iso::SECTOR })
     }
 
     pub fn read<'a>(&self, image: &'a [u8], entry: &Entry) -> &'a [u8] {
