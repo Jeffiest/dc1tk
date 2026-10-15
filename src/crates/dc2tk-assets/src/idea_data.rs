@@ -29,10 +29,13 @@ use crate::cfg_text::{self, Arg, Edit, Script, To};
 use crate::lang::{self, LANGUAGE_NAMES};
 use crate::{bail, Context, Result};
 
+/// The languages with a copy of their own, by LanguageCode (ja to es; Korean reads the English).
+pub const LANGUAGES: usize = 6;
+
 /// Every copy, the one in `menu/` (Japanese, read by nothing) first.
 pub fn paths() -> Vec<String> {
     let mut out = vec!["menu/neta2.lst".to_string()];
-    out.extend((0..6).map(|language| format!("menu/{language}/neta2.lst")));
+    out.extend((0..LANGUAGES).map(|language| format!("menu/{language}/neta2.lst")));
     out
 }
 
@@ -303,7 +306,7 @@ impl Ideas {
                 let Some(text) = value.as_str() else {
                     bail!("{label}: \"name\" is a string");
                 };
-                let languages: Vec<usize> = if new { (0..6).collect() } else { vec![1] };
+                let languages: Vec<usize> = if new { (0..LANGUAGES).collect() } else { vec![lang::ENGLISH] };
                 for language in languages {
                     names.insert(language, text.to_string());
                 }
@@ -318,7 +321,7 @@ impl Ideas {
                 let Some(english) = names.get(&1).cloned() else {
                     bail!("{label}: a new idea gives its \"name\" (or \"names\" with en)");
                 };
-                for language in 0..6 {
+                for language in 0..LANGUAGES {
                     names.entry(language).or_insert_with(|| english.clone());
                 }
             }
@@ -509,11 +512,11 @@ fn by_language<'a>(object: &'a Map<String, Value>, key: &str, label: &str) -> Re
     };
     let mut out = Vec::new();
     for (short, value) in map {
-        match LANGUAGE_NAMES[..6].iter().position(|name| name == short) {
+        match LANGUAGE_NAMES[..LANGUAGES].iter().position(|name| name == short) {
             Some(language) => out.push((language, value)),
             None => bail!(
                 "{label}: \"{key}\" has {short}; the languages are {} (Korean reads the English file)",
-                LANGUAGE_NAMES[..6].join(", ")
+                LANGUAGE_NAMES[..LANGUAGES].join(", ")
             ),
         }
     }

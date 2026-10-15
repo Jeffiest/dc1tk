@@ -159,23 +159,28 @@ pub fn locate(path: &str) -> Option<Located> {
     located(Language::Japanese, stem, 1)
 }
 
-/// The buffer the game loads a message file into, where it has one of a fixed size: system_N
-/// 0xD000 bytes (SystemMesBuffer), sysmes_N 0x13880 (SysMesBuffer), helpN 0x1000 (HelpMesBuff,
-/// which LoadHelpMes refuses to overrun). Others load into the menu's or the dungeon's heap with
-/// the rest of their pack.
+/// SystemMesBuffer, SysMesBuffer and HelpMesBuff: the buffers system_N, sysmes_N and helpN load
+/// into (LoadHelpMes refuses to overrun its own).
+pub const SYSTEM_BUFFER: usize = 0xD000;
+pub const SYSMES_BUFFER: usize = 0x13880;
+pub const HELP_BUFFER: usize = 0x1000;
+
+/// The buffer the game loads a message file into, where it has one of a fixed size (system_N,
+/// sysmes_N, helpN). Others load into the menu's or the dungeon's heap with the rest of their
+/// pack.
 pub fn buffer_size(path: &str) -> Option<usize> {
     let lower = path.replace('\\', "/").to_lowercase();
     let file = lower.rsplit('/').next().unwrap_or(&lower);
     if lower.starts_with("meswin/") && !lower["meswin/".len()..].contains('/') {
         if file.starts_with("system") {
-            return Some(0xD000);
+            return Some(SYSTEM_BUFFER);
         }
         if file.starts_with("sysmes") {
-            return Some(0x13880);
+            return Some(SYSMES_BUFFER);
         }
     }
     if lower.starts_with("etc/help") {
-        return Some(0x1000);
+        return Some(HELP_BUFFER);
     }
     None
 }

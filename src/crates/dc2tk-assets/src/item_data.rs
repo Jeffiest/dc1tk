@@ -48,7 +48,8 @@ pub const COMMON_MOST: usize = 432;
 /// local_itemdatano_converttable[512]; GetCommonData takes 1 to 0x1FF.
 pub const ITEM_MOST: i64 = 0x1FF;
 /// LoadGameDataAnalyze and LoadItemSystemMes read each script into a 0x7800-byte stack buffer,
-/// aligned to 64 bytes first (MenuCalcBufAlignment).
+/// aligned to 64 bytes first (MenuCalcBufAlignment), which loses at most 0x40 of it (see
+/// georama_data::DOWNLOAD_BUFFER, which counts on a 16-byte-aligned start).
 pub const SCRIPT_BUFFER: usize = 0x7800 - 0x40;
 /// gamedata_sysword_buffer_1073: the names, each copied in 16-byte units (mgCopyString), into an
 /// mgCMemory of 0x280 units that refuses the allocation reaching its end.

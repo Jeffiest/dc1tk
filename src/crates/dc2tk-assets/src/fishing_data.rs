@@ -37,6 +37,10 @@ pub const RACE_TABLE: u32 = 0x3630C0;
 pub const RACE_KINDS: usize = 18;
 pub const RACE_RECORD: usize = 0x1C;
 pub const CONTESTS: [&str; 2] = ["race", "tournament"];
+/// The files, by paths(): the spots, the race fish of each language, then each contest's prizes.
+const SPOTS: usize = 0;
+const RACERS: usize = 1;
+const PRIZES: [usize; 2] = [RACERS + LANGUAGES, RACERS + LANGUAGES + 1];
 
 pub fn paths() -> Vec<String> {
     let mut out = vec!["sg/fish/fishing.cfg".to_string()];
@@ -57,7 +61,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     // spots: the statements of each FISH_MAP block
     let mut spots = Vec::new();
     let mut block: Option<(usize, Vec<usize>, Vec<usize>)> = None;
-    for (at, statement) in scripts[0].statements.iter().enumerate() {
+    for (at, statement) in scripts[SPOTS].statements.iter().enumerate() {
         match statement.tag.as_str() {
             "FISH_MAP" => block = Some((at, Vec::new(), Vec::new())),
             "FISH_PLACE" => {
@@ -77,10 +81,11 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
                 let mut record = Record::new(&[("spot", Value::from(spots.len()))]);
                 let head = [(0, head)];
                 record.arg("map", S32, &head, 0);
-                if scripts[0].statements[head[0].1].args().len() >= 2 {
+                if scripts[SPOTS].statements[head[0].1].args().len() >= 2 {
                     record.arg("exclusive", S32, &head, 1);
                 }
-                if let Some(&place) = places.last().filter(|&&place| scripts[0].statements[place].args().len() >= 7) {
+                if let Some(&place) = places.last().filter(|&&place| scripts[SPOTS].statements[place].args().len() >= 7)
+                {
                     let place = [(0, place)];
                     record.arg("area", S32, &place, 0);
                     record.args("area_values", Kind::Float, &place, 2, 5);
@@ -103,7 +108,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     }
     // race opponents: (class, number) to the statement in each language's file
     let mut racers: std::collections::BTreeMap<(i32, usize), Vec<(usize, usize)>> = Default::default();
-    for (file, script) in scripts.iter().enumerate().skip(1).take(LANGUAGES) {
+    for (file, script) in scripts.iter().enumerate().skip(RACERS).take(LANGUAGES) {
         let mut class = None;
         let mut number = 0;
         for (at, statement) in script.statements.iter().enumerate() {
@@ -125,7 +130,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     let mut race_fish = Vec::new();
     for ((class, number), mut at) in racers {
         // the English file first: its name labels the fish
-        at.sort_by_key(|&(file, _)| file != 2);
+        at.sort_by_key(|&(file, _)| file != RACERS + crate::lang::ENGLISH);
         if scripts[at[0].0].statements[at[0].1].args().len() < 9 {
             continue;
         }
@@ -140,7 +145,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     }
     let mut groups = Vec::new();
     let mut prizes = Vec::new();
-    for (contest, file) in CONTESTS.iter().zip([1 + LANGUAGES, 2 + LANGUAGES]) {
+    for (contest, file) in CONTESTS.iter().zip(PRIZES) {
         let mut group = None;
         let mut prize = 0;
         for (at, statement) in scripts[file].statements.iter().enumerate() {
@@ -191,7 +196,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     table.section("spots", &["spot"], spots);
     // FISH_MAP_NUM allocates the spots (FISH_PLACE_MAP, 0x88 each, from the scene's stack); a
     // block past it is dropped
-    let counts = data_table::tagged(&table.scripts[0], "FISH_MAP_NUM").last().map(|&at| vec![(0, at, 0)]);
+    let counts = data_table::tagged(&table.scripts[SPOTS], "FISH_MAP_NUM").last().map(|&at| vec![(SPOTS, at, 0)]);
     table.adding(Adding {
         counts: counts.unwrap_or_default(),
         most: SPOTS_MOST,

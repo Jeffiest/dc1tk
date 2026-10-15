@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use crate::data_table::{self, Kind, Record, Table, S16, S8};
 use crate::elf::table_offset;
+use crate::item_data::ITEM_MOST;
 use crate::Result;
 
 /// etcitem_spectol_table: s8 {slot, value} by item number - 1 (SetItemSpectolPoint).
@@ -15,25 +16,36 @@ pub const SPECTRUM_ITEMS: usize = 425;
 /// dony_shoplist: {s16 item, s8 level, pad} until an item of 0 or less (GetDonyShopLineUp).
 pub const DONNY_TABLE: u32 = 0x358620;
 pub const DONNY_ROWS: usize = 7;
+pub const DONNY_RECORD: usize = 4;
 /// lifetbl_2854: f32 per character, weptbl_4503: s16 [language][character × 5 + slot],
 /// htbl_1662: s8 [10], mos_henge_param: 0x1C × 57, monster_progress_tbl: s16 [19][5].
 pub const LIFE_TABLE: u32 = 0x37C790;
 pub const WEAPON_TABLE: u32 = 0x33A510;
+/// The starting equipment's slots a character has, and the bytes of a language's table (two
+/// characters of five s16 slots; the Japanese first).
+pub const WEAPON_SLOTS: usize = 5;
+pub const WEAPON_LANGUAGE: usize = CHARACTERS.len() * WEAPON_SLOTS * 2;
 pub const WHP_TABLE: u32 = 0x33A490;
+pub const WHP_LEVELS: usize = 10;
 pub const HENGE_TABLE: u32 = 0x339D70;
 pub const HENGE_ROWS: usize = 57;
 pub const HENGE_RECORD: usize = 0x1C;
 pub const PROGRESS_TABLE: u32 = 0x358C90;
 pub const PROGRESS_ROWS: usize = 19;
+/// A badge row: the badge and its four forms, s16 each.
+pub const PROGRESS_RECORD: usize = 10;
 
 pub const CHARACTERS: [&str; 2] = ["max", "monica"];
 /// gift_item_tbl: s16 {gift type, item, unread} rows up to one of gift type -1 (CheckGiftPack).
 pub const GIFT_TABLE: u32 = 0x351660;
 pub const GIFT_ROWS: usize = 14;
+pub const GIFT_RECORD: usize = 6;
 /// GolfClubDef: {f32 power, f32, s32} for Spheda clubs 9 to 14 (GetSphidaClubDef: club - 9); a
 /// seventh row, of zeros, no club reaches.
 pub const CLUB_TABLE: u32 = 0x361340;
 pub const CLUBS: std::ops::RangeInclusive<usize> = 9..=14;
+pub const CLUB_ROWS: usize = 7;
+pub const CLUB_RECORD: usize = 0xC;
 /// aquafish_mixTable: s8 {parent, parent, child} × 171, each a fish item less 0x136
 /// (GetChildFishNo, a fixed count of rows).
 pub const BREEDING_TABLE: u32 = 0x3535A0;
@@ -61,13 +73,14 @@ pub fn spectrumise(elf: &[u8]) -> Result<Table> {
 /// Donny's shop: each row's item and the invention level Donny must be above to offer it. As the
 /// `donny` section of `data:shops`, by `row`.
 pub fn donny(elf: &[u8]) -> Result<Table> {
-    let start = table_offset(elf, DONNY_TABLE, (DONNY_ROWS + 1) * 4, "Donny's shop")?;
+    let start = table_offset(elf, DONNY_TABLE, (DONNY_ROWS + 1) * DONNY_RECORD, "Donny's shop")?;
     let mut records = Vec::new();
     for row in 0..DONNY_ROWS {
+        let at = start + row * DONNY_RECORD;
         let mut record = Record::new(&[("row", Value::from(row))]);
         // an item of 0 or less would end the list there
-        record.bytes("item", Kind::Int(1, 0x1FF), start + row * 4, 1);
-        record.bytes("level", S8, start + row * 4 + 2, 1);
+        record.bytes("item", Kind::Int(1, ITEM_MOST), at, 1);
+        record.bytes("level", S8, at + 2, 1);
         records.push(record);
     }
     let mut table = Table::new("a shop table", Vec::new(), elf.to_vec());
@@ -78,21 +91,22 @@ pub fn donny(elf: &[u8]) -> Result<Table> {
 /// The character tables (`data:characters`): starting HP and equipment, the WHP a weapon gains
 /// at a level-up, Monica's monster forms and the badges' forms.
 pub fn characters(elf: &[u8]) -> Result<Table> {
-    let life = table_offset(elf, LIFE_TABLE, 8, "starting HP table")?;
-    let weapons = table_offset(elf, WEAPON_TABLE, 40, "starting weapon table")?;
+    let life = table_offset(elf, LIFE_TABLE, CHARACTERS.len() * 4, "starting HP table")?;
+    let weapons = table_offset(elf, WEAPON_TABLE, 2 * WEAPON_LANGUAGE, "starting weapon table")?;
     let mut table = Table::new("a character table", Vec::new(), elf.to_vec());
     let mut characters = Vec::new();
     for (number, name) in CHARACTERS.iter().enumerate() {
         let mut record = Record::new(&[("character", Value::from(*name))]);
+        let slots = number * WEAPON_SLOTS * 2;
         record.bytes("starting_hp", Kind::Float, life + number * 4, 1);
-        record.bytes("starting_equipment", S16, weapons + 20 + number * 10, 5);
-        record.bytes("starting_equipment_japanese", S16, weapons + number * 10, 5);
+        record.bytes("starting_equipment", S16, weapons + WEAPON_LANGUAGE + slots, WEAPON_SLOTS);
+        record.bytes("starting_equipment_japanese", S16, weapons + slots, WEAPON_SLOTS);
         characters.push(record);
     }
     table.section("characters", &["character"], characters);
-    let whp = table_offset(elf, WHP_TABLE, 10, "WHP gain table")?;
+    let whp = table_offset(elf, WHP_TABLE, WHP_LEVELS, "WHP gain table")?;
     let mut level_up = Record::new(&[]);
-    level_up.bytes("whp_gain", S8, whp, 10);
+    level_up.bytes("whp_gain", S8, whp, WHP_LEVELS);
     table.section("weapon_level_up", &[], vec![level_up]);
     let henge = table_offset(elf, HENGE_TABLE, HENGE_ROWS * HENGE_RECORD, "monster form table")?;
     let mut forms = Vec::new();
@@ -103,11 +117,12 @@ pub fn characters(elf: &[u8]) -> Result<Table> {
         forms.push(record);
     }
     table.section("monster_forms", &["monster"], forms);
-    let progress = table_offset(elf, PROGRESS_TABLE, PROGRESS_ROWS * 10, "badge table")?;
+    let progress = table_offset(elf, PROGRESS_TABLE, PROGRESS_ROWS * PROGRESS_RECORD, "badge table")?;
     let mut badges = Vec::new();
     for row in 0..PROGRESS_ROWS {
+        let at = progress + row * PROGRESS_RECORD;
         let mut record = Record::new(&[("row", Value::from(row))]);
-        record.bytes("badge", S16, progress + row * 10, 1).bytes("forms", S16, progress + row * 10 + 2, 4);
+        record.bytes("badge", S16, at, 1).bytes("forms", S16, at + 2, 4);
         badges.push(record);
     }
     table.section("badges", &["row"], badges);
@@ -120,14 +135,14 @@ pub fn characters(elf: &[u8]) -> Result<Table> {
 /// gift type and takes a gift whose three gift slots all hold the item. The rows are the
 /// table's; none is added (the row after the last ends it).
 pub fn gifts(elf: &[u8]) -> Result<Table> {
-    let start = table_offset(elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table")?;
+    let start = table_offset(elf, GIFT_TABLE, (GIFT_ROWS + 1) * GIFT_RECORD, "gift table")?;
     let mut records = Vec::new();
     for row in 0..GIFT_ROWS {
-        let at = start + row * 6;
+        let at = start + row * GIFT_RECORD;
         let mut record = Record::new(&[("row", Value::from(row))]);
         // a gift type of -1 would end the table there
         record.bytes("gift_type", Kind::Int(0, i16::MAX as i64), at, 1);
-        record.bytes("item", Kind::Int(0, 0x1FF), at + 2, 1).bytes("unread", S16, at + 4, 1);
+        record.bytes("item", Kind::Int(0, ITEM_MOST), at + 2, 1).bytes("unread", S16, at + 4, 1);
         records.push(record);
     }
     let mut table = Table::new("a gift table", Vec::new(), elf.to_vec());
@@ -139,10 +154,10 @@ pub fn gifts(elf: &[u8]) -> Result<Table> {
 /// shows and two values only event scripts read (_SPHIDA_GET_CULB_DEF), `unknown_4` and
 /// `unknown_8`.
 pub fn spheda(elf: &[u8]) -> Result<Table> {
-    let start = table_offset(elf, CLUB_TABLE, 7 * 0xC, "Spheda club table")?;
+    let start = table_offset(elf, CLUB_TABLE, CLUB_ROWS * CLUB_RECORD, "Spheda club table")?;
     let mut records = Vec::new();
     for club in CLUBS {
-        let at = start + (club - CLUBS.start()) * 0xC;
+        let at = start + (club - CLUBS.start()) * CLUB_RECORD;
         let mut record = Record::new(&[("club", Value::from(club))]);
         record.bytes("power", Kind::Float, at, 1).bytes("unknown_4", Kind::Float, at + 4, 1);
         record.bytes("unknown_8", data_table::S32, at + 8, 1);
@@ -205,8 +220,9 @@ mod tests {
         assert_eq!(super::characters(&patched).unwrap().to_json()["weapon_level_up"][0]["whp_gain"][3], 9);
         assert_eq!(donny(&elf).unwrap().to_json()["donny"].as_array().unwrap().len(), DONNY_ROWS);
         // the table after the gifts ends at a gift type of -1; the clubs and breeding as found
-        let start = table_offset(&elf, GIFT_TABLE, (GIFT_ROWS + 1) * 6, "gift table").unwrap();
-        assert_eq!(&elf[start + GIFT_ROWS * 6..start + GIFT_ROWS * 6 + 2], &(-1i16).to_le_bytes());
+        let start = table_offset(&elf, GIFT_TABLE, (GIFT_ROWS + 1) * GIFT_RECORD, "gift table").unwrap();
+        let end = start + GIFT_ROWS * GIFT_RECORD;
+        assert_eq!(&elf[end..end + 2], &(-1i16).to_le_bytes());
         assert_eq!(
             gifts(&elf).unwrap().to_json()["gifts"][0],
             json!({"row": 0, "gift_type": 0, "item": 0x10D, "unread": 1})

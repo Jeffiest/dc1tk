@@ -35,6 +35,11 @@ pub const PART_ID_MOST: i64 = 0x7F;
 pub const NAME_MOST: usize = 0x2F;
 /// CEditMap::CreateTable(main_data, 0x100, ...): the parts placed in a town.
 pub const PLACED_MOST: usize = 0x100;
+/// The most bytes of g01's parts files: MakeDownLoadAnaunce reads each into a 0x7800-byte stack
+/// buffer aligned to 64 bytes first, which loses at most 0x30 of it from a 16-byte-aligned stack
+/// (the bound docs/assets/data.md gives, 0x77D0). item_data::SCRIPT_BUFFER allows for 0x40, the
+/// most an alignment of any start loses; both hold every file of the disc.
+pub const DOWNLOAD_BUFFER: usize = 0x7800 - 0x30;
 
 fn town(number: usize) -> String {
     format!("g{:02}", number + 1)
@@ -226,8 +231,7 @@ pub fn read(files: &[Vec<u8>]) -> Result<Table> {
     for (name, keys, records) in rivers {
         table.section(name, &keys, records);
     }
-    // MakeDownLoadAnaunce reads g01's parts file into a 0x7800-byte stack buffer, aligned first
-    table.limits = (0..LANGUAGES).map(|file| (file, 0x7800 - 0x30, "MakeDownLoadAnaunce's stack buffer")).collect();
+    table.limits = (0..LANGUAGES).map(|file| (file, DOWNLOAD_BUFFER, "MakeDownLoadAnaunce's stack buffer")).collect();
     Ok(table)
 }
 

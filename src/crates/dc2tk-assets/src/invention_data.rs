@@ -30,6 +30,12 @@ pub const RECIPES_MOST: usize = 234;
 const RECIPES_WHY: &str = "the inventions menu's 0x2100-byte table, InventTeigiStack";
 /// MakeItemNeeds holds four materials (HowMuchZairyouMakeItem).
 pub const MATERIALS_MOST: usize = 4;
+/// DATASET's arguments around its materials: the item and three ideas before them (the materials
+/// from argument 4), the unknown, scale and position (x, y, z) after; a statement fills a recipe
+/// when it has a material.
+const MATERIALS_FROM: usize = 4;
+const AFTER_MATERIALS: usize = 5;
+const DATASET_LEAST: usize = MATERIALS_FROM + 2 + AFTER_MATERIALS;
 
 /// Every copy of inv6.lst, the one event checks read first; pack members as `pack.d/member`.
 pub fn paths() -> Vec<String> {
@@ -55,7 +61,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
             .filter_map(|(file, list)| list.get(number).map(|&statement| (file, statement)))
             .filter(|&(file, statement)| scripts[file].statements[statement].args().len() == count)
             .collect();
-        if count < 11 {
+        if count < DATASET_LEAST {
             continue;
         }
         let mut record = Record::new(&[("recipe", Value::from(number))]);
@@ -65,13 +71,13 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
             "materials",
             Place::List {
                 at: at.clone(),
-                arg: 4,
-                tail: 5,
+                arg: MATERIALS_FROM,
+                tail: AFTER_MATERIALS,
                 entry: vec![("item", S16), ("count", U8)],
                 count: (1, MATERIALS_MOST),
             },
         );
-        record.arg("unknown_10", S16, &at, count - 5);
+        record.arg("unknown_10", S16, &at, count - AFTER_MATERIALS);
         record.arg("scale", Kind::Float, &at, count - 4);
         record.args("position", Kind::Float, &at, count - 3, 3);
         record.block = at.iter().map(|&(file, statement)| (file, statement, statement)).collect();
