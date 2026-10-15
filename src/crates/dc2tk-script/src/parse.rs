@@ -257,36 +257,68 @@ fn conditional_directive(
 
 // ---- tokens --------------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What a token is, with what only a token of its kind has.
+#[derive(Clone, Debug, PartialEq)]
 enum Kind {
-    Define,
-    Include,
-    Pragma,
+    /// #define NAME VALUE of a value that is not a macro's: its words, the name and the rest.
+    Define(Vec<String>),
+    /// #include: the file's path, whether it was <path>, and the integer constants the file
+    /// #defines (or changes), with their values.
+    Include {
+        path: String,
+        system: bool,
+        constants: Vec<(String, i128)>,
+    },
+    /// #pragma's words.
+    Pragma(Vec<Node>),
+    /// #pragma assembly: the rest of the file, the token's text, is assembly.
     Assembly,
-    Asm,
-    Str,
-    Int,
+    /// An asm block: its header's words and its lines.
+    Asm {
+        words: Vec<String>,
+        lines: Vec<String>,
+    },
+    /// A string literal, wide when written L"...".
+    Str {
+        wide: bool,
+    },
+    /// An integer literal, unsigned when its suffix says so (1u).
+    Int {
+        unsigned: bool,
+    },
     Float,
     Name,
     Op,
     Eof,
 }
 
+/// An integer token of a number written plainly (a character, __LINE__).
+const INT: Kind = Kind::Int { unsigned: false };
+const STR: Kind = Kind::Str { wide: false };
+
 impl Kind {
-    fn name(self) -> &'static str {
+    fn name(&self) -> &'static str {
         match self {
-            Kind::Define => "define",
-            Kind::Include => "include",
-            Kind::Pragma => "pragma",
+            Kind::Define(_) => "define",
+            Kind::Include { .. } => "include",
+            Kind::Pragma(_) => "pragma",
             Kind::Assembly => "assembly",
-            Kind::Asm => "asm",
-            Kind::Str => "string",
-            Kind::Int => "int",
+            Kind::Asm { .. } => "asm",
+            Kind::Str { .. } => "string",
+            Kind::Int { .. } => "int",
             Kind::Float => "float",
             Kind::Name => "name",
             Kind::Op => "op",
             Kind::Eof => "eof",
         }
+    }
+
+    fn is_int(&self) -> bool {
+        matches!(self, Kind::Int { .. })
+    }
+
+    fn is_string(&self) -> bool {
+        matches!(self, Kind::Str { .. })
     }
 }
 
@@ -298,40 +330,20 @@ struct Token {
     text: Option<String>,
     /// The comment block right above a name.
     doc: Option<String>,
-    /// A #define's words, or an asm block's header words.
-    words: Vec<String>,
-    /// A #pragma's words.
-    pragma: Vec<Node>,
-    /// An #include's path, and whether it was <path>.
-    path: String,
-    system: bool,
-    /// The integer constants an #include's file #defines (or changes), with their values.
-    constants: Vec<(String, i128)>,
-    /// An asm block's lines.
-    lines: Vec<String>,
-    /// A string literal written L"...".
-    wide: bool,
 }
 
 impl Token {
     fn new(kind: Kind, line: usize, text: Option<String>) -> Token {
-        Token {
-            kind,
-            line,
-            text,
-            doc: None,
-            words: Vec::new(),
-            pragma: Vec::new(),
-            path: String::new(),
-            system: false,
-            constants: Vec::new(),
-            lines: Vec::new(),
-            wide: false,
-        }
+        Token { kind, line, text, doc: None }
     }
 
     fn text(&self) -> &str {
         self.text.as_deref().unwrap_or("")
+    }
+
+    /// Whether a string literal is wide (L"...").
+    fn wide(&self) -> bool {
+        matches!(self.kind, Kind::Str { wide: true })
     }
 }
 
@@ -412,10 +424,7 @@ fn read_asm(text: &[char], position: usize, line: usize) -> Result<(Token, usize
     let body = text_of(&text[line_end(text, opening) + 1..start]);
     let mut lines: Vec<String> = body.split('\n').map(String::from).collect();
     lines.pop();
-    let mut token = Token::new(Kind::Asm, line, None);
-    token.words = words;
-    token.lines = lines;
-    Ok((token, end))
+    Ok((Token::new(Kind::Asm { words, lines }, line, None), end))
 }
 
 /// The comment lines right above a line, as paragraphs (a blank comment line between them).
@@ -707,43 +716,36 @@ fn tokenize_with(
                         if let Some(integer) = integer {
                             macros.values.insert(name.clone(), integer as i128);
                         }
-                        let mut token = Token::new(Kind::Define, line, None);
-                        token.words = words;
-                        tokens.push(token);
+                        tokens.push(Token::new(Kind::Define(words), line, None));
                     }
                 }
                 "include" => {
                     let rest = strip(rest);
-                    let mut token = Token::new(Kind::Include, line, None);
                     let before = headers.map(|_| macros.values.clone());
-                    if rest.starts_with('<') && rest.ends_with('>') {
-                        token.path = strip(&rest[1..rest.len() - 1]).to_string();
-                        token.system = true;
-                        if let Some(headers) = headers {
-                            *macros = header_macros(&token.path, headers, std::mem::take(macros), depth)?;
-                        }
+                    let system = rest.starts_with('<') && rest.ends_with('>');
+                    let path = if system {
+                        strip(&rest[1..rest.len() - 1]).to_string()
                     } else {
-                        let words = directive_words(rest, line)?;
-                        match words.as_slice() {
-                            [word] if word.as_object().is_some() => {
-                                token.path = word["string"].as_str().unwrap().to_string()
-                            }
+                        match directive_words(rest, line)?.as_slice() {
+                            [word] if word.as_object().is_some() => word.text("string").to_string(),
                             _ => return lex_fail(line, "expected #include \"path\" or #include <path>"),
                         }
-                        // a library's macros reach the file that includes it, as C includes it
-                        if let Some(files) = headers {
-                            let key = included_key(&token.path, false);
-                            *macros = header_macros(&key, files, std::mem::take(macros), depth)?;
-                        }
+                    };
+                    // a header's macros, and a library's, reach the file that includes it, as C
+                    // includes it
+                    if let Some(files) = headers {
+                        let key = included_key(&path, system);
+                        *macros = header_macros(&key, files, std::mem::take(macros), depth)?;
                     }
                     // the integer constants the file (and what it includes) defines or changes,
                     // which the including file's constant expressions use as C expands them
+                    let mut constants = Vec::new();
                     if let Some(before) = before {
                         let changed = macros.values.iter().filter(|(name, value)| before.get(*name) != Some(value));
-                        token.constants = changed.map(|(name, value)| (name.clone(), *value)).collect();
-                        token.constants.sort();
+                        constants = changed.map(|(name, value)| (name.clone(), *value)).collect();
+                        constants.sort();
                     }
-                    tokens.push(token);
+                    tokens.push(Token::new(Kind::Include { path, system, constants }, line, None));
                 }
                 "pragma" => {
                     let words = directive_words(rest, line)?;
@@ -752,9 +754,7 @@ fn tokenize_with(
                         tokens.push(Token::new(Kind::Assembly, line, Some(rest)));
                         return Ok(tokens);
                     }
-                    let mut token = Token::new(Kind::Pragma, line, None);
-                    token.pragma = words;
-                    tokens.push(token);
+                    tokens.push(Token::new(Kind::Pragma(words), line, None));
                 }
                 "error" => return lex_fail(line, format!("#error {}", strip(rest))),
                 "line" => {
@@ -800,7 +800,7 @@ fn tokenize_with(
             position = end + 2;
         } else if c == '"' {
             let (value, end) = read_string(&text, position, line)?;
-            tokens.push(Token::new(Kind::Str, line, Some(value)));
+            tokens.push(Token::new(STR, line, Some(value)));
             position = end;
         } else if dc2tk_py::is_digit(c)
             || (c == '.' && text.get(position + 1).is_some_and(|next| next.is_ascii_digit()))
@@ -818,13 +818,12 @@ fn tokenize_with(
             if floating && suffix.to_lowercase().contains('l') {
                 return lex_fail(line, NO_DOUBLE.replace("double is", "long double is"));
             }
-            let mut token = Token::new(if floating { Kind::Float } else { Kind::Int }, line, Some(word));
-            token.words = vec![suffix];
-            tokens.push(token);
+            let kind = if floating { Kind::Float } else { Kind::Int { unsigned: suffix.contains(['u', 'U']) } };
+            tokens.push(Token::new(kind, line, Some(word)));
             position = end;
         } else if c == '\'' {
             let (value, end) = read_char(&text, position, line)?;
-            tokens.push(Token::new(Kind::Int, line, Some(value.to_string())));
+            tokens.push(Token::new(INT, line, Some(value.to_string())));
             position = end;
         } else if c == 'L' && text.get(position + 1) == Some(&'\'') {
             // a wide character: its Shift-JIS code, which wchar_t holds
@@ -837,14 +836,12 @@ fn tokenize_with(
                     .fold(0u32, |code, byte| code << 8 | u32::from(*byte)),
                 None => value,
             };
-            tokens.push(Token::new(Kind::Int, line, Some(value.to_string())));
+            tokens.push(Token::new(INT, line, Some(value.to_string())));
             position += 1 + end;
         } else if c == 'L' && text.get(position + 1) == Some(&'"') {
             // a wide string: an array of wchar_t, each a character's Shift-JIS code
             let (value, end) = read_string(&text, position + 1, line)?;
-            let mut token = Token::new(Kind::Str, line, Some(value));
-            token.wide = true;
-            tokens.push(token);
+            tokens.push(Token::new(Kind::Str { wide: true }, line, Some(value)));
             position = end;
         } else if c == cpp::PAINT || c.is_ascii_alphabetic() || c == '_' {
             // a painted name is one a macro's own replacement held, which is never expanded
@@ -871,13 +868,13 @@ fn tokenize_with(
             position = end;
             let token = match name.as_str() {
                 "" => continue,
-                "__LINE__" => Token::new(Kind::Int, line, Some(line.to_string())),
-                "__FILE__" => Token::new(Kind::Str, line, Some(file.clone())),
+                "__LINE__" => Token::new(INT, line, Some(line.to_string())),
+                "__FILE__" => Token::new(STR, line, Some(file.clone())),
                 "__DATE__" | "__TIME__" => {
                     let (date, time) = when.get_or_insert_with(cpp::translation_time);
-                    Token::new(Kind::Str, line, Some(if name == "__DATE__" { date.clone() } else { time.clone() }))
+                    Token::new(STR, line, Some(if name == "__DATE__" { date.clone() } else { time.clone() }))
                 }
-                "__STDC__" => Token::new(Kind::Int, line, Some("1".into())),
+                "__STDC__" => Token::new(INT, line, Some("1".into())),
                 "double" => return lex_fail(line, NO_DOUBLE),
                 _ => {
                     let mut token = Token::new(Kind::Name, line, Some(name));
@@ -1147,16 +1144,21 @@ impl State {
         Ok(self.take())
     }
 
-    fn expect_kind(&mut self, kind: Kind) -> Result<Taken> {
-        if self.token(0).kind != kind {
+    /// The next token, which must be of a kind (its data aside).
+    fn expect_kind(&mut self, kind: &Kind) -> Result<Taken> {
+        if std::mem::discriminant(&self.token(0).kind) != std::mem::discriminant(kind) {
             let found = self.shown(self.token(0))?;
             return self.fail(format!("expected {}, found {found}", kind.name()));
         }
         Ok(self.take())
     }
 
+    fn expect_int(&mut self) -> Result<Taken> {
+        self.expect_kind(&INT)
+    }
+
     fn name(&mut self) -> Result<String> {
-        Ok(self.expect_kind(Kind::Name)?.text().to_string())
+        Ok(self.expect_kind(&Kind::Name)?.text().to_string())
     }
 
     /// Parses one level deeper, refusing to go past NESTING.
@@ -1202,10 +1204,9 @@ fn unsigned_literal(value: i128) -> Result<Node> {
 }
 
 fn literal(state: &State, token: &Token) -> Result<Node> {
-    if token.kind == Kind::Int {
+    if let Kind::Int { unsigned } = token.kind {
         let value = int_value(token.text()).or_else(|error| lex_fail(token.line, error))?;
         // C89: a literal too large for int (and long) is unsigned; one too large for that has no type
-        let unsigned = token.words.first().is_some_and(|suffix| suffix.contains(['u', 'U']));
         if value > u32::MAX as i128 {
             return state.fail(format!("{} does not fit in 32 bits", token.text()));
         }
@@ -1240,16 +1241,16 @@ fn arguments(state: &mut State) -> Result<Vec<Node>> {
 fn primary(state: &mut State) -> Result<Node> {
     let token = state.take();
     match token.kind {
-        Kind::Int | Kind::Float => {
+        Kind::Int { .. } | Kind::Float => {
             let number = literal(state, &token)?;
             // 1[a] is a[1]
             subscripted(state, number)
         }
-        Kind::Str if token.wide => {
+        Kind::Str { wide: true } => {
             let wide = string_literal(state, &token)?;
             postfix_operators(state, wide)
         }
-        Kind::Str => {
+        Kind::Str { .. } => {
             // "abc"[1]: the literal as an array
             let string = string_literal(state, &token)?;
             subscripted(state, string)
@@ -1277,14 +1278,14 @@ fn subscripted(state: &mut State, node: Node) -> Result<Node> {
 /// A string literal and those right after it, which are one: plain, or wide (L"...").
 fn string_literal(state: &mut State, token: &Token) -> Result<Node> {
     let mut text = token.text().to_string();
-    while state.token(0).kind == Kind::Str {
+    while state.token(0).kind.is_string() {
         let next = state.take();
-        if next.wide != token.wide {
+        if next.wide() != token.wide() {
             return state.fail("a wide string literal cannot be joined to a plain one");
         }
         text.push_str(next.text());
     }
-    if token.wide {
+    if token.wide() {
         return wide_string(state, &text);
     }
     Ok(node!({"kind": "string", "text": text}))
@@ -2720,7 +2721,7 @@ fn placed_at(state: &mut State) -> Result<Vec<Node>> {
         Node::from("direct")
     } else {
         state.expect("(")?;
-        let base = int_node(int_value(state.expect_kind(Kind::Int)?.text())?)?;
+        let base = int_node(int_value(state.expect_int()?.text())?)?;
         state.expect(")")?;
         base
     };
@@ -2807,17 +2808,17 @@ impl Size {
 fn array_size(state: &mut State) -> Result<Size> {
     let token = state.token(0);
     let alone = state.token(1).kind == Kind::Op && state.token(1).text() == "]";
-    if alone && matches!(token.kind, Kind::Int | Kind::Name) {
+    if alone && (token.kind.is_int() || token.kind == Kind::Name) {
         let token = state.take();
         return Ok(match token.kind {
-            Kind::Int => Size::Number(int_value(token.text())?),
+            Kind::Int { .. } => Size::Number(int_value(token.text())?),
             _ => match state.constants.get(token.text()) {
                 Some(value) => Size::Number(*value),
                 None => Size::Named(token.text().to_string()),
             },
         });
     }
-    if matches!(token.kind, Kind::Int | Kind::Name | Kind::Op) {
+    if token.kind.is_int() || matches!(token.kind, Kind::Name | Kind::Op) {
         return Ok(Size::Number(constant_expression(state)? as i128));
     }
     state.fail("an array size is a number or a constant")
@@ -4093,12 +4094,12 @@ fn native_declaration(state: &mut State) -> Result<Node> {
     state.expect(")")?;
     state.expect("NATIVE")?;
     state.expect("(")?;
-    let mut number = int_value(state.expect_kind(Kind::Int)?.text())?;
+    let mut number = int_value(state.expect_int()?.text())?;
     let mut base = Node::Null;
     if state.at(",", 0) {
         state.take();
         base = int_node(number)?;
-        number += int_value(state.expect_kind(Kind::Int)?.text())?;
+        number += int_value(state.expect_int()?.text())?;
     }
     state.expect(")")?;
     state.expect(";")?;
@@ -4143,7 +4144,7 @@ fn inline_definition(state: &mut State) -> Result<Node> {
 fn enum_value(state: &mut State) -> Result<i128> {
     let negative = state.at("-", 0);
     let offset = usize::from(negative);
-    let plain = state.token(offset).kind == Kind::Int
+    let plain = state.token(offset).kind.is_int()
         && state.token(offset + 1).kind == Kind::Op
         && [",", "}"].contains(&state.token(offset + 1).text());
     if !plain {
@@ -4152,7 +4153,7 @@ fn enum_value(state: &mut State) -> Result<i128> {
     if negative {
         state.take();
     }
-    let value = int_value(state.expect_kind(Kind::Int)?.text())?;
+    let value = int_value(state.expect_int()?.text())?;
     Ok(if negative { -value } else { value })
 }
 
@@ -4239,7 +4240,10 @@ fn constant_of(value: &str) -> Result<Option<Node>> {
 
 /// A #define whose value is a number or a string: a constant, and an integer one sizes arrays.
 fn definition(state: &mut State, token: &Token, program: &mut Node) -> Result<()> {
-    let [name, value] = token.words.as_slice() else {
+    let Kind::Define(words) = &token.kind else {
+        return Ok(());
+    };
+    let [name, value] = words.as_slice() else {
         return Ok(());
     };
     if let Some(value) = constant_of(value)? {
@@ -4321,7 +4325,7 @@ fn program_entry(state: &mut State, program: &mut Node) -> Result<()> {
     state.expect("(")?;
     let token = state.take();
     let number = match token.kind {
-        Kind::Int => int_node(int_value(token.text())?)?,
+        Kind::Int { .. } => int_node(int_value(token.text())?)?,
         Kind::Name => Node::from(token.text()),
         _ => {
             state.pos -= 1;
@@ -4337,13 +4341,15 @@ fn program_entry(state: &mut State, program: &mut Node) -> Result<()> {
 }
 
 fn asm_function(state: &mut State, token: &Token) -> Result<Node> {
-    let words = &token.words;
+    let Kind::Asm { words, lines } = &token.kind else {
+        unreachable!("an asm function is read from an asm token");
+    };
     if words.len() != 3 || words[1] != "arg" {
         state.pos -= 1;
         return state.fail("asm block header must be: asm NAME arg COUNT {");
     }
     let arg = int_node(int_in_base(&words[2], 10).or_else(|error| lex_fail(token.line, error))?)?;
-    Ok(node!({"kind": "asm", "name": &words[0], "arg": arg, "reason": "", "lines": token.lines.clone()}))
+    Ok(node!({"kind": "asm", "name": &words[0], "arg": arg, "reason": "", "lines": lines.clone()}))
 }
 
 /// #pragma magic's four bytes, as the assembly's .header writes them (asm::magic_bytes): 0x and
@@ -4389,7 +4395,9 @@ fn from_hex(text: &str) -> Option<Vec<u8>> {
 }
 
 fn pragma(state: &mut State, token: &Token, program: &mut Node, pending: &mut Pending) -> Result<()> {
-    let words = &token.pragma;
+    let Kind::Pragma(words) = &token.kind else {
+        unreachable!("a pragma is read from a pragma token");
+    };
     if words.is_empty() {
         // #pragma alone, which C ignores
         return Ok(());
@@ -4584,17 +4592,17 @@ fn parse_state(
     while state.token(0).kind != Kind::Eof {
         let token = state.take();
         let word = if token.kind == Kind::Name { token.text() } else { "" };
-        match token.kind {
-            Kind::Pragma => pragma(&mut state, &token, &mut program, &mut pending)?,
-            Kind::Asm => {
+        match &token.kind {
+            Kind::Pragma(_) => pragma(&mut state, &token, &mut program, &mut pending)?,
+            Kind::Asm { .. } => {
                 let function = asm_function(&mut state, &token)?;
                 program["functions"].as_array_mut().unwrap().push(function);
             }
-            Kind::Include => {
+            Kind::Include { path, system, constants } => {
                 if let Some(files) = headers {
                     // what the file declares that this one's declarations need (a library's
                     // structs, a header's typedefs), as C includes it
-                    let found = included(&included_key(&token.path, token.system), files)?;
+                    let found = included(&included_key(path, *system), files)?;
                     state.header_kinds.extend(found.kinds);
                     state.types.extend(found.types);
                     state.included_enumerators.extend(found.enumerators);
@@ -4606,18 +4614,18 @@ fn parse_state(
                 }
                 // the integer #defines the file leaves, as C includes it: they replace this
                 // file's own of the same names
-                for (name, value) in &token.constants {
+                for (name, value) in constants {
                     state.constants.remove(name);
                     state.included_constants.insert(name.clone(), *value);
                 }
                 program["functions"].as_array_mut().unwrap().push(node!({
                     "kind": "include",
-                    "path": &token.path,
-                    "system": token.system,
+                    "path": path,
+                    "system": *system,
                 }))
             }
             Kind::Assembly => return state.fail("#pragma assembly must start the file"),
-            Kind::Define => definition(&mut state, &token, &mut program)?,
+            Kind::Define(_) => definition(&mut state, &token, &mut program)?,
             _ if word == "enum" && (state.at("{", 0) || state.at("{", 1)) && enum_alone(&state) => {
                 enumeration(&mut state, &mut program)?
             }
