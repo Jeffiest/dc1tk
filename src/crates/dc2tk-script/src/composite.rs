@@ -180,7 +180,18 @@ fn is_integer(ty: &Ty) -> bool {
     matches!(ty, Ty::Scalar(name) if name != "float" && name != "string" && name != "any")
 }
 
-fn variable_of(entry: &Node, global: bool, parameter: bool) -> Variable {
+/// Where a variable is declared, which says how its entry gives its type and where it is stored.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Declared {
+    Global,
+    /// A parameter: one marked "array" holds a pointer.
+    Param,
+    /// A local: one marked "pointer" holds a pointer, one with a size is an array.
+    Local,
+}
+
+fn variable_of(entry: &Node, declared: Declared) -> Variable {
+    let parameter = declared == Declared::Param;
     let name = entry.text("name").to_string();
     let kind = entry.text("type");
     let typed = entry.get("ctype").is_some();
@@ -195,13 +206,11 @@ fn variable_of(entry: &Node, global: bool, parameter: bool) -> Variable {
         }
         None => Ty::Scalar(kind.into()),
     };
-    let pointer = if parameter { entry.flag("array") } else { entry.flag("pointer") };
-    let storage = if global {
-        Storage::Global
-    } else if pointer {
-        Storage::Pointer
-    } else {
-        Storage::Local
+    let storage = match declared {
+        Declared::Global => Storage::Global,
+        Declared::Param if entry.flag("array") => Storage::Pointer,
+        Declared::Local if entry.flag("pointer") => Storage::Pointer,
+        Declared::Param | Declared::Local => Storage::Local,
     };
     Variable { ty, storage, name, typed }
 }
@@ -212,7 +221,7 @@ fn signature_of(function: &Node) -> Signature {
         None if function["returns"] == "void" => Ty::Void,
         None => Ty::Scalar(function.text("returns").to_string()),
     };
-    let params = function.list("params").iter().map(|param| variable_of(param, false, true).ty).collect();
+    let params = function.list("params").iter().map(|param| variable_of(param, Declared::Param).ty).collect();
     Signature { returns, params, variadic: function["variadic"] == Node::Bool(true) }
 }
 
@@ -248,7 +257,7 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
     let globals = program
         .list("globals")
         .iter()
-        .map(|global| (global.text("name").to_string(), variable_of(global, true, false)))
+        .map(|global| (global.text("name").to_string(), variable_of(global, Declared::Global)))
         .collect();
     let signatures = program
         .list("functions")
@@ -333,7 +342,7 @@ impl Lowering<'_> {
             );
         }
         for param in function.list("params") {
-            let found = variable_of(param, false, true);
+            let found = variable_of(param, Declared::Param);
             if !found.ty.is_struct() {
                 self.variables.insert(found.name.clone(), found);
                 params.push(param.clone());
@@ -358,7 +367,7 @@ impl Lowering<'_> {
                 .insert("__va".into(), Variable { ty, storage: Storage::Pointer, name: "__va".into(), typed: true });
         }
         for local in function.list("locals") {
-            let found = variable_of(local, false, false);
+            let found = variable_of(local, Declared::Local);
             self.variables.insert(found.name.clone(), found);
         }
         let body = self.statements(function.list("body"))?;
