@@ -677,9 +677,16 @@ pub enum MeshId {
     New(String),
 }
 
-/// How import reads the glTF.
+/// How import reads the glTF, and the template's files besides its MDS.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct ImportOptions {
+pub struct ImportOptions<'a> {
+    /// The template's bind pose (.bbp); without one, its frames' rests.
+    pub bbp: Option<&'a [u8]>,
+    /// The template's skin weights (.wgt).
+    pub wgt: Option<&'a [u8]>,
+    /// The template meshes to replace (by what each glTF mesh node stands for, mesh_ids); every
+    /// one when None.
+    pub meshes: Option<&'a BTreeSet<MeshId>>,
     /// The model is collision: each mesh is written as type 0x213 triangle lists of positions alone
     /// (normals, uvs and colours dropped), each material's diffuse colour encoding the attributes
     /// its name gives (`col_ground0_foot2_area6_mask12`, see `collision_material`).
@@ -1460,32 +1467,349 @@ pub fn changed_geometry(exported: &Gltf, given: &Gltf, model: &Mds) -> Result<BT
         .collect())
 }
 
-/// The model rebuilt from a glTF, the template's meshes replaced by the glTF's: each glTF mesh
-/// node replaces the mesh of the frame it stands for (`frames_of`), only those in `meshes` when
-/// given.
-pub fn import_gltf(
-    gltf: &Gltf,
-    template: &[u8],
-    bbp_data: Option<&[u8]>,
-    wgt_data: Option<&[u8]>,
-    meshes: Option<&BTreeSet<MeshId>>,
-) -> Result<Imported> {
-    import_with(gltf, template, bbp_data, wgt_data, meshes, &ImportOptions::default())
+/// A mesh's place in the model: what takes the glTF's positions into its frame's space, and for a
+/// skinned mesh the frame each of its joints stands for and the matrices that bring its positions
+/// into the bind pose kept (Blender's are in its own).
+struct MeshSpace {
+    to_local: Mat4,
+    joint_map: Vec<Option<usize>>,
+    reskin: Option<Vec<Mat4>>,
 }
 
-/// import_gltf as the options say.
-pub fn import_with(
-    gltf: &Gltf,
-    template: &[u8],
-    bbp_data: Option<&[u8]>,
-    wgt_data: Option<&[u8]>,
-    meshes: Option<&BTreeSet<MeshId>>,
-    options: &ImportOptions,
-) -> Result<Imported> {
+/// A mesh's materials as its primitives name them: each glTF material once, in the order first
+/// named.
+#[derive(Default)]
+struct MeshMaterials {
+    materials: Vec<Material>,
+    material_of: Vec<(Value, usize)>,
+}
+
+impl MeshMaterials {
+    /// The number of the MDT material for a primitive's glTF material (`number`, or Null).
+    fn number(&mut self, json: &Value, number: &Value, collision: bool) -> Result<usize> {
+        if let Some((_, at)) = self.material_of.iter().find(|(known, _)| known == number) {
+            return Ok(*at);
+        }
+        self.materials.push(if collision {
+            collision_material(json, number)?
+        } else {
+            material_from_gltf(json, number)?
+        });
+        self.material_of.push((number.clone(), self.materials.len() - 1));
+        Ok(self.materials.len() - 1)
+    }
+}
+
+/// A model being rebuilt from a glTF (import_gltf): the template's frames, their bind pose, and
+/// what the glTF's nodes stand for among them.
+struct Import<'g> {
+    gltf: &'g Gltf,
+    options: &'g ImportOptions<'g>,
+    model: Mds,
+    resolved: Vec<Option<usize>>,
+    /// The glTF's nodes, animated ones at their frames' rests (as frame_geometry compares them).
+    nodes: &'g Value,
+    node_list: &'g [Value],
+    parent: HashMap<i64, usize>,
+    /// The glTF's world matrices, as world_of works them out.
+    world: HashMap<i64, TypedMatrix>,
+    /// The template's frames' world matrices.
+    template_world: Vec<Mat4>,
+    bbp: Vec<Mat4>,
+    /// Frames added for glTF mesh nodes no template frame stands for, by name.
+    by_name: HashMap<String, usize>,
+}
+
+impl Import<'_> {
+    /// The model frame glTF node `gi` stands for: the one frames_of gives, or one added for it.
+    fn mds_index_of(&self, gi: &Value) -> Result<Option<usize>> {
+        let n = index(self.nodes, gi)?;
+        let at = gi.as_i64().unwrap_or(-1);
+        let at = if at < 0 { self.node_list.len() as i64 + at } else { at };
+        match self.resolved.get(at as usize).copied().flatten() {
+            Some(frame) => Ok(Some(frame)),
+            None => Ok(self.by_name.get(&clean(n.get("name"))?).copied()),
+        }
+    }
+
+    /// The bind matrices of the skins' joints from their inverse bind matrices (so edits to the
+    /// bind pose are kept): the template's stays unless the glTF's differs from what to_gltf writes
+    /// for it (its inverse, or the frame's rest matrix's when it has none) and from what Blender
+    /// gives back for that (its bones' rests have no scale or shear).
+    fn read_binds(&mut self, exported_binds: &Binds, blender_binds: &Binds) -> Result<()> {
+        let skins = self.gltf.json.get("skins").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+        for skin in skins {
+            let Some(ibm_index) = skin.get("inverseBindMatrices") else {
+                continue;
+            };
+            let ibm = accessor(self.gltf, ibm_index)?;
+            let Some(joints) = item(skin, "joints")?.as_array() else {
+                bail!("a skin's joints are not a list");
+            };
+            for (k, gi) in joints.iter().enumerate() {
+                let mi = self.mds_index_of(gi)?;
+                let matrix = ibm.at(k as i64)?;
+                if matrix.len() < 16 {
+                    bail!("an inverse bind matrix has fewer than 16 numbers");
+                }
+                let values: Vec<f64> = matrix.iter().map(|v| v.f()).collect();
+                let inverse = mat_inv(&values[..16].try_into().unwrap());
+                let (Some(mi), Some(inverse)) = (mi, inverse) else {
+                    continue;
+                };
+                let known = [exported_binds.get(mi), blender_binds.get(mi)];
+                if !known.into_iter().flatten().flatten().any(|e| close_bind(&inverse, e)) {
+                    self.bbp[mi] = inverse;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The frame mesh node `gi` (named `name`) replaces the mesh of: the one it stands for, else a
+    /// new frame under the root (under its parent's frame, for a rigid mesh).
+    fn target_frame(&mut self, gi: usize, n: &Value, name: &str) -> Result<usize> {
+        if let Some(target) = self.resolved[gi].or_else(|| self.by_name.get(name).copied()) {
+            return Ok(target);
+        }
+        let mut node = Node::new(name, if self.model.nodes.is_empty() { -1 } else { 0 });
+        if let Some(&pj) = self.parent.get(&(gi as i64)) {
+            if let Some(p) = self.mds_index_of(&Value::from(pj as i64))? {
+                if !n.get("skin").is_some() {
+                    node.parent = p as i32;
+                }
+            }
+        }
+        self.model.nodes.push(node);
+        let target = self.model.nodes.len() - 1;
+        self.by_name.insert(name.to_string(), target);
+        self.bbp.push(IDENT);
+        Ok(target)
+    }
+
+    /// Where mesh node `gi`'s positions go in frame `target`: a skinned mesh's are in model space
+    /// (the node's transform ignored), into the frame's bind pose; a rigid mesh's into the frame's
+    /// own space through the glTF hierarchy.
+    fn mesh_space(
+        &mut self,
+        gi: usize,
+        n: &Value,
+        name: &str,
+        target: usize,
+        skin: Option<&Value>,
+    ) -> Result<MeshSpace> {
+        if let Some(skin) = skin {
+            let mut reskin = None;
+            if let Some(number) = n.get("skin") {
+                let template_world = self.model.world_matrices()?;
+                let binds: HashMap<usize, Mat4> = (0..self.model.nodes.len())
+                    .filter_map(|f| {
+                        let bind = self.bbp.get(f).filter(|m| mat_inv(m).is_some()).or_else(|| template_world.get(f));
+                        bind.map(|m| (f, *m))
+                    })
+                    .collect();
+                reskin = Some(skin_matrices(self.gltf, number, &self.resolved, &binds)?);
+            }
+            if mat_inv(&self.bbp[target]).is_none() {
+                self.bbp[target] = self.model.world_matrices()?[target];
+            }
+            let to_local = mat_inv(&self.bbp[target]).unwrap_or(IDENT);
+            let Some(joints) = item(skin, "joints")?.as_array() else {
+                bail!("a skin's joints are not a list");
+            };
+            let joint_map = joints.iter().map(|g| self.mds_index_of(g)).collect::<Result<_>>()?;
+            return Ok(MeshSpace { to_local, joint_map, reskin });
+        }
+        let mut frame_world = None;
+        if self.resolved[gi].is_none() {
+            for (g2, n2) in self.node_list.iter().enumerate() {
+                if !n2.get("mesh").is_some() && self.resolved[g2].is_none() && clean(n2.get("name"))? == name {
+                    frame_world = Some(world_of(g2 as i64, self.nodes, &self.parent, &mut self.world, 0)?);
+                }
+            }
+        }
+        let mesh_world = floats(&world_of(gi as i64, self.nodes, &self.parent, &mut self.world, 0)?);
+        let found =
+            rigid_to_local(gi, &self.resolved, self.nodes, &self.parent, &mut self.world, &self.template_world)?;
+        let to_local = match (found, frame_world) {
+            (Some(to_local), _) => to_local,
+            (None, Some(fw)) => mat_mul(&mat_inv(&floats(&fw)).unwrap_or(IDENT), &mesh_world),
+            // a mesh no frame stands for (one made in Blender): into the space of the frame it was
+            // added under, keeping where the object was put
+            (None, None) => {
+                let under = self.model.nodes[target].parent;
+                let frame = if under >= 0 { self.bbp[under as usize] } else { IDENT };
+                mat_mul(&mat_inv(&frame).unwrap_or(IDENT), &mesh_world)
+            }
+        };
+        Ok(MeshSpace { to_local, joint_map: Vec::new(), reskin: None })
+    }
+
+    /// The corners of a triangle primitive in its frame's space (None for one with none): each
+    /// corner's position, normal, uv, colour (an alpha Blender left out taken from the nearest
+    /// vertex of the mesh it replaces) and skin.
+    fn corners_of_primitive(
+        &self,
+        p: &Value,
+        mesh: (&str, &MeshSpace, bool),
+        alphas: &Alphas,
+        materials: &mut MeshMaterials,
+    ) -> Result<Option<Primitive>> {
+        let (name, space, skinned) = mesh;
+        let (gltf, collision) = (self.gltf, self.options.collision);
+        if p.get("mode").map_or(4.0, |m| m.as_f64().unwrap_or(f64::NAN)) != 4.0 {
+            bail!("only triangle primitives are supported");
+        }
+        let attributes = item(p, "attributes")?;
+        let pos = accessor(gltf, item(attributes, "POSITION")?)?;
+        let optional = |name: &str| attributes.get(name).map(|i| accessor(gltf, i)).transpose();
+        // collision keeps positions alone
+        let shaded = |name: &str| if collision { Ok(None) } else { optional(name) };
+        let nrm = shaded("NORMAL")?;
+        let uv = shaded("TEXCOORD_0")?;
+        let col = shaded("COLOR_0")?;
+        let (jts, wts) = if skinned { (optional("JOINTS_0")?, optional("WEIGHTS_0")?) } else { (None, None) };
+        let indices: Vec<Num> = match p.get("indices") {
+            Some(i) => {
+                let values = accessor(gltf, i)?;
+                if values.n != 1 {
+                    bail!("a primitive's indices have {} components, not 1", values.n);
+                }
+                values.values
+            }
+            None => (0..pos.len() as i64).map(Num::Int).collect(),
+        };
+        let material = materials.number(&gltf.json, p.get("material").unwrap_or(&Value::Null), collision)?;
+        let to_local = &space.to_local;
+        let mut corners = Vec::with_capacity(indices.len());
+        for c in &indices {
+            let Num::Int(c) = *c else {
+                bail!("a primitive's indices are floats");
+            };
+            let point = pos.at(c)?;
+            if point.len() < 3 {
+                bail!("a vertex position has fewer than 3 numbers");
+            }
+            let point: Vec<f64> = point.iter().map(|v| v.f()).collect();
+            let skinning = match (&space.reskin, jts.as_ref(), wts.as_ref()) {
+                (Some(matrices), Some(jts), Some(wts)) if !jts.is_empty() && !wts.is_empty() => {
+                    blend(matrices, jts.at(c)?, wts.at(c)?)
+                }
+                _ => IDENT,
+            };
+            let position = xform_point(to_local, &xform_point(&skinning, &point));
+            let normal = match nrm.as_ref().filter(|v| !v.is_empty()) {
+                Some(nrm) => {
+                    let v: Vec<f64> = nrm.at(c)?.iter().map(|v| v.f()).collect();
+                    if v.len() < 3 {
+                        bail!("a normal has fewer than 3 numbers");
+                    }
+                    Some(normalize(&xform_dir(to_local, &xform_dir(&skinning, &v)), Z).to_vec())
+                }
+                None => None,
+            };
+            let uv = match uv.as_ref().filter(|v| !v.is_empty()) {
+                Some(uv) => {
+                    let v = uv.at(c)?;
+                    if v.len() < 2 {
+                        bail!("a texture coordinate has fewer than 2 numbers");
+                    }
+                    Some([v[0].f(), v[1].f()])
+                }
+                None => None,
+            };
+            let colour = match col.as_ref().filter(|v| !v.is_empty()) {
+                Some(col) => {
+                    let mut v: Vec<f64> = col.at(c)?.iter().map(|v| v.f()).collect();
+                    v.push(if col.n == 3 { alphas.near(&position) } else { 1.0 });
+                    v.truncate(4);
+                    if v.len() < 4 {
+                        bail!("a colour has fewer than 4 numbers");
+                    }
+                    Some(v)
+                }
+                None => None,
+            };
+            let skin = match jts.as_ref().filter(|v| !v.is_empty()) {
+                Some(jts) => {
+                    let Some(wts) = wts.as_ref() else {
+                        bail!("mesh {name}: a primitive has JOINTS_0 but no WEIGHTS_0");
+                    };
+                    Some(corner_skin(jts.at(c)?, wts.at(c)?, &space.joint_map)?)
+                }
+                None => None,
+            };
+            corners.push(Corner { position, normal, uv, colour, skin });
+        }
+        Ok((!corners.is_empty()).then_some(Primitive { material, corners }))
+    }
+}
+
+/// A corner's skin as the MDT keeps it: up to 4 (frame, weight) pairs, the largest weights first,
+/// as percentages of their sum rounded to 4 places; joints no frame stands for left out.
+fn corner_skin(joints: &[Num], weights: &[Num], joint_map: &[Option<usize>]) -> Result<Vec<(i64, KeyFloat)>> {
+    let mut pairs: Vec<(Num, i64)> = Vec::new();
+    for (joint, w) in joints.iter().zip(weights) {
+        let Num::Int(joint) = *joint else {
+            bail!("a primitive's joints are floats");
+        };
+        if w.f() > 0.0 {
+            if let Some(bone) = *crate::to_gltf::at_index(joint_map, joint)? {
+                pairs.push((*w, bone as i64));
+            }
+        }
+    }
+    pairs.sort_by(|a, b| b.0.f().partial_cmp(&a.0.f()).unwrap().then(b.1.cmp(&a.1)));
+    pairs.truncate(4);
+    let total = numeric::sum_nums(pairs.iter().map(|(w, _)| *w));
+    let total = if total.f() == 0.0 { 1.0 } else { total.f() };
+    Ok(pairs.iter().map(|(w, b)| (*b, KeyFloat(numeric::round_decimal(w.f() / total * 100.0, 4)))).collect())
+}
+
+/// A skinned mesh's weight lists (.wgt), one per bone, from its vertices' skins.
+fn skin_weights(target: usize, skins: &[Skin], name: &str) -> Result<Vec<KeyList>> {
+    let mut per_bone: BTreeMap<i64, Vec<(i64, [f64; 4])>> = BTreeMap::new();
+    for (vi, skin) in skins.iter().enumerate() {
+        for (b, w) in skin.iter().flatten() {
+            per_bone.entry(*b).or_default().push((vi as i64, [w.0, 0.0, 0.0, 0.0]));
+        }
+    }
+    let mut out = Vec::with_capacity(per_bone.len());
+    for (b, keys) in per_bone {
+        let Ok(b) = i32::try_from(b) else {
+            bail!("mesh {name}: its skin names frame {b}, past what a weight list can name");
+        };
+        out.push(KeyList::new(target as i32, b, 20, keys));
+    }
+    Ok(out)
+}
+
+/// The weight lists: a rebuilt mesh's take the place of its old ones (blocks with keys alone: the
+/// empty blocks the disc's files hold for every bone are skipped by CreateVertexWeight), new
+/// meshes' go at the end.
+fn merged_weights(old: Vec<KeyList>, replaced: &BTreeSet<i32>, new: Vec<KeyList>) -> Vec<KeyList> {
+    let mut wgt: Vec<KeyList> = Vec::with_capacity(old.len());
+    for list in old {
+        if !replaced.contains(&list.frame) {
+            wgt.push(list);
+        } else if !wgt.iter().any(|known| known.frame == list.frame) {
+            wgt.extend(new.iter().filter(|added| added.frame == list.frame).cloned());
+        }
+    }
+    let placed: BTreeSet<i32> = wgt.iter().map(|list| list.frame).collect();
+    wgt.extend(new.into_iter().filter(|added| !placed.contains(&added.frame)));
+    wgt
+}
+
+/// The model rebuilt from a glTF, the template's meshes replaced by the glTF's: each glTF mesh
+/// node replaces the mesh of the frame it stands for (`frames_of`), only those in
+/// `options.meshes` when given, the template's bind pose and weights (`options.bbp`, `.wgt`)
+/// kept but for what the glTF changes.
+pub fn import_gltf(gltf: &Gltf, template: &[u8], options: &ImportOptions) -> Result<Imported> {
     let j = &gltf.json;
-    let mut model: Mds = mds::parse(template)?;
+    let model: Mds = mds::parse(template)?;
     let resolved = frames_of(j, &model)?;
-    let mut bbp: Vec<Mat4> = match bbp_data {
+    let mut bbp: Vec<Mat4> = match options.bbp {
         Some(data) => mot::parse_bbp(data)?,
         None => model.world_matrices()?,
     };
@@ -1493,61 +1817,29 @@ pub fn import_with(
     if bbp.len() < model.nodes.len() {
         bbp.resize(model.nodes.len(), IDENT);
     }
-    let old_wgt = match wgt_data {
+    let old_wgt = match options.wgt {
         Some(data) if !data.is_empty() => mot::parse(data)?,
         _ => Vec::new(),
     };
-    // frames added for glTF mesh nodes no template frame stands for, by name
-    let mut by_name: HashMap<String, usize> = HashMap::new();
-    let empty = Value::Array(Vec::new());
-    // animated nodes at their frames' rests, as frame_geometry compares them
-    let at_rest = animated_nodes_at_rest(j, &model, &resolved)?;
-    let nodes = &at_rest;
+    let nodes = animated_nodes_at_rest(j, &model, &resolved)?;
     let Some(node_list) = nodes.as_array() else {
         bail!("the glTF's nodes are not a list");
     };
-    let parent = parents_of(node_list);
-    let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
-    let mds_index_of = |by_name: &HashMap<String, usize>, gi: &Value| -> Result<Option<usize>> {
-        let n = index(nodes, gi)?;
-        let at = gi.as_i64().unwrap_or(-1);
-        let at = if at < 0 { node_list.len() as i64 + at } else { at };
-        match resolved.get(at as usize).copied().flatten() {
-            Some(frame) => Ok(Some(frame)),
-            None => Ok(by_name.get(&clean(n.get("name"))?).copied()),
-        }
-    };
-
-    // bind matrices of joints from the inverse bind matrices (keeps edits to the bind pose)
     let template_world = model.world_matrices()?;
-    for skin in j.get("skins").unwrap_or(&empty).as_array().unwrap_or(&Vec::new()) {
-        let Some(ibm_index) = skin.get("inverseBindMatrices") else {
-            continue;
-        };
-        let ibm = accessor(gltf, ibm_index)?;
-        let Some(joints) = item(skin, "joints")?.as_array() else {
-            bail!("a skin's joints are not a list");
-        };
-        for (k, gi) in joints.iter().enumerate() {
-            let mi = mds_index_of(&by_name, gi)?;
-            let matrix = ibm.at(k as i64)?;
-            if matrix.len() < 16 {
-                bail!("an inverse bind matrix has fewer than 16 numbers");
-            }
-            let values: Vec<f64> = matrix.iter().map(|v| v.f()).collect();
-            let inverse = mat_inv(&values[..16].try_into().unwrap());
-            let (Some(mi), Some(inverse)) = (mi, inverse) else {
-                continue;
-            };
-            // the template's bind matrix stays unless the glTF's differs from what to_gltf writes
-            // for it (its inverse, or the frame's rest matrix's when it has none) and from what
-            // Blender gives back for that (its bones' rests have no scale or shear)
-            let known = [exported_binds.get(mi), blender_binds.get(mi)];
-            if !known.into_iter().flatten().flatten().any(|e| close_bind(&inverse, e)) {
-                bbp[mi] = inverse;
-            }
-        }
-    }
+    let mut import = Import {
+        gltf,
+        options,
+        model,
+        resolved,
+        nodes: &nodes,
+        node_list,
+        parent: parents_of(node_list),
+        world: HashMap::new(),
+        template_world,
+        bbp,
+        by_name: HashMap::new(),
+    };
+    import.read_binds(&exported_binds, &blender_binds)?;
 
     let mut replaced = BTreeSet::new();
     let mut new_wgt = Vec::new();
@@ -1556,249 +1848,43 @@ pub fn import_with(
         let Some(mesh_index) = n.get("mesh") else {
             continue;
         };
-        let nm = frame_name(j, n)?;
-        let id = match resolved[gi] {
+        let name = frame_name(j, n)?;
+        let id = match import.resolved[gi] {
             Some(frame) => MeshId::Frame(frame),
-            None => MeshId::New(nm.clone()),
+            None => MeshId::New(name.clone()),
         };
-        if meshes.is_some_and(|wanted| !wanted.contains(&id)) {
+        if options.meshes.is_some_and(|wanted| !wanted.contains(&id)) {
             continue;
         }
-        let target = match resolved[gi].or_else(|| by_name.get(&nm).copied()) {
-            Some(target) => target,
-            None => {
-                // a new node, under the root
-                let mut node = Node::new(&nm, if model.nodes.is_empty() { -1 } else { 0 });
-                if let Some(&pj) = parent.get(&(gi as i64)) {
-                    if let Some(p) = mds_index_of(&by_name, &Value::from(pj as i64))? {
-                        if !n.get("skin").is_some() {
-                            node.parent = p as i32;
-                        }
-                    }
-                }
-                model.nodes.push(node);
-                let target = model.nodes.len() - 1;
-                by_name.insert(nm.clone(), target);
-                bbp.push(IDENT);
-                target
-            }
-        };
+        let target = import.target_frame(gi, n, &name)?;
         let skin = match n.get("skin") {
-            Some(_) if options.collision => bail!("collision meshes are rigid; mesh {nm} has a skin"),
+            Some(_) if options.collision => bail!("collision meshes are rigid; mesh {name} has a skin"),
             Some(s) => Some(index(item(j, "skins")?, s)?).filter(|s| is_set(s)),
             None => None,
         };
-        let to_local: Mat4;
-        let mut joint_map = Vec::new();
-        // a skinned mesh's positions brought into the bind pose kept (Blender's are in its own)
-        let mut reskin: Option<Vec<Mat4>> = None;
-        if let Some(skin) = skin {
-            if let Some(number) = n.get("skin") {
-                let template_world = model.world_matrices()?;
-                let binds: HashMap<usize, Mat4> = (0..model.nodes.len())
-                    .filter_map(|f| {
-                        let bind = bbp.get(f).filter(|m| mat_inv(m).is_some()).or_else(|| template_world.get(f));
-                        bind.map(|m| (f, *m))
-                    })
-                    .collect();
-                reskin = Some(skin_matrices(gltf, number, &resolved, &binds)?);
-            }
-            // skinned: glTF positions are model space (the mesh node's transform ignored)
-            if mat_inv(&bbp[target]).is_none() {
-                bbp[target] = model.world_matrices()?[target];
-            }
-            to_local = mat_inv(&bbp[target]).unwrap_or(IDENT);
-            let Some(joints) = item(skin, "joints")?.as_array() else {
-                bail!("a skin's joints are not a list");
-            };
-            for g in joints {
-                joint_map.push(mds_index_of(&by_name, g)?);
-            }
-        } else {
-            // rigid: vertices into the frame's own space through the glTF hierarchy
-            let mut frame_world = None;
-            if resolved[gi].is_none() {
-                for (g2, n2) in node_list.iter().enumerate() {
-                    if !n2.get("mesh").is_some() && resolved[g2].is_none() && clean(n2.get("name"))? == nm {
-                        frame_world = Some(world_of(g2 as i64, nodes, &parent, &mut world, 0)?);
-                    }
-                }
-            }
-            let mesh_world = floats(&world_of(gi as i64, nodes, &parent, &mut world, 0)?);
-            to_local = match (rigid_to_local(gi, &resolved, nodes, &parent, &mut world, &template_world)?, frame_world)
-            {
-                (Some(to_local), _) => to_local,
-                (None, Some(fw)) => mat_mul(&mat_inv(&floats(&fw)).unwrap_or(IDENT), &mesh_world),
-                // a mesh no frame stands for (one made in Blender): into the space of the frame
-                // it was added under, keeping where the object was put
-                (None, None) => {
-                    let under = model.nodes[target].parent;
-                    let frame = if under >= 0 { bbp[under as usize] } else { IDENT };
-                    mat_mul(&mat_inv(&frame).unwrap_or(IDENT), &mesh_world)
-                }
-            };
-        }
+        let space = import.mesh_space(gi, n, &name, target, skin)?;
         // Blender writes some meshes' colours without alpha: the fades come from the mesh it
         // replaces, each corner taking the alpha of the nearest vertex there
-        let alphas = original_alphas(model.nodes[target].mdt.as_ref());
-        let mut materials: Vec<Material> = Vec::new();
-        let mut material_of: Vec<(Value, usize)> = Vec::new();
+        let alphas = original_alphas(import.model.nodes[target].mdt.as_ref());
+        let mut materials = MeshMaterials::default();
         let mut prims = Vec::new();
         let mesh = index(mesh_list.ok_or_else(|| missing("meshes"))?, mesh_index)?;
         let Some(primitives) = item(mesh, "primitives")?.as_array() else {
             bail!("a mesh's primitives are not a list");
         };
         for p in primitives {
-            if p.get("mode").map_or(4.0, |m| m.as_f64().unwrap_or(f64::NAN)) != 4.0 {
-                bail!("only triangle primitives are supported");
-            }
-            let attributes = item(p, "attributes")?;
-            let pos = accessor(gltf, item(attributes, "POSITION")?)?;
-            let optional = |name: &str| attributes.get(name).map(|i| accessor(gltf, i)).transpose();
-            // collision keeps positions alone
-            let shaded = |name: &str| if options.collision { Ok(None) } else { optional(name) };
-            let nrm = shaded("NORMAL")?;
-            let uv = shaded("TEXCOORD_0")?;
-            let col = shaded("COLOR_0")?;
-            let (jts, wts) =
-                if skin.is_some() { (optional("JOINTS_0")?, optional("WEIGHTS_0")?) } else { (None, None) };
-            let indices: Vec<Num> = match p.get("indices") {
-                Some(i) => {
-                    let values = accessor(gltf, i)?;
-                    if values.n != 1 {
-                        bail!("a primitive's indices have {} components, not 1", values.n);
-                    }
-                    values.values
-                }
-                None => (0..pos.len() as i64).map(Num::Int).collect(),
-            };
-            let mk = p.get("material").cloned().unwrap_or(Value::Null);
-            let material = match material_of.iter().find(|(k, _)| *k == mk) {
-                Some((_, at)) => *at,
-                None => {
-                    materials.push(if options.collision {
-                        collision_material(j, &mk)?
-                    } else {
-                        material_from_gltf(j, &mk)?
-                    });
-                    material_of.push((mk.clone(), materials.len() - 1));
-                    materials.len() - 1
-                }
-            };
-            let mut corners = Vec::with_capacity(indices.len());
-            for c in &indices {
-                let Num::Int(c) = *c else {
-                    bail!("a primitive's indices are floats");
-                };
-                let point = pos.at(c)?;
-                if point.len() < 3 {
-                    bail!("a vertex position has fewer than 3 numbers");
-                }
-                let point: Vec<f64> = point.iter().map(|v| v.f()).collect();
-                let skinning = match (&reskin, jts.as_ref(), wts.as_ref()) {
-                    (Some(matrices), Some(jts), Some(wts)) if !jts.is_empty() && !wts.is_empty() => {
-                        blend(matrices, jts.at(c)?, wts.at(c)?)
-                    }
-                    _ => IDENT,
-                };
-                let position = xform_point(&to_local, &xform_point(&skinning, &point));
-                let normal = match nrm.as_ref().filter(|v| !v.is_empty()) {
-                    Some(nrm) => {
-                        let v: Vec<f64> = nrm.at(c)?.iter().map(|v| v.f()).collect();
-                        if v.len() < 3 {
-                            bail!("a normal has fewer than 3 numbers");
-                        }
-                        Some(normalize(&xform_dir(&to_local, &xform_dir(&skinning, &v)), Z).to_vec())
-                    }
-                    None => None,
-                };
-                let uv = match uv.as_ref().filter(|v| !v.is_empty()) {
-                    Some(uv) => {
-                        let v = uv.at(c)?;
-                        if v.len() < 2 {
-                            bail!("a texture coordinate has fewer than 2 numbers");
-                        }
-                        Some([v[0].f(), v[1].f()])
-                    }
-                    None => None,
-                };
-                let colour = match col.as_ref().filter(|v| !v.is_empty()) {
-                    Some(col) => {
-                        let mut v: Vec<f64> = col.at(c)?.iter().map(|v| v.f()).collect();
-                        v.push(if col.n == 3 { alphas.near(&position) } else { 1.0 });
-                        v.truncate(4);
-                        if v.len() < 4 {
-                            bail!("a colour has fewer than 4 numbers");
-                        }
-                        Some(v)
-                    }
-                    None => None,
-                };
-                let mut skin_key = None;
-                if let Some(jts) = jts.as_ref().filter(|v| !v.is_empty()) {
-                    let Some(wts) = wts.as_ref() else {
-                        bail!("mesh {nm}: a primitive has JOINTS_0 but no WEIGHTS_0");
-                    };
-                    let mut pairs: Vec<(Num, i64)> = Vec::new();
-                    for (jj, w) in jts.at(c)?.iter().zip(wts.at(c)?) {
-                        let Num::Int(jj) = *jj else {
-                            bail!("a primitive's indices are floats");
-                        };
-                        if w.f() > 0.0 {
-                            if let Some(bone) = *crate::to_gltf::at_index(&joint_map, jj)? {
-                                pairs.push((*w, bone as i64));
-                            }
-                        }
-                    }
-                    pairs.sort_by(|a, b| b.0.f().partial_cmp(&a.0.f()).unwrap().then(b.1.cmp(&a.1)));
-                    pairs.truncate(4);
-                    let total = numeric::sum_nums(pairs.iter().map(|(w, _)| *w));
-                    let total = if total.f() == 0.0 { 1.0 } else { total.f() };
-                    skin_key = Some(
-                        pairs
-                            .iter()
-                            .map(|(w, b)| (*b, KeyFloat(numeric::round_decimal(w.f() / total * 100.0, 4))))
-                            .collect(),
-                    );
-                }
-                corners.push(Corner { position, normal, uv, colour, skin: skin_key });
-            }
-            if !corners.is_empty() {
-                prims.push(Primitive { material, corners });
-            }
+            let mesh = (name.as_str(), &space, skin.is_some());
+            prims.extend(import.corners_of_primitive(p, mesh, &alphas, &mut materials)?);
         }
-        let (t, skins) = build_mdt(&prims, materials);
-        model.nodes[target].mdt = Some(t);
+        let (t, skins) = build_mdt(&prims, materials.materials);
+        import.model.nodes[target].mdt = Some(t);
         replaced.insert(target as i32);
         if skin.is_some() {
-            let mut per_bone: BTreeMap<i64, Vec<(i64, [f64; 4])>> = BTreeMap::new();
-            for (vi, skin) in skins.iter().enumerate() {
-                for (b, w) in skin.iter().flatten() {
-                    per_bone.entry(*b).or_default().push((vi as i64, [w.0, 0.0, 0.0, 0.0]));
-                }
-            }
-            for (b, keys) in per_bone {
-                let Ok(b) = i32::try_from(b) else {
-                    bail!("mesh {nm}: its skin names frame {b}, past what a weight list can name");
-                };
-                new_wgt.push(KeyList::new(target as i32, b, 20, keys));
-            }
+            new_wgt.extend(skin_weights(target, &skins, &name)?);
         }
     }
-    // a rebuilt mesh's weights take the place of its old ones (blocks with keys alone: the empty
-    // blocks the disc's files hold for every bone are skipped by CreateVertexWeight), new meshes'
-    // go at the end
-    let mut wgt: Vec<KeyList> = Vec::with_capacity(old_wgt.len());
-    for list in old_wgt {
-        if !replaced.contains(&list.frame) {
-            wgt.push(list);
-        } else if !wgt.iter().any(|known| known.frame == list.frame) {
-            wgt.extend(new_wgt.iter().filter(|new| new.frame == list.frame).cloned());
-        }
-    }
-    let placed: BTreeSet<i32> = wgt.iter().map(|list| list.frame).collect();
-    wgt.extend(new_wgt.into_iter().filter(|new| !placed.contains(&new.frame)));
-    Ok(Imported { mds: mds::build(&model)?, wgt: mot::build(&wgt)?, bbp: mot::build_bbp(&bbp)? })
+    let wgt = merged_weights(old_wgt, &replaced, new_wgt);
+    Ok(Imported { mds: mds::build(&import.model)?, wgt: mot::build(&wgt)?, bbp: mot::build_bbp(&import.bbp)? })
 }
 
 /// The name import_gltf gives the frame of glTF node `n`: its name, or for a mesh node without one
@@ -1916,7 +2002,7 @@ pub fn new_model(gltf: &mut Gltf, version: u32, root: &str) -> Result<NewModel> 
         .map(|(_, name)| name.clone())
         .collect();
     let skeleton = mds::build(&Mds { version, nodes: frames })?;
-    let built = import_gltf(gltf, &skeleton, None, None, None)?;
+    let built = import_gltf(gltf, &skeleton, &ImportOptions::default())?;
     Ok(NewModel { mds: built.mds, wgt: built.wgt, bbp: built.bbp, skinned })
 }
 

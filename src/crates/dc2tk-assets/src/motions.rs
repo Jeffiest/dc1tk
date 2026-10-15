@@ -742,20 +742,11 @@ fn channel_of(list: &KeyList, model: &Mds) -> Option<Channel> {
     }
 }
 
-/// The pack's motions with the given glTF's animations written in (see the module), or None when
-/// none differs from the export's (`exported`, the pack's own export) and none is gone. `model` is
-/// the pack's model (for a pack of motions alone, the model whose skeleton they play on), `member`
-/// gives the pack's members by name, `rebuilt` the model with the meshes the build rebuilt and
-/// their frames (whose vertex lists are made again for their new vertices).
-pub fn build(
-    exported: &Gltf,
-    given: &Gltf,
-    model: &Mds,
-    member: &dyn Fn(&str) -> Option<Vec<u8>>,
-    info: &[u8],
-    rebuilt: Option<(&Mds, &BTreeSet<usize>)>,
-) -> Result<Option<Rebuilt>> {
-    // the sets the pack holds a .mot of, as the export reads them
+/// An edit of the info.cfg's bytes: the range replaced and what replaces it.
+type Edit = (std::ops::Range<usize>, Vec<u8>);
+
+/// The motion sets the pack holds a .mot of, as the export reads them (set 0's must read).
+fn loaded_sets(info: &[u8], member: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Vec<LoadedSet>> {
     let mut sets: Vec<LoadedSet> = Vec::new();
     for set in motion_sets(info) {
         let zero = info_cfg::same_value(&set.id, &Arg::Int(0));
@@ -775,32 +766,30 @@ pub fn build(
         };
         sets.push(LoadedSet { info: set, member: name, lists });
     }
-    let ids: Vec<String> = sets.iter().map(|set| crate::to_gltf::id_text(&set.info.id)).collect();
-    let primary = crate::to_gltf::primary_set(&sets.iter().map(|set| &set.info.id).collect::<Vec<_>>());
-    let names = TargetNames { ids: &ids, primary };
-    let binds = from_gltf::bind_matrices(exported, model)?;
-    let after_model = rebuilt.map_or(model, |(m, _)| m);
-    let rebuilt_frames: BTreeSet<usize> = rebuilt.map(|(_, frames)| frames.clone()).unwrap_or_default();
-    let before = read(exported, model, &binds, &names)?;
-    let after = read(given, after_model, &binds, &names)?;
-    // the export's animations, in order: each exported set's KEYs
-    let mut exported_keys: Vec<(usize, usize)> = Vec::new();
+    Ok(sets)
+}
+
+/// The sets' animations as the export wrote them, in order: each exported set's KEYs, as (set,
+/// KEY).
+fn exported_keys(sets: &[LoadedSet]) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
     for (s, set) in sets.iter().enumerate() {
         if set.exported() {
-            exported_keys.extend((0..set.info.keys.len()).map(|k| (s, k)));
+            out.extend((0..set.info.keys.len()).map(|k| (s, k)));
         }
     }
-    if before.animations.len() != exported_keys.len() && !before.animations.is_empty() {
-        bail!("the export has {} animations for {} KEY lines", before.animations.len(), exported_keys.len());
-    }
-    let mut seen = BTreeSet::new();
-    for animation in &after.animations {
-        if !seen.insert(animation.name.as_str()) {
-            bail!("two animations are named {}", animation.name);
-        }
-    }
-    // each given animation's set: an exported one's, a copy's ("7:walk.001" of "7:walk"), the set
-    // its name gives ("7:jump"), else the primary set
+    out
+}
+
+/// Each given animation in its set: an exported one's, a copy's ("7:walk.001" of "7:walk"), the
+/// set its name gives ("7:jump"), else the primary set.
+fn given_by_set<'a>(
+    before: &Motions,
+    after: &'a Motions,
+    sets: &[LoadedSet],
+    exported_keys: &[(usize, usize)],
+    names: &TargetNames,
+) -> Result<Vec<Vec<Given<'a>>>> {
     let by_name: HashMap<&str, usize> =
         before.animations.iter().enumerate().map(|(i, e)| (e.name.as_str(), i)).collect();
     let mut given_of: Vec<Vec<Given>> = (0..sets.len()).map(|_| Vec::new()).collect();
@@ -824,13 +813,13 @@ pub fn build(
         let copied = by_name.get(stem.as_str()).and_then(|&i| exported_keys.get(i).map(|&(s, k)| (s, k, i)));
         // the set its name gives (`7:jump`), and the KEY's name in it
         let named = crate::to_gltf::set_of_name(&g.name).and_then(|(id, rest)| {
-            ids.iter().position(|known| *known == id.to_string()).map(|s| (s, rest.to_string()))
+            names.ids.iter().position(|known| *known == id.to_string()).map(|s| (s, rest.to_string()))
         });
         let (s, name) = match (copied, named) {
             (Some((s, _, _)), Some((n, rest))) if n == s => (s, rest),
             (Some((s, _, _)), _) => (s, g.name.clone()),
             (None, Some(found)) => found,
-            (None, None) => (primary, g.name.clone()),
+            (None, None) => (names.primary, g.name.clone()),
         };
         given_of[s].push(Given {
             animation: g,
@@ -840,8 +829,13 @@ pub fn build(
             name,
         });
     }
-    // KEYs whose animations are gone (when the glTF has any): those that animate something
-    let mut gone: Vec<Vec<usize>> = (0..sets.len()).map(|_| Vec::new()).collect();
+    Ok(given_of)
+}
+
+/// The KEYs of each set whose animations are gone (when the glTF has any): those that animate
+/// something.
+fn gone_keys(before: &Motions, after: &Motions, sets: usize, exported_keys: &[(usize, usize)]) -> Vec<Vec<usize>> {
+    let mut gone: Vec<Vec<usize>> = (0..sets).map(|_| Vec::new()).collect();
     if !after.animations.is_empty() {
         for (i, e) in before.animations.iter().enumerate() {
             let animates = !e.curves.is_empty() || !e.morphs.is_empty();
@@ -852,9 +846,95 @@ pub fn build(
             }
         }
     }
+    gone
+}
+
+/// The edits taking out the sound cues and sequence steps that name a KEY taken out (one no set
+/// still has), and a sequence left with no step.
+fn cue_edits(info: &[u8], sets: &[LoadedSet], removed: &[(String, Statement)]) -> Vec<Edit> {
+    let remaining: BTreeSet<String> = sets
+        .iter()
+        .flat_map(|set| set.info.keys.iter())
+        .filter(|key| !removed.iter().any(|(_, statement)| statement.start == key.statement.start))
+        .filter_map(|key| key.statement.args[0].0.as_str().map(str::to_string))
+        .collect();
+    let gone_names: BTreeSet<String> =
+        removed.iter().map(|(name, _)| name.clone()).filter(|name| !remaining.contains(name)).collect();
+    let names_gone = |statement: &Statement| {
+        statement.args.first().and_then(|(value, _)| value.as_str()).is_some_and(|n| gone_names.contains(n))
+    };
+    let mut edits = Vec::new();
+    let statements = info_cfg::statements(info);
+    for (at, statement) in statements.iter().enumerate() {
+        if !(matches!(statement.tag.as_str(), "SE" | "SELP" | "SEQ") && names_gone(statement)) {
+            continue;
+        }
+        edits.push((info_cfg::statement_line(info, statement), Vec::new()));
+        // a sequence left with no step goes too
+        if statement.tag == "SEQ" {
+            let open = statements[..at].iter().rposition(|s| s.tag == "SEQ_START");
+            let close = statements[at..].iter().position(|s| s.tag == "SEQ_END").map(|p| p + at);
+            if let (Some(open), Some(close)) = (open, close) {
+                let steps = &statements[open + 1..close];
+                let left = steps.iter().any(|s| s.tag == "SEQ" && !names_gone(s));
+                if !left && steps.iter().rfind(|s| s.tag == "SEQ").is_some_and(|s| s.start == statement.start) {
+                    edits.push((info_cfg::statement_line(info, &statements[open]), Vec::new()));
+                    edits.push((info_cfg::statement_line(info, &statements[close]), Vec::new()));
+                }
+            }
+        }
+    }
+    edits
+}
+
+/// The info.cfg with the edits made, from the last back (a range taken out twice once).
+fn edited(info: &[u8], mut edits: Vec<Edit>) -> Vec<u8> {
+    edits.sort_by(|a, b| b.0.start.cmp(&a.0.start).then(b.0.end.cmp(&a.0.end)));
+    edits.dedup_by(|a, b| a.0 == b.0 && a.1.is_empty() && b.1.is_empty());
+    let mut out = info.to_vec();
+    for (range, text) in edits {
+        out.splice(range, text);
+    }
+    out
+}
+
+/// The pack's motions with the given glTF's animations written in (see the module), or None when
+/// none differs from the export's (`exported`, the pack's own export) and none is gone. `model` is
+/// the pack's model (for a pack of motions alone, the model whose skeleton they play on), `member`
+/// gives the pack's members by name, `rebuilt` the model with the meshes the build rebuilt and
+/// their frames (whose vertex lists are made again for their new vertices).
+pub fn build(
+    exported: &Gltf,
+    given: &Gltf,
+    model: &Mds,
+    member: &dyn Fn(&str) -> Option<Vec<u8>>,
+    info: &[u8],
+    rebuilt: Option<(&Mds, &BTreeSet<usize>)>,
+) -> Result<Option<Rebuilt>> {
+    let sets = loaded_sets(info, member)?;
+    let ids: Vec<String> = sets.iter().map(|set| crate::to_gltf::id_text(&set.info.id)).collect();
+    let primary = crate::to_gltf::primary_set(&sets.iter().map(|set| &set.info.id).collect::<Vec<_>>());
+    let names = TargetNames { ids: &ids, primary };
+    let binds = from_gltf::bind_matrices(exported, model)?;
+    let after_model = rebuilt.map_or(model, |(m, _)| m);
+    let rebuilt_frames: BTreeSet<usize> = rebuilt.map(|(_, frames)| frames.clone()).unwrap_or_default();
+    let before = read(exported, model, &binds, &names)?;
+    let after = read(given, after_model, &binds, &names)?;
+    let exported_keys = exported_keys(&sets);
+    if before.animations.len() != exported_keys.len() && !before.animations.is_empty() {
+        bail!("the export has {} animations for {} KEY lines", before.animations.len(), exported_keys.len());
+    }
+    let mut seen = BTreeSet::new();
+    for animation in &after.animations {
+        if !seen.insert(animation.name.as_str()) {
+            bail!("two animations are named {}", animation.name);
+        }
+    }
+    let given_of = given_by_set(&before, &after, &sets, &exported_keys, &names)?;
+    let gone = gone_keys(&before, &after, sets.len(), &exported_keys);
     let context = Context { before: &before, after: &after, model, after_model, rebuilt: &rebuilt_frames, info };
     let mut mots = Vec::new();
-    let mut edits: Vec<(std::ops::Range<usize>, Vec<u8>)> = Vec::new();
+    let mut edits: Vec<Edit> = Vec::new();
     let mut changed = Vec::new();
     let mut removed: Vec<(String, Statement)> = Vec::new();
     for (s, set) in sets.iter().enumerate() {
@@ -871,49 +951,12 @@ pub fn build(
     if mots.is_empty() && edits.is_empty() && removed.is_empty() {
         return Ok(None);
     }
-    // sound cues and sequence steps naming a KEY taken out (one no set still has)
-    let remaining: BTreeSet<String> = sets
-        .iter()
-        .flat_map(|set| set.info.keys.iter())
-        .filter(|key| !removed.iter().any(|(_, statement)| statement.start == key.statement.start))
-        .filter_map(|key| key.statement.args[0].0.as_str().map(str::to_string))
-        .collect();
-    let gone_names: BTreeSet<String> =
-        removed.iter().map(|(name, _)| name.clone()).filter(|name| !remaining.contains(name)).collect();
-    let statements = info_cfg::statements(info);
-    for (at, statement) in statements.iter().enumerate() {
-        let names_gone =
-            statement.args.first().and_then(|(value, _)| value.as_str()).is_some_and(|n| gone_names.contains(n));
-        if matches!(statement.tag.as_str(), "SE" | "SELP" | "SEQ") && names_gone {
-            edits.push((info_cfg::statement_line(info, statement), Vec::new()));
-            // a sequence left with no step goes too
-            if statement.tag == "SEQ" {
-                let open = statements[..at].iter().rposition(|s| s.tag == "SEQ_START");
-                let close = statements[at..].iter().position(|s| s.tag == "SEQ_END").map(|p| p + at);
-                if let (Some(open), Some(close)) = (open, close) {
-                    let steps = &statements[open + 1..close];
-                    let left = steps.iter().any(|s| {
-                        s.tag == "SEQ"
-                            && !s.args.first().and_then(|(v, _)| v.as_str()).is_some_and(|n| gone_names.contains(n))
-                    });
-                    if !left && steps.iter().rfind(|s| s.tag == "SEQ").is_some_and(|s| s.start == statement.start) {
-                        edits.push((info_cfg::statement_line(info, &statements[open]), Vec::new()));
-                        edits.push((info_cfg::statement_line(info, &statements[close]), Vec::new()));
-                    }
-                }
-            }
-        }
-    }
+    edits.extend(cue_edits(info, &sets, &removed));
     for (_, statement) in &removed {
         edits.push((info_cfg::statement_line(info, statement), Vec::new()));
     }
-    edits.sort_by(|a, b| b.0.start.cmp(&a.0.start).then(b.0.end.cmp(&a.0.end)));
-    edits.dedup_by(|a, b| a.0 == b.0 && a.1.is_empty() && b.1.is_empty());
-    let mut info_out = info.to_vec();
-    for (range, text) in edits {
-        info_out.splice(range, text);
-    }
-    Ok(Some(Rebuilt { mots, info: info_out, changed, removed: removed.into_iter().map(|(name, _)| name).collect() }))
+    let info = edited(info, edits);
+    Ok(Some(Rebuilt { mots, info, changed, removed: removed.into_iter().map(|(name, _)| name).collect() }))
 }
 
 /// A given animation and what it stands for in its set: the KEY it is the export's of (and that

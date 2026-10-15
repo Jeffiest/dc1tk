@@ -240,7 +240,7 @@ fn import(json: &Value, bin: &[u8], template: &[u8]) {
     let _ = from_gltf::frames_of(&gltf.json, &model);
     let _ = from_gltf::mesh_geometry(&gltf, &model);
     let _ = from_gltf::frame_geometry(&gltf, &model);
-    let _ = from_gltf::import_gltf(&gltf, template, None, None, None);
+    let _ = from_gltf::import_gltf(&gltf, template, &from_gltf::ImportOptions::default());
     let _ = from_gltf::material_textures(&gltf);
     let _ = map_import::subtree(&gltf.json, &[0, 1]);
 }

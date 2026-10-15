@@ -444,7 +444,8 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
         };
         let meshes = changed_meshes(&gltf_path, &exported_folder, template).map_err(wrap)?;
         let given_gltf = load_from_disk(&gltf_path).map_err(wrap)?;
-        let built = from_gltf::import_gltf(&given_gltf, template, pose, weights, Some(&meshes)).map_err(wrap)?;
+        let import = from_gltf::ImportOptions { bbp: pose, wgt: weights, meshes: Some(&meshes), collision: false };
+        let built = from_gltf::import_gltf(&given_gltf, template, &import).map_err(wrap)?;
         // a dict of member to content: a member named twice keeps its place and the last content
         let mut written: Vec<(&str, Vec<u8>)> = Vec::new();
         let rebuilt_model = crate::mds::parse(&built.mds)?;
@@ -524,8 +525,8 @@ pub fn build_map_model(given: &Gltf, original: &[u8], options: &to_gltf::Options
     let before = load_from_folder(&exported, "model.gltf")?;
     // by geometry: a map's glTF goes through Blender, which rewrites unedited meshes another way
     let meshes = from_gltf::changed_geometry(&before, given, &model)?;
-    let import = from_gltf::ImportOptions { collision: options.collision };
-    Ok(from_gltf::import_with(given, original, None, None, Some(&meshes), &import)?.mds)
+    let import = from_gltf::ImportOptions { meshes: Some(&meshes), collision: options.collision, ..Default::default() };
+    Ok(from_gltf::import_gltf(given, original, &import)?.mds)
 }
 
 /// A new map model from meshes made in another tool: every mesh of the glTF becomes a frame under
@@ -535,8 +536,8 @@ pub fn new_map_model(given: &Gltf, stem: &str, options: &to_gltf::Options) -> Re
     let mut model = crate::mds::Mds::new();
     model.nodes.push(crate::mds::Node::new(stem, -1));
     let template = crate::mds::build(&model)?;
-    let import = from_gltf::ImportOptions { collision: options.collision };
-    let built = from_gltf::import_with(given, &template, None, None, None, &import)?.mds;
+    let import = from_gltf::ImportOptions { collision: options.collision, ..Default::default() };
+    let built = from_gltf::import_gltf(given, &template, &import)?.mds;
     if crate::mds::parse(&built)?.nodes.iter().all(|node| node.mdt.is_none()) {
         bail!("no mesh to make the model of");
     }
@@ -1639,8 +1640,8 @@ mod tests {
             }
             let pose = names.pose.as_str().and_then(|name| source.get(name));
             let weights = source.get(&names.weights).filter(|w| !w.is_empty());
-            let built = from_gltf::import_gltf(&moved, template, pose, weights, Some(&changed))
-                .map_err(|e| fail(e.to_string()))?;
+            let import = from_gltf::ImportOptions { bbp: pose, wgt: weights, meshes: Some(&changed), collision: false };
+            let built = from_gltf::import_gltf(&moved, template, &import).map_err(|e| fail(e.to_string()))?;
             let MeshId::Frame(frame) = id else {
                 return Err(fail(format!("{node_name} stands for no frame")));
             };
