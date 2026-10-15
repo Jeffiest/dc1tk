@@ -1,8 +1,11 @@
 //! A character or pack info.cfg read as the engine's CScriptInterpreter reads it: Shift-JIS text,
-//! comments blanked, statements `TAG arg, arg, ...;`, an argument a quoted string, a float when it
-//! has a '.', otherwise an int.
+//! comments blanked, statements `TAG arg, arg, ...;`, an argument a quoted string, else a number
+//! by GetArg's rules (cfg_text::number: a float when it has a '.', an int of digits and '-', none
+//! otherwise). A float keeps its text's own value, not the f32 the engine makes of it.
 
 use dc2tk_disc::text;
+
+use crate::cfg_text::Number;
 
 /// The characters of cp932 text, each with the offset of its first byte, decoded as
 /// `text::decode_lossy` decodes.
@@ -90,8 +93,8 @@ impl Arg {
     }
 }
 
-/// An argument's value. The game's files write numbers plainly (an optional sign, digits, and for
-/// a float a point), which is what str::parse reads.
+/// An argument's value: a quoted string, else the number GetArg reads (an int wrapping as the
+/// engine's 32-bit int does), Null for text that is no number.
 fn value(arg: &str) -> Arg {
     let a = arg.trim();
     let chars: Vec<char> = a.chars().collect();
@@ -99,10 +102,11 @@ fn value(arg: &str) -> Arg {
         let inner: String = chars[1..chars.len() - 1].iter().collect();
         return Arg::Str(inner.replace("\\\"", "\""));
     }
-    if a.contains('.') {
-        return a.parse().map_or(Arg::Null, Arg::Float);
+    match crate::cfg_text::number(a.as_bytes()) {
+        Some(Number::Int(value)) => Arg::Int(value as i64),
+        Some(Number::Float(value)) => Arg::Float(value),
+        None => Arg::Null,
     }
-    a.parse().map_or(Arg::Null, Arg::Int)
 }
 
 /// A statement with where its parts are in the file's bytes.
@@ -344,12 +348,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn numbers_read_by_the_engines_rules() {
+        assert_eq!(value(" 12 "), Arg::Int(12));
+        assert_eq!(value("-1.25"), Arg::Float(-1.25));
+        // the text up to a space, as atoi reads it; anything but digits, '-' and '.' is no number
+        assert_eq!(value("12 34"), Arg::Int(12));
+        assert_eq!(value("+5"), Arg::Null);
+        assert_eq!(value("1_000"), Arg::Null);
+        assert_eq!(value("4294967297"), Arg::Int(1));
+        assert_eq!(value("0.1"), Arg::Float(0.1));
+        assert_eq!(value("\"a\\\"b\""), Arg::Str("a\"b".to_string()));
+    }
+
+    #[test]
     fn statements_parse_as_the_engine_reads_them() {
         let text = b"v2;\n// comment\nMODEL \"c.mds\";\nMOTION 0, \"a.mot\", \"a.bbp\", \"a.wgt\";\n/* x */KEY \"walk\", 0, 10, 1.0;\nSCALE +5, x;";
         let statements = parse(text);
         let tags: Vec<&str> = statements.iter().map(|(t, _)| t.as_str()).collect();
         assert_eq!(tags, ["v2", "MODEL", "MOTION", "KEY", "SCALE"]);
-        assert!(matches!(statements[4].1[..], [Arg::Int(5), Arg::Null]));
+        // GetArg reads a '+' as no number, as it does any letter
+        assert!(matches!(statements[4].1[..], [Arg::Null, Arg::Null]));
         let info = CharInfo::new(&statements);
         assert_eq!(info.model.as_ref().and_then(Arg::as_str), Some("c.mds"));
         let motion = info.motion0().unwrap();

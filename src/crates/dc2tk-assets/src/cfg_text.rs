@@ -247,22 +247,40 @@ impl Piece {
             }
             return Arg::Str(out);
         }
-        // the text up to the first space; a quote at either end alone is part of it
-        let word: &[u8] = &text[..text.iter().position(|&byte| is_space(byte)).unwrap_or(text.len())];
-        let word = word.strip_suffix(b"\"").unwrap_or(word);
-        if word.is_empty() || word.iter().any(|&byte| byte != b'-' && byte != b'.' && !byte.is_ascii_digit()) {
-            return Arg::Invalid;
+        match number(text) {
+            Some(Number::Int(value)) => Arg::Int(value),
+            Some(Number::Float(value)) => Arg::Float(value as f32),
+            None => Arg::Invalid,
         }
-        if word.contains(&b'.') {
-            return Arg::Float(atof(word));
-        }
-        Arg::Int(atoi(word))
     }
 
     /// The piece with its text replaced and its spaces kept.
     pub fn with_text(&self, text: Vec<u8>) -> Piece {
         Piece { before: self.before.clone(), text, after: self.after.clone() }
     }
+}
+
+/// A number as GetArg reads one from an argument's text (its spaces around it left out).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Number {
+    Int(i32),
+    /// atof's value, before the f32 the engine keeps of it.
+    Float(f64),
+}
+
+/// The number an argument's text is to the engine: its text up to the first space (a quote at
+/// either end alone is part of it), a float when it has a `.`, an int when it is digits and `-`,
+/// and None when it has anything else or is empty (read as 0).
+pub(crate) fn number(text: &[u8]) -> Option<Number> {
+    let word: &[u8] = &text[..text.iter().position(|&byte| is_space(byte)).unwrap_or(text.len())];
+    let word = word.strip_suffix(b"\"").unwrap_or(word);
+    if word.is_empty() || word.iter().any(|&byte| byte != b'-' && byte != b'.' && !byte.is_ascii_digit()) {
+        return None;
+    }
+    if word.contains(&b'.') {
+        return Some(Number::Float(atof(word)));
+    }
+    Some(Number::Int(atoi(word)))
 }
 
 /// C's atoi over digits and '-': an optional sign, then digits up to the first other byte,
@@ -284,12 +302,12 @@ fn atoi(word: &[u8]) -> i32 {
 }
 
 /// C's atof over digits, '-' and '.': the longest prefix that is a number.
-fn atof(word: &[u8]) -> f32 {
+fn atof(word: &[u8]) -> f64 {
     let text = String::from_utf8_lossy(word);
     let mut end = text.len();
     while end > 0 {
         if let Ok(value) = text[..end].parse::<f64>() {
-            return value as f32;
+            return value;
         }
         end -= 1;
     }
