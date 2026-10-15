@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::font;
 use crate::tree::{self, Place};
-use crate::{bail, Error, Result};
+use crate::{bail, Context, Error, Result};
 
 /// The English font's table: the Shift-JIS code of each glyph, in glyph order (LoadFontTblBin,
 /// font.cpp). The menus' English glyphs follow it.
@@ -887,7 +887,7 @@ pub fn changed_letters(text: &str, reference: &[u8], path: &str, fonts: &Fonts) 
         if encode(&body, &exported).is_ok_and(|codes| reference.get(id) == Some(&codes[..])) {
             continue;
         }
-        out.extend(fonts.english_letters(&body).map_err(|error| Error::invalid(format!("@{id}: {error}")))?);
+        out.extend(fonts.english_letters(&body).with_context(|| format!("@{id}"))?);
     }
     Ok(out)
 }
@@ -937,8 +937,7 @@ pub fn build(text: &str, template: &[u8], reference: &[u8], path: &str, fonts: &
     let mut changed = false;
     for (id, body) in parse_text(text)? {
         let keep = |codes: &[u16]| reference.get(id) == Some(codes) || mes.get(id) == Some(codes);
-        let Some(codes) = changed_codes(&body, &font, exported.as_ref(), keep)
-            .map_err(|error| Error::invalid(format!("@{id}: {error}")))?
+        let Some(codes) = changed_codes(&body, &font, exported.as_ref(), keep).with_context(|| format!("@{id}"))?
         else {
             continue;
         };
@@ -1028,7 +1027,7 @@ pub fn width_warnings(text: &str, reference: &[u8], path: &str, fonts: &Fonts) -
     for (id, body) in parse_text(text)? {
         let own = reference.get(id);
         let Some(codes) = changed_codes(&body, &font, exported.as_ref(), |codes| own == Some(codes))
-            .map_err(|error| Error::invalid(format!("@{id}: {error}")))?
+            .with_context(|| format!("@{id}"))?
         else {
             continue;
         };

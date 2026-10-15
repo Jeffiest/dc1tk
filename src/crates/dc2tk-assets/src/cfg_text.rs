@@ -381,7 +381,7 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
         if let To::Insert(_) = edit.to {
             match records.get(&(edit.file, edit.what.as_str())) {
                 Some(other) if other.to != edit.to || other.statement != edit.statement => {
-                    bail!("{} is given two ways, by mod {} and mod {}", edit.what, other.module, edit.module)
+                    return Err(crate::given_two_ways(&edit.what, &other.module, &edit.module));
                 }
                 Some(_) => {}
                 None => {
@@ -408,7 +408,7 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
         };
         if let Some(other) = done.get(&(edit.file, edit.statement, slot)) {
             if other.to != edit.to || other.arg != edit.arg {
-                bail!("{} is given two values, by mod {} and mod {}", edit.what, other.module, edit.module);
+                return Err(crate::given_two_ways(&edit.what, &other.module, &edit.module));
             }
             continue;
         }

@@ -516,14 +516,13 @@ impl Layouts {
         for change in changes {
             let key = (change.layout, change.room, change.field.name());
             match wanted.get(&key) {
-                Some(known) if known.field != change.field => bail!(
-                    "{} and {} give {} different values ({}; {})",
-                    known.module,
-                    change.module,
-                    LAYOUTS[change.layout],
-                    known.what,
-                    change.what
-                ),
+                Some(known) if known.field != change.field => {
+                    let what = match change.room {
+                        Some(room) => format!("{} room {room} {}", LAYOUTS[change.layout], change.field.name()),
+                        None => format!("{} {}", LAYOUTS[change.layout], change.field.name()),
+                    };
+                    return Err(crate::given_two_ways(what, &known.module, &change.module));
+                }
                 Some(_) => {}
                 None => {
                     wanted.insert(key, change);
@@ -714,7 +713,7 @@ mod tests {
             .changes(&json!({"layouts": [{"layout": "d01f01", "rooms": [{"room": 0, "rate": 2}]}]}), "b")
             .unwrap();
         let error = layouts.apply(&[one.clone(), two].concat()).unwrap_err().to_string();
-        assert!(error.contains("a and b"), "{error}");
+        assert_eq!(error, "d01f01 room 0 rate is given two ways, by mod a and mod b");
         assert!(layouts.apply(&[one.clone(), one].concat()).is_ok());
         for wrong in [
             json!({"layouts": [{"layout": "d01f01", "rooms": [{"room": 0, "cells": ["way00 way01", "way00"]}]}]}),

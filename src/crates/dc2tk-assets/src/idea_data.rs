@@ -27,7 +27,7 @@ use serde_json::{Map, Value};
 
 use crate::cfg_text::{self, Arg, Edit, Script, To};
 use crate::lang::{self, LANGUAGE_NAMES};
-use crate::{bail, Result};
+use crate::{bail, Context, Result};
 
 /// Every copy, the one in `menu/` (Japanese, read by nothing) first.
 pub fn paths() -> Vec<String> {
@@ -196,8 +196,7 @@ impl Ideas {
         let mut entries = Vec::new();
         let mut counts = Vec::new();
         for (file, data) in files.iter().enumerate() {
-            let script =
-                Script::parse(data).map_err(|error| crate::Error::invalid(format!("{}: {error}", names[file])))?;
+            let script = Script::parse(data).context(&names[file])?;
             let Some(count) = script.statements.iter().position(|statement| statement.tag == "PIC_INFO") else {
                 bail!("{} has no PIC_INFO", names[file]);
             };
@@ -258,8 +257,7 @@ impl Ideas {
     pub fn changes_all(&self, lists: &[(String, Value)]) -> Result<Vec<Edit>> {
         let mut given: BTreeMap<i64, Given> = BTreeMap::new();
         for (module, list) in lists {
-            self.given(list, module, &mut given)
-                .map_err(|error| crate::Error::invalid(format!("mod {module}: {error}")))?;
+            self.given(list, module, &mut given).with_context(|| format!("mod {module}"))?;
         }
         let mut edits = Vec::new();
         for (file, entries) in self.entries.iter().enumerate() {
@@ -334,10 +332,10 @@ impl Ideas {
             let known = out.entry(id).or_default();
             for (language, text) in names {
                 match known.name.get(&language) {
-                    Some((other, by)) if *other != text => bail!(
-                        "{label}: its {} name is given two ways, by mod {by} and mod {module}",
-                        LANGUAGE_NAMES[language]
-                    ),
+                    Some((other, by)) if *other != text => {
+                        let what = format!("{label}: its {} name", LANGUAGE_NAMES[language]);
+                        return Err(crate::given_two_ways(what, by, module));
+                    }
                     Some(_) => {}
                     None => {
                         known.name.insert(language, (text, module.to_string()));
@@ -346,10 +344,10 @@ impl Ideas {
             }
             for (language, sort) in sorts {
                 match known.sort.get(&language) {
-                    Some((other, by)) if *other != sort => bail!(
-                        "{label}: its {} sort is given two ways, by mod {by} and mod {module}",
-                        LANGUAGE_NAMES[language]
-                    ),
+                    Some((other, by)) if *other != sort => {
+                        let what = format!("{label}: its {} sort", LANGUAGE_NAMES[language]);
+                        return Err(crate::given_two_ways(what, by, module));
+                    }
                     Some(_) => {}
                     None => {
                         known.sort.insert(language, (sort, module.to_string()));

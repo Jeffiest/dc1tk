@@ -30,7 +30,7 @@ use dc2tk_disc::extract::{MAX_PACK_DEPTH, PACK_SUFFIX};
 use dc2tk_disc::{archive, rebuild};
 
 use crate::soundbank::{self, Bank, EntryKind};
-use crate::{im3, models, text, Error, Result};
+use crate::{im3, models, text, Context, Error, Result};
 
 pub const MANIFEST: &str = "manifest.json";
 /// The manifest's layout; changes when a reader of an older one would misread it.
@@ -1307,7 +1307,7 @@ pub fn gltf_buffer(path: &std::path::Path, gltf: &[u8]) -> Result<Vec<u8>> {
         )));
     }
     let file = path.parent().unwrap_or(std::path::Path::new(".")).join(uri_decoded(uri));
-    std::fs::read(&file).map_err(|error| Error::invalid(format!("{}: {error}", file.display())))
+    std::fs::read(&file).with_context(|| file.display().to_string())
 }
 
 /// A uri's path with its %XX escapes decoded.

@@ -12,7 +12,7 @@ use serde_json::Value;
 use dc2tk_disc::rebuild;
 
 use crate::tree::{self, DiscFile, FileKind, Place};
-use crate::{im3, sounds, text, Error, Result};
+use crate::{im3, sounds, text, Context, Error, Result};
 
 /// What a check found.
 #[derive(Debug, Default)]
@@ -39,7 +39,7 @@ fn kind_name(kind: FileKind) -> &'static str {
 }
 
 fn read(root: &Path, path: &str) -> Result<Vec<u8>> {
-    std::fs::read(root.join(path)).map_err(|error| Error::invalid(format!("{path}: {error}")))
+    std::fs::read(root.join(path)).context(path)
 }
 
 /// The bytes at a place, as a build reads them: the first disc file of the path, then members by
@@ -69,8 +69,7 @@ fn first_file<'a>(asset: &'a Value, suffix: &str) -> Option<&'a str> {
 /// Checks the tree at `root` against the disc's files; `temp` is a scratch folder for the models'
 /// builds (removed afterwards).
 pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
-    let manifest: Value = serde_json::from_slice(&read(root, tree::MANIFEST)?)
-        .map_err(|error| Error::invalid(format!("{}: {error}", tree::MANIFEST)))?;
+    let manifest: Value = serde_json::from_slice(&read(root, tree::MANIFEST)?).context(tree::MANIFEST)?;
     let mut tops: HashMap<&str, &[u8]> = HashMap::new();
     for file in disc {
         tops.entry(file.path.as_str()).or_insert(file.data);

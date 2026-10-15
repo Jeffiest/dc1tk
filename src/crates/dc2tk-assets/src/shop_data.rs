@@ -87,14 +87,10 @@ impl Shops {
         for (name, data) in wanted.iter().zip(files) {
             scripts.push(Script::parse(data).context(name)?);
         }
-        let mut shown = BTreeMap::new();
-        if let Some(names) = names {
-            for statement in Script::parse(names)?.statements.iter().filter(|statement| statement.tag == "MES_SYS") {
-                if let [number, Arg::Str(text)] = &statement.values()[..] {
-                    shown.insert(number.int(), dc2tk_disc::text::decode_lossy(text));
-                }
-            }
-        }
+        let shown = match names {
+            Some(names) => crate::item_data::item_names(names)?,
+            None => BTreeMap::new(),
+        };
         let prices = keyed(&scripts, "PRICE");
         let shops = keyed(&scripts, "SHOP");
         Ok(Shops { scripts, prices, shops, names: shown })

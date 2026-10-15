@@ -143,6 +143,12 @@ impl Change {
             Field::Floor(floor, _) => (self.dungeon, "floor", *floor),
         }
     }
+
+    /// The group or floor changed, for messages: `dungeon 0 group 13`.
+    fn name(&self) -> String {
+        let (dungeon, kind, number) = self.key();
+        format!("dungeon {dungeon} {kind} {number}")
+    }
 }
 
 /// The chest scripts of [`paths`].
@@ -282,13 +288,7 @@ impl Chests {
         for change in changes {
             match wanted.get(&change.key()) {
                 Some(known) if known.field != change.field => {
-                    bail!(
-                        "{} and {} give different contents ({}; {})",
-                        known.module,
-                        change.module,
-                        known.what,
-                        change.what
-                    )
+                    return Err(crate::given_two_ways(change.name(), &known.module, &change.module));
                 }
                 Some(_) => {}
                 None => {
@@ -476,7 +476,8 @@ mod tests {
         let other = json!({"chests": [{"dungeon": 0, "groups": [{"group": 13, "items": [{"item": 6, "rank": 1, "count": 1}]}]}]});
         let mut both = chests.changes(&edit, "a").unwrap();
         both.extend(chests.changes(&other, "b").unwrap());
-        assert!(chests.apply(&both).unwrap_err().to_string().contains("a and b"));
+        let error = chests.apply(&both).unwrap_err().to_string();
+        assert_eq!(error, "dungeon 0 group 13 is given two ways, by mod a and mod b");
     }
 
     #[test]

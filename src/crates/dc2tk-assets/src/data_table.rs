@@ -24,7 +24,7 @@ use serde_json::{Map, Value};
 
 use crate::cfg_text::{self, Arg, Edit, Script, To};
 use crate::elf::Patch;
-use crate::{bail, Result};
+use crate::{bail, Context, Result};
 
 /// What a value is and the values the engine's field takes.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -529,7 +529,7 @@ impl Table {
         let mut added: Vec<Vec<Added>> = vec![Vec::new(); self.sections.len()];
         for (module, table) in tables {
             self.changes_of(table, module, &mut edits, &mut patches, &mut added)
-                .map_err(|error| crate::Error::invalid(format!("mod {module}: {error}")))?;
+                .with_context(|| format!("mod {module}"))?;
         }
         for (number, records) in added.iter().enumerate() {
             if !records.is_empty() {
@@ -593,10 +593,11 @@ impl Table {
                     let values: Vec<Value> = wanted.into_iter().cloned().collect();
                     match added[number].iter().find(|known| known.keys == values) {
                         Some(known) if known.given != given => {
-                            bail!(
-                                "{key}: new record {keys} is given two ways, by mod {} and mod {module}",
-                                known.module
-                            )
+                            return Err(crate::given_two_ways(
+                                format!("{key}: new record {keys}"),
+                                known.module,
+                                module,
+                            ));
                         }
                         Some(_) => {}
                         None => added[number].push(Added { keys: values, module, given }),
@@ -1157,11 +1158,7 @@ pub fn parse_all(names: &[String], files: &[Vec<u8>]) -> Result<Vec<Script>> {
     if names.len() != files.len() {
         bail!("{} files given for {}", files.len(), names.len());
     }
-    names
-        .iter()
-        .zip(files)
-        .map(|(name, data)| Script::parse(data).map_err(|error| crate::Error::invalid(format!("{name}: {error}"))))
-        .collect()
+    names.iter().zip(files).map(|(name, data)| Script::parse(data).context(name)).collect()
 }
 
 #[cfg(test)]

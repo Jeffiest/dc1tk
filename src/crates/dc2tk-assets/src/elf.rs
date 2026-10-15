@@ -53,7 +53,7 @@ pub fn apply_patches(elf: &[u8], patches: &[Patch]) -> Result<Vec<u8>> {
     for patch in patches {
         if let Some(other) = done.get(&patch.offset) {
             if other.bytes != patch.bytes {
-                bail!("{} is given two values, by mod {} and mod {}", patch.what, other.module, patch.module);
+                return Err(crate::given_two_ways(&patch.what, &other.module, &patch.module));
             }
             continue;
         }
