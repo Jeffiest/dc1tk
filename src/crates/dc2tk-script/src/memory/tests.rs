@@ -176,37 +176,41 @@ fn an_img_file_spills_but_enters_as_one_block() {
 }
 
 #[test]
-fn map_entries_take_the_first_listing_of_a_map() {
+fn map_entries_read_the_game_tables_as_the_engine_loads_them() {
     let row = |code: &str, kind: i64, number: usize| format!("MAP_NAME \"{code}\",\"\",\"\",{kind},1;// {number}\r\n");
-    let mut old = String::from("MAP_NAME_NUM 16;\r\n");
-    for number in 0..11 {
-        old += &row("", 0, number);
+    // the game's table: Palm Brinks (10) and its parts (11 to 14) by number, the others by type
+    let mut game = String::from("MAP_NAME_NUM 18;\r\n");
+    for number in 0..10 {
+        game += &row("", 0, number);
     }
-    old += &row("m02", 3, 11);
-    for number in 12..15 {
-        old += &row("", 0, number);
+    for (number, code) in ["m01", "m02", "m03", "m04", "m05"].into_iter().enumerate() {
+        game += &row(code, 3, 10 + number);
     }
-    old += &row("s19", 3, 15);
-    let game = format!(
-        "MAP_NAME_NUM 3;\r\n{}{}// {}{}",
-        row("s19", 8, 0),
-        row("m02", 3, 1),
-        row("x01", 7, 2),
-        row("s51", 7, 2)
-    );
+    game += &row("s19", 8, 15);
+    game += &format!("// {}", row("x01", 7, 16));
+    game += &row("a02ia", 2, 16);
+    game += &row("s51", 7, 17);
+    // ignored: map.cfg, which the game never reads, and a later language's second listing of s51
+    let old = format!("MAP_NAME_NUM 1;\r\n{}", row("s19", 3, 0));
+    let other = format!("MAP_NAME_NUM 2;\r\n{}{}", row("S51", 4, 0), row("i03h02", 4, 1));
     let disc = Files(BTreeMap::from([
         ("map/map.cfg".to_string(), old.into_bytes()),
         ("map/map1.cfg".to_string(), game.into_bytes()),
+        ("map/map2.cfg".to_string(), other.into_bytes()),
     ]));
     let kinds: Vec<(String, MapKind)> = map_entries(&disc).into_iter().map(|entry| (entry.name, entry.kind)).collect();
-    assert_eq!(
-        kinds,
-        [
-            ("m02".to_string(), MapKind::Interior),
-            ("s19".to_string(), MapKind::Town),
-            ("s51".to_string(), MapKind::Dungeon)
-        ]
-    );
+    let expected = [
+        ("m01", MapKind::Town),
+        ("m02", MapKind::Interior),
+        ("m03", MapKind::Interior),
+        ("m04", MapKind::Interior),
+        ("m05", MapKind::Interior),
+        ("s19", MapKind::Dungeon),
+        ("a02ia", MapKind::Interior),
+        ("s51", MapKind::Dungeon),
+        ("i03h02", MapKind::Interior),
+    ];
+    assert_eq!(kinds, expected.map(|(name, kind)| (name.to_string(), kind)));
 }
 
 #[test]

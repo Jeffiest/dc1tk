@@ -61,7 +61,7 @@ pub const TOWN_PARTY_STACKS: [u64; 7] = [75000, 40000, 7000, 4650, 3000, 9900, 0
 /// Largest estimated use on the retail disc of each estimated budget, measured by the corpus test
 /// `corpus_retail_fits_the_budgets` (which fails when one of these no longer matches the disc).
 pub const RETAIL_TOWN_MAP: u64 = 9_471_152;
-pub const RETAIL_INTERIOR_MAP: u64 = 4_079_968;
+pub const RETAIL_INTERIOR_MAP: u64 = 3_752_880;
 pub const RETAIL_DUNGEON_MAP: u64 = 6_911_504;
 
 mod chara;

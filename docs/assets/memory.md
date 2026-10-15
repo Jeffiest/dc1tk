@@ -131,7 +131,11 @@ counted the way the engine allocates it, from the files:
   a collision type (`CMapParts::Copy`, mapparts.cpp:803: 0xD0 a piece and its material table).
 
 Left out: the `.map`'s settings, the `.cfg`, the effect scripts and function points, all small.
-Largest on the disc: town g01 9,471,152 bytes, interior i02h01 4,079,968, dungeon d02f01
+How a map loads comes from its row of the game's map table (`map<language>.cfg`; the disc's
+older `map/map.cfg`, which nothing reads, gives some maps other types): types 7 and 8 in the
+dungeon loop, the interiors (types 2, 4 and 6) and Palm Brinks' parts m02 to m05 (maps 11 to
+14, which `EditMapJump`, editloop.cpp:2735, loads over m01) as sub maps, the rest as the main map.
+Largest on the disc: town g01 9,471,152 bytes, interior i04h01a 3,752,880, dungeon d02f01
 6,911,504. A map larger than the largest of its kind may still fit; how much its scene leaves
 is not known (section 1).
 

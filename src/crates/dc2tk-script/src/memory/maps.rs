@@ -13,7 +13,23 @@ pub enum MapKind {
     Dungeon,
 }
 
+/// The map numbers EditMapJump (editloop.cpp:2735) loads as a sub map over Palm Brinks (m01,
+/// map 10): `map_no > 0xA && map_no < 0xF`, the town's four parts m02 to m05.
+pub const PALM_BRINKS_PARTS: std::ops::RangeInclusive<i64> = 11..=14;
+
 impl MapKind {
+    /// How the engine loads a row of its map table: types 7 and 8 in the dungeon loop; the
+    /// interiors (MapType in mapselect.hpp: 2 a Georama town's, 4, 6 a future map's) and Palm
+    /// Brinks' parts as sub maps (LoadSubMap); every other map as the main map (EditMapJump).
+    pub fn of_row(row: &crate::maptable::Row) -> MapKind {
+        match row.kind {
+            7 | 8 => MapKind::Dungeon,
+            2 | 4 | 6 => MapKind::Interior,
+            _ if PALM_BRINKS_PARTS.contains(&row.number) => MapKind::Interior,
+            _ => MapKind::Town,
+        }
+    }
+
     pub(super) fn placements(self) -> usize {
         match self {
             MapKind::Dungeon => DUNGEON_PLACEMENTS,
@@ -57,34 +73,19 @@ pub struct MapEntry {
     pub kind: MapKind,
 }
 
-/// The older map table, which the game never reads (LoadMapName reads map<language>.cfg).
-const OLD_MAP_TABLE: &str = "map/map.cfg";
-
-/// The maps of the disc's map tables, first listing of each name wins: the older map/map.cfg
-/// first, then the languages' (which list the maps alike). Types 7 and 8 load in the dungeon
-/// loop; 4 and 6 (interiors) and the four parts of Palm Brinks after m01 (rows 11 to 14 of
-/// map.cfg, EditMapJump) load as sub maps.
-///
-/// map.cfg's types and add maps differ from the game's tables for some maps: s19 is a town there
-/// and a dungeon in the game's (which loads it with load_dungeon_map), i03h02 an interior there
-/// and a town in the game's. The retail budgets above (RETAIL_INTERIOR_MAP) were measured with
-/// map.cfg's kinds; which table tells how each map really loads is not settled.
+/// The maps of the game's map tables (map<language>.cfg, which LoadMapName reads; the languages'
+/// list the maps alike), first listing of each name wins. The disc's older map/map.cfg is not
+/// read: the game never does, and its types differ from the game's for some maps (s19 a town
+/// there, i03h02 an interior).
 pub fn map_entries(disc: &dyn Disc) -> Vec<MapEntry> {
-    let tables = std::iter::once(OLD_MAP_TABLE.to_string())
-        .chain(crate::maptable::LANGUAGES.map(|language| crate::startat::map_table_path(Some(language))));
     let mut out: Vec<MapEntry> = Vec::new();
-    for table in tables {
-        let Some(data) = disc.read(&table) else { continue };
+    for language in crate::maptable::LANGUAGES {
+        let Some(data) = disc.read(&crate::startat::map_table_path(Some(language))) else { continue };
         for row in crate::maptable::rows(&data) {
             if row.code.is_empty() || out.iter().any(|entry| entry.name.eq_ignore_ascii_case(&row.code)) {
                 continue;
             }
-            let kind = match row.kind {
-                7 | 8 => MapKind::Dungeon,
-                4 | 6 => MapKind::Interior,
-                _ if (11..=14).contains(&row.number) && table == OLD_MAP_TABLE => MapKind::Interior,
-                _ => MapKind::Town,
-            };
+            let kind = MapKind::of_row(&row);
             out.push(MapEntry { name: row.code, add: row.add, kind });
         }
     }
