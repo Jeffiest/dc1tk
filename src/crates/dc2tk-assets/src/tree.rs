@@ -659,7 +659,7 @@ pub(crate) fn entry_sounds(data: &[u8]) -> Option<Vec<String>> {
             _ => None,
         };
         if let (Some(ext), Some(at)) = (ext, entry.seq_index) {
-            let member = *bank.pack.find(ext).get(at)?;
+            let member = *crate::soundbank::find(&bank.pack, ext).get(at)?;
             parts.push(bank.pack.members[member].data.clone());
         }
         for voice in bank.voices(&entry).ok()? {

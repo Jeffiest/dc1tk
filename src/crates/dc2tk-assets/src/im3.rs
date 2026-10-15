@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 
+use crate::bytes::{clamped, i32_at, u16_at, u32_at, u64_at};
 use crate::{bail, Error, Result};
 
 pub const IM3_ENTRY: usize = 0x40;
@@ -270,37 +271,6 @@ fn lookup(indices: &[u8], palette: &[[u8; 4]], fill: [u8; 4]) -> Result<Vec<u8>>
     Ok(out)
 }
 
-fn u16_at(data: &[u8], at: usize) -> Result<u16> {
-    match data.get(at..at + 2) {
-        Some(b) => Ok(u16::from_le_bytes([b[0], b[1]])),
-        None => bail!("the data is shorter than the {} bytes read here", at + 2),
-    }
-}
-
-fn u32_at(data: &[u8], at: usize) -> Result<u32> {
-    match data.get(at..at + 4) {
-        Some(b) => Ok(u32::from_le_bytes(b.try_into().unwrap())),
-        None => bail!("the data is shorter than the {} bytes read here", at + 4),
-    }
-}
-
-fn i32_at(data: &[u8], at: usize) -> Result<i32> {
-    Ok(u32_at(data, at)? as i32)
-}
-
-fn u64_at(data: &[u8], at: usize) -> Result<u64> {
-    match data.get(at..at + 8) {
-        Some(b) => Ok(u64::from_le_bytes(b.try_into().unwrap())),
-        None => bail!("the data is shorter than the {} bytes read here", at + 8),
-    }
-}
-
-/// data[start..end], each end clamped to the data (an end past it, or before start, makes the slice shorter or empty).
-fn slice(data: &[u8], start: usize, end: usize) -> &[u8] {
-    let start = start.min(data.len());
-    &data[start..end.clamp(start, data.len())]
-}
-
 /// Writes the bytes at `at`, which must fit in the buffer.
 fn put(buffer: &mut [u8], at: usize, bytes: &[u8]) -> Result<()> {
     match buffer.get_mut(at..at + bytes.len()) {
@@ -351,8 +321,8 @@ fn parse_archive(data: &[u8]) -> Result<(Option<Kind>, Vec<Entry>)> {
     let mut entries = Vec::new();
     for i in 0..count as usize {
         let pos = 0x10 + stride * i;
-        let raw = slice(data, pos, pos + stride).to_vec();
-        let field = slice(&raw, 0, 0x20);
+        let raw = clamped(data, pos, pos + stride).to_vec();
+        let field = clamped(&raw, 0, 0x20);
         let name = field.split(|&b| b == 0).next().unwrap_or_default().to_vec();
         let mut entry = Entry {
             index: i,
@@ -400,13 +370,13 @@ fn tim2_start(data: &[u8], offset: i32) -> Result<usize> {
 /// when the IM3 entry says no_image).
 fn tim2_extent(data: &[u8], offset: i32, no_image: bool) -> Result<usize> {
     let off = tim2_start(data, offset)?;
-    if slice(data, off, off + 4) != b"TIM2" {
+    if clamped(data, off, off + 4) != b"TIM2" {
         bail!("no TIM2 at 0x{:x}", off);
     }
     let pictures = u16_at(data, off + 6)?;
-    let q = off + 16;
+    let q = off + TIM2_FILE_HEADER;
     if no_image {
-        return Ok(16 + u16_at(data, q + 12)? as usize);
+        return Ok(TIM2_FILE_HEADER + u16_at(data, q + 12)? as usize);
     }
     let mut end = q;
     for _ in 0..pictures.max(1) {
@@ -418,23 +388,28 @@ fn tim2_extent(data: &[u8], offset: i32, no_image: bool) -> Result<usize> {
     Ok(end - off)
 }
 
-/// The picture header fields of a TIM2 (at 16).
+/// The TIM2 file header ("TIM2", version, alignment, picture count, reserved), before the first
+/// picture's header.
+pub(crate) const TIM2_FILE_HEADER: usize = 16;
+
+/// The picture header fields of a TIM2 (at TIM2_FILE_HEADER).
 #[derive(Clone, Copy, Debug)]
-struct Header {
-    total: u32,
-    clut_size: u32,
-    image_size: u32,
-    header_size: u16,
-    colours: u16,
-    pf: u8,
-    mipmaps: u8,
-    clut_type: u8,
-    image_type: u8,
-    width: u16,
-    height: u16,
+pub(crate) struct Header {
+    pub(crate) total: u32,
+    pub(crate) clut_size: u32,
+    pub(crate) image_size: u32,
+    pub(crate) header_size: u16,
+    pub(crate) colours: u16,
+    pub(crate) pf: u8,
+    pub(crate) mipmaps: u8,
+    pub(crate) clut_type: u8,
+    pub(crate) image_type: u8,
+    pub(crate) width: u16,
+    pub(crate) height: u16,
 }
 
-fn header(tim: &[u8]) -> Result<Header> {
+/// The first picture's header of a TIM2.
+pub(crate) fn header(tim: &[u8]) -> Result<Header> {
     if tim.len() < 40 {
         bail!("a TIM2 is {} bytes, short of its 40-byte header", tim.len());
     }
@@ -453,9 +428,15 @@ fn header(tim: &[u8]) -> Result<Header> {
     })
 }
 
+/// The most levels a TIM2 picture has: the base level and the six mipmaps the GS's MXL allows.
+const MAX_LEVELS: u8 = 7;
+
 fn level_sizes(tim: &[u8], h: &Header) -> Result<Vec<usize>> {
+    if h.mipmaps > MAX_LEVELS {
+        bail!("a TIM2 picture of {} levels; the GS takes at most {MAX_LEVELS}", h.mipmaps);
+    }
     if h.mipmaps > 1 {
-        (0..h.mipmaps as usize).map(|k| Ok(u32_at(tim, 16 + 0x40 + 4 * k)? as usize)).collect()
+        (0..h.mipmaps as usize).map(|k| Ok(u32_at(tim, TIM2_FILE_HEADER + 0x40 + 4 * k)? as usize)).collect()
     } else {
         Ok(vec![h.image_size as usize])
     }
@@ -473,18 +454,17 @@ fn decode_tim2(tim: &[u8], swizzled: bool, no_image: bool) -> Result<Image> {
     if no_image {
         return Ok(image);
     }
-    let q = 16;
-    let mut pos = q + h.header_size as usize;
+    let mut pos = TIM2_FILE_HEADER + h.header_size as usize;
     let mut levels = Vec::new();
     for (k, size) in level_sizes(tim, &h)?.into_iter().enumerate() {
         let (lw, lh) = ((h.width as usize >> k).max(1), (h.height as usize >> k).max(1));
-        levels.push(decode_level(slice(tim, pos, pos + size), format, lw, lh, swizzled)?);
+        levels.push(decode_level(clamped(tim, pos, pos + size), format, lw, lh, swizzled)?);
         pos += size;
     }
     let mut levels = levels.into_iter();
     if format.paletted() {
-        let start = q + h.header_size as usize + h.image_size as usize;
-        let clut = slice(tim, start, start + h.clut_size as usize);
+        let start = TIM2_FILE_HEADER + h.header_size as usize + h.image_size as usize;
+        let clut = clamped(tim, start, start + h.clut_size as usize);
         image.palette = Some(decode_clut(clut, h.clut_type, format)?);
         image.indices = levels.next();
     } else {
@@ -681,10 +661,10 @@ fn build_header(image: &Image, old: Option<&[u8]>) -> Result<(Vec<u8>, Vec<usize
     if let Some(old) = old {
         let o = header(old)?;
         file_header = old[..16].to_vec();
-        tex0 = u64_at(old, 16 + 0x18)?;
-        tex1 = u64_at(old, 16 + 0x20)?;
-        regs = u32_at(old, 16 + 0x28)?;
-        tclut = u32_at(old, 16 + 0x2C)?;
+        tex0 = u64_at(old, TIM2_FILE_HEADER + 0x18)?;
+        tex1 = u64_at(old, TIM2_FILE_HEADER + 0x20)?;
+        regs = u32_at(old, TIM2_FILE_HEADER + 0x28)?;
+        tclut = u32_at(old, TIM2_FILE_HEADER + 0x2C)?;
         pf = o.pf;
         if !old.is_empty() && o.clut_type != 0 && image.paletted() {
             clut_type = o.clut_type;
@@ -738,10 +718,10 @@ fn build_header(image: &Image, old: Option<&[u8]>) -> Result<(Vec<u8>, Vec<usize
     out.extend(tclut.to_le_bytes());
     if levels > 1 {
         let mut mip = vec![0u8; header_size - 0x30];
-        if let Some(old) = old.filter(|old| old.len() >= 16 + 0x40) {
-            let old_header = u16_at(old, 16 + 12)? as usize;
+        if let Some(old) = old.filter(|old| old.len() >= TIM2_FILE_HEADER + 0x40) {
+            let old_header = u16_at(old, TIM2_FILE_HEADER + 12)? as usize;
             if old_header > 0x30 {
-                let keep = slice(old, 16 + 0x30, 16 + old_header);
+                let keep = clamped(old, TIM2_FILE_HEADER + 0x30, TIM2_FILE_HEADER + old_header);
                 let keep = &keep[..keep.len().min(mip.len())];
                 mip[..keep.len()].copy_from_slice(keep);
             }
@@ -770,15 +750,17 @@ fn encode_tim2(image: &Image) -> Result<Vec<u8>> {
             && o.mipmaps as usize == 1 + image.mips.len()
             && (!image.paletted() || image.palette.as_ref().is_some_and(|p| p.len() == o.colours as usize));
         if same {
-            let header_end = 16 + o.header_size as usize;
+            let header_end = TIM2_FILE_HEADER + o.header_size as usize;
             let sizes = if o.mipmaps > 1 {
-                (0..o.mipmaps as usize).map(|k| Ok(u32_at(old, 16 + 0x40 + 4 * k)? as usize)).collect::<Result<_>>()?
+                (0..o.mipmaps as usize)
+                    .map(|k| Ok(u32_at(old, TIM2_FILE_HEADER + 0x40 + 4 * k)? as usize))
+                    .collect::<Result<_>>()?
             } else {
                 vec![o.image_size as usize]
             };
             let clut_start = header_end + o.image_size as usize;
-            let clut_base = slice(old, clut_start, clut_start + o.clut_size as usize);
-            reused = Some((slice(old, 0, header_end).to_vec(), sizes, clut_base));
+            let clut_base = clamped(old, clut_start, clut_start + o.clut_size as usize);
+            reused = Some((clamped(old, 0, header_end).to_vec(), sizes, clut_base));
         }
     }
     let (header, sizes, clut_base) = match reused {
@@ -797,7 +779,7 @@ fn encode_tim2(image: &Image) -> Result<Vec<u8>> {
     let mut pos = out.len();
     for (k, (level, &size)) in std::iter::once(first).chain(&image.mips).zip(&sizes).enumerate() {
         let (lw, lh) = ((image.width >> k).max(1), (image.height >> k).max(1));
-        let base = if reuse { old.map(|old| slice(old, pos, pos + size)) } else { None };
+        let base = if reuse { old.map(|old| clamped(old, pos, pos + size)) } else { None };
         let mut encoded = encode_level(level, image.format, lw, lh, image.swizzled, base)?;
         encoded.resize(size, 0);
         out.extend(encoded);
@@ -820,9 +802,9 @@ pub fn read(data: &[u8]) -> Result<Vec<Image>> {
         }
         let n = tim2_extent(data, entry.offset, entry.no_image)?;
         let start = entry.offset as usize;
-        let mut image = decode_tim2(slice(data, start, start + n), entry.swizzled, entry.no_image)?;
+        let mut image = decode_tim2(clamped(data, start, start + n), entry.swizzled, entry.no_image)?;
         image.name = entry.name.iter().map(|&b| b as char).collect();
-        image.raw_name = Some(slice(&entry.raw, 0, 0x20).to_vec());
+        image.raw_name = Some(clamped(&entry.raw, 0, 0x20).to_vec());
         image.index = Some(entry.index);
         image.block = entry.block;
         image.clamp = entry.clamp;
@@ -919,7 +901,7 @@ pub fn write(images: &[Image], like: Option<&[u8]>) -> Result<Vec<u8>> {
             bail!("{}", e.offset);
         };
         let mut body = tim.clone();
-        body.extend_from_slice(slice(segment, old_len, segment.len()));
+        body.extend_from_slice(clamped(segment, old_len, segment.len()));
         if tim.len() != old_len && body.len() % 16 != 0 {
             body.resize(body.len().next_multiple_of(16), 0);
         }
@@ -1021,8 +1003,8 @@ fn write_appended(images: &[Image], like: &[u8], entries: &[Entry]) -> Result<Ve
     let body = write(&old, Some(like))?;
     let grow = IM3_ENTRY * new.len();
     let table_end = 0x10 + IM3_ENTRY * entries.len();
-    let mut out = slice(&body, 0, table_end).to_vec();
-    let mut rest = slice(&body, table_end, body.len()).to_vec();
+    let mut out = clamped(&body, 0, table_end).to_vec();
+    let mut rest = clamped(&body, table_end, body.len()).to_vec();
     for k in 0..entries.len() {
         let p = 0x10 + IM3_ENTRY * k + 0x24;
         let offset = i32_at(&out, p)? as i64;
@@ -1145,7 +1127,7 @@ pub fn write_png(
     let mut raw = Vec::with_capacity((stride + 1) * height);
     for y in 0..height {
         raw.push(0);
-        raw.extend_from_slice(slice(data, y * stride, (y + 1) * stride));
+        raw.extend_from_slice(clamped(data, y * stride, (y + 1) * stride));
     }
     let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
     let mut ihdr = Vec::new();
@@ -1185,7 +1167,7 @@ fn unfilter(raw: &[u8], width: usize, height: usize, bits_pp: usize) -> Result<(
         let Some(&filter) = raw.get(pos) else {
             bail!("the PNG's image data ends before its last row");
         };
-        let mut line = slice(raw, pos + 1, pos + 1 + stride).to_vec();
+        let mut line = clamped(raw, pos + 1, pos + 1 + stride).to_vec();
         pos += 1 + stride;
         let short = line.len() < stride || prev.len() < stride;
         match filter {
@@ -1294,16 +1276,16 @@ pub fn read_png(png: &[u8]) -> Result<Png> {
     let (mut plte, mut trns, mut ihdr) = (None, None, None);
     while pos < png.len() {
         if pos + 8 > png.len() {
-            bail!("the data is shorter than the {} bytes read here", pos + 8);
+            bail!("the PNG ends inside the head of a chunk at {pos}");
         }
         let n = u32::from_be_bytes(png[pos..pos + 4].try_into().unwrap()) as usize;
         let tag = &png[pos + 4..pos + 8];
-        let body = slice(png, pos + 8, pos + 8 + n);
+        let body = clamped(png, pos + 8, pos + 8 + n);
         pos += 12 + n;
         match tag {
             b"IHDR" => {
                 if body.len() != 13 {
-                    bail!("unpack requires a buffer of 13 bytes");
+                    bail!("the PNG's IHDR chunk is {} bytes, not 13", body.len());
                 }
                 ihdr = Some(body);
             }
@@ -1326,10 +1308,18 @@ pub fn read_png(png: &[u8]) -> Result<Png> {
         3 => 1,
         4 => 2,
         6 => 4,
-        _ => bail!("{colour_type}"),
+        _ => bail!("a PNG of colour type {colour_type}, which PNG does not have"),
     };
+    if ![1, 2, 4, 8, 16].contains(&depth) {
+        bail!("a PNG of bit depth {depth}, which PNG does not have");
+    }
     let bits_pp = depth as usize * channels;
     let raw = decompress(&idat)?;
+    // every pixel takes its bits of the image data: a size the data cannot hold is refused before
+    // anything is allocated for it
+    if w as u128 * h as u128 * bits_pp as u128 > 8 * raw.len() as u128 {
+        bail!("the PNG says it is {w} by {h} pixels, more than its image data holds");
+    }
     let samples_all = if interlace == 0 {
         let (rows, _) = unfilter(&raw, w, h, bits_pp)?;
         rows.iter().flat_map(|row| samples(row, w, depth, channels)).collect::<Vec<u8>>()
@@ -1343,7 +1333,7 @@ pub fn read_png(png: &[u8]) -> Result<Png> {
             if pw == 0 || ph == 0 {
                 continue;
             }
-            let (rows, used) = unfilter(slice(&raw, p, raw.len()), pw, ph, bits_pp)?;
+            let (rows, used) = unfilter(clamped(&raw, p, raw.len()), pw, ph, bits_pp)?;
             p += used;
             for (j, row) in rows.iter().enumerate() {
                 let s = samples(row, pw, depth, channels);
@@ -1351,7 +1341,7 @@ pub fn read_png(png: &[u8]) -> Result<Png> {
                 for i in 0..pw {
                     let x = x0 + i * dx;
                     let at = (y * w + x) * channels;
-                    let part = slice(&s, i * channels, (i + 1) * channels);
+                    let part = clamped(&s, i * channels, (i + 1) * channels);
                     assign_fixed(&mut buffer, at, at + channels, part);
                 }
             }

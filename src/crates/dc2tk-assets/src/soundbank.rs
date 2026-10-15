@@ -4,138 +4,49 @@
 
 use std::collections::BTreeSet;
 
+use dc2tk_disc::archive::{self, Pack};
 use dc2tk_disc::text;
 
+use crate::bytes::{clamped, u16_at, u32_at, Reader};
 use crate::{bail, numeric, Error, Result};
 
-pub const PACK_NAME: usize = 64;
-pub const PACK_SLOT: usize = 0x50;
-pub const PACK_ALIGN: usize = 16;
-
-fn i32_at(data: &[u8], at: usize) -> Result<i32> {
-    match data.get(at..at + 4) {
-        Some(b) => Ok(i32::from_le_bytes(b.try_into().unwrap())),
-        None => bail!("the data is shorter than the {} bytes read here", at + 4),
-    }
-}
-
-fn u32_at(data: &[u8], at: usize) -> Result<u32> {
-    Ok(i32_at(data, at)? as u32)
-}
-
-fn u16_at(data: &[u8], at: usize) -> Result<u16> {
-    match data.get(at..at + 2) {
-        Some(b) => Ok(u16::from_le_bytes([b[0], b[1]])),
-        None => bail!("the data is shorter than the {} bytes read here", at + 2),
-    }
-}
-
-fn slice(data: &[u8], start: usize, end: usize) -> &[u8] {
-    let start = start.min(data.len());
-    &data[start..end.clamp(start, data.len())]
-}
+/// The Sony chunks' alignment: a table chunk is padded with 0xFF to a multiple of 16 bytes.
+const CHUNK_ALIGN: usize = 16;
 
 fn pad16(size: usize) -> usize {
-    (PACK_ALIGN - size % PACK_ALIGN) % PACK_ALIGN
+    (CHUNK_ALIGN - size % CHUNK_ALIGN) % CHUNK_ALIGN
 }
 
-/// One pack member: its name, the raw 64-byte name field (stale bytes after the NUL on the disc),
-/// the slot's unused fourth word and its data.
-#[derive(Clone, Debug)]
-pub struct Member {
-    pub name: String,
-    pub data: Vec<u8>,
-    pub raw_name: Vec<u8>,
-    pub slot_tail: [u8; 4],
-}
-
-impl Member {
-    /// The extension, lower case ("" without a dot).
-    pub fn ext(&self) -> String {
-        match self.name.rsplit_once('.') {
-            Some((_, ext)) => ext.to_lowercase(),
-            None => String::new(),
+/// A sound bank's pack (archive::Pack), read strictly: besides holding together as a pack, every
+/// member's padding is zeros, as the disc's banks are, so the bank written back is the file read.
+pub fn read_pack(data: &[u8]) -> Result<Pack> {
+    let Some(pack) = Pack::read(data) else {
+        bail!("not a pack: its slots do not chain to an end slot at its end");
+    };
+    let mut at = 0;
+    for member in &pack.members {
+        let end = at + archive::PACK_SLOT + member.data.len();
+        let padding = archive::padding(member.data.len());
+        if data[end..end + padding].iter().any(|&b| b != 0) {
+            bail!("{}: non-zero padding at 0x{end:x}", member.name);
         }
+        at = end + padding;
+    }
+    Ok(pack)
+}
+
+/// A member name's extension, lower case ("" without a dot).
+pub fn extension(name: &str) -> String {
+    match name.rsplit_once('.') {
+        Some((_, ext)) => ext.to_lowercase(),
+        None => String::new(),
     }
 }
 
-/// A chain of 0x50-byte slots, each followed by its data padded to 16, ended by a slot whose name
-/// starts with NUL (its leftover bytes kept).
-#[derive(Clone, Debug)]
-pub struct Pack {
-    pub members: Vec<Member>,
-    pub terminator: Vec<u8>,
-}
-
-impl Pack {
-    pub fn parse(data: &[u8]) -> Result<Pack> {
-        let mut members = Vec::new();
-        let mut off = 0usize;
-        loop {
-            if off + PACK_SLOT > data.len() {
-                bail!("pack ends without an end slot");
-            }
-            if data[off] == 0 {
-                if off + PACK_SLOT != data.len() {
-                    bail!("bytes after the pack's end slot");
-                }
-                return Ok(Pack { members, terminator: data[off..off + PACK_SLOT].to_vec() });
-            }
-            let raw = &data[off..off + PACK_NAME];
-            let Some(end) = raw.iter().position(|&b| b == 0) else {
-                bail!("subsection not found");
-            };
-            let Some(name) = text::decode_strict(&raw[..end]) else {
-                bail!("the member name at 0x{off:x} is not cp932");
-            };
-            let (doff, size, next) = (
-                i32_at(data, off + PACK_NAME)?,
-                i32_at(data, off + PACK_NAME + 4)?,
-                i32_at(data, off + PACK_NAME + 8)?,
-            );
-            if size < 0 {
-                bail!("bad pack slot at 0x{off:x}");
-            }
-            let size = size as usize;
-            if doff != PACK_SLOT as i32 || next as i64 != (PACK_SLOT + size + pad16(size)) as i64 {
-                bail!("bad pack slot at 0x{off:x}");
-            }
-            let start = off + PACK_SLOT;
-            if slice(data, start + size, start + size + pad16(size)).iter().any(|&b| b != 0) {
-                bail!("non-zero member padding at 0x{:x}", start + size);
-            }
-            members.push(Member {
-                name,
-                data: slice(data, start, start + size).to_vec(),
-                raw_name: raw.to_vec(),
-                slot_tail: data[off + 76..off + 80].try_into().unwrap(),
-            });
-            off += next as usize;
-        }
-    }
-
-    pub fn build(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        for m in &self.members {
-            let size = m.data.len();
-            let pad = pad16(size);
-            out.extend(&m.raw_name);
-            out.extend((PACK_SLOT as i32).to_le_bytes());
-            out.extend((size as i32).to_le_bytes());
-            out.extend(((PACK_SLOT + size + pad) as i32).to_le_bytes());
-            out.extend(m.slot_tail);
-            out.extend(&m.data);
-            out.extend(std::iter::repeat_n(0, pad));
-        }
-        out.extend(&self.terminator);
-        out
-    }
-
-    /// The positions of the members with an extension, in pack order (ignoring case).
-    pub fn find(&self, ext: &str) -> Vec<usize> {
-        let ext = ext.to_lowercase();
-        (0..self.members.len()).filter(|&i| self.members[i].ext() == ext).collect()
-    }
+/// The positions of a pack's members with an extension, in pack order (ignoring case).
+pub fn find(pack: &Pack, ext: &str) -> Vec<usize> {
+    let ext = ext.to_lowercase();
+    (0..pack.members.len()).filter(|&i| extension(&pack.members[i].name) == ext).collect()
 }
 
 /// The layout of a fixed little-endian record: field names and struct format characters.
@@ -300,21 +211,16 @@ impl Record {
     fn unpack(layout: LayoutKind, data: &[u8], at: usize) -> Result<Record> {
         let fields = layout.layout().fields;
         let mut values = Vec::with_capacity(fields.len());
-        let mut pos = at;
+        let mut reader = Reader::at(data, at, "the .hd file");
         for (_, format) in fields {
-            let size = format_size(*format);
-            let Some(b) = data.get(pos..pos + size) else {
-                bail!("the data is shorter than the {} bytes read here", at + layout.layout().size());
-            };
             values.push(match format {
-                b'B' => b[0] as i64,
-                b'b' => b[0] as i8 as i64,
-                b'H' => u16::from_le_bytes([b[0], b[1]]) as i64,
-                b'h' => i16::from_le_bytes([b[0], b[1]]) as i64,
-                b'I' => u32::from_le_bytes(b.try_into().unwrap()) as i64,
-                _ => i32::from_le_bytes(b.try_into().unwrap()) as i64,
+                b'B' => reader.u8()? as i64,
+                b'b' => reader.u8()? as i8 as i64,
+                b'H' => reader.u16()? as i64,
+                b'h' => reader.i16()? as i64,
+                b'I' => reader.u32()? as i64,
+                _ => reader.i32()? as i64,
             });
-            pos += size;
         }
         Ok(Record { values, layout })
     }
@@ -541,9 +447,9 @@ impl Hd {
             programs.push(Some(Program { record, splits }));
         }
         Ok(Hd {
-            version: slice(data, 12, 16).to_vec(),
+            version: clamped(data, 12, 16).to_vec(),
             se_timbre_addr: timbre,
-            head_reserved: slice(data, h + 40, h + 64).to_vec(),
+            head_reserved: clamped(data, h + 40, h + 64).to_vec(),
             body_size: bsize,
             vags,
             samples,
@@ -640,7 +546,7 @@ pub fn decode_adpcm(data: &[u8], skip_zero_block: bool) -> Result<(Vec<i64>, Opt
     let (mut h1, mut h2) = (0i64, 0i64);
     let mut loop_start = None;
     let mut looped = false;
-    let start = if skip_zero_block && slice(data, 0, 16) == [0u8; 16] { 1 } else { 0 };
+    let start = if skip_zero_block && clamped(data, 0, 16) == [0u8; 16] { 1 } else { 0 };
     let mut b = start * BLOCK;
     while b + BLOCK <= data.len() {
         let head = data[b];
@@ -792,7 +698,7 @@ pub fn vag_length(data: &[u8]) -> usize {
         let flags = data.get(b + 1).copied().unwrap_or(0);
         if flags & FLAG_END != 0 {
             let mut end = b + BLOCK;
-            if flags & FLAG_REPEAT == 0 && slice(data, end, end + BLOCK) == SILENT_TAIL {
+            if flags & FLAG_REPEAT == 0 && clamped(data, end, end + BLOCK) == SILENT_TAIL {
                 end += BLOCK;
             }
             return end;
@@ -804,7 +710,7 @@ pub fn vag_length(data: &[u8]) -> usize {
 /// A WAV read: PCM 8/16/24/32-bit, float 32/64, also WAVE_FORMAT_EXTENSIBLE; channels averaged to
 /// mono. A 'smpl' chunk's first loop gives loop_start (audio after its end is dropped).
 pub fn read_wav(data: &[u8]) -> Result<Sound> {
-    if slice(data, 0, 4) != b"RIFF" || slice(data, 8, 12) != b"WAVE" {
+    if clamped(data, 0, 4) != b"RIFF" || clamped(data, 8, 12) != b"WAVE" {
         bail!("not a WAV file");
     }
     let mut format = None;
@@ -814,7 +720,7 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
     while off + 8 <= data.len() {
         let id = &data[off..off + 4];
         let size = u32_at(data, off + 4)? as usize;
-        let body = slice(data, off + 8, off + 8 + size);
+        let body = clamped(data, off + 8, off + 8 + size);
         if id == b"fmt " {
             if body.len() < 16 {
                 bail!("the data is shorter than the 16 bytes read here");
@@ -1082,7 +988,8 @@ impl TextFile {
             while q < data.len() && data[q] != 10 && data[q] != 13 {
                 q += 1;
             }
-            let eol = if slice(data, q, q + 2) == b"\r\n" { b"\r\n".to_vec() } else { slice(data, q, q + 1).to_vec() };
+            let eol =
+                if clamped(data, q, q + 2) == b"\r\n" { b"\r\n".to_vec() } else { clamped(data, q, q + 1).to_vec() };
             lines.push((data[p..q].to_vec(), eol.clone()));
             p = q + eol.len();
         }
@@ -1127,14 +1034,14 @@ fn byte_at(data: &[u8], p: usize) -> Result<u8> {
 /// (channel, program, key, velocity) of each note-on of an SMF format 0 file, as sndCSeSeq plays
 /// it: MIDI channels 0..7 only, program 0 until a program change, velocity 0 a note-off.
 pub fn midi_notes(data: &[u8]) -> Result<Vec<(u8, i64, u8, u8)>> {
-    if slice(data, 0, 4) != b"MThd" {
+    if clamped(data, 0, 4) != b"MThd" {
         bail!("not an SMF file");
     }
     let Some(hlen) = data.get(4..8) else {
         bail!("unpack requires a buffer of 4 bytes");
     };
     let mut p = 8 + u32::from_be_bytes(hlen.try_into().unwrap()) as usize;
-    if slice(data, p, p + 4) != b"MTrk" {
+    if clamped(data, p, p + 4) != b"MTrk" {
         bail!("no MTrk");
     }
     let Some(length) = data.get(p + 4..p + 8) else {
@@ -1168,7 +1075,7 @@ pub fn midi_notes(data: &[u8]) -> Result<Vec<(u8, i64, u8, u8)>> {
         }
         let (hi, channel) = (status & 0xF0, (status & 15) as usize);
         let n = if hi == 0xC0 || hi == 0xD0 { 1 } else { 2 };
-        let d = slice(data, p, p + n).to_vec();
+        let d = clamped(data, p, p + n).to_vec();
         p += n;
         if hi == 0xC0 {
             programs[channel] = byte_at(&d, 0)? as i64;
@@ -1314,9 +1221,9 @@ fn encode(text_: &str) -> Result<Vec<u8>> {
 
 impl Bank {
     pub fn from_bytes(data: &[u8]) -> Result<Bank> {
-        let pack = Pack::parse(data)?;
+        let pack = read_pack(data)?;
         let one = |ext: &str| -> Result<usize> {
-            let found = pack.find(ext);
+            let found = find(&pack, ext);
             if found.len() != 1 {
                 bail!("bank needs exactly one .{} member, has {}", ext, found.len());
             }
@@ -1338,7 +1245,7 @@ impl Bank {
         let vag_data = (0..starts.len())
             .map(|i| {
                 let end = starts.get(i + 1).map_or(bd.len(), |&e| e as usize);
-                slice(bd, starts[i] as usize, end).to_vec()
+                clamped(bd, starts[i] as usize, end).to_vec()
             })
             .collect();
         let cfg = TextFile::parse(&pack.members[cfg_member].data);
@@ -1365,7 +1272,7 @@ impl Bank {
         self.pack.members[self.bd_member].data = bd;
         self.pack.members[self.cfg_member].data = self.cfg.build();
         self.pack.members[self.vol_member].data = self.vol.build();
-        Ok(self.pack.build())
+        Ok(self.pack.write()?)
     }
 
     /// Size of the engine's table: cfg lines before END, header included.
@@ -1401,7 +1308,7 @@ impl Bank {
 
     pub fn entries(&self) -> Result<Vec<Entry>> {
         let names = |ext: &str| -> Vec<String> {
-            self.pack.find(ext).into_iter().map(|i| self.pack.members[i].name.to_lowercase()).collect()
+            find(&self.pack, ext).into_iter().map(|i| self.pack.members[i].name.to_lowercase()).collect()
         };
         let (sq_names, mid_names) = (names("sq"), names("mid"));
         let (volumes, _) = self.volumes();
@@ -1499,10 +1406,10 @@ impl Bank {
             EntryKind::KeyOn => Ok(self.resolve(entry.prog, entry.key, 127)),
             EntryKind::SeSeq | EntryKind::Sq => {
                 let notes = if entry.kind == EntryKind::Sq {
-                    let member = self.pack.find("sq")[entry.seq_index.unwrap()];
+                    let member = find(&self.pack, "sq")[entry.seq_index.unwrap()];
                     crate::sequence::Sequence::read(&self.pack.members[member].data)?.notes()
                 } else {
-                    let member = self.pack.find("mid")[entry.seq_index.unwrap()];
+                    let member = find(&self.pack, "mid")[entry.seq_index.unwrap()];
                     midi_notes(&self.pack.members[member].data)?.into_iter().map(|(_, p, k, v)| (p, k, v)).collect()
                 };
                 let mut seen = Vec::new();
@@ -1527,12 +1434,12 @@ impl Bank {
                 used.insert(e.prog & 0x7F);
             }
         }
-        for m in self.pack.find("mid") {
+        for m in find(&self.pack, "mid") {
             for (_, prog, _, _) in midi_notes(&self.pack.members[m].data)? {
                 used.insert(prog & 0x7F);
             }
         }
-        for m in self.pack.find("sq") {
+        for m in find(&self.pack, "sq") {
             let sequence = crate::sequence::Sequence::read(&self.pack.members[m].data)?;
             used.extend(sequence.programs().into_iter().map(i64::from));
         }

@@ -790,7 +790,7 @@ fn migrate_refuses_what_it_cannot_make_one_line_of_and_leaves_the_mod_alone() {
 /// wave); program 2, another saw wave, nothing plays.
 fn music_bank() -> Vec<u8> {
     use dc2tk_assets::sequence::{Event, Message, Sequence};
-    use dc2tk_assets::soundbank::{self, Bank, Pack};
+    use dc2tk_assets::soundbank::{self, Bank};
     let mut bank = Bank::from_bytes(&soundbank::test_bank(&[22050, 11025], 100)).unwrap();
     let eol = bank.cfg.eol();
     bank.cfg.lines = ["BG\tTEST\t1\t\t\t\t\t", "0\tBGM\tA\t0\tBG_001_000.sq\t*\t*\t", "END\t\t\t\t\t\t\t"]
@@ -798,7 +798,7 @@ fn music_bank() -> Vec<u8> {
         .map(|line| (line.as_bytes().to_vec(), eol.clone()))
         .collect();
     let data = bank.build().unwrap();
-    let mut members: Vec<(String, Vec<u8>)> = Pack::parse(&data)
+    let mut members: Vec<(String, Vec<u8>)> = soundbank::read_pack(&data)
         .unwrap()
         .members
         .into_iter()
@@ -865,9 +865,9 @@ fn a_mod_adds_a_music_file_made_like_a_bank_of_the_disc() {
     let entries = bank.entries().unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!((entries[0].kind, entries[0].file.as_str()), (EntryKind::Sq, "BG_200_000.sq"));
-    let sq = &bank.pack.members[bank.pack.find("sq")[0]].data;
+    let sq = &bank.pack.members[dc2tk_assets::soundbank::find(&bank.pack, "sq")[0]].data;
     let old = Bank::from_bytes(&like).unwrap();
-    let template = &old.pack.members[old.pack.find("sq")[0]].data;
+    let template = &old.pack.members[dc2tk_assets::soundbank::find(&old.pack, "sq")[0]].data;
     assert_eq!(*sq, music::build(&fish_midi(), template, Some(&old)).unwrap());
     let notes: Vec<(i64, u8)> =
         Sequence::read(sq).unwrap().notes().into_iter().map(|(program, key, _)| (program, key)).collect();

@@ -896,23 +896,8 @@ pub fn new_pack(source: &Path, template: &[u8], template_name: &str, stem: &str)
 mod tests {
     use super::*;
     use crate::mds::{self, Material, Mds, Mdt, Node, Prim, PRIM_TRIANGLES};
-
-    fn pack(members: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut out = Vec::new();
-        for (name, data) in members {
-            let mut slot = vec![0u8; archive::PACK_SLOT];
-            slot[..name.len()].copy_from_slice(name.as_bytes());
-            let pad = archive::padding(data.len());
-            slot[64..68].copy_from_slice(&(archive::PACK_SLOT as i32).to_le_bytes());
-            slot[68..72].copy_from_slice(&(data.len() as i32).to_le_bytes());
-            slot[72..76].copy_from_slice(&((archive::PACK_SLOT + data.len() + pad) as i32).to_le_bytes());
-            out.extend(slot);
-            out.extend(*data);
-            out.extend(vec![0u8; pad]);
-        }
-        out.extend(vec![0u8; archive::PACK_SLOT]);
-        out
-    }
+    use dc2tk_disc::samples::pack;
+    use std::sync::Arc;
 
     fn sample_pack() -> Vec<u8> {
         let mut model = Mds::new();
@@ -1473,7 +1458,7 @@ mod tests {
                     _ => 4,
                 };
                 for k in 0..accessor.get("count").unwrap().as_i64().unwrap() as usize {
-                    let bytes = &mut gltf.buffers[0][base + 4 * n * k..base + 4 * n * (k + 1)];
+                    let bytes = &mut Arc::make_mut(&mut gltf.buffers[0])[base + 4 * n * k..base + 4 * n * (k + 1)];
                     let mut values: Vec<f32> =
                         bytes.chunks(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
                     edit(&mut values);
@@ -1536,13 +1521,13 @@ mod tests {
             let doubled = [2.0 * q[0] * q[3], 0.0, 0.0, q[3] * q[3] - q[0] * q[0]];
             for (i, x) in doubled.iter().enumerate() {
                 let at = base + 16 * k + 4 * i;
-                edited.buffers[0][at..at + 4].copy_from_slice(&(*x as f32).to_le_bytes());
+                Arc::make_mut(&mut edited.buffers[0])[at..at + 4].copy_from_slice(&(*x as f32).to_le_bytes());
             }
         }
         let mut changed = files.clone();
         for (path, content) in changed.iter_mut() {
             if path == "bow.bin" {
-                *content = edited.buffers[0].clone();
+                *content = edited.buffers[0].to_vec();
             }
         }
         let folder = written(&changed, "motion-edited");
@@ -1720,7 +1705,7 @@ mod tests {
             if *path == "c.gltf" {
                 *content = serde_json::to_string(&gltf.json).expect("a JSON value serializes").into_bytes();
             } else if *path == "c.bin" {
-                *content = gltf.buffers[0].clone();
+                *content = gltf.buffers[0].to_vec();
             }
         }
         written(&files, name)
@@ -1849,7 +1834,7 @@ mod tests {
                 bin[base + 12 * k..base + 12 * k + 4].copy_from_slice(&(x + 1.0).to_le_bytes());
             }
         }
-        Gltf { json: gltf.json.clone(), buffers: vec![bin] }
+        Gltf { json: gltf.json.clone(), buffers: vec![Arc::new(bin)] }
     }
 
     #[test]

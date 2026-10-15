@@ -299,7 +299,7 @@ mod tests {
                 continue;
             }
             let bank = Bank::from_bytes(&std::fs::read(&path).unwrap()).unwrap();
-            if bank.pack.find("sq").is_empty() {
+            if crate::soundbank::find(&bank.pack, "sq").is_empty() {
                 continue;
             }
             let font = write(&bank, "BG").unwrap();

@@ -4,6 +4,7 @@
 
 use dc2tk_disc::text;
 
+use crate::bytes::{f32s_at, i32_at, u32_at, Reader};
 use crate::{bail, numeric, Result};
 
 pub const PRIM_TRIANGLES: u32 = 3;
@@ -13,30 +14,6 @@ pub const F_COLOUR: u32 = 0x100;
 pub const F_NO_NORMAL: u32 = 0x200;
 
 pub const IDENT: [f64; 16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
-
-pub(crate) fn i32_at(data: &[u8], at: usize) -> Result<i32> {
-    match data.get(at..at + 4) {
-        Some(b) => Ok(i32::from_le_bytes(b.try_into().unwrap())),
-        None => bail!("the data is shorter than the {} bytes read here", at + 4),
-    }
-}
-
-pub(crate) fn u32_at(data: &[u8], at: usize) -> Result<u32> {
-    Ok(i32_at(data, at)? as u32)
-}
-
-/// A little-endian float32 as a double, a signalling NaN made quiet as the CPU does.
-pub(crate) fn f32_at(data: &[u8], at: usize) -> Result<f64> {
-    Ok(numeric::f32_value(u32_at(data, at)?))
-}
-
-pub(crate) fn floats_at<const N: usize>(data: &[u8], at: usize) -> Result<[f64; N]> {
-    let mut out = [0.0; N];
-    for (i, slot) in out.iter_mut().enumerate() {
-        *slot = f32_at(data, at + 4 * i)?;
-    }
-    Ok(out)
-}
 
 /// The values as little-endian float32s (numeric::f32_bytes).
 pub(crate) fn pack_floats(values: &[f64], out: &mut Vec<u8>) -> Result<()> {
@@ -110,11 +87,9 @@ impl Material {
     }
 
     fn unpack(b: &[u8], o: usize) -> Result<Material> {
-        let f: [f64; 13] = floats_at(b, o)?;
-        let Some(raw) = b.get(o + 0x34..o + 0x54) else {
-            bail!("the data is shorter than the {} bytes read here", o + 0x60);
-        };
-        let (texture, texture_raw) = name_in(raw);
+        let mut record = Reader::at(b, o, "the MDS file");
+        let f: [f64; 13] = record.f32s()?;
+        let (texture, texture_raw) = name_in(record.take(NAME)?);
         Ok(Material {
             diffuse: f[0..4].to_vec(),
             ambient: f[4..8].to_vec(),
@@ -122,9 +97,9 @@ impl Material {
             power: f[12],
             texture,
             texture_raw,
-            unk_54: i32_at(b, o + 0x54)? as i64,
-            unk_58: f32_at(b, o + 0x58)?,
-            unk_5c: f32_at(b, o + 0x5C)?,
+            unk_54: record.i32()? as i64,
+            unk_58: record.f32()?,
+            unk_5c: record.f32()?,
         })
     }
 
@@ -136,7 +111,7 @@ impl Material {
         }
         let mut out = Vec::with_capacity(0x60);
         pack_floats(&floats, &mut out)?;
-        out.extend(name_out(&self.texture, &self.texture_raw, 32)?);
+        out.extend(name_out(&self.texture, &self.texture_raw, NAME)?);
         let Ok(unk_54) = i32::try_from(self.unk_54) else {
             bail!("a value does not fit in a 32-bit int");
         };
@@ -230,7 +205,7 @@ fn vecs(b: &[u8], at: i64, n: i32) -> Result<Vec<[f64; 4]>> {
     if at < 0 {
         bail!("offset {at} out of range");
     }
-    (0..n as usize).map(|i| floats_at(b, at as usize + 16 * i)).collect()
+    (0..n as usize).map(|i| f32s_at(b, at as usize + 16 * i)).collect()
 }
 
 impl Default for Mdt {
@@ -526,31 +501,36 @@ pub fn mat_mul(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
     out
 }
 
+/// The MDS file header: "MDS\0", the version, the frame count and where the frames start.
+pub const HEADER: usize = 0x10;
+/// MDTOBJ_HEADER, a frame's record: its index, this size, its name, the offset of its MDT block
+/// (0 for none), its parent and its local matrix.
+pub const RECORD: usize = 0x70;
+/// A frame's name field, and a material's texture name field.
+pub const NAME: usize = 32;
+
 pub fn parse(b: &[u8]) -> Result<Mds> {
-    if b.len() < 16 {
-        bail!("the data is shorter than the 16 bytes read here");
+    if b.len() < HEADER {
+        bail!("an MDS file is {} bytes, short of its {HEADER}-byte header", b.len());
     }
     if &b[..4] != b"MDS\0" {
         bail!("not an MDS file");
     }
     let (version, n, ofs) = (u32_at(b, 4)?, u32_at(b, 8)?, u32_at(b, 12)?);
     let mut mds = Mds { version, nodes: Vec::new() };
-    let mut o = ofs as usize;
+    let mut record = Reader::at(b, ofs as usize, "the MDS file");
     for i in 0..n as usize {
-        let (index, size) = (i32_at(b, o)?, u32_at(b, o + 4)?);
-        if size != 0x70 {
-            bail!("unexpected record size {size}");
+        let (index, size) = (record.i32()?, record.u32()?);
+        if size as usize != RECORD {
+            bail!("frame {i}'s record is 0x{size:x} bytes, not 0x{RECORD:x}");
         }
-        let Some(raw) = b.get(o + 8..o + 40) else {
-            bail!("the data is shorter than the {} bytes read here", o + 40);
-        };
-        let (name, name_raw) = name_in(raw);
-        let mdt_ofs = i32_at(b, o + 40)?;
-        let parent = i32_at(b, o + 44)?;
-        let matrix = floats_at(b, o + 48)?;
+        let (name, name_raw) = name_in(record.take(NAME)?);
+        let mdt_ofs = record.i32()?;
+        let parent = record.i32()?;
+        let matrix = record.f32s()?;
         let mdt = if mdt_ofs != 0 {
             if mdt_ofs < 0 {
-                bail!("offset out of range");
+                bail!("frame {i}'s mesh is at offset {mdt_ofs}, before the file");
             }
             Some(Mdt::unpack(b, mdt_ofs as usize)?)
         } else {
@@ -564,7 +544,6 @@ pub fn parse(b: &[u8]) -> Result<Mds> {
             matrix,
             mdt,
         });
-        o += size as usize;
     }
     Ok(mds)
 }
@@ -573,11 +552,11 @@ pub fn build(mds: &Mds) -> Result<Vec<u8>> {
     let n = mds.nodes.len();
     let blocks: Vec<Option<Vec<u8>>> =
         mds.nodes.iter().map(|node| node.mdt.as_ref().map(Mdt::pack).transpose()).collect::<Result<_>>()?;
-    let mut pos = 0x10 + 0x70 * n;
+    let mut pos = HEADER + RECORD * n;
     let mut out = b"MDS\0".to_vec();
     out.extend(mds.version.to_le_bytes());
     out.extend((n as u32).to_le_bytes());
-    out.extend(0x10u32.to_le_bytes());
+    out.extend((HEADER as u32).to_le_bytes());
     for (i, node) in mds.nodes.iter().enumerate() {
         let mut mo = 0;
         if let Some(block) = &blocks[i] {
@@ -585,8 +564,8 @@ pub fn build(mds: &Mds) -> Result<Vec<u8>> {
             pos += block.len();
         }
         out.extend(node.index.unwrap_or(i as i32).to_le_bytes());
-        out.extend(0x70u32.to_le_bytes());
-        out.extend(name_out(&node.name, &node.name_raw, 32)?);
+        out.extend((RECORD as u32).to_le_bytes());
+        out.extend(name_out(&node.name, &node.name_raw, NAME)?);
         out.extend((mo as i32).to_le_bytes());
         out.extend(node.parent.to_le_bytes());
         pack_floats(&node.matrix, &mut out)?;

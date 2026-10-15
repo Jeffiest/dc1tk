@@ -14,7 +14,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::{bail, Result};
+use crate::{bail, im3, Result};
 
 /// The characters of Japanese glyphs 94 on (glyph 94 is the full-width space).
 pub const JAPANESE: &str = concat!(
@@ -327,29 +327,36 @@ pub struct Page {
     pub clut: Vec<u8>,
 }
 
-fn u16_at(data: &[u8], at: usize) -> usize {
-    u16::from_le_bytes([data[at], data[at + 1]]) as usize
-}
-
-fn u32_at(data: &[u8], at: usize) -> usize {
-    u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]) as usize
-}
+/// A page's width: 32 glyphs of 16 pixels a row.
+const PAGE_WIDTH: usize = 32 * 16;
+/// The bytes of a 16-colour palette (r, g, b, a each).
+const CLUT_SIZE: usize = 16 * 4;
+/// The smallest picture header a page can have: the one fields the writer changes are in (the
+/// TIM2 picture header without its optional parts).
+const PICTURE_HEADER: usize = 0x30;
 
 impl Page {
     pub fn read(data: &[u8]) -> Result<Page> {
-        if data.len() < 0x40 || &data[..4] != b"TIM2" || u16_at(data, 6) != 1 {
+        if data.len() < 0x40 || &data[..4] != b"TIM2" || crate::bytes::u16_at(data, 6)? != 1 {
             bail!("a font page is a TIM2 file of one picture");
         }
-        let (clut_size, image_size, header_size) = (u32_at(data, 20), u32_at(data, 24), u16_at(data, 28));
-        let (colours, image_type) = (u16_at(data, 30), data[35]);
-        let (width, height) = (u16_at(data, 36), u16_at(data, 38));
-        let start = 16 + header_size;
-        if image_type != 4
-            || colours != 16
+        let header = im3::header(data)?;
+        let (clut_size, image_size, header_size) =
+            (header.clut_size as usize, header.image_size as usize, header.header_size as usize);
+        let (width, height) = (header.width as usize, header.height as usize);
+        let start = im3::TIM2_FILE_HEADER + header_size;
+        if header.image_type != 4
+            || header.colours != 16
+            || clut_size != CLUT_SIZE
             || image_size != width * height / 2
             || start + image_size + clut_size > data.len()
         {
             bail!("a font page is a 4-bit picture with 16 colours");
+        }
+        if width != PAGE_WIDTH || header_size < PICTURE_HEADER {
+            bail!(
+                "a font page is {PAGE_WIDTH} pixels wide (32 glyphs) with a picture header of at least 0x{PICTURE_HEADER:x} bytes, not {width} wide with 0x{header_size:x}"
+            );
         }
         let pixels = data[start..start + image_size].iter().flat_map(|&b| [b & 15, b >> 4]).collect();
         let clut = data[start + image_size..start + image_size + clut_size].to_vec();
@@ -577,6 +584,28 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(unique.len(), chars.len());
+    }
+
+    #[test]
+    fn a_page_whose_header_does_not_hold_together_is_refused() {
+        let good = page(20, &[0; 16]);
+        assert!(Page::read(&good).is_ok());
+        let with = |at: usize, bytes: &[u8]| {
+            let mut data = good.clone();
+            data[at..at + bytes.len()].copy_from_slice(bytes);
+            Page::read(&data).map(|_| ()).unwrap_err().to_string()
+        };
+        // a palette of other than 16 colours, a picture header short of the fields written back,
+        // a page not 32 glyphs wide
+        assert!(with(20, &63u32.to_le_bytes()).contains("16 colours"));
+        assert!(with(28, &0x10u16.to_le_bytes()).contains("at least 0x30"));
+        let narrow = {
+            let mut data = page(20, &[0; 16]);
+            data[36..38].copy_from_slice(&256u16.to_le_bytes());
+            data[24..28].copy_from_slice(&((256 * 20 / 2) as u32).to_le_bytes());
+            Page::read(&data).unwrap_err().to_string()
+        };
+        assert!(narrow.contains("512 pixels wide"), "{narrow}");
     }
 
     #[test]

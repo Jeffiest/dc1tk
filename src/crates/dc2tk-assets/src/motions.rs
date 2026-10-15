@@ -1725,6 +1725,7 @@ mod tests {
     use crate::mds::{self, Material, Mdt, Node, Prim, IDENT, PRIM_TRIANGLES};
     use crate::models;
     use dc2tk_disc::rebuild;
+    use std::sync::Arc;
 
     /// The engine key of a turn about an axis: glTF's quaternion conjugated, w first.
     fn engine_turn(axis: usize, degrees: f64) -> Vec4 {
@@ -1808,7 +1809,7 @@ mod tests {
         let view = index(item(&gltf.json, "bufferViews").unwrap(), item(&accessor, "bufferView").unwrap()).unwrap();
         let start = view.get("byteOffset").and_then(Value::as_i64).unwrap_or(0) as usize;
         let length = view.get("byteLength").and_then(Value::as_i64).unwrap() as usize;
-        &mut gltf.buffers[0][start..start + length]
+        &mut Arc::make_mut(&mut gltf.buffers[0])[start..start + length]
     }
 
     fn animation<'a>(gltf: &'a Gltf, name: &str) -> &'a Value {

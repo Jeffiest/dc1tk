@@ -16,12 +16,14 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::bytes::{be16_at, be32_at};
 use crate::sequence::{
     Event, Message, Sequence, DATA_ENTRY, DATA_ENTRY_LSB, DIVISION, LOOP_END, LOOP_START, META_END, META_MARKER,
     META_NAME, META_TEMPO, META_TEXT, NRPN_MSB,
 };
-use crate::soundbank::{Bank, Pack};
-use crate::{bail, Error, Result};
+use crate::soundbank::{self, Bank};
+use crate::{bail, Context, Error, Result};
+use dc2tk_disc::archive::PackMember;
 
 pub const SUFFIX: &str = ".mid";
 pub const MARKER_START: &str = "loopStart";
@@ -43,20 +45,6 @@ pub struct Smf {
 pub struct Track {
     pub events: Vec<(u64, Message)>,
     pub end: u64,
-}
-
-fn be16(data: &[u8], at: usize) -> Result<u16> {
-    match data.get(at..at + 2) {
-        Some(b) => Ok(u16::from_be_bytes([b[0], b[1]])),
-        None => bail!("the MIDI file ends early"),
-    }
-}
-
-fn be32(data: &[u8], at: usize) -> Result<u32> {
-    match data.get(at..at + 4) {
-        Some(b) => Ok(u32::from_be_bytes(b.try_into().unwrap())),
-        None => bail!("the MIDI file ends early"),
-    }
 }
 
 fn read_vlq(data: &[u8], mut at: usize) -> Result<(u32, usize)> {
@@ -96,8 +84,9 @@ impl Smf {
         if data.get(..4) != Some(b"MThd") {
             bail!("not a MIDI file (no MThd)");
         }
-        let header = be32(data, 4)? as usize;
-        let (format, count, division) = (be16(data, 8)?, be16(data, 10)?, be16(data, 12)?);
+        let field = |at: usize| be16_at(data, at).context("the MIDI file's header");
+        let header = be32_at(data, 4).context("the MIDI file's header")? as usize;
+        let (format, count, division) = (field(8)?, field(10)?, field(12)?);
         if header < 6 || format > 2 {
             bail!("not a MIDI file of format 0, 1 or 2");
         }
@@ -107,7 +96,7 @@ impl Smf {
         let mut tracks = Vec::new();
         let mut at = 8 + header;
         while at + 8 <= data.len() && tracks.len() < count as usize {
-            let size = be32(data, at + 4)? as usize;
+            let size = be32_at(data, at + 4).context("the MIDI file")? as usize;
             let Some(chunk) = data.get(at + 8..at + 8 + size) else {
                 bail!("track {} runs past the end of the file", tracks.len());
             };
@@ -583,7 +572,7 @@ fn stem(name: &str) -> &str {
 pub fn export_bank(data: &[u8], name: &str) -> Result<Vec<(String, Vec<u8>)>> {
     let bank = Bank::from_bytes(data)?;
     let mut out = Vec::new();
-    for index in bank.pack.find("sq") {
+    for index in soundbank::find(&bank.pack, "sq") {
         let member = &bank.pack.members[index];
         out.push((format!("{}{SUFFIX}", stem(&member.name)), export(&member.data, stem(&member.name))?));
     }
@@ -596,9 +585,9 @@ pub fn export_bank(data: &[u8], name: &str) -> Result<Vec<(String, Vec<u8>)>> {
 /// The bank with the sequences a folder's MIDI files give (BG_000_000.mid for BG_000_000.sq) in
 /// place of its own; other files (the exported .sf2) are not read.
 pub fn build_bank(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
-    let mut pack = Pack::parse(original)?;
+    let mut pack = soundbank::read_pack(original)?;
     let bank = Bank::from_bytes(original)?;
-    let sequences = pack.find("sq");
+    let sequences = soundbank::find(&pack, "sq");
     let mut changed = false;
     let mut paths: Vec<_> = std::fs::read_dir(folder)?.flatten().map(|entry| entry.path()).collect();
     paths.sort();
@@ -624,7 +613,7 @@ pub fn build_bank(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
             changed = true;
         }
     }
-    Ok(if changed { pack.build() } else { original.to_vec() })
+    Ok(if changed { pack.write()? } else { original.to_vec() })
 }
 
 /// The SPU2 memory the music banks (BG_*) load into, from 0x5210 to the field banks at 0x7D210
@@ -709,8 +698,9 @@ fn instrumented(
             if zones.len() == 1 { "" } else { "s" }
         ));
     }
-    let Some(index) =
-        bank.pack.find("sq").into_iter().find(|&index| bank.pack.members[index].name.eq_ignore_ascii_case(sequence))
+    let Some(index) = soundbank::find(&bank.pack, "sq")
+        .into_iter()
+        .find(|&index| bank.pack.members[index].name.eq_ignore_ascii_case(sequence))
     else {
         bail!("the bank has no sequence {sequence}");
     };
@@ -758,16 +748,6 @@ pub fn bgm_name(number: u32) -> String {
     format!("BG_{number:03}")
 }
 
-/// A pack member's 64-byte name field for a new name: the name and zeros.
-fn name_field(name: &str) -> Result<Vec<u8>> {
-    let mut field = dc2tk_disc::text::encode(name).ok_or_else(|| Error::invalid(format!("{name}: not cp932")))?;
-    if field.len() >= crate::soundbank::PACK_NAME {
-        bail!("{name}: a member's name is at most 63 bytes");
-    }
-    field.resize(crate::soundbank::PACK_NAME, 0);
-    Ok(field)
-}
-
 /// A new music bank, `name` (BG_200), made like one of the disc's (`like_data`): play_bgm's entry
 /// 0 plays a sequence built from a MIDI file with the like bank's entry 0 sequence as the template,
 /// as a music: line builds it (the layout, the loop, ...). The bank keeps the like bank's
@@ -788,14 +768,14 @@ pub fn new_bank(
     let Some(first) = entries.first().filter(|entry| entry.kind == crate::soundbank::EntryKind::Sq) else {
         bail!("the bank's entry 0 plays no sequence, so it is not a music bank");
     };
-    let sequences = like.pack.find("sq");
+    let sequences = soundbank::find(&like.pack, "sq");
     let kept = sequences[first.seq_index.unwrap_or(0)];
     let old_sequence = like.pack.members[kept].name.clone();
     let sequence = format!("{name}_000.sq");
     let mut pack = like.pack.clone();
     let mut members = Vec::new();
     for (at, mut member) in pack.members.into_iter().enumerate() {
-        let ext = member.ext();
+        let ext = soundbank::extension(&member.name);
         if ext == "sq" && at != kept {
             continue;
         }
@@ -811,13 +791,13 @@ pub fn new_bank(
             member.data = new_cfg(&member.data, first.line, &old_sequence, &sequence, name)?;
         }
         if renamed != member.name {
-            member.raw_name = name_field(&renamed)?;
-            member.name = renamed;
+            // the name and zeros after it in the name field; the slot's tail stays
+            member = PackMember { slot_tail: member.slot_tail, ..PackMember::new(&renamed, member.data)? };
         }
         members.push(member);
     }
     pack.members = members;
-    let bank = Bank::from_bytes(&pack.build())?;
+    let bank = Bank::from_bytes(&pack.write()?)?;
     instrumented(midi, bank, &sequence, instruments, region, true)
 }
 
@@ -1099,7 +1079,7 @@ mod tests {
         for path in &banks {
             let data = std::fs::read(path).unwrap();
             let bank = Bank::from_bytes(&data).unwrap();
-            for index in bank.pack.find("sq") {
+            for index in soundbank::find(&bank.pack, "sq") {
                 let member = &bank.pack.members[index];
                 let midi = export(&member.data, stem(&member.name)).unwrap();
                 let built = build(&midi, &member.data, Some(&bank)).unwrap();
@@ -1142,15 +1122,20 @@ mod tests {
             let data = std::fs::read(&path).unwrap();
             let like = Bank::from_bytes(&data).unwrap();
             let first = like.entries().unwrap()[0].seq_index.unwrap();
-            let original = &like.pack.members[like.pack.find("sq")[first]];
+            let original = &like.pack.members[soundbank::find(&like.pack, "sq")[first]];
             let midi = export(&original.data, stem(&original.name)).unwrap();
             let (built, _) = new_bank(&midi, &data, "BG_999", &[], Some(MUSIC_REGION))
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
             let bank = Bank::from_bytes(&built).unwrap();
             let entries = bank.entries().unwrap();
             assert_eq!((entries.len(), entries[0].file.as_str()), (1, "BG_999_000.sq"), "{}", path.display());
-            assert_eq!(bank.pack.find("sq").len(), 1);
-            assert_eq!(bank.pack.members[bank.pack.find("sq")[0]].data, original.data, "{}", path.display());
+            assert_eq!(soundbank::find(&bank.pack, "sq").len(), 1);
+            assert_eq!(
+                bank.pack.members[soundbank::find(&bank.pack, "sq")[0]].data,
+                original.data,
+                "{}",
+                path.display()
+            );
             assert!(bank.samples_size() <= like.samples_size());
             assert_eq!(bank.volumes(), (vec![like.volumes().0[0], like.volumes().0[1]], like.volumes().1));
             made += 1;
@@ -1167,7 +1152,7 @@ mod tests {
         bank.cfg.lines.insert(at, (b"2\tBGM\tTUNE\t0\tx_000.sq\t0\t0\t".to_vec(), eol));
         let data = bank.build().unwrap();
         let mut members: Vec<(String, Vec<u8>)> =
-            Pack::parse(&data).unwrap().members.into_iter().map(|member| (member.name, member.data)).collect();
+            soundbank::read_pack(&data).unwrap().members.into_iter().map(|member| (member.name, member.data)).collect();
         members.push(("x_000.sq".to_string(), tune().write().unwrap()));
         crate::models::write_pack(&members).unwrap()
     }
@@ -1207,7 +1192,7 @@ mod tests {
         let original = bank_with_tune();
         // a program the bank lacks is refused without the instrument
         let bank = Bank::from_bytes(&original).unwrap();
-        let sq = &bank.pack.members[bank.pack.find("sq")[0]].data;
+        let sq = &bank.pack.members[soundbank::find(&bank.pack, "sq")[0]].data;
         assert!(build(&tune_playing(100), sq, Some(&bank)).unwrap_err().to_string().contains("no program 100"));
         // two samples split at middle C, the second a fifth up from its own pitch at 60
         let instrument =
@@ -1230,7 +1215,7 @@ mod tests {
         let low_voice = bank.resolve(100, 40, 90)[0];
         assert!(bank.decode_vag(low_voice.vag).unwrap().loop_start.is_some());
         // the sequence plays it, and the old tune's program 1 is still there for others
-        let sequence = Sequence::read(&bank.pack.members[bank.pack.find("sq")[0]].data).unwrap();
+        let sequence = Sequence::read(&bank.pack.members[soundbank::find(&bank.pack, "sq")[0]].data).unwrap();
         assert_eq!(sequence.programs(), vec![100]);
         assert!(bank.hd.programs[1].is_some());
         // a program number taken by the bank is replaced, and its old sample, which nothing plays
@@ -1268,7 +1253,7 @@ mod tests {
         .collect();
         let data = bank.build().unwrap();
         let mut members: Vec<(String, Vec<u8>)> =
-            Pack::parse(&data).unwrap().members.into_iter().map(|member| (member.name, member.data)).collect();
+            soundbank::read_pack(&data).unwrap().members.into_iter().map(|member| (member.name, member.data)).collect();
         members.push(("x_000.sq".to_string(), tune().write().unwrap()));
         let mut second = tune();
         for event in &mut second.events {

@@ -4,7 +4,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::mds::{floats_at, i32_at, pack_floats, u32_at};
+use crate::bytes::{f32s_at, Reader};
+use crate::mds::pack_floats;
 use crate::{bail, Result};
 
 /// One block of keys.
@@ -29,46 +30,43 @@ impl KeyList {
     }
 }
 
+/// The size of a block's header, and of each of its keys.
+const BLOCK: usize = 32;
+/// The bytes between a key's frame and its value.
+const KEY_PAD: usize = 12;
+
 pub fn parse(b: &[u8]) -> Result<Vec<KeyList>> {
     let mut out = Vec::new();
     if b.is_empty() {
         return Ok(out);
     }
-    let mut o = 0;
+    let mut reader = Reader::new(b, "the key-list file");
     loop {
-        if o + 32 > b.len() {
-            bail!("the data is shorter than the {} bytes read here", o + 32);
-        }
-        let mut list = KeyList::new(i32_at(b, o)?, i32_at(b, o + 4)?, i32_at(b, o + 8)?, Vec::new());
-        list.unk_0c = u32_at(b, o + 12)?;
-        let count = u32_at(b, o + 16)? as usize;
-        let more = u32_at(b, o + 20)?;
-        list.garbage = (u32_at(b, o + 24)?, u32_at(b, o + 28)?);
-        let mut q = o + 32;
+        let (frame, target, kind) = (reader.i32()?, reader.i32()?, reader.i32()?);
+        let mut list = KeyList::new(frame, target, kind, Vec::new());
+        list.unk_0c = reader.u32()?;
+        let count = reader.u32()? as usize;
+        let more = reader.u32()?;
+        list.garbage = (reader.u32()?, reader.u32()?);
         for k in 0..count {
-            if q + 32 > b.len() {
-                bail!("the data is shorter than the {} bytes read here", q + 32);
-            }
-            let frame = u32_at(b, q)? as i64;
-            let pad = &b[q + 4..q + 16];
+            let frame = reader.u32()? as i64;
+            let pad = reader.take(KEY_PAD)?;
             if pad.iter().any(|&x| x != 0) {
                 list.key_pad.get_or_insert_with(BTreeMap::new).insert(k, pad.to_vec());
             }
-            list.keys.push((frame, floats_at(b, q + 16)?));
-            q += 32;
+            list.keys.push((frame, reader.f32s()?));
         }
-        let expect = (count as u64 + 1) * 32;
+        let expect = (count as u64 + 1) * BLOCK as u64;
         if more != 0 && more as u64 != expect {
             list.more_raw = Some(more);
         }
         out.push(list);
-        o = q;
         if more == 0 {
             break;
         }
     }
-    if o != b.len() {
-        bail!("trailing data in key-list file");
+    if reader.remaining() != 0 {
+        bail!("the key-list file has {} bytes after its last block", reader.remaining());
     }
     Ok(out)
 }
@@ -80,7 +78,7 @@ pub fn build(lists: &[KeyList]) -> Result<Vec<u8>> {
         let more = match list.more_raw {
             Some(more) => more as u64,
             None if last => 0,
-            None => (list.keys.len() as u64 + 1) * 32,
+            None => (list.keys.len() as u64 + 1) * BLOCK as u64,
         };
         out.extend(list.frame.to_le_bytes());
         out.extend(list.target.to_le_bytes());
@@ -100,7 +98,7 @@ pub fn build(lists: &[KeyList]) -> Result<Vec<u8>> {
             out.extend(frame.to_le_bytes());
             match list.key_pad.as_ref().and_then(|pads| pads.get(&k)) {
                 Some(pad) => out.extend(pad),
-                None => out.extend([0u8; 12]),
+                None => out.extend([0u8; KEY_PAD]),
             }
             pack_floats(value, &mut out)?;
         }
@@ -112,7 +110,7 @@ pub fn parse_bbp(b: &[u8]) -> Result<Vec<[f64; 16]>> {
     if !b.len().is_multiple_of(64) {
         bail!("bbp size is not a multiple of 64");
     }
-    (0..b.len()).step_by(64).map(|i| floats_at(b, i)).collect()
+    (0..b.len()).step_by(64).map(|i| f32s_at(b, i)).collect()
 }
 
 pub fn build_bbp(matrices: &[[f64; 16]]) -> Result<Vec<u8>> {

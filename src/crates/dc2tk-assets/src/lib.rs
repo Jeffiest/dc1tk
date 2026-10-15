@@ -2,6 +2,7 @@
 //! WAVs and their sequences (.sq) as MIDI files, character packs (.chr) as glTF 2.0, exported and
 //! built back: an asset written back unedited gives the game's bytes, byte for byte.
 
+pub(crate) mod bytes;
 pub mod cfg_text;
 pub mod chest_data;
 pub mod data_table;
@@ -45,6 +46,9 @@ pub mod town_data;
 pub mod tree;
 pub mod tree_check;
 
+#[cfg(test)]
+mod malformed;
+
 /// What went wrong: data that is not what it should be, or a file that could not be read.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -72,6 +76,25 @@ impl From<dc2tk_disc::Error> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// An error said with what was being done when it happened: `.context("track 3")` turns an error
+/// into "track 3: <the error>". For any error that displays (this crate's, serde_json's, the
+/// disc's), so a failure deep in a file names the file, the record or the field it was in.
+pub trait Context<T> {
+    fn context(self, what: impl std::fmt::Display) -> Result<T>;
+    /// context, with the description made only on an error.
+    fn with_context<D: std::fmt::Display>(self, what: impl FnOnce() -> D) -> Result<T>;
+}
+
+impl<T, E: std::fmt::Display> Context<T> for std::result::Result<T, E> {
+    fn context(self, what: impl std::fmt::Display) -> Result<T> {
+        self.map_err(|error| Error::Invalid(format!("{what}: {error}")))
+    }
+
+    fn with_context<D: std::fmt::Display>(self, what: impl FnOnce() -> D) -> Result<T> {
+        self.map_err(|error| Error::Invalid(format!("{}: {error}", what())))
+    }
+}
 
 /// Returns early with an Error::Invalid of the formatted message.
 #[macro_export]

@@ -3,6 +3,7 @@
 //! node "X" or "X_skin" replaces the MDT of frame X; Blender's ".001" suffixes are ignored).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
 
 use crate::mds::{self, Material, Mds, Mdt, Node, Prim, IDENT};
 use crate::mot::{self, KeyList};
@@ -11,10 +12,11 @@ use crate::to_gltf::{mat_inv, mat_mul, normalize, xform_dir, xform_point, Collis
 use crate::{bail, Error, Result};
 use serde_json::{json, Value};
 
-/// A glTF's JSON and its buffers.
+/// A glTF's JSON and its buffers (shared: the models of a map scene are each a glTF over the
+/// scene's one buffer).
 pub struct Gltf {
     pub json: Value,
-    pub buffers: Vec<Vec<u8>>,
+    pub buffers: Vec<Arc<Vec<u8>>>,
 }
 
 fn missing(key: &str) -> Error {
@@ -101,9 +103,13 @@ pub fn load_gltf(raw: &[u8], read: &dyn Fn(&str) -> Result<Vec<u8>>) -> Result<G
         let Some(json) = found else {
             bail!("the .glb has no JSON chunk");
         };
-        return Ok(Gltf { json, buffers: vec![bin] });
+        return Ok(Gltf { json, buffers: vec![Arc::new(bin)] });
     }
-    let json = load_json(utf8(raw)?)?;
+    with_buffers(load_json(utf8(raw)?)?, &|uri| read(uri).map(Arc::new))
+}
+
+/// A .gltf's JSON with its buffers: data: URIs decoded, files read through `read`.
+pub fn with_buffers(json: Value, read: &dyn Fn(&str) -> Result<Arc<Vec<u8>>>) -> Result<Gltf> {
     let mut buffers = Vec::new();
     let Some(list) = item(&json, "buffers")?.as_array() else {
         bail!("the glTF's buffers are not a list");
@@ -116,13 +122,14 @@ pub fn load_gltf(raw: &[u8], read: &dyn Fn(&str) -> Result<Vec<u8>>) -> Result<G
             let Some((_, data)) = uri.split_once(',') else {
                 bail!("a buffer's data: URI has no comma before its data");
             };
-            buffers.push(base64(data)?);
+            buffers.push(Arc::new(base64(data)?));
         } else {
             buffers.push(read(uri)?);
         }
     }
     Ok(Gltf { json, buffers })
 }
+
 /// An accessor's values: `n` components each, ints or floats as its component type has them.
 pub struct Values {
     pub n: usize,
@@ -174,6 +181,10 @@ pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
     }
     let count = json_int(item(a, "count")?, "count")?.max(0) as usize;
     let mut values = match a.get("bufferView") {
+        // zeros (a sparse accessor's base): as many as a model can have, not what a count says
+        None if count.checked_mul(n).is_none_or(|values| values > MAX_ZEROS) => {
+            bail!("an accessor of {count} values without a buffer view is more than a model can hold")
+        }
         None => vec![Num::Int(0); count * n],
         Some(view) => view_values(gltf, view, a.get("byteOffset"), count, n, component)?,
     };
@@ -209,6 +220,9 @@ pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
     Ok(Values { n, values })
 }
 
+/// The most values an accessor without a buffer view (all zeros) may have.
+const MAX_ZEROS: usize = 1 << 26;
+
 /// `count` values of `n` components of a component type from a buffer view, at an offset in it.
 fn view_values(
     gltf: &Gltf,
@@ -236,13 +250,21 @@ fn view_values(
         Some(stride) if stride != 0 => stride,
         _ => (n * size) as i64,
     };
-    let mut values = Vec::with_capacity(count * n);
-    for k in 0..count as i64 {
-        let at = base + k * stride;
-        if at < 0 || at as usize + n * size > buffer.len() {
-            bail!("an accessor's value {k} runs past the end of buffer {buffer_number} ({} bytes)", buffer.len());
+    // the first and last values in the buffer, before anything is allocated for them (the values
+    // between lie between them); in i128, which no count, stride or offset of a JSON int overflows
+    let value_size = (n * size) as i128;
+    for k in [0, count.saturating_sub(1)] {
+        let at = base as i128 + k as i128 * stride as i128;
+        if count > 0 && (at < 0 || at + value_size > buffer.len() as i128) {
+            bail!(
+                "an accessor's value {k} (of {count}) runs past the end of buffer {buffer_number} ({} bytes)",
+                buffer.len()
+            );
         }
-        let at = at as usize;
+    }
+    let mut values = Vec::with_capacity(count * n);
+    for k in 0..count {
+        let at = (base as i128 + k as i128 * stride as i128) as usize;
         for j in 0..n {
             let b = &buffer[at + j * size..at + (j + 1) * size];
             values.push(match component {

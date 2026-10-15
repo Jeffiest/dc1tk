@@ -5,6 +5,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
@@ -14,7 +15,7 @@ use crate::map_scene::{self, SceneNode};
 use crate::map_transform::Trs;
 use crate::mapfile;
 use crate::to_gltf::TextureSearch;
-use crate::{map_edit, models, Error, Result};
+use crate::{bail, map_edit, models, Context, Error, Result};
 
 /// What an import changes.
 #[derive(Debug, Default)]
@@ -124,6 +125,16 @@ fn trs_of(node: &Value) -> Result<Option<Trs>> {
     Ok(Some(Trs { translation: three("translation", [0.0; 3]), rotation, scale: three("scale", [1.0; 3]) }))
 }
 
+/// A node's scene tag, `extras.c2`: an object, which Blender keeps as JSON text when it could not
+/// store it as a dict (Null when the node has none).
+fn c2_of(node: &Value) -> Value {
+    let c2 = &node["extras"]["c2"];
+    match c2.as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
+        Some(parsed) => parsed,
+        None => c2.clone(),
+    }
+}
+
 /// The scene tree under a glTF node; model nodes (role "mds") are left out, their indices kept in
 /// `models` for the pieces they hang under.
 fn tree_of(
@@ -137,11 +148,8 @@ fn tree_of(
     }
     let node = &doc["nodes"][index];
     let mut extras = node["extras"].clone();
-    // Blender keeps custom properties it could not store as a dict as JSON text
-    if let Some(text) = extras["c2"].as_str() {
-        if let Ok(parsed) = serde_json::from_str::<Value>(text) {
-            extras["c2"] = parsed;
-        }
+    if extras["c2"].is_string() {
+        extras["c2"] = c2_of(node);
     }
     let role = extras["c2"]["role"].as_str().unwrap_or("").to_string();
     let mut children = Vec::new();
@@ -168,218 +176,167 @@ fn tree_of(
     })
 }
 
+/// The items of one of a glTF doc's lists that a subtree takes: their indices in the order first
+/// reached, and each one's index in the subtree.
+#[derive(Default)]
+struct Taken {
+    order: Vec<usize>,
+    new: HashMap<usize, usize>,
+}
+
+impl Taken {
+    /// Takes the item a reference (`value`, a JSON int; anything else references nothing) names in
+    /// `list`; a reference past the list's end is an error naming `what` makes it.
+    fn add(&mut self, value: &Value, list: &[Value], what: &str, list_name: &str) -> Result<()> {
+        let Some(at) = value.as_u64() else {
+            return Ok(());
+        };
+        let Some(at) = usize::try_from(at).ok().filter(|&at| at < list.len()) else {
+            bail!("{what} {at} is not one of the glTF's {} {list_name}", list.len());
+        };
+        if !self.new.contains_key(&at) {
+            self.new.insert(at, self.order.len());
+            self.order.push(at);
+        }
+        Ok(())
+    }
+
+    /// The reference at `pointer` in `value` (a JSON pointer: `/mesh`, or "" for the value itself)
+    /// given its subtree index.
+    fn renumber(&self, value: &mut Value, pointer: &str) {
+        if let Some(slot) = value.pointer_mut(pointer) {
+            if let Some(&new) = slot.as_u64().and_then(|at| self.new.get(&(at as usize))) {
+                *slot = json!(new);
+            }
+        }
+    }
+
+    /// The items taken from `list`, in their subtree order, each with its references renumbered
+    /// (`fields`: the pointer to a reference, and the list it references).
+    fn items(&self, list: &[Value], fields: &[(&str, &Taken)]) -> Vec<Value> {
+        self.order
+            .iter()
+            .map(|&at| {
+                let mut item = list[at].clone();
+                for (pointer, taken) in fields {
+                    taken.renumber(&mut item, pointer);
+                }
+                item
+            })
+            .collect()
+    }
+}
+
+/// Where a material references its textures (each a texture info, `{"index": n}`).
+const TEXTURE_FIELDS: [&str; 5] = [
+    "/pbrMetallicRoughness/baseColorTexture/index",
+    "/pbrMetallicRoughness/metallicRoughnessTexture/index",
+    "/normalTexture/index",
+    "/occlusionTexture/index",
+    "/emissiveTexture/index",
+];
+
 /// The part of a glTF doc a set of root nodes reaches, renumbered as a doc of its own (nodes,
-/// meshes, accessors, materials, textures, images, samplers, views and buffers).
-pub fn subtree(doc: &Value, roots: &[usize]) -> Value {
-    let list = |key: &str| doc[key].as_array().cloned().unwrap_or_default();
+/// meshes, accessors, materials, textures, images, samplers, views and buffers). A reference to
+/// something the doc does not have (a node's `"mesh": 99`) is an error.
+pub fn subtree(doc: &Value, roots: &[usize]) -> Result<Value> {
+    let list = |key: &str| doc[key].as_array().map(Vec::as_slice).unwrap_or_default();
     let (nodes, meshes, accessors, materials, textures) =
         (list("nodes"), list("meshes"), list("accessors"), list("materials"), list("textures"));
     let (images, samplers, views, buffers) = (list("images"), list("samplers"), list("bufferViews"), list("buffers"));
 
     // nodes reachable from the roots, in order
-    let mut node_order = Vec::new();
-    let mut pending: Vec<usize> = roots.iter().rev().copied().collect();
-    let mut seen = HashSet::new();
+    let mut node_taken = Taken::default();
+    let mut pending: Vec<Value> = roots.iter().rev().map(|&root| json!(root)).collect();
     while let Some(at) = pending.pop() {
-        if !seen.insert(at) || at >= nodes.len() {
+        let before = node_taken.order.len();
+        node_taken.add(&at, nodes, "a node's child", "nodes")?;
+        if node_taken.order.len() == before {
             continue;
         }
-        node_order.push(at);
-        for child in nodes[at]["children"].as_array().into_iter().flatten().rev() {
-            pending.push(child.as_u64().unwrap_or(0) as usize);
-        }
+        let node = &nodes[node_taken.order[before]];
+        pending.extend(node["children"].as_array().into_iter().flatten().rev().cloned());
     }
-    let renumber =
-        |order: &[usize]| -> HashMap<usize, usize> { order.iter().enumerate().map(|(new, &old)| (old, new)).collect() };
-    let node_map = renumber(&node_order);
-    let mut mesh_order = Vec::new();
-    for &at in &node_order {
-        if let Some(mesh) = nodes[at]["mesh"].as_u64().map(|mesh| mesh as usize) {
-            if !mesh_order.contains(&mesh) {
-                mesh_order.push(mesh);
-            }
-        }
+    let mut mesh_taken = Taken::default();
+    for &at in &node_taken.order {
+        mesh_taken.add(&nodes[at]["mesh"], meshes, "a node's mesh", "meshes")?;
     }
-    let mesh_map = renumber(&mesh_order);
-    let (mut accessor_order, mut material_order) = (Vec::new(), Vec::new());
-    let add = |order: &mut Vec<usize>, value: &Value| {
-        if let Some(at) = value.as_u64().map(|at| at as usize) {
-            if !order.contains(&at) {
-                order.push(at);
-            }
-        }
-    };
-    for &mesh in &mesh_order {
+    let (mut accessor_taken, mut material_taken) = (Taken::default(), Taken::default());
+    for &mesh in &mesh_taken.order {
         for primitive in meshes[mesh]["primitives"].as_array().into_iter().flatten() {
             for value in primitive["attributes"].as_object().into_iter().flatten().map(|(_, value)| value) {
-                add(&mut accessor_order, value);
+                accessor_taken.add(value, accessors, "a primitive's attribute accessor", "accessors")?;
             }
-            add(&mut accessor_order, &primitive["indices"]);
-            add(&mut material_order, &primitive["material"]);
+            accessor_taken.add(&primitive["indices"], accessors, "a primitive's index accessor", "accessors")?;
+            material_taken.add(&primitive["material"], materials, "a primitive's material", "materials")?;
         }
     }
-    let texture_keys = [
-        ("pbrMetallicRoughness", "baseColorTexture"),
-        ("pbrMetallicRoughness", "metallicRoughnessTexture"),
-        ("", "normalTexture"),
-        ("", "occlusionTexture"),
-        ("", "emissiveTexture"),
-    ];
-    let texture_info = |material: &Value, parent: &str, key: &str| -> Value {
-        if parent.is_empty() {
-            material[key]["index"].clone()
-        } else {
-            material[parent][key]["index"].clone()
-        }
-    };
-    let mut texture_order = Vec::new();
-    for &material in &material_order {
-        for (parent, key) in texture_keys {
-            add(&mut texture_order, &texture_info(&materials[material], parent, key));
+    let mut texture_taken = Taken::default();
+    for &material in &material_taken.order {
+        for pointer in TEXTURE_FIELDS {
+            let index = materials[material].pointer(pointer).unwrap_or(&Value::Null);
+            texture_taken.add(index, textures, "a material's texture", "textures")?;
         }
     }
-    let (mut image_order, mut sampler_order) = (Vec::new(), Vec::new());
-    for &texture in &texture_order {
-        add(&mut image_order, &textures[texture]["source"]);
-        add(&mut sampler_order, &textures[texture]["sampler"]);
+    let (mut image_taken, mut sampler_taken) = (Taken::default(), Taken::default());
+    for &texture in &texture_taken.order {
+        image_taken.add(&textures[texture]["source"], images, "a texture's image", "images")?;
+        sampler_taken.add(&textures[texture]["sampler"], samplers, "a texture's sampler", "samplers")?;
     }
-    let mut view_order = Vec::new();
-    for &accessor in &accessor_order {
-        add(&mut view_order, &accessors[accessor]["bufferView"]);
+    let mut view_taken = Taken::default();
+    for &accessor in &accessor_taken.order {
+        view_taken.add(&accessors[accessor]["bufferView"], views, "an accessor's buffer view", "buffer views")?;
     }
-    for &image in &image_order {
-        add(&mut view_order, &images[image]["bufferView"]);
+    for &image in &image_taken.order {
+        view_taken.add(&images[image]["bufferView"], views, "an image's buffer view", "buffer views")?;
     }
-    let mut buffer_order = Vec::new();
-    for &view in &view_order {
-        add(&mut buffer_order, &views[view]["buffer"]);
+    let mut buffer_taken = Taken::default();
+    for &view in &view_taken.order {
+        buffer_taken.add(&views[view]["buffer"], buffers, "a buffer view's buffer", "buffers")?;
     }
-    let (accessor_map, material_map, texture_map) =
-        (renumber(&accessor_order), renumber(&material_order), renumber(&texture_order));
-    let (image_map, sampler_map, view_map, buffer_map) =
-        (renumber(&image_order), renumber(&sampler_order), renumber(&view_order), renumber(&buffer_order));
-    let set = |value: &mut Value, map: &HashMap<usize, usize>| {
-        if let Some(at) = value.as_u64() {
-            *value = json!(map.get(&(at as usize)).copied().unwrap_or(0));
-        }
-    };
 
-    let out_nodes: Vec<Value> = node_order
-        .iter()
-        .map(|&at| {
-            let mut node = nodes[at].clone();
-            if let Some(object) = node.as_object_mut() {
-                object.remove("skin");
-                object.remove("camera");
-                // the scene's own tag, which the model's export does not have
-                if let Some(extras) = object.get_mut("extras").and_then(Value::as_object_mut) {
-                    extras.remove("c2");
-                }
-                if let Some(mesh) = object.get_mut("mesh") {
-                    set(mesh, &mesh_map);
-                }
-                if let Some(children) = object.get_mut("children").and_then(Value::as_array_mut) {
-                    children
-                        .retain(|child| child.as_u64().is_some_and(|child| node_map.contains_key(&(child as usize))));
-                    children.iter_mut().for_each(|child| set(child, &node_map));
-                }
+    let mut out_nodes = node_taken.items(nodes, &[("/mesh", &mesh_taken)]);
+    for node in &mut out_nodes {
+        if let Some(object) = node.as_object_mut() {
+            object.remove("skin");
+            object.remove("camera");
+            // the scene's own tag, which the model's export does not have
+            if let Some(extras) = object.get_mut("extras").and_then(Value::as_object_mut) {
+                extras.remove("c2");
             }
-            node
-        })
-        .collect();
-    let out_meshes: Vec<Value> = mesh_order
-        .iter()
-        .map(|&at| {
-            let mut mesh = meshes[at].clone();
-            for primitive in mesh.get_mut("primitives").and_then(Value::as_array_mut).into_iter().flatten() {
-                if let Some(attributes) = primitive.get_mut("attributes").and_then(Value::as_object_mut) {
-                    attributes.values_mut().for_each(|value| set(value, &accessor_map));
-                }
-                if let Some(object) = primitive.as_object_mut() {
-                    object.remove("targets");
-                    if let Some(indices) = object.get_mut("indices") {
-                        set(indices, &accessor_map);
-                    }
-                    if let Some(material) = object.get_mut("material") {
-                        set(material, &material_map);
-                    }
-                }
+            // every child was taken (or refused), so each has its new number
+            if let Some(children) = object.get_mut("children").and_then(Value::as_array_mut) {
+                children.retain(|child| child.as_u64().is_some());
+                children.iter_mut().for_each(|child| node_taken.renumber(child, ""));
             }
-            mesh
-        })
-        .collect();
-    let out_accessors: Vec<Value> = accessor_order
-        .iter()
-        .map(|&at| {
-            let mut accessor = accessors[at].clone();
-            if let Some(view) = accessor.get_mut("bufferView") {
-                set(view, &view_map);
+        }
+    }
+    let mut out_meshes = mesh_taken.items(meshes, &[]);
+    for mesh in &mut out_meshes {
+        for primitive in mesh.get_mut("primitives").and_then(Value::as_array_mut).into_iter().flatten() {
+            if let Some(attributes) = primitive.get_mut("attributes").and_then(Value::as_object_mut) {
+                attributes.values_mut().for_each(|value| accessor_taken.renumber(value, ""));
             }
-            accessor
-        })
-        .collect();
-    let out_materials: Vec<Value> = material_order
-        .iter()
-        .map(|&at| {
-            let mut material = materials[at].clone();
-            for (parent, key) in texture_keys {
-                let info = if parent.is_empty() {
-                    material.get_mut(key)
-                } else {
-                    material.get_mut(parent).and_then(|p| p.get_mut(key))
-                };
-                if let Some(index) = info.and_then(|info| info.get_mut("index")) {
-                    set(index, &texture_map);
-                }
+            if let Some(object) = primitive.as_object_mut() {
+                object.remove("targets");
             }
-            material
-        })
-        .collect();
-    let out_textures: Vec<Value> = texture_order
-        .iter()
-        .map(|&at| {
-            let mut texture = textures[at].clone();
-            if let Some(source) = texture.get_mut("source") {
-                set(source, &image_map);
-            }
-            if let Some(sampler) = texture.get_mut("sampler") {
-                set(sampler, &sampler_map);
-            }
-            texture
-        })
-        .collect();
-    let out_images: Vec<Value> = image_order
-        .iter()
-        .map(|&at| {
-            let mut image = images[at].clone();
-            if let Some(view) = image.get_mut("bufferView") {
-                set(view, &view_map);
-            }
-            image
-        })
-        .collect();
-    let out_views: Vec<Value> = view_order
-        .iter()
-        .map(|&at| {
-            let mut view = views[at].clone();
-            if let Some(buffer) = view.get_mut("buffer") {
-                set(buffer, &buffer_map);
-            }
-            view
-        })
-        .collect();
+            accessor_taken.renumber(primitive, "/indices");
+            material_taken.renumber(primitive, "/material");
+        }
+    }
+    let texture_fields: Vec<(&str, &Taken)> = TEXTURE_FIELDS.iter().map(|&pointer| (pointer, &texture_taken)).collect();
     let mut out = Map::new();
     out.insert("asset".into(), doc["asset"].clone());
     for (key, value) in [
         ("nodes", out_nodes),
         ("meshes", out_meshes),
-        ("accessors", out_accessors),
-        ("materials", out_materials),
-        ("textures", out_textures),
-        ("images", out_images),
-        ("samplers", sampler_order.iter().map(|&at| samplers[at].clone()).collect()),
-        ("bufferViews", out_views),
-        ("buffers", buffer_order.iter().map(|&at| buffers[at].clone()).collect()),
+        ("accessors", accessor_taken.items(accessors, &[("/bufferView", &view_taken)])),
+        ("materials", material_taken.items(materials, &texture_fields)),
+        ("textures", texture_taken.items(textures, &[("/source", &image_taken), ("/sampler", &sampler_taken)])),
+        ("images", image_taken.items(images, &[("/bufferView", &view_taken)])),
+        ("samplers", sampler_taken.items(samplers, &[])),
+        ("bufferViews", view_taken.items(views, &[("/buffer", &buffer_taken)])),
+        ("buffers", buffer_taken.items(buffers, &[])),
     ] {
         out.insert(key.into(), Value::Array(value));
     }
@@ -391,10 +348,10 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Value {
             }
         }
     }
-    let root_list: Vec<usize> = roots.iter().filter_map(|root| node_map.get(root).copied()).collect();
+    let root_list: Vec<usize> = roots.iter().filter_map(|root| node_taken.new.get(root).copied()).collect();
     out.insert("scenes".into(), json!([{"nodes": root_list}]));
     out.insert("scene".into(), json!(0));
-    Value::Object(out)
+    Ok(Value::Object(out))
 }
 
 /// The scene's map and models against the originals. `read` gives a file of the scene's folder
@@ -406,8 +363,7 @@ pub fn import_map(
     packs: &[ModelPack],
     textures: &TextureSearch,
 ) -> Result<Imported> {
-    let doc: Value =
-        serde_json::from_slice(gltf).map_err(|error| Error::invalid(format!("the scene's glTF: {error}")))?;
+    let doc: Value = serde_json::from_slice(gltf).context("the scene's glTF")?;
     let original_map = mapfile::parse(original)?;
     let roots: Vec<usize> = doc["scenes"][doc["scene"].as_u64().unwrap_or(0) as usize]["nodes"]
         .as_array()
@@ -418,10 +374,7 @@ pub fn import_map(
     let mut pending = roots.clone();
     while let Some(at) = pending.pop() {
         let node = &doc["nodes"][at];
-        let c2 = &node["extras"]["c2"];
-        let is_map = c2["role"] == "map"
-            || c2.as_str().is_some_and(|text| text.contains("\"role\": \"map\"") || text.contains("\"role\":\"map\""));
-        if is_map {
+        if c2_of(node)["role"] == "map" {
             root_index = Some(at);
             break;
         }
@@ -447,21 +400,18 @@ pub fn import_map(
     let mut piece_nodes: Vec<usize> = model_roots.keys().copied().collect();
     piece_nodes.sort();
     let mut done: HashSet<String> = HashSet::new();
-    let buffer_cache: RefCell<HashMap<String, Vec<u8>>> = RefCell::new(HashMap::new());
-    let read_cached = |path: &str| -> Result<Vec<u8>> {
+    // the scene's buffers, read once though every model's subtree names them
+    let buffer_cache: RefCell<HashMap<String, Arc<Vec<u8>>>> = RefCell::new(HashMap::new());
+    let read_cached = |path: &str| -> Result<Arc<Vec<u8>>> {
         if let Some(data) = buffer_cache.borrow().get(path) {
-            return Ok(data.clone());
+            return Ok(Arc::clone(data));
         }
-        let data = read(path)?;
-        buffer_cache.borrow_mut().insert(path.to_string(), data.clone());
+        let data = Arc::new(read(path)?);
+        buffer_cache.borrow_mut().insert(path.to_string(), Arc::clone(&data));
         Ok(data)
     };
     for piece in piece_nodes {
-        let c2 = &doc["nodes"][piece]["extras"]["c2"];
-        let c2 = match c2.as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
-            Some(parsed) => parsed,
-            None => c2.clone(),
-        };
+        let c2 = c2_of(&doc["nodes"][piece]);
         let Some(model) = c2["model"].as_str().map(str::to_string) else {
             continue;
         };
@@ -469,31 +419,28 @@ pub fn import_map(
         if model.is_empty() || model_roots_here.is_empty() || !done.insert(model.to_lowercase()) {
             continue;
         }
-        let sub = subtree(&doc, model_roots_here);
-        let text = serde_json::to_string(&sub).map_err(|error| Error::invalid(error.to_string()))?;
-        let given = from_gltf::load_gltf(text.as_bytes(), &|path| {
-            read_cached(path).map_err(|error| Error::invalid(error.to_string()))
-        })?;
+        let sub = subtree(&doc, model_roots_here).context(&model)?;
+        let given = from_gltf::with_buffers(sub, &read_cached)?;
         let Some((kind, data)) = find_model(packs, &model) else {
             // made in the scene: a new model of every mesh under its first piece
             let kind = new_model_kind(c2["kind"].as_str().unwrap_or(""), &model);
             let stem = model.rsplit_once('.').map_or(model.as_str(), |(stem, _)| stem);
-            let data = models::new_map_model(&given, stem, &options_for(kind, textures))
-                .map_err(|error| Error::invalid(format!("{model}: {error}")))?;
+            let data =
+                models::new_map_model(&given, stem, &options_for(kind, textures)).with_context(|| model.clone())?;
             out.new_models.push(NewModel { file: model, kind, data });
             continue;
         };
         if kind >= 3 {
             continue;
         }
-        let rebuilt = models::build_map_model(&given, data, &options_for(kind, textures))
-            .map_err(|error| Error::invalid(format!("{model}: {error}")))?;
+        let rebuilt =
+            models::build_map_model(&given, data, &options_for(kind, textures)).with_context(|| model.clone())?;
         if rebuilt != data {
             out.models.push((model, rebuilt));
         }
     }
     for (name, uri) in scene_pictures(&doc) {
-        let png = read_cached(&uri).map_err(|error| Error::invalid(format!("picture {name}: {error}")))?;
+        let png = read_cached(&uri).with_context(|| format!("picture {name}"))?.to_vec();
         match textures.find(&name) {
             // the first of the name is a render target, which the export showed as its stand-in
             // (d01f01's d01b17, which d01b01 has with pixels)
@@ -523,6 +470,44 @@ pub fn import_map(
 mod tests {
     use super::*;
     use crate::map_export::export_map;
+
+    #[test]
+    fn a_subtree_renumbers_what_its_roots_reach_and_refuses_what_the_gltf_lacks() {
+        let doc = json!({
+            "asset": {"version": "2.0"},
+            "nodes": [{"name": "other", "mesh": 1}, {"name": "piece", "children": [2]}, {"name": "m", "mesh": 1}],
+            "meshes": [
+                {"primitives": [{"attributes": {"POSITION": 0}}]},
+                {"primitives": [{"attributes": {"POSITION": 1}, "indices": 0, "material": 0}]},
+            ],
+            "accessors": [{"bufferView": 0}, {"bufferView": 1}],
+            "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
+            "textures": [{"source": 0}],
+            "images": [{"uri": "a.png"}],
+            "bufferViews": [{"buffer": 0}, {"buffer": 0}],
+            "buffers": [{"uri": "x.bin"}],
+        });
+        let sub = subtree(&doc, &[1]).unwrap();
+        assert_eq!(sub["nodes"].as_array().unwrap().len(), 2);
+        assert_eq!((&sub["nodes"][0]["children"], &sub["nodes"][1]["mesh"]), (&json!([1]), &json!(0)));
+        // the mesh's accessors in the order first reached: its position, then its indices
+        assert_eq!(
+            sub["meshes"][0]["primitives"][0],
+            json!({"attributes": {"POSITION": 0}, "indices": 1, "material": 0})
+        );
+        assert_eq!(sub["accessors"], json!([{"bufferView": 0}, {"bufferView": 1}]));
+        assert_eq!(sub["scenes"], json!([{"nodes": [0]}]));
+        // a mesh, material and child the glTF does not have
+        for (pointer, value, error) in [
+            ("/nodes/2/mesh", 99, "a node's mesh 99 is not one of the glTF's 2 meshes"),
+            ("/meshes/1/primitives/0/material", 5, "a primitive's material 5 is not one of the glTF's 1 materials"),
+            ("/nodes/1/children/0", 7, "a node's child 7 is not one of the glTF's 3 nodes"),
+        ] {
+            let mut bad = doc.clone();
+            *bad.pointer_mut(pointer).unwrap() = json!(value);
+            assert_eq!(subtree(&bad, &[1]).unwrap_err().to_string(), error);
+        }
+    }
 
     /// Every fixed map of an extracted disc (C2S_CORPUS) exported and imported unedited changes
     /// nothing: the same .map, no model rebuilt.
