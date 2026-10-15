@@ -18,7 +18,7 @@ use crate::mapfile::{
     AnimeData, ColType, EventData, FireData, FixCamera, InventData, MapFile, Num, Piece, PieceMaterial, Placement,
     PlightData, Point, PointData, PointKind, Settings, SoundData,
 };
-use crate::{Error, Result};
+use crate::{Context, Error, Result};
 
 /// A node of the scene. `model` is set on pieces, whose meshes the exporter adds under them.
 #[derive(Clone, Debug, PartialEq)]
@@ -643,14 +643,14 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
         Value::Null => original.settings.clone(),
         value => {
             let reconciled = reconcile(&serde_json::to_value(&original.settings).unwrap_or(Value::Null), value);
-            serde_json::from_value(reconciled).map_err(|error| Error::invalid(format!("map settings: {error}")))?
+            serde_json::from_value(reconciled).context("map settings")?
         }
     };
     let mut cameras: Option<Vec<FixCamera>> = match &tree["cameras"] {
         Value::Null => None,
         value => {
             let reconciled = reconcile(&serde_json::to_value(&original.cameras).unwrap_or(Value::Null), value);
-            serde_json::from_value(reconciled).map_err(|error| Error::invalid(format!("map cameras: {error}")))?
+            serde_json::from_value(reconciled).context("map cameras")?
         }
     };
     if let (Some(list), Some(group)) = (cameras.as_mut(), group("cameras")) {

@@ -317,7 +317,7 @@ fn chunks(data: &[u8]) -> Result<Vec<(String, usize, usize)>> {
     let mut off = 0;
     while off < data.len() {
         if off + 12 > data.len() {
-            bail!("the data is shorter than the {} bytes read here", off + 12);
+            bail!("the .hd ends inside the head of a chunk at 0x{off:x}");
         }
         let size = u32_at(data, off + 8)? as usize;
         if &data[off..off + 4] != CREATOR || size < 12 || off + size > data.len() {
@@ -721,7 +721,7 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
         let body = clamped(data, off + 8, off + 8 + size);
         if id == b"fmt " {
             if body.len() < 16 {
-                bail!("the data is shorter than the 16 bytes read here");
+                bail!("the WAV's fmt chunk is {} bytes, short of 16", body.len());
             }
             let mut tag = u16_at(body, 0)?;
             let channels = u16_at(body, 2)? as usize;
@@ -744,10 +744,10 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
     };
     let width = bits / 8;
     if align != width * channels {
-        bail!("unsupported WAV block alignment");
+        bail!("the WAV's frames are {align} bytes, not {channels} channels of {bits} bits");
     }
     if align == 0 {
-        bail!("integer division or modulo by zero");
+        bail!("the WAV has no channels, or samples of no bytes");
     }
     let frames = pcm.len() / align;
     let used = &pcm[..frames * align];
@@ -772,11 +772,8 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
     };
     let mut samples = Vec::with_capacity(values.len());
     for v in values {
-        if v.is_nan() {
-            bail!("cannot convert float NaN to integer");
-        }
-        if v.is_infinite() {
-            bail!("cannot convert float infinity to integer");
+        if !v.is_finite() {
+            bail!("the WAV has a sample of {v}, which is not a number a sound can have");
         }
         samples.push((v.round_ties_even() as i64).clamp(-32768, 32767));
     }
@@ -795,14 +792,14 @@ pub fn wav_bytes(sound: &Sound) -> Result<Vec<u8>> {
     let mut body = Vec::with_capacity(2 * sound.samples.len());
     for &s in &sound.samples {
         let Ok(s) = i16::try_from(s) else {
-            bail!("a value does not fit in a 16-bit int");
+            bail!("a sample of {s}, past the 16 bits a WAV sample has");
         };
         body.extend(s.to_le_bytes());
     }
     let u32_of = |v: i64| -> Result<[u8; 4]> {
         match u32::try_from(v) {
             Ok(v) => Ok(v.to_le_bytes()),
-            Err(_) => bail!("a value does not fit in an unsigned 32-bit int"),
+            Err(_) => bail!("{v} does not fit the WAV's 32-bit field"),
         }
     };
     let mut chunks = b"fmt ".to_vec();

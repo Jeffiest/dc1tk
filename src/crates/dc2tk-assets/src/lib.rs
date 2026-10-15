@@ -1,26 +1,26 @@
-//! Dark Chronicle's assets in common formats: texture files (.img) as PNGs, sound banks (.snd) as
-//! WAVs and their sequences (.sq) as MIDI files, character packs (.chr) as glTF 2.0, exported and
-//! built back: an asset written back unedited gives the game's bytes, byte for byte.
+//! Dark Chronicle's assets in formats common tools open, exported and built back: an asset written
+//! back unedited gives the game's bytes, byte for byte.
+//!
+//! - Textures (.img, .im2, .im3 archives of TIM2 pictures) as PNGs; character and map models (MDS,
+//!   with their motions, skins and bind poses) as glTF 2.0; maps (.map) as glTF scenes.
+//! - Sound banks (.snd) as WAVs per entry, their sequences (.sq) as MIDI files and their
+//!   instruments as a SoundFont; the menus' fonts.
+//! - Game data the scripts and the boot executable hold (items, shops, monsters, dungeons, ...) as
+//!   JSON tables, and the message files as text.
+//! - The asset tree: every asset of a disc once, with a manifest of the places it has each.
 
+// binary formats read and written byte for byte
 pub(crate) mod bytes;
-pub mod cfg_text;
-pub mod chest_data;
-pub mod data_table;
-pub mod dungeon_data;
-pub mod dungeon_layout;
-pub mod exe_tables;
-pub mod fishing_data;
-pub mod folder;
 pub mod font;
-pub mod from_gltf;
-pub mod game_data;
-pub mod georama_data;
-pub mod idea_data;
-pub mod ids;
 pub mod im3;
-pub mod info_cfg;
-pub mod invention_data;
-pub mod item_data;
+pub mod mds;
+pub mod mot;
+pub mod sequence;
+pub mod soundbank;
+
+// models, motions and maps as glTF
+pub mod from_gltf;
+pub(crate) mod gltf;
 pub mod map_edit;
 pub mod map_export;
 pub mod map_import;
@@ -28,22 +28,39 @@ pub mod map_scene;
 pub mod map_transform;
 pub mod mapfile;
 pub(crate) mod math;
-pub mod mds;
 pub mod models;
-pub mod monster_data;
-pub mod mot;
 pub mod motions;
+pub mod to_gltf;
+
+// textures and sounds for mods
 pub mod music;
-pub mod numeric;
-pub mod sequence;
-pub mod shop_data;
-pub mod soundbank;
 pub mod soundfont;
 pub mod sounds;
-pub mod text;
 pub mod textures;
-pub mod to_gltf;
+
+// game data tables and text
+pub mod cfg_text;
+pub mod chest_data;
+pub mod data_table;
+pub mod dungeon_data;
+pub mod dungeon_layout;
+pub mod exe_tables;
+pub mod fishing_data;
+pub mod game_data;
+pub mod georama_data;
+pub mod idea_data;
+pub mod info_cfg;
+pub mod invention_data;
+pub mod item_data;
+pub mod monster_data;
+pub mod shop_data;
+pub mod text;
 pub mod town_data;
+
+// the asset tree, and what the rest share
+pub mod folder;
+pub mod ids;
+pub mod numeric;
 pub mod tree;
 pub mod tree_check;
 

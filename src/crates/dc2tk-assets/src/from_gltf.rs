@@ -5,12 +5,13 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
+use crate::gltf::{AccessorType, ComponentType};
 use crate::math::{compose, decompose, mat_inv, mat_mul, normalize, xform_dir, xform_point, Mat4, Quat, IDENT, Z};
 use crate::mds::{self, Material, Mds, Mdt, Node, Prim};
 use crate::mot::{self, KeyList};
 use crate::numeric::{self, Num};
 use crate::to_gltf::CollisionAttributes;
-use crate::{bail, Error, Result};
+use crate::{bail, Context, Error, Result};
 use serde_json::{json, Value};
 
 /// A glTF's JSON and its buffers (shared: the models of a map scene are each a glTF over the
@@ -53,7 +54,7 @@ pub fn index<'a>(list: &'a Value, at: &Value) -> Result<&'a Value> {
 
 /// The glTF's JSON.
 pub fn load_json(text: &str) -> Result<Value> {
-    serde_json::from_str(text).map_err(|error| Error::invalid(format!("the glTF's JSON does not read: {error}")))
+    serde_json::from_str(text).context("the glTF's JSON does not read")
 }
 
 fn base64(text: &str) -> Result<Vec<u8>> {
@@ -164,22 +165,22 @@ fn json_int(value: &Value, what: &str) -> Result<i64> {
     }
 }
 
+/// An accessor's componentType, which must be one glTF has.
+fn component_type(value: &Value, what: &str) -> Result<ComponentType> {
+    let code = json_int(value, what)?;
+    ComponentType::from_code(code)
+        .ok_or_else(|| Error::invalid(format!("an accessor's {what} is {code}, which glTF does not have")))
+}
+
 /// The values of accessor i.
 pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
     let a = index(item(&gltf.json, "accessors")?, i)?;
     let kind = item(a, "type")?.as_str().unwrap_or_default();
-    let n = match kind {
-        "SCALAR" => 1,
-        "VEC2" => 2,
-        "VEC3" => 3,
-        "VEC4" => 4,
-        "MAT4" => 16,
-        _ => bail!("an accessor of type {kind:?}, which glTF does not have"),
+    let Some(kind) = AccessorType::from_name(kind) else {
+        bail!("an accessor of type {kind:?}, which glTF does not have");
     };
-    let component = json_int(item(a, "componentType")?, "componentType")?;
-    if !matches!(component, 5120 | 5121 | 5122 | 5123 | 5125 | 5126) {
-        bail!("an accessor of component type {component}, which glTF does not have");
-    }
+    let n = kind.components();
+    let component = component_type(item(a, "componentType")?, "componentType")?;
     let count = json_int(item(a, "count")?, "count")?.max(0) as usize;
     let mut values = match a.get("bufferView") {
         // zeros (a sparse accessor's base): as many as a model can have, not what a count says
@@ -193,9 +194,9 @@ pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
     if let Some(sparse) = a.get("sparse") {
         let changed = json_int(item(sparse, "count")?, "count")?.max(0) as usize;
         let indices = item(sparse, "indices")?;
-        let index_type = json_int(item(indices, "componentType")?, "componentType")?;
-        if !matches!(index_type, 5121 | 5123 | 5125) {
-            bail!("sparse indices of component type {index_type}");
+        let index_type = component_type(item(indices, "componentType")?, "sparse indices' componentType")?;
+        if !index_type.is_unsigned() {
+            bail!("an accessor's sparse indices are of component type {}, not an unsigned integer", index_type.code());
         }
         let at = view_values(gltf, item(indices, "bufferView")?, indices.get("byteOffset"), changed, 1, index_type)?;
         let given = item(sparse, "values")?;
@@ -209,12 +210,11 @@ pub fn accessor(gltf: &Gltf, i: &Value) -> Result<Values> {
         }
     }
     if a.get("normalized").is_some_and(|normalized| normalized.as_bool() == Some(true)) {
-        let divisor = match component {
-            5120 => 127.0,
-            5121 => 255.0,
-            5122 => 32767.0,
-            5123 => 65535.0,
-            _ => bail!("an accessor of component type {component}, which glTF does not have"),
+        let Some(divisor) = component.divisor() else {
+            bail!(
+                "a normalized accessor of component type {}, which only integers of 8 or 16 bits can be",
+                component.code()
+            );
         };
         values = values.into_iter().map(|v| Num::Float(numeric::max(-1.0, v.f() / divisor))).collect();
     }
@@ -231,31 +231,27 @@ fn view_values(
     offset: Option<&Value>,
     count: usize,
     n: usize,
-    component: i64,
+    component: ComponentType,
 ) -> Result<Vec<Num>> {
-    let size = match component {
-        5120 | 5121 => 1,
-        5122 | 5123 => 2,
-        5125 | 5126 => 4,
-        _ => bail!("an accessor of component type {component}, which glTF does not have"),
-    };
+    let size = component.size();
     let view = index(item(&gltf.json, "bufferViews")?, view)?;
     let buffer_number = view.get("buffer").map_or(Ok(0), |b| json_int(b, "buffer"))?;
     let Some(buffer) = usize::try_from(buffer_number).ok().and_then(|b| gltf.buffers.get(b)) else {
         bail!("the glTF has no buffer {buffer_number}");
     };
-    let base = view.get("byteOffset").map_or(Ok(0), |o| json_int(o, "byteOffset"))?
-        + offset.map_or(Ok(0), |o| json_int(o, "byteOffset"))?;
+    // in i128, which no sum or product of a count, stride and offsets of JSON ints overflows
+    let base = view.get("byteOffset").map_or(Ok(0), |o| json_int(o, "byteOffset"))? as i128
+        + offset.map_or(Ok(0), |o| json_int(o, "byteOffset"))? as i128;
     // a stride of 0 (or none) means the values are packed
     let stride = match view.get("byteStride").map(|s| json_int(s, "byteStride")).transpose()? {
-        Some(stride) if stride != 0 => stride,
-        _ => (n * size) as i64,
+        Some(stride) if stride != 0 => stride as i128,
+        _ => (n * size) as i128,
     };
     // the first and last values in the buffer, before anything is allocated for them (the values
-    // between lie between them); in i128, which no count, stride or offset of a JSON int overflows
+    // between lie between them)
     let value_size = (n * size) as i128;
     for k in [0, count.saturating_sub(1)] {
-        let at = base as i128 + k as i128 * stride as i128;
+        let at = base + k as i128 * stride;
         if count > 0 && (at < 0 || at + value_size > buffer.len() as i128) {
             bail!(
                 "an accessor's value {k} (of {count}) runs past the end of buffer {buffer_number} ({} bytes)",
@@ -265,17 +261,9 @@ fn view_values(
     }
     let mut values = Vec::with_capacity(count * n);
     for k in 0..count {
-        let at = (base as i128 + k as i128 * stride as i128) as usize;
+        let at = (base + k as i128 * stride) as usize;
         for j in 0..n {
-            let b = &buffer[at + j * size..at + (j + 1) * size];
-            values.push(match component {
-                5120 => Num::Int(b[0] as i8 as i64),
-                5121 => Num::Int(b[0] as i64),
-                5122 => Num::Int(i16::from_le_bytes([b[0], b[1]]) as i64),
-                5123 => Num::Int(u16::from_le_bytes([b[0], b[1]]) as i64),
-                5125 => Num::Int(u32::from_le_bytes(b.try_into().unwrap()) as i64),
-                _ => Num::Float(numeric::f32_value(u32::from_le_bytes(b.try_into().unwrap()))),
-            });
+            values.push(component.read(&buffer[at + j * size..at + (j + 1) * size]));
         }
     }
     Ok(values)
@@ -549,10 +537,11 @@ fn build_mdt(prims: &[Primitive], materials: Vec<Material>) -> (Mdt, Vec<Skin>) 
 
 fn floats_of(value: &Value) -> Result<Vec<f64>> {
     match value {
-        Value::Array(items) => {
-            items.iter().map(|v| v.as_f64().ok_or_else(|| Error::invalid("required argument is not a float"))).collect()
-        }
-        _ => bail!("the value is not a list"),
+        Value::Array(items) => items
+            .iter()
+            .map(|v| v.as_f64().ok_or_else(|| Error::invalid(format!("the glTF has {v} where it needs a number"))))
+            .collect(),
+        other => bail!("the glTF has {other} where it needs a list of numbers"),
     }
 }
 
@@ -577,7 +566,8 @@ fn material_from_gltf(gltf: &Value, number: &Value) -> Result<Material> {
         m.specular = floats_of(value)?;
     }
     if let Some(value) = extras.get("mdt_power") {
-        m.power = value.as_f64().ok_or_else(|| Error::invalid("required argument is not a float"))?;
+        m.power =
+            value.as_f64().ok_or_else(|| Error::invalid(format!("a material's mdt_power is {value}, not a number")))?;
     }
     let mut texture = extras.get("texture").filter(|v| !matches!(v, Value::Null)).cloned();
     if texture.is_none() {
@@ -709,7 +699,7 @@ pub struct ImportOptions {
 pub fn frames_of(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
     let empty = Vec::new();
     let nodes = match json.get("nodes") {
-        Some(nodes) => nodes.as_array().ok_or_else(|| Error::invalid("'nodes' is not a list"))?,
+        Some(nodes) => nodes.as_array().ok_or_else(|| Error::invalid("the glTF's nodes are not a list"))?,
         None => &empty,
     };
     let mut whole: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -940,7 +930,7 @@ fn geometry(
         }
         false => item(&gltf.json, "nodes")?,
     };
-    let nodes = nodes_value.as_array().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
+    let nodes = nodes_value.as_array().ok_or_else(|| Error::invalid("the glTF's nodes are not a list"))?;
     let parent = parents_of(nodes);
     let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
     let template_world = model.world_matrices()?;
@@ -957,8 +947,9 @@ fn geometry(
                         reskin = Some(skin_matrices(gltf, skin, &resolved, binds)?);
                     }
                     let skin = index(item(&gltf.json, "skins")?, skin)?;
-                    let joints =
-                        item(skin, "joints")?.as_array().ok_or_else(|| Error::invalid("'joints' is not a list"))?;
+                    let joints = item(skin, "joints")?
+                        .as_array()
+                        .ok_or_else(|| Error::invalid("a skin's joints are not a list"))?;
                     let mut frames = Vec::with_capacity(joints.len());
                     for joint in joints {
                         let at = joint.as_i64().and_then(|j| usize::try_from(j).ok());
@@ -1009,7 +1000,7 @@ fn geometry(
         };
         let mesh = index(item(&gltf.json, "meshes")?, item(node, "mesh")?)?;
         let Some(primitives) = item(mesh, "primitives")?.as_array() else {
-            bail!("'primitives' is not a list");
+            bail!("a mesh's primitives are not a list");
         };
         let mut groups: BTreeMap<String, Vec<[Vec<f64>; 3]>> = BTreeMap::new();
         for primitive in primitives {
@@ -1146,7 +1137,7 @@ fn skin_matrices(
 ) -> Result<Vec<Mat4>> {
     let skin = index(item(&gltf.json, "skins")?, skin)?;
     let Some(joints) = item(skin, "joints")?.as_array() else {
-        bail!("'joints' is not a list");
+        bail!("a skin's joints are not a list");
     };
     let ibm = skin.get("inverseBindMatrices").map(|at| accessor(gltf, at)).transpose()?;
     let mut out = Vec::with_capacity(joints.len());
@@ -1211,7 +1202,7 @@ pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Mat4>) -> R
     let mut out = BTreeMap::new();
     let resolved = frames_of(&gltf.json, model)?;
     let nodes_value = animated_nodes_at_rest(&gltf.json, model, &resolved)?;
-    let nodes = nodes_value.as_array().ok_or_else(|| Error::invalid("'nodes' is not a list"))?;
+    let nodes = nodes_value.as_array().ok_or_else(|| Error::invalid("the glTF's nodes are not a list"))?;
     let parent = parents_of(nodes);
     let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
     let template_world = model.world_matrices()?;
@@ -1222,7 +1213,7 @@ pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Mat4>) -> R
         let node = &nodes[gi];
         let mesh = index(item(&gltf.json, "meshes")?, item(node, "mesh")?)?;
         let Some(primitives) = item(mesh, "primitives")?.as_array() else {
-            bail!("'primitives' is not a list");
+            bail!("a mesh's primitives are not a list");
         };
         let count = primitives.iter().filter_map(|p| p.get("targets").and_then(Value::as_array)).map(Vec::len).max();
         let (Some(count), Some(t)) = (count.filter(|&c| c > 0), model.nodes[frame].mdt.as_ref()) else {
@@ -1513,7 +1504,7 @@ pub fn import_with(
     let at_rest = animated_nodes_at_rest(j, &model, &resolved)?;
     let nodes = &at_rest;
     let Some(node_list) = nodes.as_array() else {
-        bail!("'nodes' is not a list");
+        bail!("the glTF's nodes are not a list");
     };
     let parent = parents_of(node_list);
     let mut world: HashMap<i64, TypedMatrix> = HashMap::new();
@@ -1535,7 +1526,7 @@ pub fn import_with(
         };
         let ibm = accessor(gltf, ibm_index)?;
         let Some(joints) = item(skin, "joints")?.as_array() else {
-            bail!("'joints' is not a list");
+            bail!("a skin's joints are not a list");
         };
         for (k, gi) in joints.iter().enumerate() {
             let mi = mds_index_of(&by_name, gi)?;
@@ -1618,7 +1609,7 @@ pub fn import_with(
             }
             to_local = mat_inv(&bbp[target]).unwrap_or(IDENT);
             let Some(joints) = item(skin, "joints")?.as_array() else {
-                bail!("'joints' is not a list");
+                bail!("a skin's joints are not a list");
             };
             for g in joints {
                 joint_map.push(mds_index_of(&by_name, g)?);
@@ -1655,7 +1646,7 @@ pub fn import_with(
         let mut prims = Vec::new();
         let mesh = index(mesh_list.ok_or_else(|| missing("meshes"))?, mesh_index)?;
         let Some(primitives) = item(mesh, "primitives")?.as_array() else {
-            bail!("'primitives' is not a list");
+            bail!("a mesh's primitives are not a list");
         };
         for p in primitives {
             if p.get("mode").map_or(4.0, |m| m.as_f64().unwrap_or(f64::NAN)) != 4.0 {
@@ -1746,7 +1737,7 @@ pub fn import_with(
                 let mut skin_key = None;
                 if let Some(jts) = jts.as_ref().filter(|v| !v.is_empty()) {
                     let Some(wts) = wts.as_ref() else {
-                        bail!("the .glb has no JSON chunk");
+                        bail!("mesh {nm}: a primitive has JOINTS_0 but no WEIGHTS_0");
                     };
                     let mut pairs: Vec<(Num, i64)> = Vec::new();
                     for (jj, w) in jts.at(c)?.iter().zip(wts.at(c)?) {
@@ -1788,7 +1779,7 @@ pub fn import_with(
             }
             for (b, keys) in per_bone {
                 let Ok(b) = i32::try_from(b) else {
-                    bail!("a value does not fit in a 32-bit int");
+                    bail!("mesh {nm}: its skin names frame {b}, past what a weight list can name");
                 };
                 new_wgt.push(KeyList::new(target as i32, b, 20, keys));
             }
@@ -2149,7 +2140,7 @@ fn world_of(
         return Ok(m.clone());
     }
     if depth > 900 {
-        bail!("maximum recursion depth exceeded");
+        bail!("the glTF's node {i} is more than 900 parents deep (its hierarchy has a cycle?)");
     }
     let m = node_matrix(index(nodes, &Value::from(i))?)?;
     let m = match parent.get(&i) {

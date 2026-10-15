@@ -86,14 +86,14 @@ pub fn build(lists: &[KeyList]) -> Result<Vec<u8>> {
         out.extend(list.unk_0c.to_le_bytes());
         out.extend((list.keys.len() as u32).to_le_bytes());
         let Ok(more) = u32::try_from(more) else {
-            bail!("a value does not fit in an unsigned 32-bit int");
+            bail!("key list {i} is {more} bytes, more than its 32-bit size field holds");
         };
         out.extend(more.to_le_bytes());
         out.extend(list.garbage.0.to_le_bytes());
         out.extend(list.garbage.1.to_le_bytes());
         for (k, (frame, value)) in list.keys.iter().enumerate() {
             let Ok(frame) = u32::try_from(*frame) else {
-                bail!("a value does not fit in an unsigned 32-bit int");
+                bail!("key list {i}: key {k} is at frame {frame}, which a key list cannot hold (0 to 2^32 - 1)");
             };
             out.extend(frame.to_le_bytes());
             match list.key_pad.as_ref().and_then(|pads| pads.get(&k)) {

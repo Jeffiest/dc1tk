@@ -106,13 +106,17 @@ impl Material {
         let floats: Vec<f64> =
             self.diffuse.iter().chain(&self.ambient).chain(&self.specular).copied().chain([self.power]).collect();
         if floats.len() != 13 {
-            bail!("pack expected 13 items for packing (got {})", floats.len());
+            bail!(
+                "material {}: its colours and power are {} numbers, not 13 (4, 4, 4 and 1)",
+                self.texture,
+                floats.len()
+            );
         }
         let mut out = Vec::with_capacity(0x60);
         pack_floats(&floats, &mut out)?;
         out.extend(name_out(&self.texture, &self.texture_raw, NAME)?);
         let Ok(unk_54) = i32::try_from(self.unk_54) else {
-            bail!("a value does not fit in a 32-bit int");
+            bail!("material {}: unk_54 {} does not fit its 32 bits", self.texture, self.unk_54);
         };
         out.extend(unk_54.to_le_bytes());
         pack_floats(&[self.unk_58, self.unk_5c], &mut out)?;
@@ -202,7 +206,7 @@ fn vecs(b: &[u8], at: i64, n: i32) -> Result<Vec<[f64; 4]>> {
         return Ok(Vec::new());
     }
     if at < 0 {
-        bail!("offset {at} out of range");
+        bail!("an MDT section at offset {at}, before the file");
     }
     (0..n as usize).map(|i| f32s_at(b, at as usize + 16 * i)).collect()
 }
@@ -247,12 +251,12 @@ impl Mdt {
         for i in 0..mn.max(0) as i64 {
             let o = at(mo) + 0x60 * i;
             if o < 0 {
-                bail!("offset out of range");
+                bail!("an MDT's material {i} at offset {o}, before the file");
             }
             mdt.materials.push(Material::unpack(b, o as usize)?);
         }
         if at(fo) < 0 {
-            bail!("offset out of range");
+            bail!("an MDT's faces at offset {}, before the file", at(fo));
         }
         let f = at(fo) as usize;
         mdt.faces_unk00 = u32_at(b, f)?;
@@ -410,7 +414,7 @@ impl Mdt {
         ];
         for value in header {
             let Ok(value) = i32::try_from(value) else {
-                bail!("a value does not fit in a 32-bit int");
+                bail!("an MDT's header field of {value} does not fit its 32 bits (the mesh is too big)");
             };
             out.extend(value.to_le_bytes());
         }

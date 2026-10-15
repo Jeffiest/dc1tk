@@ -86,9 +86,7 @@ impl Smf {
                 bail!("track {} runs past the end of the file", tracks.len());
             };
             if &data[at..at + 4] == b"MTrk" {
-                tracks.push(
-                    read_track(chunk).map_err(|error| Error::invalid(format!("track {}: {error}", tracks.len())))?,
-                );
+                tracks.push(read_track(chunk).with_context(|| format!("track {}", tracks.len()))?);
             }
             at += 8 + size;
         }
@@ -591,8 +589,7 @@ pub fn build_bank(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
                 if names.is_empty() { "none".to_string() } else { names.join(", ") }
             );
         };
-        let built = build(&std::fs::read(&path)?, &pack.members[index].data, Some(&bank))
-            .map_err(|error| Error::invalid(format!("{file}: {error}")))?;
+        let built = build(&std::fs::read(&path)?, &pack.members[index].data, Some(&bank)).context(&file)?;
         if built != pack.members[index].data {
             pack.members[index].data = built;
             changed = true;
@@ -662,8 +659,7 @@ fn instrumented(
         let mut zones = Vec::new();
         for zone in &instrument.zones {
             let file = zone.path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            let sound = crate::soundbank::read_wav(&std::fs::read(&zone.path)?)
-                .map_err(|error| Error::invalid(format!("{file}: {error}")))?;
+            let sound = crate::soundbank::read_wav(&std::fs::read(&zone.path)?).context(&file)?;
             zones.push(crate::soundbank::Zone {
                 sound,
                 low: zone.low as i64,

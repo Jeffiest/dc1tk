@@ -4,6 +4,7 @@
 //! animation per KEY clip of motion set 0.
 
 use crate::folder::Folder;
+use crate::gltf::{AccessorType, ComponentType};
 use crate::info_cfg::Arg;
 use crate::info_cfg::{self, CharInfo};
 use crate::math::{
@@ -69,19 +70,6 @@ struct Gltf {
 
 const ARRAY_BUFFER: i64 = 34962;
 const ELEMENT_ARRAY_BUFFER: i64 = 34963;
-const FLOAT: i64 = 5126;
-const UNSIGNED_SHORT: i64 = 5123;
-const UNSIGNED_INT: i64 = 5125;
-
-fn components(kind: &str) -> usize {
-    match kind {
-        "SCALAR" => 1,
-        "VEC2" => 2,
-        "VEC3" => 3,
-        "VEC4" => 4,
-        _ => 16,
-    }
-}
 
 impl Gltf {
     fn view(&mut self, data: &[u8], target: Option<i64>) -> usize {
@@ -97,21 +85,28 @@ impl Gltf {
         self.buffer_views.len() - 1
     }
 
-    fn add_accessor(&mut self, data: Vec<u8>, count: usize, kind: &str, ctype: i64, target: Option<i64>) -> Value {
+    fn add_accessor(
+        &mut self,
+        data: Vec<u8>,
+        count: usize,
+        kind: AccessorType,
+        ctype: ComponentType,
+        target: Option<i64>,
+    ) -> Value {
         let view = self.view(&data, target);
-        json!({"bufferView": view, "componentType": ctype, "count": count, "type": kind})
+        json!({"bufferView": view, "componentType": ctype.code(), "count": count, "type": kind.name()})
     }
 
     /// A float accessor of values (each a vector, or one number for SCALAR), with min and max
     /// when asked.
-    fn floats(&mut self, values: &[Vec<f64>], kind: &str, target: Option<i64>, minmax: bool) -> Result<usize> {
+    fn floats(&mut self, values: &[Vec<f64>], kind: AccessorType, target: Option<i64>, minmax: bool) -> Result<usize> {
         let mut data = Vec::new();
         for v in values {
             mds::pack_floats(v, &mut data)?;
         }
-        let mut accessor = self.add_accessor(data, values.len(), kind, FLOAT, target);
+        let mut accessor = self.add_accessor(data, values.len(), kind, ComponentType::Float, target);
         if minmax {
-            let n = components(kind);
+            let n = kind.components();
             let mut low = Vec::with_capacity(n);
             let mut high = Vec::with_capacity(n);
             for i in 0..n {
@@ -137,10 +132,16 @@ impl Gltf {
     }
 
     /// An unsigned accessor (unsigned short or int) of values.
-    fn unsigned(&mut self, values: &[Vec<i64>], kind: &str, ctype: i64, target: Option<i64>) -> Result<usize> {
+    fn unsigned(
+        &mut self,
+        values: &[Vec<i64>],
+        kind: AccessorType,
+        ctype: ComponentType,
+        target: Option<i64>,
+    ) -> Result<usize> {
         let mut data = Vec::new();
         for &x in values.iter().flatten() {
-            if ctype == UNSIGNED_SHORT {
+            if ctype == ComponentType::UnsignedShort {
                 let Ok(x) = u16::try_from(x) else {
                     bail!("{x} does not fit an unsigned short");
                 };
@@ -983,7 +984,7 @@ impl<'a> MeshMotion<'a> {
                     Some(at) => at,
                     None => {
                         let values = vec![vec![0.0; 3]; corners.len()];
-                        let at = g.floats(&values, "VEC3", Some(ARRAY_BUFFER), true)?;
+                        let at = g.floats(&values, AccessorType::Vec3, Some(ARRAY_BUFFER), true)?;
                         zero = Some(at);
                         at
                     }
@@ -1011,7 +1012,7 @@ impl<'a> MeshMotion<'a> {
                 };
                 values.push(delta);
             }
-            out.push(json!({"POSITION": g.floats(&values, "VEC3", Some(ARRAY_BUFFER), true)?}));
+            out.push(json!({"POSITION": g.floats(&values, AccessorType::Vec3, Some(ARRAY_BUFFER), true)?}));
         }
         Ok(out)
     }
@@ -1332,7 +1333,7 @@ fn export_parts(
             if skinned {
                 pos = pos.iter().map(|v| xform_point(&bind, v).to_vec()).collect();
             }
-            let mut attributes = json!({"POSITION": g.floats(&pos, "VEC3", Some(ARRAY_BUFFER), true)?});
+            let mut attributes = json!({"POSITION": g.floats(&pos, AccessorType::Vec3, Some(ARRAY_BUFFER), true)?});
             if *hn {
                 let mut normals: Vec<Vec<f64>> = vs
                     .iter()
@@ -1344,12 +1345,14 @@ fn export_parts(
                 if skinned {
                     normals = normals.iter().map(|v| normalize(&xform_dir(&bind, v), Z).to_vec()).collect();
                 }
-                attributes["NORMAL"] = Value::from(g.floats(&normals, "VEC3", Some(ARRAY_BUFFER), false)?);
+                attributes["NORMAL"] =
+                    Value::from(g.floats(&normals, AccessorType::Vec3, Some(ARRAY_BUFFER), false)?);
             }
             if *hu {
                 let uvs: Vec<Vec<f64>> =
                     vs.iter().map(|k| Ok(at_index(&t.uvs, k[2])?[..2].to_vec())).collect::<Result<_>>()?;
-                attributes["TEXCOORD_0"] = Value::from(g.floats(&uvs, "VEC2", Some(ARRAY_BUFFER), false)?);
+                attributes["TEXCOORD_0"] =
+                    Value::from(g.floats(&uvs, AccessorType::Vec2, Some(ARRAY_BUFFER), false)?);
             }
             if *hc {
                 let colours: Vec<Vec<f64>> = vs
@@ -1361,7 +1364,8 @@ fn export_parts(
                             .collect())
                     })
                     .collect::<Result<_>>()?;
-                attributes["COLOR_0"] = Value::from(g.floats(&colours, "VEC4", Some(ARRAY_BUFFER), false)?);
+                attributes["COLOR_0"] =
+                    Value::from(g.floats(&colours, AccessorType::Vec4, Some(ARRAY_BUFFER), false)?);
             }
             if let Some(weights) = &weights {
                 let (mut joints, mut amounts) = (Vec::new(), Vec::new());
@@ -1371,16 +1375,21 @@ fn export_parts(
                     joints.push(l.iter().map(|(b, _)| *b).collect::<Vec<i64>>());
                     amounts.push(l.iter().map(|(_, w)| *w).collect::<Vec<f64>>());
                 }
-                attributes["JOINTS_0"] =
-                    Value::from(g.unsigned(&joints, "VEC4", UNSIGNED_SHORT, Some(ARRAY_BUFFER))?);
-                attributes["WEIGHTS_0"] = Value::from(g.floats(&amounts, "VEC4", Some(ARRAY_BUFFER), false)?);
+                attributes["JOINTS_0"] = Value::from(g.unsigned(
+                    &joints,
+                    AccessorType::Vec4,
+                    ComponentType::UnsignedShort,
+                    Some(ARRAY_BUFFER),
+                )?);
+                attributes["WEIGHTS_0"] =
+                    Value::from(g.floats(&amounts, AccessorType::Vec4, Some(ARRAY_BUFFER), false)?);
             }
             let big = vs.len() > 65535;
             let index_values: Vec<Vec<i64>> = indices.iter().map(|&x| vec![x]).collect();
             let indices = g.unsigned(
                 &index_values,
-                "SCALAR",
-                if big { UNSIGNED_INT } else { UNSIGNED_SHORT },
+                AccessorType::Scalar,
+                if big { ComponentType::UnsignedInt } else { ComponentType::UnsignedShort },
                 Some(ELEMENT_ARRAY_BUFFER),
             )?;
             let mut gp = json!({"attributes": attributes, "indices": indices, "mode": 4i64});
@@ -1443,7 +1452,7 @@ fn export_parts(
             let inverse = m.and_then(|m| mat_inv(&m)).or_else(|| mat_inv(w)).unwrap_or(IDENT);
             inverses.push(inverse.to_vec());
         }
-        let ibm = g.floats(&inverses, "MAT4", None, false)?;
+        let ibm = g.floats(&inverses, AccessorType::Mat4, None, false)?;
         g.skins.push(json!({
             "name": "skeleton",
             "joints": Value::Array((0..nodes.len()).map(Value::from).collect()),
@@ -1498,7 +1507,7 @@ fn export_parts(
             };
             let frames: Vec<i64> = (s..=e).collect();
             let times: Vec<Vec<f64>> = frames.iter().map(|f| vec![(f - s) as f64 / fps]).collect();
-            let times = g.floats(&times, "SCALAR", None, true)?;
+            let times = g.floats(&times, AccessorType::Scalar, None, true)?;
             let (mut samplers, mut channels) = (Vec::new(), Vec::new());
             for (&(node, path), list) in &channels_of {
                 let key_frames: Vec<i64> = list.keys.iter().map(|(k, _)| *k).collect();
@@ -1513,7 +1522,8 @@ fn export_parts(
                         }
                     }
                 }
-                let output = g.floats(&values, if rotation { "VEC4" } else { "VEC3" }, None, false)?;
+                let output =
+                    g.floats(&values, if rotation { AccessorType::Vec4 } else { AccessorType::Vec3 }, None, false)?;
                 samplers.push(json!({"input": times, "output": output, "interpolation": "LINEAR"}));
                 channels.push(json!({
                     "sampler": samplers.len() - 1,
@@ -1530,7 +1540,7 @@ fn export_parts(
                 }
                 let weights: Vec<Vec<f64>> =
                     frames.iter().flat_map(|&f| morph.weights(t, set, f)).map(|w| vec![w]).collect();
-                let output = g.floats(&weights, "SCALAR", None, false)?;
+                let output = g.floats(&weights, AccessorType::Scalar, None, false)?;
                 samplers.push(json!({"input": times, "output": output, "interpolation": "LINEAR"}));
                 channels.push(json!({
                     "sampler": samplers.len() - 1,

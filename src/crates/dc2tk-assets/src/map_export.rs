@@ -11,7 +11,7 @@ use serde_json::{json, Map, Value};
 use crate::map_scene::{self, SceneNode};
 use crate::mapfile::MapFile;
 use crate::to_gltf::{Options, TextureSearch};
-use crate::{info_cfg, models, Error, Result};
+use crate::{info_cfg, models, Context, Error, Result};
 
 /// A map's model pack (a .pcp of its .mpk): its info.cfg's entries (model, TYPE) and its files.
 pub struct ModelPack {
@@ -123,7 +123,7 @@ impl Scene {
         let Some((_, text)) = files.iter().find(|(path, _)| *path == gltf_name) else {
             return Err(Error::invalid(format!("{stem}: the export wrote no {gltf_name}")));
         };
-        let doc: Value = serde_json::from_slice(text).map_err(|error| Error::invalid(format!("{stem}: {error}")))?;
+        let doc: Value = serde_json::from_slice(text).context(stem)?;
         let list = |key: &str| doc[key].as_array().cloned().unwrap_or_default();
         let base = |scene: &Scene, key: &str| scene.len(key);
         let (buffer_base, view_base, accessor_base) =
@@ -330,8 +330,7 @@ pub fn export_map(
             continue;
         }
         let stem = model.rsplit_once('.').map_or(model.as_str(), |(stem, _)| stem);
-        let (files, found) = models::export_map_model(data, stem, &options_for(kind, textures))
-            .map_err(|error| Error::invalid(format!("{model}: {error}")))?;
+        let (files, found) = models::export_map_model(data, stem, &options_for(kind, textures)).context(model)?;
         for texture in found.missing_textures {
             if !report.missing_textures.contains(&texture) {
                 report.missing_textures.push(texture);

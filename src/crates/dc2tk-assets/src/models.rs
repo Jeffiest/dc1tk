@@ -14,7 +14,7 @@ use crate::folder::Folder;
 use crate::from_gltf::{self, Gltf, MeshId};
 use crate::info_cfg;
 use crate::info_cfg::Arg;
-use crate::{bail, im3, motions, textures, to_gltf, Error, Result};
+use crate::{bail, im3, motions, textures, to_gltf, Context, Error, Result};
 
 pub const TEXTURES: &str = "textures";
 
@@ -825,7 +825,7 @@ pub fn new_pack(source: &Path, template: &[u8], template_name: &str, stem: &str)
     let here = path.parent().unwrap_or(Path::new(".")).to_path_buf();
     let read = |uri: &str| -> Result<Vec<u8>> {
         let file = here.join(crate::tree::uri_decoded(uri));
-        std::fs::read(&file).map_err(|error| Error::invalid(format!("{}: {error}", file.display())))
+        std::fs::read(&file).with_context(|| file.display().to_string())
     };
     let mut gltf = from_gltf::load_gltf(&std::fs::read(&path)?, &read)?;
     let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();

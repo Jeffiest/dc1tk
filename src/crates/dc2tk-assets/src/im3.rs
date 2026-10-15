@@ -278,7 +278,7 @@ fn put(buffer: &mut [u8], at: usize, bytes: &[u8]) -> Result<()> {
             target.copy_from_slice(bytes);
             Ok(())
         }
-        None => bail!("pack_into requires a buffer of at least {} bytes", at + bytes.len()),
+        None => bail!("the archive's header ends before the {} bytes written at 0x{at:x}", bytes.len()),
     }
 }
 
@@ -495,14 +495,14 @@ fn decode_level(raw: &[u8], format: Format, w: usize, h: usize, swizzled: bool) 
         Format::Ct32 => raw[..(4 * n).min(raw.len())].to_vec(),
         Format::Ct24 => {
             if n > 0 && raw.len() < 3 * n {
-                bail!("attempt to assign bytes of size {} to extended slice of size {}", raw.len().div_ceil(3), n);
+                bail!("a 24-bit picture of {n} pixels has {} bytes of pixels, not {}", raw.len(), 3 * n);
             }
             raw[..3 * n].chunks(3).flat_map(|c| [c[0], c[1], c[2], 0x80]).collect()
         }
         Format::Ct16 => {
             let used = &raw[..(2 * n).min(raw.len())];
             if !used.len().is_multiple_of(2) {
-                bail!("iterative unpacking requires a buffer of a multiple of 2 bytes");
+                bail!("a 16-bit picture's pixels end in half a pixel");
             }
             let mut out = vec![0u8; 4 * n];
             for (i, pair) in used.chunks(2).enumerate() {
@@ -579,7 +579,7 @@ fn encode_level(
             for k in 0..3 {
                 let got = data.len().saturating_sub(k).div_ceil(4);
                 if got != n {
-                    bail!("attempt to assign bytes of size {got} to extended slice of size {n}");
+                    bail!("a 24-bit picture of {n} pixels is given {got} pixels");
                 }
             }
             (0..n).flat_map(|i| [data[4 * i], data[4 * i + 1], data[4 * i + 2]]).collect()
@@ -641,7 +641,7 @@ fn levels_pixels(w: usize, h: usize, levels: usize) -> usize {
 }
 
 fn checked<T: TryFrom<usize>>(value: usize, what: &str) -> Result<T> {
-    T::try_from(value).map_err(|_| Error::invalid(format!("argument out of range for format '{what}'")))
+    T::try_from(value).map_err(|_| Error::invalid(format!("{value} does not fit the TIM2 header's {what}")))
 }
 
 /// TIM2 file header and picture header for an image; old is the original TIM2 (fields not derived
@@ -932,7 +932,7 @@ pub fn write(images: &[Image], like: Option<&[u8]>) -> Result<Vec<u8>> {
                 put(&mut prefix, e.pos + 0x28, &(image.swizzled as i32).to_le_bytes())?;
                 put(&mut prefix, e.pos + 0x2C, &image.block.to_le_bytes())?;
                 let Some(clamp) = image.clamp else {
-                    bail!("required argument is not an integer");
+                    bail!("{} has no clamp setting, which an IM3 entry needs", image.name);
                 };
                 put(&mut prefix, e.pos + 0x38, &clamp.to_le_bytes())?;
                 let d = delta_of.get(&(e.offset as usize)).copied().unwrap_or(0);
@@ -1090,12 +1090,12 @@ pub fn decompress(data: &[u8]) -> Result<Vec<u8>> {
         let before = stream.total_out();
         let status = stream
             .decompress_vec(&data[used..], &mut out, flate2::FlushDecompress::Finish)
-            .map_err(|error| Error::invalid(format!("Error -3 while decompressing data: {error}")))?;
+            .map_err(|error| Error::invalid(format!("the compressed data does not inflate: {error}")))?;
         if status == flate2::Status::StreamEnd {
             return Ok(out);
         }
         if stream.total_in() as usize == data.len() && stream.total_out() == before && out.len() < out.capacity() {
-            bail!("Error -5 while decompressing data: incomplete or truncated stream");
+            bail!("the compressed data ends before its stream does");
         }
     }
 }
@@ -1259,7 +1259,7 @@ fn strided(data: &[u8], start: usize, step: usize) -> Vec<u8> {
 fn fill_strided(out: &mut [u8], start: usize, values: &[u8]) -> Result<()> {
     let slots = out.len().saturating_sub(start).div_ceil(4);
     if slots != values.len() {
-        bail!("attempt to assign bytes of size {} to extended slice of size {}", values.len(), slots);
+        bail!("a PNG channel of {} values for {slots} pixels", values.len());
     }
     for (slot, &v) in out.iter_mut().skip(start).step_by(4).zip(values) {
         *slot = v;
@@ -1447,7 +1447,7 @@ pub fn to_png(image: &Image, indexed: bool) -> Result<Vec<u8>> {
         let n = 3 * image.width * image.height;
         let rgb: Vec<u8> = rgba.chunks(4).flat_map(|c| c[..c.len().min(3)].to_vec()).collect();
         if rgb.len() != n {
-            bail!("attempt to assign bytes of size {} to extended slice of size {}", rgba.len().div_ceil(4), n / 3);
+            bail!("{} has {} pixels, not {} by {}", image.name, rgba.len().div_ceil(4), image.width, image.height);
         }
         return write_png(image.width, image.height, PngMode::Rgb, &rgb, &[], &text);
     }
