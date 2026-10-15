@@ -1,4 +1,5 @@
-//! difflib.get_close_matches, as CPython computes it (SequenceMatcher's ratio, autojunk included).
+//! difflib.get_close_matches and SequenceMatcher.ratio, as CPython computes them (autojunk
+//! included, no isjunk).
 
 use std::collections::HashMap;
 
@@ -42,16 +43,13 @@ impl<'a> Matcher<'a> {
             }
             j2len = next;
         }
-        // no junk is given, so only popular elements stop the match above; extend over them
-        let popular = |c: &char| !self.b2j.contains_key(c);
-        while besti > alo && bestj > blo && popular(&self.b[bestj - 1]) && self.a[besti - 1] == self.b[bestj - 1] {
+        // Popular elements are not in b2j, so the match above stops at them. With no isjunk every
+        // element is non-junk, and CPython extends the match over every equal element on each side
+        // (popular ones, and the ones beyond them); its second pass, over junk, has nothing to do.
+        while besti > alo && bestj > blo && self.a[besti - 1] == self.b[bestj - 1] {
             (besti, bestj, bestsize) = (besti - 1, bestj - 1, bestsize + 1);
         }
-        while besti + bestsize < ahi
-            && bestj + bestsize < bhi
-            && popular(&self.b[bestj + bestsize])
-            && self.a[besti + bestsize] == self.b[bestj + bestsize]
-        {
+        while besti + bestsize < ahi && bestj + bestsize < bhi && self.a[besti + bestsize] == self.b[bestj + bestsize] {
             bestsize += 1;
         }
         (besti, bestj, bestsize)
@@ -76,12 +74,20 @@ impl<'a> Matcher<'a> {
     }
 }
 
-fn ratio(matches: usize, length: usize) -> f64 {
+/// _calculate_ratio: twice the matched elements over both lengths.
+fn ratio_of(matches: usize, length: usize) -> f64 {
     if length == 0 {
         1.0
     } else {
         2.0 * matches as f64 / length as f64
     }
+}
+
+/// SequenceMatcher(None, a, b).ratio().
+pub fn ratio(a: &str, b: &str) -> f64 {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    ratio_of(Matcher::new(&a, &b).matched(), a.len() + b.len())
 }
 
 /// get_close_matches(word, possibilities, n, cutoff): the best n possibilities scoring at least
@@ -96,7 +102,7 @@ pub fn get_close_matches(word: &str, possibilities: &[String], n: usize, cutoff:
     for possibility in possibilities {
         let a: Vec<char> = possibility.chars().collect();
         let length = a.len() + b.len();
-        if ratio(a.len().min(b.len()), length) < cutoff {
+        if ratio_of(a.len().min(b.len()), length) < cutoff {
             continue;
         }
         let mut available = counts.clone();
@@ -108,10 +114,10 @@ pub fn get_close_matches(word: &str, possibilities: &[String], n: usize, cutoff:
             }
             *left -= 1;
         }
-        if ratio(quick, length) < cutoff {
+        if ratio_of(quick, length) < cutoff {
             continue;
         }
-        let score = ratio(Matcher::new(&a, &b).matched(), length);
+        let score = ratio_of(Matcher::new(&a, &b).matched(), length);
         if score >= cutoff {
             found.push((score, possibility));
         }
@@ -131,5 +137,16 @@ mod tests {
         let names: Vec<String> =
             ["floor_start", "floor_end", "map_start", "start"].iter().map(|w| w.to_string()).collect();
         assert_eq!(get_close_matches("flor_start", &names, 3, 0.6), ["floor_start", "start", "map_start"]);
+    }
+
+    #[test]
+    fn a_match_extends_past_popular_elements_like_python() {
+        // in a b of 201, a and b are popular (more than 3 times) and X, Y, Z are not: the longest
+        // match YZ extends over the "ab" before it, then over the X and b before those, so all six
+        // of a match; stopping at X left a separate X match, five in all
+        let b = format!("XbXabYZ{}", "ab".repeat(97));
+        // SequenceMatcher(None, "bXabYZ", b).ratio() in CPython 3.13
+        assert_eq!(ratio("bXabYZ", &b), 0.057971014492753624);
+        assert_eq!(ratio("", ""), 1.0);
     }
 }
