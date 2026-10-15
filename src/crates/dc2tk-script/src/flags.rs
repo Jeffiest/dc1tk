@@ -67,16 +67,32 @@ pub const TOOL_FLAGS: [(i64, &str); 1] = [(2047, "build --start-at")];
 /// Natives that take a save flag number as their first argument: event scripts' get_flag and
 /// set_flag and monster scripts' get_dungeon_flag and set_dungeon_flag, under SDK or original
 /// names.
-pub const FLAG_FUNCTIONS: [(&str, &str); 8] = [
-    ("get_flag", "get"),
-    ("set_flag", "set"),
-    ("get_dungeon_flag", "get"),
-    ("set_dungeon_flag", "set"),
-    ("_GET_FLAG", "get"),
-    ("_SET_FLAG", "set"),
-    ("_GET_BIT_FLAG", "get"),
-    ("_SET_BIT_FLAG", "set"),
+pub const FLAG_FUNCTIONS: [(&str, Access); 8] = [
+    ("get_flag", Access::Get),
+    ("set_flag", Access::Set),
+    ("get_dungeon_flag", Access::Get),
+    ("set_dungeon_flag", Access::Set),
+    ("_GET_FLAG", Access::Get),
+    ("_SET_FLAG", Access::Set),
+    ("_GET_BIT_FLAG", Access::Get),
+    ("_SET_BIT_FLAG", Access::Set),
 ];
+
+/// Whether a call reads a flag (or counter) or sets it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    Get,
+    Set,
+}
+
+impl std::fmt::Display for Access {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.pad(match self {
+            Access::Get => "get",
+            Access::Set => "set",
+        })
+    }
+}
 
 /// Counters the engine reads or writes by number, from the ChronicleTwo decomp's GetShortFlag and
 /// SetShortFlag calls: the main menu reads 5 (MenuMainInit through CheckShortFlagMenu), the fishing
@@ -91,8 +107,8 @@ pub const ENGINE_COUNTERS: [(i64, &str); 6] = [
 ];
 
 /// Natives that take a save counter number as their first argument, under SDK or original names.
-pub const COUNTER_FUNCTIONS: [(&str, &str); 4] =
-    [("get_counter", "get"), ("set_counter", "set"), ("_GET_CNT", "get"), ("_SET_CNT", "set")];
+pub const COUNTER_FUNCTIONS: [(&str, Access); 4] =
+    [("get_counter", Access::Get), ("set_counter", Access::Set), ("_GET_CNT", Access::Get), ("_SET_CNT", Access::Set)];
 
 /// One kind of numbered save data: the flags or the counters.
 #[derive(Debug)]
@@ -102,7 +118,7 @@ pub struct Space {
     pub count: i64,
     pub engine: &'static [(i64, &'static str)],
     pub tools: &'static [(i64, &'static str)],
-    pub functions: &'static [(&'static str, &'static str)],
+    pub functions: &'static [(&'static str, Access)],
     /// Prefixes of the header names that name a number.
     pub prefixes: &'static [&'static str],
 }
@@ -139,7 +155,7 @@ impl Space {
 #[derive(Clone, Debug)]
 pub struct Use {
     pub call: Call,
-    pub access: &'static str,
+    pub access: Access,
     pub expr: String,
 }
 
@@ -275,7 +291,7 @@ pub fn used_list(found: &Found, consts: &IndexMap<String, i64>) -> String {
     let mut lines = Vec::new();
     for number in used_numbers(found) {
         let uses = found.uses.get(&number).map(Vec::as_slice).unwrap_or(&[]);
-        let sets = uses.iter().filter(|used| used.access == "set").count();
+        let sets = uses.iter().filter(|used| used.access == Access::Set).count();
         let mut parts = Vec::new();
         if !uses.is_empty() {
             parts.push(format!("set {}, read {}", sets, uses.len() - sets));
@@ -318,7 +334,7 @@ pub fn who(found: &Found, number: i64, consts: &IndexMap<String, i64>) -> String
             used.call.path,
             used.call.line,
             used.call.text,
-            used.call.function.clone().unwrap_or_else(|| "None".into())
+            used.call.function.as_deref().unwrap_or("no function: before the first")
         ));
     }
     if lines.len() == 1 {

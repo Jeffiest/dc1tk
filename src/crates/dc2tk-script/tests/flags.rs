@@ -27,7 +27,10 @@ fn scanned(name: &str) -> flags::Found {
 fn scan_counts_literal_and_named_flags_and_lists_computed_ones() {
     let found = scanned("flags-scan");
     assert_eq!(found.uses.keys().copied().collect::<Vec<_>>(), vec![900, 2040]);
-    assert_eq!(found.uses[&900].iter().map(|used| used.access).collect::<Vec<_>>(), vec!["set", "get"]);
+    assert_eq!(
+        found.uses[&900].iter().map(|used| used.access).collect::<Vec<_>>(),
+        vec![flags::Access::Set, flags::Access::Get]
+    );
     assert_eq!(found.computed.iter().map(|used| used.expr.as_str()).collect::<Vec<_>>(), vec!["base + i"]);
 }
 

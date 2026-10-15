@@ -153,8 +153,7 @@ pub fn point_programs(point: &Point) -> Vec<(i64, String)> {
     let fields = point.event.as_ref().unwrap_or(&empty);
     let kind = fields.first().map_or("", |field| field.trim_matches('"'));
     if let Some(program) = point.program {
-        let check = point.check.clone().unwrap_or_else(|| "None".into());
-        let how = match check.as_str() {
+        let how = match point.check.as_deref().unwrap_or_default() {
             "on the action button" => "action button",
             "on using an item" => "using an item",
             "on touch" => "touch",
@@ -440,7 +439,7 @@ pub fn detail(code: &str, found: &Catalog, tree: &Path, extracted: &Path, progra
         };
         let started = point_programs(point);
         let what = if let Some(program) = point.program {
-            format!("starts program {program} {}", point.check.as_deref().unwrap_or("None"))
+            format!("starts program {program} {}", point.check.as_deref().unwrap_or_default())
         } else if !started.is_empty() {
             let numbers: Vec<String> = started.iter().map(|(number, _)| number.to_string()).collect();
             format!("{}, runs program {}", started[0].1, numbers.join(" and "))
@@ -469,7 +468,8 @@ pub fn detail(code: &str, found: &Catalog, tree: &Path, extracted: &Path, progra
         if entry.scripts.contains(&call.path) && call.args.first().is_some_and(|first| first == "0") {
             let key: Vec<String> = call.args.iter().skip(1).take(4).cloned().collect();
             if seen.insert(key) {
-                lines.push(format!("  {}  (in {})", call.text, call.function.as_deref().unwrap_or("None")));
+                let function = call.function.as_deref().unwrap_or("no function: before the first");
+                lines.push(format!("  {}  (in {function})", call.text));
             }
         }
     }
