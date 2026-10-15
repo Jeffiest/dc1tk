@@ -511,10 +511,9 @@ mod tests {
     /// The chest scripts of an extracted disc (C2S_CORPUS) read, write back unchanged, and their
     /// JSON changes nothing.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_chests_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let files: Vec<Vec<u8>> =
             paths().iter().map(|path| std::fs::read(std::path::Path::new(&corpus).join(path)).unwrap()).collect();
         let chests = Chests::read(&files).unwrap();

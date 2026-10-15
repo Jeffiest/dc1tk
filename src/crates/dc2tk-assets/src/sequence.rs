@@ -500,10 +500,9 @@ mod tests {
 
     /// Every .sq of an extracted disc (C2S_CORPUS) reads and writes back byte for byte.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_sequences_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let paths: Vec<std::path::PathBuf> = crate::files_under(std::path::Path::new(&corpus))
             .unwrap()
             .into_iter()

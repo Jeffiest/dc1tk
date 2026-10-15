@@ -3,6 +3,16 @@
 
 use crate::{archive, iso, text};
 
+/// The extracted disc C2S_CORPUS names, for the tests that read the game's own files. They are
+/// `#[ignore = "needs C2S_CORPUS"]`, so a plain `cargo test` lists them as ignored; `C2S_CORPUS=...
+/// cargo test --release -- --include-ignored` runs them, and fails here when the variable is unset.
+pub fn corpus() -> std::path::PathBuf {
+    match std::env::var_os("C2S_CORPUS") {
+        Some(corpus) => corpus.into(),
+        None => panic!("the corpus tests read an extracted disc: set C2S_CORPUS to one (extracted/disc)"),
+    }
+}
+
 const SECTOR: usize = iso::SECTOR as usize;
 pub const ROOT_SECTOR: usize = 18;
 

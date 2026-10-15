@@ -54,7 +54,9 @@ dc2tk defs disc extracted/disc <definition set>     record which disc a set is f
 dc2tk natives <ChronicleTwo checkout>
 ```
 
-The tests run with `cargo test --release` in the repository folder.
+The tests run with `cargo test --release` in the repository folder. The tests that read the
+game's own files are marked ignored; with `C2S_CORPUS` set to an extracted disc
+(`extracted/disc`), `cargo test --release -- --include-ignored` runs them too.
 
 ## Options shared by most commands
 

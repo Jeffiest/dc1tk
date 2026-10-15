@@ -779,10 +779,9 @@ mod tests {
     /// PartsInfoData and MiniMapInfoData of the executable (C2S_CORPUS) as data:parts: they read
     /// back as written, and a part renamed in its slot is patched in place.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_parts_table() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::elf::EXECUTABLE)).unwrap();
         let table = parts_table(&elf).unwrap();
         assert_eq!(table.check(), Vec::<String>::new());
@@ -809,10 +808,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_layouts_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);
         let files: Vec<Vec<u8>> = paths().iter().map(|path| std::fs::read(root.join(path)).unwrap()).collect();
         let parts = super::parts(&std::fs::read(root.join(crate::elf::EXECUTABLE)).unwrap()).unwrap();

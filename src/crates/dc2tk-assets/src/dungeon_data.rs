@@ -126,9 +126,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn corpus(paths: &[String]) -> Option<Vec<Vec<u8>>> {
-        let corpus = std::env::var_os("C2S_CORPUS")?;
-        Some(paths.iter().map(|path| std::fs::read(std::path::Path::new(&corpus).join(path)).unwrap()).collect())
+    fn corpus(paths: &[String]) -> Vec<Vec<u8>> {
+        let corpus = dc2tk_disc::samples::corpus();
+        paths.iter().map(|path| std::fs::read(corpus.join(path)).unwrap()).collect()
     }
 
     #[test]
@@ -149,10 +149,9 @@ mod tests {
     /// The medal and floor files of an extracted disc (C2S_CORPUS) read, write back unchanged,
     /// and their JSON changes nothing.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_floors_and_medals_round_trip() {
-        let (Some(medal_files), Some(floor_files)) = (corpus(&medal_paths()), corpus(&floor_paths())) else {
-            return;
-        };
+        let (medal_files, floor_files) = (corpus(&medal_paths()), corpus(&floor_paths()));
         let medals = medals(&medal_files).unwrap();
         assert_eq!(medals.write(), medal_files);
         assert_eq!(medals.check(), Vec::<String>::new());

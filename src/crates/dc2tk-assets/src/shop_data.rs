@@ -546,10 +546,9 @@ mod tests {
 
     /// The shop lists of an extracted disc (C2S_CORPUS) round-trip, and their JSON changes nothing.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_shops_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let menu = std::path::Path::new(&corpus).join(FOLDER);
         let files: Vec<Vec<u8>> = super::files().iter().map(|file| std::fs::read(menu.join(file)).unwrap()).collect();
         let names = std::fs::read(menu.join("cfg7").join(crate::item_data::NAMES)).ok();

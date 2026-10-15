@@ -1420,10 +1420,9 @@ mod tests {
     /// cfg7 the game reads): the scripts round-trip byte for byte, every field's text is the one
     /// its value writes, and the JSON goes back to the same files.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_item_data_round_trips() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let menu = std::path::Path::new(&corpus).join("menu");
         let mut checked = 0;
         for folder in ["cfg5", "cfg6", "cfg7"] {
@@ -1463,10 +1462,9 @@ mod tests {
     /// added up to what the engine holds (432 records: here 4 weapons, 2 usable items, 2
     /// attachments and a fish, each family's own limit met too), a tenth refused.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_items_are_added_up_to_the_engine_limits() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let folder = std::path::Path::new(&corpus).join(FOLDER);
         let files: Vec<Vec<u8>> =
             FILES.iter().chain(&NAME_FILES).map(|file| std::fs::read(folder.join(file)).unwrap()).collect();

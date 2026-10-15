@@ -2340,11 +2340,10 @@ mod tests {
     /// export of the rebuilt pack as given, every other motion as it was, and that motion's
     /// action deleted takes its KEY out and leaves every other motion as it was.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_motions_come_back_from_gltf() {
         use rayon::prelude::*;
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let packs: Vec<std::path::PathBuf> = crate::files_under(std::path::Path::new(&corpus))
             .unwrap()
             .into_iter()

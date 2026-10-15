@@ -650,10 +650,9 @@ mod tests {
     /// and its JSON changes nothing; the sort keys follow the letters; an idea is added and
     /// renamed in every copy, in its place; the limits refuse.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_ideas() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);
         let files: Vec<Vec<u8>> = paths().iter().map(|path| std::fs::read(root.join(path)).unwrap()).collect();
         let ideas = Ideas::read(&files).unwrap();

@@ -110,10 +110,9 @@ mod tests {
     /// Every copy of inv6.lst and the scoop table of an extracted disc (C2S_CORPUS) read, write
     /// back unchanged, and their JSON changes nothing; an edit reaches all 19 copies.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_inventions_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);
         let files: Vec<Vec<u8>> = paths().iter().map(|path| std::fs::read(root.join(path)).unwrap()).collect();
         let elf = std::fs::read(root.join(crate::elf::EXECUTABLE)).unwrap();

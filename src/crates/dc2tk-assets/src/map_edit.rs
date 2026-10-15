@@ -372,10 +372,9 @@ mod tests {
 
     /// Every map of an extracted disc (C2S_CORPUS) rebuilds from its own scene unchanged.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_scenes_rebuild_their_maps() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         fn walk(folder: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
             for entry in std::fs::read_dir(folder).unwrap().flatten() {
                 let path = entry.path();

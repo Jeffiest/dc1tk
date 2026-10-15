@@ -194,10 +194,9 @@ mod tests {
     /// The executable's tables (C2S_CORPUS) read, every value's bytes are the ones it writes, and
     /// their JSON changes nothing.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_executable_tables_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::elf::EXECUTABLE)).unwrap();
         for table in [
             spectrumise(&elf).unwrap(),

@@ -241,19 +241,18 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn corpus(paths: &[String]) -> Option<Vec<Vec<u8>>> {
-        let corpus = std::env::var_os("C2S_CORPUS")?;
-        Some(paths.iter().map(|path| std::fs::read(std::path::Path::new(&corpus).join(path)).unwrap()).collect())
+    fn corpus(paths: &[String]) -> Vec<Vec<u8>> {
+        let corpus = dc2tk_disc::samples::corpus();
+        paths.iter().map(|path| std::fs::read(corpus.join(path)).unwrap()).collect()
     }
 
     /// Every language's requests (C2S_CORPUS) read, write back unchanged, their JSON changes
     /// nothing, the strings fit buff_1271; a request is edited in every language and added to
     /// a town.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_requests_round_trip() {
-        let Some(files) = corpus(&request_paths()) else {
-            return;
-        };
+        let files = corpus(&request_paths());
         let table = requests(&files).unwrap();
         assert_eq!(table.write(), files);
         assert_eq!(table.check(), Vec::<String>::new());
@@ -297,10 +296,9 @@ mod tests {
     /// Every language's townspeople (C2S_CORPUS) read, write back unchanged and their JSON
     /// changes nothing; one is added in every language, up to NpcBaseData's 180.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_townspeople_round_trip() {
-        let Some(files) = corpus(&townspeople_paths()) else {
-            return;
-        };
+        let files = corpus(&townspeople_paths());
         let table = townspeople(&files).unwrap();
         assert_eq!(table.write(), files);
         assert_eq!(table.check(), Vec::<String>::new());

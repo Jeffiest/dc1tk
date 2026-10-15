@@ -13,7 +13,8 @@ this repository). Map meshes are the MDS format of
 **Settled (engine code and whole-corpus checks):**
 - All 210 `.map` files parse into a typed tree and are written back byte for
   byte, also through JSON: `dc2tk-assets`' `mapfile.rs` (`mapfile::parse`,
-  `mapfile::write`; `cargo test --release corpus` with `C2S_CORPUS` set to the
+  `mapfile::write`; `cargo test --release -- --include-ignored corpus` with
+  `C2S_CORPUS` set to the
   extracted disc checks them all). The tree keeps each number as the file
   types it (int, float, or an exponent the engine reads as 0) and every
   optional line and argument count of section 2.3; the layout is computed.

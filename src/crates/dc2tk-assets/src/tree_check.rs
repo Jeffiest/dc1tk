@@ -324,10 +324,9 @@ mod tests {
     /// pack, and an ambient bank of several sequences. Each sequence is a music asset at every
     /// place, the tree and the index give the same ids, and the tree's MIDI files build back.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_sequences_are_music_in_the_tree_and_build_back() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let read = |path: &str| std::fs::read(Path::new(&corpus).join(path)).unwrap();
         let bgm = read("snd2/bgm/BG_193.snd");
         let disc = vec![

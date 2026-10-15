@@ -356,10 +356,9 @@ mod tests {
 
     /// The whole disc round-trips: set C2S_CORPUS to an extracted disc to run it (40 s).
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let defs = dc2tk_script::definitions::load(&[files::default_defs()]).unwrap();
         let headers = dc2tk_script::sdk::header_texts(&defs, &files::root().join("sdk")).unwrap();
         let report = verify(Path::new(&corpus), &tables(), defs, headers).unwrap();

@@ -511,10 +511,9 @@ mod tests {
     /// Every fixed map of an extracted disc (C2S_CORPUS) exported and imported unedited changes
     /// nothing: the same .map, no model rebuilt.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_unedited_scenes_change_nothing() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);
         let mut checked = 0;
         for name in ["map/s/s17/s17", "map/m/m05/m05"] {

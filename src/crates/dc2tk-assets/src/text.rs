@@ -1494,10 +1494,9 @@ pub(crate) mod tests {
     /// glyph the game's own files use has its character, and the Japanese font pages have ink in
     /// exactly the cells font::JAPANESE names.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_japanese_and_korean_read_as_text() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);
         let fonts = Fonts {
             english_table: std::fs::read(root.join(ENGLISH_FONT)).ok(),
@@ -1545,10 +1544,9 @@ pub(crate) mod tests {
     /// Every message file of an extracted disc (C2S_CORPUS): read and written back, and through
     /// its text, byte for byte.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_message_files_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);
         let paths = crate::files_under(root).unwrap();
         let fonts = Fonts {

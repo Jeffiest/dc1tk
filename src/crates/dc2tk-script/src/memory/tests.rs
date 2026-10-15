@@ -292,8 +292,9 @@ fn map_files_name_their_map() {
 /// RETAIL_ constants (when one fails, the budget or the estimate is wrong). Set C2S_CORPUS to
 /// an extracted disc (`extracted/disc`).
 #[test]
+#[ignore = "needs C2S_CORPUS"]
 fn corpus_retail_fits_the_budgets() {
-    let Some(corpus) = std::env::var_os("C2S_CORPUS") else { return };
+    let corpus = dc2tk_disc::samples::corpus();
     let disc = Folder::open(Path::new(&corpus)).unwrap();
     let mut wrong = Vec::new();
     let mut largest: BTreeMap<MapKind, (u64, String)> = BTreeMap::new();

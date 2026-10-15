@@ -315,10 +315,9 @@ MAP_NAME \"\",\"\",\"\",0,0;// 1 \r\nMAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\
     /// Every language's table of an extracted disc (C2S_CORPUS) takes a new map as number 189,
     /// within its buffer.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_tables_take_a_new_map() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         for language in LANGUAGES {
             let cfg =
                 std::fs::read(std::path::Path::new(&corpus).join(startat::map_table_path(Some(language)))).unwrap();

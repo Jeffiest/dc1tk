@@ -204,10 +204,9 @@ mod tests {
     /// The executable of an extracted disc (C2S_CORPUS): its 343 monsters read, every field's
     /// bytes are the ones its value writes, and the JSON changes nothing.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_monsters_round_trip() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let elf = std::fs::read(std::path::Path::new(&corpus).join(EXECUTABLE)).unwrap();
         let monsters = read(&elf).unwrap();
         assert_eq!(monsters.sections[0].records.len(), 343);

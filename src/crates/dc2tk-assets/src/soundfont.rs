@@ -347,10 +347,9 @@ mod tests {
     /// Every bank with sequences on an extracted disc (C2S_CORPUS) gives a SoundFont whose chunks
     /// add up.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_banks_give_soundfonts() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let folder = std::path::Path::new(&corpus).join("snd2");
         let (mut count, mut bytes) = (0, 0);
         for path in crate::files_under(&folder).unwrap() {

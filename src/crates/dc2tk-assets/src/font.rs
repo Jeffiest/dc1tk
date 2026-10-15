@@ -761,10 +761,9 @@ mod tests {
     /// Every letter the build can draw, from the European font of an extracted disc (C2S_CORPUS):
     /// the composed ones drawn, shown with C2S_SHOW_LETTERS set.
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn corpus_letters_compose() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);
         let source = Page::read(&std::fs::read(root.join(EUROPEAN_TEXTURE)).unwrap()).unwrap();
         let mut refused = String::new();

@@ -418,11 +418,10 @@ MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n;MAP_NAME \
     }
 
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn the_disc_numbers_m05_14() {
         // set C2S_CORPUS to an extracted disc (extracted/disc) to read its map tables
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else {
-            return;
-        };
+        let corpus = dc2tk_disc::samples::corpus();
         let read = |language: i64| {
             map_numbers(&std::fs::read(Path::new(&corpus).join(map_table_path(Some(language)))).unwrap())
         };

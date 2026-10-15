@@ -347,13 +347,11 @@ void other(void)
     /// places their directories. Set C2S_CORPUS to the extracted disc, with the decompiled tree
     /// beside it (extracted/scripts).
     #[test]
+    #[ignore = "needs C2S_CORPUS"]
     fn the_games_scripts_load_files_the_disc_has() {
-        let Some(corpus) = std::env::var_os("C2S_CORPUS") else { return };
-        let disc = std::path::PathBuf::from(corpus);
+        let disc = dc2tk_disc::samples::corpus();
         let tree = disc.parent().unwrap().join("scripts");
-        if !tree.is_dir() {
-            return;
-        }
+        assert!(tree.is_dir(), "this test reads the decompiled tree beside C2S_CORPUS: {}", tree.display());
         let index = dc2tk_disc::archive::parse_index(&std::fs::read(disc.join("DATA.HD4")).unwrap()).unwrap();
         let known = Known::new(index.iter().map(|entry| entry.path.as_str()), []);
         let members = |path: &str| -> Option<Vec<String>> {
