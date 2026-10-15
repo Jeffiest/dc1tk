@@ -1,57 +1,57 @@
 # Usage
 
-Everything runs through one program, `c2`, built with `cargo build --release`
+Everything runs through one program, `dc2tk`, built with `cargo build --release`
 in the repository folder (see the [README](../README.md#1-what-you-need)).
-`c2 help COMMAND` lists a command's options. Everything taken from the disc
+`dc2tk help COMMAND` lists a command's options. Everything taken from the disc
 goes under `extracted/`: the disc's files in `extracted/disc/`, the
 decompiled scripts in `extracted/scripts/` and the asset tree in
 `extracted/assets/`. `extracted/disc/` holds every file of the disc (DATA.DAT's
 files, unpacked, beside the movies, SOUND.DAT and the rest) and the disc's
-layout (`disc.json`, `disc-structure.bin`), so `c2 pack` writes the image back
+layout (`disc.json`, `disc-structure.bin`), so `dc2tk pack` writes the image back
 from it byte for byte.
 
 ```
-c2 setup dc2.iso                                 extract the disc, decompile it all, write the assets
-c2 extract dc2.iso extracted/disc                write every file on the disc, and its layout
-c2 pack -o copy.iso --check dc2.iso              write the image back from extracted/disc
-c2 decompile <script.stb | extracted dir> [-o out]
-c2 compile <script.c> [-o script.stb]
-c2 build extracted/scripts dc2.iso -o modded.iso   new disc image with your changes
-c2 build extracted/scripts dc2.iso -o test.iso --start-at s51:story_50
-c2 changes extracted/scripts                     what you edited since decompiling
-c2 diff dc2.iso                                  everything changed in extracted/ since extracting
-c2 mod make dc2.iso mymod                        a mod of those changes, ready to build
-c2 mod override extracted/scripts castle --map s51 start_castle_battle   start a patch
-c2 mod check extracted/scripts castle            compile what a mod changes, without a disc
-c2 build extracted/scripts dc2.iso -o modded.iso --mod castle --mod other   build with mods
-c2 mod list extracted/scripts                    every mod, its patches, numbers and files
-c2 mod new extracted/scripts castle map/s/s51_raybrandt_castle/s51_1.c   copy whole files into a mod
-c2 mod test extracted/scripts calculator         run a mod's tests.c without the game
-c2 assets dc2.iso --force                        write the asset tree again (setup writes it)
-c2 mod asset dc2.iso castle texture:e254a1       copy an asset into a mod to replace it
-c2 mod migrate dc2.iso castle                    turn a mod's disc/ folder into asset ids
-c2 play modded.iso                               boot an image in PCSX2 (or build ... --play)
-c2 maps extracted/scripts                        every map: town or dungeon-style, playable or not
-c2 map extracted/scripts s17                     one map: programs, free numbers, trigger points, positions
-c2 map-export s17                                a map as a glTF scene for Blender (extracted/maps/s17)
-c2 xref extracted/scripts event 510 --map s51    what defines, starts and requests an event
-c2 xref extracted/scripts map s51                how the game enters a map
-c2 xref extracted/scripts monster golem          a monster's model, AI script and users
-c2 flags extracted/scripts [--flag N]            save flags in use, and free ones
-c2 flags extracted/scripts --counters [--counter N]   the same for save counters
-c2 fork extracted/scripts lib/x.c lib/y.c script.c   a library copy for some scripts
-c2 mod save extracted/scripts castle             copy edits made in the tree into a mod
-c2 mod apply extracted/scripts castle            write a mod into the tree
-c2 verify extracted/disc                         prove every script round-trips
-c2 defs check extracted/disc                     how much of the disc the definitions name
-c2 defs todo extracted/disc                      unnamed functions, most called first
-c2 disassemble <script.stb>                      text assembly, for debugging
-c2 assemble <script.asm> -o <script.stb>
-c2 defs learn <source> <definition set>
-c2 defs rename <definition set> OLD NEW --in extracted/scripts   rename a flag or other constant
-c2 defs migrate extracted/scripts mods/my-mod                    give an older tree or mod the set's renames
-c2 defs disc extracted/disc <definition set>     record which disc a set is for
-c2 natives <ChronicleTwo checkout>
+dc2tk setup dc2.iso                                 extract the disc, decompile it all, write the assets
+dc2tk extract dc2.iso extracted/disc                write every file on the disc, and its layout
+dc2tk pack -o copy.iso --check dc2.iso              write the image back from extracted/disc
+dc2tk decompile <script.stb | extracted dir> [-o out]
+dc2tk compile <script.c> [-o script.stb]
+dc2tk build extracted/scripts dc2.iso -o modded.iso   new disc image with your changes
+dc2tk build extracted/scripts dc2.iso -o test.iso --start-at s51:story_50
+dc2tk changes extracted/scripts                     what you edited since decompiling
+dc2tk diff dc2.iso                                  everything changed in extracted/ since extracting
+dc2tk mod make dc2.iso mymod                        a mod of those changes, ready to build
+dc2tk mod override extracted/scripts castle --map s51 start_castle_battle   start a patch
+dc2tk mod check extracted/scripts castle            compile what a mod changes, without a disc
+dc2tk build extracted/scripts dc2.iso -o modded.iso --mod castle --mod other   build with mods
+dc2tk mod list extracted/scripts                    every mod, its patches, numbers and files
+dc2tk mod new extracted/scripts castle map/s/s51_raybrandt_castle/s51_1.c   copy whole files into a mod
+dc2tk mod test extracted/scripts calculator         run a mod's tests.c without the game
+dc2tk assets dc2.iso --force                        write the asset tree again (setup writes it)
+dc2tk mod asset dc2.iso castle texture:e254a1       copy an asset into a mod to replace it
+dc2tk mod migrate dc2.iso castle                    turn a mod's disc/ folder into asset ids
+dc2tk play modded.iso                               boot an image in PCSX2 (or build ... --play)
+dc2tk maps extracted/scripts                        every map: town or dungeon-style, playable or not
+dc2tk map extracted/scripts s17                     one map: programs, free numbers, trigger points, positions
+dc2tk map-export s17                                a map as a glTF scene for Blender (extracted/maps/s17)
+dc2tk xref extracted/scripts event 510 --map s51    what defines, starts and requests an event
+dc2tk xref extracted/scripts map s51                how the game enters a map
+dc2tk xref extracted/scripts monster golem          a monster's model, AI script and users
+dc2tk flags extracted/scripts [--flag N]            save flags in use, and free ones
+dc2tk flags extracted/scripts --counters [--counter N]   the same for save counters
+dc2tk fork extracted/scripts lib/x.c lib/y.c script.c   a library copy for some scripts
+dc2tk mod save extracted/scripts castle             copy edits made in the tree into a mod
+dc2tk mod apply extracted/scripts castle            write a mod into the tree
+dc2tk verify extracted/disc                         prove every script round-trips
+dc2tk defs check extracted/disc                     how much of the disc the definitions name
+dc2tk defs todo extracted/disc                      unnamed functions, most called first
+dc2tk disassemble <script.stb>                      text assembly, for debugging
+dc2tk assemble <script.asm> -o <script.stb>
+dc2tk defs learn <source> <definition set>
+dc2tk defs rename <definition set> OLD NEW --in extracted/scripts   rename a flag or other constant
+dc2tk defs migrate extracted/scripts mods/my-mod                    give an older tree or mod the set's renames
+dc2tk defs disc extracted/disc <definition set>     record which disc a set is for
+dc2tk natives <ChronicleTwo checkout>
 ```
 
 The tests run with `cargo test --release` in the repository folder.
@@ -113,7 +113,7 @@ it. `setup` writes it into `extracted/assets/` (`--no-assets`
 leaves it out); to write it again:
 
 ```
-c2 assets dc2.iso --force      (or c2 assets extracted/disc; -o DIR writes it elsewhere)
+dc2tk assets dc2.iso --force      (or dc2tk assets extracted/disc; -o DIR writes it elsewhere)
 ```
 
 The ids are what a mod names the assets it replaces by (see
@@ -131,13 +131,13 @@ The output is byte-identical to the original when the source is unchanged.
 
 ## Modding workflow
 
-1. `c2 setup dc2.iso` extracts the disc and decompiles every script into
+1. `dc2tk setup dc2.iso` extracts the disc and decompiles every script into
    `extracted/scripts/`.
 2. Edit scripts in `extracted/scripts/`, and shared code in
    `extracted/scripts/lib/` (an edit to a library changes every script that
    includes it; `fork` gives some scripts their own copy). The [modding guide](modding.md) covers how scripts run
    and the commands that find what to edit.
-3. `c2 build extracted/scripts dc2.iso -o modded.iso` writes a new disc
+3. `dc2tk build extracted/scripts dc2.iso -o modded.iso` writes a new disc
    image.
 4. Boot `modded.iso` in PCSX2.
 
@@ -177,7 +177,7 @@ image; `--pcsx2 PATH` or `$PCSX2` when it is not installed in the usual
 place).
 
 To build one script without a disc,
-`c2 compile extracted/scripts/<path>.c -o <path>.stb`.
+`dc2tk compile extracted/scripts/<path>.c -o <path>.stb`.
 
 ### Testing without replaying
 
@@ -206,8 +206,8 @@ A mod is a folder in `mods/`. Keep the decompiled tree as the decompiler
 wrote it and build any set of mods over it:
 
 ```
-c2 mod override extracted/scripts castle --map s51 start_castle_battle
-c2 build extracted/scripts dc2.iso -o modded.iso --mod castle --mod other
+dc2tk mod override extracted/scripts castle --map s51 start_castle_battle
+dc2tk build extracted/scripts dc2.iso -o modded.iso --mod castle --mod other
 ```
 
 A mod holds **patches**: C files that name the scripts they change and hold
@@ -581,10 +581,10 @@ character pack; packs inside packs work the same way).
   take (wider than any of the file's on the disc, or in a menu more than a
   letter wider than the message's own). See [the message
   format](assets/text.md).
-- **Maps in Blender.** `c2 map-export s17` writes the map as one glTF scene
+- **Maps in Blender.** `dc2tk map-export s17` writes the map as one glTF scene
   (`extracted/maps/s17/`): placements, pieces with their meshes, trigger
   points, lights, cameras, collision and textures. The
-  [c2_maps add-on](../src/blender/README.md) imports it as the game draws it;
+  [dc2tk_maps add-on](../src/blender/README.md) imports it as the game draws it;
   move and add placements, doors, chests, spawn points and lights, paint
   collision, edit meshes and textures, model new objects, and export into a
   mod, which gets the line `"map:s17": "maps/s17/s17.gltf"` under `replace`.
@@ -592,7 +592,7 @@ character pack; packs inside packs work the same way).
   adds new models to the map's model pack and pictures to its textures.
   Unedited scenes change nothing. An example is
   [map-edit](examples/map-edit/); the formats are in
-  [maps](assets/maps.md). A dungeon floor's map (`c2 map-export d01f01`)
+  [maps](assets/maps.md). A dungeon floor's map (`dc2tk map-export d01f01`)
   shows each of its parts once, to edit their models, collision and points;
   the floor generator places them ([dungeons](assets/dungeons.md)). A **new
   map** is an edited export of another under `add`:
@@ -797,7 +797,7 @@ script's folder up, then in `sdk/`. Libraries can include libraries; each is
 included once.
 
 **Tests.** `mods/NAME/tests.c` holds `int test_...(void)` functions;
-`c2 mod test SOURCE NAME` compiles them with the mod over the tree and
+`dc2tk mod test SOURCE NAME` compiles them with the mod over the tree and
 runs them in an interpreter of the script VM, without the game. A test
 passes when it returns nonzero, and `print(...)` output is shown for the
 ones that fail. Natives do nothing there (a result they would give is 0),
@@ -818,7 +818,7 @@ Two edits that show within minutes of starting a new game:
   `set_sprite_color(0, 0, 0, 0, 128)` to `set_sprite_color(0, 128, 0, 0,
   128)`. The letter is narrated last line first, over red instead of black.
 - **Monica's first fight**, as a mod.
-  `c2 mod override extracted/scripts first-fight --map s51 start_castle_battle` writes
+  `dc2tk mod override extracted/scripts first-fight --map s51 start_castle_battle` writes
   `mods/first-fight/s51.c` with the function in it. There, replace the four
   `MONSTER_GRIFFON_SOLDIER_523` with other kinds from
   `extracted/scripts/include/disc.h`, loading each first:
@@ -830,7 +830,7 @@ Two edits that show within minutes of starting a new game:
   patch: the engine runs program 1500 once no monster is left. Build with
   `--mod first-fight --start-at s51:500`; the patch reaches all five
   languages of the map's script. Or leave `start_castle_battle` as it is
-  and wrap the natives it calls: `c2 mod override extracted/scripts
+  and wrap the natives it calls: `dc2tk mod override extracted/scripts
   first-fight --map s51 load_monster_data place_monster` writes wrappers
   that pass every call on, and changing the kind in each (`if (monster ==
   MONSTER_GRIFFON_SOLDIER_523) { monster = MONSTER_SEWER_RAT; }` before
@@ -842,7 +842,7 @@ Names, docs and global names you write in decompiled source can be fed back
 into a definition set, so everyone's next decompile gets them:
 
 ```
-c2 defs learn extracted/scripts definitions/pal
+dc2tk defs learn extracted/scripts definitions/pal
 ```
 
 `learn` compiles each script, matches functions by their bytecode
@@ -864,7 +864,7 @@ Constants (flag names, the music and sound enums) live in the set's
 or mod given with `--in`, keeping unedited files unedited:
 
 ```
-c2 defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
+dc2tk defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
 ```
 
 The set records each rename in `renamed.json`. A tree or mod made before
@@ -872,7 +872,7 @@ a rename still says the old name and stops compiling (the error notes the
 new name); `defs migrate` gives it every recorded rename:
 
 ```
-c2 defs migrate extracted/scripts mods/my-mod
+dc2tk defs migrate extracted/scripts mods/my-mod
 ```
 
 ## Checking a C toolchain can read the output

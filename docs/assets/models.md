@@ -7,7 +7,7 @@ the whole corpus unless a sample is named; they come from scripts run over
 all of it while the formats were worked out (the "evidence" scripts named
 below).
 
-The code, in `src/crates/c2-assets/src/`:
+The code, in `src/crates/dc2tk-assets/src/`:
 
 | file | what |
 |---|---|
@@ -78,7 +78,7 @@ Struct declarations: include/mg_dataset.hpp (`MDS_HEADER`, `MDTOBJ_HEADER`, `MDT
 `MDT_MATERIAL_`, `MDT_FACES`, `FACES_ID`).
 
 The data must be 16-byte aligned in memory (`printf("address error!!")` otherwise). Pack members
-are 16-aligned (`PACK_ALIGN` in `src/crates/c2-disc/src/archive.rs`). The vertex arrays are used in place
+are 16-aligned (`PACK_ALIGN` in `src/crates/dc2tk-disc/src/archive.rs`). The vertex arrays are used in place
 (`CopyMDTDataPointer`), so the file is also the runtime array.
 
 ### 1.1 Header (0x10)
@@ -424,7 +424,7 @@ Cloth frames are found by name, so they keep working on an imported mesh if name
 ## 6. glTF export (`to_gltf.rs`)
 
 `to_gltf::export` writes a character pack's folder as `<name>.gltf` and `<name>.bin` (30 fps).
-`c2 mod asset ISO NAME chara/c02a.chr --as gltf` and `c2 assets` run it, through `models.rs`,
+`dc2tk mod asset ISO NAME chara/c02a.chr --as gltf` and `dc2tk assets` run it, through `models.rs`,
 which puts the pack's own textures in place of the placeholders.
 - glTF node i = MDS node i (`extras.mds_index`, `extras.mds_name` keep the full name with flags).
   Local TRS comes from decomposing the MDS matrix. 4 two-root files get a synthetic `_mds_roots`
@@ -760,7 +760,7 @@ takes its KEY line and its two sound cues out.
 
 ### 7.4 New characters (`models::new_pack`)
 
-A mod's `file:` line with `like` makes a pack from a glTF alone (`c2-script`'s `discfiles::made`),
+A mod's `file:` line with `like` makes a pack from a glTF alone (`dc2tk-script`'s `discfiles::made`),
 with the pack `like` names as the template for the formats: its info.cfg's other lines, its MDS
 version and its first picture's texture format. Members, in this order:
 

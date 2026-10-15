@@ -2,7 +2,7 @@
 
 c2s is written as C. A script includes its SDK header and reads like a C
 file; a C compiler or IDE can parse it with the SDK's prelude (below), and
-`c2 compile` turns it into the exact bytecode.
+`dc2tk compile` turns it into the exact bytecode.
 
 ```c
 // A made-up event script for a town square: two characters stand in a camera shot, and talking to

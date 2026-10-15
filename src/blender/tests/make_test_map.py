@@ -1,4 +1,4 @@
-"""Writes a tiny map scene that follows docs/assets/maps.md section 8, as `c2 map-export` would:
+"""Writes a tiny map scene that follows docs/assets/maps.md section 8, as `dc2tk map-export` would:
 two placements of one template (a model piece, a collision piece and a camera-collision piece,
 a template point and a template animation turning the model's node), the map's own points (a
 door, a point light with a KHR light, a sound emitter, an invent box, an animation moving a
@@ -336,7 +336,7 @@ def build():
     root = b.node("map:" + NAME, {"role": "map", "map": map_tree}, [placements, points, cameras])
 
     gltf = {
-        "asset": {"version": "2.0", "generator": "c2 test map"},
+        "asset": {"version": "2.0", "generator": "dc2tk test map"},
         "extensionsUsed": ["KHR_lights_punctual"],
         "extensions": {
             "KHR_lights_punctual": {

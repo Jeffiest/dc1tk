@@ -1,5 +1,5 @@
 {
- "note": "The fingerprints of the functions this mod's patches override, so that build finds a function the decompiler has renamed since. c2 writes it.",
+ "note": "The fingerprints of the functions this mod's patches override, so that build finds a function the decompiler has renamed since. dc2tk writes it.",
  "calculator.c": {
   "talk_to_monica_spheda_trial": {
    "exact": "125e5b10fc90ad5e",

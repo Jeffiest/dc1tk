@@ -95,35 +95,38 @@ definitions.
 
 See [the design](docs/design.md). In order:
 
-1. **Port to Rust** (done: `src/`, one `c2` tool with the old Python
+1. **Port to Rust** (done: `src/`, one `dc2tk` tool with the old Python
    tool's commands), milestone by milestone, each ending when the Rust gave
    the Python's bytes (disc, scripts, mods, assets) and its tests ran under
    `cargo test`; then the Python was deleted. Work runs across all cores.
    Parity scripts compared the two while both existed;
    [src/README.md](src/README.md) describes the crates.
-   - Done: the disc (`c2 extract`, writing an image, cp932), the same bytes
+   - Done: the disc (`dc2tk extract`, writing an image, cp932), the same bytes
      as the Python on the whole PAL disc.
-   - Done: the script reader (`c2 disassemble`, `c2 assemble`), the same
+   - Done: the script reader (`dc2tk disassemble`, `dc2tk assemble`), the same
      text for all 1,398 scripts, 16 times faster.
-   - Done: the decompiler (`c2 decompile`, a whole disc in 21 s against
-     8 min 38 s) and the compiler (`c2 compile`), the same trees and bytes.
-   - Done: build and mods (`c2 build`, `c2 mod ...`, `c2 flags`), the same
+   - Done: the decompiler (`dc2tk decompile`, a whole disc in 21 s against
+     8 min 38 s) and the compiler (`dc2tk compile`), the same trees and bytes.
+   - Done: build and mods (`dc2tk build`, `dc2tk mod ...`, `dc2tk flags`), the same
      images for every mod in `mods/`; and the asset converters
-     (`c2-assets`: PNG, WAV, glTF), the same files both ways.
+     (`dc2tk-assets`: PNG, WAV, glTF), the same files both ways.
    - Done: `verify`, and the Python's tests as `cargo test`.
    - Done: `xref`, `maps`, `defs`, `natives`, `setup`: every command is ported.
-   - Done: the Python removed; `c2` is the only tool.
-2. **The asset tree** (done: `c2 assets`): `extracted/assets/` beside `extracted/scripts/`, every distinct
+   - Done: the Python removed; `dc2tk` is the only tool.
+   - Done: the project renamed from ChronicleTwo-Script (the tool `c2`, the
+     add-on `c2_maps`) to DC2-Toolkit (`dc2tk`, `dc2tk_maps`). Formats keep
+     their names: map scenes' `extras.c2`, the script language c2s (`sdk/c2s.h`).
+2. **The asset tree** (done: `dc2tk assets`): `extracted/assets/` beside `extracted/scripts/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.
-3. **Mods by name** (done: `replace`/`add` by id in mod.json, `c2 mod migrate`): `mod.json` maps asset ids (`texture:c02a02`,
+3. **Mods by name** (done: `replace`/`add` by id in mod.json, `dc2tk mod migrate`): `mod.json` maps asset ids (`texture:c02a02`,
    `sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW`) to files anywhere in the mod;
    a replacement reaches every copy on the disc. `mod migrate` converts the
    `disc/` layout.
 
 ## Done: editing maps in Blender
 
-Any fixed map opens in Blender (`c2 map-export`, the `c2_maps` add-on in
+Any fixed map opens in Blender (`dc2tk map-export`, the `dc2tk_maps` add-on in
 [src/blender](src/blender/README.md)) as the game draws it, and a mod's
 `"map:NAME"` line builds the edited scene back: placements, pieces and
 trigger points moved, added and deleted, collision painted, meshes and
@@ -221,7 +224,7 @@ code keeps compiling to its own bytes. What the compiler lacks today
 ([language](docs/language.md)), in the order to do it:
 
 1. **A conformance suite** (done). 115 programs in
-   `src/crates/c2-script/tests/c89/`, run in the VM interpreter, each with a
+   `src/crates/dc2tk-script/tests/c89/`, run in the VM interpreter, each with a
    row in [c-standard](docs/c-standard.md): 95 supported (83 give C's result,
    12 the error C requires), 3 differ (step 4, and a header's macros not
    seen by the includer's `#if`), 15 planned (step 5), 2 at the limit
@@ -235,7 +238,7 @@ code keeps compiling to its own bytes. What the compiler lacks today
 3. **Integer types** (done): `char` and `short` masked to their widths,
    `unsigned` with biased comparisons and a small runtime for `/`, `%`, `>>`
    and float conversions, added only when used; `<limits.h>`, `<stddef.h>`,
-   `<float.h>`. Retail bytes are unchanged (`c2 verify` OK).
+   `<float.h>`. Retail bytes are unchanged (`dc2tk verify` OK).
 4. **Strict mode** (done): `#pragma std c89` per file (a patch too) gives
    C's conversions on stores, arguments and returns, `&&`/`||` as 0 or 1,
    natives evaluated only where C would, and C's pointer diagnostics;
@@ -271,7 +274,7 @@ the game (the castle's soldiers swapped for rats).
 
 - **Save counters** (done). The save holds 128; the disc uses 0 to 25
   (the fishing tournament 21 to 25, the menu 5). `NEW_COUNTER` gives a mod
-  one from 32 up, kept in `numbers.json`; `c2 flags --counters` reports
+  one from 32 up, kept in `numbers.json`; `dc2tk flags --counters` reports
   them.
 
 ## Next: mod assets
@@ -381,9 +384,9 @@ do:
    kinds, return types, line notes, docs, script docs, globals (a
    library's too), and library paths and docs. The constants (flag names,
    the music, sound and bank enums) live in the set's `include/pal.h`,
-   which a decompiled tree includes from the set itself (done): `c2 defs
+   which a decompiled tree includes from the set itself (done): `dc2tk defs
    rename` renames one in the set and its uses in trees and mods (26 story
-   flags renamed so far), records it in `renamed.json`, and `c2 defs
+   flags renamed so far), records it in `renamed.json`, and `dc2tk defs
    migrate` brings trees and mods made before a rename up to date.
 
 Script docs (210 corrected), library docs (190 corrected, 85 libraries

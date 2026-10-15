@@ -17,12 +17,12 @@ run time). Addresses below are the symbols of `config/pal/main.symbols.txt`.
 
 ## Status
 
-**Editable through `mod.json`** (`c2 mod asset ISO NAME data:items`, then
+**Editable through `mod.json`** (`dc2tk mod asset ISO NAME data:items`, then
 `"data:items": "data/items.json"`; see [usage](../usage.md#mods)):
 
 - **Items** (`data:items`, section 2): the seven `menu/cfg7` tables, every
   item number with its weapon, effect, attachment, ridepod and fish data
-  nested. `c2-assets`' `item_data.rs`.
+  nested. `dc2tk-assets`' `item_data.rs`.
 - **Shops** (`data:shops`, section 3): prices and every shop's goods, by
   chapter, in the 16 shop lists. `shop_data.rs`.
 - **Monsters** (`data:monsters`, section 4): the 343 monster kinds' stats,
@@ -104,7 +104,7 @@ in `.data`), floor medals, race fish, prizes and conditions (whether a
 condition is met is code); a new item takes an existing icon and model, or
 one the mod draws or builds (section 2.8).
 
-The kinds after the first three share `c2-assets`' `data_table.rs`: each
+The kinds after the first three share `dc2tk-assets`' `data_table.rs`: each
 section is a list of records named by their keys (`{"dungeon": 0, "floor":
 3}`, `{"town": "g01", "part": 1}`), with labels (names, which are text; given
 back unchanged or left out) and fields; `a.b` fields are nested objects. A
@@ -118,7 +118,7 @@ English file where languages differ) and written to every copy. `build` patches
 the executable once with every table's changes.
 
 **Settled (engine code and whole-corpus checks):** every cfg script the tables
-come from is read by `c2-assets`' `cfg_text.rs` (statements with the spaces,
+come from is read by `dc2tk-assets`' `cfg_text.rs` (statements with the spaces,
 line breaks and comments around every argument) and written back byte for
 byte; an edit replaces only the arguments it changes. `cargo test --release
 corpus` with `C2S_CORPUS` set checks all three versions of the item tables

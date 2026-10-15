@@ -1,0 +1,17 @@
+schema_version = "1.0.0"
+
+id = "dc2tk_maps"
+version = "1.0.0"
+name = "Dark Chronicle Maps (dc2tk)"
+tagline = "Edit Dark Chronicle maps exported by dc2tk, export them into a mod"
+maintainer = "DC2-Toolkit"
+type = "add-on"
+
+tags = ["Import-Export", "Scene"]
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:MIT"]
+
+[permissions]
+files = "Reads and writes map glTF files and mod.json in chosen folders"

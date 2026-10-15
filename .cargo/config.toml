@@ -1,3 +1,3 @@
-# Build output goes to build/ (build/release/c2.exe); c2.bat and c2 at the root run it.
+# Build output goes to build/ (build/release/dc2tk.exe); dc2tk.bat and dc2tk at the root run it.
 [build]
 target-dir = "build"

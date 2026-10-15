@@ -14,7 +14,7 @@ through m2c). Corpus: the extracted PAL disc. Map files are in
 ## Status
 
 **Settled (engine code and whole-corpus checks):**
-- The room script's format (section 2): `c2-assets`' `dungeon_layout.rs`
+- The room script's format (section 2): `dc2tk-assets`' `dungeon_layout.rs`
   reads all 23 scripts (291 room layouts) with the part names of the
   executable's `PartsInfoData` and writes them back byte for byte; every room
   rewritten from its JSON gives its own bytes (`cargo test --release corpus`
@@ -23,7 +23,7 @@ through m2c). Corpus: the extracted PAL disc. Map files are in
   monsters and stones go (sections 3 and 4).
 - `data:layouts` in `mod.json` changes rooms and grid sizes and adds rooms
   (section 5); the parts' models, collision and points are edited in Blender
-  through `c2 map-export` of the floor's map (section 6). Both build and read
+  through `dc2tk map-export` of the floor's map (section 6). Both build and read
   back as made.
 
 - Which ways on a floor gets (`GetDngMapNextRoot`, from the dungeon's tree
@@ -175,7 +175,7 @@ needs a template of the new name, and the layouts name it (`data:parts` is
 applied before `data:layouts`, so a layout of the same build can use the new
 name).
 
-`c2 mod asset ISO NAME data:parts` writes `data/parts.json`:
+`dc2tk mod asset ISO NAME data:parts` writes `data/parts.json`:
 
 ```json
 {"parts": [{"part": 80, "name": "door00", "kind": 10, "link": 15, "entrance": 1,
@@ -310,7 +310,7 @@ highest. A floor naming a group the file lacks hangs the game (it prints and
 loops); a floor the file does not list has no groups to draw from (the
 disc's leave out the floors without chests, boss floors among them).
 
-`c2 mod asset ISO NAME data:chests` writes `data/chests.json`, the dungeon
+`dc2tk mod asset ISO NAME data:chests` writes `data/chests.json`, the dungeon
 from 0 as the other floor tables number them (0 is `tbox_d01.cfg`):
 
 ```json
@@ -328,7 +328,7 @@ does not have, and two mods giving one group or floor different contents.
 
 ## 5. Layouts as data (`data:layouts`)
 
-`c2 mod asset ISO NAME data:layouts` writes `data/layouts.json`: every room
+`dc2tk mod asset ISO NAME data:layouts` writes `data/layouts.json`: every room
 script of the table in section 1, with its grid size and layouts:
 
 ```json
@@ -360,7 +360,7 @@ until a floor picks them.
 
 ## 6. The parts in Blender
 
-A floor's map places none of its templates, so `c2 map-export d01f01` shows
+A floor's map places none of its templates, so `dc2tk map-export d01f01` shows
 each template once (the first of a name), on the ground in rows by family
 (`way`, `room`, `door`, `part`, `step`, then the objects), 480 apart: a
 placement node marked `"preview": true` with no slot. Its pieces (drawn

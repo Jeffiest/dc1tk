@@ -7,7 +7,7 @@ or layout codes. Event scripts' own text (`.txt` beside the scripts, quoted
 in the decompiled source) is a different, cp932 format; the codes here are
 the ones its tags turn into (see [the modding guide](../modding.md#message-text)).
 
-`text.rs` (in `src/crates/c2-assets/src/`) reads and writes the format and
+`text.rs` (in `src/crates/dc2tk-assets/src/`) reads and writes the format and
 turns it into the text files mods edit; the counts below come from scripts
 run over every message file of the PAL disc while the format was worked out.
 
@@ -169,7 +169,7 @@ after the table was made) and were read one by one. Every glyph the game's
 Japanese message files use has its character (shop names read
 `ミレーネの武器屋`, `ポリーズベーカリー`), and the pages have ink in exactly
 those cells (the corpus test checks both). The numbering is
-`c2_assets::font::JAPANESE`, a list of characters: the pictures stay on the
+`dc2tk_assets::font::JAPANESE`, a list of characters: the pictures stay on the
 disc. `geomenu.mes` follows this numbering in every language.
 
 **The English font gains letters.** `FontTex_1_0.tm2` is 512 by
@@ -191,7 +191,7 @@ it was; a small letter takes the small letter's mark and a capital the
 capital's, the other when that does not fit in the cell, and `i` and `j`
 lose their dot under a mark. That covers, past Latin-1, `Ć ć Ĉ ĉ Ĝ ĝ Ĥ ĥ Ĩ
 ĩ Ĵ ĵ Ķ ķ Ĺ ĺ Ļ ļ Ń ń Ņ ņ Ŕ ŕ Ŗ ŗ Ś ś Ŝ ŝ Ş ş Ţ ţ Ũ ũ Ů ů Ŵ ŵ Ŷ ŷ Ÿ Ź ź`
-(`c2_assets::font`; the corpus test draws them all off the PAL disc's
+(`dc2tk_assets::font`; the corpus test draws them all off the PAL disc's
 font). A letter with a macron, breve, dot above, double acute, caron or
 ogonek (`ā ă ċ ő č ą`), `ģ` (its cedilla does not fit under the `g`), and
 anything else neither font has (`Ø`, `ł`, `€`) are refused, naming the
@@ -310,7 +310,7 @@ characters the font has.
 
 ## 6. Ids
 
-`c2 assets` writes one text per name and language to
+`dc2tk assets` writes one text per name and language to
 `text/<language>/<name>.txt`, and mods name them `text:<language>/<name>`
 (`ja`, `en`, `fr`, `de`, `it`, `es`, `ko`). The language comes from the
 `menu/N/` folder or the number in the file name (`system_2.mes`,

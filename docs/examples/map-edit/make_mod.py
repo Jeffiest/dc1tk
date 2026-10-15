@@ -1,7 +1,7 @@
-"""Makes the map-edit mod: Barga's Valley (s17) edited in Blender with the c2_maps add-on, as you
+"""Makes the map-edit mod: Barga's Valley (s17) edited in Blender with the dc2tk_maps add-on, as you
 would by hand, and exported into mods/map-edit with this folder's mod.json and start.c.
 
-    c2 map-export s17
+    dc2tk map-export s17
     blender --background --python docs/examples/map-edit/make_mod.py
 
 The edits:
@@ -39,7 +39,7 @@ def game_to_blender(x, y, z):
 
 def ground_height(x, z):
     """The top of the floor collision under (x, z), by a ray down through every collision mesh."""
-    from c2_maps import c2data
+    from dc2tk_maps import c2data
 
     root = c2data.current_map_root(bpy.context)
     start = game_to_blender(x, 2000.0, z)
@@ -102,13 +102,13 @@ def crate_material(image):
 
 def main():
     if not os.path.isfile(SCENE):
-        raise SystemExit("export the map first: c2 map-export s17 (writes %s)" % SCENE)
+        raise SystemExit("export the map first: dc2tk map-export s17 (writes %s)" % SCENE)
     sys.path.insert(0, os.path.join(REPO, "src", "blender"))
     import addon_utils
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    addon_utils.enable("c2_maps", default_set=True, persistent=False)
-    bpy.ops.c2.import_map_gltf(filepath=SCENE)
+    addon_utils.enable("dc2tk_maps", default_set=True, persistent=False)
+    bpy.ops.dc2tk.import_map_gltf(filepath=SCENE)
 
     grass = next(image for image in bpy.data.images if image.name.startswith("s17_02"))
     autumn(grass)
@@ -130,18 +130,18 @@ def main():
     shape.to_mesh(crate.data)
     shape.free()
     crate.data.materials.append(crate_material(plank_picture("s17_crate")))
-    result = bpy.ops.c2.new_model(name="s17_crate", collision=True)
+    result = bpy.ops.dc2tk.new_model(name="s17_crate", collision=True)
     if "FINISHED" not in result:
         raise SystemExit("New Model from Selection failed")
 
     os.makedirs(MOD, exist_ok=True)
     for name in ("mod.json", "start.c"):
         shutil.copyfile(os.path.join(HERE, name), os.path.join(MOD, name))
-    result = bpy.ops.c2.export_mod(mod_dir=MOD, validate=True)
+    result = bpy.ops.dc2tk.export_mod(mod_dir=MOD, validate=True)
     if "FINISHED" not in result:
         raise SystemExit("the export failed")
     print("map-edit written to %s; build it with:" % MOD)
-    print("  c2 build extracted/scripts YOUR.iso -o map-edit.iso --mod map-edit")
+    print("  dc2tk build extracted/scripts YOUR.iso -o map-edit.iso --mod map-edit")
 
 
 main()

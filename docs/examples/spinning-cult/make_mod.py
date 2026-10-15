@@ -3,17 +3,17 @@ what the cult needs, Palm Brinks with the door and a dark light set, the cult's 
 icon in the menus' icon sheet, written into mods/spinning-cult with this folder's mod.json, scripts,
 data and models (Brother Gill's and the gyros'):
 
-    c2 map-export m01
-    c2 map-export m07
+    dc2tk map-export m01
+    dc2tk map-export m07
     blender --background --python docs/examples/spinning-cult/make_gill.py
     blender --background --python docs/examples/spinning-cult/make_gyros.py
-    blender --background --python docs/examples/spinning-cult/make_mod.py [-- C2 ISO]
+    blender --background --python docs/examples/spinning-cult/make_mod.py [-- DC2TK ISO]
     blender --background --python docs/examples/spinning-cult/make_villagers.py
 
-C2 and ISO default to build/release/c2.exe and pal.iso in the repository.
+DC2TK and ISO default to build/release/dc2tk.exe and pal.iso in the repository.
 
 The Fish Room is built by the fish-room example's make_mod.py (the room, the fish turning, the
-door), and then, as one would in Blender with the c2_maps add-on:
+door), and then, as one would in Blender with the dc2tk_maps add-on:
 - three Invent boxes round the fish, turning with it, each seen from a third of the way round:
   a photo gives "Turning" (251), "More Turning" (252) or "Endless Turning" (253), by where the
   fish is in its turn;
@@ -26,7 +26,7 @@ have turned.
 The icon: the menus draw an item's icon from the icon sheets in img/allitem.img and the menu packs'
 copies of it (texture:itemicon, 8 by 24 cells of 32x32 sharing one 256-colour palette), cell `icon`
 of sheet `icon_sheet`. Cell 191 of the item sheet is the game's own placeholder, a "reserved" mark
-no item points at. This script exports the sheet from your disc (c2 mod asset), draws
+no item points at. This script exports the sheet from your disc (dc2tk mod asset), draws
 model/gyros_icon.png (made by make_gyros.py) into that cell in the sheet's own colours (each pixel
 the nearest of the palette's opaque colours, the clear ones its clear colour) and writes it as
 textures/itemicon.png with the same palette, so build changes those 1,024 pixels and nothing else;
@@ -62,9 +62,9 @@ ICON_SHEET, ICON_CELL = 1, 191  # itemicon's cell 191: the game's "reserved" mar
 
 def arguments():
     given = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    c2 = given[0] if len(given) > 0 else os.path.join(REPO, "build", "release", "c2.exe")
+    dc2tk = given[0] if len(given) > 0 else os.path.join(REPO, "build", "release", "dc2tk.exe")
     iso = given[1] if len(given) > 1 else os.path.join(REPO, "pal.iso")
-    return os.path.abspath(c2), os.path.abspath(iso)
+    return os.path.abspath(dc2tk), os.path.abspath(iso)
 
 
 def png_chunks(data):
@@ -107,14 +107,14 @@ def png_rows(chunks):
     return rows, width, height, channels
 
 
-def place_icon(c2, iso, target):
+def place_icon(dc2tk, iso, target):
     """The disc's item icon sheet with the gyros' icon in cell ICON_CELL, written to target."""
     with open(os.path.join(HERE, "model", "gyros_icon.png"), "rb") as file:
         icon_rows, w, h, channels = png_rows(png_chunks(file.read()))
     if (w, h, channels) != (32, 32, 4):
         raise SystemExit("model/gyros_icon.png should be 32x32 RGBA: make it with make_gyros.py")
     with tempfile.TemporaryDirectory() as folder:
-        subprocess.run([c2, "mod", "asset", iso, "sheet", "texture:itemicon", "data:items", "--mods", folder], check=True)
+        subprocess.run([dc2tk, "mod", "asset", iso, "sheet", "texture:itemicon", "data:items", "--mods", folder], check=True)
         with open(os.path.join(folder, "sheet", "textures", "itemicon.png"), "rb") as file:
             sheet = file.read()
         with open(os.path.join(folder, "sheet", "data", "items.json"), encoding="utf-8") as file:
@@ -177,7 +177,7 @@ def extend_room(fish_room):
     """What the cult adds to the Fish Room, after the fish-room example has built it."""
 
     def then(root, _fish_placement):
-        from c2_maps import c2data
+        from dc2tk_maps import c2data
 
         centre = fish_room.game(0, fish_room.FISH_HEIGHT, 0)
         # the photos: three boxes round the fish, one idea each, every one seen only from within 60
@@ -256,14 +256,14 @@ def compose(folder):
 def main():
     for name in ("m01", "m07"):
         if not os.path.isfile(os.path.join(MAPS, name, name + ".gltf")):
-            raise SystemExit("export the map first: c2 map-export %s" % name)
+            raise SystemExit("export the map first: dc2tk map-export %s" % name)
     gill = os.path.join(HERE, "model", "gill.gltf")
     if not os.path.isfile(gill):
         raise SystemExit("make Brother Gill first: blender --background --python %s" % os.path.join(HERE, "make_gill.py"))
     for name in ("gyros.gltf", "gyros_item.gltf", "gyros_icon.png"):
         if not os.path.isfile(os.path.join(HERE, "model", name)):
             raise SystemExit("make the gyros first: blender --background --python %s" % os.path.join(HERE, "make_gyros.py"))
-    c2, iso = arguments()
+    dc2tk, iso = arguments()
     sys.path.insert(0, os.path.join(REPO, "src", "blender"))
     import addon_utils
     import bpy
@@ -291,14 +291,14 @@ def main():
     for name in DATA_FILES:
         shutil.copyfile(os.path.join(HERE, "data", name), os.path.join(MOD, "data", name))
     shutil.copytree(os.path.join(HERE, "model"), os.path.join(MOD, "model"))
-    place_icon(c2, iso, os.path.join(MOD, "textures", "itemicon.png"))
+    place_icon(dc2tk, iso, os.path.join(MOD, "textures", "itemicon.png"))
     shutil.copytree(os.path.join(MAPS, "m01"), os.path.join(MOD, "maps", "m01"))
     fish_room.add_town_door(os.path.join(MOD, "maps", "m01", "m01.gltf"))
     darken_town(os.path.join(MOD, "maps", "m01", "m01.gltf"))
     compose(os.path.join(MOD, "music"))
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    addon_utils.enable("c2_maps", default_set=True, persistent=False)
+    addon_utils.enable("dc2tk_maps", default_set=True, persistent=False)
     fish_room.build_room(mod=MOD, then=extend_room(fish_room))
     print("spinning-cult written to %s" % MOD)
 

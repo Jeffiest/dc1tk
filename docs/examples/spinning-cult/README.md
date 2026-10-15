@@ -15,13 +15,13 @@ the gyroscope, the room, the fish, the pictures and the music are made here.
 ## Making it
 
 ```bash
-c2 map-export m01
-c2 map-export m07
+dc2tk map-export m01
+dc2tk map-export m07
 blender --background --python docs/examples/spinning-cult/make_gill.py
 blender --background --python docs/examples/spinning-cult/make_gyros.py
 blender --background --python docs/examples/spinning-cult/make_mod.py
 blender --background --python docs/examples/spinning-cult/make_villagers.py
-c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
+dc2tk build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
 ```
 
 - `make_gill.py` models Brother Gill (`model/gill.gltf`, made by code): a
@@ -61,8 +61,8 @@ c2 build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
   with a dried-blood fog. It writes the music (`compose_turned.py`), copies
   this folder's scripts, data and `model/` into `mods/spinning-cult`, and
   puts the gyros' icon in the menus' item icon sheet: it exports the sheet
-  from your disc (`c2 mod asset ISO ... texture:itemicon`; C2 and ISO after
-  `--`, by default `build/release/c2.exe` and `pal.iso`), draws
+  from your disc (`dc2tk mod asset ISO ... texture:itemicon`; DC2TK and ISO after
+  `--`, by default `build/release/dc2tk.exe` and `pal.iso`), draws
   `gyros_icon.png` into cell 191, the game's own "reserved" placeholder that no
   item points at, in the sheet's own 256 colours, and writes
   `textures/itemicon.png` (`"texture:itemicon"` in mod.json), so build

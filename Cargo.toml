@@ -7,10 +7,10 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-c2-disc = { path = "src/crates/c2-disc" }
-c2-script = { path = "src/crates/c2-script" }
-c2-py = { path = "src/crates/c2-py" }
-c2-assets = { path = "src/crates/c2-assets" }
+dc2tk-disc = { path = "src/crates/dc2tk-disc" }
+dc2tk-script = { path = "src/crates/dc2tk-script" }
+dc2tk-py = { path = "src/crates/dc2tk-py" }
+dc2tk-assets = { path = "src/crates/dc2tk-assets" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 encoding_rs = "0.8"

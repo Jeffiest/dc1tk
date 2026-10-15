@@ -77,74 +77,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "c2"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "c2-assets",
- "c2-disc",
- "c2-py",
- "c2-script",
- "clap",
- "indexmap",
- "mimalloc",
- "rayon",
- "serde_json",
-]
-
-[[package]]
-name = "c2-assets"
-version = "0.1.0"
-dependencies = [
- "c2-disc",
- "c2-py",
- "flate2",
- "rayon",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "c2-disc"
-version = "0.1.0"
-dependencies = [
- "encoding_rs",
- "memmap2",
- "rayon",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "c2-py"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "c2-script"
-version = "0.1.0"
-dependencies = [
- "c2-assets",
- "c2-disc",
- "c2-py",
- "indexmap",
- "rayon",
- "regex",
- "serde",
- "serde_json",
- "sha1_smol",
- "sha2",
- "thiserror",
- "unicode-normalization",
-]
-
-[[package]]
 name = "cc"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -263,6 +195,74 @@ checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
  "generic-array",
  "typenum",
+]
+
+[[package]]
+name = "dc2tk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dc2tk-assets",
+ "dc2tk-disc",
+ "dc2tk-py",
+ "dc2tk-script",
+ "indexmap",
+ "mimalloc",
+ "rayon",
+ "serde_json",
+]
+
+[[package]]
+name = "dc2tk-assets"
+version = "0.1.0"
+dependencies = [
+ "dc2tk-disc",
+ "dc2tk-py",
+ "flate2",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "dc2tk-disc"
+version = "0.1.0"
+dependencies = [
+ "encoding_rs",
+ "memmap2",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "dc2tk-py"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dc2tk-script"
+version = "0.1.0"
+dependencies = [
+ "dc2tk-assets",
+ "dc2tk-disc",
+ "dc2tk-py",
+ "indexmap",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha1_smol",
+ "sha2",
+ "thiserror",
+ "unicode-normalization",
 ]
 
 [[package]]

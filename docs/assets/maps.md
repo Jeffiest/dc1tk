@@ -12,18 +12,18 @@ this repository). Map meshes are the MDS format of
 
 **Settled (engine code and whole-corpus checks):**
 - All 210 `.map` files parse into a typed tree and are written back byte for
-  byte, also through JSON: `c2-assets`' `mapfile.rs` (`mapfile::parse`,
+  byte, also through JSON: `dc2tk-assets`' `mapfile.rs` (`mapfile::parse`,
   `mapfile::write`; `cargo test --release corpus` with `C2S_CORPUS` set to the
   extracted disc checks them all). The tree keeps each number as the file
   types it (int, float, or an exponent the engine reads as 0) and every
   optional line and argument count of section 2.3; the layout is computed.
   New numbers are written as `%g` but never with an exponent.
-- `c2 map` lists trigger points from that tree: a template's points once for
+- `dc2tk map` lists trigger points from that tree: a template's points once for
   every placement of it, under the placement's name and moved by its
   transform; the map's own points as part `""`.
 - All 13,372 `.mds` files under `map/` (12,730 in `.pcp` packs, 501 in sky
   packs, 123 in character packs, 18 in `.skyb`) parse and build back byte for
-  byte with `c2-assets`' `mds.rs`, and export with `to_gltf.rs` unchanged.
+  byte with `dc2tk-assets`' `mds.rs`, and export with `to_gltf.rs` unchanged.
 - What `-m`, `-a` and `-c` meshes are, the collision layout and its per-triangle
   attributes, how textures are found, how pieces are placed (section 2-4).
 - `FUNC_ANIME_DATA` (animated pieces), every field, from `CObjAnime`'s
@@ -33,7 +33,7 @@ this repository). Map meshes are the MDS format of
   flags as material settings, collision attributes as material names. Every map
   `.mds` exports, and its unedited glTF builds back byte for byte.
 
-- The scene: `c2 map-export NAME` writes a map as one glTF scene (section 8)
+- The scene: `dc2tk map-export NAME` writes a map as one glTF scene (section 8)
   and a mod's `"map:NAME"` line builds an edited scene back into the disc
   (section 7.2): the `.map`, the meshes that changed, new models and
   pictures. Unedited scenes of the corpus change nothing; edits made in
@@ -497,7 +497,7 @@ nothing there.
   collision is written as type 0x213 triangles with positions only and the
   attribute encoding of section 4.3 (done for one model, 7.1).
 - New meshes go into the map's model pack with an `info.cfg` entry (0x1FF at
-  most); packs are patched member by member (`c2_disc::rebuild::replaced_member`
+  most); packs are patched member by member (`dc2tk_disc::rebuild::replaced_member`
   works two packs deep), never repacked: `models::write_pack` reproduces none
   of the map packs.
 - New textures go into an `.img` inside the `.ipk`, keeping its `#texanime`.
@@ -507,7 +507,7 @@ nothing there.
 
 ### 7.1 One map model to glTF and back (written)
 
-The pieces the scene exporter and importer call, in `c2-assets` (details in
+The pieces the scene exporter and importer call, in `dc2tk-assets` (details in
 [models.md](models.md) 6.1 and 7.1):
 
 - `models::export_map_model(data, stem, options)` exports one `.mds`;
@@ -549,10 +549,10 @@ lacks only `e05g01_01` and s17 nothing.
 
 ### 7.2 A scene built into a mod (written)
 
-`c2_assets::map_import::import_map(gltf, read, map, packs, textures)` takes
+`dc2tk_assets::map_import::import_map(gltf, read, map, packs, textures)` takes
 an edited scene and the map's files as the disc (or an earlier mod) has them,
-and gives what to write; `c2 build` does so for each `"map:NAME":
-"maps/NAME/NAME.gltf"` line of a chosen mod (`c2/src/map_cmd.rs`):
+and gives what to write; `dc2tk build` does so for each `"map:NAME":
+"maps/NAME/NAME.gltf"` line of a chosen mod (`dc2tk/src/map_cmd.rs`):
 
 - **The `.map`:** the scene tree is read back (`map_scene::read_scene`,
   section 8.1) and the map rebuilt (`map_edit::rebuild`): a template is
@@ -575,7 +575,7 @@ and gives what to write; `c2 build` does so for each `"map:NAME":
   translations) compare within 0.005 and 2e-6 of their value, absolutely, so
   a move far from the origin is still seen: Blender keeps world matrices in
   32 bits, which moves things thousands of units out by a few thousandths.
-  Every one of the 171 scenes `c2 map-export --all` writes, imported and
+  Every one of the 171 scenes `dc2tk map-export --all` writes, imported and
   exported unedited by the add-on in Blender 5.1, changes nothing.
 - **New models:** a piece naming a model no pack has, with meshes under it,
   is built from them (`models::new_map_model`: a root frame named after the
@@ -601,7 +601,7 @@ and gives what to write; `c2 build` does so for each `"map:NAME":
 
 ## 8. The glTF scene (conventions shared by the exporter, the importer and the Blender add-on)
 
-`c2 map export NAME` writes `extracted/maps/NAME/NAME.gltf` (with its `.bin`
+`dc2tk map export NAME` writes `extracted/maps/NAME/NAME.gltf` (with its `.bin`
 and `textures/`); `--all` exports every fixed scene. A mod carries an edited
 scene with a line `"map:NAME": "maps/NAME/NAME.gltf"` in `mod.json`; `build`
 compares it with the disc's map and writes only what changed, and `mod make`
@@ -682,7 +682,7 @@ what the importer needs and the importer allows for the rest:
   the original's and keeps the original (its int or float form and text) when
   they agree within 1e-5 of the larger of 1 and the value.
 - **Point data** is an object of named fields (Blender cannot store lists
-  mixing text and numbers). The names (`src/blender/c2_maps/schema.py`):
+  mixing text and numbers). The names (`src/blender/dc2tk_maps/schema.py`):
   - `invent`: `id`, `min[3]`, `max[3]`, `unknown_int`, `unknown_float`, `angle`
   - `event`: `kind`, `event_no`, `program`, `args[3]`, `target`, `flags[3]` (action button, use item, 0x100)
   - `fire`, `flare`: `color[3]`, `draw`, `extra[2]` (when the line has it)
@@ -708,7 +708,7 @@ what the importer needs and the importer allows for the rest:
   names) without templates, placements and points: `images`, `packs`,
   `header_order`, `settings`, `cameras`. The add-on's settings editor shows
   any structure.
-- **Exporting:** `c2 map-export NAME [-o DIR]` writes `DIR/NAME.gltf` (by
+- **Exporting:** `dc2tk map-export NAME [-o DIR]` writes `DIR/NAME.gltf` (by
   default `extracted/maps/NAME/`); `--all` every fixed scene. The glTF scene
   is named after the map.
 
@@ -750,7 +750,7 @@ what the importer needs and the importer allows for the rest:
 - **Memory** as any map's ([memory](memory.md)).
 
 **Made by a mod.** A new map is a copy of a map the disc has, edited as a
-scene: export the map (`c2 map-export m05`), edit it in Blender, and give it
+scene: export the map (`dc2tk map-export m05`), edit it in Blender, and give it
 under `add` with the map it was made from:
 
 ```json
@@ -775,7 +775,7 @@ enters it as a town (`go_to_edit_mode`).
 
 Checked in the game (`new-map-test.iso`): a copy of `m05` with its 63 trees
 raised 250 units and two ground pictures repainted builds (4 new files, 7
-tables), `c2 map-export m05x` from the built image reads it back as made,
+tables), `dc2tk map-export m05x` from the built image reads it back as made,
 while `m05` keeps its pictures, and `--start-at m05x` enters it.
 
 ### 9.1 A new map's own script

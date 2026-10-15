@@ -40,7 +40,7 @@ its target by something that can be computed from the binary.
 | Library | fingerprint of its member list |
 | Line in a function | function fingerprint and instruction index |
 
-**Function fingerprints** (`src/crates/c2-script/src/fingerprint.rs`) are the foundation, so
+**Function fingerprints** (`src/crates/dc2tk-script/src/fingerprint.rs`) are the foundation, so
 their definition is fixed and versioned. The fingerprint is a SHA-1 over:
 the function's record (argument count, local count, argument types); its
 unused strings; its instructions, with jump targets made relative to the
@@ -120,7 +120,7 @@ Every part is optional. A new set can start with just a manifest.
   (`{"address": ..., "record_size": 184}`); addresses differ between disc
   versions, so they belong to the set.
 - `disc.json`, beside the manifest, holds the hash of each script on the
-  disc the set was made from (`c2 defs disc`), so tools can tell
+  disc the set was made from (`dc2tk defs disc`), so tools can tell
   whether a disc matches the set or has been modified.
 
 ### Names
@@ -203,7 +203,7 @@ from an older, smaller table (see [the SDK](sdk.md)). An entry also applies to t
 
 ### Strings
 
-`strings/<language>.json` maps string hashes (`src/crates/c2-script/src/notes.rs`,
+`strings/<language>.json` maps string hashes (`src/crates/dc2tk-script/src/notes.rs`,
 `string_key`) to translations, shown as comments beside the code that uses
 the string:
 
@@ -235,7 +235,7 @@ A decompiled tree includes these headers from the set itself, so they are
 not learned: to rename a constant, rename it in the set with
 
 ```
-c2 defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
+dc2tk defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
 ```
 
 which renames the declaration in `include/`, the set's docs, line notes and
@@ -254,7 +254,7 @@ or checking them stops with `unknown variable FLAG_S17_E308_SEEN` and a note
 of its new name, and
 
 ```
-c2 defs migrate extracted/scripts mods/my-mod
+dc2tk defs migrate extracted/scripts mods/my-mod
 ```
 
 gives each folder every rename the set records, in order, keeping unedited
@@ -409,28 +409,28 @@ sound sets have enums in the PAL set's `pal.h` (see `notes/sounds.md`).
 
 The easiest way to write definitions is to edit decompiled code:
 
-1. `c2 setup dc2.iso` decompiles the disc with the shipped sets.
+1. `dc2tk setup dc2.iso` decompiles the disc with the shipped sets.
 2. Rename functions, parameters, locals and globals, and add doc comments
    above functions and at the top of scripts, in `extracted/scripts/`.
-3. `c2 defs learn extracted/scripts definitions/pal` compiles the edited files,
+3. `dc2tk defs learn extracted/scripts definitions/pal` compiles the edited files,
    fingerprints each function, and records every name, doc and global name
    that differs from the decompiler's defaults, and the file name, top
    comment and global names of each library file (into `libraries.json`). Because names do
    not change bytecode, any edit that still compiles to the same function
    teaches the definition set. Docs come back wrapped at 100 columns, so an annotated
    script written another way decompiles to the same words on other lines.
-   Constants are renamed with `c2 defs rename` instead (see content headers).
+   Constants are renamed with `dc2tk defs rename` instead (see content headers).
 4. Commit the definition set.
 
 To see where things stand:
 
-- `c2 defs disc extracted/disc definitions/pal` records the disc the set is
+- `dc2tk defs disc extracted/disc definitions/pal` records the disc the set is
   for in `disc.json`; `decompile` then warns when it is given a different
   disc, and `defs check` says whether the disc matches.
-- `c2 defs check extracted/disc` reports how much of the disc the set
+- `dc2tk defs check extracted/disc` reports how much of the disc the set
   names, per native table, by function and by distinct class, and entries
   that match nothing on the disc.
-- `c2 defs todo extracted/disc` lists what is still unnamed, most called
+- `dc2tk defs todo extracted/disc` lists what is still unnamed, most called
   first, with a file and current name to look at.
 
 ## What people will want to do

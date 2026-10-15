@@ -1,10 +1,10 @@
 """Makes the fish-room mod: a door in Palm Brinks (m01) into a new map, The Fish Room, a big black
-room with a giant fish spinning in its centre, made in Blender with the c2_maps add-on as you
+room with a giant fish spinning in its centre, made in Blender with the dc2tk_maps add-on as you
 would by hand, and written into mods/fish-room with this folder's mod.json, fishroom.h, m01.c,
 fishroom.c and its tune:
 
-    c2 map-export m01
-    c2 map-export m07
+    dc2tk map-export m01
+    dc2tk map-export m07
     blender --background --python docs/examples/fish-room/make_mod.py
 
 The new map is made from m07 (the opening's Palm Brinks at night, which has no sky): every one of
@@ -362,7 +362,7 @@ def make_door():
 def clear_map(root):
     """Delete every placement of the map (the importer keeps a deleted one hidden, so scripts'
     slot numbers stay), and make the background black with no fog."""
-    from c2_maps import c2data
+    from dc2tk_maps import c2data
 
     gone = set()
     for placement in c2data.placements(root):
@@ -389,7 +389,7 @@ def select_only(objects):
 
 def new_model(objects, name, collision, camera=False):
     select_only(objects)
-    result = bpy.ops.c2.new_model(name=name, collision=collision, camera=camera)
+    result = bpy.ops.dc2tk.new_model(name=name, collision=collision, camera=camera)
     if "FINISHED" not in result:
         raise SystemExit("New Model from Selection failed for %s" % name)
     return bpy.context.active_object
@@ -397,7 +397,7 @@ def new_model(objects, name, collision, camera=False):
 
 def add_point(preset, name, at, in_placement):
     bpy.context.scene.cursor.location = at
-    result = bpy.ops.c2.add_point(preset=preset, name=name, in_placement=in_placement)
+    result = bpy.ops.dc2tk.add_point(preset=preset, name=name, in_placement=in_placement)
     if "FINISHED" not in result:
         raise SystemExit("Add Point failed for %s" % name)
     return bpy.context.active_object
@@ -406,10 +406,10 @@ def add_point(preset, name, at, in_placement):
 def build_room(mod=MOD, then=None):
     """Builds the room in Blender and exports it into mod; then(root, fish placement), when
     given, adds more to the scene before the export."""
-    from c2_maps import c2data
+    from dc2tk_maps import c2data
 
     scene = os.path.join(MAPS, "m07", "m07.gltf")
-    bpy.ops.c2.import_map_gltf(filepath=scene)
+    bpy.ops.dc2tk.import_map_gltf(filepath=scene)
     root = c2data.current_map_root(bpy.context)
     clear_map(root)
     new_model([make_room()], "fr_room", collision=True, camera=True)
@@ -430,7 +430,7 @@ def build_room(mod=MOD, then=None):
     c2data.put(door, data)
     if then is not None:
         then(root, fish_placement)
-    result = bpy.ops.c2.export_mod(mod_dir=mod, validate=True)
+    result = bpy.ops.dc2tk.export_mod(mod_dir=mod, validate=True)
     if "FINISHED" not in result:
         raise SystemExit("the export failed")
 
@@ -477,7 +477,7 @@ def add_town_door(scene_path):
 def main():
     for name in ("m01", "m07"):
         if not os.path.isfile(os.path.join(MAPS, name, name + ".gltf")):
-            raise SystemExit("export the map first: c2 map-export %s" % name)
+            raise SystemExit("export the map first: dc2tk map-export %s" % name)
     sys.path.insert(0, os.path.join(REPO, "src", "blender"))
     import addon_utils
 
@@ -495,10 +495,10 @@ def main():
     compose.write(os.path.join(MOD, "music"))
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    addon_utils.enable("c2_maps", default_set=True, persistent=False)
+    addon_utils.enable("dc2tk_maps", default_set=True, persistent=False)
     build_room()
     print("fish-room written to %s; build it with:" % MOD)
-    print("  c2 build extracted/scripts YOUR.iso -o fish-room.iso --mod fish-room")
+    print("  dc2tk build extracted/scripts YOUR.iso -o fish-room.iso --mod fish-room")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 How the PAL disc stores its background music and ambient loops, how the game
 plays them, and how a mod replaces them with MIDI files. `sequence.rs` (in
-`src/crates/c2-assets/src/`) reads and writes the `.sq` files, `music.rs`
+`src/crates/dc2tk-assets/src/`) reads and writes the `.sq` files, `music.rs`
 converts them to and from standard MIDI files, `soundfont.rs` writes a bank's
 instruments as a SoundFont to hear them with. The sound banks that hold the
 sequences and their instruments are in [the sound bank notes](sounds.md).
@@ -220,14 +220,14 @@ replaces as the template:
 
 ## 4. In a mod
 
-- **By id**: `c2 mod asset dc2.iso mymod music:BG_000_000` writes
+- **By id**: `dc2tk mod asset dc2.iso mymod music:BG_000_000` writes
   `music/BG_000_000.mid` and `music/BG_000.sf2` into the mod and adds
   `"music:BG_000_000": "music/BG_000_000.mid"` to its `replace`. The
   replacement reaches every place the id has (the fishing packs' versions are
   `music:BG_193_000@fishing2`). In the asset tree each sequence is
-  `music/<bank's folder>/<id>.mid` beside `<bank>.sf2`; `c2 mod make` takes an
+  `music/<bank's folder>/<id>.mid` beside `<bank>.sf2`; `dc2tk mod make` takes an
   edited MIDI file from there.
-- **By path**: `c2 mod asset dc2.iso mymod snd2/bgm/BG_000.snd --as mid`
+- **By path**: `dc2tk mod asset dc2.iso mymod snd2/bgm/BG_000.snd --as mid`
   writes `disc/snd2/bgm/BG_000.snd.mid/` with a MIDI file per sequence (named
   after it) and the SoundFont; build replaces each sequence whose file is
   there and reads nothing else. A `.snd.mid` folder and a `.snd.wav` folder for
@@ -325,17 +325,17 @@ What `build` writes (`music::new_bank`, `replace::add_music`):
   music memory than its tune needs; `build` notes the sizes and checks the
   bank against the music region and the read buffer as for any changed
   bank. The like bank's programs stay, so the MIDI file plays the like
-  bank's instruments (its SoundFont, `c2 mod asset ... music:BG_193_000`,
+  bank's instruments (its SoundFont, `dc2tk mod asset ... music:BG_193_000`,
   is the one to hear it with) or ones the line gives.
 
 Refused: a name that is not `BG_` and three digits (`load_bgm` takes 0 to
 999 that way; the disc's are 0 to 195), a number the disc has (replace its
 tune with a `music:BG_NNN_000` line instead), a like bank the disc lacks or
 whose entry 0 plays no sequence, two lines (two mods) adding one number, and
-a `file:` line or `disc/` file giving the same path. `c2 mod check --disc`
+a `file:` line or `disc/` file giving the same path. `dc2tk mod check --disc`
 builds the bank to check it. Scripts write the number itself: it is in the
 line's key already, and `load_bgm` takes a plain `int` (`bgm_file`), in
-strict mode (`#pragma std c89`) too. `c2 mod asset built.iso NAME
+strict mode (`#pragma std c89`) too. `dc2tk mod asset built.iso NAME
 music:BG_200_000` copies the tune back out of a built image.
 
 Checked: `BG_193_001` (the fishing battle) added as `BG_200` like `BG_193`

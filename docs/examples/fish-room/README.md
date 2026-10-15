@@ -7,7 +7,7 @@ door behind where you arrive takes you back.
 
 Everything in it is made here; nothing of the game's is in this folder:
 
-- `make_mod.py` (run by Blender, with the [c2_maps add-on](../../../src/blender/README.md)
+- `make_mod.py` (run by Blender, with the [dc2tk_maps add-on](../../../src/blender/README.md)
   on the path) imports your export of `m07` (the opening's Palm Brinks at
   night, chosen because it has no sky), deletes every placement, makes the
   background black and the fog off, and models:
@@ -39,10 +39,10 @@ Everything in it is made here; nothing of the game's is in this folder:
   on the first arrival the player stands facing the door.
 
 ```bash
-c2 map-export m01
-c2 map-export m07
+dc2tk map-export m01
+dc2tk map-export m07
 blender --background --python docs/examples/fish-room/make_mod.py
-c2 build extracted/scripts dc2.iso -o fish-room.iso --mod fish-room
+dc2tk build extracted/scripts dc2.iso -o fish-room.iso --mod fish-room
 ```
 
 In the game: a new game starts in Palm Brinks, facing a house door.

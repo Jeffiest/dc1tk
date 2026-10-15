@@ -1,9 +1,9 @@
-# c2_maps: a Blender add-on for Dark Chronicle maps
+# dc2tk_maps: a Blender add-on for Dark Chronicle maps
 
-`c2_maps` imports a map that `c2 map-export NAME` wrote as a glTF scene, shows
+`dc2tk_maps` imports a map that `dc2tk map-export NAME` wrote as a glTF scene, shows
 it as the game draws it, lets you edit its placements, trigger points,
 collision, settings, meshes and textures and model new objects, checks it
-against the game's limits, and exports it into a mod that `c2 build` turns
+against the game's limits, and exports it into a mod that `dc2tk build` turns
 into a disc image. The scene's conventions (node names, `extras.c2`,
 collision material names) are in [the map formats](../../docs/assets/maps.md),
 section 8; the add-on follows them and never renames what carries data.
@@ -14,27 +14,27 @@ Python, nothing to install besides the add-on.
 ## Install
 
 Either way, then set the repository folder in the add-on's preferences
-(Edit, Preferences, Add-ons, "Dark Chronicle Maps (c2)"). When the add-on is
+(Edit, Preferences, Add-ons, "Dark Chronicle Maps (dc2tk)"). When the add-on is
 linked from this repository, the repository is found by itself.
 
-- **Link it (follows the repository):** link `src/blender/c2_maps` into
+- **Link it (follows the repository):** link `src/blender/dc2tk_maps` into
   Blender's add-ons folder and enable it.
   - Windows (Blender 4.2+: the extensions folder):
-    `mklink /J "%APPDATA%\Blender Foundation\Blender\5.1\extensions\user_default\c2_maps" "C:\path\to\ChronicleTwo-Script\src\blender\c2_maps"`
-  - Linux, macOS: `ln -s /path/to/ChronicleTwo-Script/src/blender/c2_maps ~/.config/blender/5.1/extensions/user_default/c2_maps`
+    `mklink /J "%APPDATA%\Blender Foundation\Blender\5.1\extensions\user_default\dc2tk_maps" "C:\path\to\DC2-Toolkit\src\blender\dc2tk_maps"`
+  - Linux, macOS: `ln -s /path/to/DC2-Toolkit/src/blender/dc2tk_maps ~/.config/blender/5.1/extensions/user_default/dc2tk_maps`
     (`~/Library/Application Support/Blender/5.1/...` on macOS)
   - Blender 3.6-4.1: the same into `scripts/addons/` instead of
     `extensions/user_default/`.
-- **Install a zip:** zip the `c2_maps` folder (the zip holds `c2_maps/...`),
-  or `blender --command extension build --source-dir src/blender/c2_maps`,
+- **Install a zip:** zip the `dc2tk_maps` folder (the zip holds `dc2tk_maps/...`),
+  or `blender --command extension build --source-dir src/blender/dc2tk_maps`,
   then Edit, Preferences, Add-ons, Install from Disk.
 
 Preferences:
 
 | setting | default |
 |---|---|
-| c2 repository | the repository around the add-on, when linked |
-| c2 executable | `build/release/c2.exe` (`c2` elsewhere), else `c2.bat` / `./c2` in the repository |
+| dc2tk repository | the repository around the add-on, when linked |
+| dc2tk executable | `build/release/dc2tk.exe` (`dc2tk` elsewhere), else `dc2tk.bat` / `./dc2tk` in the repository |
 | map export arguments | `map-export {name} -o {out}` |
 | exported maps | `extracted/maps` in the repository |
 | mod folder, source tree, retail and output disc images | for Export and Build; the source tree defaults to `extracted/scripts` |
@@ -45,7 +45,7 @@ Everything is in the 3D viewport's sidebar (N), tab **Dark Chronicle**, and
 in File, Import.
 
 **Import.** Type the map's name (`s17`) and press Import: the add-on runs
-`c2 map-export s17 -o extracted/maps/s17` and imports the result. File,
+`dc2tk map-export s17 -o extracted/maps/s17` and imports the result. File,
 Import, "Dark Chronicle map (.gltf)" imports a scene exported before. The
 import keeps every custom property (`extras.c2`), merges no vertices and keeps
 the node tree, then:
@@ -162,7 +162,7 @@ it changes nothing (see [dungeons](../../docs/assets/dungeons.md), where
 area 5 floors are where chests and monsters may stand).
 
 **Check.** Validate Map lists errors and warnings (select an entry's object
-with its button; the whole list is in the text "c2 validation"): names over
+with its button; the whole list is in the text "dc2tk validation"): names over
 31 bytes (cp932), event targets over 15, repeated placement names, more than
 320 placements (400 for dungeons), unknown point kinds, collision faces that
 are not triangles or whose material is not a `col_` name, more than 8
@@ -185,9 +185,9 @@ export instead, move its line under `add` with the map it came from:
 ([maps](../../docs/assets/maps.md) section 9).
 
 **Build.** Set the retail ISO, the output ISO and the source tree and press
-Build ISO with Mod: `c2 build SOURCE ISO -o OUTPUT --mods MODS --mod NAME`
+Build ISO with Mod: `dc2tk build SOURCE ISO -o OUTPUT --mods MODS --mod NAME`
 runs in the background, its last lines in the panel and all of it in the
-text "c2 output".
+text "dc2tk output".
 
 ## Tests
 
@@ -201,14 +201,14 @@ piece, a point and an animation of the model's node; a door, a point light
 with a KHR light, a sound, an invent box, an animation of a piece under the
 field names of older exports, and two points whose data is a raw argument
 list; a fixed camera; map settings), imports it (on Windows through a
-stand-in for `c2 map export`), checks the game look, the light set's world
+stand-in for `dc2tk map export`), checks the game look, the light set's world
 and suns and the hour filter, what the animations move and the lines drawn
 for them, edits fields, adds a point of every kind, duplicates a placement,
 makes a new model from a mesh, paints a collision face, validates, draws
 every panel with a checking stand-in layout, exports into a mod and checks
 the written glTF: every node and `extras.c2` of the source kept (edited ones
 as edited), transforms unchanged, the new nodes with valid extras, the look
-back after the export, `mod.json` updated; then runs `c2 build` through the
+back after the export, `mod.json` updated; then runs `dc2tk build` through the
 stand-in. `make_test_map.py OUT_DIR` also runs on its
 own with any Python 3.
 

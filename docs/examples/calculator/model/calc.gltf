@@ -1,7 +1,7 @@
 {
   "asset": {
     "version": "2.0",
-    "generator": "c2-assets calculator_art example"
+    "generator": "dc2tk-assets calculator_art example"
   },
   "scene": 0,
   "scenes": [

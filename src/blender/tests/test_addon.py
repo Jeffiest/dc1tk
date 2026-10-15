@@ -1,9 +1,9 @@
-"""End-to-end test of the c2_maps add-on, headless:
+"""End-to-end test of the dc2tk_maps add-on, headless:
 
     blender --background --factory-startup --python src/blender/tests/test_addon.py
 
 Enables the add-on from src/blender, writes the synthetic map of make_test_map.py, imports it
-(through a stand-in c2 on Windows, which copies the map as `c2 map-export` would, otherwise
+(through a stand-in dc2tk on Windows, which copies the map as `dc2tk map-export` would, otherwise
 from the file), edits fields, adds points, duplicates a placement, paints collision, validates,
 exports into a mod and checks the written glTF: every node and extras.c2 of the source is kept
 (edited values changed as expected), transforms are unchanged, the new nodes carry valid extras,
@@ -111,21 +111,21 @@ def enable_addon():
     import addon_utils
 
     try:
-        module = addon_utils.enable("c2_maps", default_set=True, persistent=False, handle_error=None)
+        module = addon_utils.enable("dc2tk_maps", default_set=True, persistent=False, handle_error=None)
     except Exception:  # noqa: BLE001
         module = None
-    if module is None or "c2_maps" not in bpy.context.preferences.addons:
-        import c2_maps
+    if module is None or "dc2tk_maps" not in bpy.context.preferences.addons:
+        import dc2tk_maps
 
-        c2_maps.register()
-        return c2_maps, False
+        dc2tk_maps.register()
+        return dc2tk_maps, False
     return module, True
 
 
-def write_fake_c2(folder, source_dir):
-    """A stand-in for c2 on Windows: `map-export NAME -o DIR` copies the test map into DIR,
+def write_fake_dc2tk(folder, source_dir):
+    """A stand-in for dc2tk on Windows: `map-export NAME -o DIR` copies the test map into DIR,
     anything else echoes its arguments."""
-    path = os.path.join(folder, "fake_c2.bat")
+    path = os.path.join(folder, "fake_dc2tk.bat")
     with open(path, "w", newline="\r\n") as handle:
         handle.write(
             "@echo off\n"
@@ -134,28 +134,28 @@ def write_fake_c2(folder, source_dir):
             "  echo exported %~2 to %~4\n"
             "  exit /b 0\n"
             ")\n"
-            "echo c2 %*\n"
+            "echo dc2tk %*\n"
             "exit /b 0\n"
         )
     return path
 
 
 def main():
-    work = tempfile.mkdtemp(prefix="c2_maps_test_")
+    work = tempfile.mkdtemp(prefix="dc2tk_maps_test_")
     print("Working in", work)
     source_dir = os.path.join(work, "source")
     source_path = make_test_map.write(source_dir)
     with open(source_path, encoding="utf-8") as handle:
         source = json.load(handle)
 
-    c2_maps, through_prefs = enable_addon()
-    from c2_maps import c2data, edit, export_mod, import_map, prefs, schema, validate  # noqa: F401
+    dc2tk_maps, through_prefs = enable_addon()
+    from dc2tk_maps import c2data, edit, export_mod, import_map, prefs, schema, validate  # noqa: F401
 
     print("Blender", bpy.app.version_string, "- add-on enabled through preferences:", through_prefs)
     settings_prefs = prefs.get()
     context = bpy.context
     wm = context.window_manager
-    settings = wm.c2_maps
+    settings = wm.dc2tk_maps
 
     # Start empty.
     for obj in list(bpy.data.objects):
@@ -163,13 +163,13 @@ def main():
 
     # 1. Import.
     if sys.platform.startswith("win"):
-        settings_prefs.c2_path = write_fake_c2(work, source_dir)
+        settings_prefs.dc2tk_path = write_fake_dc2tk(work, source_dir)
         settings_prefs.maps_dir = os.path.join(work, "maps")
-        result = bpy.ops.c2.import_map(map_name="t01")
-        check(result == {"FINISHED"}, "import through c2 finished: %s" % result)
-        check(os.path.isfile(os.path.join(work, "maps", "t01", "t01.gltf")), "c2 wrote maps/t01/t01.gltf")
+        result = bpy.ops.dc2tk.import_map(map_name="t01")
+        check(result == {"FINISHED"}, "import through dc2tk finished: %s" % result)
+        check(os.path.isfile(os.path.join(work, "maps", "t01", "t01.gltf")), "dc2tk wrote maps/t01/t01.gltf")
     else:
-        result = bpy.ops.c2.import_map_gltf(filepath=source_path)
+        result = bpy.ops.dc2tk.import_map_gltf(filepath=source_path)
         check(result == {"FINISHED"}, "import finished: %s" % result)
 
     root = bpy.data.objects.get("map:t01")
@@ -206,7 +206,7 @@ def main():
 
     # The game look: map materials draw as the game does, collision stays out of renders, the
     # light set lights the scene, and pieces show by the hour.
-    from c2_maps import look  # noqa: E402
+    from dc2tk_maps import look  # noqa: E402
 
     wall = bpy.data.materials.get("house_wall")
     check(wall is not None and wall.get(look.FLAG) == 1, "the map material has the game look")
@@ -264,7 +264,7 @@ def main():
     settings.d_event_program = 777
     settings.point_hours = (6, 18)
     settings.d_event_target = "s18"
-    bpy.ops.c2.set_event_kind(kind="t_box")
+    bpy.ops.dc2tk.set_event_kind(kind="t_box")
     check(c2data.lookup(door, ("data", "program")) == 777, "event program set")
     check(list(c2data.lookup(door, ("flag",))) == [0, 0, 6, 18], "hours set")
     check(abs(door.empty_display_size - 20.0) < 1e-6, "chest size 20 after the kind changed")
@@ -290,7 +290,7 @@ def main():
     raw_light_key = (("map:t01", 1), ("points", 1), ("point:rawlight", 1))
     edited(raw_light_key, lambda c2: c2["data"].__setitem__(0, 90.0))
 
-    from c2_maps import overlay
+    from dc2tk_maps import overlay
     from mathutils import Vector
 
     lines = overlay.box_lines(photo)
@@ -362,8 +362,8 @@ def main():
 
     edited(house02_key, change_house)
 
-    bpy.ops.c2.edit_value(object_name=root.name, path=json.dumps(["map", "light_sets", 0, "fog_enable"]), value="0")
-    bpy.ops.c2.edit_value(object_name=root.name, path=json.dumps(["map", "light_sets", 0, "bgcolor"]), value="1, 2, 3")
+    bpy.ops.dc2tk.edit_value(object_name=root.name, path=json.dumps(["map", "light_sets", 0, "fog_enable"]), value="0")
+    bpy.ops.dc2tk.edit_value(object_name=root.name, path=json.dumps(["map", "light_sets", 0, "bgcolor"]), value="1, 2, 3")
     root_key = (("map:t01", 1),)
 
     def change_root(c2):
@@ -377,16 +377,16 @@ def main():
     context.scene.cursor.location = (10.0, 20.0, 30.0)
     activate(root)
     for preset in schema.POINT_PRESETS:
-        result = bpy.ops.c2.add_point(preset=preset[0], in_placement=False)
+        result = bpy.ops.dc2tk.add_point(preset=preset[0], in_placement=False)
         check(result == {"FINISHED"}, "add point %s" % preset[0])
     activate(bpy.data.objects["place:house01"])
-    result = bpy.ops.c2.add_point(preset="EVENT", name="talk")
+    result = bpy.ops.dc2tk.add_point(preset="EVENT", name="talk")
     check(result == {"FINISHED"}, "add point in a placement")
     talk = bpy.data.objects.get("point:talk")
     check(talk is not None and talk.parent and talk.parent.name == "place:house01", "talk is in place:house01")
     body = next(o for o in c2data.descendants(house01) if schema.strip_suffix(o.name) == "house_body--a40aof-")
     activate(body)
-    result = bpy.ops.c2.add_point(preset="ANIME", name="wobble")
+    result = bpy.ops.dc2tk.add_point(preset="ANIME", name="wobble")
     check(result == {"FINISHED"}, "add an animation of a model node")
     wobble = bpy.data.objects.get("point:wobble")
     want = {"placement": "house01", "piece": "house_m", "frame": "house_body--a40aof-", "drives": 2, "mode": 1}
@@ -401,7 +401,7 @@ def main():
         check((added_door.matrix_world.translation - context.scene.cursor.location).length < 1e-4, "added at the cursor")
 
     activate(bpy.data.objects["place:house01"])
-    result = bpy.ops.c2.duplicate_placement()
+    result = bpy.ops.dc2tk.duplicate_placement()
     check(result == {"FINISHED"}, "duplicate placement")
     copy = bpy.data.objects.get("place:house01_2")
     check(copy is not None, "place:house01_2 made")
@@ -413,11 +413,11 @@ def main():
     for obj in context.selected_objects:
         obj.select_set(False)
     activate(root)
-    check(not bpy.ops.c2.new_model.poll(), "new model needs a loose mesh selected")
+    check(not bpy.ops.dc2tk.new_model.poll(), "new model needs a loose mesh selected")
     bpy.ops.mesh.primitive_cube_add(size=4.0, location=(50.0, 60.0, 5.0))
     crate = context.active_object
     crate.name = "crate"
-    result = bpy.ops.c2.new_model()
+    result = bpy.ops.dc2tk.new_model()
     check(result == {"FINISHED"}, "new model")
     made = bpy.data.objects.get("place:t01_crate")
     check(made is not None, "place:t01_crate made")
@@ -432,10 +432,10 @@ def main():
         check(len(walls) == 1 and all(len(p.vertices) == 3 for p in walls[0].data.polygons), "a triangulated collision copy")
         check(walls and walls[0].data.materials[0].name == "col_ground0_foot0_area6_mask0", "collision area 6")
     crate.select_set(True)
-    check(not bpy.ops.c2.new_model.poll(), "the mesh is a model now, not loose")
+    check(not bpy.ops.dc2tk.new_model.poll(), "the mesh is a model now, not loose")
 
     # 4. Paint collision: one face in Edit Mode.
-    bpy.ops.c2.toggle_collision(kind="collision")
+    bpy.ops.dc2tk.toggle_collision(kind="collision")
     check(floor.visible_get(), "collision shown by the toggle")
     for obj in context.selected_objects:
         obj.select_set(False)
@@ -448,17 +448,17 @@ def main():
     for face in mesh.faces:
         face.select_set(face.index == 0)
     bmesh.update_edit_mesh(floor.data)
-    result = bpy.ops.c2.paint_collision(ground=1, foot=3, area=7, mask=4)
+    result = bpy.ops.dc2tk.paint_collision(ground=1, foot=3, area=7, mask=4)
     bpy.ops.object.mode_set(mode="OBJECT")
     check(result == {"FINISHED"}, "paint collision")
     painted = floor.material_slots[floor.data.polygons[0].material_index].material
     check(painted is not None and painted.name == "col_ground1_foot3_area7_mask4", "face 0 painted: %s" % (painted and painted.name))
-    bpy.ops.c2.toggle_collision(kind="collision")
+    bpy.ops.dc2tk.toggle_collision(kind="collision")
     check(not floor.visible_get(), "collision hidden again")
 
     # 5. Validate: clean, then a broken name.
     activate(root)
-    bpy.ops.c2.validate()
+    bpy.ops.dc2tk.validate()
     errors = [r for r in validate.results if r[0] == validate.ERROR]
     check(not errors, "no validation errors: %s" % errors)
     long_name = bpy.data.objects["point:river"]
@@ -535,7 +535,7 @@ def main():
         json.dump({"name": "testmod", "replace": {"texture:abc": "a.png"}, "add": {"x": 1}}, handle)
     settings_prefs.mod_dir = mod_dir
     activate(root)
-    result = bpy.ops.c2.export_mod()
+    result = bpy.ops.dc2tk.export_mod()
     check(result == {"FINISHED"}, "export to mod: %s" % result)
     out_path = os.path.join(mod_dir, "maps", "t01", "t01.gltf")
     check(os.path.isfile(out_path), "maps/t01/t01.gltf written")
@@ -549,7 +549,7 @@ def main():
     added = {"map:t01x": {"file": "maps/t01/t01.gltf", "like": "t01"}}
     with open(os.path.join(new_map_dir, "mod.json"), "w") as handle:
         json.dump({"add": added}, handle)
-    result = bpy.ops.c2.export_mod(mod_dir=new_map_dir)
+    result = bpy.ops.dc2tk.export_mod(mod_dir=new_map_dir)
     check(result == {"FINISHED"}, "export to a new map's mod: %s" % result)
     with open(os.path.join(new_map_dir, "mod.json")) as handle:
         mod = json.load(handle)
@@ -625,16 +625,16 @@ def main():
     check("COLOR_0" in mesh["primitives"][0]["attributes"], "vertex colours exported")
     check(out["asset"].get("generator", "").startswith("Khronos glTF Blender"), "written by Blender's exporter")
 
-    # 8. c2 build (with the stand-in c2, which echoes its arguments).
+    # 8. dc2tk build (with the stand-in dc2tk, which echoes its arguments).
     if sys.platform.startswith("win"):
         iso = os.path.join(work, "dc2.iso")
         open(iso, "wb").close()
         settings_prefs.iso_path = iso
         settings_prefs.output_iso = os.path.join(work, "out.iso")
         settings_prefs.source_dir = source_dir
-        result = bpy.ops.c2.build()
-        check(result == {"FINISHED"}, "c2 build ran: %s" % result)
-        from c2_maps import runner
+        result = bpy.ops.dc2tk.build()
+        check(result == {"FINISHED"}, "dc2tk build ran: %s" % result)
+        from dc2tk_maps import runner
 
         text = "\n".join(runner.current.take()) if runner.current else ""
         check("build" in text and "--mod testmod" in text and "--mods" in text, "build arguments: %s" % text)

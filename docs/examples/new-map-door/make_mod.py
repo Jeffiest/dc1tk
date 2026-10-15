@@ -1,11 +1,11 @@
 """Makes the new-map-door mod from your own exports of Palm Brinks (m01) and its park (m05), and
 writes it into mods/new-map-door with this folder's mod.json, park.h, m01.c and m05x.c:
 
-    c2 map-export m01
-    c2 map-export m05
+    dc2tk map-export m01
+    dc2tk map-export m05
     python docs/examples/new-map-door/make_mod.py [--maps extracted/maps] [--mods mods]
 
-The edits, as you would make them in Blender with the c2_maps add-on:
+The edits, as you would make them in Blender with the dc2tk_maps add-on:
 - m01: a door point, door_park, where the closed house door "door10" was (Add Point > Door, moved
   onto door10, door10 deleted). Its program is given by mod.json's "programs" (ENTER_PARK), its
   flags are a disc door's (action button, fade out).
@@ -44,7 +44,7 @@ def add_door(scene_path):
         (node for node in nodes if c2_of(node).get("role") == "group" and node.get("name") == "points"), None
     )
     if points is None:
-        raise SystemExit("%s has no points group: export it again with c2 map-export m01" % scene_path)
+        raise SystemExit("%s has no points group: export it again with dc2tk map-export m01" % scene_path)
     old = next((at for at in points.get("children", []) if c2_of(nodes[at]).get("name") == OLD_DOOR), None)
     if old is None:
         raise SystemExit("%s has no point %s" % (scene_path, OLD_DOOR))
@@ -85,13 +85,13 @@ def add_door(scene_path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--maps", default=os.path.join(REPO, "extracted", "maps"), help="where c2 map-export wrote m01 and m05")
+    parser.add_argument("--maps", default=os.path.join(REPO, "extracted", "maps"), help="where dc2tk map-export wrote m01 and m05")
     parser.add_argument("--mods", default=os.path.join(REPO, "mods"), help="the mods folder to write new-map-door into")
     args = parser.parse_args()
     exports = {name: os.path.join(args.maps, name) for name in ("m01", "m05")}
     for name, folder in exports.items():
         if not os.path.isfile(os.path.join(folder, name + ".gltf")):
-            raise SystemExit("export the map first: c2 map-export %s (writes %s)" % (name, folder))
+            raise SystemExit("export the map first: dc2tk map-export %s (writes %s)" % (name, folder))
     mod = os.path.join(args.mods, "new-map-door")
     if os.path.isdir(os.path.join(mod, "maps")):
         shutil.rmtree(os.path.join(mod, "maps"))
@@ -102,7 +102,7 @@ def main():
     for name in OWN_FILES:
         shutil.copyfile(os.path.join(HERE, name), os.path.join(mod, name))
     print("new-map-door written to %s; build it with:" % mod)
-    print("  c2 build extracted/scripts YOUR.iso -o new-map-door.iso --mod new-map-door")
+    print("  dc2tk build extracted/scripts YOUR.iso -o new-map-door.iso --mod new-map-door")
 
 
 main()

@@ -10,14 +10,14 @@ would by hand, in their own character packs:
 The packs: Parn (chara/p01_10a.chr), Sheriff Blinkhorn (p01_05a), Giles (p01_19a), Aegira (p01_20a)
 and Fournet (p01_22a). Each is exported from your own disc into the mod as glTF:
 
-    c2 mod asset pal.iso spinning-cult chara/p01_19a.chr --as gltf
+    dc2tk mod asset pal.iso spinning-cult chara/p01_19a.chr --as gltf
 
 which writes mods/spinning-cult/disc/chara/p01_19a.chr.gltf/ (p01_19a.gltf, .bin, textures/), a game
 file in the mod's disc/ folder, so mod.json needs no line for it (mod asset writes `"replace": {}`
 when the mod has no mod.json yet and keeps the lines of one it has, refusing to run while one of
 them names a file the mod's folder does not have yet). This script opens each export in
 Blender, finds the bones by looking at the skeleton (their names differ from pack to pack), adds
-the two actions and exports glTF Separate over the export, so `c2 build` adds KEYs `spin` and
+the two actions and exports glTF Separate over the export, so `dc2tk build` adds KEYs `spin` and
 `stare` after the pack's last and changes nothing else in the pack.
 
 Every key list of a pack gets a key at every frame of every KEY, so a motion costs the pack about
@@ -29,9 +29,9 @@ one axis), and `stare` 3 frames at step 0.05 (2 s). The steps go into the animat
 after Blender's export, which build reads for a new KEY's step.
 
     blender --background --factory-startup --python docs/examples/spinning-cult/make_villagers.py
-    blender --background --factory-startup --python docs/examples/spinning-cult/make_villagers.py -- C2 ISO MODS
+    blender --background --factory-startup --python docs/examples/spinning-cult/make_villagers.py -- DC2TK ISO MODS
 
-C2, ISO and MODS default to build/release/c2.exe, pal.iso and mods/ in the repository; the mod is
+DC2TK, ISO and MODS default to build/release/dc2tk.exe, pal.iso and mods/ in the repository; the mod is
 MODS/spinning-cult. Nothing of the game's is in this folder: the models come from your own disc.
 """
 
@@ -80,16 +80,16 @@ FACE_BELOW = {"p01_10a": 25.0}
 
 def arguments():
     given = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    c2 = given[0] if len(given) > 0 else os.path.join(REPO, "build", "release", "c2.exe")
+    dc2tk = given[0] if len(given) > 0 else os.path.join(REPO, "build", "release", "dc2tk.exe")
     iso = given[1] if len(given) > 1 else os.path.join(REPO, "pal.iso")
     mods = given[2] if len(given) > 2 else os.path.join(REPO, "mods")
-    return os.path.abspath(c2), os.path.abspath(iso), os.path.abspath(mods)
+    return os.path.abspath(dc2tk), os.path.abspath(iso), os.path.abspath(mods)
 
 
-def export_packs(c2, iso, mods):
+def export_packs(dc2tk, iso, mods):
     """Each pack as glTF into the mod's disc/ folder, fresh from the disc."""
     paths = ["chara/%s.chr" % name for name, _ in PACKS]
-    subprocess.run([c2, "mod", "asset", iso, MOD] + paths + ["--as", "gltf", "--mods", mods], check=True)
+    subprocess.run([dc2tk, "mod", "asset", iso, MOD] + paths + ["--as", "gltf", "--mods", mods], check=True)
     return {name: os.path.join(mods, MOD, "disc", "chara", name + ".chr.gltf", name + ".gltf") for name, _ in PACKS}
 
 
@@ -477,8 +477,8 @@ def set_steps(path, steps):
 
 
 def main():
-    c2, iso, mods = arguments()
-    exports = export_packs(c2, iso, mods)
+    dc2tk, iso, mods = arguments()
+    exports = export_packs(dc2tk, iso, mods)
     for name, label in PACKS:
         make_motions(exports[name], label)
     print("DONE: spin and stare added to", ", ".join(n for n, _ in PACKS), "in", os.path.join(mods, MOD))

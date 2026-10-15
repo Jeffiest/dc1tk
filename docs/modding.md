@@ -9,24 +9,24 @@ comes from. The commands are in [usage](usage.md).
 
 | Question | Command |
 | --- | --- |
-| What runs program 510 of map s51, and what asks for it? | `c2 xref extracted/scripts event 510 --map s51` |
-| How does the game get to map s51, and at which program? | `c2 xref extracted/scripts map s51` |
-| Which model and AI script does a monster kind use, and who places it? | `c2 xref extracted/scripts monster golem` |
-| Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `c2 flags extracted/scripts`, `c2 flags extracted/scripts --flag 54` |
-| Which save counters are in use? Who uses counter 5? (`NEW_COUNTER` for a mod's own.) | `c2 flags extracted/scripts --counters`, `c2 flags extracted/scripts --counter 5` |
-| Which maps can a scene start in, and where does the player play? | `c2 maps extracted/scripts` |
-| A map's programs, free program numbers, trigger points and player positions? | `c2 map extracted/scripts s17` |
-| What have I changed? | `c2 changes extracted/scripts` (scripts), `c2 diff dc2.iso` (scripts, assets and disc files) |
-| Turn my edits into a mod | `c2 mod make dc2.iso mymod` |
-| Make its whole scripts patches of what changed | `c2 mod slim extracted/scripts mymod` |
+| What runs program 510 of map s51, and what asks for it? | `dc2tk xref extracted/scripts event 510 --map s51` |
+| How does the game get to map s51, and at which program? | `dc2tk xref extracted/scripts map s51` |
+| Which model and AI script does a monster kind use, and who places it? | `dc2tk xref extracted/scripts monster golem` |
+| Which save flags are in use? Who uses flag 54? (A mod asks for its own with `NEW_FLAG`.) | `dc2tk flags extracted/scripts`, `dc2tk flags extracted/scripts --flag 54` |
+| Which save counters are in use? Who uses counter 5? (`NEW_COUNTER` for a mod's own.) | `dc2tk flags extracted/scripts --counters`, `dc2tk flags extracted/scripts --counter 5` |
+| Which maps can a scene start in, and where does the player play? | `dc2tk maps extracted/scripts` |
+| A map's programs, free program numbers, trigger points and player positions? | `dc2tk map extracted/scripts s17` |
+| What have I changed? | `dc2tk changes extracted/scripts` (scripts), `dc2tk diff dc2.iso` (scripts, assets and disc files) |
+| Turn my edits into a mod | `dc2tk mod make dc2.iso mymod` |
+| Make its whole scripts patches of what changed | `dc2tk mod slim extracted/scripts mymod` |
 
-The quickest way to a mod is to edit what `c2 setup` wrote and let `c2 mod make`
+The quickest way to a mod is to edit what `dc2tk setup` wrote and let `dc2tk mod make`
 collect it. Edit scripts in `extracted/scripts`, textures, models and sounds in
 `extracted/assets` (PNG, glTF, WAV), or any game file in `extracted/disc`, and
-add new files there. `c2 diff dc2.iso` lists what changed. `c2 mod make dc2.iso mymod` writes
+add new files there. `dc2tk diff dc2.iso` lists what changed. `dc2tk mod make dc2.iso mymod` writes
 `mods/mymod`, with the scripts as whole files, each changed asset as a `replace`
 line by its id (so it changes every place the disc has it), and each changed or
-added disc file as a `file:` line. Then `c2 build extracted/scripts dc2.iso -o
+added disc file as a `file:` line. Then `dc2tk build extracted/scripts dc2.iso -o
 mymod.iso --mod mymod`. The disc's own files beside `DATA.DAT` (movies,
 `SOUND.DAT`) are listed but cannot go in a mod.
 
@@ -125,7 +125,7 @@ event and marks the AI scripts of monsters the map places.
   6; the engine reads 5 in the main menu and keeps the fishing tournament's
   count and wins in 21 to 25. A mod asks for one with `NEW_COUNTER(name)`,
   and `build` gives it one from 32 up that nothing else uses, kept in
-  `mods/numbers.json` as flags are. `c2 flags extracted/scripts --counters`
+  `mods/numbers.json` as flags are. `dc2tk flags extracted/scripts --counters`
   lists them.
 - **Script globals** keep their values between program runs for as long as
   the map's script stays loaded; they are zeroed when it loads
@@ -184,7 +184,7 @@ the player is alive and on the ground:
 | `monster_talk` (1150) | the player presses the button by a monster placed as talkable, on maps whose dungeon data allows talking (`dbinfo.monster_talk`) |
 | `monsters_cleared` (1500) | no monster is left on the floor; once per floor |
 | a monster's `run_event_script(n)` | program `n`, on the monster's request |
-| a trigger point's program | the player touches it, presses the action button at it or uses an item there, as `c2 map` lists |
+| a trigger point's program | the player touches it, presses the action button at it or uses an item there, as `dc2tk map` lists |
 
 ## Pictures and models of a mod's own
 
@@ -220,7 +220,7 @@ lines that say which of the disc's files to make them like:
   (`model:p01_01a`, a villager). See
   [the new-character example](examples/new-character/README.md) and
   [usage](usage.md#mods), "New characters".
-- `build` lists them as new files; `c2 mod asset built.iso NAME
+- `build` lists them as new files; `dc2tk mod asset built.iso NAME
   mods/calculator/ui.img --as png` (or `calc.chr --as gltf`) copies them
   back out of a built image to check. The rules are in [the
   design](design.md), "Mods by name".
@@ -292,7 +292,7 @@ reaches scripts you did not edit, and `fork` gives some scripts their own
 copy of a library first:
 
 ```
-c2 fork extracted/scripts lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
+dc2tk fork extracted/scripts lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c
 ```
 
 ## Changing what scripts ask the engine for
@@ -304,7 +304,7 @@ they make goes through a function of the mod, which calls the native with
 `original(...)`, changed or not:
 
 ```
-c2 mod override extracted/scripts rats --map s51 place_monster load_monster_data
+dc2tk mod override extracted/scripts rats --map s51 place_monster load_monster_data
 ```
 
 writes a wrapper of each that passes every call on unchanged, with the
@@ -437,8 +437,8 @@ The flag keeps the same monsters elsewhere in the game from asking.
 ## Trying a change quickly
 
 Four things keep the loop short: test a mod's logic without the game
-(`c2 mod test`, see [usage](usage.md#mods)); compile what it changes
-without a disc (`c2 mod check`); build only what changed, which `build`
+(`dc2tk mod test`, see [usage](usage.md#mods)); compile what it changes
+without a disc (`dc2tk mod check`); build only what changed, which `build`
 does by itself; and start New Game at the scene you are working on, then
 boot it with `--play`. A mod can name its scene in `mod.json`
 (`"start_at": "s17:9000"`, or one of its own programs:
@@ -448,7 +448,7 @@ boot it with `--play`. A mod can name its scene in `mod.json`
 straight to a scene, without changing the source tree:
 
 ```
-c2 build extracted/scripts dc2.iso -o test.iso --start-at s51:story_50
+dc2tk build extracted/scripts dc2.iso -o test.iso --start-at s51:story_50
 ```
 
 A new game starts in dungeon 1's script at `floor_start` (`title.cpp`,
@@ -472,24 +472,24 @@ for testing only.
 `setup` and `decompile` write `original-hashes.json` at the root of the tree,
 recording what they wrote. From it:
 
-- `c2 changes extracted/scripts` lists every file you edited, added or removed;
+- `dc2tk changes extracted/scripts` lists every file you edited, added or removed;
 - `setup` and `decompile` refuse to overwrite edited files (`--force`
   overrides);
-- `c2 mod save extracted/scripts castle` copies your edited and added files into
+- `dc2tk mod save extracted/scripts castle` copies your edited and added files into
   the mod `mods/castle`.
 
 Better still, keep the tree untouched and do the work in mods:
-`c2 mod override extracted/scripts castle --map s51 start_castle_battle` starts a
+`dc2tk mod override extracted/scripts castle --map s51 start_castle_battle` starts a
 patch holding just that function, and
-`c2 build extracted/scripts dc2.iso -o modded.iso --mod castle --mod another`
+`dc2tk build extracted/scripts dc2.iso -o modded.iso --mod castle --mod another`
 merges the chosen mods into the scripts they target. A patch holds only what it changes, so a fresh tree,
 decompiled after a tools update, takes the same mods, and several mods can
 change one script. Better definitions can rename a function a patch
 overrides; the mod keeps the function's fingerprint, so `build` still finds
-it and says its new name, and `c2 mod check extracted/scripts castle
+it and says its new name, and `dc2tk mod check extracted/scripts castle
 --rename` puts the new name in the patch. (`mod new` copies whole files into a mod instead; `mod
 list` marks a copied file whose decompiler version has changed since, to
-compare. `c2 mod slim extracted/scripts castle` turns such copies into
+compare. `dc2tk mod slim extracted/scripts castle` turns such copies into
 patches of the functions they change, where the mod then builds to the same
 bytes.) See [usage](usage.md#mods).
 
@@ -509,7 +509,7 @@ functions of the scripts that include it), which is expected.
 
 A patch uses the functions and globals of the scripts it targets without
 declaring them, since `build` merges it into them. `mod override` (and
-`c2 mod header extracted/scripts NAME` at any time) writes a header of each
+`dc2tk mod header extracted/scripts NAME` at any time) writes a header of each
 patch's target into the mod's hidden `.editor/` folder, and a
 `compile_commands.json` that has clangd read each patch with the SDK, the
 tree's headers, the mods folder (for `#include "base/names.h"` from a mod

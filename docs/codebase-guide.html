@@ -351,7 +351,7 @@ footer { margin-top: 80px; color: var(--muted); font-size: 0.85rem; border-top: 
 <main>
 
 <header class="hero">
-  <div class="eyebrow">ChronicleTwo-Script · onboarding</div>
+  <div class="eyebrow">DC2-Toolkit · onboarding</div>
   <h1>The Dark Chronicle script codebase</h1>
   <p class="lede">
     Welcome. You've been handed <code>extracted/scripts/</code>: about 2,500 C files that make up the
@@ -731,7 +731,7 @@ talk_to_npc(npc_slot, -1, 0, 0);    // -1 = show what's laid out; bubble, wait, 
 <p>
   Trigger points are drawn into each map's <code>.map</code> file: a door, a spot to step
   on, a spot to press the button at. Each one names a program number.
-  <code>c2 map extracted/scripts g01</code> lists them all, for example "door to g01i07, runs
+  <code>dc2tk map extracted/scripts g01</code> lists them all, for example "door to g01i07, runs
   program 200", with the part each belongs to: the placement that carries it (a point of a
   template is listed once for every placement of it) or the map's own. Scripts switch points on
   and off with <code>set_func_point_enabled(part, "door", on)</code> (part <code>""</code> for the
@@ -789,8 +789,8 @@ talk_to_npc(npc_slot, -1, 0, 0);    // -1 = show what's laid out; bubble, wait, 
 </svg>
 </figure>
 <p>
-  To trace a chain yourself: <code>c2 xref extracted/scripts map s47</code> lists every way into
-  a map, and <code>c2 xref extracted/scripts event 501 --map s47</code> lists everything that
+  To trace a chain yourself: <code>dc2tk xref extracted/scripts map s47</code> lists every way into
+  a map, and <code>dc2tk xref extracted/scripts event 501 --map s47</code> lists everything that
   starts that program.
 </p>
 </section>
@@ -1046,7 +1046,7 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
   <li><strong>File names are the AI code</strong>: <code>e33a_golem.c</code> is AI <code>e33a</code>. <code>e</code> files are ordinary enemies, <code>b</code> files bosses and story fights. The letters <code>a</code>–<code>d</code> are a family's four colour variants, which usually all run the <code>a</code> AI.</li>
   <li><strong>One AI often serves many kinds.</strong> Editing <code>e33a</code> changes all four golems; <code>element</code> runs twenty kinds. Branch on <code>get_monster_kind()</code> when you need one to differ.</li>
   <li><strong>Story-fight kinds often have their own AI.</strong> Kind 523 looks like a Griffon Soldier but runs <code>b254a</code>, so the castle fight can count deaths without changing every Griffon Soldier in the game.</li>
-  <li><strong>About 30 AI files are dead</strong>: no kind runs them (for example e111a–e115a, whose models run <code>eJema</code>). Check with <code>c2 xref extracted/scripts monster NAME</code> before editing.</li>
+  <li><strong>About 30 AI files are dead</strong>: no kind runs them (for example e111a–e115a, whose models run <code>eJema</code>). Check with <code>dc2tk xref extracted/scripts monster NAME</code> before editing.</li>
 </ul>
 
 <h3>Inside a monster script</h3>
@@ -1279,11 +1279,11 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
 <ol class="steps">
   <li><strong>Find the code.</strong> Use the <a href="#reference">lookup commands</a>, the comments, and your editor (open <code>extracted/scripts/</code> in an editor with clangd for hover docs and go-to-definition).</li>
   <li><strong>Copy it into a mod.</strong>
-<pre><code>c2 mod new extracted/scripts my-change map/g/g01_sindain/g01_1.c</code></pre>
+<pre><code>dc2tk mod new extracted/scripts my-change map/g/g01_sindain/g01_1.c</code></pre>
   Then edit under <code>mods/my-change/files/</code>.</li>
   <li><strong>Or add without copying.</strong> A mod's <code>mod.json</code> can add programs and includes to a map's scripts (all languages at once), or wrap an existing program with your functions before or after it. See <a href="#task-cutscene">task 14</a>.</li>
   <li><strong>Build and play.</strong>
-<pre><code>c2 build extracted/scripts dc2.iso -o modded.iso --mod my-change --play</code></pre>
+<pre><code>dc2tk build extracted/scripts dc2.iso -o modded.iso --mod my-change --play</code></pre>
   Only the scripts that change are recompiled, so this takes seconds.</li>
   <li><strong>Jump straight to the scene.</strong> For maps loaded dungeon-style, <code>--start-at s51:story_50</code> (or <code>"start_at"</code> in <code>mod.json</code>) makes New Game start there. It doesn't work for town maps; for those, keep a PCSX2 save state near the spot.</li>
 </ol>
@@ -1308,12 +1308,12 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
   <li><strong>Find the right branch.</strong> Read the <code>if</code> chain on flags and quest state (<code>talk_gordon</code> → <code>talk_gordon_early</code>) until you reach the <code>show_message</code> for the case you want.</li>
   <li><strong>Check who else uses the code.</strong> The library's top comment lists the scripts that include it. <code>base_town_villagers_v1.c</code> is included by several Palm Brinks maps, which is usually what you want for a villager: their line changes everywhere.</li>
   <li><strong>Edit the text in every language copy.</strong> Copy the five libraries into a mod and change the literal in each:
-<pre><code>c2 mod new extracted/scripts gordon-line lib/map/base_town_villagers_v1.c lib/map/base_town_villagers_v2.c lib/map/base_town_villagers_v3.c lib/map/base_town_villagers_v4.c lib/map/base_town_villagers_v5.c</code></pre>
+<pre><code>dc2tk mod new extracted/scripts gordon-line lib/map/base_town_villagers_v1.c lib/map/base_town_villagers_v2.c lib/map/base_town_villagers_v3.c lib/map/base_town_villagers_v4.c lib/map/base_town_villagers_v5.c</code></pre>
   Use <code>\n</code> for a new line and <code>&lt;page&gt;</code> for a page break; the
   <a href="modding.md#message-text">message text codes</a> list button icons and
   placeholders. Keep lines short enough for the bubble.</li>
   <li><strong>If the line is a number, not text</strong> (<code>show_message(0, 1090010)</code>), it comes from a message file on the disc, which these tools don't edit. Replace the number with your own literal string. If it was voiced, also remove or replace the voice call, or the old audio plays under your new text.</li>
-  <li><strong>To change it on one map only</strong>, give that map its own copy of the library first: <code>c2 fork extracted/scripts lib/map/base_town_villagers_v1.c lib/mods/gordon/villagers_m01_v1.c map/m/m01_palm_brinks/m01_1.c</code>.</li>
+  <li><strong>To change it on one map only</strong>, give that map its own copy of the library first: <code>dc2tk fork extracted/scripts lib/map/base_town_villagers_v1.c lib/mods/gordon/villagers_m01_v1.c map/m/m01_palm_brinks/m01_1.c</code>.</li>
 </ol>
 </div>
 </section>
@@ -1326,10 +1326,10 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
 <p class="goal">The pattern for "this enemy is too easy / should also do X".</p>
 <ol class="steps">
   <li><strong>Find its AI and who shares it.</strong>
-<pre><code>c2 xref extracted/scripts monster golem</code></pre>
+<pre><code>dc2tk xref extracted/scripts monster golem</code></pre>
   This prints the model, the AI file (<code>dungeon/monster/e33a_golem.c</code>), and the other kinds that run the same AI (Rave Golem, Rock Taster, Titan). Your change will reach all four unless you branch on <code>get_monster_kind()</code>.</li>
   <li><strong>Copy it into a mod.</strong>
-<pre><code>c2 mod new extracted/scripts stronger-golem dungeon/monster/e33a_golem.c</code></pre></li>
+<pre><code>dc2tk mod new extracted/scripts stronger-golem dungeon/monster/e33a_golem.c</code></pre></li>
   <li><strong>Change what's in the script itself.</strong> The useful knobs:
     <ul>
       <li>Hit size and timing: the radius and the start/end fractions in <code>add_attack_hit</code> in <code>on_init</code>.</li>
@@ -1340,7 +1340,7 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
     </ul>
   </li>
   <li><strong>If you need to change a library function</strong> (say <code>init_monster_ai</code>'s aggro range), fork the library for this script only. Editing <code>monster_ai_full_toolkit.c</code> itself would change 36 monsters:
-<pre><code>c2 fork extracted/scripts lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c</code></pre></li>
+<pre><code>dc2tk fork extracted/scripts lib/dungeon/monster/monster_ai_full_toolkit.c lib/dungeon/monster/golem_toolkit.c dungeon/monster/e33a_golem.c</code></pre></li>
   <li><strong>Build, then find a Golem.</strong> They roam random floors, so either play to one or put some in a scripted fight you can reach with <code>--start-at</code> (next task).</li>
 </ol>
 <div class="note">
@@ -1371,7 +1371,7 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
 
 <h3>Recipe: replace the castle soldiers with Golems</h3>
 <ol class="steps">
-  <li><strong>Find every place the fight is set up.</strong> <code>c2 xref extracted/scripts monster 523</code> shows the soldiers placed in two functions: <code>start_castle_battle</code> (program 500 of <code>map/s/s51_raybrandt_castle/s51_1.c</code> to <code>_5.c</code>, reached from dungeon 1) and <code>start_monica_gear_battle</code> (program <code>story_50</code>, in <code>lib/map/s/s51_raybrandt_castle/monica_gear_battle.c</code>). Copy the five scripts and the library into a mod and change both.</li>
+  <li><strong>Find every place the fight is set up.</strong> <code>dc2tk xref extracted/scripts monster 523</code> shows the soldiers placed in two functions: <code>start_castle_battle</code> (program 500 of <code>map/s/s51_raybrandt_castle/s51_1.c</code> to <code>_5.c</code>, reached from dungeon 1) and <code>start_monica_gear_battle</code> (program <code>story_50</code>, in <code>lib/map/s/s51_raybrandt_castle/monica_gear_battle.c</code>). Copy the five scripts and the library into a mod and change both.</li>
   <li><strong>Swap the kind.</strong> Load the new kind (the <code>1</code> clears what was loaded before), then place it:
 <pre><code class="c">load_monster_data(MONSTER_GOLEM, 1);
 place_monster(MONSTER_GOLEM, -382.5, -0.2, 120.2, 0.0, 1.61, 0.0);   // x, y, z, then rotation
@@ -1382,7 +1382,7 @@ place_monster(MONSTER_GOLEM, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
 <pre><code class="c">PROGRAM(monsters_cleared, start_georama_with_starter_items);   // beside PROGRAM(510, ...)</code></pre>
   Or make the Golem's death program count kills and call <code>run_event_script(510)</code> like the soldier does, guarded by a flag that only this fight sets so Golems elsewhere aren't affected.</li>
   <li><strong>Test it directly.</strong> <code>story_50</code> runs <code>start_monica_gear_battle</code>, which also gives Monica her gear:
-<pre><code>c2 build extracted/scripts dc2.iso -o test.iso --mod castle --start-at s51:story_50 --play</code></pre></li>
+<pre><code>dc2tk build extracted/scripts dc2.iso -o test.iso --mod castle --start-at s51:story_50 --play</code></pre></li>
 </ol>
 <p>
   To give the castle Golems their own behaviour too, combine this with
@@ -1400,8 +1400,8 @@ place_monster(MONSTER_GOLEM, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
 <h3>Play a short scene the first time the player enters Sindain after this point</h3>
 <p class="goal">A complete mod that touches no game file: one new library and a <code>mod.json</code>.</p>
 <ol class="steps">
-  <li><strong>Pick a free flag.</strong> The game uses save flags up to 824. Check yours is free with <code>c2 flags extracted/scripts --flag 1300</code>.</li>
-  <li><strong>See what the map already does on entry.</strong> <code>c2 map extracted/scripts g01</code> lists its programs, trigger points and free program numbers (9000 and up). Read its <code>map_start</code> so your scene doesn't fight a story scene that also auto-plays there.</li>
+  <li><strong>Pick a free flag.</strong> The game uses save flags up to 824. Check yours is free with <code>dc2tk flags extracted/scripts --flag 1300</code>.</li>
+  <li><strong>See what the map already does on entry.</strong> <code>dc2tk map extracted/scripts g01</code> lists its programs, trigger points and free program numbers (9000 and up). Read its <code>map_start</code> so your scene doesn't fight a story scene that also auto-plays there.</li>
   <li><strong>Write the scene as a library.</strong> <code>mods/sindain-hello/files/lib/mods/sindain-hello/hello.c</code>:
 <figure class="code">
 <figcaption>lib/mods/sindain-hello/hello.c (new code)</figcaption>
@@ -1460,7 +1460,7 @@ void play_sindain_hello(void)
   <code>"scripts"</code> takes disc paths (codes without the readable names) and <code>?</code> stands for the language digit. The shorter <code>"map": "g01"</code> would also reach every other script of the map: the g01b and g01c alternates, the rush script, and the interiors in its folder, so the scene would play inside the Dwarves' house too. An <code>"after"</code> function never runs if the program it wraps warps to another map, so check what <code>map_start</code> does first.
   To trigger it from somewhere else instead, add it as a program (<code>"programs": {"9000": "play_sindain_hello"}</code>) and warp to it: <code>jump_to_map(-1, "g01", 9000)</code>.</li>
   <li><strong>Build and play.</strong> <code>--start-at</code> can't start in a town, so play to Sindain or use a save state:
-<pre><code>c2 build extracted/scripts dc2.iso -o modded.iso --mod sindain-hello --play</code></pre></li>
+<pre><code>dc2tk build extracted/scripts dc2.iso -o modded.iso --mod sindain-hello --play</code></pre></li>
 </ol>
 <div class="note">
   <strong>Going further</strong>
@@ -1469,7 +1469,7 @@ void play_sindain_hello(void)
   wrap the timeline in <code>enable_scene_skip()</code> … <code>skip_end;</code>
   <code>disable_scene_skip();</code> and keep every flag and cleanup outside it.
   <a href="examples/cutscene.c">docs/examples/cutscene.c</a> is a fuller made-up scene, and
-  <code>c2 mod test</code> runs a mod's logic without the game.
+  <code>dc2tk mod test</code> runs a mod's logic without the game.
 </div>
 </div>
 </section>
@@ -1480,7 +1480,7 @@ void play_sindain_hello(void)
 <div class="task">
 <h3>Make Max's combo more forgiving</h3>
 <ol class="steps">
-  <li><strong>Copy Max into a mod:</strong> <code>c2 mod new extracted/scripts max-combo mainchr/c01_max.c</code>.</li>
+  <li><strong>Copy Max into a mod:</strong> <code>dc2tk mod new extracted/scripts max-combo mainchr/c01_max.c</code>.</li>
   <li><strong>Widen the chain windows.</strong> In <code>update_sword_combo_model_0</code> (and <code>_1</code>, <code>_2</code>: one per weapon model), each hit has a test like <code>progress &gt;= 0.33 &amp;&amp; progress &lt;= 0.45</code>. Lower the start or raise the end.</li>
   <li><strong>Damage and reach</strong> are in <code>setup_max_attacks</code>: in <code>add_attack_hit("dcol00", "dcol01", HIT_…, radius, power_rate, MOTION_…, start, end)</code>, raise <code>power_rate</code> for more damage, widen <code>start</code>–<code>end</code> for a longer active window. Again, there's a block per weapon model.</li>
   <li><strong>The charge attack</strong> starts when the button is held longer than a frame count (<code>get_attack_hold_frames() &gt; 8</code> in the first hit, <code>&gt; 12</code> from standing). Its states are in <code>lib/max_charge_attack.c</code>, shared with the other Max scripts in <code>dungeon/act_script/</code>.</li>
@@ -1516,13 +1516,13 @@ void play_sindain_hello(void)
 <table>
   <thead><tr><th>Question</th><th>Command</th></tr></thead>
   <tbody>
-    <tr><td>Every map, and which are towns or dungeon-style</td><td><code>c2 maps extracted/scripts</code></td></tr>
-    <tr><td>One map's programs, triggers, free numbers, player positions</td><td><code>c2 map extracted/scripts g01</code></td></tr>
-    <tr><td>How the game gets into a map</td><td><code>c2 xref extracted/scripts map s47</code></td></tr>
-    <tr><td>What starts or requests a program</td><td><code>c2 xref extracted/scripts event 510 --map s51</code></td></tr>
-    <tr><td>A monster's model, AI, sharers and placements</td><td><code>c2 xref extracted/scripts monster golem</code></td></tr>
-    <tr><td>Save flags in use, free ones, who uses one</td><td><code>c2 flags extracted/scripts [--flag N]</code></td></tr>
-    <tr><td>What you've changed in the tree</td><td><code>c2 changes extracted/scripts</code></td></tr>
+    <tr><td>Every map, and which are towns or dungeon-style</td><td><code>dc2tk maps extracted/scripts</code></td></tr>
+    <tr><td>One map's programs, triggers, free numbers, player positions</td><td><code>dc2tk map extracted/scripts g01</code></td></tr>
+    <tr><td>How the game gets into a map</td><td><code>dc2tk xref extracted/scripts map s47</code></td></tr>
+    <tr><td>What starts or requests a program</td><td><code>dc2tk xref extracted/scripts event 510 --map s51</code></td></tr>
+    <tr><td>A monster's model, AI, sharers and placements</td><td><code>dc2tk xref extracted/scripts monster golem</code></td></tr>
+    <tr><td>Save flags in use, free ones, who uses one</td><td><code>dc2tk flags extracted/scripts [--flag N]</code></td></tr>
+    <tr><td>What you've changed in the tree</td><td><code>dc2tk changes extracted/scripts</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -1552,7 +1552,7 @@ void play_sindain_hello(void)
 </section>
 
 <footer>
-  Part of ChronicleTwo-Script. Dark Chronicle and Dark Cloud are trademarks of their owners;
+  Part of DC2-Toolkit. Dark Chronicle and Dark Cloud are trademarks of their owners;
   this project is not affiliated with Level-5 or Sony.
 </footer>
 

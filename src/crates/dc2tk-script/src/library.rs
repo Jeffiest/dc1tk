@@ -1,0 +1,1307 @@
+//! Libraries: runs of functions that two or more scripts share, found by fingerprint, are written
+//! once as lib/... files the scripts #include, and a script keeps only its own functions. The
+//! model of a whole disc holds the libraries, the names every function gets, and what the scripts
+//! that include a library agree on (its globals' names, its messages, the sound banks they pass
+//! it). Expanding includes back into a script, for the compiler, is here too.
+
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use indexmap::IndexMap;
+
+use crate::definitions::{self, Definitions};
+use crate::messages::{self, NameTable};
+use crate::natives::{self, Table};
+use crate::node::{Map, Node};
+use crate::sdk::{self, Context, Passed};
+use crate::source::{py_str, truthy};
+use crate::{assets, decompile, disc, maps, names, node, notes, parse, slots, source, stb, Error, Result};
+
+pub const MINIMUM_USERS: usize = 2;
+
+fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
+    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
+}
+
+fn text<'a>(node: &'a Node, key: &str) -> &'a str {
+    node[key].as_str().unwrap_or("")
+}
+
+fn is_assembly(program: &Node) -> bool {
+    program.get("asm").is_some() || list(program, "functions").iter().any(|function| function.kind() == "asm")
+}
+
+/// A script's functions in order, by fingerprint where they can go in a library.
+#[derive(Clone, Debug)]
+pub struct FileEntry {
+    pub path: String,
+    pub table: Option<String>,
+    pub fingerprints: Vec<Option<String>>,
+}
+
+/// Which functions can be shared: those with a fingerprint the script has not used before, that
+/// call only functions that can be shared.
+fn eligible(program: &Node, found: &IndexMap<String, Option<String>>) -> HashMap<String, bool> {
+    let mut usable: HashMap<String, bool> = HashMap::new();
+    let mut seen: HashSet<Option<String>> = HashSet::new();
+    for function in list(program, "functions") {
+        let name = text(function, "name");
+        let fingerprint = found.get(name).cloned().flatten();
+        let called = names::callees(function.get("body").unwrap_or(&Node::Null));
+        let ok = fingerprint.is_some()
+            && !seen.contains(&fingerprint)
+            && called.iter().all(|callee| usable.get(callee).copied().unwrap_or(false));
+        usable.insert(name.to_string(), ok);
+        seen.insert(fingerprint);
+    }
+    usable
+}
+
+/// A script's entry for finding shared runs, and the shapes of its shareable functions (their
+/// calls by callee fingerprint).
+fn survey(path: &str, program: &Node) -> Result<(FileEntry, IndexMap<String, Node>)> {
+    if is_assembly(program) {
+        return Ok((FileEntry { path: path.to_string(), table: None, fingerprints: Vec::new() }, IndexMap::new()));
+    }
+    let found = names::fingerprints(program);
+    let usable = eligible(program, &found);
+    let mapping: HashMap<String, String> =
+        found.iter().filter_map(|(name, print)| Some((name.clone(), print.clone()?))).collect();
+    let mut fingerprints = Vec::new();
+    let mut shapes = IndexMap::new();
+    for function in list(program, "functions") {
+        let name = text(function, "name");
+        let fingerprint = if usable[name] { found[name].clone() } else { None };
+        if let Some(print) = &fingerprint {
+            if !shapes.contains_key(print) {
+                let body = names::mapped(&function["body"], &mapping)?;
+                shapes.insert(
+                    print.clone(),
+                    function.clone().with("name", print.clone()).with("padding", Node::Null).with("body", body),
+                );
+            }
+        }
+        fingerprints.push(fingerprint);
+    }
+    Ok((
+        FileEntry { path: path.to_string(), table: program["natives"].as_str().map(str::to_string), fingerprints },
+        shapes,
+    ))
+}
+
+/// A run of a script's functions that other scripts have too.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Segment {
+    pub start: usize,
+    pub fingerprints: Vec<String>,
+}
+
+/// Each script's longest runs of functions at least MINIMUM_USERS scripts share, from the left.
+fn segments(files: &[FileEntry]) -> Vec<Vec<Segment>> {
+    let mut places: HashMap<&String, Vec<(usize, usize)>> = HashMap::new();
+    for (number, entry) in files.iter().enumerate() {
+        for (position, fingerprint) in entry.fingerprints.iter().enumerate() {
+            if let Some(print) = fingerprint {
+                places.entry(print).or_default().push((number, position));
+            }
+        }
+    }
+    let distinct =
+        |candidates: &[(usize, usize)]| candidates.iter().map(|(number, _)| *number).collect::<HashSet<_>>().len();
+    let mut layouts = Vec::new();
+    for entry in files {
+        let sequence = &entry.fingerprints;
+        let mut found = Vec::new();
+        let mut start = 0;
+        while start < sequence.len() {
+            let mut candidates: Vec<(usize, usize)> =
+                sequence[start].as_ref().and_then(|print| places.get(print)).cloned().unwrap_or_default();
+            if distinct(&candidates) < MINIMUM_USERS {
+                start += 1;
+                continue;
+            }
+            let mut end = start + 1;
+            while end < sequence.len() && sequence[end].is_some() {
+                let step = end - start;
+                let following: Vec<(usize, usize)> = candidates
+                    .iter()
+                    .copied()
+                    .filter(|(number, position)| {
+                        files[*number].fingerprints.get(position + step).is_some_and(|other| *other == sequence[end])
+                    })
+                    .collect();
+                if distinct(&following) < MINIMUM_USERS {
+                    break;
+                }
+                candidates = following;
+                end += 1;
+            }
+            found.push(Segment {
+                start,
+                fingerprints: sequence[start..end].iter().map(|print| print.clone().unwrap()).collect(),
+            });
+            start = end;
+        }
+        layouts.push(found);
+    }
+    layouts
+}
+
+/// A folder name as a C identifier part.
+fn identifier(text: &str) -> String {
+    let out: String = text.chars().map(|c| if dc2tk_py::is_word(c) { c } else { '_' }).collect();
+    if out.chars().next().is_some_and(dc2tk_py::is_digit) {
+        format!("l{out}")
+    } else {
+        out
+    }
+}
+
+fn common_directory(paths: &[String]) -> Vec<String> {
+    let parts: Vec<Vec<&str>> = paths
+        .iter()
+        .map(|path| {
+            let mut parts: Vec<&str> = path.split('/').collect();
+            parts.pop();
+            parts
+        })
+        .collect();
+    let mut common = Vec::new();
+    let shortest = parts.iter().map(Vec::len).min().unwrap_or(0);
+    for column in 0..shortest {
+        let first = parts[0][column];
+        if parts.iter().any(|path| path[column] != first) {
+            break;
+        }
+        common.push(first.to_string());
+    }
+    common
+}
+
+pub fn library_fingerprint(table: &str, fingerprints: &[String]) -> String {
+    let text = format!("{}:{}", table, fingerprints.join(","));
+    sha1_smol::Sha1::from(text.as_bytes()).digest().to_string()[..16].to_string()
+}
+
+/// A library: its path and name, the table its functions call, and its functions.
+#[derive(Clone, Debug)]
+pub struct Library {
+    pub path: String,
+    pub name: String,
+    pub table: String,
+    pub fingerprints: Vec<String>,
+    pub users: usize,
+    pub user_paths: Vec<String>,
+    pub fingerprint: String,
+    pub doc: String,
+    /// The names the definition set gives its globals, by slot name (g3).
+    pub globals: IndexMap<String, String>,
+}
+
+/// (native table, fingerprints): a library's key.
+pub type LibraryKey = (String, Vec<String>);
+
+/// The layouts, libraries and class names build finds.
+type Built = (IndexMap<String, Vec<Segment>>, IndexMap<LibraryKey, Library>, IndexMap<String, String>);
+
+/// What a whole-disc decompile knows across its scripts.
+pub struct Model {
+    pub layouts: IndexMap<String, Vec<Segment>>,
+    pub libraries: IndexMap<LibraryKey, Library>,
+    pub class_names: IndexMap<String, String>,
+    pub shapes: IndexMap<String, Node>,
+    pub defs: Definitions,
+    pub tables: BTreeMap<String, Table>,
+    pub asset_names: IndexMap<(String, String), String>,
+    pub contexts: HashMap<String, Option<Context>>,
+    pub root: PathBuf,
+    /// {kind: {fingerprint: positions}}: the parameters that carry a kind of value.
+    pub kind_params: IndexMap<String, IndexMap<String, BTreeSet<usize>>>,
+    pub script_files: HashMap<String, Vec<String>>,
+    pub language_code: Option<i64>,
+    pub disc_names: IndexMap<String, NameTable>,
+    pub folder_slots: BTreeMap<String, BTreeMap<i64, String>>,
+    /// The villager slots of the maps the scripts run on.
+    pub villagers: slots::Changing,
+    pub exact_to_loose: IndexMap<String, String>,
+    pub script_prints: IndexMap<String, Vec<Option<String>>>,
+    pub siblings: HashMap<String, HashMap<String, String>>,
+    pub triggers: BTreeMap<String, IndexMap<i64, Vec<String>>>,
+    /// The definition set's entries, with the variants' and loose fingerprints' added.
+    pub entries: names::Known,
+    pub own_names: IndexMap<String, String>,
+    /// The decompiled programs, by path.
+    pub programs: IndexMap<String, Node>,
+    message_cache: Mutex<HashMap<String, IndexMap<i64, String>>>,
+    /// What each script that includes a library passes it, by library path.
+    sound_uses: Mutex<HashMap<String, Vec<Passed>>>,
+    reserved: HashSet<String>,
+}
+
+fn build(files: &[FileEntry], library_defs: &IndexMap<String, Node>) -> Built {
+    let mut used_paths: HashSet<String> = HashSet::new();
+    let layouts = segments(files);
+    let mut users: IndexMap<LibraryKey, Vec<String>> = IndexMap::new();
+    for (entry, layout) in files.iter().zip(&layouts) {
+        for segment in layout {
+            let key = (entry.table.clone().unwrap_or_default(), segment.fingerprints.clone());
+            users.entry(key).or_default().push(entry.path.clone());
+        }
+    }
+    let mut ranked: Vec<(i64, &String, &LibraryKey)> = users
+        .iter()
+        .filter(|(_, paths)| paths.len() >= MINIMUM_USERS)
+        .map(|(key, paths)| (-(paths.len() as i64), &paths[0], key))
+        .collect();
+    ranked.sort();
+    let shared: Vec<LibraryKey> = ranked.into_iter().map(|(_, _, key)| key.clone()).collect();
+    let mut libraries = IndexMap::new();
+    let mut counters: HashMap<String, usize> = HashMap::new();
+    let mut class_names: IndexMap<String, String> = IndexMap::new();
+    for key in shared {
+        let directory = common_directory(&users[&key]);
+        let leaf = directory.last().map(|part| identifier(part)).unwrap_or_else(|| "common".into());
+        let counter = counters.entry(leaf.clone()).or_default();
+        *counter += 1;
+        let name = format!("{leaf}_{counter}");
+        let mut path = std::iter::once("lib".to_string())
+            .chain(directory.iter().cloned())
+            .chain(std::iter::once(format!("{name}{}", source::EXTENSION)))
+            .collect::<Vec<_>>()
+            .join("/");
+        let identity = library_fingerprint(&key.0, &key.1);
+        let chosen = library_defs.get(&identity).cloned().unwrap_or_default();
+        let wanted = text(&chosen, "path");
+        if wanted.starts_with("lib/") && wanted.ends_with(source::EXTENSION) && !used_paths.contains(wanted) {
+            path = wanted.to_string();
+        }
+        used_paths.insert(path.clone());
+        for (position, fingerprint) in key.1.iter().enumerate() {
+            class_names.entry(fingerprint.clone()).or_insert_with(|| format!("{}_{}", name, position + 1));
+        }
+        let globals = chosen["globals"]
+            .as_object()
+            .map(|globals| globals.iter().map(|(slot, name)| (slot.to_string(), py_str(name))).collect())
+            .unwrap_or_default();
+        libraries.insert(
+            key.clone(),
+            Library {
+                path,
+                name,
+                table: key.0.clone(),
+                fingerprints: key.1.clone(),
+                users: users[&key].len(),
+                user_paths: users[&key].clone(),
+                fingerprint: identity,
+                doc: chosen.get("doc").map(py_str).unwrap_or_default(),
+                globals,
+            },
+        );
+    }
+    let mut loose = 0;
+    for key in users.keys() {
+        for fingerprint in &key.1 {
+            if !class_names.contains_key(fingerprint) {
+                loose += 1;
+                class_names.insert(fingerprint.clone(), format!("shared_{loose}"));
+            }
+        }
+    }
+    let layouts = files.iter().zip(layouts).map(|(entry, layout)| (entry.path.clone(), layout)).collect();
+    (layouts, libraries, class_names)
+}
+
+impl Model {
+    fn shared_runs(&self) -> HashSet<&Vec<String>> {
+        self.libraries.keys().map(|key| &key.1).collect()
+    }
+
+    fn clashes(&self, class_names: &IndexMap<String, String>) -> HashSet<String> {
+        let shared = self.shared_runs();
+        let mut clashing = HashSet::new();
+        for layout in self.layouts.values() {
+            let mut owners: HashMap<&String, &String> = HashMap::new();
+            for segment in layout.iter().filter(|segment| shared.contains(&segment.fingerprints)) {
+                for fingerprint in &segment.fingerprints {
+                    let owner = *owners.entry(&class_names[fingerprint]).or_insert(fingerprint);
+                    if owner != fingerprint {
+                        clashing.insert(owner.clone());
+                        clashing.insert(fingerprint.clone());
+                    }
+                }
+            }
+        }
+        clashing
+    }
+
+    fn meetings(&self, clashing: &HashSet<String>) -> HashMap<String, HashSet<String>> {
+        let shared = self.shared_runs();
+        let mut met: HashMap<String, HashSet<String>> = HashMap::new();
+        for layout in self.layouts.values() {
+            let present: HashSet<&String> = layout
+                .iter()
+                .filter(|segment| shared.contains(&segment.fingerprints))
+                .flat_map(|segment| segment.fingerprints.iter())
+                .filter(|fingerprint| clashing.contains(*fingerprint))
+                .collect();
+            for fingerprint in &present {
+                let entry = met.entry((*fingerprint).clone()).or_default();
+                entry.extend(present.iter().filter(|other| *other != fingerprint).map(|other| (*other).clone()));
+            }
+        }
+        met
+    }
+
+    /// Names two functions share in one script numbered apart (name_2), the lowest number that
+    /// does not clash with the functions it meets.
+    fn numbered(
+        &self,
+        class_names: &IndexMap<String, String>,
+        clashing: &HashSet<String>,
+        taken: &HashSet<String>,
+    ) -> IndexMap<String, String> {
+        let mut order: Vec<String> =
+            self.libraries.values().flat_map(|library| library.fingerprints.iter().cloned()).collect();
+        let seen: HashSet<&String> = order.iter().collect();
+        let mut rest: Vec<String> = class_names.keys().filter(|print| !seen.contains(print)).cloned().collect();
+        rest.sort();
+        order.extend(rest);
+        let met = self.meetings(clashing);
+        let mut used: HashSet<String> = class_names.values().cloned().collect();
+        used.extend(taken.iter().cloned());
+        let mut out = class_names.clone();
+        let mut copies: HashMap<String, usize> = HashMap::new();
+        for fingerprint in order {
+            if !clashing.contains(&fingerprint) || copies.contains_key(&fingerprint) {
+                continue;
+            }
+            let base = &class_names[&fingerprint];
+            let near: HashSet<usize> = met
+                .get(&fingerprint)
+                .map(|others| {
+                    others
+                        .iter()
+                        .filter(|other| copies.contains_key(*other) && class_names[*other] == *base)
+                        .map(|other| copies[other])
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut copy = 1;
+            while near.contains(&copy) || (copy > 1 && used.contains(&format!("{base}_{copy}"))) {
+                copy += 1;
+            }
+            copies.insert(fingerprint.clone(), copy);
+            if copy > 1 {
+                out.insert(fingerprint, format!("{base}_{copy}"));
+            }
+        }
+        out
+    }
+
+    fn library_slots(&self, library: &Library) -> HashSet<String> {
+        let shapes: Vec<Node> = library.fingerprints.iter().map(|print| self.shapes[print].clone()).collect();
+        names::global_uses(&shapes)
+    }
+
+    fn library_variables(&self, library: &Library) -> HashSet<String> {
+        let mut found = HashSet::new();
+        for fingerprint in &library.fingerprints {
+            if let Some(entry) = self.entry(fingerprint) {
+                for key in ["params", "locals"] {
+                    found.extend(list(entry, key).iter().filter_map(Node::as_str).map(str::to_string));
+                }
+            }
+        }
+        found
+    }
+
+    pub fn entry(&self, fingerprint: &str) -> Option<&Node> {
+        self.entries.entries.get(fingerprint)
+    }
+
+    fn lookup(&self) -> names::Lookup<'_> {
+        self.entries.with_loose(&IndexMap::new())
+    }
+
+    /// The names the SDK's headers take, for every table.
+    pub fn reserved_names(&self) -> &HashSet<String> {
+        &self.reserved
+    }
+}
+
+fn reserved_of(contexts: &HashMap<String, Option<Context>>) -> HashSet<String> {
+    let mut taken = HashSet::new();
+    for found in contexts.values() {
+        taken.extend(sdk::reserved(found.as_ref()));
+    }
+    taken
+}
+
+/// The libraries' globals named as the definition set says, where every script that includes a
+/// library agrees and no name is used twice.
+fn conflicting(
+    used: &[&Library],
+    slots: &HashMap<String, HashSet<String>>,
+    chosen: &HashMap<String, IndexMap<String, String>>,
+) -> HashSet<(String, String)> {
+    let mut dropped = HashSet::new();
+    let mut by_name: HashMap<Option<&String>, HashSet<&String>> = HashMap::new();
+    for library in used {
+        for slot in &slots[&library.path] {
+            by_name.entry(chosen[&library.path].get(slot)).or_default().insert(slot);
+        }
+    }
+    let all: HashSet<&String> = used.iter().flat_map(|library| slots[&library.path].iter()).collect();
+    for slot in all {
+        let touching: Vec<&&Library> = used.iter().filter(|library| slots[&library.path].contains(slot)).collect();
+        let wanted: HashSet<Option<&String>> = touching.iter().map(|library| chosen[&library.path].get(slot)).collect();
+        if wanted.len() > 1
+            || wanted.iter().any(|name| name.is_some() && by_name.get(name).is_some_and(|slots| slots.len() > 1))
+        {
+            for library in touching {
+                if chosen[&library.path].contains_key(slot) {
+                    dropped.insert((library.path.clone(), slot.clone()));
+                }
+            }
+        }
+    }
+    dropped
+}
+
+fn with_globals(mut model: Model) -> Model {
+    let mut taken = model.reserved.clone();
+    taken.extend(model.class_names.values().cloned());
+    taken.extend(model.own_names.values().cloned());
+    let libraries: Vec<Library> = model.libraries.values().cloned().collect();
+    let slots: HashMap<String, HashSet<String>> =
+        libraries.iter().map(|library| (library.path.clone(), model.library_slots(library))).collect();
+    let mut chosen: HashMap<String, IndexMap<String, String>> = HashMap::new();
+    for library in &libraries {
+        let variables = model.library_variables(library);
+        let picked = library
+            .globals
+            .iter()
+            .filter(|(slot, name)| {
+                let global_name =
+                    name.len() > 1 && name.starts_with('g') && name[1..].bytes().all(|b| b.is_ascii_digit());
+                slots[&library.path].contains(*slot)
+                    && names::is_identifier(name)
+                    && !global_name
+                    && !taken.contains(*name)
+                    && !variables.contains(*name)
+            })
+            .map(|(slot, name)| (slot.clone(), name.clone()))
+            .collect();
+        chosen.insert(library.path.clone(), picked);
+    }
+    let mut users: IndexMap<String, Vec<&Library>> = IndexMap::new();
+    for library in &libraries {
+        for path in &library.user_paths {
+            users.entry(path.clone()).or_default().push(library);
+        }
+    }
+    loop {
+        let mut dropped = HashSet::new();
+        for used in users.values() {
+            dropped.extend(conflicting(used, &slots, &chosen));
+        }
+        if dropped.is_empty() {
+            break;
+        }
+        for (path, slot) in dropped {
+            if let Some(globals) = chosen.get_mut(&path) {
+                globals.shift_remove(&slot);
+            }
+        }
+    }
+    for library in model.libraries.values_mut() {
+        library.globals = chosen[&library.path].clone();
+    }
+    model
+}
+
+fn with_names(mut model: Model) -> Model {
+    let entries = names::with_positions(&names::merged(&model.defs.names), &model.script_prints, &model.exact_to_loose);
+    let entries = names::Known::new(entries).with_loose(&model.exact_to_loose).entries();
+    let mut class_names = model.class_names.clone();
+    for (fingerprint, entry) in &entries {
+        if class_names.contains_key(fingerprint) {
+            if let Some(name) = entry.get("name") {
+                class_names.insert(fingerprint.clone(), py_str(name));
+            }
+        }
+    }
+    let taken = model.reserved.clone();
+    let originals = model.class_names.clone();
+    for (fingerprint, name) in class_names.iter_mut() {
+        if taken.contains(name) {
+            *name = originals[fingerprint].clone();
+        }
+    }
+    let clashing = model.clashes(&class_names);
+    let mut class_names = model.numbered(&class_names, &clashing, &taken);
+    for fingerprint in model.clashes(&class_names) {
+        class_names.insert(fingerprint.clone(), originals[&fingerprint].clone());
+    }
+    model.own_names = entries
+        .iter()
+        .filter(|(fingerprint, entry)| {
+            !class_names.contains_key(*fingerprint)
+                && entry.get("name").is_some_and(|name| !taken.contains(&py_str(name)))
+        })
+        .map(|(fingerprint, entry)| (fingerprint.clone(), py_str(&entry["name"])))
+        .collect();
+    model.class_names = class_names;
+    model.entries = names::Known::new(entries);
+    model
+}
+
+/// The English the same script in the set's language gives each script's strings, by path.
+fn sibling_maps(
+    script_strings: &IndexMap<String, Vec<String>>,
+    code: Option<i64>,
+) -> HashMap<String, HashMap<String, String>> {
+    let Some(code) = code else {
+        return HashMap::new();
+    };
+    let mut found = HashMap::new();
+    let own = format!("_{code}.stb");
+    for (path, strings) in script_strings {
+        let base = definitions::variant_base(path);
+        if base == *path || path.ends_with(&own) {
+            continue;
+        }
+        let sibling = format!("{}{}", &base[..base.len() - ".stb".len()], own);
+        if let Some(theirs) = script_strings.get(&sibling) {
+            let pairs = notes::sibling_strings(strings, theirs);
+            if !pairs.is_empty() {
+                found.insert(path.clone(), pairs);
+            }
+        }
+    }
+    found
+}
+
+/// The model of a disc's scripts: their libraries and names. headers include disc.h.
+pub fn model_for(
+    root: &Path,
+    paths: &[String],
+    tables: &BTreeMap<String, Table>,
+    defs: &Definitions,
+    headers: &IndexMap<String, String>,
+) -> Result<Model> {
+    let mut contexts = HashMap::new();
+    for table in tables.keys() {
+        let found = sdk::header_context(table, headers, tables, &defs.include, &|text| parse::parse(text))?;
+        contexts.insert(table.clone(), sdk::with_sound_sets(found, defs));
+    }
+    use rayon::prelude::*;
+    let programs: Vec<(String, Node)> = paths
+        .par_iter()
+        .map(|path| -> Result<(String, Node)> {
+            let table = natives::table_for(path, &defs.tables);
+            let data = std::fs::read(root.join(path))?;
+            Ok((path.clone(), decompile::decompile(&stb::read(&data), table, tables)))
+        })
+        .collect::<Result<_>>()?;
+    let mut files = Vec::new();
+    let mut shapes: IndexMap<String, Node> = IndexMap::new();
+    let mut kind_params: IndexMap<String, IndexMap<String, BTreeSet<usize>>> = IndexMap::new();
+    let mut script_files = HashMap::new();
+    let mut exact_to_loose = IndexMap::new();
+    let mut script_strings = IndexMap::new();
+    let mut script_prints = IndexMap::new();
+    let mut slot_loads = slots::Survey::new();
+    let mut asset_strings = BTreeSet::new();
+    // what every script's calls pass for each unused pointer parameter, by callee fingerprint
+    let mut pointer_types: HashMap<(String, usize), BTreeSet<String>> = HashMap::new();
+    for (path, program) in &programs {
+        let table = natives::table_for(path, &defs.tables);
+        let context = contexts.get(table).and_then(Option::as_ref);
+        let (entry, found) = survey(path, program)?;
+        slots::survey(&mut slot_loads, path, program);
+        assets::survey(&mut asset_strings, program, context);
+        files.push(entry);
+        exact_to_loose.extend(names::loose_map(program));
+        let exact = &program["fingerprints"];
+        script_prints.insert(
+            path.clone(),
+            list(program, "functions")
+                .iter()
+                .map(|function| exact[text(function, "name")].as_str().map(str::to_string))
+                .collect(),
+        );
+        if program.get("asm").is_none() {
+            let prints = names::fingerprints(program);
+            let passed = decompile::pointer_evidence(list(program, "functions"), list(program, "globals"));
+            for ((callee, position), types) in passed {
+                if let Some(Some(print)) = prints.get(&callee) {
+                    pointer_types.entry((print.clone(), position)).or_default().extend(types);
+                }
+            }
+            let bodies: Node = list(program, "functions")
+                .iter()
+                .map(|function| function.get("body").cloned().unwrap_or(Node::List(vec![])))
+                .collect();
+            script_strings.insert(path.clone(), notes::strings_in(&bodies));
+        }
+        if let Some(context) = context.filter(|_| program.get("asm").is_none()) {
+            let fingerprints = names::fingerprints(program);
+            script_files.insert(path.clone(), messages::loaded_files(list(program, "functions"), context));
+            let mut by_kind: Vec<(String, messages::ParamsByFunction)> =
+                messages::kind_params(list(program, "functions"), context).into_iter().collect();
+            by_kind.sort_by(|a, b| a.0.cmp(&b.0));
+            for (kind, by_function) in by_kind {
+                let known = kind_params.entry(kind).or_default();
+                for (name, positions) in by_function {
+                    if let Some(Some(print)) = fingerprints.get(&name) {
+                        known.entry(print.clone()).or_default().extend(positions);
+                    }
+                }
+            }
+        }
+        for (fingerprint, shape) in found {
+            match shapes.get(&fingerprint) {
+                None => {
+                    shapes.insert(fingerprint, shape);
+                }
+                Some(known) => {
+                    if known.get("returns") == Some(&Node::from("void"))
+                        && shape.get("returns") != Some(&Node::from("void"))
+                    {
+                        let updated = known.clone().with("returns", shape["returns"].clone());
+                        shapes.insert(fingerprint, updated);
+                    }
+                }
+            }
+        }
+    }
+    // a shared function's unused pointer parameters take what all its callers pass, so the one
+    // library file agrees with every script that includes it
+    for (print, shape) in shapes.iter_mut() {
+        for position in decompile::unused_pointer_params(shape) {
+            let passed = pointer_types.get(&(print.clone(), position));
+            if let Some(element) = passed.and_then(decompile::passed_type) {
+                shape["params"][position]["type"] = Node::from(element);
+            }
+        }
+    }
+    let (layouts, libraries, class_names) = build(&files, &defs.libraries);
+    let taken: HashSet<String> =
+        contexts.values().flatten().flat_map(|context| context.constants.keys().cloned()).collect();
+    let asset_names = assets::names(&asset_strings, &defs.strings, &taken);
+    for context in contexts.values_mut().flatten() {
+        if !asset_names.is_empty() {
+            context.asset_names = asset_names.clone();
+        }
+    }
+    let disc_names = disc::tables(root, defs);
+    let empty = NameTable::new();
+    let folder_slots = slots::names(&slot_loads, disc_names.get("chara_pack").unwrap_or(&empty));
+    let villager_tables = crate::villagers::Tables::read(root);
+    let villagers = slots::villagers(&slot_loads, &folder_slots, villager_tables.as_ref(), &disc_names, paths);
+    let language_code = disc::language_code(defs);
+    let triggers = if root.join("map").is_dir() { maps::folder_triggers(root)? } else { BTreeMap::new() };
+    let reserved = reserved_of(&contexts);
+    let model = Model {
+        layouts,
+        libraries,
+        class_names,
+        shapes,
+        defs: defs.clone(),
+        tables: tables.clone(),
+        asset_names,
+        contexts,
+        root: root.to_path_buf(),
+        kind_params,
+        script_files,
+        language_code,
+        disc_names,
+        folder_slots,
+        villagers,
+        exact_to_loose,
+        script_prints,
+        siblings: sibling_maps(&script_strings, language_code),
+        triggers,
+        entries: names::Known::new(names::Entries::new()),
+        own_names: IndexMap::new(),
+        programs: programs.into_iter().collect(),
+        message_cache: Mutex::new(HashMap::new()),
+        sound_uses: Mutex::new(HashMap::new()),
+        reserved,
+    };
+    Ok(with_globals(with_names(model)))
+}
+
+impl Model {
+    fn script_messages(&self, path: &str) -> IndexMap<i64, String> {
+        let Some(code) = self.language_code else {
+            return IndexMap::new();
+        };
+        let files = self.script_files.get(path).cloned().unwrap_or_default();
+        let mut cache = self.message_cache.lock().unwrap();
+        messages::texts_for(&files, &self.root, code, &mut cache)
+    }
+
+    fn library_messages(&self, library: &Library) -> IndexMap<i64, String> {
+        let mut agreed: IndexMap<i64, String> = IndexMap::new();
+        let mut clashing = HashSet::new();
+        for path in &library.user_paths {
+            for (number, text) in self.script_messages(path) {
+                let known = agreed.entry(number).or_insert_with(|| text.clone());
+                if *known != text {
+                    clashing.insert(number);
+                }
+            }
+        }
+        agreed.into_iter().filter(|(number, _)| !clashing.contains(number)).collect()
+    }
+
+    fn library_siblings(&self, library: &Library) -> HashMap<String, String> {
+        let mut agreed: IndexMap<String, String> = IndexMap::new();
+        let mut clashing = HashSet::new();
+        for path in &library.user_paths {
+            if let Some(pairs) = self.siblings.get(path) {
+                for (text, english) in pairs {
+                    let known = agreed.entry(text.clone()).or_insert_with(|| english.clone());
+                    if known != english {
+                        clashing.insert(text.clone());
+                    }
+                }
+            }
+        }
+        agreed.into_iter().filter(|(text, _)| !clashing.contains(text)).collect()
+    }
+
+    /// {kind: {function name: positions}} for functions named by the mapping from fingerprints.
+    fn named_kind_params(
+        &self,
+        names_of: impl Fn(&str) -> Option<String>,
+    ) -> HashMap<String, messages::ParamsByFunction> {
+        self.kind_params
+            .iter()
+            .map(|(kind, positions)| {
+                let by_name =
+                    positions.iter().filter_map(|(print, found)| Some((names_of(print)?, found.clone()))).collect();
+                (kind.clone(), by_name)
+            })
+            .collect()
+    }
+
+    /// A library's source text.
+    pub fn library_text(&self, library: &Library) -> Result<String> {
+        let class_names: HashMap<String, String> =
+            self.class_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
+        let globals: HashMap<String, String> =
+            library.globals.iter().map(|(slot, name)| (slot.clone(), name.clone())).collect();
+        let mut functions = Vec::new();
+        for fingerprint in &library.fingerprints {
+            let shape = &self.shapes[fingerprint];
+            let body = names::renamed_variables(&names::mapped(&shape["body"], &class_names)?, &globals);
+            let mut function = shape.clone().with("name", class_names[fingerprint].clone()).with("body", body);
+            if let Some(entry) = self.entry(fingerprint) {
+                function = names::with_variables(function, entry, &self.reserved);
+            }
+            functions.push(function);
+        }
+        let found = self.contexts.get(&library.table).and_then(Option::as_ref);
+        let header = found.map(|_| sdk::header_name(&library.table));
+        let params = self.named_kind_params(|print| class_names.get(print).cloned());
+        if let Some(found) = found {
+            functions = messages::annotate_functions(
+                functions,
+                found,
+                &params,
+                &self.library_messages(library),
+                &self.disc_names,
+            );
+        }
+        functions = notes::annotate_siblings(functions, &self.library_siblings(library));
+        // a library only scripts built for one older native table use reads its calls the same way
+        let numberings: HashSet<Option<String>> = library
+            .user_paths
+            .iter()
+            .map(|path| definitions::script_entry(&self.defs, path).and_then(sdk::numbering_of))
+            .collect();
+        let mut found = found.cloned();
+        if numberings.len() == 1 {
+            found = sdk::numbered(found, numberings.into_iter().next().unwrap().as_deref());
+        }
+        // sound banks the scripts that include the library pass it, when they agree
+        let uses = self.sound_uses.lock().unwrap().get(&library.path).cloned().unwrap_or_default();
+        let mut sounds = sdk::Sounds { seed: Some(sdk::library_sounds(&uses)), ..sdk::Sounds::default() };
+        // a library only the scripts of one map include names that map's villager slots
+        let maps: BTreeSet<Option<&String>> = library.user_paths.iter().map(|path| self.villagers.maps.get(path)).collect();
+        let map = match maps.into_iter().collect::<Vec<_>>()[..] {
+            [Some(map)] => Some(map.as_str()),
+            _ => None,
+        };
+        let found = slots::on_map(found, map, &self.villagers);
+        // and one that only the scripts of one folder include, that folder's slot names
+        let folders: BTreeSet<String> = library.user_paths.iter().map(|path| slots::folder(path)).collect();
+        let found = match (folders.len(), library.user_paths.first()) {
+            (1, Some(user)) => {
+                let found = slots::in_folder(found, user, &self.folder_slots);
+                slots::with_loaded(found, &slots::folder(user), &self.villagers)
+            }
+            _ => found,
+        };
+        let presented = match &found {
+            Some(found) => sdk::present_functions(&functions, found, &params, &[], &mut sounds),
+            None => functions,
+        };
+        let presented = match (map.and_then(|map| self.villagers.notes.get(map)), &found) {
+            (Some(notes), Some(found)) => with_villager_notes(&presented, found, notes).as_array().cloned().unwrap_or_default(),
+            _ => presented,
+        };
+        let presented = notes::annotate_functions(presented, &self.defs.strings);
+        source::library_text(&library.table, &presented, header.as_deref(), &library.doc)
+    }
+
+    /// Every library's source text, by path.
+    pub fn library_texts(&self) -> Result<IndexMap<String, String>> {
+        use rayon::prelude::*;
+        let libraries: Vec<&Library> = self.libraries.values().collect();
+        let texts: Vec<(String, String)> = libraries
+            .par_iter()
+            .map(|library| Ok((library.path.clone(), self.library_text(library)?)))
+            .collect::<Result<_>>()?;
+        Ok(texts.into_iter().collect())
+    }
+
+    fn record_sound_uses(
+        &self,
+        hidden_by_library: &[(&Library, Vec<Node>)],
+        global_names: &HashMap<String, String>,
+        passed: &Passed,
+    ) {
+        let mut uses = self.sound_uses.lock().unwrap();
+        for (library, functions) in hidden_by_library {
+            let own: HashSet<&str> = functions.iter().map(|function| text(function, "name")).collect();
+            let used: HashSet<String> = names::global_uses(functions)
+                .into_iter()
+                .map(|name| global_names.get(&name).cloned().unwrap_or(name))
+                .collect();
+            let mine = Passed {
+                params: passed
+                    .params
+                    .iter()
+                    .filter(|(key, _)| own.contains(key.0.as_str()))
+                    .map(|(key, kinds)| (key.clone(), kinds.clone()))
+                    .collect(),
+                globals: passed
+                    .globals
+                    .iter()
+                    .filter(|(name, _)| used.contains(*name))
+                    .map(|(name, kinds)| (name.clone(), kinds.clone()))
+                    .collect(),
+                port_in: passed
+                    .port_in
+                    .iter()
+                    .filter(|(name, _)| own.contains(name.as_str()))
+                    .map(|(name, kinds)| (name.clone(), kinds.clone()))
+                    .collect(),
+            };
+            uses.entry(library.path.clone()).or_default().push(mine);
+        }
+    }
+
+    /// A script's program as a whole-disc decompile writes it: its functions named across the
+    /// disc, the libraries it shares as includes.
+    pub fn script_program(&self, program: &Node, path: &str) -> Result<Node> {
+        if is_assembly(program) {
+            return Ok(program.clone());
+        }
+        let natives_name = text(program, "natives").to_string();
+        let context = slots::in_folder(self.contexts.get(&natives_name).cloned().flatten(), path, &self.folder_slots);
+        let map = self.villagers.maps.get(path).map(String::as_str);
+        let context = slots::on_map(context, map, &self.villagers);
+        let context = slots::with_loaded(context, &slots::folder(path), &self.villagers);
+        let program_names = context.as_ref().map(|context| context.program_names.clone()).unwrap_or_default();
+        let found = names::fingerprints(program);
+        let mut known: HashMap<String, String> =
+            self.own_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
+        known.extend(self.class_names.iter().map(|(print, name)| (print.clone(), name.clone())));
+        let mapping = names::assign(program, &found, &known, &self.reserved, &program_names);
+        let order: Vec<Option<String>> = list(program, "functions")
+            .iter()
+            .map(|function| found.get(text(function, "name")).cloned().flatten())
+            .collect();
+        let lookup = self.lookup();
+        let renamed = names::described(names::rename(program.clone(), &mapping)?, &order, &lookup, &self.reserved);
+        // the parameters that carry kinds, under the names the script gives the functions
+        let mut params: HashMap<String, messages::ParamsByFunction> = HashMap::new();
+        for (kind, positions) in &self.kind_params {
+            let mut by_name = messages::ParamsByFunction::new();
+            for (name, print) in &found {
+                if let Some(found_positions) = print.as_ref().and_then(|print| positions.get(print)) {
+                    by_name.insert(mapping[name].clone(), found_positions.clone());
+                }
+            }
+            params.insert(kind.clone(), by_name);
+        }
+        let mut functions = list(&renamed, "functions").to_vec();
+        if let Some(context) = &context {
+            functions = messages::annotate_functions(
+                functions,
+                context,
+                &params,
+                &self.script_messages(path),
+                &self.disc_names,
+            );
+        }
+        functions = notes::annotate_siblings(functions, self.siblings.get(path).unwrap_or(&HashMap::new()));
+        let renamed = renamed.with("functions", functions.clone());
+        let mut included: HashMap<usize, (&Library, usize)> = HashMap::new();
+        let mut forced: HashMap<String, String> = HashMap::new();
+        let original_functions = list(program, "functions");
+        for segment in self.layouts.get(path).into_iter().flatten() {
+            let Some(library) = self.libraries.get(&(natives_name.clone(), segment.fingerprints.clone())) else {
+                continue;
+            };
+            let span = segment.start..segment.start + segment.fingerprints.len();
+            let all_named = span.clone().all(|position| {
+                let name = text(&original_functions[position], "name");
+                found[name].as_ref().is_some_and(|print| self.class_names.get(print) == mapping.get(name))
+            });
+            if all_named {
+                included.insert(segment.start, (library, span.len()));
+                forced.extend(library.globals.iter().map(|(slot, name)| (slot.clone(), name.clone())));
+            }
+        }
+        let mut shown = Vec::new();
+        let mut padding_of = Map::new();
+        let mut hidden: Vec<Node> = Vec::new();
+        let mut hidden_by_library: Vec<(&Library, Vec<Node>)> = Vec::new();
+        let mut position = 0;
+        while position < functions.len() {
+            let Some(&(library, count)) = included.get(&position) else {
+                shown.push(functions[position].clone());
+                position += 1;
+                continue;
+            };
+            shown.push(node!({"kind": "include", "path": library.path.clone(), "system": false}));
+            hidden_by_library.push((library, functions[position..position + count].to_vec()));
+            for function in &functions[position..position + count] {
+                hidden.push(function.clone());
+                if !function["padding"].is_null() {
+                    padding_of.insert(text(function, "name").to_string(), function["padding"].clone());
+                }
+            }
+            position += count;
+        }
+        let split = renamed.with("functions", shown).with("padding_of", Node::Map(padding_of));
+        let entry = definitions::script_entry(&self.defs, path).cloned().unwrap_or_default();
+        let protected = names::global_uses(&hidden);
+        let scripted = names::with_script(split.clone(), &entry, &protected, &forced);
+        // the included code under the global names the script gives it, for the sound pass
+        let global_names = names::global_mapping(&split, &entry, &protected, &forced);
+        let shown_hidden: Vec<Node> = hidden
+            .iter()
+            .filter(|function| function.kind() == "function")
+            .map(|function| function.clone().with("body", names::renamed_variables(&function["body"], &global_names)))
+            .collect();
+        let numbering = sdk::numbering_of(&entry);
+        let keys: HashMap<String, String> = hidden
+            .iter()
+            .filter(|function| function.kind() == "function")
+            .map(|function| {
+                let mut uses: Vec<(String, String)> = names::global_uses(std::slice::from_ref(function))
+                    .into_iter()
+                    .map(|name| {
+                        let to = global_names.get(&name).cloned().unwrap_or_else(|| name.clone());
+                        (name, to)
+                    })
+                    .collect();
+                uses.sort();
+                let name = text(function, "name").to_string();
+                (name.clone(), format!("{natives_name}\u{0}{numbering:?}\u{0}{name}\u{0}{uses:?}"))
+            })
+            .collect();
+        let mut sounds = sdk::Sounds { want_out: true, keys, ..sdk::Sounds::default() };
+        let numbered = sdk::numbered(context, numbering.as_deref());
+        let mut presented = sdk::present(scripted, numbered.as_ref(), &params, &shown_hidden, &mut sounds);
+        if let (Some(notes), Some(found)) = (map.and_then(|map| self.villagers.notes.get(map)), numbered.as_ref()) {
+            presented = presented.clone().with("functions", with_villager_notes(list(&presented, "functions"), found, notes));
+        }
+        if let Some(passed) = &sounds.out {
+            self.record_sound_uses(&hidden_by_library, &global_names, passed);
+        }
+        let folder = slots::folder(path);
+        if let Some(triggers) = self.triggers.get(&folder).filter(|triggers| !triggers.is_empty()) {
+            let programs: Vec<Node> = list(&presented, "programs")
+                .iter()
+                .zip(list(program, "programs"))
+                .map(|(entry, original)| match original["no"].as_i64().and_then(|no| triggers.get(&no)) {
+                    Some(notes) => entry.clone().with("note", notes.join("; ")),
+                    None => entry.clone(),
+                })
+                .collect();
+            presented = presented.with("programs", programs);
+        }
+        Ok(notes::annotate(presented, &self.defs.strings))
+    }
+}
+
+// ---- expanding includes, for the compiler --------------------------------------------------
+
+struct Expansion<'a> {
+    declarations: sdk::Declarations,
+    absorbed: HashMap<String, Option<String>>,
+    seen: HashSet<String>,
+    included: HashSet<String>,
+    texts: &'a IndexMap<String, String>,
+    headers: &'a IndexMap<String, String>,
+    functions: Vec<Node>,
+    library_docs: Map,
+    /// The structs and unions the program and its libraries declare.
+    structs: crate::ctype::Structs,
+}
+
+impl Expansion<'_> {
+    /// Adds a file's structs and unions; a tag two files define differently is refused.
+    fn add_structs(&mut self, program: &Node, path: &str) -> Result<()> {
+        for (tag, composite) in crate::ctype::structs_of(program) {
+            match self.structs.get(&tag).cloned() {
+                Some(known) if known.members.is_empty() || composite.members.is_empty() => {
+                    if known.members.is_empty() {
+                        self.structs.insert(tag, composite);
+                    }
+                }
+                Some(known) if known != composite => {
+                    return Err(Error::invalid(format!("{path} defines {tag} differently from the file including it")));
+                }
+                _ => {
+                    self.structs.insert(tag, composite);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn absorbed_header(&mut self, path: &str) -> Result<Option<String>> {
+        if !self.absorbed.contains_key(path) {
+            let table =
+                sdk::header_declarations(path, self.headers, &mut self.declarations, &mut self.seen, &|text| {
+                    parse::parse(text)
+                })?;
+            self.absorbed.insert(path.to_string(), table);
+        }
+        Ok(self.absorbed[path].clone())
+    }
+
+    /// Puts a library's functions where it is included, after the libraries it includes itself.
+    /// Each library is included once however many files include it, as if every library had
+    /// #pragma once. A library's own #defines, enums, typedefs and helpers become the script's,
+    /// as with a C header.
+    fn inline_library(&mut self, path: &str, chain: &[String]) -> Result<Option<String>> {
+        if chain.iter().any(|link| link == path) {
+            let mut links = chain.to_vec();
+            links.push(path.to_string());
+            return Err(Error::invalid(format!("libraries include each other: {}", links.join(" -> "))));
+        }
+        if self.included.contains(path) {
+            return Ok(None);
+        }
+        let Some(text) = self.texts.get(path) else {
+            return Err(Error::invalid(format!("cannot find included file {path}")));
+        };
+        self.included.insert(path.to_string());
+        let included = parse::parse_source_with(text, path, &HashMap::new(), self.headers, self.texts)?;
+        self.add_structs(&included, path)?;
+        self.library_docs.insert(path.to_string(), included.get("doc").cloned().unwrap_or(Node::from("")));
+        self.declarations.add_from(&included["declarations"]);
+        let mut table = included["natives"].as_str().map(str::to_string);
+        let mut inner_chain = chain.to_vec();
+        inner_chain.push(path.to_string());
+        for sub in list(&included, "functions") {
+            if sub.kind() == "include" && truthy(&sub["system"]) {
+                let header_table = self.absorbed_header(text_of(sub, "path"))?;
+                if table.is_none() {
+                    table = header_table;
+                }
+            } else if sub.kind() == "include" {
+                let nested = self.inline_library(text_of(sub, "path"), &inner_chain)?;
+                if let (Some(table), Some(nested)) = (&table, &nested) {
+                    if nested != table {
+                        return Err(Error::invalid(format!(
+                            "{} uses natives {}, not {}",
+                            text_of(sub, "path"),
+                            nested,
+                            table
+                        )));
+                    }
+                }
+            } else {
+                // which library a function came from, for defs learn
+                self.functions.push(sub.clone().with("library", path));
+            }
+        }
+        Ok(table)
+    }
+}
+
+fn text_of<'a>(node: &'a Node, key: &str) -> &'a str {
+    text(node, key)
+}
+
+/// A program with its includes expanded: libraries' functions and declarations inlined, headers'
+/// declarations absorbed, and #pragma padding_of applied.
+pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMap<String, String>) -> Result<Node> {
+    if program.get("asm").is_some() {
+        return Ok(program);
+    }
+    let mut state = Expansion {
+        declarations: sdk::Declarations::of(&program["declarations"]),
+        absorbed: HashMap::new(),
+        seen: HashSet::new(),
+        included: HashSet::new(),
+        texts,
+        headers,
+        functions: Vec::new(),
+        library_docs: Map::new(),
+        structs: crate::ctype::structs_of(&program),
+    };
+    let mut table = program["natives"].as_str().map(str::to_string);
+    for item in list(&program, "functions") {
+        if item.kind() != "include" {
+            state.functions.push(item.clone());
+        } else if truthy(&item["system"]) {
+            let header_table = state.absorbed_header(text_of(item, "path"))?;
+            if table.is_none() {
+                table = header_table;
+            }
+        } else {
+            let included_table = state.inline_library(text_of(item, "path"), &[])?;
+            if let (Some(table), Some(included_table)) = (&table, &included_table) {
+                if included_table != table {
+                    return Err(Error::invalid(format!(
+                        "{} uses natives {}, not {}",
+                        text_of(item, "path"),
+                        included_table,
+                        table
+                    )));
+                }
+            }
+        }
+    }
+    let padding_of = program["padding_of"].as_object().cloned().unwrap_or_default();
+    let defined: HashSet<&str> = state.functions.iter().map(|function| text(function, "name")).collect();
+    for name in padding_of.keys() {
+        if !defined.contains(name) {
+            return Err(Error::invalid(format!("#pragma padding_of names unknown function {name}")));
+        }
+    }
+    let functions: Vec<Node> = state
+        .functions
+        .iter()
+        .map(|function| match padding_of.get(text(function, "name")) {
+            Some(padding) => function.clone().with("padding", padding.clone()),
+            None => function.clone(),
+        })
+        .collect();
+    let program = if state.structs.is_empty() {
+        program
+    } else {
+        program.with("structs", crate::ctype::structs_node(&state.structs))
+    };
+    Ok(program
+        .with("natives", table.map(Node::from).unwrap_or(Node::Null))
+        .with("functions", functions)
+        .with("padding_of", Node::Map(Map::new()))
+        .with("declarations", state.declarations.to_node())
+        .with("library_docs", Node::Map(state.library_docs)))
+}
+
+/// The texts of a source's library includes and those they include, found from its #include
+/// "..." lines before it is parsed, for parse::parse_source_with: what C's #include gives the file.
+pub fn include_texts(
+    text: &str,
+    source_path: &Path,
+    overlay: Option<&IndexMap<String, String>>,
+    sdk_dir: &Path,
+    extra_dirs: &[PathBuf],
+) -> Result<IndexMap<String, String>> {
+    let program = node!({"functions": quoted_includes(text)
+        .into_iter()
+        .map(|path| node!({"kind": "include", "path": path, "system": false}))
+        .collect::<Vec<_>>()});
+    read_includes(&program, source_path, overlay, sdk_dir, extra_dirs)
+}
+
+/// The paths of a text's #include "..." lines.
+fn quoted_includes(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let rest = line.trim_start().strip_prefix('#')?.trim_start().strip_prefix("include")?.trim();
+            let path = rest.strip_prefix('"')?;
+            Some(path[..path.find('"')?].to_string())
+        })
+        .collect()
+}
+
+/// The texts of a script's library includes and of the libraries they include, looked up from
+/// the script's folder and each folder above it, then in the SDK folder, whose libraries
+/// (modkit/...) any script or mod can include. overlay, keyed by include path, stands in for files
+/// on disk (build --mod). extra_dirs are looked in before the SDK folder (a mod patch finds the
+/// tree's libraries there).
+pub fn read_includes(
+    program: &Node,
+    source_path: &Path,
+    overlay: Option<&IndexMap<String, String>>,
+    sdk_dir: &Path,
+    extra_dirs: &[PathBuf],
+) -> Result<IndexMap<String, String>> {
+    let mut texts = IndexMap::new();
+    let directory =
+        PathBuf::from(definitions::resolved_posix(source_path)).parent().map(Path::to_path_buf).unwrap_or_default();
+    let includes = |node: &Node| -> Vec<String> {
+        list(node, "functions")
+            .iter()
+            .filter(|item| item.kind() == "include" && !truthy(&item["system"]))
+            .map(|item| text(item, "path").to_string())
+            .collect()
+    };
+    let mut pending = includes(program);
+    while let Some(path) = pending.pop() {
+        if texts.contains_key(&path) {
+            continue;
+        }
+        let mut found = overlay.and_then(|overlay| overlay.get(&path).cloned());
+        if found.is_none() {
+            let folders = directory
+                .ancestors()
+                .map(Path::to_path_buf)
+                .chain(extra_dirs.iter().cloned())
+                .chain(std::iter::once(sdk_dir.to_path_buf()));
+            for folder in folders {
+                let candidate = folder.join(&path);
+                if candidate.is_file() {
+                    found = Some(dc2tk_py::read_text(&candidate)?);
+                    break;
+                }
+            }
+        }
+        let Some(text) = found else {
+            continue;
+        };
+        texts.insert(path.clone(), text.clone());
+        pending.extend(quoted_includes(&text));
+    }
+    Ok(texts)
+}
+
+/// Functions with notes on the natives that address a villager slot several villagers can hold.
+fn with_villager_notes(functions: &[Node], found: &sdk::Context, notes: &BTreeMap<i64, String>) -> Node {
+    functions
+        .iter()
+        .map(|function| {
+            if function.kind() == "function" {
+                function.clone().with("body", Node::List(slots::villager_notes(list(function, "body"), found, notes)))
+            } else {
+                function.clone()
+            }
+        })
+        .collect()
+}

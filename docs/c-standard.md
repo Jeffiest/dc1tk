@@ -3,7 +3,7 @@
 The aim is a conforming C89/C90 freestanding implementation (ANSI X3.159-1989, ISO/IEC
 9899:1990) for code people write, on a VM that was made for a smaller language (see
 [the format](format.md)). One rule bounds it: every script on the disc still compiles to its
-own bytes. Only forms the decompiler never writes take the new paths, and `c2 verify`
+own bytes. Only forms the decompiler never writes take the new paths, and `dc2tk verify`
 checks the whole disc.
 
 Where the VM's semantics differ from C's (a value stored keeps its own type, `&&` gives the
@@ -12,8 +12,8 @@ VM's, so C's apply in **strict mode**: `#pragma std c89` before the code that wa
 [the language](language.md)). Everything else below holds in either mode.
 
 Progress is measured by a conformance suite: a small program in
-`src/crates/c2-script/tests/c89/` for each feature, compiled in strict mode with the SDK and run
-in the test VM (`cargo test -p c2-script --test c89`). Each program's second line says what it
+`src/crates/dc2tk-script/tests/c89/` for each feature, compiled in strict mode with the SDK and run
+in the test VM (`cargo test -p dc2tk-script --test c89`). Each program's second line says what it
 shows, and its row below says the same (a test checks that):
 
 - **supported**: it compiles and gives C's result, or, where C requires a diagnostic, the
@@ -25,7 +25,7 @@ shows, and its row below says the same (a test checks that):
 
 Today: 129 programs, 125 supported (109 giving C's result, 16 giving C's diagnostic) and 4 at
 the limit (`double` twice, and comparing or subtracting two pointers); none differ or are
-planned. `src/crates/c2-script/tests/composite.rs` runs larger programs that use the composite
+planned. `src/crates/dc2tk-script/tests/composite.rs` runs larger programs that use the composite
 types together.
 
 ## The departures
@@ -283,7 +283,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 
 ## How the forms the VM lacks are lowered
 
-Done (see `src/crates/c2-script/src/lower.rs`, `parse.rs` and `cpp.rs`):
+Done (see `src/crates/dc2tk-script/src/lower.rs`, `parse.rs` and `cpp.rs`):
 
 - **Macros** are expanded by the tokenizer, but a `#define` whose value is a constant (a
   number, a string, a negative number, or a parenthesised integer expression) stays a named

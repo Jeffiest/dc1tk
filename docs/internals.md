@@ -14,7 +14,7 @@ plus the native table (see
 [how definitions find things](definitions.md#how-definitions-find-things)). No script calls a later function or
 itself, so fingerprints are well defined and the same in every file.
 
-`src/crates/c2-script/src/library.rs` finds the libraries over the whole disc:
+`src/crates/dc2tk-script/src/library.rs` finds the libraries over the whole disc:
 
 1. A function can join a library when it is the first copy of its body in
    the file and everything it calls can too.
@@ -69,7 +69,7 @@ globals.
 
 ## Decompiler
 
-`decompile.rs` (in `src/crates/c2-script/src/`) turns a parsed script into a
+`decompile.rs` (in `src/crates/dc2tk-script/src/`) turns a parsed script into a
 program tree (`Node`, `node.rs`: maps and lists that dump as JSON);
 `sdk.rs` presents it with the SDK's names and helpers, and `source.rs` prints
 it as C; `decompiler.rs` runs the three with the definitions.

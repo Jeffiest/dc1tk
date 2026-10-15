@@ -152,7 +152,7 @@ enums in the matching header:
 | effect | `ps2/src/effscript.cpp` `ext_func_info[129]` | 128 | `dungeon/eff_script/*.stb` |
 | arg | `ps2/src/event_func.cpp` `esa_ext_func_info[3]` | 2 | argument files loaded by `_LOAD_ARG` |
 
-`c2 natives <chronicletwo>` reads each table and its enum and writes
+`dc2tk natives <chronicletwo>` reads each table and its enum and writes
 `src/natives/<table>.json` (checked in) as `{no, name, accessors}` rows.
 Every native's function name matches its enum name, and names are unique
 within a table. `accessors` lists the stack calls in the native's body in
@@ -162,7 +162,7 @@ the stack in loops and branches. The decompiler does not need it, because the
 bytecode already shows `&x` (`LOAD_ADDR`) and each constant's type.
 
 `EXT` pops `arg1` values, and the deepest of them is the native number. It is
-found by walking back from the `EXT` and adding up stack effects (`src/crates/c2-script/src/stack.rs`):
+found by walking back from the `EXT` and adding up stack effects (`src/crates/dc2tk-script/src/stack.rs`):
 `CALL` pops the callee's `arg` and pushes one, and the indexed modes (`0x2`,
 `0x4`, `0x10`, `0x20`) pop an index before pushing. Every one of the 1,407,551
 calls on the disc ends at a `PUSH_CONST` int.

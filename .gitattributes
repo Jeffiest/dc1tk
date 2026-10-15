@@ -1,2 +1,2 @@
-c2 text eol=lf
+dc2tk text eol=lf
 *.bat text eol=crlf

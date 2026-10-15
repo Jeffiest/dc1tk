@@ -15,7 +15,7 @@ Sources: engine `ps2/include/mg_texture.hpp` (structs, lines 54-174) and
 `ps2/asm/pal/data/mg_texture.data.s` (`lut_1246`, `block_table8_1266`,
 `block_table32_1267`). The corpus is all 5,217 `*.img` files under
 `extracted/disc/`; the counts below come from scripts run over all of them
-while the format was worked out. `im3.rs` (in `src/crates/c2-assets/src/`)
+while the format was worked out. `im3.rs` (in `src/crates/dc2tk-assets/src/`)
 implements it, and `textures.rs` turns it into the PNG folders mods use.
 
 All values are little-endian.
@@ -330,7 +330,7 @@ exposes entries by index (for example `character.cpp:2625`).
 
 ## 9. `im3.rs`
 
-`c2_assets::im3`, in `src/crates/c2-assets/src/im3.rs`.
+`dc2tk_assets::im3`, in `src/crates/dc2tk-assets/src/im3.rs`.
 
 * `read(data) -> Result<Vec<Image>>` returns one `Image` per picture entry (scripts
   skipped), with `name`, `index` (entry number), `format`, `width`,

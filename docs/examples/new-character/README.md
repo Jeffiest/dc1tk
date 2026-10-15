@@ -15,7 +15,7 @@ game's is in this folder.
   map's "talk" point and starts `wave`.
 
 ```bash
-c2 build extracted/scripts dc2.iso -o new-chara-test.iso --mod new-character --mods docs/examples
+dc2tk build extracted/scripts dc2.iso -o new-chara-test.iso --mod new-character --mods docs/examples
 ```
 
 To make the model again (or change it and build again):

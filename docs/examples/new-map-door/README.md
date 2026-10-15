@@ -30,10 +30,10 @@ point to Palm Brinks' scene where the closed house door `door10` was (and
 deletes that one), and copies this folder's files beside them:
 
 ```bash
-c2 map-export m01
-c2 map-export m05
+dc2tk map-export m01
+dc2tk map-export m05
 python docs/examples/new-map-door/make_mod.py
-c2 build extracted/scripts dc2.iso -o new-map-door.iso --mod new-map-door
+dc2tk build extracted/scripts dc2.iso -o new-map-door.iso --mod new-map-door
 ```
 
 `build` prints the programs the points got (`point door_park runs program

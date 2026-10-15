@@ -1,14 +1,28 @@
-# ChronicleTwo-Script
+# DC2-Toolkit
 
-Tools to decompile, edit and rebuild the scripts of **Dark Chronicle** (Dark
-Cloud 2), PAL version.
+**DC2-Toolkit** (`dc2tk`) extracts every asset of **Dark Chronicle** (Dark
+Cloud 2), PAL version, into a form you can edit, and recompiles and rebuilds
+them, and mods made from them, into a disc image you can play in PCSX2 (or a
+future port):
+
+- **scripts** as readable C, with named functions, documented engine calls
+  and English comments, compiled back into the game's bytecode;
+- **maps** as glTF scenes for Blender, with an add-on to edit placements,
+  trigger points, lights and collision;
+- **character models** and their **motions** as glTF;
+- **textures** as PNG;
+- **sounds** as WAV;
+- **music** as MIDI, with each bank's instruments as a SoundFont;
+- **text**: menus, items, shops and messages in every language, as text files;
+- **game data tables** (items, shops, monsters, dungeons and more) as JSON.
+
+Unedited assets rebuild to exactly the bytes on the disc, so a disc built
+from your edits differs from the original only where you changed it.
 
 Most of the game's behaviour lives in compiled scripts rather than in the
 executable: every cutscene, conversation, door, monster AI, the player's
-moves and the scripted effects. These tools turn every one of them into
-readable C, with named functions, documented engine calls and English
-comments, and compile your edits back into a disc image you can play in
-PCSX2/A future port. Unedited scripts compile back to exactly the bytes on the disc.
+moves and the scripted effects. Every one of them decompiles, and every
+unedited script compiles back to exactly the bytes on the disc.
 
 > **No game files are included.** This repository holds tools, an SDK and
 > knowledge about the scripts (names, documentation), never decompiled code,
@@ -29,27 +43,27 @@ PCSX2/A future port. Unedited scripts compile back to exactly the bytes on the d
 - Optional: an editor that uses clangd (VS Code with the clangd extension,
   Neovim, Emacs, Zed), which then completes and documents every engine call.
 
-The tool is one program, `c2`. Build it:
+The tool is one program, `dc2tk`. Build it:
 
 ```
 cargo build --release
 ```
 
-in this folder. This writes `build/release/c2` (`c2.exe` on Windows). Run it
-from this folder with `c2.bat` (Command Prompt and PowerShell: `c2 ...` in
-Command Prompt, `.\c2 ...` in PowerShell) or `./c2` in a Unix shell such as
+in this folder. This writes `build/release/dc2tk` (`dc2tk.exe` on Windows). Run it
+from this folder with `dc2tk.bat` (Command Prompt and PowerShell: `dc2tk ...` in
+Command Prompt, `.\dc2tk ...` in PowerShell) or `./dc2tk` in a Unix shell such as
 Git Bash; each builds the program first if it is missing. The commands below
-are written as `c2 ...`. To run it from anywhere, put this folder (or
+are written as `dc2tk ...`. To run it from anywhere, put this folder (or
 `build/release`) on your PATH instead. The program finds `sdk/`,
 `definitions/` and `src/natives/` in the repository folder above it (or in
-the folder `$C2_ROOT` names). Run the commands from this folder (it is where
-`extracted/` and `mods/` go). `c2 help` lists the commands and
-`c2 help COMMAND` gives one command's options.
+the folder `$DC2TK_ROOT` names). Run the commands from this folder (it is where
+`extracted/` and `mods/` go). `dc2tk help` lists the commands and
+`dc2tk help COMMAND` gives one command's options.
 
 ### 2. Decompile the game
 
 ```
-c2 setup dc2.iso
+dc2tk setup dc2.iso
 ```
 
 This takes a minute or two. Everything taken from the disc goes under
@@ -67,7 +81,7 @@ Keep your changes in a **mod**: a folder in `mods/` that holds only what you
 change. Pick the functions you want to change and copy them into the mod:
 
 ```
-c2 mod override extracted/scripts my-first-mod --map s51 start_castle_battle
+dc2tk mod override extracted/scripts my-first-mod --map s51 start_castle_battle
 ```
 
 and edit them in `mods/my-first-mod/s51.c`, a **patch**. When the mod is
@@ -80,16 +94,16 @@ by name (`NEW_FLAG(MY_SCENE_SEEN);`) and the build gives it a free one, so
 mods never collide. See [mods](docs/usage.md#mods) for the rest: targeting
 a monster's AI, running code every frame, text in each language.
 (You can also edit `extracted/scripts/` directly and save the edits into a
-mod later with `c2 mod save extracted/scripts my-first-mod`.)
+mod later with `dc2tk mod save extracted/scripts my-first-mod`.)
 
 To find what to change:
 
 ```
-c2 maps extracted/scripts                       every map, and which ones you can play in
-c2 map extracted/scripts s51                    one map: its programs, triggers, player positions
-c2 xref extracted/scripts monster golem         a monster's AI and who places it
-c2 xref extracted/scripts event 510 --map s51   what starts an event
-c2 flags extracted/scripts                      save flags in use
+dc2tk maps extracted/scripts                       every map, and which ones you can play in
+dc2tk map extracted/scripts s51                    one map: its programs, triggers, player positions
+dc2tk xref extracted/scripts monster golem         a monster's AI and who places it
+dc2tk xref extracted/scripts event 510 --map s51   what starts an event
+dc2tk flags extracted/scripts                      save flags in use
 ```
 
 [A first test](docs/usage.md#a-first-test) has two small edits to try, and
@@ -98,7 +112,7 @@ the [modding guide](docs/modding.md) explains how the game runs its scripts.
 ### 4. Rebuild the disc
 
 ```
-c2 build extracted/scripts dc2.iso -o modded.iso --mod my-first-mod
+dc2tk build extracted/scripts dc2.iso -o modded.iso --mod my-first-mod
 ```
 
 `build` compiles the scripts your mod changes and writes `modded.iso`: your
@@ -114,7 +128,7 @@ script, which takes under a minute; it says so.
 Boot `modded.iso` in PCSX2 like the original, or let the tools start it:
 
 ```
-c2 play modded.iso
+dc2tk play modded.iso
 ```
 
 (or add `--play` to `build`).
@@ -134,7 +148,7 @@ c2 play modded.iso
 - [Definitions](docs/definitions.md): how names and documentation are shared
   without sharing the scripts.
 - [Example mod](docs/examples/calculator/calculator.c): a calculator with its
-  own model, screen and sounds (`c2 build extracted/scripts dc2.iso -o
+  own model, screen and sounds (`dc2tk build extracted/scripts dc2.iso -o
   calculator.iso --mod calculator --mods docs/examples`), and
   [a character of its own](docs/examples/new-character/README.md), rigged
   and animated in Blender, and
@@ -146,9 +160,11 @@ c2 play modded.iso
 
 ```
 Cargo.toml       the Cargo workspace (cargo build --release, cargo test --release)
-src/crates/      the tool, c2: disc, format, assembler, decompiler, compiler,
+src/crates/      the tool, dc2tk: disc, format, assembler, decompiler, compiler,
                  mods, assets; see src/README.md
-src/natives/     the engine's native function tables, generated by c2 natives
+src/natives/     the engine's native function tables, generated by dc2tk natives
+src/blender/     dc2tk_maps, the Blender add-on for map scenes; see src/blender/README.md
+dc2tk, dc2tk.bat run dc2tk from this folder, building it first when missing
 sdk/             C headers scripts include: every engine call declared and
                  documented, constants, helpers; sdk/modkit/ for mods
 definitions/pal/ what is known about the PAL scripts: names, docs,
@@ -161,7 +177,7 @@ PLAN.md          what is done and what comes next
 
 Every one of the 1,398 scripts on the PAL disc decompiles, with no function
 left as assembly, and compiles back byte for byte
-(`c2 verify extracted/disc` checks this). All 1,081 engine calls are
+(`dc2tk verify extracted/disc` checks this). All 1,081 engine calls are
 documented. Every function on the disc has a name, named parameters and
 locals and a doc comment; story flags print as named constants; and dialogue, item, map and
 character ids carry their English text from your disc. See

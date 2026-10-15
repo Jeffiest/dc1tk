@@ -93,7 +93,7 @@ class FakePanel:
 
 
 def draw_all(context):
-    import c2_maps.ui as ui
+    import dc2tk_maps.ui as ui
 
     problems = []
     for cls in ui.classes:

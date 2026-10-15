@@ -4,7 +4,7 @@ Three changes, in this order: decide the formats below, port the tools to
 Rust with the Python as the reference, then build the asset tree and the new
 mod format in Rust only. Nothing is written twice.
 
-All three are done: `c2` is the only tool, and the Python it was ported
+All three are done: `dc2tk` is the only tool, and the Python it was ported
 from has been removed. Section 3 is kept as the plan the port followed.
 
 ## 1. The asset tree
@@ -15,7 +15,7 @@ scripts into a tree of C. The asset tree does the same for everything else:
 format common tools open.
 
 ```
-c2 assets extracted/disc    (or c2 assets pal.iso; writes extracted/assets/; --force replaces a tree already there)
+dc2tk assets extracted/disc    (or dc2tk assets pal.iso; writes extracted/assets/; --force replaces a tree already there)
 ```
 
 ```
@@ -184,7 +184,7 @@ mod is still the extracted one.
   writing it back is its own piece of research.
 
 Every exported file builds back to the disc's own bytes when unedited, at
-every place the manifest lists: the hidden `c2 assets-check SOURCE ASSETS`
+every place the manifest lists: the hidden `dc2tk assets-check SOURCE ASSETS`
 checks every file's hash, builds each texture into each texture file the
 manifest gives for it, each model's glTF and buffer into each of its packs
 each bank's folder into each of its places and each text into each of its
@@ -197,8 +197,8 @@ file places build back, no problems.
 
 A mod is a folder with a `mod.json`. Where files sit inside the folder does
 not matter: `mod.json` says what each one replaces, by asset id (section
-1). Built in `c2` (`c2-script`'s `replace` and `migrate`, the index of ids
-in `c2-assets`' `ids`).
+1). Built in `dc2tk` (`dc2tk-script`'s `replace` and `migrate`, the index of ids
+in `dc2tk-assets`' `ids`).
 
 ```json
 {
@@ -343,13 +343,13 @@ in `c2-assets`' `ids`).
 ### How a build finds the places
 
 `build` makes the index of ids from the disc image it builds from, only
-when a chosen mod names an id: the same walk and naming as `c2 assets`
+when a chosen mod names an id: the same walk and naming as `dc2tk assets`
 (the tree's `named` step, shared), without converting anything. On the
 PAL disc it takes 0.6 s and gives the asset tree's manifest exactly (all
 26,399 ids, 1,497 aliases and every place, compared). It does not read
 `extracted/assets/manifest.json`: a tree can be stale, made from another disc or
 with other definitions, and a build should not need one. The definition
-sets (`--defs`) name the sound entries, as for `c2 assets`. (The index
+sets (`--defs`) name the sound entries, as for `dc2tk assets`. (The index
 counts as models the packs whose cfg names a model; the tree, the ones its
 export converts: on the PAL disc the same.)
 
@@ -424,7 +424,7 @@ as built before. The old `disc/` layout keeps working, alone or beside
 
 ## 3. The Rust port
 
-One Rust tool, `c2`, doing everything the Python tool (`cli.py`) did, with
+One Rust tool, `dc2tk`, doing everything the Python tool (`cli.py`) did, with
 the same command names and output, so the docs change little. Done: what
 was built is described in [src/README.md](../src/README.md).
 
@@ -435,14 +435,14 @@ A Cargo workspace at `rust/` (now `Cargo.toml` at the root and the crates in
 
 | crate | Python modules it takes over |
 |---|---|
-| `c2-disc` | iso, archive, rebuild, extract, discfiles, index |
-| `c2-script` | stb, vm, asm, stack, slots, decompile, parse, compile, source, sdk, definitions, names, tables |
-| `c2-assets` | im3, textures, soundbank, sounds, mds, mot, info_cfg, to_gltf, from_gltf, models |
-| `c2-mods` | mods, patches, additions, numbers, flags, startat, assets (manifest) |
-| `c2` | the command line, maps, xref, verify, coverage, learn, play |
+| `dc2tk-disc` | iso, archive, rebuild, extract, discfiles, index |
+| `dc2tk-script` | stb, vm, asm, stack, slots, decompile, parse, compile, source, sdk, definitions, names, tables |
+| `dc2tk-assets` | im3, textures, soundbank, sounds, mds, mot, info_cfg, to_gltf, from_gltf, models |
+| `dc2tk-mods` | mods, patches, additions, numbers, flags, startat, assets (manifest) |
+| `dc2tk` | the command line, maps, xref, verify, coverage, learn, play |
 
-As built, the mod modules went into `c2-script` rather than a crate of
-their own, and a `c2-py` crate does the number and text formatting the
+As built, the mod modules went into `dc2tk-script` rather than a crate of
+their own, and a `dc2tk-py` crate does the number and text formatting the
 output depends on as CPython did.
 
 The definitions (`definitions/`), tables (now `src/natives/*.json`) and SDK
@@ -482,14 +482,14 @@ script runs both on the same inputs and compares:
 Each milestone ends with its parity check passing and its tests ported to
 `cargo test`. Order, by dependency:
 
-1. `c2-disc`: ISO, index, packs, extract, write a disc.
-2. `c2-script` reading: stb, vm, disassemble, definitions, names.
+1. `dc2tk-disc`: ISO, index, packs, extract, write a disc.
+2. `dc2tk-script` reading: stb, vm, disassemble, definitions, names.
 3. Decompile.
 4. Parse, compile, SDK; then build (scripts only).
 5. Mods: patches, additions, numbers, start_at.
 6. Assets: textures, sounds, models.
 7. The remaining commands; port the last tests; delete the Python.
-8. New: the asset tree (`c2 assets`) and `mod.json` replacements.
+8. New: the asset tree (`dc2tk assets`) and `mod.json` replacements.
 
 ### Open choices
 

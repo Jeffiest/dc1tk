@@ -2,7 +2,7 @@
 
 How the PAL disc stores sound effects, how `play_se(bank, n)` turns entry
 `n` into SPU2 voices, and what a mod must keep consistent to replace or add
-sounds. `soundbank.rs` (in `src/crates/c2-assets/src/`) implements all of it,
+sounds. `soundbank.rs` (in `src/crates/dc2tk-assets/src/`) implements all of it,
 and `sounds.rs` turns it into the WAV folders mods use; the counts
 below come from a check run over every bank on the disc while the format
 was worked out.
@@ -25,7 +25,7 @@ Evidence is of three kinds, marked where it matters:
 
 ## 1. The `.snd` pack
 
-The same chain format as the game's other packs (`c2_disc::archive::parse_pack`):
+The same chain format as the game's other packs (`dc2tk_disc::archive::parse_pack`):
 
 | Offset | Size | Field |
 |---|---|---|
@@ -410,12 +410,12 @@ program 0, volume/expression 127, pan 64.
 
 ## 9. Changing a bank with `soundbank.rs`
 
-`c2_assets::soundbank` (`src/crates/c2-assets/src/soundbank.rs`); mods
+`dc2tk_assets::soundbank` (`src/crates/dc2tk-assets/src/soundbank.rs`); mods
 reach it through `sounds.rs` (the WAV folders) and `replace` lines by
 sound id.
 
 ```rust
-use c2_assets::soundbank::{self as sb, Bank, Mode};
+use dc2tk_assets::soundbank::{self as sb, Bank, Mode};
 use std::fs;
 
 let mut bank = Bank::from_bytes(&fs::read("extracted/disc/snd2/SY_000.snd")?)?;
@@ -475,7 +475,7 @@ All 861 banks, 16 processes, about 6 minutes (`check_results.txt`):
 | every VAG ends at its end block (+ silent block), flags agree with the Vagi loop bit | 7,397 VAGs (2,106 looped), 222,046,748 samples decoded |
 | re-encoding a decoded VAG gives Sony's length and flag bytes | 7,397 / 7,397 |
 | decode -> re-encode -> decode | 7,395 VAGs reproduced exactly; the other 2 at 53.5 and 55.6 dB |
-| replace an entry (detach) + add an entry, build, re-parse: build idempotent, the two entries play exactly the two new VAGs, every other entry plays identical bytes and parameters, volumes kept, Head sizes and VAG offsets consistent, `c2_disc::archive::parse_pack` accepts the pack | 861 / 861 |
+| replace an entry (detach) + add an entry, build, re-parse: build idempotent, the two entries play exactly the two new VAGs, every other entry plays identical bytes and parameters, volumes kept, Head sizes and VAG offsets consistent, `dc2tk_disc::archive::parse_pack` accepts the pack | 861 / 861 |
 | in-place VAG replacement, re-parse, other VAGs unchanged | 861 / 861 |
 
 Decode -> re-encode is near-lossless only because the input already lies on

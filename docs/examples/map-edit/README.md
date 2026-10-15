@@ -1,6 +1,6 @@
 # map-edit: a map edited in Blender
 
-Barga's Valley (`s17`) edited with the [c2_maps add-on](../../../src/blender/README.md),
+Barga's Valley (`s17`) edited with the [dc2tk_maps add-on](../../../src/blender/README.md),
 built into a disc (checked in the game):
 
 - the valley's grass and cliff picture (`s17_02`) turned to autumn colours;
@@ -15,7 +15,7 @@ your own export of the map, as you would by hand in Blender, and writes the
 mod into `mods/map-edit`:
 
 ```bash
-c2 map-export s17
+dc2tk map-export s17
 ```
 
 ```bash
@@ -23,7 +23,7 @@ blender --background --python docs/examples/map-edit/make_mod.py
 ```
 
 ```bash
-c2 build extracted/scripts dc2.iso -o map-edit.iso --mod map-edit
+dc2tk build extracted/scripts dc2.iso -o map-edit.iso --mod map-edit
 ```
 
 `build` prints what the map line changed: the `.map` (the crate's placement
