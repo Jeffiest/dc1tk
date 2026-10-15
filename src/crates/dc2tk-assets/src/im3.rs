@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 
 use crate::bytes::{clamped, i32_at, u16_at, u32_at, u64_at};
+use crate::png::{self, PngMode};
+use crate::quantise;
 use crate::{bail, Error, Result};
 
 pub const IM3_ENTRY: usize = 0x40;
@@ -813,17 +815,8 @@ pub fn read(data: &[u8]) -> Result<Vec<Image>> {
     Ok(images)
 }
 
-fn latin1(text: &str) -> Result<Vec<u8>> {
-    text.chars()
-        .map(|c| {
-            u8::try_from(c as u32)
-                .map_err(|_| Error::invalid(format!("{text:?} has a character Latin-1 cannot encode")))
-        })
-        .collect()
-}
-
 fn name_field(image: &Image) -> Result<Vec<u8>> {
-    let name = latin1(&image.name)?;
+    let name = png::latin1(&image.name)?;
     if name.len() > 0x1F {
         bail!("name {:?} longer than 31 bytes", image.name);
     }
@@ -1047,374 +1040,6 @@ pub fn alpha_mode(image: &Image) -> AlphaMode {
     }
 }
 
-fn crc32(data: &[u8]) -> u32 {
-    let mut hasher = flate2::Crc::new();
-    hasher.update(data);
-    hasher.sum()
-}
-
-fn chunk(tag: &[u8], body: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(body.len() + 12);
-    out.extend((body.len() as u32).to_be_bytes());
-    out.extend(tag);
-    out.extend(body);
-    let mut tagged = tag.to_vec();
-    tagged.extend(body);
-    out.extend(crc32(&tagged).to_be_bytes());
-    out
-}
-
-/// The data as a zlib stream at a compression level, as the zlib library (1.3.1) writes it.
-pub fn compress(data: &[u8], level: u32) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len() / 2 + 64);
-    let mut stream = flate2::Compress::new(flate2::Compression::new(level), true);
-    loop {
-        out.reserve(data.len() / 2 + 1024);
-        let used = stream.total_in() as usize;
-        let status = stream
-            .compress_vec(&data[used..], &mut out, flate2::FlushCompress::Finish)
-            .expect("zlib compresses any input");
-        if status == flate2::Status::StreamEnd {
-            return out;
-        }
-    }
-}
-
-/// zlib.decompress(data).
-pub fn decompress(data: &[u8]) -> Result<Vec<u8>> {
-    let mut out = Vec::with_capacity(data.len() * 4 + 1024);
-    let mut stream = flate2::Decompress::new(true);
-    loop {
-        out.reserve(out.len().max(1024));
-        let used = stream.total_in() as usize;
-        let before = stream.total_out();
-        let status = stream
-            .decompress_vec(&data[used..], &mut out, flate2::FlushDecompress::Finish)
-            .map_err(|error| Error::invalid(format!("the compressed data does not inflate: {error}")))?;
-        if status == flate2::Status::StreamEnd {
-            return Ok(out);
-        }
-        if stream.total_in() as usize == data.len() && stream.total_out() == before && out.len() < out.capacity() {
-            bail!("the compressed data ends before its stream does");
-        }
-    }
-}
-
-/// The colour type of a PNG write_png makes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PngMode {
-    /// Indices and a palette of (r, g, b, a).
-    P,
-    Rgba,
-    Rgb,
-}
-
-/// A PNG of the pixels: mode P (data = indices, palette 0..255), RGBA, or RGB (3 bytes a pixel).
-pub fn write_png(
-    width: usize,
-    height: usize,
-    mode: PngMode,
-    data: &[u8],
-    palette: &[[u8; 4]],
-    text: &[(&str, &str)],
-) -> Result<Vec<u8>> {
-    let (colour_type, bpp) = match mode {
-        PngMode::P => (3u8, 1),
-        PngMode::Rgba => (6, 4),
-        PngMode::Rgb => (2, 3),
-    };
-    let stride = width * bpp;
-    let mut raw = Vec::with_capacity((stride + 1) * height);
-    for y in 0..height {
-        raw.push(0);
-        raw.extend_from_slice(clamped(data, y * stride, (y + 1) * stride));
-    }
-    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
-    let mut ihdr = Vec::new();
-    ihdr.extend(checked::<u32>(width, "I")?.to_be_bytes());
-    ihdr.extend(checked::<u32>(height, "I")?.to_be_bytes());
-    ihdr.extend([8, colour_type, 0, 0, 0]);
-    out.extend(chunk(b"IHDR", &ihdr));
-    if mode == PngMode::P {
-        let rgb: Vec<u8> = palette.iter().flat_map(|c| [c[0], c[1], c[2]]).collect();
-        out.extend(chunk(b"PLTE", &rgb));
-        let alphas: Vec<u8> = palette.iter().map(|c| c[3]).collect();
-        if alphas.iter().any(|&a| a != 255) {
-            let end = alphas.iter().rposition(|&a| a != 0xFF).map_or(0, |i| i + 1);
-            let kept = if end == 0 { &alphas[..1] } else { &alphas[..end] };
-            out.extend(chunk(b"tRNS", kept));
-        }
-    }
-    for (key, value) in text {
-        let mut body = latin1(key)?;
-        body.push(0);
-        body.extend(latin1(value)?);
-        out.extend(chunk(b"tEXt", &body));
-    }
-    out.extend(chunk(b"IDAT", &compress(&raw, 6)));
-    out.extend(chunk(b"IEND", b""));
-    Ok(out)
-}
-
-/// Undoes PNG filtering of one (sub)image; returns its rows and the bytes it used.
-fn unfilter(raw: &[u8], width: usize, height: usize, bits_pp: usize) -> Result<(Vec<Vec<u8>>, usize)> {
-    let bpp = (bits_pp / 8).max(1);
-    let stride = (width * bits_pp).div_ceil(8);
-    let mut rows = Vec::with_capacity(height);
-    let mut prev = vec![0u8; stride];
-    let mut pos = 0;
-    for _ in 0..height {
-        let Some(&filter) = raw.get(pos) else {
-            bail!("the PNG's image data ends before its last row");
-        };
-        let mut line = clamped(raw, pos + 1, pos + 1 + stride).to_vec();
-        pos += 1 + stride;
-        let short = line.len() < stride || prev.len() < stride;
-        match filter {
-            0 => {}
-            1 => {
-                if short && stride > bpp {
-                    bail!("the PNG's image data ends inside a row");
-                }
-                for i in bpp..stride {
-                    line[i] = line[i].wrapping_add(line[i - bpp]);
-                }
-            }
-            2 => {
-                line = line.iter().zip(&prev).map(|(a, b)| a.wrapping_add(*b)).collect();
-            }
-            3 => {
-                if short {
-                    bail!("the PNG's image data ends inside a row");
-                }
-                for i in 0..stride {
-                    let left = if i >= bpp { line[i - bpp] as u32 } else { 0 };
-                    line[i] = line[i].wrapping_add(((left + prev[i] as u32) >> 1) as u8);
-                }
-            }
-            4 => {
-                if short {
-                    bail!("the PNG's image data ends inside a row");
-                }
-                for i in 0..stride {
-                    let a = if i >= bpp { line[i - bpp] as i32 } else { 0 };
-                    let b = prev[i] as i32;
-                    let c = if i >= bpp { prev[i - bpp] as i32 } else { 0 };
-                    let p = a + b - c;
-                    let (pa, pb, pc) = ((p - a).abs(), (p - b).abs(), (p - c).abs());
-                    let predicted = if pa <= pb && pa <= pc {
-                        a
-                    } else if pb <= pc {
-                        b
-                    } else {
-                        c
-                    };
-                    line[i] = line[i].wrapping_add(predicted as u8);
-                }
-            }
-            _ => bail!("bad PNG filter {filter}"),
-        }
-        prev = line.clone();
-        rows.push(line);
-    }
-    Ok((rows, pos))
-}
-
-/// One row unpacked into samples (16-bit samples as their high byte).
-fn samples(row: &[u8], width: usize, depth: u8, channels: usize) -> Vec<u8> {
-    match depth {
-        8 => row[..(width * channels).min(row.len())].to_vec(),
-        16 => row[..(2 * width * channels).min(row.len())].iter().step_by(2).copied().collect(),
-        _ => {
-            let per = 8 / depth as usize;
-            let mask = (1u8 << depth) - 1;
-            let mut out = Vec::with_capacity(row.len() * per);
-            for &b in row {
-                for k in 0..per {
-                    out.push((b >> (8 - depth as usize * (k + 1))) & mask);
-                }
-            }
-            out.truncate(width * channels);
-            out
-        }
-    }
-}
-
-/// A decoded PNG: mode P (data = indices, palette of (r, g, b, a)) or RGBA (palette empty), with
-/// the PNG's own 0..255 alpha.
-pub struct Png {
-    pub width: usize,
-    pub height: usize,
-    pub paletted: bool,
-    pub data: Vec<u8>,
-    pub palette: Vec<[u8; 4]>,
-}
-
-/// Every element of a strided slice of `data` (data[start::step]).
-fn strided(data: &[u8], start: usize, step: usize) -> Vec<u8> {
-    data.iter().skip(start).step_by(step).copied().collect()
-}
-
-/// out[start::4] = values, which must be as many as the slots.
-fn fill_strided(out: &mut [u8], start: usize, values: &[u8]) -> Result<()> {
-    let slots = out.len().saturating_sub(start).div_ceil(4);
-    if slots != values.len() {
-        bail!("a PNG channel of {} values for {slots} pixels", values.len());
-    }
-    for (slot, &v) in out.iter_mut().skip(start).step_by(4).zip(values) {
-        *slot = v;
-    }
-    Ok(())
-}
-
-pub fn read_png(png: &[u8]) -> Result<Png> {
-    if png.len() < 8 || &png[..8] != b"\x89PNG\r\n\x1a\n" {
-        bail!("not a PNG");
-    }
-    let mut pos = 8;
-    let mut idat = Vec::new();
-    let (mut plte, mut trns, mut ihdr) = (None, None, None);
-    while pos < png.len() {
-        if pos + 8 > png.len() {
-            bail!("the PNG ends inside the head of a chunk at {pos}");
-        }
-        let n = u32::from_be_bytes(png[pos..pos + 4].try_into().unwrap()) as usize;
-        let tag = &png[pos + 4..pos + 8];
-        let body = clamped(png, pos + 8, pos + 8 + n);
-        pos += 12 + n;
-        match tag {
-            b"IHDR" => {
-                if body.len() != 13 {
-                    bail!("the PNG's IHDR chunk is {} bytes, not 13", body.len());
-                }
-                ihdr = Some(body);
-            }
-            b"PLTE" => plte = Some(body),
-            b"tRNS" => trns = Some(body),
-            b"IDAT" => idat.extend_from_slice(body),
-            b"IEND" => break,
-            _ => {}
-        }
-    }
-    let Some(ihdr) = ihdr else {
-        bail!("the PNG has no IHDR chunk");
-    };
-    let w = u32::from_be_bytes(ihdr[0..4].try_into().unwrap()) as usize;
-    let h = u32::from_be_bytes(ihdr[4..8].try_into().unwrap()) as usize;
-    let (depth, colour_type, interlace) = (ihdr[8], ihdr[9], ihdr[12]);
-    let channels = match colour_type {
-        0 => 1,
-        2 => 3,
-        3 => 1,
-        4 => 2,
-        6 => 4,
-        _ => bail!("a PNG of colour type {colour_type}, which PNG does not have"),
-    };
-    if ![1, 2, 4, 8, 16].contains(&depth) {
-        bail!("a PNG of bit depth {depth}, which PNG does not have");
-    }
-    let bits_pp = depth as usize * channels;
-    let raw = decompress(&idat)?;
-    // every pixel takes its bits of the image data: a size the data cannot hold is refused before
-    // anything is allocated for it
-    if w as u128 * h as u128 * bits_pp as u128 > 8 * raw.len() as u128 {
-        bail!("the PNG says it is {w} by {h} pixels, more than its image data holds");
-    }
-    let samples_all = if interlace == 0 {
-        let (rows, _) = unfilter(&raw, w, h, bits_pp)?;
-        rows.iter().flat_map(|row| samples(row, w, depth, channels)).collect::<Vec<u8>>()
-    } else {
-        let passes = [(0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)];
-        let mut buffer = vec![0u8; w * h * channels];
-        let mut p = 0;
-        for (x0, y0, dx, dy) in passes {
-            let pw = if w > x0 { (w - x0).div_ceil(dx) } else { 0 };
-            let ph = if h > y0 { (h - y0).div_ceil(dy) } else { 0 };
-            if pw == 0 || ph == 0 {
-                continue;
-            }
-            let (rows, used) = unfilter(clamped(&raw, p, raw.len()), pw, ph, bits_pp)?;
-            p += used;
-            for (j, row) in rows.iter().enumerate() {
-                let s = samples(row, pw, depth, channels);
-                let y = y0 + j * dy;
-                for i in 0..pw {
-                    let x = x0 + i * dx;
-                    let at = (y * w + x) * channels;
-                    let part = clamped(&s, i * channels, (i + 1) * channels);
-                    assign_fixed(&mut buffer, at, at + channels, part);
-                }
-            }
-        }
-        buffer
-    };
-    let n = w * h;
-    if colour_type == 3 {
-        let plte = plte.unwrap_or_default();
-        let mut palette: Vec<[u8; 4]> = plte.as_chunks::<3>().0.iter().map(|c| [c[0], c[1], c[2], 255]).collect();
-        if let Some(trns) = trns.filter(|t| !t.is_empty()) {
-            for (colour, &a) in palette.iter_mut().zip(trns) {
-                colour[3] = a;
-            }
-        }
-        return Ok(Png { width: w, height: h, paletted: true, data: samples_all, palette });
-    }
-    let mut out = vec![0u8; 4 * n];
-    match colour_type {
-        6 => out = samples_all,
-        2 => {
-            for k in 0..3 {
-                fill_strided(&mut out, k, &strided(&samples_all, k, 3))?;
-            }
-            fill_strided(&mut out, 3, &vec![0xFF; n])?;
-            if let Some(trns) = trns.filter(|t| t.len() >= 6) {
-                let key: Vec<u8> = if depth == 16 {
-                    strided(trns, 1, 2).into_iter().take(3).collect()
-                } else {
-                    vec![trns[1], trns[3], trns[5]]
-                };
-                for i in 0..n {
-                    if out[4 * i..4 * i + 3] == key[..] {
-                        out[4 * i + 3] = 0;
-                    }
-                }
-            }
-        }
-        _ => {
-            let mut g = strided(&samples_all, 0, channels);
-            if depth < 8 {
-                let scale = 255 / ((1u32 << depth) - 1);
-                g = g.iter().map(|&v| (v as u32 * scale) as u8).collect();
-            }
-            for k in 0..3 {
-                fill_strided(&mut out, k, &g)?;
-            }
-            if colour_type == 4 {
-                fill_strided(&mut out, 3, &strided(&samples_all, 1, 2))?;
-            } else {
-                fill_strided(&mut out, 3, &vec![0xFF; n])?;
-                if let Some(trns) = trns.filter(|t| t.len() >= 2) {
-                    let key = if depth >= 8 { trns[1] as u32 } else { trns[1] as u32 * (255 / ((1u32 << depth) - 1)) };
-                    for i in 0..n {
-                        if g[i] as u32 == key {
-                            out[4 * i + 3] = 0;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(Png { width: w, height: h, paletted: false, data: out, palette: Vec::new() })
-}
-
-/// buffer[start:end] = part on a bytearray of fixed size where part has the slice's length.
-fn assign_fixed(buffer: &mut [u8], start: usize, end: usize, part: &[u8]) {
-    let start = start.min(buffer.len());
-    let end = end.clamp(start, buffer.len());
-    let n = (end - start).min(part.len());
-    buffer[start..start + n].copy_from_slice(&part[..n]);
-}
-
 /// The picture's base level as a PNG. Paletted pictures become indexed PNGs (palette in index
 /// order) unless indexed is false.
 pub fn to_png(image: &Image, indexed: bool) -> Result<Vec<u8>> {
@@ -1438,7 +1063,7 @@ pub fn to_png(image: &Image, indexed: bool) -> Result<Vec<u8>> {
             .map(|&[r, g, b, a]| [r, g, b, if flat { 255 } else { mode.to_png(a) }])
             .collect();
         let indices = image.indices.as_deref().unwrap_or_default();
-        return write_png(image.width, image.height, PngMode::P, indices, &palette, &text);
+        return png::write_png(image.width, image.height, PngMode::P, indices, &palette, &text);
     }
     let Some(mut rgba) = image.rgba()? else {
         bail!("the picture has no pixels");
@@ -1449,12 +1074,12 @@ pub fn to_png(image: &Image, indexed: bool) -> Result<Vec<u8>> {
         if rgb.len() != n {
             bail!("{} has {} pixels, not {} by {}", image.name, rgba.len().div_ceil(4), image.width, image.height);
         }
-        return write_png(image.width, image.height, PngMode::Rgb, &rgb, &[], &text);
+        return png::write_png(image.width, image.height, PngMode::Rgb, &rgb, &[], &text);
     }
     for a in rgba.iter_mut().skip(3).step_by(4) {
         *a = mode.to_png(*a);
     }
-    write_png(image.width, image.height, PngMode::Rgba, &rgba, &[], &text)
+    png::write_png(image.width, image.height, PngMode::Rgba, &rgba, &[], &text)
 }
 
 fn to_ps2_alpha(rgba: &[u8], mode: AlphaMode) -> Vec<u8> {
@@ -1477,152 +1102,6 @@ fn to_ps2_alpha(rgba: &[u8], mode: AlphaMode) -> Vec<u8> {
     out
 }
 
-type Colour = [u8; 4];
-
-/// Up to n representative colours of (colour, count) pairs, by median cut.
-fn median_cut(colours: Vec<(Colour, u64)>, n: usize) -> Vec<Colour> {
-    let mut boxes = vec![colours];
-    while boxes.len() < n {
-        let (mut best, mut best_i, mut best_axis) = (-1i32, None, 0);
-        for (i, b) in boxes.iter().enumerate() {
-            if b.len() < 2 {
-                continue;
-            }
-            for axis in 0..4 {
-                let top = b.iter().map(|(c, _)| c[axis]).max().unwrap() as i32;
-                let bottom = b.iter().map(|(c, _)| c[axis]).min().unwrap() as i32;
-                if top - bottom > best {
-                    (best, best_i, best_axis) = (top - bottom, Some(i), axis);
-                }
-            }
-        }
-        let Some(best_i) = best_i.filter(|_| best > 0) else {
-            break;
-        };
-        let mut b = boxes.remove(best_i);
-        b.sort_by_key(|(c, _)| c[best_axis]);
-        let total: u64 = b.iter().map(|(_, w)| w).sum();
-        let mut acc = 0u64;
-        let mut cut = 1;
-        for (k, (_, w)) in b.iter().enumerate() {
-            acc += w;
-            if acc as f64 >= total as f64 / 2.0 {
-                cut = (k + 1).max(1).min(b.len() - 1);
-                break;
-            }
-        }
-        let second = b.split_off(cut);
-        boxes.push(b);
-        boxes.push(second);
-    }
-    boxes
-        .iter()
-        .map(|b| {
-            let total = b.iter().map(|(_, w)| w).sum::<u64>().max(1);
-            let mut colour = [0u8; 4];
-            for (a, slot) in colour.iter_mut().enumerate() {
-                let weighted: u64 = b.iter().map(|(c, w)| c[a] as u64 * w).sum();
-                *slot = (weighted as f64 / total as f64).round_ties_even() as u8;
-            }
-            colour
-        })
-        .collect()
-}
-
-/// The index of the nearest palette colour (alpha weighs double), the first of equals; cached.
-struct Nearest<'a> {
-    palette: &'a [Colour],
-    cache: HashMap<Colour, u8>,
-}
-
-impl<'a> Nearest<'a> {
-    fn new(palette: &'a [Colour]) -> Nearest<'a> {
-        Nearest { palette, cache: HashMap::new() }
-    }
-
-    fn find(&mut self, c: Colour) -> u8 {
-        if let Some(&got) = self.cache.get(&c) {
-            return got;
-        }
-        let (mut best, mut got) = (None, 0usize);
-        for (i, p) in self.palette.iter().enumerate() {
-            let d: i64 = (0..3).map(|k| (p[k] as i64 - c[k] as i64).pow(2)).sum::<i64>()
-                + 2 * (p[3] as i64 - c[3] as i64).pow(2);
-            if best.is_none_or(|b| d < b) {
-                (best, got) = (Some(d), i);
-                if d == 0 {
-                    break;
-                }
-            }
-        }
-        self.cache.insert(c, got as u8);
-        got as u8
-    }
-}
-
-/// A counted histogram in first-seen order.
-struct Histogram {
-    order: Vec<(Colour, u64)>,
-    at: HashMap<Colour, usize>,
-}
-
-impl Histogram {
-    fn new() -> Histogram {
-        Histogram { order: Vec::new(), at: HashMap::new() }
-    }
-
-    fn add(&mut self, c: Colour, count: u64) {
-        match self.at.get(&c) {
-            Some(&i) => self.order[i].1 += count,
-            None => {
-                self.at.insert(c, self.order.len());
-                self.order.push((c, count));
-            }
-        }
-    }
-}
-
-/// RGBA (PS2 alpha) to indices and a palette of n entries.
-fn quantise(rgba: &[u8], n: usize) -> (Vec<u8>, Vec<Colour>) {
-    let pixels: Vec<Colour> = rgba.chunks(4).map(|c| [c[0], c[1], c[2], c[3]]).collect();
-    let mut hist = Histogram::new();
-    for &c in &pixels {
-        hist.add(c, 1);
-    }
-    let mut palette = if hist.order.len() <= n {
-        let mut colours: Vec<Colour> = hist.order.iter().map(|(c, _)| *c).collect();
-        colours.sort();
-        colours
-    } else if hist.order.len() > 32768 {
-        let mut coarse: Vec<[u64; 5]> = Vec::new();
-        let mut coarse_at: HashMap<Colour, usize> = HashMap::new();
-        for (c, w) in &hist.order {
-            let k = [c[0] >> 3, c[1] >> 3, c[2] >> 3, c[3] >> 3];
-            let i = *coarse_at.entry(k).or_insert_with(|| {
-                coarse.push([0; 5]);
-                coarse.len() - 1
-            });
-            let s = &mut coarse[i];
-            for a in 0..4 {
-                s[a] += c[a] as u64 * w;
-            }
-            s[4] += w;
-        }
-        let mut merged = Histogram::new();
-        for s in &coarse {
-            let c = [(s[0] / s[4]) as u8, (s[1] / s[4]) as u8, (s[2] / s[4]) as u8, (s[3] / s[4]) as u8];
-            merged.add(c, s[4]);
-        }
-        median_cut(merged.order, n)
-    } else {
-        median_cut(hist.order, n)
-    };
-    let mut nearest = Nearest::new(&palette);
-    let indices = pixels.iter().map(|&c| nearest.find(c)).collect();
-    palette.resize(n.max(palette.len()), [0, 0, 0, 0]);
-    (indices, palette)
-}
-
 fn downsample(rgba: &[u8], w: usize, h: usize) -> (Vec<u8>, usize, usize) {
     let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
     let mut out = vec![0u8; 4 * nw * nh];
@@ -1643,21 +1122,12 @@ fn downsample(rgba: &[u8], w: usize, h: usize) -> (Vec<u8>, usize, usize) {
     (out, nw, nh)
 }
 
-/// PNG colours (indexed or not) as RGBA, unused palette entries black and opaque.
-pub fn png_rgba(png: &Png) -> Result<Vec<u8>> {
-    if png.paletted {
-        lookup(&png.data, &png.palette, [0, 0, 0, 0xFF])
-    } else {
-        Ok(png.data.clone())
-    }
-}
-
 /// A picture made from PNG bytes, taking name, format, palette size, flags and header from `like`
 /// (normally the picture the PNG was exported from). Paletted targets: an indexed PNG with at most
 /// as many colours is taken as is; otherwise colours are matched to like's palette, and only if
 /// that fails quantised (median cut) to a new palette.
 pub fn from_png(png: &[u8], like: &Image) -> Result<Image> {
-    let png = read_png(png)?;
+    let png = png::read_png(png)?;
     let (w, h) = (png.width, png.height);
     let mut image = like.clone();
     image.width = w;
@@ -1671,7 +1141,7 @@ pub fn from_png(png: &[u8], like: &Image) -> Result<Image> {
         let top = png.data.iter().copied().max().unwrap_or(0) as usize;
         if png.paletted && png.palette.len() <= n && top < png.palette.len() {
             let opaque_png = png.palette.iter().all(|c| c[3] == 255);
-            let mut palette: Vec<Colour> = png
+            let mut palette: Vec<[u8; 4]> = png
                 .palette
                 .iter()
                 .map(|&[r, g, b, a]| {
@@ -1687,8 +1157,8 @@ pub fn from_png(png: &[u8], like: &Image) -> Result<Image> {
             image.palette = Some(palette);
             image.indices = Some(png.data.clone());
         } else {
-            let rgba = to_ps2_alpha(&png_rgba(&png)?, mode);
-            let mut candidates: HashMap<Colour, Vec<usize>> = HashMap::new();
+            let rgba = to_ps2_alpha(&png.rgba(), mode);
+            let mut candidates: HashMap<[u8; 4], Vec<usize>> = HashMap::new();
             for (i, c) in like_palette.iter().enumerate() {
                 candidates.entry(*c).or_default().push(i);
             }
@@ -1711,7 +1181,7 @@ pub fn from_png(png: &[u8], like: &Image) -> Result<Image> {
                 image.palette = Some(like_palette.to_vec());
                 image.indices = Some(indices);
             } else {
-                let (indices, palette) = quantise(&rgba, n);
+                let (indices, palette) = quantise::quantise(&rgba, n);
                 image.indices = Some(indices);
                 image.palette = Some(palette);
             }
@@ -1719,7 +1189,7 @@ pub fn from_png(png: &[u8], like: &Image) -> Result<Image> {
         image.pixels = None;
         same_size && image.indices == like.indices && image.palette == like.palette
     } else {
-        image.pixels = Some(to_ps2_alpha(&png_rgba(&png)?, mode));
+        image.pixels = Some(to_ps2_alpha(&png.rgba(), mode));
         image.indices = None;
         image.palette = None;
         same_size && image.pixels == like.pixels
@@ -1728,7 +1198,7 @@ pub fn from_png(png: &[u8], like: &Image) -> Result<Image> {
         image.mips = Vec::new();
         let (mut current, mut cw, mut ch) = (image.rgba()?.unwrap_or_default(), w, h);
         let palette = image.palette.clone().unwrap_or_default();
-        let mut nearest = Nearest::new(&palette);
+        let mut nearest = quantise::Nearest::new(&palette);
         for _ in &like.mips {
             (current, cw, ch) = downsample(&current, cw, ch);
             if image.paletted() {

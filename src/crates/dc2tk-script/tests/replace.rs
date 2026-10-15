@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 
 use build_common::{archive_files, iso_image, pack, TempDir, SECTOR};
 use dc2tk_assets::ids::{self, Index};
-use dc2tk_assets::im3::{self, Format, Image as Picture, PngMode};
+use dc2tk_assets::im3::{self, Format, Image as Picture};
 use dc2tk_assets::mds::{self, Material, Mds, Mdt, Node, Prim, PRIM_TRIANGLES};
+use dc2tk_assets::png::{self, PngMode};
 use dc2tk_assets::text::{self, Fonts, Language, Mes};
 use dc2tk_assets::tree::{self, DiscFile, Kind, Place};
 use dc2tk_disc::archive::Archive;
@@ -112,7 +113,7 @@ fn mod_json(mod_dir: &Path, body: Value) {
 }
 
 fn png(colour: [u8; 3]) -> Vec<u8> {
-    im3::write_png(8, 8, PngMode::Rgb, &colour.repeat(64), &[], &[]).unwrap()
+    png::write_png(8, 8, PngMode::Rgb, &colour.repeat(64), &[], &[]).unwrap()
 }
 
 /// The disc's bytes at a place, before or after a build's files.
@@ -375,7 +376,7 @@ fn a_file_line_made_like_a_disc_file_is_a_new_texture_file_or_pack() {
     let disc = disc("made");
     let mod_dir = disc.mods.join("calc");
     let colours = |seed: u8| -> Vec<u8> { (0..64u8).flat_map(|i| [seed, i * 4, 255 - i, 255]).collect() };
-    let rgba = |seed: u8| im3::write_png(8, 8, PngMode::Rgba, &colours(seed), &[], &[]).unwrap();
+    let rgba = |seed: u8| png::write_png(8, 8, PngMode::Rgba, &colours(seed), &[], &[]).unwrap();
     write(&mod_dir.join("ui/calc_bg.png"), &rgba(10));
     write(&mod_dir.join("ui/calc_key.png"), &rgba(200));
     for (name, data) in tree::exported_model(&character(), "c01").unwrap() {
@@ -416,7 +417,7 @@ fn a_file_line_made_like_a_disc_file_is_a_new_texture_file_or_pack() {
     assert_eq!(names, [("calc_bg", Format::Ct32), ("calc_key", Format::Ct32)]);
     for (name, png) in dc2tk_assets::textures::export(&files["mods/calc/ui.img"]).unwrap() {
         let seed = if name == "calc_bg.png" { 10 } else { 200 };
-        assert_eq!(im3::read_png(&png).unwrap().data, colours(seed), "{name}");
+        assert_eq!(png::read_png(&png).unwrap().data, colours(seed), "{name}");
     }
     let keys = at(&disc, &files, "map/b/b02.ipk", &["keys.img"]);
     assert_eq!(im3::read(&keys).unwrap()[0].name, "calc_key");

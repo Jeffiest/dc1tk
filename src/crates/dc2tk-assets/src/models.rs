@@ -973,7 +973,8 @@ mod tests {
                 *content = buffer.clone();
             }
             if path == "textures/tex01.png" {
-                *content = im3::write_png(8, 8, im3::PngMode::Rgb, &[0, 0, 255].repeat(64), &[], &[]).unwrap();
+                *content =
+                    crate::png::write_png(8, 8, crate::png::PngMode::Rgb, &[0, 0, 255].repeat(64), &[], &[]).unwrap();
             }
         }
         let folder = written(&exported, "edited");
@@ -1041,7 +1042,7 @@ mod tests {
             (0..32 * 16).flat_map(|i| if i % 5 == 0 { [255, 255, 255, 255] } else { [20, 40, 200, 255] }).collect();
         std::fs::write(
             folder.join("tex/calc_face.png"),
-            im3::write_png(32, 16, im3::PngMode::Rgba, &face, &[], &[]).unwrap(),
+            crate::png::write_png(32, 16, crate::png::PngMode::Rgba, &face, &[], &[]).unwrap(),
         )
         .unwrap();
         std::fs::write(folder.join("calc.gltf"), gltf).unwrap();
@@ -1080,9 +1081,9 @@ mod tests {
         let exported = export(&built).unwrap();
         let paths: Vec<&str> = exported.iter().map(|(path, _)| path.as_str()).collect();
         assert_eq!(paths, ["calc.bin", "calc.gltf", "textures/calc_face.png"]);
-        let png = im3::read_png(get(&exported, "textures/calc_face.png")).unwrap();
-        let given = im3::read_png(&std::fs::read(folder.join("tex/calc_face.png")).unwrap()).unwrap();
-        let rgba = |p: &im3::Png| -> Vec<u8> {
+        let png = crate::png::read_png(get(&exported, "textures/calc_face.png")).unwrap();
+        let given = crate::png::read_png(&std::fs::read(folder.join("tex/calc_face.png")).unwrap()).unwrap();
+        let rgba = |p: &crate::png::Png| -> Vec<u8> {
             if p.paletted {
                 p.data.iter().flat_map(|&i| p.palette[i as usize]).collect()
             } else {
@@ -1110,7 +1111,7 @@ mod tests {
         let face: Vec<u8> = [9u8, 9, 9, 255].repeat(48 * 16);
         std::fs::write(
             folder.join("tex/calc_face.png"),
-            im3::write_png(48, 16, im3::PngMode::Rgba, &face, &[], &[]).unwrap(),
+            crate::png::write_png(48, 16, crate::png::PngMode::Rgba, &face, &[], &[]).unwrap(),
         )
         .unwrap();
         let error = new_pack(&gltf, &prop_template(), "prop", "calc").unwrap_err().to_string();
@@ -1209,7 +1210,7 @@ mod tests {
             (0..256).flat_map(|i| if i % 3 == 0 { [250, 200, 150, 255] } else { [40, 90, 200, 255] }).collect();
         std::fs::write(
             folder.join("hero_skin.png"),
-            im3::write_png(16, 16, im3::PngMode::Rgba, &skin, &[], &[]).unwrap(),
+            crate::png::write_png(16, 16, crate::png::PngMode::Rgba, &skin, &[], &[]).unwrap(),
         )
         .unwrap();
         std::fs::write(folder.join("hero.gltf"), gltf).unwrap();

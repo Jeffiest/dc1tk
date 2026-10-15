@@ -24,7 +24,7 @@ use std::fs;
 use std::path::Path;
 
 use dc2tk_assets::from_gltf::{self, Gltf};
-use dc2tk_assets::im3::{self, PngMode};
+use dc2tk_assets::png::{self, PngMode};
 use dc2tk_assets::soundbank::{self, Sound};
 use serde_json::json;
 
@@ -365,10 +365,10 @@ fn quantize(rgba: &[u8], limit: usize) -> (Vec<u8>, usize) {
 fn save_png(canvas: &Canvas, path: &Path) -> Result<usize> {
     let (rgba, colours) = quantize(&canvas.rgba8(), 256);
     let png =
-        im3::write_png(canvas.w, canvas.h, PngMode::Rgba, &rgba, &[], &[("Software", "dc2tk-assets calculator_art")])?;
+        png::write_png(canvas.w, canvas.h, PngMode::Rgba, &rgba, &[], &[("Software", "dc2tk-assets calculator_art")])?;
     fs::write(path, &png)?;
     // Read it back: the size, power-of-two sides and the colour count.
-    let back = im3::read_png(&fs::read(path)?)?;
+    let back = png::read_png(&fs::read(path)?)?;
     let distinct = back.data.as_chunks::<4>().0.iter().collect::<std::collections::HashSet<_>>().len();
     if back.width != canvas.w || back.height != canvas.h || back.paletted || back.data != rgba || distinct != colours {
         return Err(format!("{} did not read back as written", path.display()).into());
@@ -396,8 +396,11 @@ const CELLS: usize = 9;
 const CELL_W: usize = 16;
 const CELL_H: usize = 32;
 const CELL_STEP: usize = 20;
-const CELL_X: usize = 40; // LCD.x + (LCD.w - (CELLS * CELL_STEP - (CELL_STEP - CELL_W))) / 2
-const CELL_Y: usize = 37; // LCD.y + (LCD.h - CELL_H) / 2
+/// The first cell's corner: the row of cells centred in the LCD (40, 37, which calculator.c's
+/// place_sprite calls write as numbers).
+const CELL_X: usize = LCD.x as usize + (LCD.w as usize - (CELLS * CELL_STEP - (CELL_STEP - CELL_W))) / 2;
+const CELL_Y: usize = LCD.y as usize + (LCD.h as usize - CELL_H) / 2;
+const _: () = assert!(CELL_X == 40 && CELL_Y == 37, "calculator.c places the digits at (40 + 20 * cell, 37)");
 
 const GRID_X: f32 = 20.0;
 const GRID_Y: f32 = 92.0;

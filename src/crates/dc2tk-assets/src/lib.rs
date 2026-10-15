@@ -15,6 +15,7 @@ pub mod font;
 pub mod im3;
 pub mod mds;
 pub mod mot;
+pub mod png;
 pub mod sequence;
 pub mod soundbank;
 
@@ -34,6 +35,7 @@ pub mod to_gltf;
 
 // textures and sounds for mods
 pub mod music;
+pub mod quantise;
 pub mod soundfont;
 pub mod sounds;
 pub mod textures;

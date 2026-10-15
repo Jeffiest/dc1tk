@@ -164,7 +164,7 @@ fn new_picture(
     if others.iter().any(|image: &im3::Image| image.name.eq_ignore_ascii_case(name)) {
         return Err(fail("two pictures of this name (ignoring case)".into()));
     }
-    let decoded = im3::read_png(png).map_err(|error| fail(error.to_string()))?;
+    let decoded = crate::png::read_png(png).map_err(|error| fail(error.to_string()))?;
     let (w, h) = (decoded.width, decoded.height);
     if !(1..=MAX_SIDE).contains(&w) || !(1..=MAX_SIDE).contains(&h) {
         return Err(fail(format!("{w}x{h}: sides are 1 to {MAX_SIDE} texels")));
@@ -203,8 +203,8 @@ pub fn same_pixels(a: &[u8], b: &[u8]) -> Result<bool> {
     if a == b {
         return Ok(true);
     }
-    let (a, b) = (im3::read_png(a)?, im3::read_png(b)?);
-    Ok(a.width == b.width && a.height == b.height && im3::png_rgba(&a)? == im3::png_rgba(&b)?)
+    let (a, b) = (crate::png::read_png(a)?, crate::png::read_png(b)?);
+    Ok(a.width == b.width && a.height == b.height && a.rgba() == b.rgba())
 }
 
 /// (picture name, PNG) for every PNG a mod gives for a new texture file: the file itself, or each
@@ -235,7 +235,8 @@ pub fn build_new(source: &Path, template: &[u8], picture: Option<usize>) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use im3::{Format, Image, PngMode};
+    use crate::png::PngMode;
+    use im3::{Format, Image};
 
     fn sample_texture_file() -> Vec<u8> {
         let mut image = Image::new("tex01", Format::T8, 16, 16);
@@ -272,7 +273,7 @@ mod tests {
         let data = sample_texture_file();
         let folder = temp_folder("partial");
         // tex02 in blue; tex01 is left out and keeps its pixels
-        let blue = im3::write_png(8, 8, PngMode::Rgb, &[0, 0, 255].repeat(64), &[], &[]).unwrap();
+        let blue = crate::png::write_png(8, 8, PngMode::Rgb, &[0, 0, 255].repeat(64), &[], &[]).unwrap();
         std::fs::write(folder.join("tex02.png"), blue).unwrap();
         let built = im3::read(&build(&folder, &data).unwrap()).unwrap();
         std::fs::remove_dir_all(folder).unwrap();
@@ -284,8 +285,11 @@ mod tests {
     fn a_png_for_no_picture_is_refused_with_the_names_there_are() {
         let data = sample_texture_file();
         let folder = temp_folder("refused");
-        std::fs::write(folder.join("tex99.png"), im3::write_png(8, 8, PngMode::Rgb, &[0; 192], &[], &[]).unwrap())
-            .unwrap();
+        std::fs::write(
+            folder.join("tex99.png"),
+            crate::png::write_png(8, 8, PngMode::Rgb, &[0; 192], &[], &[]).unwrap(),
+        )
+        .unwrap();
         let error = build(&folder, &data).unwrap_err().to_string();
         std::fs::remove_dir_all(folder).unwrap();
         assert!(error.contains("tex01") && error.contains("tex02"), "{error}");
@@ -304,7 +308,7 @@ mod tests {
     fn rgba_png(w: usize, h: usize, seed: u8) -> Vec<u8> {
         let colours = [[255, 0, 0, 255], [0, 255, seed, 255], [0, 0, 255, 0], [seed, 200, 100, 255]];
         let data: Vec<u8> = (0..w * h).flat_map(|i| colours[(i / 3 + i / w) % 4]).collect();
-        im3::write_png(w, h, PngMode::Rgba, &data, &[], &[]).unwrap()
+        crate::png::write_png(w, h, PngMode::Rgba, &data, &[], &[]).unwrap()
     }
 
     #[test]
@@ -334,8 +338,8 @@ mod tests {
         let exported = export(&built).unwrap();
         for ((name, png), (file, again)) in pngs.iter().zip(&exported) {
             assert_eq!(*file, format!("{name}.png"));
-            let (a, b) = (im3::read_png(png).unwrap(), im3::read_png(again).unwrap());
-            let rgba = |p: &im3::Png| -> Vec<u8> {
+            let (a, b) = (crate::png::read_png(png).unwrap(), crate::png::read_png(again).unwrap());
+            let rgba = |p: &crate::png::Png| -> Vec<u8> {
                 if p.paletted {
                     p.data.iter().flat_map(|&i| p.palette[i as usize]).collect()
                 } else {
@@ -370,7 +374,7 @@ mod tests {
     #[test]
     fn new_pictures_go_at_the_end_in_the_first_pictures_format() {
         let data = sample_texture_file();
-        let red = im3::write_png(16, 16, PngMode::Rgb, &[255, 0, 0].repeat(256), &[], &[]).unwrap();
+        let red = crate::png::write_png(16, 16, PngMode::Rgb, &[255, 0, 0].repeat(256), &[], &[]).unwrap();
         let grown = with_new_pictures(&[("wood".into(), red.clone())], &data).unwrap();
         let images = im3::read(&grown).unwrap();
         let names: Vec<&str> = images.iter().map(|image| image.name.as_str()).collect();
@@ -382,18 +386,19 @@ mod tests {
         assert!(same_pixels(&wood.1, &red).unwrap());
         // a name taken, or a side that is not a power of two
         assert!(with_new_pictures(&[("TEX01".into(), red.clone())], &data).is_err());
-        let odd = im3::write_png(12, 16, PngMode::Rgb, &[0; 12 * 16 * 3], &[], &[]).unwrap();
+        let odd = crate::png::write_png(12, 16, PngMode::Rgb, &[0; 12 * 16 * 3], &[], &[]).unwrap();
         assert!(with_new_pictures(&[("odd".into(), odd)], &data).is_err());
     }
 
     #[test]
     fn same_pixels_ignores_the_encoding() {
-        let rgb = im3::write_png(2, 1, PngMode::Rgb, &[1, 2, 3, 4, 5, 6], &[], &[]).unwrap();
-        let rgba = im3::write_png(2, 1, PngMode::Rgba, &[1, 2, 3, 255, 4, 5, 6, 255], &[], &[]).unwrap();
-        let paletted = im3::write_png(2, 1, PngMode::P, &[1, 0], &[[4, 5, 6, 255], [1, 2, 3, 255]], &[]).unwrap();
+        let rgb = crate::png::write_png(2, 1, PngMode::Rgb, &[1, 2, 3, 4, 5, 6], &[], &[]).unwrap();
+        let rgba = crate::png::write_png(2, 1, PngMode::Rgba, &[1, 2, 3, 255, 4, 5, 6, 255], &[], &[]).unwrap();
+        let paletted =
+            crate::png::write_png(2, 1, PngMode::P, &[1, 0], &[[4, 5, 6, 255], [1, 2, 3, 255]], &[]).unwrap();
         assert!(same_pixels(&rgb, &rgba).unwrap());
         assert!(same_pixels(&rgb, &paletted).unwrap());
-        let other = im3::write_png(2, 1, PngMode::Rgb, &[1, 2, 3, 4, 5, 7], &[], &[]).unwrap();
+        let other = crate::png::write_png(2, 1, PngMode::Rgb, &[1, 2, 3, 4, 5, 7], &[], &[]).unwrap();
         assert!(!same_pixels(&rgb, &other).unwrap());
     }
 

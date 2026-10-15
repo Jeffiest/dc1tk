@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn an_edited_texture_is_found() {
         let report = run("edited", |written| {
-            let png = im3::write_png(8, 8, im3::PngMode::Rgb, &[0, 0, 255].repeat(64), &[], &[]).unwrap();
+            let png = crate::png::write_png(8, 8, crate::png::PngMode::Rgb, &[0, 0, 255].repeat(64), &[], &[]).unwrap();
             written.insert("textures/map/a/tex02.png".to_string(), png);
         });
         // its hash, and both places it is at

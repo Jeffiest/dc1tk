@@ -200,28 +200,13 @@ pub fn placeholder_png(name: &str) -> Vec<u8> {
     let h = hasher.sum();
     let c1 = [(h & 0xFF) as u8, ((h >> 8) & 0xFF) as u8, ((h >> 16) & 0xFF) as u8];
     let c2 = c1.map(|x| 255 - x);
-    let mut rows = Vec::new();
+    let mut pixels = Vec::with_capacity(8 * 8 * 3);
     for y in 0..8 {
-        rows.push(0);
         for x in 0..8 {
-            rows.extend(if (x / 2 + y / 2) % 2 == 1 { c1 } else { c2 });
+            pixels.extend(if (x / 2 + y / 2) % 2 == 1 { c1 } else { c2 });
         }
     }
-    let chunk = |tag: &[u8], data: &[u8]| {
-        let mut out = (data.len() as u32).to_be_bytes().to_vec();
-        out.extend(tag);
-        out.extend(data);
-        let mut hasher = flate2::Crc::new();
-        hasher.update(tag);
-        hasher.update(data);
-        out.extend(hasher.sum().to_be_bytes());
-        out
-    };
-    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
-    out.extend(chunk(b"IHDR", &[0, 0, 0, 8, 0, 0, 0, 8, 8, 2, 0, 0, 0]));
-    out.extend(chunk(b"IDAT", &im3::compress(&rows, 6)));
-    out.extend(chunk(b"IEND", b""));
-    out
+    crate::png::write_png(8, 8, crate::png::PngMode::Rgb, &pixels, &[], &[]).expect("an 8x8 PNG writes")
 }
 
 /// Per vertex up to 4 (bone frame, weight) pairs, in file order, weights normalised; a vertex no

@@ -118,8 +118,8 @@ fn malformed_texture_archives_are_errors_not_panics() {
     });
     let png = im3::to_png(&im3::read(&data).unwrap()[0], true).unwrap();
     sweep("PNG", &png, |data| {
-        if let Ok(png) = im3::read_png(data) {
-            let _ = im3::png_rgba(&png);
+        if let Ok(png) = crate::png::read_png(data) {
+            let _ = png.rgba();
         }
     });
 }
