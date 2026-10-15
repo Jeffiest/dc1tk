@@ -600,184 +600,282 @@ struct Brought {
     variables: IndexMap<String, String>,
 }
 
-/// The script program with one patch merged in. program has had its libraries included; patch and
-/// consts come from prepared.
-pub fn merged(
-    program: &Node,
-    done: &mut Done,
-    patch: &Node,
-    consts: &IndexMap<String, Node>,
-    module: &str,
-) -> Result<Node> {
-    if patch["natives"].is_set() && program["natives"].is_set() && !patch["natives"].same_value(&program["natives"]) {
-        return Err(Error::invalid(format!(
-            "the patch uses {} natives, but the script is an {} script",
-            patch["natives"].plain_text(),
-            program["natives"].plain_text()
-        )));
+/// One patch being merged into a script: what the script has, the patch's functions that join it,
+/// and the names those functions and the patch's globals are given there.
+struct Merge<'a> {
+    program: &'a Node,
+    patch: &'a Node,
+    consts: &'a IndexMap<String, Node>,
+    module: &'a str,
+    /// The script's functions, overrides put in as they are merged.
+    functions: Vec<Node>,
+    function_names: HashSet<String>,
+    global_names: HashSet<String>,
+    /// Every name the script has or the patch has been given.
+    taken: HashSet<String>,
+    /// The patch's functions the script knows by other names: renamed ones, and the libraries'
+    /// functions an earlier mod brought in.
+    calls: IndexMap<String, String>,
+    /// The patch's globals the script knows by other names.
+    variables: IndexMap<String, String>,
+    /// The patch's own functions: all but those of libraries the script or an earlier mod has.
+    mine: Vec<&'a Node>,
+    /// The libraries this patch brings, with the names their functions and globals are given.
+    libraries: IndexMap<String, Brought>,
+    /// {override: the name its wrapper of a native is given}.
+    wrapper_names: HashMap<String, String>,
+    /// The natives the script and the patch declare, by name.
+    natives: HashMap<&'a str, &'a Node>,
+}
+
+fn is_override(function: &Node) -> bool {
+    function["override"].is_set()
+}
+
+/// What an override replaces: the native after #pragma override, else its own name.
+fn overridden_name(function: &Node) -> String {
+    function["override_of"].as_str().unwrap_or(function.text("name")).to_string()
+}
+
+impl<'a> Merge<'a> {
+    fn new(program: &'a Node, patch: &'a Node, consts: &'a IndexMap<String, Node>, module: &'a str) -> Merge<'a> {
+        let functions: Vec<Node> = program.list("functions").to_vec();
+        let function_names: HashSet<String> =
+            functions.iter().map(|function| function.text("name").to_string()).collect();
+        let global_names: HashSet<String> =
+            program.list("globals").iter().map(|declared| declared.text("name").to_string()).collect();
+        let taken = function_names.union(&global_names).cloned().collect();
+        let natives = program["declarations"]
+            .list("natives")
+            .iter()
+            .chain(patch["declarations"].list("natives"))
+            .map(|declared| (declared.text("name"), declared))
+            .collect();
+        Merge {
+            program,
+            patch,
+            consts,
+            module,
+            functions,
+            function_names,
+            global_names,
+            taken,
+            calls: IndexMap::new(),
+            variables: IndexMap::new(),
+            mine: Vec::new(),
+            libraries: IndexMap::new(),
+            wrapper_names: HashMap::new(),
+            natives,
+        }
     }
-    let mut functions: Vec<Node> = program.list("functions").to_vec();
-    let script_libraries: HashSet<&str> =
-        functions.iter().filter_map(|function| function["library"].as_str()).collect();
-    let function_names: HashSet<String> = functions.iter().map(|function| function.text("name").to_string()).collect();
-    let global_names: HashSet<String> =
-        program.list("globals").iter().map(|declared| declared.text("name").to_string()).collect();
-    let mut taken: HashSet<String> = function_names.union(&global_names).cloned().collect();
-    let mut calls: IndexMap<String, String> = IndexMap::new();
-    let mut variables: IndexMap<String, String> = IndexMap::new();
-    let mut mine: Vec<&Node> = Vec::new();
-    let mut libraries: IndexMap<String, Brought> = IndexMap::new();
-    for function in patch.list("functions") {
-        if function.kind() != "function" {
-            return Err(Error::invalid(format!("a patch cannot hold asm functions ({})", function.text("name"))));
-        }
-        let source = function["library"].as_str();
-        if source.is_some_and(|source| script_libraries.contains(source)) {
-            continue;
-        }
-        if let Some(brought) = source.and_then(|source| done.libraries.get(source)) {
-            // an earlier mod brought this library in; use its copy, under the names it was given
-            calls.extend(brought.calls.iter().map(|(from, to)| (from.clone(), to.clone())));
-            continue;
-        }
-        mine.push(function);
-        if let Some(source) = source {
-            libraries.entry(source.to_string()).or_default();
-        }
+
+    /// The name the script knows one of the patch's functions by.
+    fn given_name(&self, name: &str) -> String {
+        self.calls.get(name).cloned().unwrap_or_else(|| name.to_string())
     }
-    let is_override = |function: &Node| function["override"].is_set();
-    for function in &mine {
-        let name = function.text("name");
-        if is_override(function) || !taken.contains(name) {
-            continue;
-        }
-        if !done.added.contains(name) {
-            return Err(Error::invalid(format!(
-                "the script already has {name}; put #pragma override before it to replace it, or rename it"
-            )));
-        }
-        let fresh = fresh_name(&format!("{}_{}", name, mod_identifier(module)), &mut taken);
-        calls.insert(name.to_string(), fresh);
+
+    /// A name of the patch's made the mod's own, as it is taken in the script.
+    fn fresh(&mut self, name: &str) -> String {
+        fresh_name(&format!("{}_{}", name, mod_identifier(self.module)), &mut self.taken)
     }
-    for function in &mine {
-        if !is_override(function) {
-            let name = function.text("name");
-            taken.insert(calls.get(name).cloned().unwrap_or_else(|| name.to_string()));
-        }
-    }
-    // an override of a native the script has no function of wraps it, under a name of its own; a
-    // wrapper named otherwise than the native can be called by its name too
-    let natives: HashMap<&str, &Node> = program["declarations"]
-        .list("natives")
-        .iter()
-        .chain(patch["declarations"].list("natives"))
-        .map(|declared| (declared.text("name"), declared))
-        .collect();
-    let overridden_name =
-        |function: &Node| function["override_of"].as_str().unwrap_or(function.text("name")).to_string();
-    let mut wrapper_names: HashMap<String, String> = HashMap::new();
-    for function in mine.iter().filter(|function| is_override(function)) {
-        let (name, target) = (function.text("name"), overridden_name(function));
-        if function_names.contains(&target) || !natives.contains_key(target.as_str()) {
-            continue;
-        }
-        let fresh = fresh_name(&format!("{}_{}", name, mod_identifier(module)), &mut taken);
-        if name != target {
-            calls.insert(name.to_string(), fresh.clone());
-        }
-        wrapper_names.insert(name.to_string(), fresh);
-    }
-    let mut added_globals = Vec::new();
-    for declared in patch.list("globals") {
-        let name = declared.text("name").to_string();
-        let source = declared["source"].as_str();
-        if let Some(brought) = source.and_then(|source| done.libraries.get(source)) {
-            variables.extend(brought.variables.iter().map(|(from, to)| (from.clone(), to.clone())));
-            continue;
-        }
-        if global_names.contains(&name) && !done.added.contains(&name) {
-            return Err(Error::invalid(format!("the script already has a global {name}; rename the patch's")));
-        }
-        if taken.contains(&name) {
-            let fresh = fresh_name(&format!("{}_{}", name, mod_identifier(module)), &mut taken);
-            variables.insert(name.clone(), fresh);
-        } else {
-            taken.insert(name.clone());
-        }
-        let given = variables.get(&name).cloned().unwrap_or_else(|| name.clone());
-        if let Some(source) = source {
-            libraries.entry(source.to_string()).or_default().variables.insert(name.clone(), given.clone());
-        }
-        let mut out = declared.clone().with("name", given);
-        if let Some(map) = out.as_object_mut() {
-            map.remove("source");
-        }
-        added_globals.push(out);
-    }
-    // what the globals' values name (another global's address, a function) follows renaming too,
-    // once every name is known
-    let added_globals: Vec<Node> = added_globals
-        .into_iter()
-        .map(|mut declared| {
-            for key in ["init", "inits"] {
-                if let Some(value) = declared.get(key) {
-                    let value = renamed(
-                        &sdk::with_constants(value, consts, &HashSet::new()),
-                        &calls,
-                        &variables,
-                        &HashSet::new(),
-                    );
-                    declared[key] = value;
-                }
+
+    /// The patch's own functions: a library the script includes itself is the script's, and one
+    /// an earlier mod brought in is used under the names it was given there.
+    fn collect(&mut self, done: &Done) -> Result<()> {
+        let script_libraries: HashSet<&str> =
+            self.functions.iter().filter_map(|function| function["library"].as_str()).collect();
+        for function in self.patch.list("functions") {
+            if function.kind() != "function" {
+                return Err(Error::invalid(format!("a patch cannot hold asm functions ({})", function.text("name"))));
             }
-            declared
-        })
-        .collect();
-    let mut all_globals = global_names.clone();
-    all_globals.extend(patch.list("globals").iter().map(|declared| declared.text("name").to_string()));
-    for function in &mine {
-        if let Some(source) = function["library"].as_str().filter(|_| !is_override(function)) {
-            let name = function.text("name");
-            let given = calls.get(name).cloned().unwrap_or_else(|| name.to_string());
-            libraries.get_mut(source).unwrap().calls.insert(name.to_string(), given);
+            let source = function["library"].as_str();
+            if source.is_some_and(|source| script_libraries.contains(source)) {
+                continue;
+            }
+            if let Some(brought) = source.and_then(|source| done.libraries.get(source)) {
+                self.calls.extend(brought.calls.iter().map(|(from, to)| (from.clone(), to.clone())));
+                continue;
+            }
+            self.mine.push(function);
+            if let Some(source) = source {
+                self.libraries.entry(source.to_string()).or_default();
+            }
         }
+        Ok(())
     }
-    let mut position: HashMap<String, usize> =
-        functions.iter().enumerate().map(|(number, function)| (function.text("name").to_string(), number)).collect();
-    let mut appended = Vec::new();
-    for function in &mine {
-        let name = function.text("name");
-        if function["every_frame"].is_set() {
-            if !function.list("params").is_empty() || is_override(function) {
+
+    /// The names the patch's added functions take: a name the script has is refused (the patch
+    /// most likely meant to override it) unless an earlier mod added it, when this mod's is
+    /// renamed.
+    fn plan_renames(&mut self, done: &Done) -> Result<()> {
+        for function in self.mine.clone() {
+            let name = function.text("name");
+            if is_override(function) || !self.taken.contains(name) {
+                continue;
+            }
+            if !done.added.contains(name) {
                 return Err(Error::invalid(format!(
-                    "#pragma every_frame {name}: an every-frame function takes no parameters and overrides nothing"
+                    "the script already has {name}; put #pragma override before it to replace it, or rename it"
                 )));
             }
-            done.every_frame.push(calls.get(name).cloned().unwrap_or_else(|| name.to_string()));
+            let fresh = self.fresh(name);
+            self.calls.insert(name.to_string(), fresh);
         }
-        if !is_override(function) {
-            appended.push(joined(function, consts, &calls, &variables, &all_globals, module, None)?);
-            done.added.insert(calls.get(name).cloned().unwrap_or_else(|| name.to_string()));
-            continue;
+        for function in self.mine.clone().into_iter().filter(|function| !is_override(function)) {
+            let given = self.given_name(function.text("name"));
+            self.taken.insert(given);
         }
+        Ok(())
+    }
+
+    /// An override of a native the script has no function of wraps it, under a name of its own; a
+    /// wrapper named otherwise than the native can be called by its name too.
+    fn native_wrappers(&mut self) {
+        for function in self.mine.clone().into_iter().filter(|function| is_override(function)) {
+            let (name, target) = (function.text("name"), overridden_name(function));
+            if self.function_names.contains(&target) || !self.natives.contains_key(target.as_str()) {
+                continue;
+            }
+            let fresh = self.fresh(name);
+            if name != target {
+                self.calls.insert(name.to_string(), fresh.clone());
+            }
+            self.wrapper_names.insert(name.to_string(), fresh);
+        }
+    }
+
+    /// The patch's globals as they join the script, renamed where another mod's take the name;
+    /// those of a library an earlier mod brought are that mod's. Their values follow the
+    /// renaming once every name is known.
+    fn globals(&mut self, done: &Done) -> Result<Vec<Node>> {
+        let mut added = Vec::new();
+        for declared in self.patch.list("globals") {
+            let name = declared.text("name").to_string();
+            let source = declared["source"].as_str();
+            if let Some(brought) = source.and_then(|source| done.libraries.get(source)) {
+                self.variables.extend(brought.variables.iter().map(|(from, to)| (from.clone(), to.clone())));
+                continue;
+            }
+            if self.global_names.contains(&name) && !done.added.contains(&name) {
+                return Err(Error::invalid(format!("the script already has a global {name}; rename the patch's")));
+            }
+            if self.taken.contains(&name) {
+                let fresh = self.fresh(&name);
+                self.variables.insert(name.clone(), fresh);
+            } else {
+                self.taken.insert(name.clone());
+            }
+            let given = self.variables.get(&name).cloned().unwrap_or_else(|| name.clone());
+            if let Some(source) = source {
+                self.libraries.entry(source.to_string()).or_default().variables.insert(name.clone(), given.clone());
+            }
+            let mut out = declared.clone().with("name", given);
+            if let Some(map) = out.as_object_mut() {
+                map.remove("source");
+            }
+            added.push(out);
+        }
+        // what the globals' values name (another global's address, a function) follows renaming
+        Ok(added
+            .into_iter()
+            .map(|mut declared| {
+                for key in ["init", "inits"] {
+                    if let Some(value) = declared.get(key) {
+                        let value = sdk::with_constants(value, self.consts, &HashSet::new());
+                        declared[key] = renamed(&value, &self.calls, &self.variables, &HashSet::new());
+                    }
+                }
+                declared
+            })
+            .collect())
+    }
+
+    /// The patch function ready to join the script (joined).
+    fn joined(&self, function: &Node, all_globals: &HashSet<String>, before: Option<&str>) -> Result<Node> {
+        joined(function, self.consts, &self.calls, &self.variables, all_globals, self.module, before)
+    }
+
+    /// The patch's functions put in: added ones and chaining overrides appended (returned),
+    /// overrides that replace a function put in its place, native wrappers kept for
+    /// with_wrappers.
+    fn functions(&mut self, done: &mut Done, all_globals: &HashSet<String>) -> Result<Vec<Node>> {
+        for function in &self.mine {
+            if let Some(source) = function["library"].as_str().filter(|_| !is_override(function)) {
+                let name = function.text("name");
+                let given = self.given_name(name);
+                self.libraries.get_mut(source).unwrap().calls.insert(name.to_string(), given);
+            }
+        }
+        let mut position: HashMap<String, usize> = self
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(number, function)| (function.text("name").to_string(), number))
+            .collect();
+        let mut appended = Vec::new();
+        for function in self.mine.clone() {
+            let name = function.text("name");
+            if function["every_frame"].is_set() {
+                if !function.list("params").is_empty() || is_override(function) {
+                    return Err(Error::invalid(format!(
+                        "#pragma every_frame {name}: an every-frame function takes no parameters and overrides nothing"
+                    )));
+                }
+                done.every_frame.push(self.given_name(name));
+            }
+            if !is_override(function) {
+                appended.push(self.joined(function, all_globals, None)?);
+                done.added.insert(self.given_name(name));
+                continue;
+            }
+            if let Some(fresh) = self.wrapper_names.get(name) {
+                let wrapper = self.native_wrapper(function, fresh, done, all_globals)?;
+                done.wrappers.entry(overridden_name(function)).or_default().push(wrapper);
+                continue;
+            }
+            if let Some(chained) = self.override_function(function, &mut position, done, all_globals)? {
+                appended.push(chained);
+            }
+        }
+        Ok(appended)
+    }
+
+    /// An override that wraps a native: the wrapper, named fresh, which with_wrappers places.
+    fn native_wrapper(
+        &self,
+        function: &Node,
+        fresh: &str,
+        done: &mut Done,
+        all_globals: &HashSet<String>,
+    ) -> Result<Node> {
         let target = overridden_name(function);
         let chains = names::callees(&function["body"]).iter().any(|callee| callee == ORIGINAL);
-        if let Some(fresh) = wrapper_names.get(name) {
-            wraps(natives[target.as_str()], function, &target)?;
-            let earlier = done.overrides.get(&target).cloned().unwrap_or_default();
-            if !earlier.is_empty() && !chains {
-                return Err(Error::invalid(format!(
-                    "{} replaces native {}, which mod {} wraps too; call original() in one of them to run both",
-                    module,
-                    target,
-                    earlier.join(", ")
-                )));
-            }
-            let wrapper = joined(function, consts, &calls, &variables, &all_globals, module, Some(ORIGINAL))?;
-            done.wrappers.entry(target.clone()).or_default().push(wrapper.with("name", fresh.as_str()));
-            done.overrides.entry(target).or_default().push(module.to_string());
-            continue;
+        wraps(self.natives[target.as_str()], function, &target)?;
+        let earlier = done.overrides.get(&target).cloned().unwrap_or_default();
+        if !earlier.is_empty() && !chains {
+            return Err(Error::invalid(format!(
+                "{} replaces native {}, which mod {} wraps too; call original() in one of them to run both",
+                self.module,
+                target,
+                earlier.join(", ")
+            )));
         }
+        let wrapper = self.joined(function, all_globals, Some(ORIGINAL))?;
+        done.overrides.entry(target).or_default().push(self.module.to_string());
+        Ok(wrapper.with("name", fresh))
+    }
+
+    /// An override of one of the script's functions: in the function's place, or, when it calls
+    /// original(), appended (returned) with the function it replaces renamed.
+    fn override_function(
+        &mut self,
+        function: &Node,
+        position: &mut HashMap<String, usize>,
+        done: &mut Done,
+        all_globals: &HashSet<String>,
+    ) -> Result<Option<Node>> {
+        let name = function.text("name");
+        let target = overridden_name(function);
         if target != name {
             let what = if position.contains_key(&target) {
                 format!("{target} is the script's function, so call the override {target}")
@@ -797,79 +895,123 @@ pub fn merged(
             };
             return Err(Error::invalid(format!("#pragma override {name}: the script has no function {name}{hint}")));
         };
-        let old = &functions[at];
-        if parameter_count(old) != function.list("params").len() {
+        let old = self.functions[at].clone();
+        if parameter_count(&old) != function.list("params").len() {
             return Err(Error::invalid(format!(
                 "override {} takes {} parameters; the script's {} takes {}",
                 name,
                 function.list("params").len(),
                 name,
-                parameter_count(old)
+                parameter_count(&old)
             )));
         }
+        let chains = names::callees(&function["body"]).iter().any(|callee| callee == ORIGINAL);
         let earlier = done.overrides.get(name).cloned().unwrap_or_default();
         if !earlier.is_empty() && !chains {
             return Err(Error::invalid(format!(
                 "{} replaces {}, which mod {} overrides too; call original() in one of them to run both",
-                module,
+                self.module,
                 name,
                 earlier.join(", ")
             )));
         }
-        if chains {
-            let before = fresh_name(&format!("{}_before_{}", name, mod_identifier(module)), &mut taken);
-            functions[at] = old.clone().with("name", before.as_str());
+        let chained = if chains {
+            let before = fresh_name(&format!("{}_before_{}", name, mod_identifier(self.module)), &mut self.taken);
+            self.functions[at] = old.with("name", before.as_str());
             position.remove(name);
             position.insert(before.clone(), at);
-            appended.push(joined(function, consts, &calls, &variables, &all_globals, module, Some(&before))?);
+            Some(self.joined(function, all_globals, Some(&before))?)
         } else {
-            functions[at] = joined(function, consts, &calls, &variables, &all_globals, module, None)?;
-        }
-        let mut owners = earlier;
-        owners.push(module.to_string());
-        done.overrides.insert(name.to_string(), owners);
-    }
-    let mut numbering: HashMap<String, i64> = HashMap::new();
-    for declared in program["declarations"].list("programs").iter().chain(patch["declarations"].list("programs")) {
-        numbering.insert(declared.text("name").to_string(), declared["no"].as_i64().unwrap_or(0));
-    }
-    let mut present: HashMap<Option<i64>, String> = HashMap::new();
-    for entry in program.list("programs") {
-        present.insert(program_number(&entry["no"], &numbering, &IndexMap::new()), entry["function"].plain_text());
-    }
-    let mut programs: Vec<Node> = program.list("programs").to_vec();
-    for entry in patch.list("programs") {
-        let (written, function) = (entry["no"].plain_text(), entry["function"].plain_text());
-        let Some(number) = program_number(&entry["no"], &numbering, consts) else {
-            return Err(Error::invalid(format!(
-                "PROGRAM({written}, {function}): {written} is not a program number or name"
-            )));
+            self.functions[at] = self.joined(function, all_globals, None)?;
+            None
         };
-        if let Some(runner) = present.get(&Some(number)) {
-            return Err(Error::invalid(format!(
-                "PROGRAM({written}, {function}): the script already has program {written}, run by {runner}; override {runner} instead"
-            )));
-        }
-        present.insert(Some(number), function.clone());
-        let given = calls.get(&function).cloned().unwrap_or(function);
-        programs.push(node!({"no": number, "function": given}));
+        let mut owners = earlier;
+        owners.push(self.module.to_string());
+        done.overrides.insert(name.to_string(), owners);
+        Ok(chained)
     }
+
+    /// The script's programs with the patch's PROGRAM lines added; a program the script has
+    /// already is refused (its function is to be overridden instead).
+    fn programs(&self) -> Result<Vec<Node>> {
+        let (program, patch) = (self.program, self.patch);
+        let mut numbering: HashMap<String, i64> = HashMap::new();
+        for declared in program["declarations"].list("programs").iter().chain(patch["declarations"].list("programs")) {
+            numbering.insert(declared.text("name").to_string(), declared["no"].as_i64().unwrap_or(0));
+        }
+        let mut present: HashMap<Option<i64>, String> = HashMap::new();
+        for entry in program.list("programs") {
+            present.insert(program_number(&entry["no"], &numbering, &IndexMap::new()), entry["function"].plain_text());
+        }
+        let mut programs: Vec<Node> = program.list("programs").to_vec();
+        for entry in patch.list("programs") {
+            let (written, function) = (entry["no"].plain_text(), entry["function"].plain_text());
+            let Some(number) = program_number(&entry["no"], &numbering, self.consts) else {
+                return Err(Error::invalid(format!(
+                    "PROGRAM({written}, {function}): {written} is not a program number or name"
+                )));
+            };
+            if let Some(runner) = present.get(&Some(number)) {
+                return Err(Error::invalid(format!(
+                    "PROGRAM({written}, {function}): the script already has program {written}, run by {runner}; override {runner} instead"
+                )));
+            }
+            present.insert(Some(number), function.clone());
+            programs.push(node!({"no": number, "function": self.given_name(&function)}));
+        }
+        Ok(programs)
+    }
+}
+
+/// The script's globals with the added ones after them, and the count of global slots the merged
+/// script declares (global_num). Slots the script counts but never names are named, so the
+/// patch's stay clear of them. A patch that adds no global leaves the count as the script has it,
+/// which in some scripts is no count at all (0xCCCCCCCC, the compiler's fill); otherwise, or when
+/// the script gives none, the count is the slots the globals take.
+fn merged_globals(program: &Node, added: Vec<Node>) -> (Vec<Node>, Node) {
     let mut globals: Vec<Node> = program.list("globals").to_vec();
     // a global array or struct takes several slots
     let slots =
         |globals: &[Node]| -> i64 { globals.iter().map(|declared| declared["size"].as_i64().unwrap_or(1)).sum() };
     let global_num = program["global_num"].as_i64().unwrap_or(0).max(0);
     while slots(&globals) < global_num {
-        // slots the script counts but never names: keep them clear of the patch's
         globals.push(node!({"name": format!("unnamed_global_{}", globals.len()), "type": "int"}));
     }
+    let kept: Option<Node> = Some(program["global_num"].clone()).filter(|count| added.is_empty() && !count.is_null());
+    globals.extend(added);
+    let count = kept.unwrap_or_else(|| Node::from(slots(&globals)));
+    (globals, count)
+}
+
+/// The script program with one patch merged in. program has had its libraries included; patch and
+/// consts come from prepared.
+pub fn merged(
+    program: &Node,
+    done: &mut Done,
+    patch: &Node,
+    consts: &IndexMap<String, Node>,
+    module: &str,
+) -> Result<Node> {
+    if patch["natives"].is_set() && program["natives"].is_set() && !patch["natives"].same_value(&program["natives"]) {
+        return Err(Error::invalid(format!(
+            "the patch uses {} natives, but the script is an {} script",
+            patch["natives"].plain_text(),
+            program["natives"].plain_text()
+        )));
+    }
+    let mut merge = Merge::new(program, patch, consts, module);
+    merge.collect(done)?;
+    merge.plan_renames(done)?;
+    merge.native_wrappers();
+    let added_globals = merge.globals(done)?;
+    let mut all_globals = merge.global_names.clone();
+    all_globals.extend(patch.list("globals").iter().map(|declared| declared.text("name").to_string()));
+    let appended = merge.functions(done, &all_globals)?;
+    let programs = merge.programs()?;
     done.added.extend(added_globals.iter().map(|declared| declared.text("name").to_string()));
-    // a patch that adds no global leaves the count as the script has it, which in some scripts
-    // is no count at all (0xCCCCCCCC, the compiler's fill)
-    let count = if added_globals.is_empty() { program["global_num"].clone() } else { Node::Null };
-    globals.extend(added_globals);
-    done.libraries.extend(libraries);
-    let count = if count.is_null() { Node::from(slots(&globals)) } else { count };
+    let (globals, count) = merged_globals(program, added_globals);
+    done.libraries.extend(std::mem::take(&mut merge.libraries));
+    let mut functions = merge.functions;
     functions.extend(appended);
     let natives = if program["natives"].is_set() { program["natives"].clone() } else { patch["natives"].clone() };
     let declarations = merged_declarations(&program["declarations"], &patch["declarations"]);
