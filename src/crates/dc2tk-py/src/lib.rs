@@ -148,49 +148,17 @@ pub fn strip(text: &str) -> &str {
     text.trim_matches(is_space)
 }
 
-/// Digits with single underscores between them, as Python number literals allow; None otherwise.
-fn without_underscores(digits: &str) -> Option<String> {
-    if digits.starts_with('_') || digits.ends_with('_') || digits.contains("__") {
-        return None;
-    }
-    Some(digits.replace('_', ""))
-}
-
-/// int(text, 0): an integer literal with an optional sign and 0x/0o/0b prefix.
+/// int(text, 0): an integer literal with an optional sign and 0x/0o/0b prefix, in any script's
+/// decimal digits; None when it is not one, or does not fit in an i64.
 pub fn parse_int(text: &str) -> Option<i64> {
-    let text = strip(text);
-    let (negative, body) = match text.as_bytes().first() {
-        Some(b'-') => (true, &text[1..]),
-        Some(b'+') => (false, &text[1..]),
-        _ => (false, text),
-    };
-    let lower = body.to_ascii_lowercase();
-    let (radix, rest) = if let Some(rest) = lower.strip_prefix("0x") {
-        (16, rest)
-    } else if let Some(rest) = lower.strip_prefix("0o") {
-        (8, rest)
-    } else if let Some(rest) = lower.strip_prefix("0b") {
-        (2, rest)
-    } else {
-        (10, lower.as_str())
-    };
-    // after a prefix an underscore may come first ("0x_1f")
-    let rest = if radix != 10 { rest.strip_prefix('_').unwrap_or(rest) } else { rest };
-    let digits = without_underscores(rest)?;
-    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
-        return None;
-    }
-    if radix == 10 && digits.len() > 1 && digits.starts_with('0') && digits.chars().any(|c| c != '0') {
-        return None;
-    }
-    let magnitude = i128::from_str_radix(&digits, radix).ok()?;
-    let value = if negative { -magnitude } else { magnitude };
-    i64::try_from(value).ok()
+    int_base(text, 0).ok().and_then(|value| i64::try_from(value).ok())
 }
 
-/// float(text).
+/// float(text), with any script's decimal digits: whitespace around it, single underscores between
+/// digits, and inf, infinity and nan in any case.
 pub fn parse_float(text: &str) -> Option<f64> {
-    let text = strip(text);
+    let ascii = ascii_digits(text);
+    let text = ascii.trim_matches(|c: char| c.is_ascii() && is_c_space(c as u8));
     let lower = text.to_ascii_lowercase();
     let unsigned = lower.trim_start_matches(['+', '-']);
     if matches!(unsigned, "inf" | "infinity" | "nan") {
@@ -392,8 +360,9 @@ pub fn repr(text: &str) -> String {
     out
 }
 
-/// What int() and float() parse instead of a str: ASCII stays, other whitespace becomes a space and
-/// other decimal digits their ASCII digit; anything else ends the text with '?'.
+/// What int() and float() parse instead of a str (_PyUnicode_TransformDecimalAndSpaceToASCII):
+/// ASCII stays, other whitespace becomes a space and other decimal digits their ASCII digit;
+/// anything else ends the text with '?'.
 pub fn ascii_digits(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -552,6 +521,11 @@ mod tests {
         assert_eq!(parse_int("0x_ff"), Some(255));
         assert_eq!(parse_int("1__0"), None);
         assert_eq!(parse_int("abc"), None);
+        // as int(text, 0) reads them: any script's digits, only ASCII whitespace around
+        assert_eq!(parse_int("\u{661}\u{662}"), Some(12));
+        assert_eq!(parse_int("\u{3000}12"), Some(12));
+        assert_eq!(parse_int("\x1c12"), None);
+        assert_eq!(parse_int("9223372036854775808"), None);
     }
 
     #[test]
@@ -562,6 +536,9 @@ mod tests {
         assert_eq!(parse_float("1._5"), None);
         assert!(parse_float("inf").unwrap().is_infinite());
         assert_eq!(parse_float("0x10"), None);
+        assert_eq!(parse_float("\u{661}.5"), Some(1.5));
+        assert_eq!(parse_float("\u{a0}1.5\u{3000}"), Some(1.5));
+        assert_eq!(parse_float("\x1c1.5"), None);
     }
 
     #[test]
