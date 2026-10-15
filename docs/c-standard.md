@@ -324,7 +324,7 @@ Done (see `src/crates/dc2tk-script/src/lower.rs`, `parse/` and `cpp.rs`):
   `(size_t)x`, `int f(size_t, size_t);`) where a name, `*` or `)` follows (or `,` in a
   parameter list), unless the file declares the name as a variable, enumerator or constant:
   the SDK's value kinds (`flag`, `message`) are names scripts use for variables too.
-- **Strict mode** (`lower.rs`, `sdk.rs`): a store, argument or return converts with `FTOI` or
+- **Strict mode** (`lower.rs`, `sdk/resolve.rs`): a store, argument or return converts with `FTOI` or
   `ITOF` (or the unsigned runtime) where the types differ, constants folded; `&&` and `||`
   whose value is used are followed by `NOT NOT`; and in `a && f()`, `a || f()`, `c ? f() : x`
   and `a, f()` a native `f` is called in an `if` on a hidden local (`t = !!a; if (t) { f(&v);

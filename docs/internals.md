@@ -71,7 +71,8 @@ globals.
 
 `decompile.rs` (in `src/crates/dc2tk-script/src/`) turns a parsed script into a
 program tree (`Node`, `node.rs`: maps and lists that dump as JSON);
-`sdk.rs` presents it with the SDK's names and helpers, and `source.rs` prints
+`sdk/present.rs` presents it with the SDK's names and helpers (`sdk/headers.rs` loads the headers,
+`sdk/resolve.rs` resolves the other way when compiling), and `source.rs` prints
 it as C; `decompiler.rs` runs the three with the definitions.
 
 1. Declarations come from the addressing modes: each slot is used with one
