@@ -31,7 +31,8 @@ use crate::{asm, stb, Error, Result};
 /// a 1 MB stack (a Windows main thread's) in a debug build, whose frames are the largest; the
 /// functions on its way down are kept small for that. Parentheses take three of it each (an
 /// assignment, a ternary and a unary expression), a block, if, loop or switch two (the statement
-/// and itself), so parentheses nest 64 deep, statements 97, and an operator chain is 194 long.
+/// and itself), so parentheses nest 64 deep, statements 97, and an operator chain is 194 long;
+/// a struct defined in a struct's members takes two (the struct and its members' declaration).
 pub const NESTING: usize = 200;
 
 const TYPES: [&str; 3] = ["int", "float", "string"];
@@ -653,257 +654,370 @@ fn tokenize_with(
     headers: Headers,
     depth: usize,
 ) -> Result<Vec<Token>> {
-    // the text grows and shrinks as macros are replaced in it
-    let mut text = cpp::trigraphs(source);
-    let mut file = file.to_string();
-    let mut regions: Vec<cpp::Region> = Vec::new();
-    // __DATE__ and __TIME__, read from the clock when first used
-    let mut when: Option<(String, String)> = None;
-    let mut tokens = Vec::new();
-    let mut comments: Vec<(usize, String)> = Vec::new();
-    let mut conditions: Vec<Block> = Vec::new();
-    let mut position = 0;
-    let mut line = 1;
-    while position < text.len() {
-        let c = text[position];
-        if c == '\n' {
-            line += 1;
-            position += 1;
-            continue;
-        }
-        let directive = if c == '#' { directive_at(&text, position) } else { None };
-        if let Some((word, rest)) = &directive {
-            if CONDITIONALS.contains(&word.as_str()) {
-                conditional_directive(word, rest, &mut conditions, macros, line)?;
-                let (end, joined) = directive_end(&text, position);
-                line += joined;
-                position = end;
+    let lexer = Lexer {
+        // the text grows and shrinks as macros are replaced in it
+        text: cpp::trigraphs(source),
+        macros,
+        file: file.to_string(),
+        headers,
+        depth,
+        regions: Vec::new(),
+        when: None,
+        tokens: Vec::new(),
+        comments: Vec::new(),
+        conditions: Vec::new(),
+        position: 0,
+        line: 1,
+    };
+    lexer.run()
+}
+
+/// The tokenizer's place in a file, and what it has read so far.
+struct Lexer<'a, 'm> {
+    text: Vec<char>,
+    macros: &'m mut Macros,
+    /// The name __FILE__ gives, which #line changes.
+    file: String,
+    headers: Headers<'a>,
+    /// How deep headers include headers here.
+    depth: usize,
+    /// Where macros' replacements are in the text, which they do not expand again.
+    regions: Vec<cpp::Region>,
+    /// __DATE__ and __TIME__, read from the clock when first used.
+    when: Option<(String, String)>,
+    tokens: Vec<Token>,
+    /// The // comments that are a line of their own, by line: what comment_block reads.
+    comments: Vec<(usize, String)>,
+    /// The #if blocks open.
+    conditions: Vec<Block>,
+    position: usize,
+    line: usize,
+}
+
+/// Whether the tokenizer goes on after a directive: #pragma assembly ends the file's tokens.
+enum After {
+    More,
+    Done,
+}
+
+impl Lexer<'_, '_> {
+    fn run(mut self) -> Result<Vec<Token>> {
+        while self.position < self.text.len() {
+            let c = self.text[self.position];
+            if c == '\n' {
+                self.line += 1;
+                self.position += 1;
                 continue;
             }
-        }
-        if conditions.last().is_some_and(|block| !block.on) {
-            position = line_end(&text, position);
-            continue;
-        }
-        if let Some((word, rest)) = &directive {
-            let (end, joined) = directive_end(&text, position);
-            let mut next_line = line + joined;
-            match word.as_str() {
-                "undef" => macros.undefine(strip(before_comment(rest))),
-                "define" => {
-                    let (name, definition) = cpp::parse_define(rest).or_else(|reason| lex_fail(line, reason))?;
-                    if cpp::PREDEFINED.contains(&name.as_str()) || name == "defined" {
-                        return lex_fail(line, format!("{name} cannot be #defined"));
-                    }
-                    let same = |old: &cpp::Macro| {
-                        let spaced = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
-                        old.params == definition.params && spaced(&old.body) == spaced(&definition.body)
-                    };
-                    if macros.table.get(&name).is_some_and(|old| !same(old)) {
-                        return lex_fail(line, format!("{name} is #defined again differently; #undef it first"));
-                    }
-                    if definition.params.is_some() {
-                        macros.define(&name, definition, false);
-                    } else {
-                        let words: Vec<String> = split_first_word(rest).into_iter().map(String::from).collect();
-                        let constant = match words.get(1) {
-                            Some(value) => constant_of(value)?,
-                            None => None,
-                        };
-                        let integer = constant.as_ref().filter(|value| value.kind() == "int");
-                        let integer = integer.and_then(|value| value["value"].as_i64());
-                        macros.define(&name, definition, constant.is_some());
-                        if let Some(integer) = integer {
-                            macros.values.insert(name.clone(), integer as i128);
-                        }
-                        tokens.push(Token::new(Kind::Define(words), line, None));
-                    }
-                }
-                "include" => {
-                    let rest = strip(rest);
-                    let before = headers.map(|_| macros.values.clone());
-                    let system = rest.starts_with('<') && rest.ends_with('>');
-                    let path = if system {
-                        strip(&rest[1..rest.len() - 1]).to_string()
-                    } else {
-                        match directive_words(rest, line)?.as_slice() {
-                            [word] if word.as_object().is_some() => word.text("string").to_string(),
-                            _ => return lex_fail(line, "expected #include \"path\" or #include <path>"),
-                        }
-                    };
-                    // a header's macros, and a library's, reach the file that includes it, as C
-                    // includes it
-                    if let Some(files) = headers {
-                        let key = included_key(&path, system);
-                        *macros = header_macros(&key, files, std::mem::take(macros), depth)?;
-                    }
-                    // the integer constants the file (and what it includes) defines or changes,
-                    // which the including file's constant expressions use as C expands them
-                    let mut constants = Vec::new();
-                    if let Some(before) = before {
-                        let changed = macros.values.iter().filter(|(name, value)| before.get(*name) != Some(value));
-                        constants = changed.map(|(name, value)| (name.clone(), *value)).collect();
-                        constants.sort();
-                    }
-                    tokens.push(Token::new(Kind::Include { path, system, constants }, line, None));
-                }
-                "pragma" => {
-                    let words = directive_words(rest, line)?;
-                    if words.first().is_some_and(|word| *word == "assembly") {
-                        let rest = text_of(&text[(end + 1).min(text.len())..]);
-                        tokens.push(Token::new(Kind::Assembly, line, Some(rest)));
-                        return Ok(tokens);
-                    }
-                    tokens.push(Token::new(Kind::Pragma(words), line, None));
-                }
-                "error" => return lex_fail(line, format!("#error {}", strip(rest))),
-                "line" => {
-                    let expanded =
-                        cpp::expand_text(rest, macros, true, &[]).or_else(|reason| lex_fail(line, reason))?;
-                    let words = directive_words(&expanded.replace(cpp::PAINT, " "), line)?;
-                    let number = words.first().and_then(Node::as_str).and_then(|word| word.parse::<usize>().ok());
-                    let name = words.get(1).map(|word| word.get("string").and_then(Node::as_str));
-                    match (number, name, words.len()) {
-                        (Some(number), None, 1) => next_line = number.saturating_sub(1),
-                        (Some(number), Some(Some(name)), 2) => {
-                            next_line = number.saturating_sub(1);
-                            file = name.to_string();
-                        }
-                        _ => return lex_fail(line, "#line takes a line number and, after it, a file name in quotes"),
-                    }
-                }
-                other => return lex_fail(line, format!("unknown directive #{other}")),
-            }
-            line = next_line;
-            position = end;
-            continue;
-        }
-        if c == '#' && text[position + 1..line_end(&text, position)].iter().all(|c| is_space(*c)) {
-            // the null directive
-            position = line_end(&text, position);
-            continue;
-        }
-        if is_space(c) {
-            position += 1;
-        } else if starts_with(&text, position, "//") {
-            let end = line_end(&text, position);
-            let start = (0..position).rev().find(|&at| text[at] == '\n').map_or(0, |at| at + 1);
-            if strip(&text_of(&text[start..position])).is_empty() {
-                comments.push((line, strip(&text_of(&text[position + 2..end])).to_string()));
-            }
-            position = end;
-        } else if starts_with(&text, position, "/*") {
-            let Some(end) = find(&text, position + 2, "*/") else {
-                return lex_fail(line, "unterminated comment");
-            };
-            line += count_lines(&text, position, end);
-            position = end + 2;
-        } else if c == '"' {
-            let (value, end) = read_string(&text, position, line)?;
-            tokens.push(Token::new(STR, line, Some(value)));
-            position = end;
-        } else if dc2tk_py::is_digit(c)
-            || (c == '.' && text.get(position + 1).is_some_and(|next| next.is_ascii_digit()))
-        {
-            let Some((mut word, suffix, end)) = number_at(&text, position) else {
-                return Err(Error::invalid(format!("line {line}: cannot read the number at {}", repr(&c.to_string()))));
-            };
-            let lower = word.to_lowercase();
-            let hexadecimal = lower.starts_with("0x");
-            let floating =
-                !hexadecimal && (word.contains('.') || lower.contains('e') || suffix.to_lowercase().contains('f'));
-            if floating && !word.contains('.') && !lower.contains('e') {
-                word.push_str(".0");
-            }
-            if floating && suffix.to_lowercase().contains('l') {
-                return lex_fail(line, NO_DOUBLE.replace("double is", "long double is"));
-            }
-            let kind = if floating { Kind::Float } else { Kind::Int { unsigned: suffix.contains(['u', 'U']) } };
-            tokens.push(Token::new(kind, line, Some(word)));
-            position = end;
-        } else if c == '\'' {
-            let (value, end) = read_char(&text, position, line)?;
-            tokens.push(Token::new(INT, line, Some(value.to_string())));
-            position = end;
-        } else if c == 'L' && text.get(position + 1) == Some(&'\'') {
-            // a wide character: its Shift-JIS code, which wchar_t holds
-            let (value, end) =
-                cpp::character_constant(&text[position + 1..]).or_else(|reason| lex_fail(line, reason))?;
-            let value = match char::from_u32(value).filter(|_| text[position + 2] != '\\') {
-                Some(character) => dc2tk_disc::text::encode(&character.to_string())
-                    .ok_or_else(|| Error::invalid(format!("line {line}: {character:?} has no Shift-JIS code")))?
-                    .iter()
-                    .fold(0u32, |code, byte| code << 8 | u32::from(*byte)),
-                None => value,
-            };
-            tokens.push(Token::new(INT, line, Some(value.to_string())));
-            position += 1 + end;
-        } else if c == 'L' && text.get(position + 1) == Some(&'"') {
-            // a wide string: an array of wchar_t, each a character's Shift-JIS code
-            let (value, end) = read_string(&text, position + 1, line)?;
-            tokens.push(Token::new(Kind::Str { wide: true }, line, Some(value)));
-            position = end;
-        } else if c == cpp::PAINT || c.is_ascii_alphabetic() || c == '_' {
-            // a painted name is one a macro's own replacement held, which is never expanded
-            let painted = c == cpp::PAINT;
-            let start = position + usize::from(painted);
-            let end = cpp::word_end(&text, start);
-            let name = text_of(&text[start..end]);
-            if name == "asm" && !painted {
-                let (token, after) = read_asm(&text, end, line)?;
-                tokens.push(token);
-                line += count_lines(&text, position, after);
-                position = after;
-                continue;
-            }
-            if !painted && cpp::expandable(macros, &name, false).is_some() {
-                regions.retain(|region| region.end > position);
-                if !cpp::disabled(&regions, &name, position)
-                    && cpp::expand_at(&mut text, position, end, macros, false, &mut regions)
-                        .or_else(|reason| lex_fail(line, reason))?
-                {
+            let directive = if c == '#' { directive_at(&self.text, self.position) } else { None };
+            if let Some((word, rest)) = &directive {
+                if CONDITIONALS.contains(&word.as_str()) {
+                    conditional_directive(word, rest, &mut self.conditions, self.macros, self.line)?;
+                    self.skip_directive();
                     continue;
                 }
             }
-            position = end;
-            let token = match name.as_str() {
-                "" => continue,
-                "__LINE__" => Token::new(INT, line, Some(line.to_string())),
-                "__FILE__" => Token::new(STR, line, Some(file.clone())),
-                "__DATE__" | "__TIME__" => {
-                    let (date, time) = when.get_or_insert_with(cpp::translation_time);
-                    Token::new(STR, line, Some(if name == "__DATE__" { date.clone() } else { time.clone() }))
+            if self.conditions.last().is_some_and(|block| !block.on) {
+                self.position = line_end(&self.text, self.position);
+                continue;
+            }
+            if let Some((word, rest)) = &directive {
+                if let After::Done = self.directive(word, rest)? {
+                    return Ok(self.tokens);
                 }
-                "__STDC__" => Token::new(INT, line, Some("1".into())),
-                "double" => return lex_fail(line, NO_DOUBLE),
-                _ => {
-                    let mut token = Token::new(Kind::Name, line, Some(name));
-                    let doc = comment_block(&comments, line);
-                    if !doc.is_empty() {
-                        token.doc = Some(doc);
-                    }
-                    token
+                continue;
+            }
+            if c == '#'
+                && self.text[self.position + 1..line_end(&self.text, self.position)].iter().all(|c| is_space(*c))
+            {
+                // the null directive
+                self.position = line_end(&self.text, self.position);
+                continue;
+            }
+            self.token(c)?;
+        }
+        if let Some(block) = self.conditions.last() {
+            return lex_fail(block.line, "#if without #endif");
+        }
+        self.tokens.push(Token::new(Kind::Eof, self.line, Some(String::new())));
+        Ok(self.tokens)
+    }
+
+    /// Past a directive's line (and the lines it splices).
+    fn skip_directive(&mut self) {
+        let (end, joined) = directive_end(&self.text, self.position);
+        self.line += joined;
+        self.position = end;
+    }
+
+    fn push(&mut self, kind: Kind, text: Option<String>) {
+        self.tokens.push(Token::new(kind, self.line, text));
+    }
+
+    /// A directive but the conditionals: #undef, #define, #include, #pragma, #error and #line.
+    fn directive(&mut self, word: &str, rest: &str) -> Result<After> {
+        let line = self.line;
+        let (end, joined) = directive_end(&self.text, self.position);
+        let mut next_line = line + joined;
+        match word {
+            "undef" => self.macros.undefine(strip(before_comment(rest))),
+            "define" => self.define(rest)?,
+            "include" => self.include(rest)?,
+            "pragma" => {
+                let words = directive_words(rest, line)?;
+                if words.first().is_some_and(|word| *word == "assembly") {
+                    let rest = text_of(&self.text[(end + 1).min(self.text.len())..]);
+                    self.push(Kind::Assembly, Some(rest));
+                    return Ok(After::Done);
                 }
-            };
-            tokens.push(token);
-        } else if let Some(op) = LONG_OPERATORS.iter().find(|op| starts_with(&text, position, op)) {
-            tokens.push(Token::new(Kind::Op, line, Some(op.to_string())));
-            position += 3;
-        } else if let Some(op) = OPERATORS.iter().find(|op| starts_with(&text, position, op)) {
-            tokens.push(Token::new(Kind::Op, line, Some(op.to_string())));
-            position += 2;
-        } else if SINGLES.contains(c) {
-            tokens.push(Token::new(Kind::Op, line, Some(c.to_string())));
-            position += 1;
+                self.push(Kind::Pragma(words), None);
+            }
+            "error" => return lex_fail(line, format!("#error {}", strip(rest))),
+            "line" => next_line = self.line_directive(rest)?.unwrap_or(next_line),
+            other => return lex_fail(line, format!("unknown directive #{other}")),
+        }
+        self.line = next_line;
+        self.position = end;
+        Ok(After::More)
+    }
+
+    /// #define: a macro, which is a constant too when its value is one (a number or a string).
+    fn define(&mut self, rest: &str) -> Result<()> {
+        let line = self.line;
+        let (name, definition) = cpp::parse_define(rest).or_else(|reason| lex_fail(line, reason))?;
+        if cpp::PREDEFINED.contains(&name.as_str()) || name == "defined" {
+            return lex_fail(line, format!("{name} cannot be #defined"));
+        }
+        let same = |old: &cpp::Macro| {
+            let spaced = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+            old.params == definition.params && spaced(&old.body) == spaced(&definition.body)
+        };
+        if self.macros.table.get(&name).is_some_and(|old| !same(old)) {
+            return lex_fail(line, format!("{name} is #defined again differently; #undef it first"));
+        }
+        if definition.params.is_some() {
+            self.macros.define(&name, definition, false);
+            return Ok(());
+        }
+        let words: Vec<String> = split_first_word(rest).into_iter().map(String::from).collect();
+        let constant = match words.get(1) {
+            Some(value) => constant_of(value)?,
+            None => None,
+        };
+        let integer = constant.as_ref().filter(|value| value.kind() == "int");
+        let integer = integer.and_then(|value| value["value"].as_i64());
+        self.macros.define(&name, definition, constant.is_some());
+        if let Some(integer) = integer {
+            self.macros.values.insert(name.clone(), integer as i128);
+        }
+        self.push(Kind::Define(words), None);
+        Ok(())
+    }
+
+    /// #include <path> or #include "path": the file's macros reach this one (with the headers
+    /// given), and the token keeps the integer constants it defines or changes.
+    fn include(&mut self, rest: &str) -> Result<()> {
+        let line = self.line;
+        let rest = strip(rest);
+        let before = self.headers.map(|_| self.macros.values.clone());
+        let system = rest.starts_with('<') && rest.ends_with('>');
+        let path = if system {
+            strip(&rest[1..rest.len() - 1]).to_string()
         } else {
-            return lex_fail(line, format!("unexpected character {}", repr(&c.to_string())));
+            match directive_words(rest, line)?.as_slice() {
+                [word] if word.as_object().is_some() => word.text("string").to_string(),
+                _ => return lex_fail(line, "expected #include \"path\" or #include <path>"),
+            }
+        };
+        // a header's macros, and a library's, reach the file that includes it, as C includes it
+        if let Some(files) = self.headers {
+            let key = included_key(&path, system);
+            *self.macros = header_macros(&key, files, std::mem::take(self.macros), self.depth)?;
+        }
+        // the integer constants the file (and what it includes) defines or changes, which the
+        // including file's constant expressions use as C expands them
+        let mut constants = Vec::new();
+        if let Some(before) = before {
+            let changed = self.macros.values.iter().filter(|(name, value)| before.get(*name) != Some(value));
+            constants = changed.map(|(name, value)| (name.clone(), *value)).collect();
+            constants.sort();
+        }
+        self.push(Kind::Include { path, system, constants }, None);
+        Ok(())
+    }
+
+    /// #line N or #line N "file": the next line's number, and the file's name from there.
+    fn line_directive(&mut self, rest: &str) -> Result<Option<usize>> {
+        let line = self.line;
+        let expanded = cpp::expand_text(rest, self.macros, true, &[]).or_else(|reason| lex_fail(line, reason))?;
+        let words = directive_words(&expanded.replace(cpp::PAINT, " "), line)?;
+        let number = words.first().and_then(Node::as_str).and_then(|word| word.parse::<usize>().ok());
+        let name = words.get(1).map(|word| word.get("string").and_then(Node::as_str));
+        match (number, name, words.len()) {
+            (Some(number), None, 1) => Ok(Some(number.saturating_sub(1))),
+            (Some(number), Some(Some(name)), 2) => {
+                self.file = name.to_string();
+                Ok(Some(number.saturating_sub(1)))
+            }
+            _ => lex_fail(line, "#line takes a line number and, after it, a file name in quotes"),
         }
     }
-    if let Some(block) = conditions.last() {
-        return lex_fail(block.line, "#if without #endif");
+
+    /// The token at c (or the space or comment there).
+    fn token(&mut self, c: char) -> Result<()> {
+        let (text, position) = (&self.text, self.position);
+        if is_space(c) {
+            self.position += 1;
+        } else if starts_with(text, position, "//") {
+            self.line_comment();
+        } else if starts_with(text, position, "/*") {
+            let Some(end) = find(text, position + 2, "*/") else {
+                return lex_fail(self.line, "unterminated comment");
+            };
+            self.line += count_lines(text, position, end);
+            self.position = end + 2;
+        } else if c == '"' {
+            let (value, end) = read_string(text, position, self.line)?;
+            self.push(STR, Some(value));
+            self.position = end;
+        } else if dc2tk_py::is_digit(c)
+            || (c == '.' && text.get(position + 1).is_some_and(|next| next.is_ascii_digit()))
+        {
+            self.number(c)?;
+        } else if c == '\'' {
+            let (value, end) = read_char(text, position, self.line)?;
+            self.push(INT, Some(value.to_string()));
+            self.position = end;
+        } else if c == 'L' && text.get(position + 1) == Some(&'\'') {
+            self.wide_character()?;
+        } else if c == 'L' && text.get(position + 1) == Some(&'"') {
+            // a wide string: an array of wchar_t, each a character's Shift-JIS code
+            let (value, end) = read_string(text, position + 1, self.line)?;
+            self.push(Kind::Str { wide: true }, Some(value));
+            self.position = end;
+        } else if c == cpp::PAINT || c.is_ascii_alphabetic() || c == '_' {
+            self.name(c)?;
+        } else {
+            self.operator(c)?;
+        }
+        Ok(())
     }
-    tokens.push(Token::new(Kind::Eof, line, Some(String::new())));
-    Ok(tokens)
+
+    /// A // comment: one that is a line of its own is kept, for the doc of a name below it.
+    fn line_comment(&mut self) {
+        let (text, position) = (&self.text, self.position);
+        let end = line_end(text, position);
+        let start = (0..position).rev().find(|&at| text[at] == '\n').map_or(0, |at| at + 1);
+        if strip(&text_of(&text[start..position])).is_empty() {
+            self.comments.push((self.line, strip(&text_of(&text[position + 2..end])).to_string()));
+        }
+        self.position = end;
+    }
+
+    /// A number: an int, or a float when it has a point, an exponent or an f.
+    fn number(&mut self, c: char) -> Result<()> {
+        let line = self.line;
+        let Some((mut word, suffix, end)) = number_at(&self.text, self.position) else {
+            return Err(Error::invalid(format!("line {line}: cannot read the number at {}", repr(&c.to_string()))));
+        };
+        let lower = word.to_lowercase();
+        let hexadecimal = lower.starts_with("0x");
+        let floating =
+            !hexadecimal && (word.contains('.') || lower.contains('e') || suffix.to_lowercase().contains('f'));
+        if floating && !word.contains('.') && !lower.contains('e') {
+            word.push_str(".0");
+        }
+        if floating && suffix.to_lowercase().contains('l') {
+            return lex_fail(line, NO_DOUBLE.replace("double is", "long double is"));
+        }
+        let kind = if floating { Kind::Float } else { Kind::Int { unsigned: suffix.contains(['u', 'U']) } };
+        self.push(kind, Some(word));
+        self.position = end;
+        Ok(())
+    }
+
+    /// L'x': a wide character, its Shift-JIS code, which wchar_t holds.
+    fn wide_character(&mut self) -> Result<()> {
+        let (text, position, line) = (&self.text, self.position, self.line);
+        let (value, end) = cpp::character_constant(&text[position + 1..]).or_else(|reason| lex_fail(line, reason))?;
+        let value = match char::from_u32(value).filter(|_| text[position + 2] != '\\') {
+            Some(character) => dc2tk_disc::text::encode(&character.to_string())
+                .ok_or_else(|| Error::invalid(format!("line {line}: {character:?} has no Shift-JIS code")))?
+                .iter()
+                .fold(0u32, |code, byte| code << 8 | u32::from(*byte)),
+            None => value,
+        };
+        self.push(INT, Some(value.to_string()));
+        self.position += 1 + end;
+        Ok(())
+    }
+
+    /// A name: an asm block, a macro expanded in the text, a name C predefines, or a name (with the
+    /// comment block above it). A painted name is one a macro's own replacement held, which is
+    /// never expanded.
+    fn name(&mut self, c: char) -> Result<()> {
+        let line = self.line;
+        let painted = c == cpp::PAINT;
+        let start = self.position + usize::from(painted);
+        let end = cpp::word_end(&self.text, start);
+        let name = text_of(&self.text[start..end]);
+        if name == "asm" && !painted {
+            let (token, after) = read_asm(&self.text, end, line)?;
+            self.tokens.push(token);
+            self.line += count_lines(&self.text, self.position, after);
+            self.position = after;
+            return Ok(());
+        }
+        if !painted && cpp::expandable(self.macros, &name, false).is_some() {
+            let position = self.position;
+            self.regions.retain(|region| region.end > position);
+            if !cpp::disabled(&self.regions, &name, position)
+                && cpp::expand_at(&mut self.text, position, end, self.macros, false, &mut self.regions)
+                    .or_else(|reason| lex_fail(line, reason))?
+            {
+                return Ok(());
+            }
+        }
+        self.position = end;
+        let token = match name.as_str() {
+            "" => return Ok(()),
+            "__LINE__" => Token::new(INT, line, Some(line.to_string())),
+            "__FILE__" => Token::new(STR, line, Some(self.file.clone())),
+            "__DATE__" | "__TIME__" => {
+                let (date, time) = self.when.get_or_insert_with(cpp::translation_time);
+                Token::new(STR, line, Some(if name == "__DATE__" { date.clone() } else { time.clone() }))
+            }
+            "__STDC__" => Token::new(INT, line, Some("1".into())),
+            "double" => return lex_fail(line, NO_DOUBLE),
+            _ => {
+                let mut token = Token::new(Kind::Name, line, Some(name));
+                let doc = comment_block(&self.comments, line);
+                if !doc.is_empty() {
+                    token.doc = Some(doc);
+                }
+                token
+            }
+        };
+        self.tokens.push(token);
+        Ok(())
+    }
+
+    /// An operator: the longest of three characters, two or one.
+    fn operator(&mut self, c: char) -> Result<()> {
+        let (text, position) = (&self.text, self.position);
+        let (op, length) = if let Some(op) = LONG_OPERATORS.iter().find(|op| starts_with(text, position, op)) {
+            (op.to_string(), 3)
+        } else if let Some(op) = OPERATORS.iter().find(|op| starts_with(text, position, op)) {
+            (op.to_string(), 2)
+        } else if SINGLES.contains(c) {
+            (c.to_string(), 1)
+        } else {
+            return lex_fail(self.line, format!("unexpected character {}", repr(&c.to_string())));
+        };
+        self.push(Kind::Op, Some(op));
+        self.position += length;
+        Ok(())
+    }
 }
 
 // ---- parsing -------------------------------------------------------------------------------
@@ -1976,7 +2090,7 @@ impl Members {
     }
 }
 
-// Refuses an object of a type with no size: void, a function, a struct not defined, an array
+/// Refuses an object of a type with no size: void, a function, a struct not defined, an array
 /// whose size nothing gave.
 fn complete(state: &State, name: &str, ty: &Ty) -> Result<()> {
     match ty {
@@ -3350,33 +3464,60 @@ fn sized_by(state: &State, ty: Ty, init: &Option<Init>) -> Result<Ty> {
     Ok(Ty::Array(of.clone(), count))
 }
 
+/// Values by slot, as an initializer fills them.
+type Slots = std::collections::BTreeMap<i64, Node>;
+
+/// One element (or member) an initializer list fills: its type, the slot it starts at, and its
+/// bits for a bit-field.
+struct Part {
+    ty: Ty,
+    slot: i64,
+    bits: Option<ctype::Bits>,
+}
+
+/// A scalar's one value: a value, or a list of one.
+fn one_value(state: &State, item: &Init) -> Result<Node> {
+    match item {
+        Init::Value(node) => Ok(node.clone()),
+        Init::List(inner) => match inner.as_slice() {
+            [Init::Value(node)] => Ok(node.clone()),
+            _ => state.fail("a scalar takes one value"),
+        },
+    }
+}
+
 /// Puts an initializer list's values into a value of a type, from slot base, reading items from at
 /// with C's brace elision; gives how many elements of an array it filled (-1 size: all it can).
-fn fill_typed(
-    state: &State,
-    ty: &Ty,
-    items: &[Init],
-    at: &mut usize,
-    base: i64,
-    out: &mut std::collections::BTreeMap<i64, Node>,
-) -> Result<i64> {
-    let structs = &state.structs;
-    let one = |item: &Init| -> Result<Node> {
-        match item {
-            Init::Value(node) => Ok(node.clone()),
-            Init::List(inner) => match inner.as_slice() {
-                [Init::Value(node)] => Ok(node.clone()),
-                _ => state.fail("a scalar takes one value"),
-            },
-        }
+fn fill_typed(state: &State, ty: &Ty, items: &[Init], at: &mut usize, base: i64, out: &mut Slots) -> Result<i64> {
+    let Some(parts) = parts(state, ty, items.len(), base)? else {
+        // a scalar
+        let Some(item) = items.get(*at) else {
+            return Ok(0);
+        };
+        out.insert(base, one_value(state, item)?);
+        *at += 1;
+        return Ok(1);
     };
-    // what one element (or member) of ty is, where it starts, and its bits for a bit-field
-    let parts: Vec<(Ty, i64, Option<ctype::Bits>)> = match ty {
+    let mut filled = 0;
+    for part in parts {
+        if *at >= items.len() {
+            break;
+        }
+        fill_part(state, &part, items, at, out)?;
+        filled += 1;
+    }
+    Ok(filled)
+}
+
+/// What an array's or struct's initializer fills, in order (None for a scalar): each element, or
+/// each named member (a union's first). An open size takes at most an element per value.
+fn parts(state: &State, ty: &Ty, values: usize, base: i64) -> Result<Option<Vec<Part>>> {
+    let structs = &state.structs;
+    Ok(Some(match ty {
         Ty::Array(of, size) => {
             let step = of.slots(structs);
-            // an open size takes at most an element per value
-            let count = if *size < 0 { items.len() as i64 } else { *size };
-            (0..count).map(|index| ((**of).clone(), base + index * step, None)).collect()
+            let count = if *size < 0 { values as i64 } else { *size };
+            (0..count).map(|index| Part { ty: (**of).clone(), slot: base + index * step, bits: None }).collect()
         }
         Ty::Struct(tag) => {
             let Some(found) = structs.get(tag) else {
@@ -3387,10 +3528,10 @@ fn fill_typed(
             for (at, (name, member)) in found.members.iter().enumerate() {
                 let bits = found.bits_of(at);
                 // a bit-field that shares a slot is in the one the last started
-                let start = if bits.is_some_and(|bits| bits.offset > 0) { offset - 1 } else { offset };
+                let slot = if bits.is_some_and(|bits| bits.offset > 0) { offset - 1 } else { offset };
                 if !name.is_empty() {
                     // an unnamed bit-field takes no value
-                    parts.push((member.clone(), start, bits));
+                    parts.push(Part { ty: member.clone(), slot, bits });
                     if found.union {
                         // a union's initializer sets its first member
                         break;
@@ -3400,73 +3541,69 @@ fn fill_typed(
             }
             parts
         }
-        _ => {
-            let Some(item) = items.get(*at) else {
-                return Ok(0);
-            };
-            out.insert(base, one(item)?);
-            *at += 1;
-            return Ok(1);
-        }
-    };
+        _ => return Ok(None),
+    }))
+}
+
+/// One part of an aggregate filled from the values at at: a bit-field's bits in its slot, a string
+/// in an array of characters, an aggregate from its braces or (their braces elided) from the
+/// values here, or a scalar.
+fn fill_part(state: &State, part: &Part, items: &[Init], at: &mut usize, out: &mut Slots) -> Result<()> {
+    let offset = part.slot;
+    if let Some(bits) = part.bits {
+        // the fields that share a slot are put together in its one value
+        let packed = bits.packed(one_value(state, &items[*at])?);
+        let value = match out.remove(&offset) {
+            Some(known) => ctype::Bits::joined(known, packed),
+            None => packed,
+        };
+        out.insert(offset, value);
+        *at += 1;
+        return Ok(());
+    }
     let characters =
         |of: &Ty| matches!(of, Ty::Scalar(kind) if kind.contains("char") || kind.contains("short") || kind == "int");
-    let mut filled = 0;
-    for (part, offset, bits) in parts {
-        if *at >= items.len() {
-            break;
-        }
-        if let Some(bits) = bits {
-            // the fields that share a slot are put together in its one value
-            let packed = bits.packed(one(&items[*at])?);
-            let value = match out.remove(&offset) {
-                Some(known) => ctype::Bits::joined(known, packed),
-                None => packed,
-            };
-            out.insert(offset, value);
+    match (&part.ty, &items[*at]) {
+        // a string or wide string for an array of characters
+        (Ty::Array(of, length), Init::Value(node)) if matches!(node.kind(), "string" | "wide") && characters(of) => {
+            put_codes(state, node, of, *length, offset, out)?;
             *at += 1;
-            filled += 1;
-            continue;
         }
-        match (&part, &items[*at]) {
-            // a string or wide string for an array of characters
-            (Ty::Array(of, length), Init::Value(node))
-                if matches!(node.kind(), "string" | "wide") && characters(of) =>
-            {
-                let codes: Vec<Node> = if node.kind() == "wide" {
-                    let codes = node["codes"].as_array().map_or(&[][..], Vec::as_slice);
-                    codes.iter().map(|code| node!({"kind": "int", "value": code.clone()})).collect()
-                } else {
-                    string_elements(state, node.text("text"), &of.slot_kind())?
-                };
-                let fits = if *length >= 0 && codes.len() as i64 == length + 1 { codes.len() - 1 } else { codes.len() };
-                if *length >= 0 && fits as i64 > *length {
-                    return state.fail("the string is longer than the array");
-                }
-                for (index, code) in codes.into_iter().take(fits).enumerate() {
-                    out.insert(offset + index as i64, code);
-                }
-                *at += 1;
+        (ty, Init::List(inner)) if ty.is_aggregate() => {
+            let mut inner_at = 0;
+            fill_typed(state, ty, inner, &mut inner_at, offset, out)?;
+            if inner_at < inner.len() {
+                return state.fail("too many values in a brace");
             }
-            (part, Init::List(inner)) if part.is_aggregate() => {
-                let mut inner_at = 0;
-                fill_typed(state, part, inner, &mut inner_at, offset, out)?;
-                if inner_at < inner.len() {
-                    return state.fail("too many values in a brace");
-                }
-                *at += 1;
-            }
-            (part, _) if part.is_aggregate() => {
-                fill_typed(state, part, items, at, offset, out)?;
-            }
-            (_, item) => {
-                out.insert(offset, one(item)?);
-                *at += 1;
-            }
+            *at += 1;
         }
-        filled += 1;
+        (ty, _) if ty.is_aggregate() => {
+            fill_typed(state, ty, items, at, offset, out)?;
+        }
+        (_, item) => {
+            out.insert(offset, one_value(state, item)?);
+            *at += 1;
+        }
     }
-    Ok(filled)
+    Ok(())
+}
+
+/// A string's characters (or a wide string's codes) into an array of length of them from offset:
+/// its 0 left out when the array is exactly the string's length, as C allows.
+fn put_codes(state: &State, node: &Node, of: &Ty, length: i64, offset: i64, out: &mut Slots) -> Result<()> {
+    let codes: Vec<Node> = if node.kind() == "wide" {
+        node.list("codes").iter().map(|code| node!({"kind": "int", "value": code.clone()})).collect()
+    } else {
+        string_elements(state, node.text("text"), &of.slot_kind())?
+    };
+    let fits = if length >= 0 && codes.len() as i64 == length + 1 { codes.len() - 1 } else { codes.len() };
+    if length >= 0 && fits as i64 > length {
+        return state.fail("the string is longer than the array");
+    }
+    for (index, code) in codes.into_iter().take(fits).enumerate() {
+        out.insert(offset + index as i64, code);
+    }
+    Ok(())
 }
 
 /// The values an initializer gives an object of a type, by slot: every scalar slot, those it
@@ -3793,23 +3930,15 @@ struct Parameters {
 /// A function's parameters. A prototype's parameters may go unnamed.
 fn parameters(state: &mut State) -> Result<Parameters> {
     state.expect("(")?;
-    let mut params = Vec::new();
-    let mut variadic = false;
     let identifiers = state.token(0).kind == Kind::Name
         && !starts_type(state, 0)
         && state.token(1).kind == Kind::Op
         && [",", ")"].contains(&state.token(1).text());
     if identifiers {
-        loop {
-            params.push(node!({"name": state.name()?, "type": "int", "array": false}));
-            if !state.at(",", 0) {
-                break;
-            }
-            state.take();
-        }
-        state.expect(")")?;
-        return Ok(Parameters { params, identifiers: true, variadic: false });
+        return identifier_list(state);
     }
+    let mut params = Vec::new();
+    let mut variadic = false;
     if !no_parameters(state) {
         loop {
             if state.at("...", 0) && !params.is_empty() {
@@ -3818,78 +3947,7 @@ fn parameters(state: &mut State) -> Result<Parameters> {
                 variadic = true;
                 break;
             }
-            let typed = state.at("void", 0) && state.at("*", 1) && state.at("*", 2);
-            let void_pointer = !typed && state.at("void", 0) && state.at("*", 1);
-            let spec = if typed {
-                specifiers(state, true)?
-            } else if void_pointer {
-                // void *p: a pointer parameter the function never reads, so of no element type
-                state.take();
-                Spec { kind: "void".to_string(), ..Spec::default() }
-            } else {
-                specifiers(state, true)?
-            };
-            if spec.storage.as_ref().is_some_and(|storage| storage != "register") {
-                return state.fail("a parameter's only storage class is register");
-            }
-            let pointer_ahead = state.at("*", 0);
-            if spec.kind == "any" || (spec.kind == "void" && !pointer_ahead) {
-                return state.fail(format!("unknown type {}", spec.kind));
-            }
-            if typed || (!void_pointer && complex_ahead(state, &spec)) {
-                params.push(typed_parameter_entry(state, &spec)?);
-                if !state.at(",", 0) {
-                    break;
-                }
-                state.take();
-                continue;
-            }
-            let (pointer, pointer_const) = if spec.kind == "void" && pointer_ahead {
-                state.take();
-                (true, false)
-            } else {
-                pointer_part(state)?
-            };
-            let name = if state.token(0).kind == Kind::Name { state.name()? } else { String::new() };
-            let array = state.at("[", 0);
-            let mut inner = Vec::new();
-            if array {
-                state.take();
-                if !state.at("]", 0) {
-                    array_size(state)?;
-                }
-                state.expect("]")?;
-                while state.at("[", 0) {
-                    state.take();
-                    match array_size(state)? {
-                        Size::Number(size) => inner.push(size as i64),
-                        Size::Named(name) if state.constant(&name).is_some() => {
-                            inner.push(state.constant(&name).unwrap() as i64)
-                        }
-                        _ => {
-                            return state.fail(
-                                "a parameter's inner array sizes must be constants this file defines or includes",
-                            )
-                        }
-                    }
-                    state.expect("]")?;
-                }
-            }
-            let kind = if local_kind(state, &spec.kind) { state.kinds[&spec.kind].clone() } else { spec.kind.clone() };
-            let mut param = node!({"name": name, "type": kind, "array": array || pointer});
-            if !inner.is_empty() {
-                param["dims"] = Node::List(inner.into_iter().map(Node::from).collect());
-            }
-            if (spec.constant && !pointer && !array) || pointer_const {
-                param["const"] = Node::Bool(true);
-            }
-            if spec.constant && (pointer || array) {
-                param["pointee_const"] = Node::Bool(true);
-            }
-            if spec.storage.is_some() {
-                param["register"] = Node::Bool(true);
-            }
-            params.push(param);
+            params.push(parameter(state)?);
             if !state.at(",", 0) {
                 break;
             }
@@ -3898,6 +3956,88 @@ fn parameters(state: &mut State) -> Result<Parameters> {
     }
     state.expect(")")?;
     Ok(Parameters { params, identifiers: false, variadic })
+}
+
+/// A K&R definition's parameter names, int until the declarations after the ) give their types.
+fn identifier_list(state: &mut State) -> Result<Parameters> {
+    let mut params = Vec::new();
+    loop {
+        params.push(node!({"name": state.name()?, "type": "int", "array": false}));
+        if !state.at(",", 0) {
+            break;
+        }
+        state.take();
+    }
+    state.expect(")")?;
+    Ok(Parameters { params, identifiers: true, variadic: false })
+}
+
+/// One parameter of a prototype's list: its type, then its name, which may go unnamed.
+fn parameter(state: &mut State) -> Result<Node> {
+    let typed = state.at("void", 0) && state.at("*", 1) && state.at("*", 2);
+    let void_pointer = !typed && state.at("void", 0) && state.at("*", 1);
+    let spec = if void_pointer {
+        // void *p: a pointer parameter the function never reads, so of no element type
+        state.take();
+        Spec { kind: "void".to_string(), ..Spec::default() }
+    } else {
+        specifiers(state, true)?
+    };
+    if spec.storage.as_ref().is_some_and(|storage| storage != "register") {
+        return state.fail("a parameter's only storage class is register");
+    }
+    let pointer_ahead = state.at("*", 0);
+    if spec.kind == "any" || (spec.kind == "void" && !pointer_ahead) {
+        return state.fail(format!("unknown type {}", spec.kind));
+    }
+    if typed || (!void_pointer && complex_ahead(state, &spec)) {
+        return typed_parameter_entry(state, &spec);
+    }
+    let (pointer, pointer_const) = if spec.kind == "void" && pointer_ahead {
+        state.take();
+        (true, false)
+    } else {
+        pointer_part(state)?
+    };
+    let name = if state.token(0).kind == Kind::Name { state.name()? } else { String::new() };
+    let array = state.at("[", 0);
+    let inner = if array { parameter_sizes(state)? } else { Vec::new() };
+    let kind = if local_kind(state, &spec.kind) { state.kinds[&spec.kind].clone() } else { spec.kind.clone() };
+    let mut param = node!({"name": name, "type": kind, "array": array || pointer});
+    if !inner.is_empty() {
+        param["dims"] = Node::List(inner.into_iter().map(Node::from).collect());
+    }
+    if (spec.constant && !pointer && !array) || pointer_const {
+        param["const"] = Node::Bool(true);
+    }
+    if spec.constant && (pointer || array) {
+        param["pointee_const"] = Node::Bool(true);
+    }
+    if spec.storage.is_some() {
+        param["register"] = Node::Bool(true);
+    }
+    Ok(param)
+}
+
+/// An array parameter's [N][M]...: its first size, which is the pointer's, read and dropped, and
+/// the inner ones, which must be constants.
+fn parameter_sizes(state: &mut State) -> Result<Vec<i64>> {
+    state.take();
+    if !state.at("]", 0) {
+        array_size(state)?;
+    }
+    state.expect("]")?;
+    let mut inner = Vec::new();
+    while state.at("[", 0) {
+        state.take();
+        match array_size(state)? {
+            Size::Number(size) => inner.push(size as i64),
+            Size::Named(name) if state.constant(&name).is_some() => inner.push(state.constant(&name).unwrap() as i64),
+            _ => return state.fail("a parameter's inner array sizes must be constants this file defines or includes"),
+        }
+        state.expect("]")?;
+    }
+    Ok(inner)
 }
 
 /// A parameter of C's other types: a pointer to a pointer or a struct, a struct (passed by value,
@@ -4658,20 +4798,7 @@ fn parse_state(
     file: &str,
     headers: Headers,
 ) -> Result<(Node, Included)> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut macros = Macros::default();
-    for (name, value) in defines {
-        macros.define(name, cpp::Macro { params: None, body: value.clone() }, true);
-        if let Ok(value) = value.trim().parse::<i128>() {
-            macros.values.insert(name.clone(), value);
-        }
-    }
-    let predefined = macros.values.clone();
-    let tokens = tokenize_with(&chars, &mut macros, file, headers, 0)?;
-    let mut state = State::new(tokens);
-    // the constants in force before the first line (LANGUAGE), as a header's are
-    state.included_constants = predefined;
-    state.file_key = file_key(text);
+    let mut state = file_state(text, defines, file, headers)?;
     if state.tokens[0].kind == Kind::Assembly {
         return Ok((node!({"kind": "program", "asm": state.tokens[0].text()}), Included::default()));
     }
@@ -4683,107 +4810,40 @@ fn parse_state(
     let mut pending = Pending::default();
     while state.token(0).kind != Kind::Eof {
         let token = state.take();
-        let word = if token.kind == Kind::Name { token.text() } else { "" };
-        match &token.kind {
-            Kind::Pragma(_) => pragma(&mut state, &token, &mut program, &mut pending)?,
-            Kind::Asm { .. } => {
-                let function = asm_function(&mut state, &token)?;
-                program["functions"].as_array_mut().unwrap().push(function);
-            }
-            Kind::Include { path, system, constants } => {
-                if let Some(files) = headers {
-                    // what the file declares that this one's declarations need (a library's
-                    // structs, a header's typedefs), as C includes it
-                    let found = included(&included_key(path, *system), files)?;
-                    state.header_kinds.extend(found.kinds);
-                    state.types.extend(found.types);
-                    state.included_enumerators.extend(found.enumerators);
-                    for (tag, composite) in found.structs {
-                        if state.structs.get(&tag).is_none_or(|known| known.members.is_empty()) {
-                            state.structs.insert(tag, composite);
-                        }
-                    }
-                }
-                // the integer #defines the file leaves, as C includes it: they replace this
-                // file's own of the same names
-                for (name, value) in constants {
-                    state.constants.remove(name);
-                    state.included_constants.insert(name.clone(), *value);
-                }
-                program["functions"].as_array_mut().unwrap().push(node!({
-                    "kind": "include",
-                    "path": path,
-                    "system": *system,
-                }))
-            }
-            Kind::Assembly => return state.fail("#pragma assembly must start the file"),
-            Kind::Define(_) => definition(&mut state, &token, &mut program)?,
-            _ if word == "enum" && (state.at("{", 0) || state.at("{", 1)) && enum_alone(&state) => {
-                enumeration(&mut state, &mut program)?
-            }
-            _ if word == "PROGRAM" => program_entry(&mut state, &mut program)?,
-            _ if request(word).is_some() => {
-                // NEW_FLAG(name): a number build gives the mod (numbers.rs)
-                state.expect("(")?;
-                let name = state.name()?;
-                state.expect(")")?;
-                state.expect(";")?;
-                if program.get("requests").is_none() {
-                    program["requests"] = Node::List(Vec::new());
-                }
-                program["requests"].as_array_mut().unwrap().push(node!({"kind": request(word), "name": name}));
-            }
-            _ if word == "MAIN" => {
-                state.expect("(")?;
-                program["main"] = Node::from(state.name()?);
-                state.expect(")")?;
-                state.expect(";")?;
-            }
-            _ if word == "typedef" => {
-                let base = if state.at("any", 0) {
-                    type_name(&mut state, &NATIVE_TYPES)?
-                } else {
-                    let spec = specifiers(&mut state, false)?;
-                    if typed_typedef(&mut state, &spec)? {
-                        continue;
-                    }
-                    base_type(&state, &spec.kind)?
-                };
-                let name = state.name()?;
-                state.expect(";")?;
-                program["declarations"]["kinds"][name.as_str()] = Node::from(&base);
-                state.kinds.insert(name, base);
-            }
-            _ if word == "extern" && native_ahead(&state) => {
-                let native = native_declaration(&mut state)?;
-                declarations(&mut program, "natives").push(native);
-            }
-            _ if word == "static" && state.at("inline", 0) => {
-                state.expect("inline")?;
-                let inline = inline_definition(&mut state)?;
-                declarations(&mut program, "inlines").push(inline);
-            }
-            _ if token.kind == Kind::Name && (type_word(&state, word) || header_type(&state, word, state.token(0))) => {
-                let doc = token.doc.clone();
-                state.pos -= 1;
-                if top_declaration(&mut state, &mut program, &pending, doc.as_deref())? {
-                    pending = Pending::default();
-                }
-            }
-            _ => {
-                state.pos -= 1;
-                let found = state.shown(&token)?;
-                return state.fail(format!("expected a declaration, found {found}"));
-            }
+        if top_level(&mut state, &token, &mut program, &mut pending, headers)? {
+            let found = std::mem::take(&mut state.constants_found);
+            declarations(&mut program, "constants").extend(found);
         }
-        let found = std::mem::take(&mut state.constants_found);
-        declarations(&mut program, "constants").extend(found);
     }
-    // static locals' hidden globals
+    Ok(finished(state, program))
+}
+
+/// The parser's state for a file: its tokens, with the #defines given in force before its first
+/// line (a mod patch's LANGUAGE), which are its constants as a header's are.
+fn file_state(text: &str, defines: &HashMap<String, String>, file: &str, headers: Headers) -> Result<State> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut macros = Macros::default();
+    for (name, value) in defines {
+        macros.define(name, cpp::Macro { params: None, body: value.clone() }, true);
+        if let Ok(value) = value.trim().parse::<i128>() {
+            macros.values.insert(name.clone(), value);
+        }
+    }
+    let predefined = macros.values.clone();
+    let tokens = tokenize_with(&chars, &mut macros, file, headers, 0)?;
+    let mut state = State::new(tokens);
+    state.included_constants = predefined;
+    state.file_key = file_key(text);
+    Ok(state)
+}
+
+/// What a file's declarations leave once they are read: the static locals' hidden globals among
+/// the globals, the global count when no #pragma gave it, the structs, and what a file including
+/// this one needs.
+fn finished(mut state: State, mut program: Node) -> (Node, Included) {
     program["globals"].as_array_mut().unwrap().extend(std::mem::take(&mut state.statics));
     if program["global_num"].is_null() {
-        let slots: i64 =
-            program["globals"].as_array().unwrap().iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
+        let slots: i64 = program.list("globals").iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
         program["global_num"] = Node::from(slots);
     }
     if !state.structs.is_empty() {
@@ -4799,7 +4859,127 @@ fn parse_state(
         structs: std::mem::take(&mut state.structs),
         enumerators,
     };
-    Ok((with_own_padding(program), included))
+    (with_own_padding(program), included)
+}
+
+/// A directive or declaration at file scope, after its first token. Whether the enumerators it
+/// defined join the program's constants now: a typedef of a type beyond the scalars leaves them
+/// for the next declaration's (the order the constants have always been written in).
+fn top_level(
+    state: &mut State,
+    token: &Token,
+    program: &mut Node,
+    pending: &mut Pending,
+    headers: Headers,
+) -> Result<bool> {
+    let word = if token.kind == Kind::Name { token.text() } else { "" };
+    match &token.kind {
+        Kind::Pragma(_) => pragma(state, token, program, pending)?,
+        Kind::Asm { .. } => {
+            let function = asm_function(state, token)?;
+            program["functions"].as_array_mut().unwrap().push(function);
+        }
+        Kind::Include { path, system, constants } => {
+            include_declarations(state, program, headers, path, *system, constants)?
+        }
+        Kind::Assembly => return state.fail("#pragma assembly must start the file"),
+        Kind::Define(_) => definition(state, token, program)?,
+        _ if word == "enum" && (state.at("{", 0) || state.at("{", 1)) && enum_alone(state) => {
+            enumeration(state, program)?
+        }
+        _ if word == "PROGRAM" => program_entry(state, program)?,
+        _ if request(word).is_some() => number_request(state, program, word)?,
+        _ if word == "MAIN" => {
+            state.expect("(")?;
+            program["main"] = Node::from(state.name()?);
+            state.expect(")")?;
+            state.expect(";")?;
+        }
+        _ if word == "typedef" => return file_typedef(state, program),
+        _ if word == "extern" && native_ahead(state) => {
+            let native = native_declaration(state)?;
+            declarations(program, "natives").push(native);
+        }
+        _ if word == "static" && state.at("inline", 0) => {
+            state.expect("inline")?;
+            let inline = inline_definition(state)?;
+            declarations(program, "inlines").push(inline);
+        }
+        _ if token.kind == Kind::Name && (type_word(state, word) || header_type(state, word, state.token(0))) => {
+            state.pos -= 1;
+            if top_declaration(state, program, pending, token.doc.as_deref())? {
+                *pending = Pending::default();
+            }
+        }
+        _ => {
+            state.pos -= 1;
+            let found = state.shown(token)?;
+            return state.fail(format!("expected a declaration, found {found}"));
+        }
+    }
+    Ok(true)
+}
+
+/// #include's token: what the file declares that this one's declarations need (a library's
+/// structs, a header's typedefs) as C includes it, when the files are given, and the integer
+/// #defines it leaves, which replace this file's own of the same names.
+fn include_declarations(
+    state: &mut State,
+    program: &mut Node,
+    headers: Headers,
+    path: &str,
+    system: bool,
+    constants: &[(String, i128)],
+) -> Result<()> {
+    if let Some(files) = headers {
+        let found = included(&included_key(path, system), files)?;
+        state.header_kinds.extend(found.kinds);
+        state.types.extend(found.types);
+        state.included_enumerators.extend(found.enumerators);
+        for (tag, composite) in found.structs {
+            if state.structs.get(&tag).is_none_or(|known| known.members.is_empty()) {
+                state.structs.insert(tag, composite);
+            }
+        }
+    }
+    for (name, value) in constants {
+        state.constants.remove(name);
+        state.included_constants.insert(name.clone(), *value);
+    }
+    program["functions"].as_array_mut().unwrap().push(node!({"kind": "include", "path": path, "system": system}));
+    Ok(())
+}
+
+/// NEW_FLAG(name); and its kin: a number build gives the mod (numbers.rs).
+fn number_request(state: &mut State, program: &mut Node, word: &str) -> Result<()> {
+    state.expect("(")?;
+    let name = state.name()?;
+    state.expect(")")?;
+    state.expect(";")?;
+    if program.get("requests").is_none() {
+        program["requests"] = Node::List(Vec::new());
+    }
+    program["requests"].as_array_mut().unwrap().push(node!({"kind": request(word), "name": name}));
+    Ok(())
+}
+
+/// typedef at file scope: of a scalar, a kind of the program's declarations; of another type, a
+/// type the parser knows by the name. false for the second (see top_level).
+fn file_typedef(state: &mut State, program: &mut Node) -> Result<bool> {
+    let base = if state.at("any", 0) {
+        type_name(state, &NATIVE_TYPES)?
+    } else {
+        let spec = specifiers(state, false)?;
+        if typed_typedef(state, &spec)? {
+            return Ok(false);
+        }
+        base_type(state, &spec.kind)?
+    };
+    let name = state.name()?;
+    state.expect(";")?;
+    program["declarations"]["kinds"][name.as_str()] = Node::from(&base);
+    state.kinds.insert(name, base);
+    Ok(true)
 }
 
 /// Functions take the padding #pragma padding_of gave them by name; padding_of keeps the rest.
@@ -4967,6 +5147,12 @@ int yes;
                     97,
                 );
                 deepest(&|count| format!("int {}x{};", r("(", count), r(")", count)), 199);
+                let structs = |count: usize| {
+                    let opened: String = (0..count).map(|level| format!("struct s{level} {{ ")).collect();
+                    let closed: String = (0..count).rev().map(|level| format!("}} m{level}; ")).collect();
+                    format!("struct t {{ {opened}int z; {closed}}};")
+                };
+                deepest(&structs, 98);
             })
             .unwrap()
             .join()

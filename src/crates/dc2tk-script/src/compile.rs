@@ -385,7 +385,7 @@ fn ternary(state: &mut State, node: &Node) -> Result<()> {
     Ok(())
 }
 
-// A value wrapped to the width of a narrow integer type: masked for an unsigned one, and for a
+/// A value wrapped to the width of a narrow integer type: masked for an unsigned one, and for a
 /// signed one offset into the unsigned range, masked and offset back.
 fn narrow(state: &mut State, kind: &str) -> Result<()> {
     let Some(narrow) = IntType::narrow(kind) else {
