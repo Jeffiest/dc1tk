@@ -791,9 +791,9 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         lines.extend(mine.iter().map(|patch| format!("    patch {}", patches::summary(patch))));
         for (kind, names) in numbers::requests(own.iter().map(|(_, text)| text)) {
             for asked in names {
-                let number = held[&kind].get(&format!("{name}/{asked}"));
+                let number = held.get(&kind).and_then(|held| held.get(&format!("{name}/{asked}")));
                 let shown = number.map_or_else(|| "given at its next build".to_string(), |number| number.to_string());
-                lines.push(format!("    {} {} = {}", numbers::word(&kind), asked, shown));
+                lines.push(format!("    {} {} = {}", kind.word(), asked, shown));
             }
         }
         let mut paths: Vec<&String> = texts.keys().collect();

@@ -269,7 +269,7 @@ pub fn plan(
     }
     let mut given = BTreeMap::new();
     if !wanted.is_empty() {
-        let kinds: BTreeSet<String> = wanted.values().flat_map(|asked| asked.keys().cloned()).collect();
+        let kinds: BTreeSet<numbers::NumberKind> = wanted.values().flat_map(|asked| asked.keys().copied()).collect();
         let mut used = numbers::used_by_tree(tree, consts, &kinds)?;
         let hand: Vec<&String> = mod_list
             .iter()
@@ -277,8 +277,8 @@ pub fn plan(
             .chain(written.iter())
             .collect();
         let by_hand = numbers::written(hand);
-        for kind in numbers::KINDS {
-            used.get_mut(kind).unwrap().extend(by_hand[kind].iter().copied());
+        for (kind, numbers) in by_hand {
+            used.entry(kind).or_default().extend(numbers);
         }
         let mut held = numbers::read_lock(lock)?;
         let (found, changed) = numbers::assign(&wanted, &mut held, &used)?;
