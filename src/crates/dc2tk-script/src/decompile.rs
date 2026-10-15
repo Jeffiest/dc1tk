@@ -997,7 +997,7 @@ fn as_assembly(script: &Script, table: &str, tables: &BTreeMap<String, Table>) -
     node!({"kind": "program", "asm": asm::disassemble(script, table, tables)})
 }
 
-/// The magic as Python reads it: four bytes as Latin-1 characters.
+/// The magic as the tree holds it: four bytes, each a character of its value (Latin-1).
 fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| b as char).collect()
 }

@@ -22,7 +22,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use dc2tk_py::{ascii_digits, int_base, is_space, repr, split, strip, IntError};
 use indexmap::IndexMap;
 
 use crate::cpp::{self, Macros};
@@ -130,33 +129,51 @@ fn lex_fail<T>(line: usize, reason: impl std::fmt::Display) -> Result<T> {
     Err(Error::invalid(format!("line {line}: {reason}")))
 }
 
-/// A text quoted for an error message, its first 200 characters.
-fn short_repr(text: &str) -> String {
-    repr(text).chars().take(200).collect()
+/// A text quoted for an error message: in single quotes, what cannot be shown escaped.
+fn quoted(text: &str) -> String {
+    format!("'{}'", text.escape_debug())
 }
 
-/// A whole number in a base (0: the base its prefix gives, as 0x).
+/// quoted, of the text's first 200 characters.
+fn short_quoted(text: &str) -> String {
+    quoted(&text.chars().take(200).collect::<String>())
+}
+
+/// A whole number in a base, with an optional sign: 16 takes an 0x before its digits, and 0
+/// reads the base the prefix gives (0x, else decimal).
 fn int_in_base(text: &str, base: u32) -> Result<i128> {
-    int_base(text, base).map_err(|error| match error {
-        IntError::Invalid => {
-            let kind = match base {
-                8 => "an octal",
-                10 => "a decimal",
-                16 => "a hexadecimal",
-                _ => "a",
-            };
-            Error::invalid(format!("{} is not {kind} number", short_repr(text)))
-        }
-        IntError::TooLarge => Error::invalid(format!("{text} is too large a number")),
-    })
+    let (negative, unsigned) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text.strip_prefix('+').unwrap_or(text)),
+    };
+    let hexadecimal = unsigned.strip_prefix("0x").or_else(|| unsigned.strip_prefix("0X"));
+    let (radix, digits) = match (base, hexadecimal) {
+        (0 | 16, Some(digits)) => (16, digits),
+        (0, None) => (10, unsigned),
+        _ => (base, unsigned),
+    };
+    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
+        let kind = match base {
+            8 => "an octal",
+            10 => "a decimal",
+            16 => "a hexadecimal",
+            _ => "a",
+        };
+        return Err(Error::invalid(format!("{} is not {kind} number", short_quoted(text))));
+    }
+    let value =
+        i128::from_str_radix(digits, radix).map_err(|_| Error::invalid(format!("{text} is too large a number")))?;
+    Ok(if negative { -value } else { value })
 }
 
 /// The character a \x escape's two hexadecimal digits give.
 fn hex_escape(digits: &[char], line: usize) -> Result<char> {
-    let digits: String = digits.iter().collect();
-    match int_base(&digits, 16).ok().and_then(|value| u32::try_from(value).ok()).and_then(char::from_u32) {
-        Some(c) => Ok(c),
-        None => lex_fail(line, format!("\\x takes two hexadecimal digits, not {}", short_repr(&digits))),
+    let text: String = digits.iter().collect();
+    match digits {
+        [high, low] if high.is_ascii_hexdigit() && low.is_ascii_hexdigit() => {
+            Ok(char::from(u8::from_str_radix(&text, 16).expect("two hexadecimal digits")))
+        }
+        _ => lex_fail(line, format!("\\x takes two hexadecimal digits, not {}", short_quoted(&text))),
     }
 }
 
@@ -394,11 +411,11 @@ impl State {
         lex_fail(self.token(0).line, reason)
     }
 
-    /// repr() of a token's text for a message; a directive's or asm block's token has none, and
-    /// is unexpected wherever a message would quote one.
+    /// A token's text quoted for a message; a directive's or asm block's token has none, and is
+    /// unexpected wherever a message would quote one.
     fn shown(&self, token: &Token) -> Result<String> {
         match &token.text {
-            Some(text) => Ok(repr(text)),
+            Some(text) => Ok(quoted(text)),
             None => Err(Error::invalid(format!("line {}: unexpected {} token", token.line, token.kind.name()))),
         }
     }
@@ -406,7 +423,7 @@ impl State {
     fn expect(&mut self, text: &str) -> Result<Taken> {
         if !self.at(text, 0) {
             let found = self.shown(self.token(0))?;
-            return self.fail(format!("expected {}, found {found}", repr(text)));
+            return self.fail(format!("expected {}, found {found}", quoted(text)));
         }
         Ok(self.take())
     }

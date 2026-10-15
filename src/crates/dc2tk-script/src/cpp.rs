@@ -15,7 +15,10 @@
 
 use std::collections::HashMap;
 
-use dc2tk_py::is_word;
+/// Whether a character may be in a name.
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
 
 /// A macro: its parameters (None for an object-like macro) and its replacement text.
 #[derive(Clone, Debug, PartialEq)]

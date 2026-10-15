@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use dc2tk_py::{float_repr, format_g, parse_float, parse_int};
+use dc2tk_py::{float_repr, format_g};
 
 use crate::natives::Table;
 use crate::stack;
@@ -76,7 +76,7 @@ pub fn quote(text: &str) -> String {
 }
 
 /// The shortest decimal text (from 1 to 9 significant digits) that reads back as the float the
-/// bits hold, as Python's repr writes it; None for NaN and infinities.
+/// bits hold, written as float_repr writes it; None for NaN and infinities.
 pub fn float_text(bits: i32) -> Option<String> {
     let value = f32::from_bits(bits as u32) as f64;
     if !value.is_finite() {
@@ -410,7 +410,7 @@ fn unescape(c: char) -> Option<char> {
 
 pub fn tokenize(line: &str) -> Result<Vec<Token>> {
     if !line.contains('"') {
-        return Ok(dc2tk_py::split(line).into_iter().map(|word| Token::Word(word.to_string())).collect());
+        return Ok(line.split_whitespace().map(|word| Token::Word(word.to_string())).collect());
     }
     let chars: Vec<char> = line.chars().collect();
     let mut tokens = Vec::new();
@@ -418,13 +418,13 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>> {
     let bad = || Error::invalid(format!("a string in {line:?} is not ended"));
     while position < chars.len() {
         let c = chars[position];
-        if dc2tk_py::is_space(c) {
+        if c.is_whitespace() {
             position += 1;
             continue;
         }
         if c != '"' {
             let start = position;
-            while position < chars.len() && !dc2tk_py::is_space(chars[position]) {
+            while position < chars.len() && !chars[position].is_whitespace() {
                 position += 1;
             }
             tokens.push(Token::Word(chars[start..position].iter().collect()));
@@ -463,7 +463,25 @@ pub fn tokenize(line: &str) -> Result<Vec<Token>> {
 }
 
 pub fn number(token: &str) -> Result<i64> {
-    parse_int(token).ok_or_else(|| Error::invalid(format!("{token:?} is not a number")))
+    parse_number(token).ok_or_else(|| Error::invalid(format!("{token:?} is not a number")))
+}
+
+/// A whole number as the assembly writes one: decimal, or 0x and hexadecimal digits, with an
+/// optional sign; None when it is not one, or does not fit in an i64.
+pub fn parse_number(token: &str) -> Option<i64> {
+    let (negative, unsigned) = match token.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, token.strip_prefix('+').unwrap_or(token)),
+    };
+    let (radix, digits) = match unsigned.strip_prefix("0x").or_else(|| unsigned.strip_prefix("0X")) {
+        Some(digits) => (16, digits),
+        None => (10, unsigned),
+    };
+    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
+        return None;
+    }
+    let value = i128::from_str_radix(digits, radix).ok()?;
+    i64::try_from(if negative { -value } else { value }).ok()
 }
 
 fn number32(token: &str) -> Result<i32> {
@@ -475,7 +493,7 @@ pub fn is_float(token: &str) -> bool {
 }
 
 pub fn float_bits(token: &str) -> Result<i32> {
-    let value = parse_float(token).ok_or_else(|| Error::invalid(format!("{token:?} is not a number")))?;
+    let value: f64 = token.parse().map_err(|_| Error::invalid(format!("{token:?} is not a number")))?;
     let single = value as f32;
     if single.is_infinite() && value.is_finite() {
         return Err(Error::invalid(format!("{token} is too large for a float")));
@@ -682,7 +700,8 @@ fn needs_end(function: &FunctionItem) -> bool {
         None => true,
         Some(last) => {
             !(last.mnemonic == ".op"
-                && last.operands.first().and_then(Token::word).and_then(parse_int) == Some(Op::FuncEnd.number() as i64))
+                && last.operands.first().and_then(Token::word).and_then(parse_number)
+                    == Some(Op::FuncEnd.number() as i64))
         }
     }
 }

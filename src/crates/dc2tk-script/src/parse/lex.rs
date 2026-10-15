@@ -25,21 +25,21 @@ pub(super) fn count_lines(chars: &[char], from: usize, to: usize) -> usize {
     chars[from.min(to)..to].iter().filter(|&&c| c == '\n').count()
 }
 
-/// text.split("//")[0]
+/// The text before a // comment.
 pub(super) fn before_comment(text: &str) -> &str {
     text.split("//").next().unwrap_or("")
 }
 
-/// text.split(None, 1): the first word and the rest (its trailing whitespace kept).
+/// The first word and the rest (its trailing whitespace kept).
 pub(super) fn split_first_word(text: &str) -> Vec<&str> {
-    let rest = text.trim_start_matches(is_space);
+    let rest = text.trim_start();
     if rest.is_empty() {
         return Vec::new();
     }
-    match rest.find(is_space) {
+    match rest.find(char::is_whitespace) {
         None => vec![rest],
         Some(at) => {
-            let remainder = rest[at..].trim_start_matches(is_space);
+            let remainder = rest[at..].trim_start();
             if remainder.is_empty() {
                 vec![&rest[..at]]
             } else {
@@ -65,7 +65,7 @@ pub(super) struct Block {
 /// The value of an #if or #elif condition, as C works it out (cpp::condition).
 pub(super) fn condition_value(text: &str, macros: &Macros, line: usize) -> Result<bool> {
     cpp::condition(text, macros)
-        .or_else(|reason| lex_fail(line, format!("cannot read the condition {}: {reason}", repr(strip(text)))))
+        .or_else(|reason| lex_fail(line, format!("cannot read the condition {}: {reason}", quoted(text.trim()))))
 }
 
 pub(super) fn conditional_directive(
@@ -77,7 +77,7 @@ pub(super) fn conditional_directive(
 ) -> Result<()> {
     let compiling = conditions.last().is_none_or(|block| block.on);
     if matches!(word, "if" | "ifdef" | "ifndef") {
-        let name = strip(before_comment(rest));
+        let name = before_comment(rest).trim();
         let chosen = if word == "if" {
             compiling && condition_value(rest, macros, line)?
         } else {
@@ -260,7 +260,7 @@ pub(super) fn read_asm(text: &[char], position: usize, line: usize) -> Result<(T
     let Some(opening) = find(text, position, "{") else {
         return lex_fail(line, "asm block without {");
     };
-    let words: Vec<String> = split(&text_of(&text[position..opening])).into_iter().map(String::from).collect();
+    let words: Vec<String> = text_of(&text[position..opening]).split_whitespace().map(String::from).collect();
     // the first line from the { on that is a } alone
     let closing = (opening + 1..text.len()).find_map(|start| {
         if text[start - 1] != '\n' || text[start] != '}' {
@@ -320,7 +320,7 @@ pub(super) fn joined(lines: &[&str]) -> String {
         let mut end = text.chars().rev();
         let hyphen = end.next() == Some('-')
             && end.next().is_some_and(|c| c.is_ascii_alphabetic())
-            && line.chars().next().is_some_and(dc2tk_py::is_alpha);
+            && line.chars().next().is_some_and(char::is_alphabetic);
         if !hyphen && !text.is_empty() {
             text.push(' ');
         }
@@ -375,7 +375,7 @@ pub(super) fn directive_at(text: &[char], position: usize) -> Option<(String, St
 /// then [fFuUlL]*, the decimals in any script. The word, the suffix and the end.
 pub(super) fn number_at(text: &[char], position: usize) -> Option<(String, String, usize)> {
     let at = |i: usize| text.get(i).copied().unwrap_or('\0');
-    let decimal = |i: usize| dc2tk_py::is_decimal(at(i));
+    let decimal = |i: usize| at(i).is_ascii_digit();
     let mut end;
     if at(position) == '0' && matches!(at(position + 1), 'x' | 'X') && at(position + 2).is_ascii_hexdigit() {
         end = position + 2;
@@ -581,7 +581,7 @@ impl Lexer<'_, '_> {
                 continue;
             }
             if c == '#'
-                && self.text[self.position + 1..line_end(&self.text, self.position)].iter().all(|c| is_space(*c))
+                && self.text[self.position + 1..line_end(&self.text, self.position)].iter().all(|c| c.is_whitespace())
             {
                 // the null directive
                 self.position = line_end(&self.text, self.position);
@@ -613,7 +613,7 @@ impl Lexer<'_, '_> {
         let (end, joined) = directive_end(&self.text, self.position);
         let mut next_line = line + joined;
         match word {
-            "undef" => self.macros.undefine(strip(before_comment(rest))),
+            "undef" => self.macros.undefine(before_comment(rest).trim()),
             "define" => self.define(rest)?,
             "include" => self.include(rest)?,
             "pragma" => {
@@ -625,7 +625,7 @@ impl Lexer<'_, '_> {
                 }
                 self.push(Kind::Pragma(words), None);
             }
-            "error" => return lex_fail(line, format!("#error {}", strip(rest))),
+            "error" => return lex_fail(line, format!("#error {}", rest.trim())),
             "line" => next_line = self.line_directive(rest)?.unwrap_or(next_line),
             other => return lex_fail(line, format!("unknown directive #{other}")),
         }
@@ -671,11 +671,11 @@ impl Lexer<'_, '_> {
     /// given), and the token keeps the integer constants it defines or changes.
     pub(super) fn include(&mut self, rest: &str) -> Result<()> {
         let line = self.line;
-        let rest = strip(rest);
+        let rest = rest.trim();
         let before = self.headers.map(|_| self.macros.values.clone());
         let system = rest.starts_with('<') && rest.ends_with('>');
         let path = if system {
-            strip(&rest[1..rest.len() - 1]).to_string()
+            rest[1..rest.len() - 1].trim().to_string()
         } else {
             match directive_words(rest, line)?.as_slice() {
                 [word] if word.as_object().is_some() => word.text("string").to_string(),
@@ -719,7 +719,7 @@ impl Lexer<'_, '_> {
     /// The token at c (or the space or comment there).
     pub(super) fn token(&mut self, c: char) -> Result<()> {
         let (text, position) = (&self.text, self.position);
-        if is_space(c) {
+        if c.is_whitespace() {
             self.position += 1;
         } else if starts_with(text, position, "//") {
             self.line_comment();
@@ -733,9 +733,7 @@ impl Lexer<'_, '_> {
             let (value, end) = read_string(text, position, self.line)?;
             self.push(STR, Some(value));
             self.position = end;
-        } else if dc2tk_py::is_digit(c)
-            || (c == '.' && text.get(position + 1).is_some_and(|next| next.is_ascii_digit()))
-        {
+        } else if c.is_ascii_digit() || (c == '.' && text.get(position + 1).is_some_and(|next| next.is_ascii_digit())) {
             self.number(c)?;
         } else if c == '\'' {
             let (value, end) = read_char(text, position, self.line)?;
@@ -761,8 +759,8 @@ impl Lexer<'_, '_> {
         let (text, position) = (&self.text, self.position);
         let end = line_end(text, position);
         let start = (0..position).rev().find(|&at| text[at] == '\n').map_or(0, |at| at + 1);
-        if strip(&text_of(&text[start..position])).is_empty() {
-            self.comments.push((self.line, strip(&text_of(&text[position + 2..end])).to_string()));
+        if text_of(&text[start..position]).trim().is_empty() {
+            self.comments.push((self.line, text_of(&text[position + 2..end]).trim().to_string()));
         }
         self.position = end;
     }
@@ -771,7 +769,7 @@ impl Lexer<'_, '_> {
     pub(super) fn number(&mut self, c: char) -> Result<()> {
         let line = self.line;
         let Some((mut word, suffix, end)) = number_at(&self.text, self.position) else {
-            return Err(Error::invalid(format!("line {line}: cannot read the number at {}", repr(&c.to_string()))));
+            return Err(Error::invalid(format!("line {line}: cannot read the number at {}", quoted(&c.to_string()))));
         };
         let lower = word.to_lowercase();
         let hexadecimal = lower.starts_with("0x");
@@ -865,7 +863,7 @@ impl Lexer<'_, '_> {
         } else if SINGLES.contains(c) {
             (c.to_string(), 1)
         } else {
-            return lex_fail(self.line, format!("unexpected character {}", repr(&c.to_string())));
+            return lex_fail(self.line, format!("unexpected character {}", quoted(&c.to_string())));
         };
         self.push(Kind::Op, Some(op));
         self.position += length;

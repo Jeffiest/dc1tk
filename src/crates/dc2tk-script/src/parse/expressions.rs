@@ -29,7 +29,7 @@ pub(super) fn literal(state: &State, token: &Token) -> Result<Node> {
         }
         return int_literal(value);
     }
-    let bits = asm::float_bits(&ascii_digits(token.text())).or_else(|error| lex_fail(token.line, error))?;
+    let bits = asm::float_bits(token.text()).or_else(|error| lex_fail(token.line, error))?;
     Ok(node!({"kind": "float", "bits": bits}))
 }
 

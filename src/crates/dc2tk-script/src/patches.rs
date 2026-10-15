@@ -602,7 +602,7 @@ pub fn merged(
     consts: &IndexMap<String, Node>,
     module: &str,
 ) -> Result<Node> {
-    if truthy(&patch["natives"]) && truthy(&program["natives"]) && !patch["natives"].py_eq(&program["natives"]) {
+    if truthy(&patch["natives"]) && truthy(&program["natives"]) && !patch["natives"].same_value(&program["natives"]) {
         return Err(Error::invalid(format!(
             "the patch uses {} natives, but the script is an {} script",
             py_str(&patch["natives"]),

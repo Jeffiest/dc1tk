@@ -879,13 +879,13 @@ fn matches(pattern: &Node, node: &Node, params: &HashMap<String, Param>, binding
                 .filter(|(key, _)| *key != "line" && *key != "start")
                 .all(|(key, value)| matches(value, other.get(key).unwrap(), params, bindings))
         }
-        other => other.py_eq(node),
+        other => other.same_value(node),
     }
 }
 
 fn bound(name: &str, node: &Node, bindings: &mut HashMap<String, Node>) -> bool {
     match bindings.get(name) {
-        Some(known) => known.py_eq(node),
+        Some(known) => known.same_value(node),
         None => {
             bindings.insert(name.to_string(), node.clone());
             true
@@ -950,7 +950,7 @@ fn folded(nodes: &[Node], found: &Context, inlines: &[&Node], pointers: &HashSet
         for (inline, first) in inlines.iter().zip(&first) {
             if let Some((kind, name)) = first {
                 if here.get("kind").and_then(Node::as_str) != Some(kind)
-                    || (*kind == "native" && !name.py_eq(&here["name"]))
+                    || (*kind == "native" && !name.same_value(&here["name"]))
                 {
                     continue;
                 }
@@ -1105,7 +1105,7 @@ fn readable_native(node: &Node, found: &Context, pointers: &HashSet<String>) -> 
     };
     let params = declared.list("params");
     let args = named_args(node.list("args"), params, found);
-    let base = if node["base"].py_eq(&declared["base"]) {
+    let base = if node["base"].same_value(&declared["base"]) {
         Node::Null
     } else if node["base"].is_null() {
         Node::from("direct")

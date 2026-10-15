@@ -1,5 +1,5 @@
-//! The program tree: the Python tools' dicts and lists, as cheap Rust values. An object keeps its
-//! keys in insertion order (as a Python dict does) in a small vector, since tree nodes have a
+//! The program tree: JSON-like values, cheap to build. An object keeps its keys in insertion
+//! order (the order the tree is written in) in a small vector, since tree nodes have a
 //! handful of keys; keys are mostly the literals the code writes, so they are not allocated. The
 //! API follows serde_json's Value (`node!` takes json!'s syntax), and serializes to the same JSON.
 
@@ -323,9 +323,9 @@ impl Node {
         matches!(self.get(key), Some(Node::Bool(true)))
     }
 
-    /// Python's ==: objects equal whatever their key order, and numbers by value (1 == 1.0 ==
+    /// Equal as values: objects whatever their key order, and numbers by value (1 == 1.0 ==
     /// True).
-    pub fn py_eq(&self, other: &Node) -> bool {
+    pub fn same_value(&self, other: &Node) -> bool {
         let number = |node: &Node| match node {
             Node::Bool(value) => Some(*value as i64 as f64),
             Node::Int(value) => Some(*value as f64),
@@ -336,9 +336,10 @@ impl Node {
             (Node::Int(a), Node::Int(b)) => a == b,
             (Node::Null, Node::Null) => true,
             (Node::Str(a), Node::Str(b)) => a == b,
-            (Node::List(a), Node::List(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.py_eq(y)),
+            (Node::List(a), Node::List(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.same_value(y)),
             (Node::Map(a), Node::Map(b)) => {
-                a.len() == b.len() && a.iter().all(|(key, value)| b.get(key).is_some_and(|found| value.py_eq(found)))
+                a.len() == b.len()
+                    && a.iter().all(|(key, value)| b.get(key).is_some_and(|found| value.same_value(found)))
             }
             _ => match (number(self), number(other)) {
                 (Some(a), Some(b)) => a == b,
@@ -347,7 +348,7 @@ impl Node {
         }
     }
 
-    /// Python's dict(node, key=value): the key keeps its place if the node has it, else goes last.
+    /// The node with a key set: in its place if the node has it, else last.
     pub fn with(mut self, key: impl Into<Key>, value: impl Into<Node>) -> Node {
         if let Node::Map(map) = &mut self {
             map.insert(key, value.into());
@@ -531,7 +532,7 @@ impl Serialize for Node {
 }
 
 impl fmt::Display for Node {
-    /// Compact JSON, as Python's json.dumps(separators=(",", ":"), ensure_ascii=False).
+    /// Compact JSON: no spaces, and text as it is (not \u-escaped).
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(&serde_json::to_string(self).map_err(|_| fmt::Error)?)
     }

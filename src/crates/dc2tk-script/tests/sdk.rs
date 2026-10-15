@@ -192,14 +192,13 @@ fn header_declarations_parse() {
     assert!(params
         .last()
         .unwrap()
-        .py_eq(&node!({"name": "flag", "type": "int", "out": true, "optional": false, "result": true})));
-    assert!(
-        declared[1]["params"][2].py_eq(&node!({"name": "anim_name", "type": "string", "out": false, "optional": true}))
-    );
+        .same_value(&node!({"name": "flag", "type": "int", "out": true, "optional": false, "result": true})));
+    assert!(declared[1]["params"][2]
+        .same_value(&node!({"name": "anim_name", "type": "string", "out": false, "optional": true})));
     assert!(declared[2]["base"] == Node::Int(70) && declared[2]["no"] == Node::Int(85));
     assert_eq!(declared[2]["variadic"], Node::Bool(true));
     assert_eq!(declared[2]["params"][0]["out"], Node::Bool(true));
-    assert!(header["declarations"]["programs"].py_eq(&node!([{"name": "init", "no": 100}])));
+    assert!(header["declarations"]["programs"].same_value(&node!([{"name": "init", "no": 100}])));
 }
 
 #[test]
@@ -232,8 +231,8 @@ fn void_pointers_are_out_parameters_of_any_type() {
     let native = "extern void get_random(any range, void *value, OPTIONAL(any *other)) NATIVE(1013);\n";
     let header = parse::parse(native).unwrap()["declarations"].clone();
     let params = header["natives"][0]["params"].as_array().unwrap();
-    assert!(params[1].py_eq(&node!({"name": "value", "type": "any", "out": true, "optional": false})));
-    assert!(params[2].py_eq(&node!({"name": "other", "type": "any", "out": true, "optional": true})));
+    assert!(params[1].same_value(&node!({"name": "value", "type": "any", "out": true, "optional": false})));
+    assert!(params[2].same_value(&node!({"name": "other", "type": "any", "out": true, "optional": true})));
     assert_eq!(
         source::native_declaration(&header["natives"][0]).unwrap(),
         "extern void get_random(any range, void *value, OPTIONAL(void *other)) NATIVE(1013);"

@@ -684,7 +684,7 @@ fn switch(state: &mut State, node: &Node) -> Result<()> {
     let end = state.new_label();
     let mut fallback = end;
     for (case, &label) in cases.iter().zip(&labels) {
-        if crate::source::truthy(&case["default"]) {
+        if case.flag("default") {
             fallback = label;
             continue;
         }
@@ -892,7 +892,7 @@ pub fn to_asm(
             .collect(),
         natives,
         buffer: Vec::new(),
-        pool: program.get("string_pool").is_some_and(crate::source::truthy),
+        pool: program.flag("string_pool"),
         notes,
     };
     for entry in program.list("programs") {

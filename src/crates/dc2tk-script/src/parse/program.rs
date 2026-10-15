@@ -391,13 +391,13 @@ pub(super) fn file_doc(text: &str) -> String {
     let lines: Vec<&str> = text.split('\n').collect();
     let mut comments = Vec::new();
     for (number, line) in lines.iter().enumerate() {
-        let stripped = strip(line);
+        let stripped = line.trim();
         let Some(comment) = stripped.strip_prefix("//") else {
             break;
         };
-        comments.push((number + 1, strip(comment).to_string()));
+        comments.push((number + 1, comment.trim().to_string()));
     }
-    if comments.is_empty() || (lines.len() > comments.len() && !strip(lines[comments.len()]).is_empty()) {
+    if comments.is_empty() || (lines.len() > comments.len() && !lines[comments.len()].trim().is_empty()) {
         return String::new();
     }
     comment_block(&comments, comments.len() + 1)

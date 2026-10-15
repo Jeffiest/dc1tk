@@ -93,16 +93,17 @@ pub fn table_of(program: &Node, tables: &BTreeMap<String, Table>) -> Result<Func
 
 fn is_label(line: &str) -> Option<&str> {
     let label = line.strip_suffix(':')?;
-    (label.starts_with("L_") && label.len() > 2 && label[2..].chars().all(dc2tk_py::is_word)).then_some(label)
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    (label.starts_with("L_") && label.len() > 2 && label[2..].chars().all(word)).then_some(label)
 }
 
 pub fn lines_table(text: &str) -> Result<Functions> {
     let mut found = Functions::new();
     let mut current: Option<String> = None;
     for line in text.split('\n') {
-        let line = dc2tk_py::strip(line);
+        let line = line.trim();
         if line.starts_with(".function ") {
-            let words = dc2tk_py::split(line);
+            let words: Vec<&str> = line.split_whitespace().collect();
             let after = |key: &str| -> usize {
                 words
                     .iter()
@@ -134,7 +135,7 @@ pub fn lines_table(text: &str) -> Result<Functions> {
         } else if let Some(label) = is_label(line) {
             function.labels.insert(label.to_string(), function.code.len());
         } else {
-            function.code.push(dc2tk_py::split(line).into_iter().map(str::to_string).collect());
+            function.code.push(line.split_whitespace().map(str::to_string).collect());
         }
     }
     Ok(found)
@@ -434,7 +435,7 @@ fn constant(function: &Function, word: &str, index: &str) -> std::result::Result
     if let Ok(value) = word.parse::<i128>() {
         return Ok(Value::Int(value));
     }
-    let value = dc2tk_py::parse_float(word).ok_or_else(|| format!("push {word}: not a number"))?;
+    let value: f64 = word.parse().map_err(|_| format!("push {word}: not a number"))?;
     Ok(Value::Float(value as f32 as f64))
 }
 

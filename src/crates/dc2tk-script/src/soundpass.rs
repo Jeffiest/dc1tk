@@ -692,7 +692,7 @@ fn native_banks(
             let event_value = literal_value(&crate::node!({"kind": "var", "name": "SND_PORT_EVENT"}), found)
                 .map(Node::Int)
                 .unwrap_or(Node::Null);
-            if port == "SND_PORT_EVENT" || port.py_eq(&event_value) {
+            if port == "SND_PORT_EVENT" || port.same_value(&event_value) {
                 written.insert(EVENT_PORT.into(), loaded);
             }
         }

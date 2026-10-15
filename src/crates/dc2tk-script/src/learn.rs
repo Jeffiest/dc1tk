@@ -59,7 +59,9 @@ pub fn learned_entry(function: &Node, program_names: &IndexMap<String, i64>, inf
     }
     if let Some(inferred) = inferred {
         let returns = &function["returns"];
-        if returns.as_str().is_some_and(|kind| ["void", "int", "float"].contains(&kind)) && !returns.py_eq(inferred) {
+        if returns.as_str().is_some_and(|kind| ["void", "int", "float"].contains(&kind))
+            && !returns.same_value(inferred)
+        {
             entry.insert("returns", returns.clone());
         }
     }
@@ -280,7 +282,7 @@ pub fn resolved(copies: &[Node], existing: &Node) -> Node {
         }
         let known = existing.get(field);
         let edited: Vec<&Node> =
-            values.iter().copied().filter(|value| !known.is_some_and(|known| value.py_eq(known))).collect();
+            values.iter().copied().filter(|value| !known.is_some_and(|known| value.same_value(known))).collect();
         let chosen = if edited.is_empty() { values[0] } else { edited[0] };
         out.insert(field.to_string(), chosen.clone());
     }
@@ -477,7 +479,7 @@ pub fn write_libraries(target: &Path, found: &IndexMap<String, Node>) -> Result<
             taken.insert(Some(path));
         }
         if let Some(doc) = entry.get("doc").filter(|doc| truthy(doc)) {
-            if !updated.get("doc").is_some_and(|known| known.py_eq(doc)) {
+            if !updated.get("doc").is_some_and(|known| known.same_value(doc)) {
                 updated = updated.with("doc", doc.clone());
             }
         }
@@ -488,7 +490,7 @@ pub fn write_libraries(target: &Path, found: &IndexMap<String, Node>) -> Result<
             }
             updated = updated.with("globals", merged);
         }
-        if !updated.py_eq(&old) {
+        if !updated.same_value(&old) {
             known[key.as_str()] = updated;
             changed += 1;
         }
@@ -663,9 +665,9 @@ void on_init(void)
             })
             .collect();
         entries.sort_by_key(|entry| entry.text("name").to_string());
-        assert!(entries[0].py_eq(&node!({"name": "greet_visitor", "locals": ["count", "angle", "slots"],
+        assert!(entries[0].same_value(&node!({"name": "greet_visitor", "locals": ["count", "angle", "slots"],
                                          "doc": "Greets the visitor and counts the visit."})));
-        assert!(entries[1].py_eq(&node!({"name": "helper", "params": ["values", "scale"]})));
+        assert!(entries[1].same_value(&node!({"name": "helper", "params": ["values", "scale"]})));
         let data = build(EVENT, &IndexMap::new());
         let shown = named_source(&data, table, None);
         assert!(shown.contains("// Greets the visitor and counts the visit.\nvoid greet_visitor(void)"), "{shown}");
@@ -704,7 +706,7 @@ void on_init(void)
         assert_eq!(defs.language, "de");
         let event = &defs.names["event"];
         assert_eq!(event.keys().collect::<Vec<_>>(), ["a", "b"]);
-        assert!(event["a"].py_eq(&node!({"name": "one"})) && event["b"].py_eq(&node!({"name": "deux"})));
+        assert!(event["a"].same_value(&node!({"name": "one"})) && event["b"].same_value(&node!({"name": "deux"})));
         let rules = [("mod/".to_string(), "monster".to_string()), ("base/".to_string(), "monster".to_string())];
         assert_eq!(defs.tables, rules);
         let _ = fs::remove_dir_all(&folder);
@@ -749,7 +751,7 @@ void on_init(void)
         let entries = learned_entries(&folder);
         let types: Vec<&Node> = entries.values().map(|entry| &entry["types"]).collect();
         assert_eq!(types.len(), 1);
-        assert!(types[0].py_eq(&node!({"track": "music"})));
+        assert!(types[0].same_value(&node!({"track": "music"})));
         let data = build(TYPED, &headers);
         assert_eq!(data, build(&TYPED.replace("music track", "int track"), &headers));
         let found = header_context(&headers);
@@ -784,7 +786,7 @@ void on_init(void)
         let entries = learned_entries(&folder);
         let notes: Vec<&Node> = entries.values().map(|entry| &entry["notes"]).collect();
         assert_eq!(notes.len(), 1);
-        assert!(notes[0].py_eq(&node!({"4": "22 is the town theme."})));
+        assert!(notes[0].same_value(&node!({"4": "22 is the town theme."})));
         let data = build(&source, &headers);
         let found = header_context(&headers);
         let shown = named_source(&data, entries, Some(&found));
@@ -801,9 +803,9 @@ void on_init(void)
             node!({"name": "start_event_for_program_506", "doc": "New doc."}),
             node!({"name": "start_event_2"}),
         ];
-        assert!(resolved(&copies, &existing).py_eq(&node!({"name": "start_event", "doc": "New doc."})));
+        assert!(resolved(&copies, &existing).same_value(&node!({"name": "start_event", "doc": "New doc."})));
         let copies = vec![node!({"name": "start_event"}), node!({"name": "begin_event"})];
-        assert!(resolved(&copies, &existing).py_eq(&node!({"name": "begin_event"})));
+        assert!(resolved(&copies, &existing).same_value(&node!({"name": "begin_event"})));
     }
 
     #[test]
@@ -829,8 +831,10 @@ void on_init(void)
         let x = library::library_fingerprint("event", &["f1".into(), "f2".into()]);
         let y = library::library_fingerprint("event", &["f3".into()]);
         assert_eq!(entries.keys().cloned().collect::<Vec<_>>(), vec![x.clone(), y.clone()]);
-        assert!(entries[&x].py_eq(&node!({"path": "lib/x.c", "doc": "Shared helpers.", "globals": {"g0": "visits"}})));
-        assert!(entries[&y].py_eq(&node!({"path": "lib/y.c"})));
+        assert!(
+            entries[&x].same_value(&node!({"path": "lib/x.c", "doc": "Shared helpers.", "globals": {"g0": "visits"}}))
+        );
+        assert!(entries[&y].same_value(&node!({"path": "lib/y.c"})));
     }
 
     #[test]

@@ -229,7 +229,7 @@ pub(super) fn placed(nodes: Vec<Node>, line: usize, doc: Option<&str>) -> Vec<No
         .split('\n')
         .rfind(|paragraph| paragraph.get(..NOTE.len()).is_some_and(|start| start.eq_ignore_ascii_case(NOTE)));
     if let (Some(first), Some(note)) = (nodes.first_mut(), note) {
-        *first = std::mem::take(first).with("note", strip(&note[NOTE.len()..]));
+        *first = std::mem::take(first).with("note", note[NOTE.len()..].trim());
     }
     nodes
 }
