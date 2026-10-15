@@ -65,26 +65,6 @@ pub fn write_output(path: Option<&Path>, text: &str) -> Result<()> {
     }
 }
 
-/// Every .stb under a folder (any case), by path from it with "/", sorted.
-pub fn find_scripts(root: &Path) -> Result<Vec<String>> {
-    let mut found = Vec::new();
-    let mut folders = vec![root.to_path_buf()];
-    while let Some(folder) = folders.pop() {
-        for entry in fs::read_dir(&folder).with_context(|| format!("cannot read {}", folder.display()))? {
-            let entry = entry?;
-            let path = entry.path();
-            if entry.file_type()?.is_dir() {
-                folders.push(path);
-            } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("stb")) {
-                let relative = path.strip_prefix(root).unwrap();
-                found.push(relative.to_string_lossy().replace('\\', "/"));
-            }
-        }
-    }
-    found.sort();
-    Ok(found)
-}
-
 /// When errors name constants a definition set has renamed since the tree was made ("unknown
 /// variable FLAG_S17_E308_SEEN"), a note saying their new names and how to bring the tree up to date.
 pub fn rename_hint<'a>(sets: &[PathBuf], errors: impl IntoIterator<Item = &'a str>, tree: &Path) -> Option<String> {

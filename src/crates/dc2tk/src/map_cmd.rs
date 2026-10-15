@@ -14,7 +14,7 @@ use dc2tk_assets::mapfile;
 use dc2tk_assets::to_gltf::TextureSearch;
 use dc2tk_disc::archive;
 use dc2tk_disc::DiscSource;
-use dc2tk_script::mapedit;
+use dc2tk_script::{mapedit, paths};
 
 #[derive(Args)]
 pub struct MapExportArgs {
@@ -96,7 +96,7 @@ fn export_one(disc: &DiscSource, name: &str, out: &Path, search: Option<&Texture
         fs::remove_dir_all(out).with_context(|| format!("cannot replace {}", out.display()))?;
     }
     for (path, data) in &written {
-        let target = path.split('/').fold(out.to_path_buf(), |folder, part| folder.join(part));
+        let target = paths::join_relative(out, path);
         fs::create_dir_all(target.parent().unwrap())?;
         fs::write(&target, data)?;
     }
@@ -240,7 +240,7 @@ pub fn apply_maps(
         let search = texture_search(&disc, &found)?;
         let folder = line.file.parent().map(Path::to_path_buf).unwrap_or_default();
         let read = |relative: &str| -> dc2tk_assets::Result<Vec<u8>> {
-            let path = relative.split('/').fold(folder.clone(), |path, part| path.join(part));
+            let path = paths::join_relative(&folder, relative);
             fs::read(&path).map_err(|error| dc2tk_assets::Error::invalid(format!("{}: {error}", path.display())))
         };
         let mut gltf = fs::read(&line.file).with_context(|| line.file.display().to_string())?;

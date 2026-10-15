@@ -33,7 +33,8 @@ pub struct Entry<'a> {
 
 /// The files under root that keep takes, as paths from root with "/", in no particular order.
 /// keep sees every folder too, and walk goes into the ones it takes. A root that is not a folder
-/// has no files; a folder that cannot be read is an error, so a listing is never quietly short.
+/// has no files; a folder that cannot be read is an error naming it, so a listing is never
+/// quietly short.
 pub fn walk(root: &Path, keep: impl Fn(&Entry) -> bool) -> io::Result<Vec<String>> {
     let mut found = Vec::new();
     if !root.is_dir() {
@@ -41,8 +42,10 @@ pub fn walk(root: &Path, keep: impl Fn(&Entry) -> bool) -> io::Result<Vec<String
     }
     let mut folders = vec![root.to_path_buf()];
     while let Some(folder) = folders.pop() {
-        for entry in fs::read_dir(&folder)? {
-            let path = entry?.path();
+        let unreadable =
+            |error: io::Error| io::Error::new(error.kind(), format!("cannot read {}: {error}", folder.display()));
+        for entry in fs::read_dir(&folder).map_err(unreadable)? {
+            let path = entry.map_err(unreadable)?.path();
             let relative = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
             let name = file_name(&path);
             let entry = Entry { path: &path, relative: &relative, name: &name, is_dir: path.is_dir() };
@@ -56,6 +59,17 @@ pub fn walk(root: &Path, keep: impl Fn(&Entry) -> bool) -> io::Result<Vec<String
             }
         }
     }
+    Ok(found)
+}
+
+/// Every script (.stb, in any case) under a folder, by path from it with "/", sorted. A folder
+/// that is not there is an error, not a disc without scripts.
+pub fn scripts_under(root: &Path) -> io::Result<Vec<String>> {
+    fs::read_dir(root)
+        .map_err(|error| io::Error::new(error.kind(), format!("cannot read {}: {error}", root.display())))?;
+    let mut found =
+        walk(root, |entry| entry.is_dir || entry.path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("stb")))?;
+    found.sort();
     Ok(found)
 }
 
@@ -109,6 +123,13 @@ mod tests {
         // a folder's files come before a file named like the folder with more after it
         assert_eq!(found, ["a/Y.c", "a.c", "b/x.c"]);
         assert_eq!(walk(&root.join("missing"), |_| true).unwrap(), Vec::<String>::new());
+        for file in ["map/T01.STB", "map/t02.stb", "map/t01.cfg"] {
+            let path = join_relative(&root, file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "").unwrap();
+        }
+        assert_eq!(scripts_under(&root).unwrap(), ["map/T01.STB", "map/t02.stb"]);
+        assert!(scripts_under(&root.join("missing")).unwrap_err().to_string().contains("missing"));
         fs::remove_dir_all(&root).unwrap();
     }
 }

@@ -12,8 +12,8 @@ use indexmap::IndexMap;
 use dc2tk_disc::rebuild;
 use dc2tk_script::compile::Toolchain;
 use dc2tk_script::{
-    build, definitions, discfiles, editor, index, loads, memory, migrate, mods, patches, renames, replace, sdk, slim,
-    startat, tree,
+    build, definitions, discfiles, editor, index, loads, memory, migrate, mods, patches, paths, renames, replace, sdk,
+    slim, startat, tree,
 };
 
 use crate::Common;
@@ -1017,7 +1017,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 paths.iter().cloned().partition(|path| dc2tk_assets::ids::kind_of(path).is_some());
             if !keys.is_empty() {
                 for (id, file, written) in replace::copy_out(iso, &mod_dir, &keys, &asset_tree::index_of(iso, defs)?)? {
-                    let place = file.split('/').fold(mod_dir.clone(), |folder, part| folder.join(part));
+                    let place = paths::join_relative(&mod_dir, &file);
                     if written {
                         println!(
                             "{}: {id}; edit it there, and build puts it at every place the disc has it",
@@ -1029,7 +1029,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                 }
             }
             for path in discfiles::copy_out(iso, &mod_dir, &paths, form.as_deref())? {
-                let place = path.split('/').fold(mod_dir.join(discfiles::DISC), |folder, part| folder.join(part));
+                let place = paths::join_relative(&mod_dir.join(discfiles::DISC), &path);
                 println!("{}: replace it there, and build puts it on the disc", shown(&place));
             }
             Ok(ExitCode::SUCCESS)

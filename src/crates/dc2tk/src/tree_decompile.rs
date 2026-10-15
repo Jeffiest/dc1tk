@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use rayon::prelude::*;
 
 use dc2tk_script::definitions::{self, Definitions};
-use dc2tk_script::{assets, disc, library, pathnames, sdk, slots, source, tree};
+use dc2tk_script::{assets, disc, library, pathnames, paths, sdk, slots, source, tree};
 
 use crate::files;
 
@@ -72,7 +72,7 @@ pub fn run(
     let prefix =
         resolved.strip_prefix(&resolved_root).map(|rest| rest.to_string_lossy().replace('\\', "/")).unwrap_or_default();
     let prefix = if prefix.is_empty() { ".".to_string() } else { prefix };
-    let found = files::find_scripts(stb)?;
+    let found = paths::scripts_under(stb)?;
     // a folder of the disc is compared with that folder of the set's disc
     let scripts: Vec<(String, Vec<u8>)> =
         found.par_iter().map(|path| Ok((path.clone(), std::fs::read(stb.join(path))?))).collect::<Result<_>>()?;

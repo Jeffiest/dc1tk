@@ -8,7 +8,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use rayon::prelude::*;
 
-use dc2tk_script::{constants, coverage, definitions, learn, sdk};
+use dc2tk_script::{constants, coverage, definitions, learn, paths, sdk};
 
 use crate::files;
 use crate::tree_decompile::disc_match_text;
@@ -95,7 +95,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
         }
         DefsCommand::Check { extracted, common } => {
             let defs = common.definitions()?;
-            let paths = files::find_scripts(extracted)?;
+            let paths = paths::scripts_under(extracted)?;
             println!("{}", coverage::format_check(&coverage::check(extracted, &paths, &defs)?));
             let scripts: Vec<(String, Vec<u8>)> = paths
                 .par_iter()
@@ -134,7 +134,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
         }
         DefsCommand::Disc { extracted, into, common } => {
             common.definitions()?;
-            let paths = files::find_scripts(extracted)?;
+            let paths = paths::scripts_under(extracted)?;
             let count = coverage::write_disc(extracted, &paths, into)?;
             let written = into.join(definitions::DISC);
             println!("{} script hashes written to {}", count, files::shown_path(&written.to_string_lossy()));
@@ -143,7 +143,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
         DefsCommand::Todo { extracted, limit, common } => {
             let defs = common.definitions()?;
             let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
-            let paths = files::find_scripts(extracted)?;
+            let paths = paths::scripts_under(extracted)?;
             let (rows, total) = coverage::todo(extracted, &paths, &defs, &common.tables()?, &headers, *limit)?;
             println!("{total} functions still unnamed (counting language variants once); most called first:");
             for row in rows {

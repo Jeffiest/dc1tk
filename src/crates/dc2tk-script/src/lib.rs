@@ -71,7 +71,7 @@ pub mod slim;
 pub mod startat;
 
 // Paths as the tools write them, and walking folders
-pub(crate) mod paths;
+pub mod paths;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

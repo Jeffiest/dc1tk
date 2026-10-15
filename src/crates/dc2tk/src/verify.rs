@@ -11,9 +11,7 @@ use serde_json::{json, Map, Value};
 
 use dc2tk_script::definitions::Definitions;
 use dc2tk_script::natives::{self, Table};
-use dc2tk_script::{asm, assets, compile, disc, library, parse, slots, source, stack, stb};
-
-use crate::files;
+use dc2tk_script::{asm, assets, compile, disc, library, parse, paths, slots, source, stack, stb};
 
 const STAGES: [&str; 4] = ["format", "natives", "assembly", "source"];
 const STATUSES: [&str; 4] = ["pass", "fail", "error", "pending"];
@@ -189,7 +187,7 @@ pub fn verify(
     defs: Definitions,
     headers: indexmap::IndexMap<String, String>,
 ) -> Result<Value> {
-    let paths = files::find_scripts(root)?;
+    let paths = paths::scripts_under(root)?;
     let (defs, mut headers, _) = disc::with_header(root, defs, headers);
     let model = library::model_for(root, &paths, tables, &defs, &headers)?;
     if let Some(text) = headers.get(disc::HEADER).cloned() {
@@ -300,6 +298,7 @@ pub fn format_report(report: &Value, limit: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::files;
 
     const UNREGISTERED: [&str; 22] = [
         "action:6",
