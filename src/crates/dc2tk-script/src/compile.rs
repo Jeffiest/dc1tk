@@ -9,7 +9,6 @@ use indexmap::IndexMap;
 use crate::asm;
 use crate::ctype::IntType;
 use crate::natives::Table;
-use crate::node;
 use crate::node::{kinds, Node};
 use crate::stb::{self, Compare, Mode, Op, Place};
 use crate::{Error, Result};

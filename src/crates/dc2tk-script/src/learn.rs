@@ -12,7 +12,6 @@ use indexmap::IndexMap;
 use regex::Regex;
 
 use crate::natives::Table;
-use crate::node;
 use crate::node::{Map, Node};
 use crate::{
     asm, compile, decompile, definitions, fingerprint, library, names, natives, parse, pathnames, paths, sdk, stb,

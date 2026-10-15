@@ -13,7 +13,7 @@ use regex::Regex;
 
 use crate::node::Node;
 use crate::sdk::Context;
-use crate::{asm, node, notes};
+use crate::{asm, notes};
 
 const MOST_WORDS: usize = 6;
 

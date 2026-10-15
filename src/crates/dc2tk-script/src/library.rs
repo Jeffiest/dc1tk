@@ -15,7 +15,7 @@ use crate::messages::{self, NameTable};
 use crate::natives::{self, Table};
 use crate::node::{Map, Node};
 use crate::sdk::{self, Context, Passed};
-use crate::{assets, decompile, disc, maps, names, node, notes, parse, slots, source, stb, Error, Result};
+use crate::{assets, decompile, disc, maps, names, notes, parse, slots, source, stb, Error, Result};
 
 pub const MINIMUM_USERS: usize = 2;
 

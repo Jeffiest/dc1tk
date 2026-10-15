@@ -9,7 +9,6 @@ use std::path::Path;
 
 use indexmap::IndexMap;
 
-use crate::node;
 use crate::node::Node;
 use crate::{Error, Result};
 

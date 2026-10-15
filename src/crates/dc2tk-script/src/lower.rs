@@ -15,7 +15,6 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ctype::IntType;
-use crate::node;
 use crate::node::{kinds, Map, Node};
 use crate::sdk::Context;
 use crate::{Error, Result};

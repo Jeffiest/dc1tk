@@ -39,7 +39,6 @@ use std::collections::{BTreeSet, HashMap};
 use indexmap::IndexMap;
 
 use crate::ctype::{self, Structs, Ty};
-use crate::node;
 use crate::node::{kinds, Map, Node};
 use crate::sdk::Context;
 use crate::{Error, Result};

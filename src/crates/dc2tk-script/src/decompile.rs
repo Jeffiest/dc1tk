@@ -8,7 +8,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use crate::node;
 use crate::node::{kinds, Map, Node};
 
 use crate::asm::{self, hex};

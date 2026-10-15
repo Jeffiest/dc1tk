@@ -12,7 +12,6 @@ use indexmap::IndexMap;
 
 use crate::definitions::Definitions;
 use crate::natives::Table;
-use crate::node;
 use crate::node::{kinds, Map, Node};
 use crate::{assets, names, paths, Error, Result};
 

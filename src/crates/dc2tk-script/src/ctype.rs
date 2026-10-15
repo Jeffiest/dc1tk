@@ -21,7 +21,6 @@
 
 use indexmap::IndexMap;
 
-use crate::node;
 use crate::node::{Map, Node};
 
 #[derive(Clone, Debug, PartialEq)]

@@ -46,7 +46,6 @@ use regex::Regex;
 
 use crate::asm::{self, Token};
 use crate::index;
-use crate::node;
 use crate::node::{Map, Node};
 use crate::{additions, library, names, numbers, parse, pathnames, sdk, Error, Result};
 

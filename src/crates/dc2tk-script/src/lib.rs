@@ -1,63 +1,77 @@
 //! Dark Chronicle's scripts: the .stb format, its text assembly, the native tables, decompiling
 //! to C and compiling back, and the tools a mod is built with.
 
-pub mod additions;
+// The modules by area. Those only the crate itself uses are pub(crate); the others are what
+// the dc2tk binary and the integration tests (tests/) use.
+
+// The program tree, the .stb format and its assembly, the native tables, the test VM
+#[macro_use]
+pub mod node;
 pub mod asm;
-pub mod assets;
-pub mod build;
-pub mod capture;
+pub(crate) mod fingerprint;
+pub mod natives;
+pub mod stack;
+pub mod stb;
+pub mod vm;
+
+// The C-like language: parsing, the SDK's headers, lowering and compiling, writing source
 pub mod compile;
-pub mod composite;
-pub mod constants;
+pub(crate) mod composite;
+pub(crate) mod cpp;
+pub(crate) mod ctype;
+pub(crate) mod lower;
+pub mod parse;
+pub mod sdk;
+pub mod source;
+
+// Decompiling a disc: the program tree from a script, named and presented with the definitions
+pub mod assets;
 pub mod coverage;
-pub mod cpp;
-pub mod ctype;
 pub mod decompile;
 pub mod decompiler;
 pub mod definitions;
 pub mod disc;
-pub mod discfiles;
-pub mod editor;
-pub mod fingerprint;
-pub mod flags;
-pub mod index;
 pub mod learn;
 pub mod library;
-pub mod loads;
-pub mod lower;
-pub mod mapedit;
-pub mod maps;
-pub mod mapscript;
-pub mod maptable;
-pub mod memory;
 pub mod messages;
-pub mod migrate;
-pub mod mods;
 pub mod names;
-pub mod natives;
 pub mod notes;
-pub mod numbers;
-pub mod patches;
-pub mod pathnames;
-pub mod renames;
-pub mod replace;
-pub mod sdk;
-pub mod slim;
 pub mod slotflow;
 pub mod slots;
 pub mod soundpass;
-pub mod source;
-pub mod startat;
-#[macro_use]
-pub mod node;
-pub mod parse;
-pub mod paths;
-pub mod stack;
-pub mod stb;
-pub mod tree;
 pub mod villagers;
-pub mod vm;
+
+// A decompiled tree, read as text: its record, names, flags, constants and cross-references
+pub mod constants;
+pub mod flags;
+pub mod index;
+pub mod loads;
+pub mod maps;
+pub mod pathnames;
+pub mod tree;
 pub mod xref;
+
+// Mods, and building an image with them
+pub mod additions;
+pub mod build;
+pub mod capture;
+pub mod discfiles;
+pub mod editor;
+pub mod mapedit;
+pub mod mapscript;
+pub mod maptable;
+pub mod memory;
+pub mod migrate;
+pub mod mods;
+pub mod numbers;
+pub mod patches;
+pub mod renames;
+pub mod replace;
+pub mod slim;
+pub mod startat;
+
+// Paths as the tools write them, and walking folders
+pub(crate) mod paths;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
