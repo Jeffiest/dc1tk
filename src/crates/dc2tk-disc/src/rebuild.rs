@@ -6,7 +6,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use crate::archive::{self, Archive, Member};
+use crate::archive::{self, Member};
 use crate::{iso, Error, Result, WithPath};
 
 pub const SCRIPT_SUFFIXES: [&str; 2] = [".stb", ".STB"];
@@ -299,12 +299,6 @@ pub fn overwrite_iso_file(image_path: &Path, path: &str, data: &[u8]) -> Result<
         .with_path("write", image_path)
 }
 
-/// The bytes a disc file, or a member inside it, reads back as from an image.
-pub fn read_back(image: &[u8], archive: &Archive, top: &str, members: &[String]) -> Option<Vec<u8>> {
-    let entry = archive.entry(top)?;
-    read_member(archive.read(image, entry), members).map(|data| data.to_vec())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,9 +313,7 @@ mod tests {
     }
 
     fn read_back_file(image_path: &Path, path: &str) -> Option<Vec<u8>> {
-        let image = crate::Image::open(image_path).unwrap();
-        let archive = Archive::open(image.bytes()).unwrap();
-        read_back(image.bytes(), &archive, path, &[])
+        crate::DiscSource::open(image_path).unwrap().member(path, &[]).unwrap().map(std::borrow::Cow::into_owned)
     }
 
     #[test]
