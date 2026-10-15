@@ -611,8 +611,13 @@ fn the_event_port_follows_calls_and_rests_at_the_bank_events_put_back() {
     // battle music back
     let scene = function(
         "scene",
-        node!([load_event("snd2/event/EV_100_105.snd"), call("keep", vec![]), read_port(), stop_port_entry(11),
-               call("load_event_sound", vec![])]),
+        node!([
+            load_event("snd2/event/EV_100_105.snd"),
+            call("keep", vec![]),
+            read_port(),
+            stop_port_entry(11),
+            call("load_event_sound", vec![])
+        ]),
     );
     let keep = function("keep", node!([]));
     let victory = function("victory", node!([read_port(), stop_port_entry(0)]));

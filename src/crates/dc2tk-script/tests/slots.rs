@@ -65,7 +65,8 @@ fn villager_tables_give_each_slot_the_villagers_a_chapter_puts_there() {
          NPC  3 ;\n\tPROGRESS  1 , 0 ,\"x\";\n\t\tNOON_PLACE  2 ;\n\t\tNIGHT_PLACE  2 ;\n\tPROGRESS_END;\nNPC_END;\n",
     )
     .unwrap();
-    std::fs::write(root.join("place.cfg"), "NPC_PLACE  1 , 1 ;\nNPC_PLACE_END;\nNPC_PLACE  2 , 2 ;\nNPC_PLACE_END;\n").unwrap();
+    std::fs::write(root.join("place.cfg"), "NPC_PLACE  1 , 1 ;\nNPC_PLACE_END;\nNPC_PLACE  2 , 2 ;\nNPC_PLACE_END;\n")
+        .unwrap();
     std::fs::write(
         root.join("npc.cfg"),
         "NPC_INFO  1 ,\"a\",\"p01_01a\",0;\nNPC_INFO  2 ,\"b\",\"p01_02a\",0;\nNPC_INFO  3 ,\"c\",\"p01_03a\",0;\n",
@@ -89,13 +90,8 @@ fn villager_tables_give_each_slot_the_villagers_a_chapter_puts_there() {
     slots::survey(&mut found, "map/i/i01/h01/i01h01_1.stb", &program(vec![load(25, "chara/e1_steve.chr")]));
     let npc_names: NameTable = [(NameKey::Int(3), "Cedric".to_string())].into_iter().collect();
     let names: IndexMap<String, NameTable> = [("npc_id".to_string(), npc_names)].into_iter().collect();
-    let changing = slots::villagers(
-        &found,
-        &BTreeMap::new(),
-        Some(&tables),
-        &names,
-        &["map/i/i01/h01/i01h01_1.stb".to_string()],
-    );
+    let changing =
+        slots::villagers(&found, &BTreeMap::new(), Some(&tables), &names, &["map/i/i01/h01/i01h01_1.stb".to_string()]);
     assert_eq!(changing.names["i01h01"][&24], "CHARA_I01_H01_CEDRIC");
     let context = slots::on_map(Some(Context::default()), Some("i01h01"), &changing).unwrap();
     assert_eq!(context.enums["chara_slot_villager"][&24], "CHARA_I01_H01_CEDRIC");

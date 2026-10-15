@@ -832,7 +832,8 @@ impl Model {
         let uses = self.sound_uses.lock().unwrap().get(&library.path).cloned().unwrap_or_default();
         let mut sounds = sdk::Sounds { seed: Some(sdk::library_sounds(&uses)), ..sdk::Sounds::default() };
         // a library only the scripts of one map include names that map's villager slots
-        let maps: BTreeSet<Option<&String>> = library.user_paths.iter().map(|path| self.villagers.maps.get(path)).collect();
+        let maps: BTreeSet<Option<&String>> =
+            library.user_paths.iter().map(|path| self.villagers.maps.get(path)).collect();
         let map = match maps.into_iter().collect::<Vec<_>>()[..] {
             [Some(map)] => Some(map.as_str()),
             _ => None,
@@ -852,7 +853,9 @@ impl Model {
             None => functions,
         };
         let presented = match (map.and_then(|map| self.villagers.notes.get(map)), &found) {
-            (Some(notes), Some(found)) => with_villager_notes(&presented, found, notes).as_array().cloned().unwrap_or_default(),
+            (Some(notes), Some(found)) => {
+                with_villager_notes(&presented, found, notes).as_array().cloned().unwrap_or_default()
+            }
             _ => presented,
         };
         let presented = notes::annotate_functions(presented, &self.defs.strings);
@@ -1023,7 +1026,8 @@ impl Model {
         let numbered = sdk::numbered(context, numbering.as_deref());
         let mut presented = sdk::present(scripted, numbered.as_ref(), &params, &shown_hidden, &mut sounds);
         if let (Some(notes), Some(found)) = (map.and_then(|map| self.villagers.notes.get(map)), numbered.as_ref()) {
-            presented = presented.clone().with("functions", with_villager_notes(list(&presented, "functions"), found, notes));
+            presented =
+                presented.clone().with("functions", with_villager_notes(list(&presented, "functions"), found, notes));
         }
         if let Some(passed) = &sounds.out {
             self.record_sound_uses(&hidden_by_library, &global_names, passed);
