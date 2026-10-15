@@ -142,7 +142,7 @@ impl Values {
     pub fn repr(&self) -> String {
         let number = |v: &Num| match v {
             Num::Int(i) => i.to_string(),
-            Num::Float(f) => crate::py::float_repr(*f),
+            Num::Float(f) => dc2tk_py::float_repr(*f),
         };
         let mut out = String::from("[");
         for (k, chunk) in self.values.chunks(self.n.max(1)).enumerate() {

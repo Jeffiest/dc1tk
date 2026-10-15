@@ -263,13 +263,18 @@ pub fn read_text(path: &std::path::Path) -> std::io::Result<String> {
     Ok(std::fs::read_to_string(path)?.replace("\r\n", "\n").replace('\r', "\n"))
 }
 
+/// Text with \n as this system's line ending, as Python writes a text file: \r\n on Windows.
+pub fn native_lines(text: &str) -> std::borrow::Cow<'_, str> {
+    if cfg!(windows) {
+        text.replace('\n', "\r\n").into()
+    } else {
+        text.into()
+    }
+}
+
 /// Path.write_text(): UTF-8, with \n written as this system's line ending.
 pub fn write_text(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    if cfg!(windows) {
-        std::fs::write(path, text.replace('\n', "\r\n"))
-    } else {
-        std::fs::write(path, text)
-    }
+    std::fs::write(path, native_lines(text).as_bytes())
 }
 
 /// Whether c falls in one of a table's (first, last) pairs.

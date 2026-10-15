@@ -150,7 +150,7 @@ fn float_text(v: f64) -> String {
     } else if v.is_infinite() {
         if v > 0.0 { "Infinity" } else { "-Infinity" }.into()
     } else {
-        crate::py::float_repr(v)
+        dc2tk_py::float_repr(v)
     }
 }
 

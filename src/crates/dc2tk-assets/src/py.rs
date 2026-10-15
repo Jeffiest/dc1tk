@@ -1,32 +1,9 @@
-//! Arithmetic as CPython does it, where the converters' output depends on it: sum() of floats
-//! (compensated since 3.12), round() (half to even), min()/max() (first wins), // and % (floor),
-//! struct.pack('<f') and a number that is an int or a float.
+//! Arithmetic as CPython does it, where the converters' output depends on it: a number that is an
+//! int or a float and sum() of those (compensated since 3.12), round() (half to even),
+//! min()/max() (first wins), // and % (floor), struct.pack('<f'). sum() of floats alone and repr()
+//! of a float are dc2tk_py's sum_floats and float_repr.
 
 use std::ops::{Add, Mul, Sub};
-
-/// sum() of floats: the start value is the int 0, so the first float is added to 0.0 plainly,
-/// then Neumaier's compensated summation, the compensation added at the end when finite.
-pub fn sum<I: IntoIterator<Item = f64>>(items: I) -> f64 {
-    let mut items = items.into_iter();
-    let Some(first) = items.next() else {
-        return 0.0;
-    };
-    let mut total = 0.0 + first;
-    let mut compensation = 0.0;
-    for x in items {
-        let t = total + x;
-        if total.abs() >= x.abs() {
-            compensation += (total - t) + x;
-        } else {
-            compensation += (x - t) + total;
-        }
-        total = t;
-    }
-    if compensation != 0.0 && compensation.is_finite() {
-        total += compensation;
-    }
-    total
-}
 
 /// A Python number of the kinds the converters meet: an int (exact) or a float.
 #[derive(Clone, Copy, Debug)]
@@ -237,43 +214,6 @@ pub fn div(a: f64, b: f64) -> crate::Result<f64> {
     Ok(a / b)
 }
 
-/// repr() of a float: the shortest digits that read back as the value and, of those, the nearest
-/// to it, a tie going to the even digit (as CPython's dtoa picks them; Rust's shortest digits round
-/// such a tie up).
-pub fn float_repr(value: f64) -> String {
-    if value.is_nan() {
-        return "nan".into();
-    }
-    if value.is_infinite() {
-        return if value < 0.0 { "-inf" } else { "inf" }.into();
-    }
-    let shortest = format!("{:e}", value.abs());
-    let (mantissa, _) = shortest.split_once('e').unwrap();
-    let length = mantissa.chars().filter(char::is_ascii_digit).count();
-    let nearest = format!("{:.*e}", length - 1, value.abs());
-    let chosen = if nearest.parse::<f64>() == Ok(value.abs()) { nearest } else { shortest };
-    let (mantissa, exponent) = chosen.split_once('e').unwrap();
-    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
-    let point = exponent.parse::<i32>().unwrap() + 1;
-    let sign = if value.is_sign_negative() { "-" } else { "" };
-    let body = if point <= -4 || point > 16 {
-        let mut text = digits[..1].to_string();
-        if digits.len() > 1 {
-            text.push('.');
-            text.push_str(&digits[1..]);
-        }
-        let exponent = point - 1;
-        format!("{text}e{}{:02}", if exponent < 0 { '-' } else { '+' }, exponent.abs())
-    } else if point <= 0 {
-        format!("0.{}{}", "0".repeat((-point) as usize), digits)
-    } else if point as usize >= digits.len() {
-        format!("{}{}.0", digits, "0".repeat(point as usize - digits.len()))
-    } else {
-        format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
-    };
-    format!("{sign}{body}")
-}
-
 /// int.bit_length().
 pub fn bit_length(value: i64) -> u32 {
     64 - value.unsigned_abs().leading_zeros()
@@ -285,8 +225,6 @@ mod tests {
 
     #[test]
     fn sums_like_python() {
-        assert_eq!(sum([0.1, 0.2, 0.3]), 0.6);
-        assert_eq!(sum([-0.0]).to_bits(), 0.0f64.to_bits());
         assert_eq!(sum_nums([Num::Float(1e100), Num::Int(1), Num::Float(-1e100)]).f(), 0.0);
         assert_eq!(sum_nums([Num::Float(1e100), Num::Float(1.0), Num::Float(-1e100)]).f(), 1.0);
         assert!(sum_nums([Num::Int(1), Num::Int(2)]).is_int());
@@ -302,37 +240,6 @@ mod tests {
         assert_eq!(modulo(-7, 16), 9);
         assert_eq!(bit_length(-1), 1);
         assert_eq!(bit_length(255), 8);
-    }
-
-    #[test]
-    fn reprs_like_python() {
-        assert_eq!(float_repr(-1.0728836059570312e-06), "-1.0728836059570312e-06");
-        assert_eq!(float_repr(1e16), "1e+16");
-        assert_eq!(float_repr(0.1), "0.1");
-        assert_eq!(float_repr(-0.0), "-0.0");
-        assert_eq!(float_repr(123456.0), "123456.0");
-        assert_eq!(float_repr(1e-5), "1e-05");
-        assert_eq!(float_repr(5e-324), "5e-324");
-    }
-
-    /// Checks repr() against a file of "hex bits<TAB>Python's repr" lines named by $C2_REPR_FILE.
-    #[test]
-    #[ignore]
-    fn reprs_like_python_for_a_listing() {
-        let path = std::env::var("C2_REPR_FILE").expect("C2_REPR_FILE names the listing");
-        let text = std::fs::read_to_string(path).unwrap();
-        let mut wrong = 0;
-        for line in text.lines() {
-            let (bits, expected) = line.split_once('\t').unwrap();
-            let value = f64::from_bits(u64::from_str_radix(bits, 16).unwrap());
-            if float_repr(value) != expected {
-                wrong += 1;
-                if wrong < 10 {
-                    eprintln!("{bits}: {} != {expected}", float_repr(value));
-                }
-            }
-        }
-        assert_eq!(wrong, 0, "{} of {} differ", wrong, text.lines().count());
     }
 
     #[test]

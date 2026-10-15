@@ -75,7 +75,7 @@ pub fn xform_dir(m: &Matrix, v: &[f64]) -> [f64; 3] {
 
 /// The vector divided by its length, or the fallback when it has none.
 pub fn normalize(v: &[f64], fallback: &[f64]) -> Vec<f64> {
-    let length = py::sum(v.iter().map(|x| x * x)).sqrt();
+    let length = dc2tk_py::sum_floats(v.iter().map(|x| x * x)).sqrt();
     if length > 1e-12 {
         v.iter().map(|x| x / length).collect()
     } else {
@@ -112,7 +112,7 @@ fn quat_from_rot(c0: &[f64], c1: &[f64], c2: &[f64]) -> Result<Vec<f64>> {
 pub fn decompose(m: &Matrix) -> Result<([f64; 3], Vec<f64>, [f64; 3])> {
     let t = [m[12], m[13], m[14]];
     let cols = [&m[0..3], &m[4..7], &m[8..11]];
-    let mut s = cols.map(|c| py::sum(c.iter().map(|x| x * x)).sqrt());
+    let mut s = cols.map(|c| dc2tk_py::sum_floats(c.iter().map(|x| x * x)).sqrt());
     let det = cols[0][0] * (cols[1][1] * cols[2][2] - cols[1][2] * cols[2][1])
         - cols[1][0] * (cols[0][1] * cols[2][2] - cols[0][2] * cols[2][1])
         + cols[2][0] * (cols[0][1] * cols[1][2] - cols[0][2] * cols[1][1]);
@@ -155,7 +155,7 @@ fn engine_quat_to_gltf(q: &[f64; 4]) -> Vec<f64> {
 
 pub(crate) fn slerp(a: &[f64], b: &[f64], t: f64) -> Result<Vec<f64>> {
     let mut b = b.to_vec();
-    let mut d = py::sum(a.iter().zip(&b).map(|(x, y)| x * y));
+    let mut d = dc2tk_py::sum_floats(a.iter().zip(&b).map(|(x, y)| x * y));
     if d < 0.0 {
         b = b.iter().map(|x| -x).collect();
         d = -d;
@@ -387,7 +387,7 @@ pub fn vertex_weights(lists: &[KeyList], frame: usize, vertex_num: usize) -> Opt
     }
     let first_bone = first_bone?;
     for l in &mut out {
-        let s = py::sum(l.iter().map(|(_, w)| *w));
+        let s = dc2tk_py::sum_floats(l.iter().map(|(_, w)| *w));
         if s == 0.0 {
             *l = vec![(first_bone, 1.0)];
         } else if s != 1.0 {
@@ -552,7 +552,7 @@ fn py_str(value: &Arg) -> String {
         Arg::Null => "None".into(),
         Arg::Bool(b) => if *b { "True" } else { "False" }.into(),
         Arg::Int(v) => v.to_string(),
-        Arg::Float(v) => crate::py::float_repr(*v),
+        Arg::Float(v) => dc2tk_py::float_repr(*v),
         Arg::Str(s) => s.clone(),
         _ => String::new(),
     }
@@ -1665,7 +1665,7 @@ fn export_parts(
                     frames.iter().map(|&f| sample(list, &key_frames, f, rotation)).collect::<Result<Vec<_>>>()?;
                 if rotation {
                     for a in 1..values.len() {
-                        if py::sum(values[a - 1].iter().zip(&values[a]).map(|(x, y)| x * y)) < 0.0 {
+                        if dc2tk_py::sum_floats(values[a - 1].iter().zip(&values[a]).map(|(x, y)| x * y)) < 0.0 {
                             values[a] = values[a].iter().map(|x| -x).collect();
                         }
                     }

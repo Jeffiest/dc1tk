@@ -47,26 +47,16 @@ pub fn python_path(path: &str) -> String {
     }
 }
 
-/// Text with the line endings Python writes in text mode on this system.
-fn native_lines(text: &str) -> String {
-    if cfg!(windows) {
-        text.replace('\n', "\r\n")
-    } else {
-        text.to_string()
-    }
-}
-
-/// Path.read_text(): UTF-8 with \r\n and \r read as \n.
+/// Path.read_text() (dc2tk_py::read_text), naming the file when it cannot be read.
 pub fn read_text(path: &Path) -> Result<String> {
-    let text = fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
-    Ok(text.replace("\r\n", "\n").replace('\r', "\n"))
+    dc2tk_py::read_text(path).with_context(|| format!("cannot read {}", path.display()))
 }
 
 /// Path.write_text(), or standard output when there is no path.
 pub fn write_output(path: Option<&Path>, text: &str) -> Result<()> {
-    let text = native_lines(text);
+    let text = dc2tk_py::native_lines(text);
     match path {
-        Some(path) => fs::write(path, text).with_context(|| format!("cannot write {}", path.display())),
+        Some(path) => fs::write(path, text.as_bytes()).with_context(|| format!("cannot write {}", path.display())),
         None => {
             let mut out = std::io::stdout().lock();
             out.write_all(text.as_bytes())?;

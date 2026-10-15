@@ -519,7 +519,7 @@ pub fn mat_mul(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
     let mut out = [0.0; 16];
     for c in 0..4 {
         for r in 0..4 {
-            out[c * 4 + r] = py::sum((0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]));
+            out[c * 4 + r] = dc2tk_py::sum_floats((0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]));
         }
     }
     out

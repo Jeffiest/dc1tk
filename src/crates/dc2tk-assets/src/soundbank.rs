@@ -862,7 +862,7 @@ pub fn read_wav(data: &[u8]) -> Result<Sound> {
         _ => bail!("unsupported WAV format {tag} with {bits} bits"),
     };
     let values: Vec<f64> = if channels > 1 {
-        values.chunks(channels).map(|frame| py::sum(frame.iter().copied()) / channels as f64).collect()
+        values.chunks(channels).map(|frame| dc2tk_py::sum_floats(frame.iter().copied()) / channels as f64).collect()
     } else {
         values
     };
