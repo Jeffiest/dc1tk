@@ -1,4 +1,4 @@
-//! The C preprocessor's parts beyond what the tokenizer does inline (parse.rs): macros, expanded
+//! The C preprocessor's parts beyond what the tokenizer does inline (parse/lex.rs): macros, expanded
 //! as C expands them, and #if conditions, worked out as C works them out.
 //!
 //! A #define whose value is a constant (a literal, a negative one, or a parenthesised integer

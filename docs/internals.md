@@ -93,7 +93,8 @@ it as C; `decompiler.rs` runs the three with the definitions.
 
 ## Compiler
 
-`parse.rs` reads `.c` into the same tree and `compile.rs` turns
+`parse/` reads `.c` into the same tree (`parse/lex.rs` tokenizes and preprocesses, the
+other parts parse file scope, declarations, types, statements and expressions) and `compile.rs` turns
 the tree into text assembly, which `asm::assemble` lays out. Slots, label
 numbers, native numbers and string indices are assigned by the rules above;
 the assembler computes every offset, record field and header field.

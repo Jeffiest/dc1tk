@@ -589,7 +589,7 @@ impl Lowering<'_> {
                 })
             }
             "field" => {
-                // an initializer's slot (parse.rs), of its C type, read as its type's base
+                // an initializer's slot (parse/declarations.rs), of its C type, read as its type's base
                 let ty = node.get("ctype").map_or_else(|| Ty::Scalar(node.text("type").to_string()), Ty::from_node);
                 let mut plain = node.clone().with("type", self.slot_kind(&ty));
                 if let Some(map) = plain.as_object_mut() {

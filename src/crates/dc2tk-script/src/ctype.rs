@@ -412,7 +412,7 @@ impl Ty {
     }
 }
 
-/// A tag as the source wrote it: a block's own struct's tag (T#key_n, see parse.rs) is T, and an
+/// A tag as the source wrote it: a block's own struct's tag (T#key_n, see parse::State::declared_tag) is T, and an
 /// unnamed struct's made-up one "(unnamed)".
 pub fn tag_shown(tag: &str) -> &str {
     if tag.starts_with("__anonymous") {

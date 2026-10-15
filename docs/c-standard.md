@@ -285,7 +285,7 @@ C89 leaves these to the implementation and asks it to say what it does.
 
 ## How the forms the VM lacks are lowered
 
-Done (see `src/crates/dc2tk-script/src/lower.rs`, `parse.rs` and `cpp.rs`):
+Done (see `src/crates/dc2tk-script/src/lower.rs`, `parse/` and `cpp.rs`):
 
 - **Macros** are expanded by the tokenizer, but a `#define` whose value is a constant (a
   number, a string, a negative number, or a parenthesised integer expression) stays a named
