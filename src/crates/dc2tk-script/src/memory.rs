@@ -15,8 +15,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use dc2tk_assets::info_cfg;
-use dc2tk_assets::info_cfg::Arg;
+use dc2tk_assets::im3;
+use dc2tk_assets::info_cfg::{self, Arg};
+use dc2tk_assets::mds::{self, F_COLOUR, PRIM_STRIP};
 use dc2tk_disc::{archive, text};
 
 /// Bytes in a quadword: mgCMemory sizes and allocations count quadwords.
@@ -246,15 +247,10 @@ fn i32_at(data: &[u8], at: usize) -> Option<i32> {
     u32_at(data, at).map(|value| value as i32)
 }
 
-const F_NO_UV: u32 = 0x10;
-const F_COLOUR: u32 = 0x100;
-const F_NO_NORMAL: u32 = 0x200;
-const STRIP: u32 = 4;
-
 /// Indices per corner of a primitive of this type: the vertex, a normal, a uv, a colour
 /// (CreateFace).
 fn stride(kind: u32) -> u64 {
-    (3 + (kind & F_COLOUR != 0) as i64 - (kind & F_NO_UV != 0) as i64 - (kind & F_NO_NORMAL != 0) as i64) as u64
+    mds::Prim::stride_of(kind) as u64
 }
 
 /// The frames of an MDS file and the counts of each mesh (MDS_HEADER, MDTOBJ_HEADER records of
@@ -338,7 +334,7 @@ fn packet(prim: &Prim, skinned_bones: Option<u64>) -> u64 {
     while left > 0 {
         let corners = left.min(size);
         quadwords += 4 + corner * corners;
-        if prim.kind & 7 == STRIP && size < left {
+        if prim.kind & 7 == PRIM_STRIP && size < left {
             left += 2;
         }
         left -= size.min(left);
@@ -454,7 +450,7 @@ fn collision(stack: &mut Stack, mds: &[u8]) -> Option<()> {
     stack.alloc(objects.len() as u64 * 0x120 / 16 + 2);
     for mesh in objects.iter().filter_map(|object| object.mesh.as_ref()) {
         stack.alloc(7);
-        if !mesh.prims.iter().any(|prim| prim.kind & 7 == STRIP || prim.kind & F_COLOUR != 0) {
+        if !mesh.prims.iter().any(|prim| prim.kind & 7 == PRIM_STRIP || prim.kind & F_COLOUR != 0) {
             let triangles: u64 = mesh.prims.iter().map(|prim| prim.count as u64 / 3).sum();
             stack.alloc(triangles * 0x50 / 16);
         }
@@ -955,20 +951,40 @@ impl Blocks {
     }
 }
 
+/// A TIM2 picture's fields EnterTexture reads, from the start of its file: the picture header
+/// follows the 0x10-byte file header.
+const TIM2_MIPMAPS: usize = 0x21;
+const TIM2_IMAGE_TYPE: usize = 0x23;
+const TIM2_WIDTH: usize = 0x24;
+const TIM2_HEIGHT: usize = 0x26;
+
+/// A picture file's header (mgIMG_FILE_HEADER, 0x10 bytes): the entries of an IMG or IM2 file
+/// (num) and of an IM3 (num3); its entries follow it.
+const IMG_COUNT: usize = 4;
+const IM3_COUNT: usize = 8;
+const IMG_ENTRIES: usize = 0x10;
+/// An IMG or IM2 entry (mgIMG1_HEADER, 0x30 bytes): a name of 0x20 bytes, then the picture's
+/// offset.
+const IMG_ENTRY: usize = 0x30;
+const IMG_OFFSET: usize = 0x20;
+/// An IM3 entry (mgIMG_HEADER, 0x40 bytes): a name of 0x20 bytes, then the picture's offset, its
+/// swizzle, its block (the group) and no_image.
+const IM3_ENTRY: usize = 0x40;
+const IM3_OFFSET: usize = 0x24;
+const IM3_SWIZZLED: usize = 0x28;
+const IM3_BLOCK: usize = 0x2C;
+const IM3_NO_IMAGE: usize = 0x30;
+const NAME: usize = 0x20;
+
 /// EnterTexture for one TIM2 picture (mg_texture.cpp:482, 683): its size in GS memory, rounded up
 /// to whole pages, and whether it may go in the Z buffer. None when the engine refuses it.
 fn texture(img: &[u8], at: usize, swizzled: bool, no_image: bool) -> Option<Texture> {
-    let mips = *img.get(at + 0x21)? as usize;
-    let bpp: i64 = match img.get(at + 0x23)? {
-        1 => 16,
-        2 => 24,
-        3 => 32,
-        4 => 4,
-        5 => 8,
-        _ => return None,
-    };
-    let width = u16::from_le_bytes(img.get(at + 0x24..at + 0x26)?.try_into().unwrap()) as i64;
-    let height = u16::from_le_bytes(img.get(at + 0x26..at + 0x28)?.try_into().unwrap()) as i64;
+    let mips = *img.get(at + TIM2_MIPMAPS)? as usize;
+    let bpp = im3::Format::from_type(*img.get(at + TIM2_IMAGE_TYPE)?)?.bpp() as i64;
+    let u16_at =
+        |field: usize| img.get(at + field..at + field + 2).map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]));
+    let width = u16_at(TIM2_WIDTH)? as i64;
+    let height = u16_at(TIM2_HEIGHT)? as i64;
     let mut images = [false; 4];
     if !no_image {
         for level in images.iter_mut().take(mips.max(1)) {
@@ -1003,66 +1019,93 @@ fn texture(img: &[u8], at: usize, swizzled: bool, no_image: bool) -> Option<Text
 ///   to it, and `last_block_used` follows the picture's block, so the two stay equal. The next
 ///   file then starts one block on from this one's start, even when this one spilled past it.
 fn enter_img(blocks: &mut Blocks, img: &[u8], block: i64, block_max: i64) -> i64 {
-    if img.get(..2) != Some(b"IM") {
-        return 0;
+    match img.get(..3) {
+        Some(b"IM3") => enter_im3(blocks, img, block, block_max),
+        Some(magic) if magic.starts_with(b"IM") => {
+            enter_img1(blocks, img, block, block_max, magic == b"IM2");
+            // last_block_used - current_block, which are equal here (see above)
+            0
+        }
+        _ => 0,
     }
-    if img.get(..3) == Some(b"IM3") {
-        let count = u32_at(img, 8).unwrap_or(0) as usize;
-        let mut entries: Vec<(Vec<u8>, usize, bool, i64, bool)> = Vec::new();
-        for index in 0..count {
-            let at = 0x10 + index * 0x40;
-            let Some(raw) = img.get(at..at + 0x20) else { break };
-            let name = raw[..raw.iter().position(|&b| b == 0).unwrap_or(0x20)].to_vec();
-            let offset = i32_at(img, at + 0x24).unwrap_or(0).max(0) as usize;
-            let swizzled = i32_at(img, at + 0x28).unwrap_or(0) != 0;
-            let group = i32_at(img, at + 0x2C).unwrap_or(0) as i64;
-            let no_image = img.get(at + 0x30..at + 0x32).is_some_and(|bytes| bytes != [0, 0]);
-            entries.push((name, offset, swizzled, group, no_image));
-        }
-        // the engine's exchange sort (not stable), which leaves '#' scripts where they are
-        for a in 0..entries.len().saturating_sub(1) {
-            for b in a + 1..entries.len() {
-                entries[a].3 = entries[a].3.max(0);
-                entries[b].3 = entries[b].3.max(0);
-                if entries[b].3 < entries[a].3 && entries[b].0.first() != Some(&b'#') {
-                    entries.swap(a, b);
-                }
-            }
-        }
-        let mut spill = 0;
-        let mut last = block;
-        for (name, offset, swizzled, group, no_image) in entries {
-            if name.first() == Some(&b'#') || name.is_empty() {
-                continue;
-            }
-            let at = spill + block + group;
-            let Some(texture) = texture(img, offset, swizzled, no_image) else { continue };
-            if at < 0 || at >= block_max {
-                continue;
-            }
-            blocks.blocks.entry(at).or_default().push(texture);
-            let mut placed = at;
-            if at < block_max - 1 && blocks.remain(at) < 0 {
-                spill += 1;
-                blocks.spills += 1;
-                let moved = blocks.blocks.get_mut(&at).unwrap().pop().unwrap();
-                placed = at + 1;
-                blocks.blocks.entry(placed).or_default().push(moved);
-            }
-            last = last.max(placed);
-        }
-        return last - block;
+}
+
+/// An entry of an IM3 file.
+struct Im3Entry {
+    name: Vec<u8>,
+    offset: usize,
+    swizzled: bool,
+    /// The texture block it goes into, from the one the file is entered at.
+    group: i64,
+    no_image: bool,
+}
+
+fn im3_entries(img: &[u8]) -> Vec<Im3Entry> {
+    let count = u32_at(img, IM3_COUNT).unwrap_or(0) as usize;
+    let mut entries = Vec::new();
+    for index in 0..count {
+        let at = IMG_ENTRIES + index * IM3_ENTRY;
+        let Some(raw) = img.get(at..at + NAME) else { break };
+        entries.push(Im3Entry {
+            name: raw[..raw.iter().position(|&b| b == 0).unwrap_or(NAME)].to_vec(),
+            offset: i32_at(img, at + IM3_OFFSET).unwrap_or(0).max(0) as usize,
+            swizzled: i32_at(img, at + IM3_SWIZZLED).unwrap_or(0) != 0,
+            group: i32_at(img, at + IM3_BLOCK).unwrap_or(0) as i64,
+            no_image: img.get(at + IM3_NO_IMAGE..at + IM3_NO_IMAGE + 2).is_some_and(|bytes| bytes != [0, 0]),
+        });
     }
-    let swizzled = img.get(..3) == Some(b"IM2");
-    let count = u32_at(img, 4).unwrap_or(0) as usize;
+    entries
+}
+
+/// An IM3's pictures entered; the blocks past `block` they reach.
+fn enter_im3(blocks: &mut Blocks, img: &[u8], block: i64, block_max: i64) -> i64 {
+    let mut entries = im3_entries(img);
+    // the engine's exchange sort (not stable), which leaves '#' scripts where they are
+    for a in 0..entries.len().saturating_sub(1) {
+        for b in a + 1..entries.len() {
+            entries[a].group = entries[a].group.max(0);
+            entries[b].group = entries[b].group.max(0);
+            if entries[b].group < entries[a].group && entries[b].name.first() != Some(&b'#') {
+                entries.swap(a, b);
+            }
+        }
+    }
+    let mut spill = 0;
+    let mut last = block;
+    for entry in entries {
+        if entry.name.first() == Some(&b'#') || entry.name.is_empty() {
+            continue;
+        }
+        let at = spill + block + entry.group;
+        let Some(texture) = texture(img, entry.offset, entry.swizzled, entry.no_image) else { continue };
+        if at < 0 || at >= block_max {
+            continue;
+        }
+        blocks.blocks.entry(at).or_default().push(texture);
+        let mut placed = at;
+        if at < block_max - 1 && blocks.remain(at) < 0 {
+            spill += 1;
+            blocks.spills += 1;
+            let moved = blocks.blocks.get_mut(&at).unwrap().pop().unwrap();
+            placed = at + 1;
+            blocks.blocks.entry(placed).or_default().push(moved);
+        }
+        last = last.max(placed);
+    }
+    last - block
+}
+
+/// An IMG or IM2 file's pictures entered into one running block.
+fn enter_img1(blocks: &mut Blocks, img: &[u8], block: i64, block_max: i64, swizzled: bool) {
+    let count = u32_at(img, IMG_COUNT).unwrap_or(0) as usize;
     let mut current = block;
     for index in 0..count {
-        let at = 0x10 + index * 0x30;
-        let Some(raw) = img.get(at..at + 0x20) else { break };
+        let at = IMG_ENTRIES + index * IMG_ENTRY;
+        let Some(raw) = img.get(at..at + NAME) else { break };
         if raw[0] == 0 {
             continue;
         }
-        let offset = i32_at(img, at + 0x20).unwrap_or(0).max(0) as usize;
+        let offset = i32_at(img, at + IMG_OFFSET).unwrap_or(0).max(0) as usize;
         let Some(texture) = texture(img, offset, swizzled, false) else { continue };
         if current >= block_max {
             continue;
@@ -1074,8 +1117,6 @@ fn enter_img(blocks: &mut Blocks, img: &[u8], block: i64, block_max: i64) -> i64
             blocks.spills += 1;
         }
     }
-    // last_block_used - current_block, which are equal here (see above)
-    0
 }
 
 /// What a set of picture files takes of the texture blocks.
