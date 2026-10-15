@@ -582,7 +582,9 @@ impl Lowering<'_> {
                     let shown = if node["arrow"] == Node::Bool(true) { "->" } else { "." };
                     return fail(format!("{shown}{name} of {}, which is not a struct or union", ty.shown()));
                 };
-                let Some((offset, _, member, bits)) = ctype::member_bits(&self.structs, tag, name) else {
+                let Some(ctype::Member { slot: offset, ty: member, bits, .. }) =
+                    ctype::member(&self.structs, tag, name)
+                else {
                     return fail(format!("{} has no member {name}", ty.shown()));
                 };
                 let place = self.offset(base, offset, None);

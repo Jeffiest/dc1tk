@@ -1408,7 +1408,8 @@ fn offsetof(state: &mut State) -> Result<Node> {
         let Ty::Struct(tag) = &ty else {
             return state.fail(format!("offsetof needs a struct or union, not {}", ty.shown()));
         };
-        let Some((_, offset, member, bits)) = ctype::member_bits(&state.structs, tag, &name) else {
+        let Some(ctype::Member { byte: offset, ty: member, bits, .. }) = ctype::member(&state.structs, tag, &name)
+        else {
             return state.fail(format!("{} has no member {name}", ty.shown()));
         };
         if bits.is_some() {
@@ -2133,7 +2134,7 @@ fn member_of(state: &State, node: &Node) -> Option<(Ty, Option<ctype::Bits>)> {
     let Ty::Struct(tag) = object else {
         return None;
     };
-    ctype::member_bits(&state.structs, &tag, node.text("name")).map(|(_, _, ty, bits)| (ty, bits))
+    ctype::member(&state.structs, &tag, node.text("name")).map(|found| (found.ty, found.bits))
 }
 
 /// What sizeof gives for an expression, which it does not evaluate.
@@ -3296,7 +3297,7 @@ fn fill_typed(
                         break;
                     }
                 }
-                offset += found.takes(at, structs).0;
+                offset += found.slots_of(at, structs);
             }
             parts
         }
@@ -3680,9 +3681,18 @@ fn no_parameters(state: &mut State) -> bool {
     state.at(")", 0)
 }
 
-/// A function's parameters, and whether they are a K&R identifier list (int f(a, b) int a; ...),
-/// whose types the declarations after the ) give. A prototype's parameters may go unnamed.
-fn parameters(state: &mut State) -> Result<(Vec<Node>, bool, bool)> {
+/// A function's parameter list.
+struct Parameters {
+    params: Vec<Node>,
+    /// A K&R identifier list (int f(a, b) int a; ...), whose types the declarations after the )
+    /// give.
+    identifiers: bool,
+    /// ... after the named parameters.
+    variadic: bool,
+}
+
+/// A function's parameters. A prototype's parameters may go unnamed.
+fn parameters(state: &mut State) -> Result<Parameters> {
     state.expect("(")?;
     let mut params = Vec::new();
     let mut variadic = false;
@@ -3699,7 +3709,7 @@ fn parameters(state: &mut State) -> Result<(Vec<Node>, bool, bool)> {
             state.take();
         }
         state.expect(")")?;
-        return Ok((params, true, false));
+        return Ok(Parameters { params, identifiers: true, variadic: false });
     }
     if !no_parameters(state) {
         loop {
@@ -3788,7 +3798,7 @@ fn parameters(state: &mut State) -> Result<(Vec<Node>, bool, bool)> {
         }
     }
     state.expect(")")?;
-    Ok((params, false, variadic))
+    Ok(Parameters { params, identifiers: false, variadic })
 }
 
 /// A parameter of C's other types: a pointer to a pointer or a struct, a struct (passed by value,
@@ -3855,7 +3865,7 @@ fn function_definition(
         state.pos -= 1;
         return state.fail("function names cannot start with _, which marks natives");
     }
-    let (mut params, identifiers, variadic) = parameters(state)?;
+    let Parameters { mut params, identifiers, variadic } = parameters(state)?;
     if state.at(";", 0) {
         // a prototype: calls are checked against the definition
         state.take();

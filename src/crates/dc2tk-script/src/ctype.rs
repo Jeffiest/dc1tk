@@ -149,19 +149,49 @@ impl Composite {
         self.bits.get(at).copied().flatten()
     }
 
-    /// The slots and bytes the member at takes in a struct: a bit-field that starts its slot takes
-    /// the slot (an int's 4 bytes), one that shares it none.
-    pub fn takes(&self, at: usize, structs: &Structs) -> (i64, i64, i64) {
+    /// The slots the member at takes in a struct: a bit-field that starts its slot takes the slot,
+    /// one that shares it none.
+    pub fn slots_of(&self, at: usize, structs: &Structs) -> i64 {
         match self.bits_of(at) {
-            Some(bits) if bits.offset > 0 => (0, 0, 4),
-            Some(_) => (1, 4, 4),
-            None => {
-                let ty = &self.members[at].1;
-                let (bytes, align) = ty.layout(structs);
-                (ty.slots(structs), bytes, align)
-            }
+            Some(bits) if bits.offset > 0 => 0,
+            Some(_) => 1,
+            None => self.members[at].1.slots(structs),
         }
     }
+
+    /// C's bytes and alignment of the member at: a bit-field that starts its slot takes an int's 4
+    /// bytes, one that shares it none.
+    fn layout_of(&self, at: usize, structs: &Structs) -> (i64, i64) {
+        match self.bits_of(at) {
+            Some(bits) if bits.offset > 0 => (0, 4),
+            Some(_) => (4, 4),
+            None => self.members[at].1.layout(structs),
+        }
+    }
+
+    /// What the member at takes in a struct.
+    pub fn takes(&self, at: usize, structs: &Structs) -> Takes {
+        let (bytes, align) = self.layout_of(at, structs);
+        Takes { slots: self.slots_of(at, structs), bytes, align }
+    }
+}
+
+/// What a member takes in its struct: its slots, and C's bytes and alignment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Takes {
+    pub slots: i64,
+    pub bytes: i64,
+    pub align: i64,
+}
+
+/// A member of a struct or union: where it starts, in slots and in C's bytes (a bit-field that
+/// shares its slot, the slot the last one started), its type, and its bits when it is a bit-field.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Member {
+    pub slot: i64,
+    pub byte: i64,
+    pub ty: Ty,
+    pub bits: Option<Bits>,
 }
 
 pub type Structs = IndexMap<String, Composite>;
@@ -243,7 +273,9 @@ impl Ty {
             Ty::Array(of, size) => of.slots(structs) * (*size).max(0),
             Ty::Struct(tag) => match structs.get(tag) {
                 Some(found) => {
-                    let sizes = (0..found.members.len()).map(|at| found.takes(at, structs).0);
+                    // the members' slots alone: their layouts would read their own members again
+                    // (and theirs), twice for each struct inside another
+                    let sizes = (0..found.members.len()).map(|at| found.slots_of(at, structs));
                     if found.union {
                         sizes.max().unwrap_or(0)
                     } else {
@@ -274,7 +306,7 @@ impl Ty {
                 };
                 let (mut size, mut align) = (0, 1);
                 for at in 0..found.members.len() {
-                    let (_, bytes, member_align) = found.takes(at, structs);
+                    let (bytes, member_align) = found.layout_of(at, structs);
                     align = align.max(member_align);
                     if found.union {
                         size = size.max(bytes);
@@ -340,33 +372,25 @@ fn aligned(value: i64, align: i64) -> i64 {
     (value + align - 1) / align * align
 }
 
-/// A member of a struct or union: its offset in slots and in bytes, and its type.
-pub fn member(structs: &Structs, tag: &str, name: &str) -> Option<(i64, i64, Ty)> {
-    member_bits(structs, tag, name).map(|(slots, bytes, ty, _)| (slots, bytes, ty))
-}
-
-/// member, and the member's bits when it is a bit-field (its offsets are its slot's).
-pub fn member_bits(structs: &Structs, tag: &str, name: &str) -> Option<(i64, i64, Ty, Option<Bits>)> {
+/// A member of a struct or union, by its name.
+pub fn member(structs: &Structs, tag: &str, name: &str) -> Option<Member> {
     let found = structs.get(tag)?;
     let (mut slots, mut bytes) = (0, 0);
     for (at, (member, ty)) in found.members.iter().enumerate() {
-        let (taken, size, align) = found.takes(at, structs);
+        let takes = found.takes(at, structs);
         let bits = found.bits_of(at);
-        if !found.union && taken > 0 {
-            bytes = aligned(bytes, align);
+        if !found.union && takes.slots > 0 {
+            bytes = aligned(bytes, takes.align);
         }
         if member == name && !name.is_empty() {
             // a bit-field that shares its slot is in the slot the last one started
             let shared = bits.is_some_and(|bits| bits.offset > 0) && !found.union;
-            return Some(if shared {
-                (slots - 1, bytes - 4, ty.clone(), bits)
-            } else {
-                (slots, bytes, ty.clone(), bits)
-            });
+            let (slot, byte) = if shared { (slots - 1, bytes - 4) } else { (slots, bytes) };
+            return Some(Member { slot, byte, ty: ty.clone(), bits });
         }
         if !found.union {
-            slots += taken;
-            bytes += size;
+            slots += takes.slots;
+            bytes += takes.bytes;
         }
     }
     None
@@ -401,7 +425,7 @@ pub fn scalar_slots(ty: &Ty, structs: &Structs, base: i64, out: &mut Vec<(i64, T
                     }
                     return;
                 }
-                at += found.takes(index, structs).0;
+                at += found.slots_of(index, structs);
             }
         }
         other => out.push((base, other.clone())),
@@ -478,8 +502,8 @@ mod tests {
         );
         let pair = Ty::Struct("pair".into());
         assert_eq!((pair.bytes(&structs), pair.slots(&structs)), (12, 3));
-        assert_eq!(member(&structs, "pair", "i"), Some((1, 4, int())));
-        assert_eq!(member(&structs, "pair", "s").map(|(slots, bytes, _)| (slots, bytes)), Some((2, 8)));
+        assert_eq!(member(&structs, "pair", "i"), Some(Member { slot: 1, byte: 4, ty: int(), bits: None }));
+        assert_eq!(member(&structs, "pair", "s").map(|found| (found.slot, found.byte)), Some((2, 8)));
         let value = Ty::Struct("value".into());
         assert_eq!((value.bytes(&structs), value.slots(&structs)), (12, 3));
         let mut slots = Vec::new();
@@ -487,6 +511,21 @@ mod tests {
         assert_eq!(slots, vec![(0, Ty::Scalar("float".into())), (1, int()), (2, int())]);
         let node = Ty::Function(Box::new(pointer(pair.clone())), vec![int()], true).to_node();
         assert_eq!(Ty::from_node(&node), Ty::Function(Box::new(pointer(pair)), vec![int()], true));
+    }
+
+    #[test]
+    fn structs_nested_deep_are_measured_in_time_linear_in_their_depth() {
+        // each struct holds the one inside it and an int; measuring a level's slots once read its
+        // members' layouts as well, which doubled the work at each level (2^80 here)
+        let mut structs = Structs::new();
+        structs.insert("s0".into(), Composite::new(false, vec![("i".into(), int())]));
+        for level in 1..80 {
+            let inner = Ty::Struct(format!("s{}", level - 1));
+            structs.insert(format!("s{level}"), Composite::new(false, vec![("m".into(), inner), ("i".into(), int())]));
+        }
+        let outer = Ty::Struct("s79".into());
+        assert_eq!((outer.slots(&structs), outer.bytes(&structs)), (80, 320));
+        assert_eq!(member(&structs, "s79", "i").map(|found| (found.slot, found.byte)), Some((79, 316)));
     }
 
     #[test]
@@ -506,9 +545,10 @@ mod tests {
         structs.insert("flags".into(), flags);
         let ty = Ty::Struct("flags".into());
         assert_eq!((ty.bytes(&structs), ty.slots(&structs)), (12, 3));
-        assert_eq!(member_bits(&structs, "flags", "b"), Some((0, 0, int(), Some(Bits { offset: 3, width: 29 }))));
-        assert_eq!(member_bits(&structs, "flags", "c").map(|(slots, bytes, ..)| (slots, bytes)), Some((1, 4)));
-        assert_eq!(member_bits(&structs, "flags", "d").map(|(slots, ..)| slots), Some(2));
+        let b = Member { slot: 0, byte: 0, ty: int(), bits: Some(Bits { offset: 3, width: 29 }) };
+        assert_eq!(member(&structs, "flags", "b"), Some(b));
+        assert_eq!(member(&structs, "flags", "c").map(|found| (found.slot, found.byte)), Some((1, 4)));
+        assert_eq!(member(&structs, "flags", "d").map(|found| found.slot), Some(2));
         let mut slots = Vec::new();
         scalar_slots(&ty, &structs, 0, &mut slots);
         assert_eq!(slots.iter().map(|(slot, _)| *slot).collect::<Vec<_>>(), vec![0, 1, 2]);
