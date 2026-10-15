@@ -59,7 +59,7 @@ pub(crate) fn mat_inv(m: &Mat4) -> Option<Mat4> {
         }
         a.swap(col, pivot);
         let p = a[col][col];
-        for x in a[col].iter_mut() {
+        for x in &mut a[col] {
             *x /= p;
         }
         for r in 0..4 {

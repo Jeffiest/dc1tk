@@ -573,7 +573,7 @@ pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
                 pictures.extend(found);
             }
             Surveyed::Whole(hash) if files[index].kind == FileKind::Pack => {
-                packs.push((file_name_stem(place), hash, index, None))
+                packs.push((file_name_stem(place), hash, index, None));
             }
             Surveyed::Whole(hash) if files[index].kind == FileKind::Messages => messages.push((index, hash)),
             Surveyed::Whole(hash) => banks.push((file_name_stem(place), hash, index, None)),

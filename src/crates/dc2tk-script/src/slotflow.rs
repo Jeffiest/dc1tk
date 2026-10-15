@@ -23,8 +23,9 @@ fn loads(name: &str) -> Option<(usize, usize)> {
     matches!(name, "load_chara" | "load_chara_motion").then_some((1, 3))
 }
 
-/// Natives that change what a slot holds other than by a pack load: delete_chara(slot),
-/// copy_chara(stack, src, dst), load_npc_chara(set, stack, npc, slot), and the villager loaders.
+/// Natives that change what a slot holds other than by a pack load, with the position of the slot
+/// they name: delete_chara(slot), copy_chara(stack, src, dst), load_npc_chara(set, stack, npc,
+/// slot); and the villager loaders, which name none (Some(None)).
 fn changes(name: &str) -> Option<Option<usize>> {
     Some(match name {
         "delete_chara" => Some(0),
@@ -221,7 +222,7 @@ impl Pass<'_> {
                     node.clone()
                         .with("cond", cond)
                         .with("then", Node::List(then))
-                        .with("else", otherwise.map(Node::List).unwrap_or(Node::Null))
+                        .with("else", otherwise.map_or(Node::Null, Node::List))
                 }
                 "while" => {
                     // a loop body runs after itself: it starts from what holds both before and

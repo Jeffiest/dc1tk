@@ -397,8 +397,7 @@ pub fn code(path: &Path) -> Result<Arc<String>> {
     static CACHE: OnceLock<Cache> = OnceLock::new();
     let modified = std::fs::metadata(path)?
         .modified()
-        .map(|time| time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |time| time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos());
     let key = (path.to_path_buf(), modified);
     let cache = CACHE.get_or_init(Default::default);
     if let Some(found) = cache.lock().unwrap().get(&key) {

@@ -1001,7 +1001,7 @@ impl TextFile {
     }
 
     pub fn eol(&self) -> Vec<u8> {
-        self.lines.iter().find(|(_, e)| !e.is_empty()).map(|(_, e)| e.clone()).unwrap_or_else(|| b"\r\n".to_vec())
+        self.lines.iter().find(|(_, e)| !e.is_empty()).map_or_else(|| b"\r\n".to_vec(), |(_, e)| e.clone())
     }
 }
 
@@ -1361,7 +1361,7 @@ impl Bank {
     fn encode(&self, sound: &Sound, rate: Option<i64>, wanted: Option<bool>) -> Result<(Vec<u8>, u16, bool)> {
         let rate = rate.unwrap_or(sound.rate.min(48000));
         let samples =
-            if rate != sound.rate { resample(&sound.samples, sound.rate, rate) } else { sound.samples.clone() };
+            if rate == sound.rate { sound.samples.clone() } else { resample(&sound.samples, sound.rate, rate) };
         let mut ls = sound.loop_start;
         if let Some(start) = ls {
             if rate != sound.rate {

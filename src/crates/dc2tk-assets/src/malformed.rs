@@ -251,7 +251,7 @@ fn integer_cases(json: &Value, values: &[i64]) -> Vec<Value> {
         match value {
             Value::Number(number) if number.is_i64() || number.is_u64() => out.push(path),
             Value::Array(items) => {
-                items.iter().enumerate().for_each(|(at, item)| places(item, format!("{path}/{at}"), out))
+                items.iter().enumerate().for_each(|(at, item)| places(item, format!("{path}/{at}"), out));
             }
             Value::Object(map) => map.iter().for_each(|(key, item)| places(item, format!("{path}/{key}"), out)),
             _ => {}

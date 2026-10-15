@@ -216,7 +216,7 @@ fn with_initialise(program: &Node, functions: Vec<Node>) -> Result<Vec<Node>> {
 /// The runtime the integer types need, in c2s: unsigned division, remainder and right shift, and
 /// conversions between unsigned int and float, on the VM's signed 32-bit ints (whose arithmetic
 /// wraps). Each function is added to a program that uses it, under its name with c89_ made __.
-const RUNTIME: &str = r#"
+const RUNTIME: &str = r"
 // The unsigned quotient of a and b.
 int c89_udiv(int a, int b)
 {
@@ -279,7 +279,7 @@ int c89_ftou(float value)
     }
     return (int)(value - 2147483648.0) + (-2147483647 - 1);
 }
-"#;
+";
 
 /// The bit pattern int arithmetic adds to unsigned values to compare them as signed ones.
 const BIAS: i64 = -2147483648;

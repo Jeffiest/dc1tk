@@ -303,7 +303,7 @@ fn build(files: &[FileEntry], library_defs: &IndexMap<String, Node>) -> Built {
     let mut class_names: IndexMap<String, String> = IndexMap::new();
     for key in shared {
         let directory = common_directory(&users[&key]);
-        let leaf = directory.last().map(|part| identifier(part)).unwrap_or_else(|| "common".into());
+        let leaf = directory.last().map_or_else(|| "common".into(), |part| identifier(part));
         let counter = counters.entry(leaf.clone()).or_default();
         *counter += 1;
         let name = format!("{leaf}_{counter}");
@@ -580,7 +580,7 @@ fn with_names(mut model: Model) -> Model {
     }
     let taken = model.shared.reserved.clone();
     let originals = model.shared.class_names.clone();
-    for (fingerprint, name) in class_names.iter_mut() {
+    for (fingerprint, name) in &mut class_names {
         if taken.contains(name) {
             *name = originals[fingerprint].clone();
         }
@@ -733,7 +733,7 @@ impl Found {
     /// A shared function's unused pointer parameters take what all its callers pass, so the one
     /// library file agrees with every script that includes it.
     fn type_unused_pointers(&mut self) {
-        for (print, shape) in self.shapes.iter_mut() {
+        for (print, shape) in &mut self.shapes {
             for position in decompile::unused_pointer_params(shape) {
                 let passed = self.pointer_types.get(&(print.clone(), position));
                 if let Some(element) = passed.and_then(decompile::passed_type) {
@@ -1381,7 +1381,7 @@ pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMa
         program.with("structs", crate::ctype::structs_node(&state.structs))
     };
     Ok(program
-        .with("natives", table.map(Node::from).unwrap_or(Node::Null))
+        .with("natives", table.map_or(Node::Null, Node::from))
         .with("functions", functions)
         .with("padding_of", Node::Map(Map::new()))
         .with("declarations", state.declarations.to_node())

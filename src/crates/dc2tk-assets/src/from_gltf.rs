@@ -728,9 +728,9 @@ pub fn frames_of(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
             let n = &nodes[gi];
             let up = parent.get(&(gi as i64)).copied()?;
             let lone = n.get("mesh").is_some()
-                && !n.get("skin").is_some()
+                && n.get("skin").is_none()
                 && index_of(n).is_none()
-                && !nodes[up].get("mesh").is_some();
+                && nodes[up].get("mesh").is_none();
             (lone && names[up] == names[gi]).then_some(up)
         })
         .collect();
@@ -879,7 +879,7 @@ fn rigid_to_local(
     let node_list = nodes.as_array().map(Vec::as_slice).unwrap_or_default();
     let mut frame_world = None;
     for (g2, n2) in node_list.iter().enumerate() {
-        if !n2.get("mesh").is_some() && resolved[g2] == Some(frame) {
+        if n2.get("mesh").is_none() && resolved[g2] == Some(frame) {
             frame_world = Some(floats(&world_of(g2 as i64, nodes, parent, world, 0)?));
         }
     }
@@ -1579,7 +1579,7 @@ impl Import<'_> {
         let mut node = Node::new(name, if self.model.nodes.is_empty() { -1 } else { 0 });
         if let Some(&pj) = self.parent.get(&(gi as i64)) {
             if let Some(p) = self.mds_index_of(&Value::from(pj as i64))? {
-                if !n.get("skin").is_some() {
+                if n.get("skin").is_none() {
                     node.parent = p as i32;
                 }
             }
@@ -1627,7 +1627,7 @@ impl Import<'_> {
         let mut frame_world = None;
         if self.resolved[gi].is_none() {
             for (g2, n2) in self.node_list.iter().enumerate() {
-                if !n2.get("mesh").is_some() && self.resolved[g2].is_none() && clean(n2.get("name"))? == name {
+                if n2.get("mesh").is_none() && self.resolved[g2].is_none() && clean(n2.get("name"))? == name {
                     frame_world = Some(world_of(g2 as i64, self.nodes, &self.parent, &mut self.world, 0)?);
                 }
             }

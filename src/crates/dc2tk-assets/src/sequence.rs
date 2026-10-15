@@ -383,10 +383,10 @@ impl Sequence {
         for (event, tick) in self.events.iter().zip(self.ticks()) {
             match event.message {
                 Message::Control { controller: NRPN_MSB, value: LOOP_START, .. } if found.0.is_none() => {
-                    found.0 = Some(tick)
+                    found.0 = Some(tick);
                 }
                 Message::Control { controller: NRPN_MSB, value: LOOP_END, .. } if found.1.is_none() => {
-                    found.1 = Some(tick)
+                    found.1 = Some(tick);
                 }
                 _ => {}
             }
@@ -403,7 +403,7 @@ impl Sequence {
             match event.message {
                 Message::Program { channel, program } => programs[channel as usize] = program as i64,
                 Message::NoteOn { channel, key, velocity } if velocity > 0 => {
-                    out.push((programs[channel as usize], key, velocity))
+                    out.push((programs[channel as usize], key, velocity));
                 }
                 _ => {}
             }

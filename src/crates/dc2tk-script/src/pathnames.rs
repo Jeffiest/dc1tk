@@ -209,8 +209,7 @@ pub fn tree_tables(tree: &Path) -> Result<Arc<Tables>> {
     let path = tree.join(UNNAMED);
     let modified = std::fs::metadata(&path)
         .and_then(|meta| meta.modified())
-        .map(|time| time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |time| time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos());
     let key = (crate::definitions::resolved_posix(tree), modified);
     let cache = CACHE.get_or_init(Default::default);
     if let Some(found) = cache.lock().unwrap().get(&key) {

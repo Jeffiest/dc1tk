@@ -968,7 +968,7 @@ mod tests {
                 buffer[at..at + 4].copy_from_slice(&(x * 2.0).to_le_bytes());
             }
         }
-        for (path, content) in exported.iter_mut() {
+        for (path, content) in &mut exported {
             if path == "c.bin" {
                 *content = buffer.clone();
             }
@@ -1335,7 +1335,7 @@ mod tests {
         }
         if skinned {
             for gi in 0..nodes.len() {
-                if nodes[gi].get("mesh").is_some() && !nodes[gi].get("skin").is_some() {
+                if nodes[gi].get("mesh").is_some() && nodes[gi].get("skin").is_none() {
                     let mesh = nodes[gi].get("mesh").unwrap().clone();
                     let name = nodes[gi].get("name").cloned().unwrap_or(Value::Null);
                     if let Value::Object(items) = &mut nodes[gi] {
@@ -1351,7 +1351,7 @@ mod tests {
             }
         }
         let mut seen: BTreeMap<(bool, String), usize> = BTreeMap::new();
-        for node in nodes.iter_mut() {
+        for node in &mut nodes {
             let Some(name) = node.get("name").and_then(Value::as_str).map(str::to_string) else {
                 continue;
             };
@@ -1396,7 +1396,7 @@ mod tests {
             }
         };
         let mut reordered: Vec<Value> = order.iter().map(|&old| nodes[old].clone()).collect();
-        for node in reordered.iter_mut() {
+        for node in &mut reordered {
             if let Some(Value::Array(list)) = node.get_mut("children") {
                 list.iter_mut().for_each(renumber);
             }
@@ -1520,7 +1520,7 @@ mod tests {
             }
         }
         let mut changed = files.clone();
-        for (path, content) in changed.iter_mut() {
+        for (path, content) in &mut changed {
             if path == "bow.bin" {
                 *content = edited.buffers[0].to_vec();
             }
@@ -1695,7 +1695,7 @@ mod tests {
     /// The folder of a glTF: the export's files with the glTF and its buffer replaced.
     fn folder_with(exported: &[(String, Vec<u8>)], gltf: &Gltf, name: &str) -> std::path::PathBuf {
         let mut files: Vec<(String, Vec<u8>)> = exported.to_vec();
-        for (path, content) in files.iter_mut() {
+        for (path, content) in &mut files {
             if *path == "c.gltf" {
                 *content = serde_json::to_string(&gltf.json).expect("a JSON value serializes").into_bytes();
             } else if *path == "c.bin" {
@@ -1872,7 +1872,7 @@ mod tests {
         assert_eq!(mode(&material_of(2)).as_deref(), Some("MASK"));
         assert_eq!(material_of(2).get("alphaCutoff").unwrap().as_f64(), Some(0.5));
         assert!(material_of(3).get("extensions").unwrap().get("KHR_materials_unlit").is_some());
-        assert!(!material_of(1).get("extensions").is_some());
+        assert!(material_of(1).get("extensions").is_none());
         let flags = material_of(3).get("extras").unwrap().get("frame_flags").unwrap().clone();
         assert_eq!(flags.get("mds_flags").unwrap().as_str(), Some("n1z0c0f2app-"));
         assert_eq!(flags.get("z_write").unwrap().as_bool(), Some(false));

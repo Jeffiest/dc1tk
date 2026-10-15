@@ -286,7 +286,7 @@ fn river_sections(scripts: &[Script]) -> Vec<(&'static str, Vec<&'static str>, V
                         Value::from(
                             surfaces.iter().filter(|record: &&Record| record.keys[0].1 == town(number)).count(),
                         ),
-                    ))
+                    ));
                 }
                 "WATER_VERTEX" if args(at) >= 8 => {
                     if let Some(record) = current.as_mut() {

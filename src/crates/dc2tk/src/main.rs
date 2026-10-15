@@ -301,7 +301,7 @@ fn run_compile(source_path: &Path, output: Option<&Path>, table: Option<&str>, c
     let options = dc2tk_script::compile::Options { table, ..Default::default() };
     let data = dc2tk_script::compile::compile_file(source_path, &tools.toolchain(), &options)
         .with_context(|| source_path.display().to_string())?;
-    let output = output.map(Path::to_path_buf).unwrap_or_else(|| source_path.with_extension("stb"));
+    let output = output.map_or_else(|| source_path.with_extension("stb"), Path::to_path_buf);
     std::fs::write(&output, data).with_context(|| format!("cannot write {}", output.display()))?;
     Ok(ExitCode::SUCCESS)
 }

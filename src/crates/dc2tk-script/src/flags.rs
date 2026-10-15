@@ -289,7 +289,7 @@ pub fn used_list(found: &Found, consts: &IndexMap<String, i64>) -> String {
         lines.push(format!(
             "{:>5}  {:<40} {}",
             number,
-            names.get(&number).map(String::as_str).unwrap_or(""),
+            names.get(&number).map_or("", String::as_str),
             parts.join("; ")
         ));
     }

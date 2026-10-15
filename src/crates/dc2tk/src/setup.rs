@@ -41,15 +41,15 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
     let extracted = &args.extracted;
     {
         let image = Image::open(&args.iso)?;
-        if !extracted.join(extract::MANIFEST).is_file() {
-            let manifest = extract::extract(image.bytes(), extracted)?;
-            println!("{} files extracted to {}", manifest.files.len(), files::shown_path(extracted));
-        } else {
+        if extracted.join(extract::MANIFEST).is_file() {
             extract::extract_boot(image.bytes(), extracted)?;
             if !extracted.join(dc2tk_disc::layout::LAYOUT).is_file() {
                 dc2tk_disc::layout::record(image.bytes(), extracted)?;
                 println!("the disc's other files and layout written to {}", files::shown_path(extracted));
             }
+        } else {
+            let manifest = extract::extract(image.bytes(), extracted)?;
+            println!("{} files extracted to {}", manifest.files.len(), files::shown_path(extracted));
         }
     }
     let common = &args.common;

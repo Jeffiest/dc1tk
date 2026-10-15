@@ -441,7 +441,7 @@ pub(super) fn included(path: &str, headers: Files) -> Result<Included> {
         return Ok(found);
     }
     let (_, found) = parse_state(text, &HashMap::new(), path, Some(headers))
-        .map_err(|fault| Error::invalid(format!("in {path}: {}", fault)))?;
+        .map_err(|fault| Error::invalid(format!("in {path}: {fault}")))?;
     INCLUDED.with(|cache| cache.borrow_mut().insert(key, found.clone()));
     Ok(found)
 }
@@ -535,12 +535,12 @@ pub(super) fn top_level(
             program["functions"].as_array_mut().unwrap().push(function);
         }
         Kind::Include { path, system, constants } => {
-            include_declarations(state, program, headers, path, *system, constants)?
+            include_declarations(state, program, headers, path, *system, constants)?;
         }
         Kind::Assembly => return state.fail("#pragma assembly must start the file"),
         Kind::Define(_) => definition(state, token, program)?,
         _ if word == "enum" && (state.at("{", 0) || state.at("{", 1)) && enum_alone(state) => {
-            enumeration(state, program)?
+            enumeration(state, program)?;
         }
         _ if word == "PROGRAM" => program_entry(state, program)?,
         _ if request(word).is_some() => number_request(state, program, word)?,

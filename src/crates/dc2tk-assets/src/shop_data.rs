@@ -410,7 +410,7 @@ impl Shops {
                 bail!("{what}: {item} is not an item number");
             };
             let number = number as i32;
-            if !self.prices.get(&number).is_some_and(|places| places[chapter].is_some()) && !priced.contains(&number) {
+            if self.prices.get(&number).is_none_or(|places| places[chapter].is_none()) && !priced.contains(&number) {
                 bail!("{what}: item {number} has no price in chapter {}; give it one under \"prices\"", chapter + 1);
             }
             numbers.push(number);

@@ -350,7 +350,7 @@ impl<'a> Machine<'a> {
         let function = call.function;
         let words = function.code.get(call.pc).ok_or("it ran past its last instruction")?;
         call.pc += 1;
-        let word = |at: usize| words.get(at).map(String::as_str).unwrap_or("");
+        let word = |at: usize| words.get(at).map_or("", String::as_str);
         let number = |at: usize| -> std::result::Result<usize, String> {
             word(at).parse().map_err(|_| format!("bad operand {}", word(at)))
         };

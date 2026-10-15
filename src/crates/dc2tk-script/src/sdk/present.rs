@@ -39,7 +39,7 @@ fn matches(pattern: &Node, node: &Node, params: &HashMap<String, Param>, binding
                 && pattern["operand"].kind() == kinds::VAR
                 && params.get(pattern["operand"].text("name")) == Some(&Param::Out)
             {
-                if !matches!(node.get("kind").and_then(Node::as_str), Some("var") | Some("index")) {
+                if !matches!(node.get("kind").and_then(Node::as_str), Some("var" | "index")) {
                     return false;
                 }
                 return bound(
@@ -463,7 +463,7 @@ fn digits(text: &str) -> bool {
 /// unused, unused3, unused_value or unused_2.
 fn is_unused_local(name: &str) -> bool {
     match name.strip_prefix("unused") {
-        Some("") | Some("_value") => true,
+        Some("" | "_value") => true,
         Some(rest) => digits(rest) || rest.strip_prefix('_').is_some_and(digits),
         None => false,
     }
@@ -962,8 +962,7 @@ pub fn present(
             let number = entry["no"]
                 .as_i64()
                 .and_then(|no| found.program_names.get(&no))
-                .map(Node::from)
-                .unwrap_or_else(|| entry["no"].clone());
+                .map_or_else(|| entry["no"].clone(), Node::from);
             entry.clone().with("no", number)
         })
         .collect();

@@ -239,7 +239,7 @@ fn node_frames(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
     let mut named: Vec<(Option<usize>, String, usize, usize)> = Vec::new();
     for (gi, n) in nodes.iter().enumerate() {
         let stem = match n.get("name").and_then(Value::as_str) {
-            Some(name) if !n.get("skin").is_some() => {
+            Some(name) if n.get("skin").is_none() => {
                 let stem = clean(n.get("name"))?;
                 let number = if stem.len() < name.len() { name[stem.len() + 1..].parse().unwrap_or(0) } else { 0 };
                 named.push((parent[gi], stem.clone(), number, gi));
@@ -273,7 +273,7 @@ fn node_frames(json: &Value, model: &Mds) -> Result<Vec<Option<usize>>> {
         let n = &nodes[gi];
         let index = n.get("extras").and_then(|e| e.get("mds_index")).and_then(Value::as_i64);
         if let Some(i) = index.and_then(|i| usize::try_from(i).ok()).filter(|&i| i < model.nodes.len()) {
-            out[gi] = (!n.get("skin").is_some()).then_some(i);
+            out[gi] = n.get("skin").is_none().then_some(i);
             continue;
         }
         let Some(stem) = &stems[gi] else {
@@ -353,7 +353,7 @@ fn read<'m>(
         if let Some(f) = *frame {
             let better = match chosen[f] {
                 None => true,
-                Some(other) => nodes[other].get("mesh").is_some() && !nodes[gi].get("mesh").is_some(),
+                Some(other) => nodes[other].get("mesh").is_some() && nodes[gi].get("mesh").is_none(),
             };
             if better {
                 chosen[f] = Some(gi);
@@ -1344,7 +1344,7 @@ impl SetPlan<'_, '_> {
         if dropped.is_empty() {
             return;
         }
-        for track in tracks.tracks.iter_mut() {
+        for track in &mut tracks.tracks {
             let original = track.original.clone();
             let present: BTreeMap<i64, Vec4> = track.keys().clone();
             let left: Vec<i64> = present.keys().copied().filter(|f| !dropped.contains(f)).collect();

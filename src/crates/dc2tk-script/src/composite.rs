@@ -387,11 +387,11 @@ impl Lowering<'_> {
         if signature.returns.is_struct() {
             lowered = lowered.with("returns", "void");
         }
-        if !prologue.is_empty() {
+        if prologue.is_empty() {
+            lowered = lowered.with("body", body);
+        } else {
             prologue.extend(body);
             lowered = lowered.with("body", prologue);
-        } else {
-            lowered = lowered.with("body", body);
         }
         if !self.hidden.is_empty() {
             let mut locals = function.list("locals").to_vec();

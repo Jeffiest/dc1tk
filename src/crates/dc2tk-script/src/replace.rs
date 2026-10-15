@@ -325,7 +325,7 @@ fn instruments(
                                     });
                                 match keys {
                                     Some(keys) if keys.len() == 2 && keys[0] <= keys[1] => {
-                                        (zone.low, zone.high) = (keys[0], keys[1])
+                                        (zone.low, zone.high) = (keys[0], keys[1]);
                                     }
                                     _ => return Err(fail("\"keys\" is [lowest, highest], 0 to 127")),
                                 }
@@ -333,11 +333,11 @@ fn instruments(
                             "root" => zone.root = number(127).ok_or_else(|| fail("\"root\" is a key, 0 to 127"))?,
                             "volume" => zone.volume = number(128).ok_or_else(|| fail("\"volume\" is 0 to 128"))?,
                             "loop" => {
-                                zone.looped = Some(value.as_bool().ok_or_else(|| fail("\"loop\" is true or false"))?)
+                                zone.looped = Some(value.as_bool().ok_or_else(|| fail("\"loop\" is true or false"))?);
                             }
                             "like" => {
                                 instrument.like =
-                                    Some(number(127).ok_or_else(|| fail("\"like\" is a program, 0 to 127"))?)
+                                    Some(number(127).ok_or_else(|| fail("\"like\" is a program, 0 to 127"))?);
                             }
                             other => return Err(fail(&format!("unknown field \"{other}\""))),
                         }
@@ -538,7 +538,7 @@ fn check_asset_line(line: &Line) -> Result<()> {
                         "a new music file is named BG_ and three digits, the number load_bgm takes (music:BG_200)",
                     ));
                 }
-                if !like.as_deref().is_some_and(|like| bgm_number(like).is_some()) {
+                if like.as_deref().is_none_or(|like| bgm_number(like).is_none()) {
                     return Err(line.fail(
                         "a new music file names the disc's music bank it is made like: {\"file\": ..., \"like\": \"BG_193\"}",
                     ));

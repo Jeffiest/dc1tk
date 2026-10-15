@@ -487,7 +487,7 @@ pub(super) fn header_macros(path: &str, headers: Files, macros: Macros, depth: u
     let chars: Vec<char> = text.chars().collect();
     let mut found = macros;
     tokenize_with(&chars, &mut found, path, Some(headers), depth + 1)
-        .map_err(|fault| Error::invalid(format!("in <{path}>: {}", fault)))?;
+        .map_err(|fault| Error::invalid(format!("in <{path}>: {fault}")))?;
     HEADER_MACROS.with(|cache| cache.borrow_mut().insert(key, found.clone()));
     Ok(found)
 }

@@ -123,7 +123,7 @@ const TREE_PARTS: [&str; 5] = [tree::MANIFEST, tree::TEXTURES, tree::MODELS, tre
 
 pub fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -> Result<ExitCode> {
     let names = sound_names(defs)?;
-    let has_files = std::fs::read_dir(output).map(|mut entries| entries.next().is_some()).unwrap_or(false);
+    let has_files = std::fs::read_dir(output).is_ok_and(|mut entries| entries.next().is_some());
     if has_files {
         if !force {
             bail!("{} already has files; --force replaces the asset tree in it", output.display());

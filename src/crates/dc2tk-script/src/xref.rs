@@ -176,7 +176,7 @@ pub fn ai_script(row: &MonsterRow) -> &str {
     }
 }
 
-fn row_of<'a>(rows: &'a Rows, value: &Option<Folded>) -> Option<(i64, &'a MonsterRow)> {
+fn row_of<'a>(rows: &'a Rows, value: Option<&Folded>) -> Option<(i64, &'a MonsterRow)> {
     let Some(Folded::Int(number)) = value else {
         return None;
     };
@@ -207,15 +207,15 @@ pub fn map_monster_ais(
         if !here {
             continue;
         }
-        if let Some((kind, row)) = row_of(rows, &index::value(&call.args[0], consts)) {
+        if let Some((kind, row)) = row_of(rows, index::value(&call.args[0], consts).as_ref()) {
             found.entry(ai_script(row).to_string()).or_default().insert(kind);
         }
     }
     Ok(found)
 }
 
-fn is_number(value: &Option<Folded>, number: i128) -> bool {
-    *value == Some(Folded::Int(number))
+fn is_number(value: Option<&Folded>, number: i128) -> bool {
+    value == Some(&Folded::Int(number))
 }
 
 /// Path(path).stem.
@@ -247,12 +247,12 @@ pub fn event_report(
             }
         }
         for (written, function) in &entry.programs {
-            if is_number(&index::value(written, consts), number) {
+            if is_number(index::value(written, consts).as_ref(), number) {
                 defined.entry((index::variant_key(path), function.clone())).or_default().push(path);
             }
         }
     }
-    lines.extend(["".to_string(), "defined by:".to_string()]);
+    lines.extend([String::new(), "defined by:".to_string()]);
     for ((key, function), paths) in &defined {
         let shown = if paths.len() == 1 { paths[0] } else { key };
         lines.push(format!("  {shown}  PROGRAM({number}, {function})"));
@@ -264,15 +264,15 @@ pub fn event_report(
     let started: Vec<Entry> = map_entries(tree, consts)?
         .into_iter()
         .filter(|entry| {
-            is_number(&entry.program, number)
+            is_number(entry.program.as_ref(), number)
                 && map_name.is_none_or(|name| entry.map == Some(Folded::Text(name.to_string())))
         })
         .collect();
-    lines.extend(["".to_string(), "started by moving to the map at this program:".to_string()]);
+    lines.extend([String::new(), "started by moving to the map at this program:".to_string()]);
     lines.extend(or_none(grouped(&started, &users, None)?));
     let requested: Vec<Call> = index::calls(tree, &name_set(&REQUEST_CALLS))?
         .into_iter()
-        .filter(|call| !call.args.is_empty() && is_number(&index::value(&call.args[0], consts), number))
+        .filter(|call| !call.args.is_empty() && is_number(index::value(&call.args[0], consts).as_ref(), number))
         .collect();
     let ais = match named_map {
         Some(name) if !rows.is_empty() => map_monster_ais(tree, consts, rows, name, &users)?,
@@ -287,8 +287,7 @@ pub fn event_report(
         let listed: Vec<String> = kinds.iter().map(|kind| format!("{kind} {}", rows[kind].name)).collect();
         Ok(Some(format!("<- {} places kind {}, which runs this AI", map_name.unwrap_or(""), listed.join(", "))))
     };
-    lines
-        .extend(["".to_string(), format!("requested while a map is loaded (runs the loaded map's program {number}):")]);
+    lines.extend([String::new(), format!("requested while a map is loaded (runs the loaded map's program {number}):")]);
     lines.extend(or_none(grouped(&requested, &users, Some(&placed_here))?));
     Ok(lines.join("\n"))
 }
@@ -318,7 +317,7 @@ pub fn map_report(tree: &Path, consts: &IndexMap<String, i64>, map_name: &str) -
     let users = index::includers(&outline);
     let target = Some(Folded::Text(map_name.to_string()));
     let entries: Vec<Entry> = map_entries(tree, consts)?.into_iter().filter(|entry| entry.map == target).collect();
-    let mut lines = vec![format!("map {map_name}"), "".into(), "scripts:".into()];
+    let mut lines = vec![format!("map {map_name}"), String::new(), "scripts:".into()];
     let mut paths: Vec<&String> = outline.keys().collect();
     paths.sort();
     let mut scripts = Vec::new();
@@ -328,7 +327,7 @@ pub fn map_report(tree: &Path, consts: &IndexMap<String, i64>, map_name: &str) -
         }
     }
     lines.extend(or_else(scripts, "  none in this tree"));
-    lines.extend(["".to_string(), "entered by:".to_string()]);
+    lines.extend([String::new(), "entered by:".to_string()]);
     lines.extend(or_else(
         grouped(&entries, &users, Some(&starts_program))?,
         "  no call names it as a string (calls that pass a map number are not matched)",
@@ -357,7 +356,7 @@ pub fn monster_report(tree: &Path, consts: &IndexMap<String, i64>, rows: &Rows, 
     let Some(number) = number else {
         return Ok(format!("no monster kind {wanted} (give its number, its MONSTER_ constant or its name)"));
     };
-    let row = row_of(rows, &Some(Folded::Int(number)));
+    let row = row_of(rows, Some(&Folded::Int(number)));
     let names: Vec<&str> = consts
         .iter()
         .filter(|(name, value)| name.starts_with("MONSTER_") && **value as i128 == number)
@@ -391,9 +390,9 @@ pub fn monster_report(tree: &Path, consts: &IndexMap<String, i64>, rows: &Rows, 
     let users = index::includers(&index::outlines(tree)?);
     let loads: Vec<Call> = index::calls(tree, &name_set(&MONSTER_CALLS))?
         .into_iter()
-        .filter(|call| !call.args.is_empty() && is_number(&index::value(&call.args[0], consts), number))
+        .filter(|call| !call.args.is_empty() && is_number(index::value(&call.args[0], consts).as_ref(), number))
         .collect();
-    lines.extend(["".to_string(), "loaded or placed by:".to_string()]);
+    lines.extend([String::new(), "loaded or placed by:".to_string()]);
     lines.extend(or_none(grouped(&loads, &users, None)?));
     Ok(lines.join("\n"))
 }

@@ -180,7 +180,7 @@ pub fn todo(
             let Some(exact) = exact else {
                 continue;
             };
-            if !entries.get(exact).is_some_and(|entry| entry.get("name").is_some()) {
+            if entries.get(exact).is_none_or(|entry| entry.get("name").is_none()) {
                 let loose = model.survey.exact_to_loose[exact].clone();
                 seen.entry(loose).or_insert_with(|| (path.clone(), mapping[name].clone()));
             }

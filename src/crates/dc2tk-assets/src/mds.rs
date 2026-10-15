@@ -42,9 +42,9 @@ fn name_in(raw: &[u8]) -> (String, Option<Vec<u8>>) {
     }
 }
 
-fn name_out(name: &str, raw: &Option<Vec<u8>>, size: usize) -> Result<Vec<u8>> {
+fn name_out(name: &str, raw: Option<&[u8]>, size: usize) -> Result<Vec<u8>> {
     if let Some(raw) = raw {
-        return Ok(raw.clone());
+        return Ok(raw.to_vec());
     }
     let Some(mut bytes) = text::encode(name) else {
         bail!("{name:?} has a character cp932 cannot encode");
@@ -114,7 +114,7 @@ impl Material {
         }
         let mut out = Vec::with_capacity(0x60);
         pack_floats(&floats, &mut out)?;
-        out.extend(name_out(&self.texture, &self.texture_raw, NAME)?);
+        out.extend(name_out(&self.texture, self.texture_raw.as_deref(), NAME)?);
         let Ok(unk_54) = i32::try_from(self.unk_54) else {
             bail!("material {}: unk_54 {} does not fit its 32 bits", self.texture, self.unk_54);
         };
@@ -556,7 +556,7 @@ pub fn build(mds: &Mds) -> Result<Vec<u8>> {
         }
         out.extend(node.index.unwrap_or(i as i32).to_le_bytes());
         out.extend((RECORD as u32).to_le_bytes());
-        out.extend(name_out(&node.name, &node.name_raw, NAME)?);
+        out.extend(name_out(&node.name, node.name_raw.as_deref(), NAME)?);
         out.extend((mo as i32).to_le_bytes());
         out.extend(node.parent.to_le_bytes());
         pack_floats(&node.matrix, &mut out)?;

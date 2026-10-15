@@ -404,7 +404,7 @@ fn merged_cond(then: Option<&String>, otherwise: Option<&String>, cond: Option<&
         (!then.is_empty() || !otherwise.is_empty())
             .then(|| format!("{COND}{vars}{COND_KEY}{key}{COND_KEY}{then}{COND_KEY}{otherwise}"))
     };
-    let (a, b) = (then.map(String::as_str).unwrap_or(""), otherwise.map(String::as_str).unwrap_or(""));
+    let (a, b) = (then.map_or("", String::as_str), otherwise.map_or("", String::as_str));
     match (cond_parts(a), cond_parts(b)) {
         (None, None) => {
             let (vars, key) = cond?;
@@ -527,7 +527,7 @@ pub fn named_sounds(
             let (mut then_banks, mut else_banks) = (banks.clone(), banks.clone());
             // a bank that depends on this same condition is known on each path
             if let Some((_, key)) = &key {
-                for (name, value) in banks.vars.iter() {
+                for (name, value) in &banks.vars {
                     if let Some((_, _, then, otherwise)) = cond_parts(value).filter(|parts| parts.1 == key) {
                         for (path_banks, bank) in [(&mut then_banks, then), (&mut else_banks, otherwise)] {
                             if bank.is_empty() {
@@ -746,8 +746,7 @@ fn native_banks(node: &Node, found: &Context, banks: &Banks, flow: Option<&Flow>
                 written.insert(target, loaded.clone());
             }
             let event_value = literal_value(&crate::node!({"kind": "var", "name": "SND_PORT_EVENT"}), found)
-                .map(Node::Int)
-                .unwrap_or(Node::Null);
+                .map_or(Node::Null, Node::Int);
             if port == "SND_PORT_EVENT" || port.same_value(&event_value) {
                 port_written = Some(loaded.as_deref().map_or(PortValue::Unknown, PortValue::bank));
             }

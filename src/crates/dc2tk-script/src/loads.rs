@@ -237,7 +237,7 @@ pub fn check(loads: &[Load], known: &Known, members: &dyn Fn(&str) -> Option<Vec
             }
             match &load.dir {
                 None if !load.dirs.is_empty() => {
-                    out.push((load.clone(), format!("the disc has no {name} in {}", load.dirs.join(", "))))
+                    out.push((load.clone(), format!("the disc has no {name} in {}", load.dirs.join(", "))));
                 }
                 Some(dir) => out.push((
                     load.clone(),

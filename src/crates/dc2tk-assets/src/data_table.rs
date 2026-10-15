@@ -745,7 +745,7 @@ impl Table {
             let mut statements = self.scripts[file].statements[first..=last].to_vec();
             statements[0].before = self.scripts[file].newline().as_bytes().to_vec();
             let language = adding.languages.iter().find(|(known, _)| *known == file).map(|&(_, language)| language);
-            for statement in statements.iter_mut() {
+            for statement in &mut statements {
                 for (tag, arg, text) in key_texts {
                     if statement.tag == *tag {
                         set_piece(statement, *arg, text.clone(), label)?;
@@ -778,7 +778,7 @@ impl Table {
         let label = &new.label;
         let moved = moved_fields(new.like);
         let mut flat = Vec::new();
-        for (key, value) in new.added.given.iter() {
+        for (key, value) in new.added.given {
             if section.keys.contains(key) || key == "like" || adding.label_args.iter().any(|(known, ..)| known == key) {
                 continue;
             }

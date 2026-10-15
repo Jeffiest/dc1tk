@@ -259,7 +259,7 @@ impl CharInfo {
                     }
                 }
                 "SHADOW_MOTION" if a.len() >= 3 => {
-                    info.shadow_motion = Some((a[0].clone(), a[1].clone(), a[2].clone()))
+                    info.shadow_motion = Some((a[0].clone(), a[1].clone(), a[2].clone()));
                 }
                 "KEY" if a.len() >= 4 => {
                     if let Some(at) = current {

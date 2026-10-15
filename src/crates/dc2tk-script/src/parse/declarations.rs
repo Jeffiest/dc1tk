@@ -422,7 +422,7 @@ pub(super) fn declaration(state: &mut State) -> Result<Vec<Node>> {
             Some(Init::List(items)) if declared.dims.is_empty() => match items.as_slice() {
                 // int x = {5};
                 [Init::Value(value)] => {
-                    statements.push(assign(node!({"kind": "var", "name": &storage}), value.clone()))
+                    statements.push(assign(node!({"kind": "var", "name": &storage}), value.clone()));
                 }
                 _ => return state.fail(format!("too many values for {}", declared.name)),
             },
@@ -468,7 +468,7 @@ pub(super) fn plain_type(state: &State, declared: &Declared, kind: &str) -> Resu
 
 /// An array's open size ([]) given by its initializer: as many elements as the list fills, or the
 /// string's characters and its 0.
-pub(super) fn sized_by(state: &State, ty: Ty, init: &Option<Init>) -> Result<Ty> {
+pub(super) fn sized_by(state: &State, ty: Ty, init: Option<&Init>) -> Result<Ty> {
     let Ty::Array(of, -1) = &ty else {
         return Ok(ty);
     };
@@ -705,7 +705,7 @@ pub(super) fn typed_local(state: &mut State, spec: &Spec, declared: Declared, ki
         Some(ty) => ty.clone(),
         None => plain_type(state, &declared, kind)?,
     };
-    let ty = sized_by(state, ty, &declared.init)?;
+    let ty = sized_by(state, ty, declared.init.as_ref())?;
     complete(state, &declared.name, &ty)?;
     let is_static = spec.storage.as_deref() == Some("static");
     let entry = typed_entry(state, "", &ty);
@@ -756,7 +756,7 @@ pub(super) fn typed_global(state: &mut State, program: &mut Node, spec: &Spec, d
         // a function's prototype written as a declarator
         return Ok(());
     }
-    let ty = sized_by(state, ty, &declared.init)?;
+    let ty = sized_by(state, ty, declared.init.as_ref())?;
     complete(state, &declared.name, &ty)?;
     let mut entry = typed_entry(state, &declared.name, &ty);
     if let Some(map) = entry.as_object_mut() {

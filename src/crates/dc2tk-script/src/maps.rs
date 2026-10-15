@@ -151,7 +151,7 @@ pub fn trigger_points(path: &Path) -> Result<Vec<Point>> {
 pub fn point_programs(point: &Point) -> Vec<(i64, String)> {
     let empty = Vec::new();
     let fields = point.event.as_ref().unwrap_or(&empty);
-    let kind = fields.first().map(|field| field.trim_matches('"')).unwrap_or("");
+    let kind = fields.first().map_or("", |field| field.trim_matches('"'));
     if let Some(program) = point.program {
         let check = point.check.clone().unwrap_or_else(|| "None".into());
         let how = match check.as_str() {

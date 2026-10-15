@@ -13,7 +13,7 @@ use dc2tk_script::stb::{self, Region};
 use dc2tk_script::{compile, decompile, library, names, parse, source};
 use indexmap::IndexMap;
 
-const EVENT_HEADER: &str = r#"#ifndef C2S_EVENT_H
+const EVENT_HEADER: &str = r"#ifndef C2S_EVENT_H
 #define C2S_EVENT_H
 #include <c2s.h>
 #pragma natives event
@@ -39,7 +39,7 @@ static inline void set_actor_face(int actor, string face, string eyes)
     set_actor_texture_anim(actor, 1, eyes);
 }
 #endif
-"#;
+";
 
 const MONSTER_HEADER: &str = "#include <c2s.h>
 #pragma natives monster

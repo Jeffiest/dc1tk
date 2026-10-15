@@ -375,7 +375,7 @@ fn point_node(point: &Point, order: usize) -> SceneNode {
     }
 }
 
-fn col_type_json(col_type: &Option<ColType>) -> Value {
+fn col_type_json(col_type: Option<&ColType>) -> Value {
     match col_type {
         None => Value::Null,
         Some(ColType { kind, param: None }) => num_json(*kind),
@@ -383,7 +383,7 @@ fn col_type_json(col_type: &Option<ColType>) -> Value {
     }
 }
 
-fn materials_json(materials: &Option<Vec<PieceMaterial>>) -> Value {
+fn materials_json(materials: Option<&Vec<PieceMaterial>>) -> Value {
     match materials {
         None => Value::Null,
         Some(list) => Value::Array(
@@ -401,7 +401,7 @@ fn piece_node(piece: &Piece, order: usize, kind: &str) -> SceneNode {
         extras: json!({"c2": {
             "role": "piece", "name": piece.name, "order": order, "model": piece.model, "kind": kind,
             "show": num_json(piece.show), "time": nums_json(&piece.time),
-            "col_type": col_type_json(&piece.col_type), "materials": materials_json(&piece.materials),
+            "col_type": col_type_json(piece.col_type.as_ref()), "materials": materials_json(piece.materials.as_ref()),
         }}),
         children: Vec::new(),
         model: Some(piece.model.clone()),

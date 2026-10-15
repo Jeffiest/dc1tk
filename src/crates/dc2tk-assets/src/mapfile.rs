@@ -64,14 +64,14 @@ impl Num {
             }
             Num::Exponent { exponent: value } => {
                 let (negative, digits, exponent) = significant(value as f64);
-                let body = if !(-4..6).contains(&exponent) {
+                let body = if (-4..6).contains(&exponent) {
+                    positional(&digits, exponent)
+                } else {
                     let rest = digits[1..].trim_end_matches('0');
                     let mantissa =
                         if rest.is_empty() { digits[..1].to_string() } else { format!("{}.{rest}", &digits[..1]) };
                     let sign = if exponent < 0 { '-' } else { '+' };
                     format!("{mantissa}e{sign}{:03}", exponent.unsigned_abs())
-                } else {
-                    positional(&digits, exponent)
                 };
                 signed(negative, body)
             }

@@ -149,37 +149,34 @@ pub fn named(nodes: &Node, found: &Context) -> Node {
     if found.asset_names.is_empty() {
         return nodes.clone();
     }
-    nodes
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .map(|node| {
-                    let mut node = node.clone();
-                    if node.kind() == "native" {
-                        let mut args = node.list("args").to_vec();
-                        for (position, prefix, text) in asset_args(&node, found) {
-                            if let Some(name) = found.asset_names.get(&(prefix.to_string(), text)) {
-                                args[position] = node!({"kind": "var", "name": name.clone()});
-                            }
-                        }
-                        node = node.with("args", args);
+    let Some(items) = nodes.as_array() else {
+        return nodes.clone();
+    };
+    items
+        .iter()
+        .map(|node| {
+            let mut node = node.clone();
+            if node.kind() == "native" {
+                let mut args = node.list("args").to_vec();
+                for (position, prefix, text) in asset_args(&node, found) {
+                    if let Some(name) = found.asset_names.get(&(prefix.to_string(), text)) {
+                        args[position] = node!({"kind": "var", "name": name.clone()});
                     }
-                    match node.kind() {
-                        "if" => {
-                            let otherwise =
-                                if node["else"].is_null() { Node::Null } else { named(&node["else"], found) };
-                            let then = named(&node["then"], found);
-                            node.with("then", then).with("else", otherwise)
-                        }
-                        "while" => {
-                            let body = named(&node["body"], found);
-                            node.with("body", body)
-                        }
-                        _ => node,
-                    }
-                })
-                .collect()
+                }
+                node = node.with("args", args);
+            }
+            match node.kind() {
+                "if" => {
+                    let otherwise = if node["else"].is_null() { Node::Null } else { named(&node["else"], found) };
+                    let then = named(&node["then"], found);
+                    node.with("then", then).with("else", otherwise)
+                }
+                "while" => {
+                    let body = named(&node["body"], found);
+                    node.with("body", body)
+                }
+                _ => node,
+            }
         })
-        .unwrap_or_else(|| nodes.clone())
+        .collect()
 }
