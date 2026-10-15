@@ -73,7 +73,9 @@ globals.
 program tree (`Node`, `node.rs`: maps and lists that dump as JSON);
 `sdk/present.rs` presents it with the SDK's names and helpers (`sdk/headers.rs` loads the headers,
 `sdk/resolve.rs` resolves the other way when compiling), and `source.rs` prints
-it as C; `decompiler.rs` runs the three with the definitions.
+it as C; `decompiler.rs` runs the three with the definitions, for one script
+(`script_source`) or a whole extracted disc written as a source tree
+(`decompile_tree`, which `dc2tk decompile` and `setup` print the result of).
 
 1. Declarations come from the addressing modes: each slot is used with one
    mode, so it is an `int` or `float` scalar, a local array (indexed modes, the

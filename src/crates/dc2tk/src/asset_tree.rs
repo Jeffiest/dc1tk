@@ -130,19 +130,22 @@ pub fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -
         }
         for part in TREE_PARTS {
             let path = output.join(part);
-            if path.is_dir() {
-                std::fs::remove_dir_all(&path)?;
+            let removed = if path.is_dir() {
+                std::fs::remove_dir_all(&path)
             } else if path.is_file() {
-                std::fs::remove_file(&path)?;
-            }
+                std::fs::remove_file(&path)
+            } else {
+                continue;
+            };
+            removed.with_context(|| format!("cannot replace {}", path.display()))?;
         }
     }
     let disc = DiscSource::open(source)?;
     let write = |path: &str, data: &[u8]| -> dc2tk_assets::Result<()> {
         let target = output.join(path);
         std::fs::create_dir_all(target.parent().expect("a tree file is in a folder"))?;
-        std::fs::write(target, data)?;
-        Ok(())
+        std::fs::write(&target, data)
+            .map_err(|error| dc2tk_assets::Error::invalid(format!("cannot write {}: {error}", target.display())))
     };
     let summary = tree::build(&disc_files(&tree_files(&disc)?), &names, &write)?;
     println!(

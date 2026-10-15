@@ -223,10 +223,10 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
         ModCommand::Apply { source, names, force, mods } => run_mod_apply(source, names, *force, mods),
         ModCommand::Override { source, name, functions, map, script, monster, library, mods, common } => {
             let targets = [
-                (TargetKind::Map, map),
-                (TargetKind::Script, script),
-                (TargetKind::Monster, monster),
-                (TargetKind::Library, library),
+                (TargetKind::Map, map.as_deref()),
+                (TargetKind::Script, script.as_deref()),
+                (TargetKind::Monster, monster.as_deref()),
+                (TargetKind::Library, library.as_deref()),
             ];
             run_mod_override(source, name, functions, &targets, mods, common)
         }
@@ -322,14 +322,14 @@ fn run_mod_override(
     source: &Path,
     name: &str,
     functions: &[String],
-    targets: &[(TargetKind, &Option<String>)],
+    targets: &[(TargetKind, Option<&str>)],
     mods_dir: &ModsDir,
     common: &Common,
 ) -> Result<ExitCode> {
     let mod_dir = mods_dir.folder(name)?;
-    let given: Vec<(TargetKind, &String)> = targets
+    let given: Vec<(TargetKind, &str)> = targets
         .iter()
-        .filter_map(|(kind, value)| value.as_ref().filter(|value| !value.is_empty()).map(|value| (*kind, value)))
+        .filter_map(|&(kind, value)| value.filter(|value| !value.is_empty()).map(|value| (kind, value)))
         .collect();
     let [(kind, target)] = given[..] else {
         bail!("give one of --map, --script, --monster and --library: the scripts to patch");
