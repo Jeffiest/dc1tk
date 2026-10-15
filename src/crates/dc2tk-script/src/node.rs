@@ -298,6 +298,25 @@ impl Node {
         self.get(key).and_then(Node::as_str).unwrap_or("")
     }
 
+    /// The value under a key, Null left in its place (Null for a missing key, which stays
+    /// missing): a child to rebuild without copying it, put back with node[key] = value.
+    pub fn take(&mut self, key: &str) -> Node {
+        self.as_object_mut().and_then(|map| map.get_mut(key)).map(std::mem::take).unwrap_or_default()
+    }
+
+    /// Removes a key of an object, keeping the others in order.
+    pub fn remove(&mut self, key: &str) -> Option<Node> {
+        self.as_object_mut()?.remove(key)
+    }
+
+    /// The items of a list; empty for anything else.
+    pub fn into_list(self) -> Vec<Node> {
+        match self {
+            Node::List(items) => items,
+            _ => Vec::new(),
+        }
+    }
+
     /// Whether a flag the parser sets is on: the key holds true. The parser writes a flag only
     /// when it is on ("pointer": true), so a missing key, false or any other value is off.
     pub fn flag(&self, key: &str) -> bool {

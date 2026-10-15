@@ -88,58 +88,80 @@ fn shown(node: &Node) -> String {
 
 /// Globals given values (int g = 5;, and static locals) set by a hidden function that every entry
 /// function calls first, once per load.
-pub fn initialised_globals(program: &Node, found: &Context) -> Result<Node> {
-    let globals = program.list("globals");
+pub fn initialised_globals(mut program: Node, found: &Context) -> Result<Node> {
+    let globals = program.take("globals").into_list();
     let given = |global: &Node| global.get("init").is_some() || global.get("inits").is_some();
     if !globals.iter().any(|global| given(global) || global.get("const").is_some()) {
-        return Ok(program.clone());
+        program["globals"] = Node::List(globals);
+        return Ok(program);
     }
-    let names: HashSet<&str> = globals.iter().map(|global| global.text("name")).collect();
-    let functions: HashSet<&str> = program.list("functions").iter().map(|function| function.text("name")).collect();
+    let strict = globals.iter().any(|global| global["std"] == "c89");
+    let (plain, body) = assignments(globals, program.list("functions"), found)?;
+    if body.is_empty() {
+        program["globals"] = Node::List(plain);
+        return Ok(program);
+    }
+    let mut plain = plain;
+    plain.push(node!({"name": INITIALISED, "type": "int"}));
+    program["globals"] = Node::List(plain);
+    let functions = program.take("functions").into_list();
+    program["functions"] = Node::List(with_initialise(&program, functions)?);
+    let initialise = initialise_function(body, strict);
+    program["functions"].as_array_mut().expect("the functions are a list").push(initialise);
+    let count: i64 = program.list("globals").iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
+    let declared = program["global_num"].as_i64().unwrap_or(0);
+    Ok(program.with("global_num", count.max(declared)))
+}
+
+/// The globals as plain declarations (their values, consts and std left out), and an assignment
+/// for each value one is given: a scalar's, or each slot an array's or struct's list gives. Every
+/// value must be a constant expression, as C requires of static storage.
+fn assignments(globals: Vec<Node>, functions: &[Node], found: &Context) -> Result<(Vec<Node>, Vec<Node>)> {
+    let names: HashSet<String> = globals.iter().map(|global| global.text("name").to_string()).collect();
+    let names: HashSet<&str> = names.iter().map(String::as_str).collect();
+    let functions: HashSet<&str> = functions.iter().map(|function| function.text("name")).collect();
     let mut body = Vec::new();
     let mut plain = Vec::new();
-    for global in globals {
-        let mut entry = global.clone();
-        if let Some(map) = entry.as_object_mut() {
-            map.remove("init");
-            map.remove("inits");
-            map.remove("const");
-            map.remove("std");
-        }
-        plain.push(entry);
-        // a scalar's value, or the slots an array's or struct's list gives
-        let values: Vec<(Node, &Node)> = match global.get("init") {
-            Some(value) => vec![(node!({"kind": "var", "name": global.text("name")}), value)],
-            None => global
-                .list("inits")
-                .iter()
-                .map(|slot| {
+    for mut global in globals {
+        let name = global.text("name").to_string();
+        let (init, inits) = (global.remove("init"), global.remove("inits"));
+        global.remove("const");
+        global.remove("std");
+        plain.push(global);
+        let values: Vec<(Node, Node)> = match (init, inits) {
+            (Some(value), _) => vec![(node!({"kind": "var", "name": name.as_str()}), value)],
+            (None, inits) => inits
+                .map(Node::into_list)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|mut slot| {
                     let target = node!({
                         "kind": "field",
-                        "name": global.text("name"),
-                        "offset": slot["offset"].clone(),
-                        "type": slot["type"].clone(),
-                        "ctype": slot["ctype"].clone(),
+                        "name": name.as_str(),
+                        "offset": slot.take("offset"),
+                        "type": slot.take("type"),
+                        "ctype": slot.take("ctype"),
                     });
-                    (target, &slot["value"])
+                    (target, slot.take("value"))
                 })
                 .collect(),
         };
         for (target, value) in values {
-            if let Some(part) = not_constant(value, found, &names, &functions) {
+            if let Some(part) = not_constant(&value, found, &names, &functions) {
                 return Err(Error::invalid(format!(
-                    "the value of global {} must be a constant expression, not {}",
-                    global.text("name"),
+                    "the value of global {name} must be a constant expression, not {}",
                     shown(part)
                 )));
             }
-            body.push(node!({"kind": "expr", "expr": {"kind": "assign", "target": target, "value": value.clone()}}));
+            body.push(node!({"kind": "expr", "expr": {"kind": "assign", "target": target, "value": value}}));
         }
     }
-    if body.is_empty() {
-        return Ok(program.clone().with("globals", plain));
-    }
-    plain.push(node!({"name": INITIALISED, "type": "int"}));
+    Ok((plain, body))
+}
+
+/// The hidden function that sets the globals, once per load: it returns at once when its flag is
+/// set, and sets the flag first.
+fn initialise_function(body: Vec<Node>, strict: bool) -> Node {
     let flag = node!({"kind": "var", "name": INITIALISED});
     let mut statements = vec![
         node!({"kind": "if", "cond": flag.clone(), "then": [{"kind": "return", "value": null}], "else": null}),
@@ -156,37 +178,38 @@ pub fn initialised_globals(program: &Node, found: &Context) -> Result<Node> {
         "unused_strings": [],
         "padding": null,
     });
-    if globals.iter().any(|global| global["std"] == "c89") {
+    if strict {
         // a value given under #pragma std c89 converts to its global's type
         initialise["std"] = Node::from("c89");
     }
-    let mut entries: HashSet<String> =
-        program.list("programs").iter().map(|entry| entry.text("function").to_string()).collect();
+    initialise
+}
+
+/// The functions with a call of the hidden function first in each the engine can start: the main
+/// function and each program's.
+fn with_initialise(program: &Node, functions: Vec<Node>) -> Result<Vec<Node>> {
+    let mut entries: HashSet<&str> = program.list("programs").iter().map(|entry| entry.text("function")).collect();
     if let Some(main) = program["main"].as_str() {
-        entries.insert(main.to_string());
+        entries.insert(main);
     }
     let call = node!({"kind": "expr", "expr": {"kind": "call", "name": INITIALISE, "args": []}});
-    let mut functions = Vec::new();
-    for function in program.list("functions") {
-        if !entries.contains(function.text("name")) {
-            functions.push(function.clone());
-            continue;
-        }
-        if function.kind() == kinds::ASM {
-            return Err(Error::invalid(format!(
-                "{} is written in assembly, so it cannot set the script's initialised globals first",
-                function.text("name")
-            )));
-        }
-        let mut body = vec![call.clone()];
-        body.extend(function.list("body").iter().cloned());
-        functions.push(function.clone().with("body", body));
-    }
-    functions.push(initialise);
-    let program = program.clone().with("globals", plain).with("functions", functions);
-    let count: i64 = program.list("globals").iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
-    let declared = program["global_num"].as_i64().unwrap_or(0);
-    Ok(program.with("global_num", count.max(declared)))
+    functions
+        .into_iter()
+        .map(|mut function| {
+            if !entries.contains(function.text("name")) {
+                return Ok(function);
+            }
+            if function.kind() == kinds::ASM {
+                return Err(Error::invalid(format!(
+                    "{} is written in assembly, so it cannot set the script's initialised globals first",
+                    function.text("name")
+                )));
+            }
+            let mut body = vec![call.clone()];
+            body.extend(function.take("body").into_list());
+            Ok(function.with("body", body))
+        })
+        .collect()
 }
 
 // ---- integer types -------------------------------------------------------------------------
@@ -405,6 +428,9 @@ fn literal(node: &Node) -> Option<u32> {
     (node.kind() == kinds::INT).then(|| node["value"].as_i64()).flatten().map(|value| value as u32)
 }
 
+/// An expression lowered, and its type.
+type Lowered = Result<(Node, String)>;
+
 impl Types<'_> {
     /// The type of a variable named in code, and whether it is an array or pointer of that type.
     fn variable(&self, name: &str) -> Option<(String, bool)> {
@@ -412,125 +438,165 @@ impl Types<'_> {
     }
 
     /// An expression lowered, and its type.
-    fn expression(&mut self, node: &Node) -> Result<(Node, String)> {
+    fn expression(&mut self, node: Node) -> Lowered {
         self.typed(node, false)
     }
 
     /// An expression whose value is only tested (a condition): && and || need not give 0 or 1.
-    fn condition(&mut self, node: &Node) -> Result<(Node, String)> {
+    fn condition(&mut self, node: Node) -> Lowered {
         self.typed(node, true)
     }
 
-    fn typed(&mut self, node: &Node, condition: bool) -> Result<(Node, String)> {
-        let kind = node.kind();
-        Ok(match kind {
-            kinds::INT => (node.clone(), if node.get("unsigned").is_some() { "unsigned int" } else { "int" }.into()),
-            kinds::FLOAT => (node.clone(), "float".into()),
-            kinds::STRING => (node.clone(), "string".into()),
-            kinds::VAR => match self.variable(node.text("name")) {
-                Some((_, true)) => (node.clone(), "pointer".into()),
-                Some((kind, false)) => (node.clone(), kind),
-                None => (node.clone(), "int".into()),
-            },
-            kinds::INDEX => {
-                let (index, _) = self.expression(&node["index"])?;
-                let kind = match node["type"].as_str() {
-                    Some(kind) => kind.to_string(),
-                    None => self.variable(node.text("name")).map_or("any".into(), |(kind, _)| kind),
-                };
-                (node.clone().with("index", index), kind)
-            }
-            // a slot of C's other types (composite.rs), of the type it says
-            kinds::FIELD => (node.clone(), node.text("type").to_string()),
-            kinds::AT => {
-                let (pointer, _) = self.expression(&node["pointer"])?;
-                let (index, _) = self.expression(&node["index"])?;
-                (node.clone().with("pointer", pointer).with("index", index), node.text("type").to_string())
-            }
-            kinds::DEREF => {
-                let kind = self.variable(node["operand"].text("name")).map_or("any".into(), |(kind, _)| kind);
-                (node.clone(), kind)
-            }
-            kinds::ADDR => {
-                let (target, _) = self.expression(&node["target"])?;
-                (node.clone().with("target", target), "pointer".into())
-            }
-            kinds::ASSIGN => {
-                let (target, to) = self.expression(&node["target"])?;
-                let (value, from) = self.expression(&node["value"])?;
-                let value = converted(value, &from, &to, self.strict, self.used);
-                (node.clone().with("target", target).with("value", value), to)
-            }
-            kinds::COMPOUND => self.compound(node)?,
-            kinds::UNARY => {
-                let not = node.text("op") == "!";
-                let (operand, operand_kind) =
-                    if not { self.condition(&node["operand"])? } else { self.expression(&node["operand"])? };
-                let result =
-                    if node.text("op") == "!" { "int".to_string() } else { promoted(&operand_kind).to_string() };
-                (node.clone().with("operand", operand), result)
-            }
-            kinds::BINARY => self.binary(node)?,
-            kinds::LOGICAL => {
-                let (left, _) = self.condition(&node["left"])?;
-                let (right, _) = self.typed(&node["right"], condition)?;
-                let lowered = node.clone().with("left", left).with("right", right);
-                // the VM's && and || leave the deciding value; C's give 0 or 1
-                (if self.strict && !condition { truth(lowered) } else { lowered }, "int".into())
-            }
-            kinds::TERNARY => {
-                let (cond, _) = self.condition(&node["cond"])?;
-                let (then, then_kind) = self.expression(&node["then"])?;
-                let (otherwise, otherwise_kind) = self.expression(&node["else"])?;
-                let kind = common(&then_kind, &otherwise_kind);
-                let then =
-                    if kind == "float" { converted(then, &then_kind, "float", self.strict, self.used) } else { then };
-                let otherwise = if kind == "float" {
-                    converted(otherwise, &otherwise_kind, "float", self.strict, self.used)
-                } else {
-                    otherwise
-                };
-                (node.clone().with("cond", cond).with("then", then).with("else", otherwise), kind)
-            }
-            kinds::CAST => self.cast(node)?,
-            kinds::COMMA => {
-                let (left, _) = self.expression(&node["left"])?;
-                let (right, kind) = self.expression(&node["right"])?;
-                (node.clone().with("left", left).with("right", right), kind)
-            }
-            kinds::CALL => {
-                let name = node.text("name");
-                let mut args = Vec::new();
-                let params = match self.functions.get(name) {
-                    Some((_, params)) => params.clone(),
-                    None if self.strict => native_params(self.found, name),
-                    None => Vec::new(),
-                };
-                for (at, arg) in node.list("args").iter().enumerate() {
-                    let (arg, from) = self.expression(arg)?;
-                    args.push(match params.get(at) {
-                        Some(to) => converted(arg, &from, to, self.strict, self.used),
-                        None => arg,
-                    });
-                }
-                let returns = match self.functions.get(name) {
-                    Some((returns, _)) => returns.clone(),
-                    None => {
-                        self.found.natives.get(name).map_or("any".into(), |native| native.text("returns").to_string())
-                    }
-                };
-                (node.clone().with("args", args), returns)
-            }
-            kinds::BUILTIN => {
-                let (operand, _) = self.expression(&node["operand"])?;
-                (node.clone().with("operand", operand), "float".into())
-            }
-            _ => (node.clone(), "any".into()),
-        })
+    /// The child under a key lowered in its place, and its type.
+    fn child(&mut self, node: &mut Node, key: &str) -> Result<String> {
+        let (lowered, kind) = self.expression(node.take(key))?;
+        node[key] = lowered;
+        Ok(kind)
     }
 
-    fn cast(&mut self, node: &Node) -> Result<(Node, String)> {
-        let (operand, from) = self.expression(&node["operand"])?;
+    // The passes recurse once for each level of the tree, so typed only dispatches: each kind is
+    // lowered by a method of its own, and a debug build's frame of typed stays small.
+    fn typed(&mut self, node: Node, condition: bool) -> Lowered {
+        match node.kind() {
+            kinds::INT | kinds::FLOAT | kinds::STRING | kinds::VAR | kinds::FIELD | kinds::DEREF => self.leaf(node),
+            kinds::INDEX => self.index(node),
+            kinds::AT => self.at(node),
+            kinds::ADDR => self.address(node),
+            kinds::ASSIGN => self.assign(node),
+            kinds::COMPOUND => self.compound(node),
+            kinds::UNARY => self.unary(node),
+            kinds::BINARY => self.binary(node),
+            kinds::LOGICAL => self.logical(node, condition),
+            kinds::TERNARY => self.ternary(node),
+            kinds::CAST => self.cast(node),
+            kinds::COMMA => self.comma(node),
+            kinds::CALL => self.call(node),
+            kinds::BUILTIN => self.builtin(node),
+            _ => Ok((node, "any".into())),
+        }
+    }
+
+    /// What has no expression in it to lower: a constant, a variable, a field, *p.
+    fn leaf(&mut self, node: Node) -> Lowered {
+        let kind = match node.kind() {
+            kinds::INT if node.get("unsigned").is_some() => "unsigned int".into(),
+            kinds::INT => "int".into(),
+            kinds::FLOAT => "float".into(),
+            kinds::STRING => "string".into(),
+            kinds::VAR => match self.variable(node.text("name")) {
+                Some((_, true)) => "pointer".into(),
+                Some((kind, false)) => kind,
+                None => "int".into(),
+            },
+            // a slot of C's other types (composite.rs), of the type it says
+            kinds::FIELD => node.text("type").to_string(),
+            _ => self.variable(node["operand"].text("name")).map_or("any".into(), |(kind, _)| kind),
+        };
+        Ok((node, kind))
+    }
+
+    fn builtin(&mut self, mut node: Node) -> Lowered {
+        self.child(&mut node, "operand")?;
+        Ok((node, "float".into()))
+    }
+
+    fn index(&mut self, mut node: Node) -> Lowered {
+        self.child(&mut node, "index")?;
+        let kind = match node["type"].as_str() {
+            Some(kind) => kind.to_string(),
+            None => self.variable(node.text("name")).map_or("any".into(), |(kind, _)| kind),
+        };
+        Ok((node, kind))
+    }
+
+    fn at(&mut self, mut node: Node) -> Lowered {
+        self.child(&mut node, "pointer")?;
+        self.child(&mut node, "index")?;
+        let kind = node.text("type").to_string();
+        Ok((node, kind))
+    }
+
+    fn address(&mut self, mut node: Node) -> Lowered {
+        self.child(&mut node, "target")?;
+        Ok((node, "pointer".into()))
+    }
+
+    fn assign(&mut self, mut node: Node) -> Lowered {
+        let to = self.child(&mut node, "target")?;
+        let (value, from) = self.expression(node.take("value"))?;
+        node["value"] = converted(value, &from, &to, self.strict, self.used);
+        Ok((node, to))
+    }
+
+    fn unary(&mut self, mut node: Node) -> Lowered {
+        let not = node.text("op") == "!";
+        let operand = node.take("operand");
+        let (operand, operand_kind) = if not { self.condition(operand)? } else { self.expression(operand)? };
+        node["operand"] = operand;
+        let result = if not { "int".to_string() } else { promoted(&operand_kind).to_string() };
+        Ok((node, result))
+    }
+
+    fn logical(&mut self, mut node: Node, condition: bool) -> Lowered {
+        let (left, _) = self.condition(node.take("left"))?;
+        let (right, _) = self.typed(node.take("right"), condition)?;
+        node["left"] = left;
+        node["right"] = right;
+        // the VM's && and || leave the deciding value; C's give 0 or 1
+        Ok((if self.strict && !condition { truth(node) } else { node }, "int".into()))
+    }
+
+    fn ternary(&mut self, mut node: Node) -> Lowered {
+        let (cond, _) = self.condition(node.take("cond"))?;
+        let (then, then_kind) = self.expression(node.take("then"))?;
+        let (otherwise, otherwise_kind) = self.expression(node.take("else"))?;
+        let kind = common(&then_kind, &otherwise_kind);
+        let float = |types: &mut Self, value: Node, from: &str| {
+            if kind == "float" {
+                converted(value, from, "float", types.strict, types.used)
+            } else {
+                value
+            }
+        };
+        node["cond"] = cond;
+        node["then"] = float(self, then, &then_kind);
+        node["else"] = float(self, otherwise, &otherwise_kind);
+        Ok((node, kind))
+    }
+
+    fn comma(&mut self, mut node: Node) -> Lowered {
+        self.child(&mut node, "left")?;
+        let kind = self.child(&mut node, "right")?;
+        Ok((node, kind))
+    }
+
+    /// A call: its arguments converted to the function's parameters' types (or, in strict mode,
+    /// a native's), and the type it returns.
+    fn call(&mut self, mut node: Node) -> Lowered {
+        let name = node.text("name").to_string();
+        let params = match self.functions.get(&name) {
+            Some((_, params)) => params.clone(),
+            None if self.strict => native_params(self.found, &name),
+            None => Vec::new(),
+        };
+        let mut args = Vec::new();
+        for (at, arg) in node.take("args").into_list().into_iter().enumerate() {
+            let (arg, from) = self.expression(arg)?;
+            args.push(match params.get(at) {
+                Some(to) => converted(arg, &from, to, self.strict, self.used),
+                None => arg,
+            });
+        }
+        node["args"] = Node::List(args);
+        let returns = match self.functions.get(&name) {
+            Some((returns, _)) => returns.clone(),
+            None => self.found.natives.get(&name).map_or("any".into(), |native| native.text("returns").to_string()),
+        };
+        Ok((node, returns))
+    }
+
+    fn cast(&mut self, mut node: Node) -> Lowered {
+        let (operand, from) = self.expression(node.take("operand"))?;
         let to = node.text("type").to_string();
         if let Some(narrow) = IntType::narrow(&to) {
             return Ok((narrowed(operand, &from, narrow), to));
@@ -540,39 +606,72 @@ impl Types<'_> {
             ("unsigned int", "float") => call(FTOU, vec![operand], self.used),
             // the bits are the value's already
             ("unsigned int", _) => operand,
-            _ => node.clone().with("operand", operand),
+            _ => {
+                node["operand"] = operand;
+                node
+            }
         };
         Ok((lowered, to))
     }
 
-    fn binary(&mut self, node: &Node) -> Result<(Node, String)> {
-        let op = node.text("op");
-        let (left, left_kind) = self.expression(&node["left"])?;
-        let (right, right_kind) = self.expression(&node["right"])?;
+    fn binary(&mut self, mut node: Node) -> Lowered {
+        // x++ is the stepped value worked back to the old one: the variable's type
+        let stepped = node.get("postfix").map(|_| node["left"]["target"].clone());
+        let left = self.expression(node.take("left"))?;
+        let right = self.expression(node.take("right"))?;
+        let stepped = match stepped {
+            Some(target) => Some(self.expression(target)?.1),
+            None => None,
+        };
+        self.binary_of(node, left, right, stepped)
+    }
+
+    /// A binary operation of lowered operands, with their types (and for x++, x's).
+    fn binary_of(
+        &mut self,
+        node: Node,
+        left: (Node, String),
+        right: (Node, String),
+        stepped: Option<String>,
+    ) -> Lowered {
+        let ((left, left_kind), (right, right_kind)) = (left, right);
+        let op = node.text("op").to_string();
+        let postfix = stepped.is_some();
         let shift = op == "<<" || op == ">>";
         let kind = if shift { promoted(&left_kind).to_string() } else { common(&left_kind, &right_kind) };
-        let compared = matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=");
+        let compared = matches!(op.as_str(), "==" | "!=" | "<" | "<=" | ">" | ">=");
         let result = if compared { "int".to_string() } else { kind.clone() };
-        let plain = |left: Node, right: Node| node.clone().with("left", left).with("right", right);
-        if node.get("postfix").is_some() {
-            // x++ is the stepped value worked back to the old one, which for a narrow x wraps
-            // back too (an unsigned char at 255 steps to 0, and 0 - 1 is 255 again)
-            let (_, stepped) = self.expression(&node["left"]["target"])?;
+        let plain = |mut node: Node, left: Node, right: Node| {
+            node["left"] = left;
+            node["right"] = right;
+            node
+        };
+        if let Some(stepped) = stepped {
+            // for a narrow x the old value wraps back too (an unsigned char at 255 steps to 0, and
+            // 0 - 1 is 255 again)
             if let Some(narrow) = IntType::narrow(&stepped) {
-                return Ok((narrowed(plain(left, right), "int", narrow), stepped));
+                return Ok((narrowed(plain(node, left, right), "int", narrow), stepped));
             }
         }
         if kind == "float" {
             // an unsigned operand of float arithmetic converts by its value
             let left = converted(left, &left_kind, "float", false, self.used);
             let right = converted(right, &right_kind, "float", false, self.used);
-            return Ok((plain(left, right), result));
+            return Ok((plain(node, left, right), result));
         }
         if kind != "unsigned int" {
-            return Ok((plain(left, right), result));
+            return Ok((plain(node, left, right), result));
         }
+        let lowered = self.unsigned(&op, node, left, right);
+        let lowered = if postfix { lowered.with("postfix", true) } else { lowered };
+        Ok((lowered, result))
+    }
+
+    /// An operation on unsigned ints: division, remainder and right shift by the runtime's
+    /// functions, comparisons of the values offset into the signed range, and constants folded.
+    fn unsigned(&mut self, op: &str, mut node: Node, left: Node, right: Node) -> Node {
         let folded = literal(&left).zip(literal(&right));
-        let lowered = match op {
+        match op {
             "/" | "%" => match folded {
                 Some((a, b)) if b != 0 => int_node((if op == "/" { a / b } else { a % b }) as i32 as i64),
                 _ => call(if op == "/" { UDIV } else { UMOD }, vec![left, right], self.used),
@@ -593,22 +692,26 @@ impl Types<'_> {
                         Some(value) => int_node((value as i64 + BIAS) as i32 as i64),
                         None => node!({"kind": "binary", "op": "+", "left": side, "right": int_node(BIAS)}),
                     };
-                    plain(biased(left), biased(right))
+                    node["left"] = biased(left);
+                    node["right"] = biased(right);
+                    node
                 }
             },
-            _ => plain(left, right),
-        };
-        let lowered = if node.get("postfix").is_some() { lowered.with("postfix", true) } else { lowered };
-        Ok((lowered, result))
+            _ => {
+                node["left"] = left;
+                node["right"] = right;
+                node
+            }
+        }
     }
 
     /// target op= value: worked out in the target's type, and narrowed to it when stored.
-    fn compound(&mut self, node: &Node) -> Result<(Node, String)> {
-        let (target, to) = self.expression(&node["target"])?;
-        let (value, from) = self.expression(&node["value"])?;
-        let op = node.text("op");
+    fn compound(&mut self, mut node: Node) -> Lowered {
+        let (target, to) = self.expression(node.take("target"))?;
+        let (value, from) = self.expression(node.take("value"))?;
+        let op = node.text("op").to_string();
         let kind = if op == "<<" || op == ">>" { promoted(&to).to_string() } else { common(&to, &from) };
-        if kind == "unsigned int" && matches!(op, "/" | "%" | ">>") {
+        if kind == "unsigned int" && matches!(op.as_str(), "/" | "%" | ">>") {
             // an unsigned quotient, remainder or shift is a call: target = op(target, value)
             if contains_effects(&target) {
                 return Err(Error::invalid(
@@ -616,7 +719,7 @@ impl Types<'_> {
                 ));
             }
             let binary = node!({"kind": "binary", "op": op, "left": target.clone(), "right": value});
-            let (operation, kind) = self.binary(&binary)?;
+            let (operation, kind) = self.binary(binary)?;
             let stored = converted(operation, &kind, &to, self.strict, self.used);
             return Ok((node!({"kind": "assign", "target": target, "value": stored}), to));
         }
@@ -631,64 +734,83 @@ impl Types<'_> {
             let stored = call(FTOU, vec![binary], self.used);
             return Ok((node!({"kind": "assign", "target": target, "value": stored}), to));
         }
-        let mut lowered = node.clone().with("target", target).with("value", value);
+        node["target"] = target;
+        node["value"] = value;
         if self.strict && is_integer(&to) && kind == "float" {
-            lowered = lowered.with("convert", "int");
+            node["convert"] = Node::from("int");
         }
-        Ok((if is_narrow(&to) { lowered.with("narrow", to.clone()) } else { lowered }, to))
+        if is_narrow(&to) {
+            node["narrow"] = Node::from(to.as_str());
+        }
+        Ok((node, to))
     }
 
     /// A statement, and those in it, lowered.
-    fn statement(&mut self, node: &Node) -> Result<Node> {
-        let mut out = node.clone();
+    fn statement(&mut self, mut node: Node) -> Result<Node> {
         match node.kind() {
             kinds::EXPR => {
-                let (expression, _) = self.expression(&node["expr"])?;
-                out = out.with("expr", expression);
+                self.child(&mut node, "expr")?;
+                Ok(node)
             }
-            kinds::RETURN if !node["value"].is_null() => {
-                let (value, from) = self.expression(&node["value"])?;
-                let to = self.returns.clone();
-                out = out.with("value", converted(value, &from, &to, self.strict, self.used));
-            }
-            kinds::IF => {
-                let (cond, _) = self.condition(&node["cond"])?;
-                out = out.with("cond", cond).with("then", self.statements(node.list("then"))?);
-                if let Some(otherwise) = node["else"].as_array() {
-                    out = out.with("else", self.statements(otherwise)?);
-                }
-            }
-            kinds::WHILE => {
-                let (cond, _) = self.condition(&node["cond"])?;
-                out = out.with("cond", cond).with("body", self.statements(node.list("body"))?);
-            }
-            kinds::SWITCH => {
-                let (value, _) = self.expression(&node["value"])?;
-                let mut cases = Vec::new();
-                for case in node.list("cases") {
-                    let mut case = case.clone().with("body", self.statements(case.list("body"))?);
-                    if !case["value"].is_null() {
-                        let (value, _) = self.expression(&case["value"])?;
-                        case = case.with("value", value);
-                    }
-                    cases.push(case);
-                }
-                out = out.with("value", value).with("cases", cases);
-            }
-            kinds::PRINT | kinds::NATIVE => {
-                let mut args = Vec::new();
-                for arg in node.list("args") {
-                    args.push(self.expression(arg)?.0);
-                }
-                out = out.with("args", args);
-            }
-            _ => {}
+            kinds::RETURN if !node["value"].is_null() => self.return_value(node),
+            kinds::IF => self.conditional(node),
+            kinds::WHILE => self.while_loop(node),
+            kinds::SWITCH => self.switch(node),
+            kinds::PRINT | kinds::NATIVE => self.arguments(node),
+            _ => Ok(node),
         }
-        Ok(out)
     }
 
-    fn statements(&mut self, nodes: &[Node]) -> Result<Vec<Node>> {
-        nodes.iter().map(|node| self.statement(node)).collect()
+    fn return_value(&mut self, mut node: Node) -> Result<Node> {
+        let (value, from) = self.expression(node.take("value"))?;
+        let to = self.returns.clone();
+        node["value"] = converted(value, &from, &to, self.strict, self.used);
+        Ok(node)
+    }
+
+    fn conditional(&mut self, mut node: Node) -> Result<Node> {
+        let (cond, _) = self.condition(node.take("cond"))?;
+        node["cond"] = cond;
+        node["then"] = Node::List(self.statements(node.take("then").into_list())?);
+        if node["else"].as_array().is_some() {
+            node["else"] = Node::List(self.statements(node.take("else").into_list())?);
+        }
+        Ok(node)
+    }
+
+    fn while_loop(&mut self, mut node: Node) -> Result<Node> {
+        let (cond, _) = self.condition(node.take("cond"))?;
+        node["cond"] = cond;
+        node["body"] = Node::List(self.statements(node.take("body").into_list())?);
+        Ok(node)
+    }
+
+    fn switch(&mut self, mut node: Node) -> Result<Node> {
+        self.child(&mut node, "value")?;
+        let mut cases = Vec::new();
+        for mut case in node.take("cases").into_list() {
+            case["body"] = Node::List(self.statements(case.take("body").into_list())?);
+            if !case["value"].is_null() {
+                self.child(&mut case, "value")?;
+            }
+            cases.push(case);
+        }
+        node["cases"] = Node::List(cases);
+        Ok(node)
+    }
+
+    /// A print's or a native call's arguments.
+    fn arguments(&mut self, mut node: Node) -> Result<Node> {
+        let mut args = Vec::new();
+        for arg in node.take("args").into_list() {
+            args.push(self.expression(arg)?.0);
+        }
+        node["args"] = Node::List(args);
+        Ok(node)
+    }
+
+    fn statements(&mut self, nodes: Vec<Node>) -> Result<Vec<Node>> {
+        nodes.into_iter().map(|node| self.statement(node)).collect()
     }
 }
 
@@ -749,14 +871,14 @@ fn uses_integer_types(node: &Node, kinds: &Map) -> bool {
 /// (the first three by functions of the runtime above). Conversions happen where C's would on
 /// storing to a variable of a narrow type, passing an argument, returning, and in casts and
 /// mixed arithmetic.
-pub fn integer_types(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
+pub fn integer_types(mut program: Node, kinds: &Map, found: &Context) -> Result<Node> {
     let unsigned_constants = found.constants.values().any(|constant| constant.get("unsigned").is_some());
     let used_anywhere = unsigned_constants
         || uses_integer_types(&program["functions"], kinds)
         || uses_integer_types(&program["globals"], kinds);
     let strict_anywhere = program.list("functions").iter().any(is_strict);
     if program.get("asm").is_some() || !(used_anywhere || strict_anywhere) {
-        return Ok(program.clone());
+        return Ok(program);
     }
     let globals: HashMap<String, String> = program
         .list("globals")
@@ -778,9 +900,9 @@ pub fn integer_types(program: &Node, kinds: &Map, found: &Context) -> Result<Nod
         .collect();
     let mut used = Vec::new();
     let mut lowered = Vec::new();
-    for function in program.list("functions") {
-        if function.kind() != kinds::FUNCTION || !(used_anywhere || is_strict(function)) {
-            lowered.push(function.clone());
+    for mut function in program.take("functions").into_list() {
+        if function.kind() != kinds::FUNCTION || !(used_anywhere || is_strict(&function)) {
+            lowered.push(function);
             continue;
         }
         let mut variables = HashMap::new();
@@ -802,31 +924,36 @@ pub fn integer_types(program: &Node, kinds: &Map, found: &Context) -> Result<Nod
             found,
             returns: base(function.text("returns"), kinds),
             used: &mut used,
-            strict: is_strict(function),
+            strict: is_strict(&function),
         };
         // constants as their values, so an unsigned one is typed as one
         let body = crate::sdk::with_constants(&function["body"], &found.constants, &shadowed);
-        let body = types.statements(body.as_array().map_or(&[][..], Vec::as_slice))?;
-        lowered.push(function.clone().with("body", body));
+        function["body"] = Node::List(types.statements(body.into_list())?);
+        lowered.push(function);
     }
     if !used.is_empty() {
-        // the runtime functions a call was made to, and those they call
-        if used.contains(&UMOD) && !used.contains(&UDIV) {
-            used.push(UDIV);
-        }
-        let runtime = crate::parse::parse(RUNTIME)?;
-        for function in runtime.list("functions") {
-            let name = function.text("name").replacen("c89_", "__", 1);
-            if used.contains(&name.as_str()) {
-                let mut function = function.clone().with("name", name).with("body", rename_calls(&function["body"]));
-                if let Some(map) = function.as_object_mut() {
-                    map.remove("doc");
-                }
-                lowered.push(function);
-            }
+        lowered.extend(runtime(&mut used)?);
+    }
+    program["functions"] = Node::List(lowered);
+    Ok(program)
+}
+
+/// The runtime's functions a call was made to, and those they call, under their hidden names.
+fn runtime(used: &mut Vec<&'static str>) -> Result<Vec<Node>> {
+    if used.contains(&UMOD) && !used.contains(&UDIV) {
+        used.push(UDIV);
+    }
+    let runtime = crate::parse::parse(RUNTIME)?;
+    let mut functions = Vec::new();
+    for function in runtime.list("functions") {
+        let name = function.text("name").replacen("c89_", "__", 1);
+        if used.contains(&name.as_str()) {
+            let mut function = function.clone().with("name", name).with("body", rename_calls(&function["body"]));
+            function.remove("doc");
+            functions.push(function);
         }
     }
-    Ok(program.clone().with("functions", lowered))
+    Ok(functions)
 }
 
 /// The runtime's calls of each other, by their hidden names.
@@ -846,5 +973,36 @@ fn rename_calls(node: &Node) -> Node {
             Node::Map(out)
         }
         other => other.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn float(value: f32) -> Node {
+        node!({"kind": "float", "bits": value.to_bits() as i32 as i64})
+    }
+
+    #[test]
+    fn a_float_constant_converts_to_int_here_when_an_int_holds_it() {
+        assert_eq!(as_int(float(2.75)), int_node(2));
+        assert_eq!(as_int(float(-2.75)), int_node(-2));
+        assert_eq!(as_int(float(2147483520.0)), int_node(2147483520));
+        // 2^31 and NaN are left to FTOI, as is anything but a float constant
+        for value in [float(2147483648.0), float(f32::NAN), node!({"kind": "var", "name": "x"})] {
+            assert_eq!(as_int(value.clone()), node!({"kind": "cast", "type": "int", "operand": value}));
+        }
+    }
+
+    #[test]
+    fn an_int_constant_converts_to_float_here_when_a_float_holds_it_exactly() {
+        assert_eq!(as_float(int_node(3)), float(3.0));
+        assert_eq!(as_float(int_node(-16777215)), float(-16777215.0));
+        // 2^24 and beyond may round, an unsigned constant is a large one, and the rest are ITOF's
+        let unsigned = node!({"kind": "int", "value": -1, "unsigned": true});
+        for value in [int_node(16777216), unsigned, node!({"kind": "var", "name": "x"})] {
+            assert_eq!(as_float(value.clone()), node!({"kind": "cast", "type": "float", "operand": value}));
+        }
     }
 }
