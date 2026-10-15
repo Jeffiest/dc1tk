@@ -1,5 +1,6 @@
 // Generated from CPython 3.13.15's str methods (Unicode 15.1.0): the code points each one is true for, as
 // sorted pairs of first and last code point; DECIMAL_ZEROS starts each run of ten decimal digits.
+// Written by tests/unicode_tables.py.
 
 pub(crate) const ALPHA: [u32; 1320] = [
     0x41, 0x5A, 0x61, 0x7A, 0xAA, 0xAA, 0xB5, 0xB5, 0xBA, 0xBA, 0xC0, 0xD6, 0xD8, 0xF6, 0xF8, 0x2C1, 0x2C6, 0x2D1,

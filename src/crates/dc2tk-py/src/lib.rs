@@ -573,6 +573,18 @@ mod tests {
         assert_eq!(int_base(&"9".repeat(40), 10), Err(IntError::TooLarge));
     }
 
+    /// in_table and decimal_value search the tables, so each must be sorted runs.
+    #[test]
+    fn unicode_tables_are_sorted_runs() {
+        for table in [&ALPHA[..], &DECIMAL, &DIGIT, &NUMERIC, &PRINTABLE] {
+            assert!(table.len() % 2 == 0);
+            assert!(table.chunks(2).all(|pair| pair[0] <= pair[1]));
+            // a run ends before the next one starts, with a gap (touching runs would be one)
+            assert!(table[1..].chunks(2).filter(|gap| gap.len() == 2).all(|gap| gap[0] + 1 < gap[1]));
+        }
+        assert!(DECIMAL_ZEROS.windows(2).all(|pair| pair[0] + 10 <= pair[1]));
+    }
+
     #[test]
     fn str_like_python() {
         assert_eq!(repr("a'b"), "\"a'b\"");

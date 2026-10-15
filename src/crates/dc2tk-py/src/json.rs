@@ -81,15 +81,11 @@ impl PyFormatter {
 }
 
 impl Formatter for PyFormatter {
+    /// Only finite floats get here: serde_json writes null for NaN and the infinities without
+    /// asking the formatter (where json.dumps writes NaN, Infinity and -Infinity), and a
+    /// serde_json::Value cannot hold them at all.
     fn write_f64<W: ?Sized + Write>(&mut self, writer: &mut W, value: f64) -> io::Result<()> {
-        let text = if value.is_nan() {
-            "NaN".to_string()
-        } else if value.is_infinite() {
-            if value > 0.0 { "Infinity" } else { "-Infinity" }.to_string()
-        } else {
-            float_repr(value)
-        };
-        writer.write_all(text.as_bytes())
+        writer.write_all(float_repr(value).as_bytes())
     }
 
     fn write_f32<W: ?Sized + Write>(&mut self, writer: &mut W, value: f32) -> io::Result<()> {
@@ -197,5 +193,21 @@ mod tests {
             dumps(&value, &Options::compact()),
             "{\"a\":[1,2.5,1e+16,1e-05],\"b\":{},\"c\":[],\"d\":\"é\u{7f}\u{1F600}\\n\",\"e\":null,\"f\":true}"
         );
+    }
+
+    #[test]
+    fn numbers_like_python() {
+        let numbers =
+            json!([-0.0, 0.0, i64::MAX, i64::MIN, u64::MAX, 1e300, 5e-324, 1e16, 123456789.0, 87.76602172851562]);
+        // json.dumps([-0.0, 0.0, 2**63 - 1, -2**63, 2**64 - 1, 1e300, 5e-324, 1e16, 123456789.0,
+        // 87.76602172851562]) in CPython 3.13
+        assert_eq!(
+            dumps(&numbers, &Options::plain()),
+            "[-0.0, 0.0, 9223372036854775807, -9223372036854775808, 18446744073709551615, 1e+300, 5e-324, 1e+16, \
+             123456789.0, 87.76602172851562]"
+        );
+        assert_eq!(dumps(&json!({"a": -0.0}), &Options::indented(1)), "{\n \"a\": -0.0\n}");
+        // unlike json.dumps, which writes NaN, Infinity and -Infinity
+        assert_eq!(dumps(&[f64::NAN, f64::INFINITY], &Options::plain()), "[null, null]");
     }
 }
