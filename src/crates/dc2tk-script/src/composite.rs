@@ -44,14 +44,6 @@ use crate::node::{Map, Node};
 use crate::sdk::Context;
 use crate::{Error, Result};
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 fn fail<T>(reason: impl Into<String>) -> Result<T> {
     Err(Error::invalid(reason))
 }
@@ -189,23 +181,21 @@ fn is_integer(ty: &Ty) -> bool {
 }
 
 fn variable_of(entry: &Node, global: bool, parameter: bool) -> Variable {
-    let name = text(entry, "name").to_string();
-    let kind = text(entry, "type");
+    let name = entry.text("name").to_string();
+    let kind = entry.text("type");
     let typed = entry.get("ctype").is_some();
     let ty = match entry.get("ctype") {
         Some(ctype) => Ty::from_node(ctype),
-        None if parameter && entry["array"] == Node::Bool(true) => {
+        None if parameter && entry.flag("array") => {
             ctype::pointer(if kind == "void" { Ty::Void } else { Ty::Scalar(kind.into()) })
         }
-        None if entry.get("pointer").is_some_and(|pointer| *pointer == Node::Bool(true)) => {
-            ctype::pointer(Ty::Scalar(kind.into()))
-        }
+        None if entry.flag("pointer") => ctype::pointer(Ty::Scalar(kind.into())),
         None if !parameter && !entry["size"].is_null() => {
             Ty::Array(Box::new(Ty::Scalar(kind.into())), entry["size"].as_i64().unwrap_or(-1))
         }
         None => Ty::Scalar(kind.into()),
     };
-    let pointer = if parameter { entry["array"] == Node::Bool(true) } else { entry.get("pointer").is_some() };
+    let pointer = if parameter { entry.flag("array") } else { entry.flag("pointer") };
     let storage = if global {
         Storage::Global
     } else if pointer {
@@ -220,9 +210,9 @@ fn signature_of(function: &Node) -> Signature {
     let returns = match function.get("ctype_returns") {
         Some(ctype) => Ty::from_node(ctype),
         None if function["returns"] == "void" => Ty::Void,
-        None => Ty::Scalar(text(function, "returns").to_string()),
+        None => Ty::Scalar(function.text("returns").to_string()),
     };
-    let params = list(function, "params").iter().map(|param| variable_of(param, false, true).ty).collect();
+    let params = function.list("params").iter().map(|param| variable_of(param, false, true).ty).collect();
     Signature { returns, params, variadic: function["variadic"] == Node::Bool(true) }
 }
 
@@ -255,14 +245,16 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
     if program.get("asm").is_some() {
         return Ok(program.clone());
     }
-    let globals = list(program, "globals")
+    let globals = program
+        .list("globals")
         .iter()
-        .map(|global| (text(global, "name").to_string(), variable_of(global, true, false)))
+        .map(|global| (global.text("name").to_string(), variable_of(global, true, false)))
         .collect();
-    let signatures = list(program, "functions")
+    let signatures = program
+        .list("functions")
         .iter()
         .filter(|function| function.kind() == "function")
-        .map(|function| (text(function, "name").to_string(), signature_of(function)))
+        .map(|function| (function.text("name").to_string(), signature_of(function)))
         .collect();
     let mut lowering = Lowering {
         structs: ctype::structs_of(program),
@@ -280,7 +272,7 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
         literals: Vec::new(),
     };
     let mut functions = Vec::new();
-    for function in list(program, "functions") {
+    for function in program.list("functions") {
         if function.kind() != "function" {
             functions.push(function.clone());
             continue;
@@ -292,7 +284,7 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
     }
     let mut program = program.clone().with("functions", functions);
     if !lowering.literals.is_empty() {
-        let mut globals = list(&program, "globals").to_vec();
+        let mut globals = program.list("globals").to_vec();
         globals.extend(lowering.literals);
         let slots: i64 = globals.iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
         let declared = program["global_num"].as_i64().unwrap_or(0);
@@ -324,7 +316,7 @@ impl Lowering<'_> {
     }
 
     fn function(&mut self, function: &Node) -> Result<Node> {
-        self.function = text(function, "name").to_string();
+        self.function = function.text("name").to_string();
         self.strict = crate::lower::is_strict(function);
         self.variables.clear();
         self.hidden.clear();
@@ -340,7 +332,7 @@ impl Lowering<'_> {
                 Variable { ty, storage: Storage::Pointer, name: "__result".into(), typed: true },
             );
         }
-        for param in list(function, "params") {
+        for param in function.list("params") {
             let found = variable_of(param, false, true);
             if !found.ty.is_struct() {
                 self.variables.insert(found.name.clone(), found);
@@ -365,11 +357,11 @@ impl Lowering<'_> {
             self.variables
                 .insert("__va".into(), Variable { ty, storage: Storage::Pointer, name: "__va".into(), typed: true });
         }
-        for local in list(function, "locals") {
+        for local in function.list("locals") {
             let found = variable_of(local, false, false);
             self.variables.insert(found.name.clone(), found);
         }
-        let body = self.statements(list(function, "body"))?;
+        let body = self.statements(function.list("body"))?;
         let mut lowered = function.clone();
         if !prologue.is_empty() || signature.returns.is_struct() || signature.variadic {
             lowered = lowered.with("params", params);
@@ -384,7 +376,7 @@ impl Lowering<'_> {
             lowered = lowered.with("body", body);
         }
         if !self.hidden.is_empty() {
-            let mut locals = list(function, "locals").to_vec();
+            let mut locals = function.list("locals").to_vec();
             locals.extend(std::mem::take(&mut self.hidden));
             lowered = lowered.with("locals", locals);
         }
@@ -463,7 +455,7 @@ impl Lowering<'_> {
             "return" if !node["value"].is_null() => self.return_statement(node)?,
             "if" => {
                 let cond = self.condition(&node["cond"])?;
-                let mut out = node.clone().with("cond", cond).with("then", self.statements(list(node, "then"))?);
+                let mut out = node.clone().with("cond", cond).with("then", self.statements(node.list("then"))?);
                 if let Some(otherwise) = node["else"].as_array() {
                     out = out.with("else", self.statements(otherwise)?);
                 }
@@ -471,13 +463,13 @@ impl Lowering<'_> {
             }
             "while" => {
                 let cond = self.condition(&node["cond"])?;
-                node.clone().with("cond", cond).with("body", self.statements(list(node, "body"))?)
+                node.clone().with("cond", cond).with("body", self.statements(node.list("body"))?)
             }
             "switch" => {
                 let value = self.scalar(&node["value"], "a switch's value")?;
                 let mut cases = Vec::new();
-                for case in list(node, "cases") {
-                    let mut case = case.clone().with("body", self.statements(list(case, "body"))?);
+                for case in node.list("cases") {
+                    let mut case = case.clone().with("body", self.statements(case.list("body"))?);
                     if !case["value"].is_null() {
                         let value = self.rvalue(&case["value"])?.node;
                         case = case.with("value", value);
@@ -488,7 +480,7 @@ impl Lowering<'_> {
             }
             "print" | "native" => {
                 let mut args = Vec::new();
-                for arg in list(node, "args") {
+                for arg in node.list("args") {
                     args.push(self.scalar(arg, "an argument")?.node);
                 }
                 node.clone().with("args", args)
@@ -535,7 +527,7 @@ impl Lowering<'_> {
     fn place(&mut self, node: &Node) -> Result<(Place, Ty)> {
         match node.kind() {
             "var" => {
-                let name = text(node, "name");
+                let name = node.text("name");
                 match self.lookup(name) {
                     Some(found) => Ok((Place::Var(found.name.clone()), found.ty)),
                     None if self.signatures.contains_key(name) => fail(format!("{name} is a function, not a variable")),
@@ -543,7 +535,7 @@ impl Lowering<'_> {
                 }
             }
             "index" => {
-                let name = text(node, "name");
+                let name = node.text("name");
                 let found = self.lookup(name);
                 match found {
                     Some(found) if !found.typed && found.storage != Storage::Global && found.ty.target().is_some() => {
@@ -585,7 +577,7 @@ impl Lowering<'_> {
                     let value = self.rvalue(&node["object"])?;
                     self.deref_place(Typed::new(value.node, ctype::pointer(value.ty)))?
                 };
-                let name = text(node, "name");
+                let name = node.text("name");
                 let Ty::Struct(tag) = &ty else {
                     let shown = if node["arrow"] == Node::Bool(true) { "->" } else { "." };
                     return fail(format!("{shown}{name} of {}, which is not a struct or union", ty.shown()));
@@ -601,7 +593,7 @@ impl Lowering<'_> {
             }
             "field" => {
                 // an initializer's slot (parse.rs), of its C type, read as its type's base
-                let ty = node.get("ctype").map_or_else(|| Ty::Scalar(text(node, "type").to_string()), Ty::from_node);
+                let ty = node.get("ctype").map_or_else(|| Ty::Scalar(node.text("type").to_string()), Ty::from_node);
                 let mut plain = node.clone().with("type", self.slot_kind(&ty));
                 if let Some(map) = plain.as_object_mut() {
                     map.remove("ctype");
@@ -624,7 +616,7 @@ impl Lowering<'_> {
         if operand.kind() != "var" {
             return None;
         }
-        let found = self.lookup(text(operand, "name"))?;
+        let found = self.lookup(operand.text("name"))?;
         if found.typed || found.storage == Storage::Global {
             return None;
         }
@@ -669,18 +661,18 @@ impl Lowering<'_> {
             "addr" => {
                 let target = &node["target"];
                 Some(match target.kind() {
-                    "var" => Place::Var(text(target, "name").to_string()),
-                    "field" => Place::Field(text(target, "name").to_string(), target["offset"].as_i64().unwrap_or(0)),
-                    "index" => Place::Index(text(target, "name").to_string(), target["index"].clone()),
+                    "var" => Place::Var(target.text("name").to_string()),
+                    "field" => Place::Field(target.text("name").to_string(), target["offset"].as_i64().unwrap_or(0)),
+                    "index" => Place::Index(target.text("name").to_string(), target["index"].clone()),
                     "at" => Place::At(target["pointer"].clone(), target["index"].clone()),
                     "deref" if target["operand"].kind() == "var" => {
-                        Place::Index(text(&target["operand"], "name").to_string(), int_node(0))
+                        Place::Index(target["operand"].text("name").to_string(), int_node(0))
                     }
                     _ => return None,
                 })
             }
             "var" => {
-                let found = self.lookup(text(node, "name"))?;
+                let found = self.lookup(node.text("name"))?;
                 match (found.storage, &found.ty) {
                     (Storage::Pointer, _) => Some(Place::Index(found.name, int_node(0))),
                     (Storage::Local, ty) if ty.is_aggregate() => Some(Place::Var(found.name)),
@@ -721,10 +713,10 @@ impl Lowering<'_> {
             Place::At(pointer, at) => Place::At(pointer, plus(at, more)),
             Place::Plain(node) => {
                 let place = match node.kind() {
-                    "var" => Place::Var(text(&node, "name").to_string()),
-                    "index" => Place::Index(text(&node, "name").to_string(), node["index"].clone()),
-                    "field" => Place::Field(text(&node, "name").to_string(), node["offset"].as_i64().unwrap_or(0)),
-                    "deref" => Place::Index(text(&node["operand"], "name").to_string(), int_node(0)),
+                    "var" => Place::Var(node.text("name").to_string()),
+                    "index" => Place::Index(node.text("name").to_string(), node["index"].clone()),
+                    "field" => Place::Field(node.text("name").to_string(), node["offset"].as_i64().unwrap_or(0)),
+                    "deref" => Place::Index(node["operand"].text("name").to_string(), int_node(0)),
                     _ => return Place::At(address_of(node), more),
                 };
                 self.offset(place, by, index)
@@ -852,7 +844,7 @@ impl Lowering<'_> {
                 let operand = self.scalar(&node["operand"], "an operand")?;
                 let ty = if node["op"] == "!" { ctype::int() } else { operand.ty.clone() };
                 if node["op"] != "!" && !matches!(operand.ty, Ty::Scalar(_)) {
-                    return fail(format!("unary {} of {}", text(node, "op"), operand.ty.shown()));
+                    return fail(format!("unary {} of {}", node.text("op"), operand.ty.shown()));
                 }
                 Typed::new(node.clone().with("operand", operand.node), ty)
             }
@@ -904,7 +896,7 @@ impl Lowering<'_> {
             }
             "narrow" => {
                 let operand = self.rvalue(&node["operand"])?;
-                Typed::new(node.clone().with("operand", operand.node), Ty::Scalar(text(node, "type").into()))
+                Typed::new(node.clone().with("operand", operand.node), Ty::Scalar(node.text("type").into()))
             }
             _ => Typed::new(node.clone(), ctype::int()),
         })
@@ -913,7 +905,7 @@ impl Lowering<'_> {
     /// A name's value: a variable's (an array's or struct's address), a function's number (its
     /// address), or a constant as it is.
     fn variable(&mut self, node: &Node) -> Result<Typed> {
-        let name = text(node, "name");
+        let name = node.text("name");
         if let Some(found) = self.lookup(name) {
             let place = Place::Var(found.name.clone());
             let loaded = self.load(&place, found.ty.clone());
@@ -946,9 +938,9 @@ impl Lowering<'_> {
 
     fn address_value(&mut self, node: &Node) -> Result<Typed> {
         let target = &node["target"];
-        if target.kind() == "var" && self.lookup(text(target, "name")).is_none() {
-            if let Some(signature) = self.signatures.get(text(target, "name")).cloned() {
-                return self.function_number(text(target, "name"), &signature);
+        if target.kind() == "var" && self.lookup(target.text("name")).is_none() {
+            if let Some(signature) = self.signatures.get(target.text("name")).cloned() {
+                return self.function_number(target.text("name"), &signature);
             }
         }
         let (place, ty) = self.place(target)?;
@@ -966,10 +958,10 @@ impl Lowering<'_> {
     /// (its codes and a 0): a hidden global, set before the statement.
     fn literal_array(&mut self, node: &Node) -> Result<Typed> {
         let (codes, element): (Vec<i64>, Ty) = if node.kind() == "wide" {
-            let codes = list(node, "codes").iter().filter_map(Node::as_i64).collect();
+            let codes = node.list("codes").iter().filter_map(Node::as_i64).collect();
             (codes, Ty::Scalar("unsigned short".into()))
         } else {
-            let mut bytes = crate::stb::encode_string(text(node, "text"))?;
+            let mut bytes = crate::stb::encode_string(node.text("text"))?;
             bytes.push(0);
             (bytes.into_iter().map(|byte| byte as i8 as i64).collect(), Ty::Scalar("char".into()))
         };
@@ -1030,7 +1022,7 @@ impl Lowering<'_> {
         let (place, ty) = self.place(&node["target"])?;
         let value = self.scalar(&node["value"], "an operand")?;
         if let Place::Bits(slot, bits) = place {
-            let op = text(node, "op").to_string();
+            let op = node.text("op").to_string();
             return Ok(self.store_bits(
                 *slot,
                 bits,
@@ -1040,12 +1032,12 @@ impl Lowering<'_> {
         }
         if !ty.is_pointer() {
             if ty.is_aggregate() {
-                return fail(format!("{}= of {}", text(node, "op"), ty.shown()));
+                return fail(format!("{}= of {}", node.text("op"), ty.shown()));
             }
             let target = self.access(&place, &ty);
             return Ok(Typed::new(node.clone().with("target", target).with("value", value.node), ty));
         }
-        let op = text(node, "op");
+        let op = node.text("op");
         if op != "+" && op != "-" {
             return fail(format!("{op}= of a pointer"));
         }
@@ -1078,7 +1070,7 @@ impl Lowering<'_> {
     }
 
     fn binary(&mut self, node: &Node) -> Result<Typed> {
-        let op = text(node, "op");
+        let op = node.text("op");
         if node.get("postfix").is_some() && node["left"].kind() == "compound" {
             // p++: the old value, kept in a hidden local, and the pointer stepped
             let target = &node["left"]["target"];
@@ -1155,8 +1147,8 @@ impl Lowering<'_> {
             "int" => node["value"] == Node::Int(0),
             "cast" => self.is_null(&node["operand"]),
             "var" => {
-                self.lookup(text(node, "name")).is_none()
-                    && self.found.constants.get(text(node, "name")).is_some_and(|value| self.is_null(value))
+                self.lookup(node.text("name")).is_none()
+                    && self.found.constants.get(node.text("name")).is_some_and(|value| self.is_null(value))
             }
             _ => false,
         }
@@ -1185,7 +1177,7 @@ impl Lowering<'_> {
 
     fn cast(&mut self, node: &Node) -> Result<Typed> {
         let operand = self.rvalue(&node["operand"])?;
-        let kind = text(node, "type");
+        let kind = node.text("type");
         let to = match node.get("ctype") {
             Some(ctype) => Ty::from_node(ctype),
             None if kind.ends_with(" *") => ctype::pointer(Ty::Scalar(kind.trim_end_matches(" *").to_string())),
@@ -1215,7 +1207,7 @@ impl Lowering<'_> {
     // ---- calls -----------------------------------------------------------------------------
 
     fn call(&mut self, node: &Node) -> Result<Typed> {
-        let name = text(node, "name");
+        let name = node.text("name");
         if let Some(found) = self.lookup(name) {
             if found.ty.is_function_pointer() {
                 let callee = var(name);
@@ -1225,14 +1217,14 @@ impl Lowering<'_> {
         let Some(signature) = self.signatures.get(name).cloned() else {
             // a native, or a function the compiler reports
             let mut args = Vec::new();
-            for arg in list(node, "args") {
+            for arg in node.list("args") {
                 args.push(self.scalar(arg, "a native's argument")?.node);
             }
-            let returns = self.found.natives.get(name).map_or("int", |native| text(native, "returns"));
+            let returns = self.found.natives.get(name).map_or("int", |native| native.text("returns"));
             let ty = if returns == "void" { Ty::Void } else { Ty::Scalar(returns.to_string()) };
             return Ok(Typed::new(node.clone().with("args", args), ty));
         };
-        let given = list(node, "args");
+        let given = node.list("args");
         let fixed = signature.params.len();
         if given.len() < fixed || (given.len() > fixed && !signature.variadic) {
             return fail(format!("{name} takes {fixed} arguments"));
@@ -1291,7 +1283,7 @@ impl Lowering<'_> {
             "deref" if callee["operand"].kind() == "var" => Some(&callee["operand"]),
             _ => None,
         };
-        if let Some(name) = designated.map(|named| text(named, "name")) {
+        if let Some(name) = designated.map(|named| named.text("name")) {
             if self.lookup(name).is_none() && self.signatures.contains_key(name) {
                 // (f)(x) and (*f)(x) of a function f are plain calls
                 let call = node!({"kind": "call", "name": name, "args": node["args"].clone()});
@@ -1306,7 +1298,7 @@ impl Lowering<'_> {
         let Ty::Function(returns, params, variadic) = function else {
             return fail(format!("{} is not a function or a function pointer", pointer.ty.shown()));
         };
-        let given = list(node, "args");
+        let given = node.list("args");
         let wrong = if variadic { given.len() < params.len() } else { params.len() != given.len() };
         if !params.is_empty() && wrong {
             return fail(format!("the function pointer's function takes {} arguments", params.len()));

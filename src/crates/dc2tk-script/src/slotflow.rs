@@ -9,17 +9,9 @@ use std::collections::{HashMap, HashSet};
 use crate::node::Node;
 use crate::sdk::Context;
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 /// A native's SDK name, from either name a call carries.
 fn sdk_name<'a>(node: &'a Node, found: &'a Context) -> &'a str {
-    let name = text(node, "name");
+    let name = node.text("name");
     match found.by_original.get(name) {
         Some(declared) => declared["name"].as_str().unwrap_or(name),
         None => name,
@@ -70,7 +62,7 @@ fn effects(node: &Node, found: &Context) -> Option<Vec<Effect>> {
     let native_effect = |name: &str, args: &[Node]| -> Option<Effect> {
         if let Some((pack_at, slot_at)) = loads(name) {
             let pack =
-                args.get(pack_at).filter(|pack| pack.kind() == "string").map(|pack| text(pack, "text").to_string());
+                args.get(pack_at).filter(|pack| pack.kind() == "string").map(|pack| pack.text("text").to_string());
             return Some(Effect { slot: args.get(slot_at).and_then(|slot| slot_value(slot, found)), pack });
         }
         let position = changes(name)?;
@@ -80,22 +72,23 @@ fn effects(node: &Node, found: &Context) -> Option<Vec<Effect>> {
         })
     };
     match node.kind() {
-        "native" => native_effect(sdk_name(node, found), list(node, "args")).map(|effect| vec![effect]),
+        "native" => native_effect(sdk_name(node, found), node.list("args")).map(|effect| vec![effect]),
         "call" => {
-            let inline = found.inlines.get(text(node, "name"))?;
-            let params: Vec<&str> = list(inline, "params").iter().map(|param| text(param, "name")).collect();
-            let args = list(node, "args");
+            let inline = found.inlines.get(node.text("name"))?;
+            let params: Vec<&str> = inline.list("params").iter().map(|param| param.text("name")).collect();
+            let args = node.list("args");
             let mut natives = Vec::new();
             natives_in(&inline["body"], &mut natives);
             let found_effects: Vec<Effect> = natives
                 .into_iter()
                 .filter_map(|native| {
                     // the helper's parameters stand for the call's arguments
-                    let bound: Vec<Node> = list(native, "args")
+                    let bound: Vec<Node> = native
+                        .list("args")
                         .iter()
                         .map(|arg| {
                             let at = (arg.kind() == "var")
-                                .then(|| params.iter().position(|param| *param == text(arg, "name")));
+                                .then(|| params.iter().position(|param| *param == arg.text("name")));
                             match at.flatten().and_then(|at| args.get(at)) {
                                 Some(passed) => passed.clone(),
                                 None => arg.clone(),
@@ -129,8 +122,8 @@ fn touched_by(nodes: &Node, found: &Context, out: &mut Touched, calls: &mut Vec<
                         _ => {}
                     }
                 }
-            } else if nodes.kind() == "call" && !found.inlines.contains_key(text(nodes, "name")) {
-                calls.push(text(nodes, "name").to_string());
+            } else if nodes.kind() == "call" && !found.inlines.contains_key(nodes.text("name")) {
+                calls.push(nodes.text("name").to_string());
             }
             map.values().for_each(|value| touched_by(value, found, out, calls));
         }
@@ -143,7 +136,7 @@ fn slot_value(node: &Node, found: &Context) -> Option<i64> {
     match node.kind() {
         "int" => node["value"].as_i64(),
         "var" => {
-            let name = text(node, "name");
+            let name = node.text("name");
             found.constants.get(name).and_then(|value| value["value"].as_i64()).or_else(|| {
                 found.enums.iter().filter(|(kind, _)| kind.starts_with("chara_slot")).find_map(|(_, members)| {
                     members.iter().find(|(_, member)| *member == name).map(|(value, _)| *value)
@@ -162,7 +155,7 @@ fn summaries(functions: &[&Node], found: &Context) -> HashMap<String, Touched> {
         let mut touched = Some(HashSet::new());
         let mut calls = Vec::new();
         touched_by(&function["body"], found, &mut touched, &mut calls);
-        own.insert(text(function, "name").to_string(), (touched, calls));
+        own.insert(function.text("name").to_string(), (touched, calls));
     }
     let mut out: HashMap<String, Touched> =
         own.iter().map(|(name, (touched, _))| (name.clone(), touched.clone())).collect();
@@ -221,7 +214,7 @@ impl Pass<'_> {
                 "if" => {
                     let cond = self.expression(&node["cond"], slots);
                     let (mut then_slots, mut else_slots) = (slots.clone(), slots.clone());
-                    let then = self.statements(list(node, "then"), &mut then_slots);
+                    let then = self.statements(node.list("then"), &mut then_slots);
                     let otherwise = node["else"].as_array().map(|items| self.statements(items, &mut else_slots));
                     *slots =
                         merged(slots, &[(then_slots, &then[..]), (else_slots, otherwise.as_deref().unwrap_or(&[]))]);
@@ -234,11 +227,11 @@ impl Pass<'_> {
                     // a loop body runs after itself: it starts from what holds both before and
                     // after one pass
                     let mut first = slots.clone();
-                    self.statements(list(node, "body"), &mut first);
+                    self.statements(node.list("body"), &mut first);
                     let mut entry = merged(slots, &[(first, &[]), (slots.clone(), &[])]);
                     let cond = self.expression(&node["cond"], &mut entry);
                     let mut after = entry.clone();
-                    let body = self.statements(list(node, "body"), &mut after);
+                    let body = self.statements(node.list("body"), &mut after);
                     *slots = merged(&entry, &[(after, &[]), (entry.clone(), &[])]);
                     node.clone().with("cond", cond).with("body", Node::List(body))
                 }
@@ -265,7 +258,7 @@ impl Pass<'_> {
             rebuilt.insert(key.clone(), value);
         }
         let mut node = Node::Map(rebuilt);
-        let name = text(&node, "name").to_string();
+        let name = node.text("name").to_string();
         let found_effects = effects(&node, self.found);
         match (&found_effects, node.kind()) {
             (Some(found_effects), _) => {
@@ -294,8 +287,8 @@ impl Pass<'_> {
             _ => None,
         };
         if let Some(declared) = declared {
-            let params = list(declared, "params");
-            let mut args = list(&node, "args").to_vec();
+            let params = declared.list("params");
+            let mut args = node.list("args").to_vec();
             let mut renamed = false;
             for (position, arg) in args.iter_mut().enumerate() {
                 let is_slot = params.get(position).is_some_and(|param| param["kind"].as_str() == Some("chara_slot"));
@@ -332,7 +325,7 @@ pub fn named_slots(functions: Vec<Node>, hidden: &[Node], found: &Context) -> Ve
             if function.kind() != "function" {
                 return function;
             }
-            let body = pass.statements(list(&function, "body"), &mut Slots::new());
+            let body = pass.statements(function.list("body"), &mut Slots::new());
             function.with("body", Node::List(body))
         })
         .collect()

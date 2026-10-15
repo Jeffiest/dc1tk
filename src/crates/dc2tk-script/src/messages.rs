@@ -164,12 +164,9 @@ pub fn localized(path: &str, code: i64) -> String {
     path.to_string()
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
 fn kind_positions(declared: &Node, kinds: &[&str]) -> BTreeSet<usize> {
-    list(declared, "params")
+    declared
+        .list("params")
         .iter()
         .enumerate()
         .filter(|(_, param)| param.get("kind").and_then(Node::as_str).is_some_and(|kind| kinds.contains(&kind)))
@@ -183,10 +180,10 @@ pub fn statements_in<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>) {
         out.push(node);
         match node.kind() {
             "if" => {
-                statements_in(list(node, "then"), out);
-                statements_in(list(node, "else"), out);
+                statements_in(node.list("then"), out);
+                statements_in(node.list("else"), out);
             }
-            "while" => statements_in(list(node, "body"), out),
+            "while" => statements_in(node.list("body"), out),
             _ => {}
         }
     }
@@ -195,14 +192,14 @@ pub fn statements_in<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>) {
 /// The call a statement makes: ("native" or "call", name, arguments).
 pub fn calls_in(node: &Node) -> Option<(&'static str, &str, &[Node])> {
     if node.kind() == "native" {
-        return Some(("native", node["name"].as_str().unwrap_or(""), list(node, "args")));
+        return Some(("native", node["name"].as_str().unwrap_or(""), node.list("args")));
     }
     let mut expression = node.get("expr").filter(|expression| !expression.is_null())?;
     if expression.kind() == "assign" {
         expression = &expression["value"];
     }
     if expression.kind() == "call" {
-        return Some(("call", expression["name"].as_str().unwrap_or(""), list(expression, "args")));
+        return Some(("call", expression["name"].as_str().unwrap_or(""), expression.list("args")));
     }
     None
 }
@@ -224,7 +221,7 @@ fn callee_positions(
 }
 
 fn param_names(function: &Node) -> Vec<String> {
-    list(function, "params").iter().map(|param| param["name"].as_str().unwrap_or("").to_string()).collect()
+    function.list("params").iter().map(|param| param["name"].as_str().unwrap_or("").to_string()).collect()
 }
 
 fn string_arg(args: &[Node], positions: &BTreeSet<usize>) -> Option<String> {
@@ -240,7 +237,7 @@ pub fn loaded_files(functions: &[Node], found: &Context) -> Vec<String> {
     for function in functions.iter().filter(|function| function.kind() == "function") {
         let mut directory = String::new();
         let mut statements = Vec::new();
-        statements_in(list(function, "body"), &mut statements);
+        statements_in(function.list("body"), &mut statements);
         for node in statements {
             if node.kind() != "native" {
                 continue;
@@ -248,7 +245,7 @@ pub fn loaded_files(functions: &[Node], found: &Context) -> Vec<String> {
             let Some(declared) = found.by_original.get(node["name"].as_str().unwrap_or("")) else {
                 continue;
             };
-            let args = list(node, "args");
+            let args = node.list("args");
             let directories = kind_positions(declared, &["directory"]);
             let changed = string_arg(args, &directories);
             if changed.is_some() || (!directories.is_empty() && args.is_empty()) {
@@ -400,9 +397,9 @@ fn annotated(nodes: &[Node], found: &Context, lookups: &[Lookup]) -> Node {
                     Some(items) => annotated(items, found, lookups),
                     None => Node::Null,
                 };
-                node.clone().with("then", annotated(list(node, "then"), found, lookups)).with("else", otherwise)
+                node.clone().with("then", annotated(node.list("then"), found, lookups)).with("else", otherwise)
             }
-            "while" => node.clone().with("body", annotated(list(node, "body"), found, lookups)),
+            "while" => node.clone().with("body", annotated(node.list("body"), found, lookups)),
             _ => {
                 let comment = statement_notes(node, found, lookups);
                 if comment.is_empty() {
@@ -419,7 +416,8 @@ fn annotated(nodes: &[Node], found: &Context, lookups: &[Lookup]) -> Node {
 
 /// The declared kind (or enum) of each of a native's parameters that is not an out parameter.
 fn declared_kinds(declared: &Node) -> IndexMap<usize, String> {
-    list(declared, "params")
+    declared
+        .list("params")
         .iter()
         .enumerate()
         .filter_map(|(position, param)| {
@@ -443,7 +441,7 @@ pub fn param_kinds(functions: &[Node], found: &Context) -> HashMap<String, Index
             let name = function["name"].as_str().unwrap_or("").to_string();
             let mut known = result.get(&name).cloned().unwrap_or_default();
             let mut statements = Vec::new();
-            statements_in(list(function, "body"), &mut statements);
+            statements_in(function.list("body"), &mut statements);
             for node in statements {
                 let Some((kind, callee, args)) = calls_in(node) else {
                     continue;
@@ -530,7 +528,7 @@ pub fn annotate_functions(
         .into_iter()
         .map(|function| {
             if function.kind() == "function" {
-                let body = annotated(list(&function, "body"), found, &lookups);
+                let body = annotated(function.list("body"), found, &lookups);
                 function.with("body", body)
             } else {
                 function

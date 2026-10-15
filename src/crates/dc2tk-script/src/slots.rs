@@ -19,13 +19,9 @@ use crate::sdk::Context;
 const LOADS: [&str; 2] = ["_LOAD_CHARA", "_LOAD_MOTION"];
 const ENGINE_SLOTS: [i64; 5] = [0, 120, 121, 122, 123];
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
 fn loads(nodes: &[Node], out: &mut Vec<(i64, String)>) {
     for node in nodes {
-        let args = list(node, "args");
+        let args = node.list("args");
         if node.kind() == "native" && LOADS.contains(&node["name"].as_str().unwrap_or("")) && args.len() > 3 {
             let (pack, slot) = (&args[1], &args[3]);
             if pack.kind() == "string" && slot.kind() == "int" {
@@ -59,9 +55,9 @@ pub fn survey(found: &mut Survey, path: &str, program: &Node) {
     if program.get("asm").is_some() {
         return;
     }
-    for function in list(program, "functions").iter().filter(|function| function.kind() == "function") {
+    for function in program.list("functions").iter().filter(|function| function.kind() == "function") {
         let mut loaded = Vec::new();
-        loads(list(function, "body"), &mut loaded);
+        loads(function.list("body"), &mut loaded);
         for (slot, pack) in loaded {
             found.entry(folder(path)).or_default().entry(slot).or_default().insert(pack);
         }
@@ -399,17 +395,17 @@ pub fn villager_notes(nodes: &[Node], found: &Context, notes: &BTreeMap<i64, Str
                     None => Node::Null,
                 };
                 node.clone()
-                    .with("then", Node::List(villager_notes(list(node, "then"), found, notes)))
+                    .with("then", Node::List(villager_notes(node.list("then"), found, notes)))
                     .with("else", otherwise)
             }
-            "while" => node.clone().with("body", Node::List(villager_notes(list(node, "body"), found, notes))),
+            "while" => node.clone().with("body", Node::List(villager_notes(node.list("body"), found, notes))),
             "native" => {
                 let Some(declared) = found.natives.get(node["name"].as_str().unwrap_or("")) else {
                     return node.clone();
                 };
-                let params = list(declared, "params");
+                let params = declared.list("params");
                 let mut added: Vec<&String> = Vec::new();
-                for (position, arg) in list(node, "args").iter().enumerate() {
+                for (position, arg) in node.list("args").iter().enumerate() {
                     let slot = params.get(position).filter(|param| param["kind"].as_str() == Some("chara_slot"));
                     if let (Some(_), Some(note)) = (
                         slot,

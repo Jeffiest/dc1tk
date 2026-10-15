@@ -28,14 +28,6 @@ static ALIAS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.+?)(?:_for_prog
 
 const BASE_TYPES: [&str; 3] = ["int", "float", "string"];
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 /// A name the decompiler would have given anyway: f_04d4, func_3, start, on_<a program's name>.
 pub fn is_default_name(name: &str, program_names: &IndexMap<String, i64>) -> bool {
     DEFAULT_NAME.is_match(name) || name.strip_prefix("on_").is_some_and(|rest| program_names.contains_key(rest))
@@ -54,12 +46,12 @@ fn any_named(names: &[Node], default: &Regex) -> bool {
 /// doc.
 pub fn learned_entry(function: &Node, program_names: &IndexMap<String, i64>, inferred: Option<&Node>) -> Node {
     let mut entry = Map::new();
-    let variables: Vec<&Node> = list(function, "params").iter().chain(list(function, "locals")).collect();
+    let variables: Vec<&Node> = function.list("params").iter().chain(function.list("locals")).collect();
     let mut types = Map::new();
     for variable in variables {
         let kind = &variable["type"];
         if !kind.as_str().is_some_and(|kind| BASE_TYPES.contains(&kind)) {
-            types.insert(text(variable, "name").to_string(), kind.clone());
+            types.insert(variable.text("name").to_string(), kind.clone());
         }
     }
     if !types.is_empty() {
@@ -71,15 +63,15 @@ pub fn learned_entry(function: &Node, program_names: &IndexMap<String, i64>, inf
             entry.insert("returns", returns.clone());
         }
     }
-    let name = text(function, "name");
+    let name = function.text("name");
     if !is_default_name(name, program_names) {
         entry.insert("name", function["name"].clone());
     }
-    let params = names_of(list(function, "params"));
+    let params = names_of(function.list("params"));
     if any_named(&params, &DEFAULT_VARIABLE) {
         entry.insert("params", Node::List(params));
     }
-    let locals = names_of(list(function, "locals"));
+    let locals = names_of(function.list("locals"));
     if any_named(&locals, &DEFAULT_VARIABLE) {
         entry.insert("locals", Node::List(locals));
     }
@@ -92,7 +84,7 @@ pub fn learned_entry(function: &Node, program_names: &IndexMap<String, i64>, inf
 /// A script's own globals' names, when it names any, and its doc.
 pub fn script_entry(program: &Node) -> Node {
     let mut entry = Map::new();
-    let globals = names_of(list(program, "globals"));
+    let globals = names_of(program.list("globals"));
     if any_named(&globals, &DEFAULT_GLOBAL) {
         entry.insert("globals", Node::List(globals));
     }
@@ -153,7 +145,8 @@ pub fn script_entries(
     let inferred: Vec<Node> = if assembly {
         Vec::new()
     } else {
-        list(&decompiled, "functions")
+        decompiled
+            .list("functions")
             .iter()
             .filter(|function| matches!(function.kind(), "function" | "asm"))
             .map(|function| function.get("returns").cloned().unwrap_or(Node::Null))
@@ -161,7 +154,7 @@ pub fn script_entries(
     };
     let context = sdk::context(&sdk::Declarations::of(&expanded["declarations"]), &table, tables)?;
     let functions: Vec<&Node> =
-        list(&expanded, "functions").iter().filter(|function| matches!(function.kind(), "function" | "asm")).collect();
+        expanded.list("functions").iter().filter(|function| matches!(function.kind(), "function" | "asm")).collect();
     let mut entries = IndexMap::new();
     let mut seen = HashSet::new();
     for (position, (function, (offset, exact))) in functions.iter().zip(found).enumerate() {
@@ -176,7 +169,7 @@ pub fn script_entries(
         }
         let returned = inferred.get(position).filter(|node| !node.is_null());
         let mut entry = learned_entry(function, &context.programs, returned);
-        if let Some(noted) = notes.get(text(function, "name")).filter(|noted| truthy(noted)) {
+        if let Some(noted) = notes.get(function.text("name")).filter(|noted| truthy(noted)) {
             entry = entry.with("notes", noted.clone());
         }
         if !is_empty(&entry) {
@@ -185,9 +178,9 @@ pub fn script_entries(
         }
     }
     let mut slots = HashMap::new();
-    if !assembly && list(&decompiled, "globals").len() == list(&expanded, "globals").len() {
-        for (declared, shown) in list(&expanded, "globals").iter().zip(list(&decompiled, "globals")) {
-            slots.insert(text(declared, "name").to_string(), text(shown, "name").to_string());
+    if !assembly && decompiled.list("globals").len() == expanded.list("globals").len() {
+        for (declared, shown) in expanded.list("globals").iter().zip(decompiled.list("globals")) {
+            slots.insert(declared.text("name").to_string(), shown.text("name").to_string());
         }
     }
     let prints: Vec<String> = found.values().cloned().collect();
@@ -229,10 +222,11 @@ pub fn library_entries(
         }
         let mut used = HashSet::new();
         for function in &members {
-            let own: HashSet<&str> = list(function, "params")
+            let own: HashSet<&str> = function
+                .list("params")
                 .iter()
-                .chain(list(function, "locals"))
-                .map(|variable| text(variable, "name"))
+                .chain(function.list("locals"))
+                .map(|variable| variable.text("name"))
                 .collect();
             for name in names::variables(&function["body"]) {
                 if !own.contains(name.as_str()) {
@@ -422,7 +416,7 @@ pub fn learn(
         for (key, mut entry) in found.libraries {
             // the set keeps library paths under the disc's folder names, as the decompiler makes them
             if source.is_dir() {
-                let path = pathnames::unnamed(source, text(&entry, "path"))?;
+                let path = pathnames::unnamed(source, entry.text("path"))?;
                 entry = entry.with("path", path);
             }
             found_libraries.entry(key).or_insert(entry);
@@ -475,7 +469,7 @@ pub fn write_libraries(target: &Path, found: &IndexMap<String, Node>) -> Result<
             continue;
         };
         let mut updated = old.clone();
-        let path = text(entry, "path").to_string();
+        let path = entry.text("path").to_string();
         let current = updated.get("path").and_then(Node::as_str).map(str::to_string);
         if current.as_deref() != Some(path.as_str()) && !taken.contains(&Some(path.clone())) {
             taken.remove(&current);
@@ -668,7 +662,7 @@ void on_init(void)
                 entry
             })
             .collect();
-        entries.sort_by_key(|entry| text(entry, "name").to_string());
+        entries.sort_by_key(|entry| entry.text("name").to_string());
         assert!(entries[0].py_eq(&node!({"name": "greet_visitor", "locals": ["count", "angle", "slots"],
                                          "doc": "Greets the visitor and counts the visit."})));
         assert!(entries[1].py_eq(&node!({"name": "helper", "params": ["values", "scale"]})));
@@ -731,8 +725,8 @@ void on_init(void)
         let comment =
             "// Pushes backwards while the flip is mid-\n// motion, then stops - briefly.\nvoid f(void)\n{\n}\n";
         let program = parse::parse(comment).unwrap();
-        let function = list(&program, "functions").iter().find(|item| item.kind() == "function").unwrap();
-        assert_eq!(text(function, "doc"), "Pushes backwards while the flip is mid-motion, then stops - briefly.");
+        let function = program.list("functions").iter().find(|item| item.kind() == "function").unwrap();
+        assert_eq!(function.text("doc"), "Pushes backwards while the flip is mid-motion, then stops - briefly.");
     }
 
     #[test]

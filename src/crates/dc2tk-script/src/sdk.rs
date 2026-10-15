@@ -83,14 +83,6 @@ pub fn header_texts(defs: &Definitions, sdk_dir: &Path) -> Result<IndexMap<Strin
     Ok(texts)
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 fn ext_number(name: &str) -> Option<i64> {
     let digits = name.strip_prefix("_EXT_")?;
     (!digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())).then(|| digits.parse().ok()).flatten()
@@ -111,10 +103,10 @@ impl Declarations {
     /// A program's declarations ({"natives": [...], ...}).
     pub fn of(node: &Node) -> Declarations {
         Declarations {
-            natives: list(node, "natives").to_vec(),
-            programs: list(node, "programs").to_vec(),
-            inlines: list(node, "inlines").to_vec(),
-            constants: list(node, "constants").to_vec(),
+            natives: node.list("natives").to_vec(),
+            programs: node.list("programs").to_vec(),
+            inlines: node.list("inlines").to_vec(),
+            constants: node.list("constants").to_vec(),
             kinds: node["kinds"].as_object().cloned().unwrap_or_default(),
         }
     }
@@ -152,7 +144,7 @@ impl Declarations {
                         "inlines" => &mut self.inlines,
                         _ => &mut self.constants,
                     };
-                    into.extend(list(other, key).iter().cloned());
+                    into.extend(other.list(key).iter().cloned());
                 }
             }
         }
@@ -178,19 +170,15 @@ pub fn header_declarations(
     let header = parse(text)?;
     let mut table = header["natives"].as_str().map(str::to_string);
     declarations.add(&header["declarations"]);
-    for item in list(&header, "functions") {
+    for item in header.list("functions") {
         if item.kind() == "include" && truthy(&item["system"]) {
-            let nested = header_declarations(text_of(item, "path"), headers, declarations, seen, parse)?;
+            let nested = header_declarations(item.text("path"), headers, declarations, seen, parse)?;
             if table.is_none() {
                 table = nested;
             }
         }
     }
     Ok(table)
-}
-
-fn text_of<'a>(node: &'a Node, key: &str) -> &'a str {
-    text(node, key)
 }
 
 pub fn header_name(table: &str) -> String {
@@ -258,7 +246,7 @@ pub fn check_constants(constants: &[Node]) -> Result<()> {
     };
     let mut first: HashMap<&str, &Node> = HashMap::new();
     for declared in constants {
-        let name = text(declared, "name");
+        let name = declared.text("name");
         let Some(earlier) = first.insert(name, declared) else {
             continue;
         };
@@ -285,17 +273,17 @@ pub fn context(declarations: &Declarations, table: &str, tables: &BTreeMap<Strin
         let no = declared["no"].as_i64().unwrap_or(0);
         let canonical = original_by_number.get(&no).cloned().unwrap_or_else(|| format!("_EXT_{no}"));
         let with = declared.clone().with("canonical", canonical.clone());
-        found.natives.insert(text(declared, "name").to_string(), with.clone());
+        found.natives.insert(declared.text("name").to_string(), with.clone());
         found.by_original.insert(canonical, with);
     }
     for declared in &declarations.programs {
-        found.programs.insert(text(declared, "name").to_string(), declared["no"].as_i64().unwrap_or(0));
+        found.programs.insert(declared.text("name").to_string(), declared["no"].as_i64().unwrap_or(0));
     }
     for declared in &declarations.constants {
-        found.constants.insert(text(declared, "name").to_string(), declared["value"].clone());
+        found.constants.insert(declared.text("name").to_string(), declared["value"].clone());
     }
     for declared in &declarations.programs {
-        let (name, no) = (text(declared, "name").to_string(), declared["no"].as_i64().unwrap_or(0));
+        let (name, no) = (declared.text("name").to_string(), declared["no"].as_i64().unwrap_or(0));
         if !found.constants.contains_key(&name) {
             found.constants.insert(name.clone(), node!({"kind": "int", "value": no}));
         }
@@ -303,7 +291,7 @@ pub fn context(declarations: &Declarations, table: &str, tables: &BTreeMap<Strin
     }
     for declared in &declarations.constants {
         let value = &declared["value"];
-        let name = text(declared, "name").to_string();
+        let name = declared.text("name").to_string();
         if let Some(enum_name) = declared["enum"].as_str() {
             if let Some(member) = value["value"].as_i64() {
                 found.enums.entry(enum_name.to_string()).or_default().entry(member).or_insert(name);
@@ -324,15 +312,15 @@ pub fn context(declarations: &Declarations, table: &str, tables: &BTreeMap<Strin
     found.by_number = declarations
         .natives
         .iter()
-        .map(|declared| (declared["no"].as_i64().unwrap_or(0), text(declared, "name").to_string()))
+        .map(|declared| (declared["no"].as_i64().unwrap_or(0), declared.text("name").to_string()))
         .collect();
     found.refresh_reserved();
     for inline in &declarations.inlines {
         let shadowed: HashSet<String> =
-            list(inline, "params").iter().map(|param| text(param, "name").to_string()).collect();
+            inline.list("params").iter().map(|param| param.text("name").to_string()).collect();
         let body = with_constants(&inline["body"], &found.constants, &shadowed);
         let resolved = statements(body.as_array().map(Vec::as_slice).unwrap_or(&[]), &found, &mut Vec::new())?;
-        found.inlines.insert(text(inline, "name").to_string(), inline.clone().with("body", resolved));
+        found.inlines.insert(inline.text("name").to_string(), inline.clone().with("body", resolved));
         found.refresh_reserved();
     }
     Ok(found)
@@ -388,7 +376,7 @@ pub fn with_constants(node: &Node, constants: &IndexMap<String, Node>, shadowed:
         Node::List(items) => Node::List(items.iter().map(|item| with_constants(item, constants, shadowed)).collect()),
         Node::Map(map) => {
             if node.kind() == "var" {
-                let name = text(node, "name");
+                let name = node.text("name");
                 if let Some(value) = constants.get(name).filter(|_| !shadowed.contains(name)) {
                     return value.clone();
                 }
@@ -403,8 +391,8 @@ pub fn with_constants(node: &Node, constants: &IndexMap<String, Node>, shadowed:
 
 fn variable_names(function: &Node, global_names: &HashSet<String>) -> HashSet<String> {
     let mut found: HashSet<String> =
-        list(function, "params").iter().map(|param| text(param, "name").to_string()).collect();
-    found.extend(list(function, "locals").iter().map(|declared| text(declared, "name").to_string()));
+        function.list("params").iter().map(|param| param.text("name").to_string()).collect();
+    found.extend(function.list("locals").iter().map(|declared| declared.text("name").to_string()));
     found.extend(global_names.iter().cloned());
     found
 }
@@ -414,7 +402,7 @@ pub fn is_native(name: &str, found: &Context) -> bool {
 }
 
 pub fn has_result(declared: &Node) -> bool {
-    list(declared, "params").last().is_some_and(|param| truthy(&param["result"]))
+    declared.list("params").last().is_some_and(|param| truthy(&param["result"]))
 }
 
 /// A native call as the VM makes it: its canonical name and group base.
@@ -445,15 +433,13 @@ fn substituted(node: &Node, bindings: &HashMap<String, Node>, outs: &HashSet<Str
         Node::List(items) => Node::List(items.iter().map(|item| substituted(item, bindings, outs)).collect()),
         Node::Map(map) => {
             if node.kind() == "var" {
-                if let Some(bound) = bindings.get(text(node, "name")) {
+                if let Some(bound) = bindings.get(node.text("name")) {
                     return bound.clone();
                 }
             }
-            if node.kind() == "deref"
-                && node["operand"].kind() == "var"
-                && outs.contains(text(&node["operand"], "name"))
+            if node.kind() == "deref" && node["operand"].kind() == "var" && outs.contains(node["operand"].text("name"))
             {
-                return bindings[text(&node["operand"], "name")]["target"].clone();
+                return bindings[node["operand"].text("name")]["target"].clone();
             }
             Node::Map(
                 map.entries()
@@ -467,17 +453,17 @@ fn substituted(node: &Node, bindings: &HashMap<String, Node>, outs: &HashSet<Str
 }
 
 fn expanded_inline(inline: &Node, args: &[Node]) -> Result<Vec<Node>> {
-    let params = list(inline, "params");
-    let name = text(inline, "name");
+    let params = inline.list("params");
+    let name = inline.text("name");
     if args.len() != params.len() {
         return Err(Error::invalid(format!("{} takes {} arguments", name, params.len())));
     }
     let bindings: HashMap<String, Node> =
-        params.iter().zip(args).map(|(param, arg)| (text(param, "name").to_string(), arg.clone())).collect();
+        params.iter().zip(args).map(|(param, arg)| (param.text("name").to_string(), arg.clone())).collect();
     let outs: HashSet<String> =
-        params.iter().filter(|param| truthy(&param["out"])).map(|param| text(param, "name").to_string()).collect();
+        params.iter().filter(|param| truthy(&param["out"])).map(|param| param.text("name").to_string()).collect();
     for param in params.iter().filter(|param| truthy(&param["out"])) {
-        let out = text(param, "name");
+        let out = param.text("name");
         if bindings[out].kind() != "addr" {
             return Err(Error::invalid(format!("{name}: pass &variable for pointer parameter {out}")));
         }
@@ -489,8 +475,8 @@ fn native_values(node: &Node, found: &Context, out: &mut Vec<String>) {
     match node {
         Node::List(items) => items.iter().for_each(|item| native_values(item, found, out)),
         Node::Map(map) => {
-            if node.kind() == "call" && is_native(text(node, "name"), found) {
-                out.push(text(node, "name").to_string());
+            if node.kind() == "call" && is_native(node.text("name"), found) {
+                out.push(node.text("name").to_string());
             }
             map.values().for_each(|value| native_values(value, found, out));
         }
@@ -514,7 +500,7 @@ fn calls_native(node: &Node, found: &Context) -> bool {
     match node {
         Node::List(items) => items.iter().any(|item| calls_native(item, found)),
         Node::Map(map) => {
-            (node.kind() == "call" && is_native(text(node, "name"), found))
+            (node.kind() == "call" && is_native(node.text("name"), found))
                 || map.values().any(|value| calls_native(value, found))
         }
         _ => false,
@@ -591,7 +577,7 @@ fn hoisted(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut V
             Ok(Node::List(items.iter().map(|item| hoisted(item, found, temps, before)).collect::<Result<_>>()?))
         }
         Node::Map(map) => {
-            let name = text(node, "name");
+            let name = node.text("name");
             if node.kind() == "call" && found.inlines.contains_key(name) {
                 return Err(Error::invalid(format!("helper {name} is a statement; call it on a line of its own")));
             }
@@ -632,7 +618,7 @@ fn resolved_statement(
     }
     let expression = if kind == "expr" { node.get("expr").filter(|expression| !expression.is_null()) } else { None };
     if let Some(expression) = expression.filter(|expression| expression.kind() == "call") {
-        let name = text(expression, "name");
+        let name = expression.text("name");
         if let Some(inline) = found.inlines.get(name) {
             if !at.is_null() {
                 return Err(Error::invalid(format!("AT and DIRECT apply to native calls, not to helper {name}")));
@@ -648,9 +634,9 @@ fn resolved_statement(
     if let Some(expression) = expression {
         if expression.kind() == "assign"
             && expression["value"].kind() == "call"
-            && is_native(text(&expression["value"], "name"), found)
+            && is_native(expression["value"].text("name"), found)
         {
-            let name = text(&expression["value"], "name");
+            let name = expression["value"].text("name");
             if !found.natives.get(name).is_some_and(has_result) {
                 return Err(Error::invalid(format!(
                     "native {name} returns nothing; pass &variable instead of assigning"
@@ -670,7 +656,7 @@ fn resolved_statement(
     match kind {
         "native" => {
             let args = hoisted(&node["args"], found, temps, before)?;
-            Ok(vec![canonical_native(text(node, "name"), &node["base"], args, found)])
+            Ok(vec![canonical_native(node.text("name"), &node["base"], args, found)])
         }
         "if" => {
             let otherwise = match node["else"].as_array() {
@@ -678,13 +664,13 @@ fn resolved_statement(
                 None => Node::Null,
             };
             let cond = hoisted(&node["cond"], found, temps, before)?;
-            let then = statements(list(node, "then"), found, temps)?;
+            let then = statements(node.list("then"), found, temps)?;
             Ok(vec![plain.with("cond", cond).with("then", then).with("else", otherwise)])
         }
         "while" => {
             let mut inner = Vec::new();
             let cond = hoisted(&node["cond"], found, temps, &mut inner)?;
-            let body = statements(list(node, "body"), found, temps)?;
+            let body = statements(node.list("body"), found, temps)?;
             if inner.is_empty() {
                 return Ok(vec![plain.with("cond", cond).with("body", body)]);
             }
@@ -696,9 +682,9 @@ fn resolved_statement(
         }
         "switch" => {
             let mut cases = Vec::new();
-            for case in list(node, "cases") {
+            for case in node.list("cases") {
                 let value = if case["value"].is_null() { Node::Null } else { checked(&case["value"], found)? };
-                let body = statements(list(case, "body"), found, temps)?;
+                let body = statements(case.list("body"), found, temps)?;
                 cases.push(case.clone().with("value", value).with("body", body));
             }
             let value = hoisted(&node["value"], found, temps, before)?;
@@ -749,13 +735,13 @@ pub fn statements(nodes: &[Node], found: &Context, temps: &mut Vec<String>) -> R
 /// Locals whose array size names a constant get its value.
 fn sized_locals(function: &Node, found: &Context) -> Result<Vec<Node>> {
     let mut sized = Vec::new();
-    for declared in list(function, "locals") {
+    for declared in function.list("locals") {
         if let Some(size) = declared["size"].as_str() {
             let value = found.constants.get(size).filter(|value| truthy(value) && value.kind() == "int");
             let Some(value) = value else {
                 return Err(Error::invalid(format!(
                     "{}: array size {} is not a known integer constant",
-                    text(function, "name"),
+                    function.text("name"),
                     size
                 )));
             };
@@ -777,7 +763,7 @@ fn is_base_type(kind: &str) -> bool {
 /// A variable declared with a value kind (bgm_file) or an enum (enum se_bank) has the kind's base
 /// type, int for an enum; the kind stays on it, for the decompiler's types.
 fn typed(variable: &Node, kinds: &Map) -> Result<Node> {
-    let kind = text(variable, "type");
+    let kind = variable.text("type");
     // void *p: a pointer parameter the function never reads through
     if is_base_type(kind) || (kind == "void" && truthy(&variable["array"])) {
         return Ok(variable.clone());
@@ -785,7 +771,7 @@ fn typed(variable: &Node, kinds: &Map) -> Result<Node> {
     let base = if kind.starts_with("enum ") { Some("int") } else { kinds.get(kind).and_then(Node::as_str) };
     match base {
         Some(base) if is_base_type(base) => Ok(variable.clone().with("type", base).with("kind", kind)),
-        _ => Err(Error::invalid(format!("{}: unknown type {}", text(variable, "name"), kind))),
+        _ => Err(Error::invalid(format!("{}: unknown type {}", variable.text("name"), kind))),
     }
 }
 
@@ -795,21 +781,20 @@ pub fn resolve(program: &Node, tables: &BTreeMap<String, Table>) -> Result<Node>
         return Ok(program.clone());
     }
     let declarations = program.get("declarations").map(Declarations::of).unwrap_or_default();
-    let mut found = context(&declarations, text(program, "natives"), tables)?;
+    let mut found = context(&declarations, program.text("natives"), tables)?;
     let program = &crate::lower::initialised_globals(program, &found)?;
     let program = &crate::composite::lower(program, &declarations.kinds, &found)?;
     let program = &crate::lower::integer_types(program, &declarations.kinds, &found)?;
     let global_names: HashSet<String> =
-        list(program, "globals").iter().map(|declared| text(declared, "name").to_string()).collect();
+        program.list("globals").iter().map(|declared| declared.text("name").to_string()).collect();
     let mut functions = Vec::new();
-    for function in list(program, "functions") {
+    for function in program.list("functions") {
         let mut function = function.clone();
         if function.kind() == "function" {
-            let params: Vec<Node> = list(&function, "params")
-                .iter()
-                .map(|param| typed(param, &declarations.kinds))
-                .collect::<Result<_>>()?;
-            let locals: Vec<Node> = list(&function, "locals")
+            let params: Vec<Node> =
+                function.list("params").iter().map(|param| typed(param, &declarations.kinds)).collect::<Result<_>>()?;
+            let locals: Vec<Node> = function
+                .list("locals")
                 .iter()
                 .map(|declared| typed(declared, &declarations.kinds))
                 .collect::<Result<_>>()?;
@@ -827,7 +812,7 @@ pub fn resolve(program: &Node, tables: &BTreeMap<String, Table>) -> Result<Node>
         functions.push(function);
     }
     let mut programs = Vec::new();
-    for entry in list(program, "programs") {
+    for entry in program.list("programs") {
         let number = match &entry["no"] {
             Node::Str(name) => match found.programs.get(name) {
                 Some(number) => Node::Int(*number),
@@ -865,25 +850,25 @@ fn matches(pattern: &Node, node: &Node, params: &HashMap<String, Param>, binding
                 return false;
             };
             if pattern.kind() == "var" {
-                if let Some(param) = params.get(text(pattern, "name")) {
+                if let Some(param) = params.get(pattern.text("name")) {
                     if *param == Param::Out && node.get("kind").and_then(Node::as_str) != Some("addr") {
                         return false;
                     }
                     if *param == Param::In && node.get("kind").and_then(Node::as_str) == Some("addr") {
                         return false;
                     }
-                    return bound(text(pattern, "name"), node, bindings);
+                    return bound(pattern.text("name"), node, bindings);
                 }
             }
             if pattern.kind() == "deref"
                 && pattern["operand"].kind() == "var"
-                && params.get(text(&pattern["operand"], "name")) == Some(&Param::Out)
+                && params.get(pattern["operand"].text("name")) == Some(&Param::Out)
             {
                 if !matches!(node.get("kind").and_then(Node::as_str), Some("var") | Some("index")) {
                     return false;
                 }
                 return bound(
-                    text(&pattern["operand"], "name"),
+                    pattern["operand"].text("name"),
                     &node!({"kind": "addr", "target": node.clone()}),
                     bindings,
                 );
@@ -916,14 +901,15 @@ fn bound(name: &str, node: &Node, bindings: &mut HashMap<String, Node>) -> bool 
 /// The helpers, longest body first (then by name), as folding tries them.
 fn ordered_inlines(found: &Context) -> Vec<&Node> {
     let mut ranked: Vec<(i64, &String)> =
-        found.inlines.iter().map(|(name, inline)| (-(list(inline, "body").len() as i64), name)).collect();
+        found.inlines.iter().map(|(name, inline)| (-(inline.list("body").len() as i64), name)).collect();
     ranked.sort();
     ranked.into_iter().map(|(_, name)| &found.inlines[name]).collect()
 }
 
 fn helper_call(inline: &Node, nodes: &[Node], position: usize) -> Option<(Node, Vec<Node>)> {
-    let body = list(inline, "body");
-    let params: HashMap<String, Param> = list(inline, "params")
+    let body = inline.list("body");
+    let params: HashMap<String, Param> = inline
+        .list("params")
         .iter()
         .map(|param| {
             let kind = if truthy(&param["out"]) {
@@ -933,7 +919,7 @@ fn helper_call(inline: &Node, nodes: &[Node], position: usize) -> Option<(Node, 
             } else {
                 Param::In
             };
-            (text(param, "name").to_string(), kind)
+            (param.text("name").to_string(), kind)
         })
         .collect();
     let mut bindings = HashMap::new();
@@ -943,9 +929,9 @@ fn helper_call(inline: &Node, nodes: &[Node], position: usize) -> Option<(Node, 
     if !matched || bindings.len() != params.len() {
         return None;
     }
-    let args: Vec<Node> = list(inline, "params").iter().map(|param| bindings[text(param, "name")].clone()).collect();
+    let args: Vec<Node> = inline.list("params").iter().map(|param| bindings[param.text("name")].clone()).collect();
     let call = node!({"kind": "expr", "expr": {"kind": "call", "name": inline["name"].clone(), "args": args}});
-    Some((call, list(inline, "params").to_vec()))
+    Some((call, inline.list("params").to_vec()))
 }
 
 /// Statements with runs that a helper expands to folded back into calls of the helper, choosing
@@ -957,7 +943,7 @@ fn folded(nodes: &[Node], found: &Context, inlines: &[&Node], pointers: &HashSet
     let first: Vec<Option<(&str, &Node)>> = inlines
         .iter()
         .map(|inline| {
-            let pattern = list(inline, "body").first()?;
+            let pattern = inline.list("body").first()?;
             let kind = pattern.get("kind")?.as_str()?;
             (!matches!(kind, "var" | "deref")).then(|| (kind, &pattern["name"]))
         })
@@ -974,7 +960,7 @@ fn folded(nodes: &[Node], found: &Context, inlines: &[&Node], pointers: &HashSet
                     continue;
                 }
             }
-            let size = list(inline, "body").len();
+            let size = inline.list("body").len();
             if position + size > nodes.len() {
                 continue;
             }
@@ -997,7 +983,7 @@ fn folded(nodes: &[Node], found: &Context, inlines: &[&Node], pointers: &HashSet
                 position += 1;
             }
             Some((call, params, size)) => {
-                let args = named_args(list(&call["expr"], "args"), &params, found);
+                let args = named_args(call["expr"].list("args"), &params, found);
                 let expr = call["expr"].clone().with("args", args);
                 let mut call = call.with("expr", expr);
                 let comments: Vec<String> = nodes[position..position + size]
@@ -1022,11 +1008,11 @@ fn nested(node: &Node, found: &Context, inlines: &[&Node], pointers: &HashSet<St
                 Some(items) => Node::List(folded(items, found, inlines, pointers)),
                 None => Node::Null,
             };
-            let then = folded(list(node, "then"), found, inlines, pointers);
+            let then = folded(node.list("then"), found, inlines, pointers);
             node.clone().with("then", then).with("else", otherwise)
         }
         "while" => {
-            let body = folded(list(node, "body"), found, inlines, pointers);
+            let body = folded(node.list("body"), found, inlines, pointers);
             node.clone().with("body", body)
         }
         "native" => readable_native(node, found, pointers),
@@ -1038,7 +1024,7 @@ fn result_target(arg: &Node, pointers: &HashSet<String>) -> Option<Node> {
     if arg.kind() == "addr" && matches!(arg["target"].kind(), "var" | "index") {
         return Some(arg["target"].clone());
     }
-    if arg.kind() == "var" && pointers.contains(text(arg, "name")) {
+    if arg.kind() == "var" && pointers.contains(arg.text("name")) {
         return Some(node!({"kind": "deref", "operand": arg.clone()}));
     }
     None
@@ -1068,7 +1054,7 @@ pub fn named_literal(node: &Node, enum_name: &str, found: &Context) -> Node {
             return node!({"kind": "var", "name": name.clone()});
         }
     }
-    if node.kind() == "binary" && matches!(text(node, "op"), "|" | "+" | "-" | "*" | "/") {
+    if node.kind() == "binary" && matches!(node.text("op"), "|" | "+" | "-" | "*" | "/") {
         let left = named_literal(&node["left"], enum_name, found);
         let right = named_literal(&node["right"], enum_name, found);
         return node.clone().with("left", left).with("right", right);
@@ -1119,11 +1105,11 @@ fn named_floats(node: &Node, found: &Context) -> Node {
 
 /// A native call by its SDK name, with named arguments and its result as an assignment.
 fn readable_native(node: &Node, found: &Context, pointers: &HashSet<String>) -> Node {
-    let Some(declared) = found.by_original.get(text(node, "name")) else {
+    let Some(declared) = found.by_original.get(node.text("name")) else {
         return node.clone().with("result", Node::Null);
     };
-    let params = list(declared, "params");
-    let args = named_args(list(node, "args"), params, found);
+    let params = declared.list("params");
+    let args = named_args(node.list("args"), params, found);
     let base = if node["base"].py_eq(&declared["base"]) {
         Node::Null
     } else if node["base"].is_null() {
@@ -1164,8 +1150,8 @@ fn vector_subject(name: &str) -> Option<&str> {
 }
 
 fn call_subject(node: &Node, declared: &Node, found: &Context) -> Option<(String, String)> {
-    let params = list(declared, "params");
-    for (position, arg) in list(node, "args").iter().enumerate() {
+    let params = declared.list("params");
+    for (position, arg) in node.list("args").iter().enumerate() {
         if position >= params.len() || arg.kind() != "int" {
             continue;
         }
@@ -1186,12 +1172,13 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
     for node in nodes {
         match node.kind() {
             "native" => {
-                let Some(declared) = found.by_original.get(text(node, "name")) else {
+                let Some(declared) = found.by_original.get(node.text("name")) else {
                     continue;
                 };
-                let params = list(declared, "params");
+                let params = declared.list("params");
                 let subject = call_subject(node, declared, found);
-                let outs: Vec<(usize, &Node)> = list(node, "args")
+                let outs: Vec<(usize, &Node)> = node
+                    .list("args")
                     .iter()
                     .enumerate()
                     .filter(|(position, arg)| {
@@ -1202,9 +1189,9 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
                     })
                     .collect();
                 // get_home_pos(&x, &y, &z) reads the home's position: home_x, home_y, home_z
-                let thing = vector_subject(text(declared, "name")).map(str::to_string);
+                let thing = vector_subject(declared.text("name")).map(str::to_string);
                 for (position, arg) in &outs {
-                    let generic = text(&params[*position], "name").to_string();
+                    let generic = params[*position].text("name").to_string();
                     let mut wanted = generic.clone();
                     match &subject {
                         Some((kind, subject)) if kind == "flag" && outs.len() == 1 => wanted = subject.clone(),
@@ -1220,14 +1207,14 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
                             }
                         }
                     }
-                    out.push((text(&arg["target"], "name").to_string(), wanted, generic));
+                    out.push((arg["target"].text("name").to_string(), wanted, generic));
                 }
             }
             "if" => {
-                out_uses(list(node, "then"), found, out);
-                out_uses(list(node, "else"), found, out);
+                out_uses(node.list("then"), found, out);
+                out_uses(node.list("else"), found, out);
             }
-            "while" => out_uses(list(node, "body"), found, out),
+            "while" => out_uses(node.list("body"), found, out),
             _ => {}
         }
     }
@@ -1237,13 +1224,13 @@ fn out_uses(nodes: &[Node], found: &Context, out: &mut Vec<(String, String, Stri
 fn in_uses(nodes: &[Node], found: &Context, out: &mut HashMap<String, String>) {
     for node in nodes {
         if node.kind() == "native" {
-            let declared = found.by_original.get(text(node, "name"));
-            for (position, arg) in list(node, "args").iter().enumerate() {
+            let declared = found.by_original.get(node.text("name"));
+            for (position, arg) in node.list("args").iter().enumerate() {
                 if let Some(declared) = declared {
-                    let params = list(declared, "params");
+                    let params = declared.list("params");
                     if position < params.len() && !truthy(&params[position]["out"]) && arg.kind() == "var" {
-                        out.entry(text(arg, "name").to_string())
-                            .or_insert_with(|| text(&params[position], "name").to_string());
+                        out.entry(arg.text("name").to_string())
+                            .or_insert_with(|| params[position].text("name").to_string());
                     }
                 }
             }
@@ -1264,11 +1251,11 @@ fn variable_access(node: &Node, reads: &mut HashSet<String>, writes: &mut HashSe
         Node::Map(map) => {
             let kind = node.kind();
             if kind == "var" {
-                reads.insert(text(node, "name").to_string());
+                reads.insert(node.text("name").to_string());
                 return;
             }
             if (kind == "addr" || kind == "assign") && matches!(node["target"].kind(), "var" | "index") {
-                writes.insert(text(&node["target"], "name").to_string());
+                writes.insert(node["target"].text("name").to_string());
                 if let Some(index) = node["target"].get("index") {
                     variable_access(index, reads, writes);
                 }
@@ -1279,7 +1266,7 @@ fn variable_access(node: &Node, reads: &mut HashSet<String>, writes: &mut HashSe
             }
             if kind == "native" && node.get("result").is_some_and(|result| !result.is_null() && result.kind() == "var")
             {
-                writes.insert(text(&node["result"], "name").to_string());
+                writes.insert(node["result"].text("name").to_string());
             }
             for (key, value) in map.iter() {
                 if key != "result" {
@@ -1322,15 +1309,15 @@ fn default_local(name: &str) -> bool {
 /// what it reads when every read agrees (griffon_defeated for get_flag(FLAG_GRIFFON_DEFEATED)).
 pub fn named_locals(function: Node, found: &Context, function_names: &HashSet<String>) -> Node {
     let mut uses = Vec::new();
-    out_uses(list(&function, "body"), found, &mut uses);
+    out_uses(function.list("body"), found, &mut uses);
     let mut by_variable: HashMap<&str, HashSet<(&str, &str)>> = HashMap::new();
     for (variable, wanted, generic) in &uses {
         by_variable.entry(variable).or_default().insert((wanted, generic));
     }
-    let locals = list(&function, "locals");
+    let locals = function.list("locals");
     let mut generic_names = HashSet::new();
     for declared in locals {
-        let name = text(declared, "name");
+        let name = declared.text("name");
         if let Some(seen) = by_variable.get(name).filter(|seen| seen.len() == 1) {
             let (wanted, generic) = *seen.iter().next().unwrap();
             if wanted != generic && is_name_or_numbered(name, generic) {
@@ -1344,13 +1331,13 @@ pub fn named_locals(function: Node, found: &Context, function_names: &HashSet<St
     variable_access(&function["body"], &mut reads, &mut writes);
     let misnamed: HashSet<String> = locals
         .iter()
-        .map(|declared| text(declared, "name"))
+        .map(|declared| declared.text("name"))
         .filter(|name| is_unused_local(name) && reads.contains(*name))
         .map(str::to_string)
         .collect();
     let mut unnamed: HashSet<String> = locals
         .iter()
-        .map(|declared| text(declared, "name"))
+        .map(|declared| declared.text("name"))
         .filter(|name| default_local(name))
         .map(str::to_string)
         .collect();
@@ -1360,8 +1347,8 @@ pub fn named_locals(function: Node, found: &Context, function_names: &HashSet<St
         return function;
     }
     let mut taken: HashSet<String> =
-        list(&function, "params").iter().map(|param| text(param, "name").to_string()).collect();
-    taken.extend(locals.iter().map(|declared| text(declared, "name").to_string()));
+        function.list("params").iter().map(|param| param.text("name").to_string()).collect();
+    taken.extend(locals.iter().map(|declared| declared.text("name").to_string()));
     taken.extend(names::variables(&function["body"]));
     // the SDK's names are taken too; checked in place, as there are thousands
     taken.extend(function_names.iter().cloned());
@@ -1380,7 +1367,7 @@ pub fn named_locals(function: Node, found: &Context, function_names: &HashSet<St
         mapping.insert(variable.clone(), candidate);
     }
     let mut passed = HashMap::new();
-    in_uses(list(&function, "body"), found, &mut passed);
+    in_uses(function.list("body"), found, &mut passed);
     let mut leftover: Vec<&String> = misnamed.iter().filter(|name| !mapping.contains_key(*name)).collect();
     leftover.sort();
     for variable in leftover {
@@ -1408,7 +1395,7 @@ pub fn named_locals(function: Node, found: &Context, function_names: &HashSet<St
     let locals: Node = locals
         .iter()
         .map(|declared| {
-            let name = text(declared, "name");
+            let name = declared.text("name");
             declared.clone().with("name", mapping.get(name).cloned().unwrap_or_else(|| name.to_string()))
         })
         .collect();
@@ -1424,8 +1411,9 @@ fn call_named(node: &Node, found: &Context, function_kinds: &HashMap<String, BTr
                 map.entries().map(|(key, value)| (key.clone(), call_named(value, found, function_kinds))).collect(),
             );
             if node.kind() == "call" {
-                if let Some(kinds) = function_kinds.get(text(node, "name")) {
-                    let args: Vec<Node> = list(&out, "args")
+                if let Some(kinds) = function_kinds.get(node.text("name")) {
+                    let args: Vec<Node> = out
+                        .list("args")
                         .iter()
                         .enumerate()
                         .map(|(position, arg)| match kinds.get(&position) {
@@ -1448,11 +1436,12 @@ fn kind_name(kind: &str) -> String {
 }
 
 fn variable_kinds(function: &Node) -> HashMap<String, String> {
-    list(function, "params")
+    function
+        .list("params")
         .iter()
-        .chain(list(function, "locals"))
+        .chain(function.list("locals"))
         .filter(|variable| variable.get("kind").is_some_and(truthy))
-        .map(|variable| (text(variable, "name").to_string(), kind_name(&py_str(&variable["kind"]))))
+        .map(|variable| (variable.text("name").to_string(), kind_name(&py_str(&variable["kind"]))))
         .collect()
 }
 
@@ -1469,15 +1458,15 @@ fn typed_literals(node: &Node, kinds: &HashMap<String, String>, found: &Context)
             );
             match out.kind() {
                 "assign" if out["target"].kind() == "var" => {
-                    if let Some(kind) = kinds.get(text(&out["target"], "name")) {
+                    if let Some(kind) = kinds.get(out["target"].text("name")) {
                         let value = named_literal(&out["value"], kind, found);
                         out = out.with("value", value);
                     }
                 }
-                "binary" if matches!(text(&out, "op"), "==" | "!=" | "<" | "<=" | ">" | ">=") => {
+                "binary" if matches!(out.text("op"), "==" | "!=" | "<" | "<=" | ">" | ">=") => {
                     for (side, other) in [("left", "right"), ("right", "left")] {
                         if out[side].kind() == "var" {
-                            if let Some(kind) = kinds.get(text(&out[side], "name")) {
+                            if let Some(kind) = kinds.get(out[side].text("name")) {
                                 let value = named_literal(&out[other], kind, found);
                                 out = out.with(other, value);
                             }
@@ -1513,7 +1502,7 @@ fn calls_made(node: &Node, out: &mut HashSet<(String, String)>) {
         Node::List(items) => items.iter().for_each(|item| calls_made(item, out)),
         Node::Map(map) => {
             if matches!(node.kind(), "native" | "call") {
-                out.insert((node.kind().to_string(), text(node, "name").to_string()));
+                out.insert((node.kind().to_string(), node.text("name").to_string()));
             }
             map.values().for_each(|value| calls_made(value, out));
         }
@@ -1530,7 +1519,7 @@ fn sound_related<'a>(hidden: &'a [Node], shown: &[Node], found: &Context) -> Vec
         .map(|function| {
             let mut made = HashSet::new();
             calls_made(&function["body"], &mut made);
-            (text(function, "name").to_string(), made)
+            (function.text("name").to_string(), made)
         })
         .collect();
     let mut related: HashSet<String> = calls
@@ -1554,16 +1543,16 @@ fn sound_related<'a>(hidden: &'a [Node], shown: &[Node], found: &Context) -> Vec
             }
         }
     }
-    hidden.iter().filter(|function| function.kind() == "function" && related.contains(text(function, "name"))).collect()
+    hidden.iter().filter(|function| function.kind() == "function" && related.contains(function.text("name"))).collect()
 }
 
 fn prepared_function(function: &Node, found: &Context, function_names: &HashSet<String>, inlines: &[&Node]) -> Node {
     if function.kind() != "function" {
         return function.clone();
     }
-    let body = assets::named(&old_numbered(list(function, "body"), found), found);
+    let body = assets::named(&old_numbered(function.list("body"), found), found);
     let function = named_locals(function.clone().with("body", body), found, function_names);
-    let body = folded(list(&function, "body"), found, inlines, &HashSet::new());
+    let body = folded(function.list("body"), found, inlines, &HashSet::new());
     function.with("body", body)
 }
 
@@ -1594,7 +1583,7 @@ pub fn numbering_of(entry: &Node) -> Option<String> {
 /// native a group (shown as DIRECT) comes from an older table, and old_direct maps the numbers
 /// whose same-shaped twins elsewhere on the disc show what they stand for.
 pub fn meant_native(node: &Node, found: &Context) -> Option<String> {
-    let name = text(node, "name");
+    let name = node.text("name");
     let (no, declared_base) = match found.by_original.get(name) {
         Some(declared) => (declared["no"].as_i64()?, declared["base"].clone()),
         // a number the engine does not register, as the decompiler names it
@@ -1626,15 +1615,15 @@ fn old_numbered(nodes: &[Node], found: &Context) -> Node {
                     Some(items) => old_numbered(items, found),
                     None => Node::Null,
                 };
-                node.clone().with("then", old_numbered(list(node, "then"), found)).with("else", otherwise)
+                node.clone().with("then", old_numbered(node.list("then"), found)).with("else", otherwise)
             }
-            "while" => node.clone().with("body", old_numbered(list(node, "body"), found)),
+            "while" => node.clone().with("body", old_numbered(node.list("body"), found)),
             "native" => {
                 let mut notes = Vec::new();
                 if let Some(meant) = meant_native(node, found) {
                     notes.push(format!("old numbering, meant as {meant}"));
                 }
-                if text(node, "name").starts_with("_EXT_") {
+                if node.text("name").starts_with("_EXT_") {
                     // the engine's table has no function at this number; the VM prints "not found
                     // ext" and goes on (CRunScript::ext, runscript.cpp)
                     notes.push("no native at this number, so the call does nothing".into());
@@ -1666,21 +1655,19 @@ pub fn with_sound_sets(found: Option<Context>, defs: &Definitions) -> Option<Con
 }
 
 fn shadowing(function: &Node, names_used: &[&String]) -> bool {
-    let declared: HashSet<&str> = list(function, "params")
-        .iter()
-        .chain(list(function, "locals"))
-        .map(|variable| text(variable, "name"))
-        .collect();
+    let declared: HashSet<&str> =
+        function.list("params").iter().chain(function.list("locals")).map(|variable| variable.text("name")).collect();
     names_used.iter().any(|name| declared.contains(name.as_str()))
 }
 
 pub fn present_inline(inline: &Node, found: &Context) -> Node {
-    let pointers: HashSet<String> = list(inline, "params")
+    let pointers: HashSet<String> = inline
+        .list("params")
         .iter()
         .filter(|param| truthy(&param["out"]))
-        .map(|param| text(param, "name").to_string())
+        .map(|param| param.text("name").to_string())
         .collect();
-    let body = folded(list(inline, "body"), found, &[], &pointers);
+    let body = folded(inline.list("body"), found, &[], &pointers);
     inline.clone().with("body", body)
 }
 
@@ -1697,10 +1684,10 @@ pub fn present_functions(
     let mut function_kinds = function_kinds_of(params_by_kind);
     // parameters a definition set gives a value kind (types)
     for function in functions.iter().filter(|function| function.kind() == "function") {
-        for (position, param) in list(function, "params").iter().enumerate() {
+        for (position, param) in function.list("params").iter().enumerate() {
             if let Some(kind) = param.get("kind").filter(|kind| truthy(kind)) {
                 function_kinds
-                    .entry(text(function, "name").to_string())
+                    .entry(function.text("name").to_string())
                     .or_default()
                     .insert(position, kind_name(&py_str(kind)));
             }
@@ -1724,7 +1711,7 @@ pub fn present_functions(
     let function_names: HashSet<String> = functions
         .iter()
         .filter(|function| function.kind() == "function")
-        .map(|function| text(function, "name").to_string())
+        .map(|function| function.text("name").to_string())
         .collect();
     let prepared: Vec<Node> =
         functions.iter().map(|function| prepared_function(function, found, &function_names, &inlines)).collect();
@@ -1732,7 +1719,7 @@ pub fn present_functions(
     // of global names (sounds.keys, into sounds.cache)
     let mut prepared_hidden = Vec::new();
     for function in sound_related(hidden, &functions, found) {
-        let name = text(function, "name");
+        let name = function.text("name");
         match sounds.keys.get(name).cloned() {
             None => prepared_hidden.push(prepared_function(function, found, &function_names, &inlines)),
             Some(key) => {
@@ -1758,7 +1745,7 @@ pub fn present_functions(
             }
             let mut banks = crate::soundpass::sound_banks(&function, &known);
             let flow = crate::soundpass::sound_flow(&function, &known);
-            let body = crate::soundpass::named_sounds(list(&function, "body"), found, &mut banks, Some(&flow), None);
+            let body = crate::soundpass::named_sounds(function.list("body"), found, &mut banks, Some(&flow), None);
             let mut body = typed_literals(&body, &variable_kinds(&function), found);
             if !found.float_names.is_empty() && !shadowing(&function, &float_names) {
                 body = named_floats(&body, found);
@@ -1784,7 +1771,8 @@ pub fn present(
     if program.get("asm").is_some() {
         return program;
     }
-    let programs: Vec<Node> = list(&program, "programs")
+    let programs: Vec<Node> = program
+        .list("programs")
         .iter()
         .map(|entry| {
             let number = entry["no"]
@@ -1797,13 +1785,13 @@ pub fn present(
         .collect();
     // the functions the engine starts, which find the event port as the last event left it
     let mut entries: HashSet<String> =
-        list(&program, "programs").iter().map(|entry| text(entry, "function").to_string()).collect();
+        program.list("programs").iter().map(|entry| entry.text("function").to_string()).collect();
     if let Some(main) = program["main"].as_str() {
         entries.insert(main.to_string());
     }
     sounds.entries = Some(entries);
     let mut functions: Vec<Node> =
         found.includes.iter().map(|path| node!({"kind": "include", "path": path.clone(), "system": true})).collect();
-    functions.extend(present_functions(list(&program, "functions"), found, params_by_kind, hidden, sounds));
+    functions.extend(present_functions(program.list("functions"), found, params_by_kind, hidden, sounds));
     program.with("natives", Node::Null).with("programs", programs).with("functions", functions)
 }

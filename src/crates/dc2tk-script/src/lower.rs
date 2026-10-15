@@ -15,21 +15,13 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::node;
-use crate::node::{Map, Node};
+use crate::node::{kinds, Map, Node};
 use crate::sdk::Context;
 use crate::{Error, Result};
 
 /// The hidden function that sets initialised globals, and its flag.
 pub const INITIALISE: &str = "__initialise";
 pub const INITIALISED: &str = "__initialised";
-
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
 
 /// The first part of an initialiser that is not a constant expression (C 3.4): a variable, a
 /// call, an assignment, an address of something but a global (or a function, a function pointer's
@@ -42,18 +34,18 @@ fn not_constant<'a>(
 ) -> Option<&'a Node> {
     let not_constant = |node: &'a Node| not_constant(node, found, variables, functions);
     match node.kind() {
-        "int" | "float" | "string" => None,
-        "var" if functions.contains(text(node, "name")) && !variables.contains(text(node, "name")) => None,
-        "var" => {
-            let name = text(node, "name");
+        kinds::INT | kinds::FLOAT | kinds::STRING => None,
+        kinds::VAR if functions.contains(node.text("name")) && !variables.contains(node.text("name")) => None,
+        kinds::VAR => {
+            let name = node.text("name");
             (variables.contains(name) || !found.constants.contains_key(name)).then_some(node)
         }
         // an address constant: of a global, a member or element of one at constant offsets
-        "addr" if !address_constant(&node["target"], variables, functions) => Some(node),
-        "addr" => index_constant(&node["target"]).and_then(not_constant),
-        "unary" | "cast" => not_constant(&node["operand"]),
-        "binary" | "logical" => not_constant(&node["left"]).or_else(|| not_constant(&node["right"])),
-        "ternary" => {
+        kinds::ADDR if !address_constant(&node["target"], variables, functions) => Some(node),
+        kinds::ADDR => index_constant(&node["target"]).and_then(not_constant),
+        kinds::UNARY | kinds::CAST => not_constant(&node["operand"]),
+        kinds::BINARY | kinds::LOGICAL => not_constant(&node["left"]).or_else(|| not_constant(&node["right"])),
+        kinds::TERNARY => {
             not_constant(&node["cond"]).or_else(|| not_constant(&node["then"])).or_else(|| not_constant(&node["else"]))
         }
         _ => Some(node),
@@ -64,10 +56,12 @@ fn not_constant<'a>(
 /// global (whose indexes index_constant checks).
 fn address_constant(target: &Node, variables: &HashSet<&str>, functions: &HashSet<&str>) -> bool {
     match target.kind() {
-        "var" => variables.contains(text(target, "name")) || functions.contains(text(target, "name")),
-        "member" if target["arrow"] != Node::Bool(true) => address_constant(&target["object"], variables, functions),
-        "subscript" => address_constant(&target["array"], variables, functions),
-        "index" => variables.contains(text(target, "name")),
+        kinds::VAR => variables.contains(target.text("name")) || functions.contains(target.text("name")),
+        kinds::MEMBER if target["arrow"] != Node::Bool(true) => {
+            address_constant(&target["object"], variables, functions)
+        }
+        kinds::SUBSCRIPT => address_constant(&target["array"], variables, functions),
+        kinds::INDEX => variables.contains(target.text("name")),
         _ => false,
     }
 }
@@ -75,18 +69,18 @@ fn address_constant(target: &Node, variables: &HashSet<&str>, functions: &HashSe
 /// The index in an address constant's target, which must be a constant too.
 fn index_constant(target: &Node) -> Option<&Node> {
     match target.kind() {
-        "subscript" => Some(&target["index"]),
-        "index" => Some(&target["index"]),
-        "member" => index_constant(&target["object"]),
+        kinds::SUBSCRIPT => Some(&target["index"]),
+        kinds::INDEX => Some(&target["index"]),
+        kinds::MEMBER => index_constant(&target["object"]),
         _ => None,
     }
 }
 
 fn shown(node: &Node) -> String {
     match node.kind() {
-        "var" | "call" => text(node, "name").to_string(),
-        "assign" | "compound" => "an assignment".into(),
-        "addr" => "an address".into(),
+        kinds::VAR | kinds::CALL => node.text("name").to_string(),
+        kinds::ASSIGN | kinds::COMPOUND => "an assignment".into(),
+        kinds::ADDR => "an address".into(),
         other => format!("a {other}"),
     }
 }
@@ -94,13 +88,13 @@ fn shown(node: &Node) -> String {
 /// Globals given values (int g = 5;, and static locals) set by a hidden function that every entry
 /// function calls first, once per load.
 pub fn initialised_globals(program: &Node, found: &Context) -> Result<Node> {
-    let globals = list(program, "globals");
+    let globals = program.list("globals");
     let given = |global: &Node| global.get("init").is_some() || global.get("inits").is_some();
     if !globals.iter().any(|global| given(global) || global.get("const").is_some()) {
         return Ok(program.clone());
     }
-    let names: HashSet<&str> = globals.iter().map(|global| text(global, "name")).collect();
-    let functions: HashSet<&str> = list(program, "functions").iter().map(|function| text(function, "name")).collect();
+    let names: HashSet<&str> = globals.iter().map(|global| global.text("name")).collect();
+    let functions: HashSet<&str> = program.list("functions").iter().map(|function| function.text("name")).collect();
     let mut body = Vec::new();
     let mut plain = Vec::new();
     for global in globals {
@@ -114,13 +108,14 @@ pub fn initialised_globals(program: &Node, found: &Context) -> Result<Node> {
         plain.push(entry);
         // a scalar's value, or the slots an array's or struct's list gives
         let values: Vec<(Node, &Node)> = match global.get("init") {
-            Some(value) => vec![(node!({"kind": "var", "name": text(global, "name")}), value)],
-            None => list(global, "inits")
+            Some(value) => vec![(node!({"kind": "var", "name": global.text("name")}), value)],
+            None => global
+                .list("inits")
                 .iter()
                 .map(|slot| {
                     let target = node!({
                         "kind": "field",
-                        "name": text(global, "name"),
+                        "name": global.text("name"),
                         "offset": slot["offset"].clone(),
                         "type": slot["type"].clone(),
                         "ctype": slot["ctype"].clone(),
@@ -133,7 +128,7 @@ pub fn initialised_globals(program: &Node, found: &Context) -> Result<Node> {
             if let Some(part) = not_constant(value, found, &names, &functions) {
                 return Err(Error::invalid(format!(
                     "the value of global {} must be a constant expression, not {}",
-                    text(global, "name"),
+                    global.text("name"),
                     shown(part)
                 )));
             }
@@ -165,30 +160,30 @@ pub fn initialised_globals(program: &Node, found: &Context) -> Result<Node> {
         initialise["std"] = Node::from("c89");
     }
     let mut entries: HashSet<String> =
-        list(program, "programs").iter().map(|entry| text(entry, "function").to_string()).collect();
+        program.list("programs").iter().map(|entry| entry.text("function").to_string()).collect();
     if let Some(main) = program["main"].as_str() {
         entries.insert(main.to_string());
     }
     let call = node!({"kind": "expr", "expr": {"kind": "call", "name": INITIALISE, "args": []}});
     let mut functions = Vec::new();
-    for function in list(program, "functions") {
-        if !entries.contains(text(function, "name")) {
+    for function in program.list("functions") {
+        if !entries.contains(function.text("name")) {
             functions.push(function.clone());
             continue;
         }
-        if function.kind() == "asm" {
+        if function.kind() == kinds::ASM {
             return Err(Error::invalid(format!(
                 "{} is written in assembly, so it cannot set the script's initialised globals first",
-                text(function, "name")
+                function.text("name")
             )));
         }
         let mut body = vec![call.clone()];
-        body.extend(list(function, "body").iter().cloned());
+        body.extend(function.list("body").iter().cloned());
         functions.push(function.clone().with("body", body));
     }
     functions.push(initialise);
     let program = program.clone().with("globals", plain).with("functions", functions);
-    let count: i64 = list(&program, "globals").iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
+    let count: i64 = program.list("globals").iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
     let declared = program["global_num"].as_i64().unwrap_or(0);
     Ok(program.with("global_num", count.max(declared)))
 }
@@ -339,7 +334,7 @@ fn call(name: &'static str, args: Vec<Node>, used: &mut Vec<&'static str>) -> No
 /// A value stored in a variable of a narrow type, wrapped to its width (a float truncated first).
 fn narrowed(value: Node, from: &str, kind: &str) -> Node {
     let value = if from == "float" { node!({"kind": "cast", "type": "int", "operand": value}) } else { value };
-    if let Some(constant) = value.get("value").filter(|_| value.kind() == "int").and_then(Node::as_i64) {
+    if let Some(constant) = value.get("value").filter(|_| value.kind() == kinds::INT).and_then(Node::as_i64) {
         return int_node(match kind {
             "char" => constant as i8 as i64,
             "unsigned char" => constant as u8 as i64,
@@ -372,7 +367,7 @@ fn converted(value: Node, from: &str, to: &str, strict: bool, used: &mut Vec<&'s
 
 /// (int)value: a float constant truncated here, anything else by FTOI.
 fn as_int(value: Node) -> Node {
-    if value.kind() == "float" {
+    if value.kind() == kinds::FLOAT {
         if let Some(bits) = value["bits"].as_i64() {
             let float = f32::from_bits(bits as u32);
             if float.abs() < 2147483648.0 {
@@ -411,7 +406,7 @@ const UTOF: &str = "__utof";
 const FTOU: &str = "__ftou";
 
 fn literal(node: &Node) -> Option<u32> {
-    (node.kind() == "int").then(|| node["value"].as_i64()).flatten().map(|value| value as u32)
+    (node.kind() == kinds::INT).then(|| node["value"].as_i64()).flatten().map(|value| value as u32)
 }
 
 impl Types<'_> {
@@ -433,61 +428,61 @@ impl Types<'_> {
     fn typed(&mut self, node: &Node, condition: bool) -> Result<(Node, String)> {
         let kind = node.kind();
         Ok(match kind {
-            "int" => (node.clone(), if node.get("unsigned").is_some() { "unsigned int" } else { "int" }.into()),
-            "float" => (node.clone(), "float".into()),
-            "string" => (node.clone(), "string".into()),
-            "var" => match self.variable(text(node, "name")) {
+            kinds::INT => (node.clone(), if node.get("unsigned").is_some() { "unsigned int" } else { "int" }.into()),
+            kinds::FLOAT => (node.clone(), "float".into()),
+            kinds::STRING => (node.clone(), "string".into()),
+            kinds::VAR => match self.variable(node.text("name")) {
                 Some((_, true)) => (node.clone(), "pointer".into()),
                 Some((kind, false)) => (node.clone(), kind),
                 None => (node.clone(), "int".into()),
             },
-            "index" => {
+            kinds::INDEX => {
                 let (index, _) = self.expression(&node["index"])?;
                 let kind = match node["type"].as_str() {
                     Some(kind) => kind.to_string(),
-                    None => self.variable(text(node, "name")).map_or("any".into(), |(kind, _)| kind),
+                    None => self.variable(node.text("name")).map_or("any".into(), |(kind, _)| kind),
                 };
                 (node.clone().with("index", index), kind)
             }
             // a slot of C's other types (composite.rs), of the type it says
-            "field" => (node.clone(), text(node, "type").to_string()),
-            "at" => {
+            kinds::FIELD => (node.clone(), node.text("type").to_string()),
+            kinds::AT => {
                 let (pointer, _) = self.expression(&node["pointer"])?;
                 let (index, _) = self.expression(&node["index"])?;
-                (node.clone().with("pointer", pointer).with("index", index), text(node, "type").to_string())
+                (node.clone().with("pointer", pointer).with("index", index), node.text("type").to_string())
             }
-            "deref" => {
-                let kind = self.variable(text(&node["operand"], "name")).map_or("any".into(), |(kind, _)| kind);
+            kinds::DEREF => {
+                let kind = self.variable(node["operand"].text("name")).map_or("any".into(), |(kind, _)| kind);
                 (node.clone(), kind)
             }
-            "addr" => {
+            kinds::ADDR => {
                 let (target, _) = self.expression(&node["target"])?;
                 (node.clone().with("target", target), "pointer".into())
             }
-            "assign" => {
+            kinds::ASSIGN => {
                 let (target, to) = self.expression(&node["target"])?;
                 let (value, from) = self.expression(&node["value"])?;
                 let value = converted(value, &from, &to, self.strict, self.used);
                 (node.clone().with("target", target).with("value", value), to)
             }
-            "compound" => self.compound(node)?,
-            "unary" => {
-                let not = text(node, "op") == "!";
+            kinds::COMPOUND => self.compound(node)?,
+            kinds::UNARY => {
+                let not = node.text("op") == "!";
                 let (operand, operand_kind) =
                     if not { self.condition(&node["operand"])? } else { self.expression(&node["operand"])? };
                 let result =
-                    if text(node, "op") == "!" { "int".to_string() } else { promoted(&operand_kind).to_string() };
+                    if node.text("op") == "!" { "int".to_string() } else { promoted(&operand_kind).to_string() };
                 (node.clone().with("operand", operand), result)
             }
-            "binary" => self.binary(node)?,
-            "logical" => {
+            kinds::BINARY => self.binary(node)?,
+            kinds::LOGICAL => {
                 let (left, _) = self.condition(&node["left"])?;
                 let (right, _) = self.typed(&node["right"], condition)?;
                 let lowered = node.clone().with("left", left).with("right", right);
                 // the VM's && and || leave the deciding value; C's give 0 or 1
                 (if self.strict && !condition { truth(lowered) } else { lowered }, "int".into())
             }
-            "ternary" => {
+            kinds::TERNARY => {
                 let (cond, _) = self.condition(&node["cond"])?;
                 let (then, then_kind) = self.expression(&node["then"])?;
                 let (otherwise, otherwise_kind) = self.expression(&node["else"])?;
@@ -501,21 +496,21 @@ impl Types<'_> {
                 };
                 (node.clone().with("cond", cond).with("then", then).with("else", otherwise), kind)
             }
-            "cast" => self.cast(node)?,
-            "comma" => {
+            kinds::CAST => self.cast(node)?,
+            kinds::COMMA => {
                 let (left, _) = self.expression(&node["left"])?;
                 let (right, kind) = self.expression(&node["right"])?;
                 (node.clone().with("left", left).with("right", right), kind)
             }
-            "call" => {
-                let name = text(node, "name");
+            kinds::CALL => {
+                let name = node.text("name");
                 let mut args = Vec::new();
                 let params = match self.functions.get(name) {
                     Some((_, params)) => params.clone(),
                     None if self.strict => native_params(self.found, name),
                     None => Vec::new(),
                 };
-                for (at, arg) in list(node, "args").iter().enumerate() {
+                for (at, arg) in node.list("args").iter().enumerate() {
                     let (arg, from) = self.expression(arg)?;
                     args.push(match params.get(at) {
                         Some(to) => converted(arg, &from, to, self.strict, self.used),
@@ -525,12 +520,12 @@ impl Types<'_> {
                 let returns = match self.functions.get(name) {
                     Some((returns, _)) => returns.clone(),
                     None => {
-                        self.found.natives.get(name).map_or("any".into(), |native| text(native, "returns").to_string())
+                        self.found.natives.get(name).map_or("any".into(), |native| native.text("returns").to_string())
                     }
                 };
                 (node.clone().with("args", args), returns)
             }
-            "builtin" => {
+            kinds::BUILTIN => {
                 let (operand, _) = self.expression(&node["operand"])?;
                 (node.clone().with("operand", operand), "float".into())
             }
@@ -540,7 +535,7 @@ impl Types<'_> {
 
     fn cast(&mut self, node: &Node) -> Result<(Node, String)> {
         let (operand, from) = self.expression(&node["operand"])?;
-        let to = text(node, "type").to_string();
+        let to = node.text("type").to_string();
         if is_narrow(&to) {
             return Ok((narrowed(operand, &from, &to), to));
         }
@@ -555,7 +550,7 @@ impl Types<'_> {
     }
 
     fn binary(&mut self, node: &Node) -> Result<(Node, String)> {
-        let op = text(node, "op");
+        let op = node.text("op");
         let (left, left_kind) = self.expression(&node["left"])?;
         let (right, right_kind) = self.expression(&node["right"])?;
         let shift = op == "<<" || op == ">>";
@@ -615,7 +610,7 @@ impl Types<'_> {
     fn compound(&mut self, node: &Node) -> Result<(Node, String)> {
         let (target, to) = self.expression(&node["target"])?;
         let (value, from) = self.expression(&node["value"])?;
-        let op = text(node, "op");
+        let op = node.text("op");
         let kind = if op == "<<" || op == ">>" { promoted(&to).to_string() } else { common(&to, &from) };
         if kind == "unsigned int" && matches!(op, "/" | "%" | ">>") {
             // an unsigned quotient, remainder or shift is a call: target = op(target, value)
@@ -651,31 +646,31 @@ impl Types<'_> {
     fn statement(&mut self, node: &Node) -> Result<Node> {
         let mut out = node.clone();
         match node.kind() {
-            "expr" => {
+            kinds::EXPR => {
                 let (expression, _) = self.expression(&node["expr"])?;
                 out = out.with("expr", expression);
             }
-            "return" if !node["value"].is_null() => {
+            kinds::RETURN if !node["value"].is_null() => {
                 let (value, from) = self.expression(&node["value"])?;
                 let to = self.returns.clone();
                 out = out.with("value", converted(value, &from, &to, self.strict, self.used));
             }
-            "if" => {
+            kinds::IF => {
                 let (cond, _) = self.condition(&node["cond"])?;
-                out = out.with("cond", cond).with("then", self.statements(list(node, "then"))?);
+                out = out.with("cond", cond).with("then", self.statements(node.list("then"))?);
                 if let Some(otherwise) = node["else"].as_array() {
                     out = out.with("else", self.statements(otherwise)?);
                 }
             }
-            "while" => {
+            kinds::WHILE => {
                 let (cond, _) = self.condition(&node["cond"])?;
-                out = out.with("cond", cond).with("body", self.statements(list(node, "body"))?);
+                out = out.with("cond", cond).with("body", self.statements(node.list("body"))?);
             }
-            "switch" => {
+            kinds::SWITCH => {
                 let (value, _) = self.expression(&node["value"])?;
                 let mut cases = Vec::new();
-                for case in list(node, "cases") {
-                    let mut case = case.clone().with("body", self.statements(list(case, "body"))?);
+                for case in node.list("cases") {
+                    let mut case = case.clone().with("body", self.statements(case.list("body"))?);
                     if !case["value"].is_null() {
                         let (value, _) = self.expression(&case["value"])?;
                         case = case.with("value", value);
@@ -684,9 +679,9 @@ impl Types<'_> {
                 }
                 out = out.with("value", value).with("cases", cases);
             }
-            "print" | "native" => {
+            kinds::PRINT | kinds::NATIVE => {
                 let mut args = Vec::new();
-                for arg in list(node, "args") {
+                for arg in node.list("args") {
                     args.push(self.expression(arg)?.0);
                 }
                 out = out.with("args", args);
@@ -707,7 +702,8 @@ fn native_params(found: &Context, name: &str) -> Vec<String> {
     let Some(declared) = found.natives.get(name) else {
         return Vec::new();
     };
-    list(declared, "params")
+    declared
+        .list("params")
         .iter()
         .filter(|param| param["result"] != Node::Bool(true))
         .map(
@@ -715,7 +711,7 @@ fn native_params(found: &Context, name: &str) -> Vec<String> {
                 if param["out"] == Node::Bool(true) {
                     "pointer".to_string()
                 } else {
-                    text(param, "type").to_string()
+                    param.text("type").to_string()
                 }
             },
         )
@@ -726,7 +722,9 @@ fn native_params(found: &Context, name: &str) -> Vec<String> {
 fn contains_effects(node: &Node) -> bool {
     match node {
         Node::List(items) => items.iter().any(contains_effects),
-        Node::Map(map) => matches!(node.kind(), "assign" | "compound" | "call") || map.values().any(contains_effects),
+        Node::Map(map) => {
+            matches!(node.kind(), kinds::ASSIGN | kinds::COMPOUND | kinds::CALL) || map.values().any(contains_effects)
+        }
         _ => false,
     }
 }
@@ -760,56 +758,53 @@ pub fn integer_types(program: &Node, kinds: &Map, found: &Context) -> Result<Nod
     let used_anywhere = unsigned_constants
         || uses_integer_types(&program["functions"], kinds)
         || uses_integer_types(&program["globals"], kinds);
-    let strict_anywhere = list(program, "functions").iter().any(is_strict);
+    let strict_anywhere = program.list("functions").iter().any(is_strict);
     if program.get("asm").is_some() || !(used_anywhere || strict_anywhere) {
         return Ok(program.clone());
     }
-    let globals: HashMap<String, String> = list(program, "globals")
+    let globals: HashMap<String, String> = program
+        .list("globals")
         .iter()
-        .map(|global| (text(global, "name").to_string(), base(text(global, "type"), kinds)))
+        .map(|global| (global.text("name").to_string(), base(global.text("type"), kinds)))
         .collect();
-    let functions: HashMap<String, (String, Vec<String>)> = list(program, "functions")
+    let functions: HashMap<String, (String, Vec<String>)> = program
+        .list("functions")
         .iter()
-        .filter(|function| function.kind() == "function")
+        .filter(|function| function.kind() == kinds::FUNCTION)
         .map(|function| {
-            let params = list(function, "params")
+            let params = function
+                .list("params")
                 .iter()
-                .map(|param| {
-                    if param["array"] == Node::Bool(true) {
-                        "pointer".into()
-                    } else {
-                        base(text(param, "type"), kinds)
-                    }
-                })
+                .map(|param| if param.flag("array") { "pointer".into() } else { base(param.text("type"), kinds) })
                 .collect();
-            (text(function, "name").to_string(), (base(text(function, "returns"), kinds), params))
+            (function.text("name").to_string(), (base(function.text("returns"), kinds), params))
         })
         .collect();
     let mut used = Vec::new();
     let mut lowered = Vec::new();
-    for function in list(program, "functions") {
-        if function.kind() != "function" || !(used_anywhere || is_strict(function)) {
+    for function in program.list("functions") {
+        if function.kind() != kinds::FUNCTION || !(used_anywhere || is_strict(function)) {
             lowered.push(function.clone());
             continue;
         }
         let mut variables = HashMap::new();
         let mut shadowed: HashSet<String> = globals.keys().cloned().collect();
-        for param in list(function, "params") {
-            shadowed.insert(text(param, "name").to_string());
-            let array = param["array"] == Node::Bool(true);
-            variables.insert(text(param, "name").to_string(), (base(text(param, "type"), kinds), array));
+        for param in function.list("params") {
+            shadowed.insert(param.text("name").to_string());
+            let array = param.flag("array");
+            variables.insert(param.text("name").to_string(), (base(param.text("type"), kinds), array));
         }
-        for local in list(function, "locals") {
-            shadowed.insert(text(local, "name").to_string());
-            let array = !local["size"].is_null() || local.get("pointer").is_some();
-            variables.insert(text(local, "name").to_string(), (base(text(local, "type"), kinds), array));
+        for local in function.list("locals") {
+            shadowed.insert(local.text("name").to_string());
+            let array = !local["size"].is_null() || local.flag("pointer");
+            variables.insert(local.text("name").to_string(), (base(local.text("type"), kinds), array));
         }
         let mut types = Types {
             variables,
             globals: globals.clone(),
             functions: &functions,
             found,
-            returns: base(text(function, "returns"), kinds),
+            returns: base(function.text("returns"), kinds),
             used: &mut used,
             strict: is_strict(function),
         };
@@ -824,8 +819,8 @@ pub fn integer_types(program: &Node, kinds: &Map, found: &Context) -> Result<Nod
             used.push(UDIV);
         }
         let runtime = crate::parse::parse(RUNTIME)?;
-        for function in list(&runtime, "functions") {
-            let name = text(function, "name").replacen("c89_", "__", 1);
+        for function in runtime.list("functions") {
+            let name = function.text("name").replacen("c89_", "__", 1);
             if used.contains(&name.as_str()) {
                 let mut function = function.clone().with("name", name).with("body", rename_calls(&function["body"]));
                 if let Some(map) = function.as_object_mut() {
@@ -845,8 +840,8 @@ fn rename_calls(node: &Node) -> Node {
         Node::Map(map) => {
             let mut out = Map::with_capacity(map.len());
             for (key, value) in map.entries() {
-                let value = if key == "name" && node.kind() == "call" {
-                    Node::from(text(node, "name").replacen("c89_", "__", 1))
+                let value = if key == "name" && node.kind() == kinds::CALL {
+                    Node::from(node.text("name").replacen("c89_", "__", 1))
                 } else {
                     rename_calls(value)
                 };

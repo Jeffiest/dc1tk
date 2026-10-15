@@ -76,14 +76,6 @@ fn target_line() -> &'static Regex {
     regex(&CELL, r"(?m)^[ \t]*#[ \t]*pragma[ \t]+target\b(.*)$")
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 fn truthy(node: &Node) -> bool {
     crate::source::truthy(node)
 }
@@ -397,21 +389,22 @@ pub fn prepared(
     let texts = library::read_includes(&parsed, &patch.path, overlay, sdk_dir, &[tree.to_path_buf()])?;
     // the script's own libraries never declare globals; a mod's can
     let mut own_globals: Vec<Node> =
-        list(&parsed, "globals").iter().map(|declared| declared.clone().with("source", Node::Null)).collect();
+        parsed.list("globals").iter().map(|declared| declared.clone().with("source", Node::Null)).collect();
     for (path, text) in &texts {
         if let Ok(library_program) = parse::parse_source_with(text, path, &defines, headers, &libraries) {
             own_globals
-                .extend(list(&library_program, "globals").iter().map(|declared| declared.clone().with("source", path)));
+                .extend(library_program.list("globals").iter().map(|declared| declared.clone().with("source", path)));
         }
     }
     let mut expanded = library::expand(parsed, &texts, headers)?;
     if let Some(follow) = patch.follow.get(script).filter(|follow| !follow.is_empty()) {
         // overrides of functions the tree renamed: the override and every call to the old name
         // take the new one
-        let functions: Vec<Node> = list(&expanded, "functions")
+        let functions: Vec<Node> = expanded
+            .list("functions")
             .iter()
             .map(|function| {
-                let name = text(function, "name");
+                let name = function.text("name");
                 let mut out = renamed(function, follow, &IndexMap::new(), &own_names(function));
                 if truthy(&function["override"]) {
                     if let Some(to) = follow.get(name) {
@@ -426,13 +419,14 @@ pub fn prepared(
             .collect();
         expanded = expanded.with("functions", functions);
     }
-    let mut consts: IndexMap<String, Node> = list(&expanded["declarations"], "constants")
+    let mut consts: IndexMap<String, Node> = expanded["declarations"]
+        .list("constants")
         .iter()
-        .map(|declared| (text(declared, "name").to_string(), declared["value"].clone()))
+        .map(|declared| (declared.text("name").to_string(), declared["value"].clone()))
         .collect();
-    for declared in list(&expanded["declarations"], "programs") {
+    for declared in expanded["declarations"].list("programs") {
         consts
-            .entry(text(declared, "name").to_string())
+            .entry(declared.text("name").to_string())
             .or_insert_with(|| int_node(declared["no"].as_i64().unwrap_or(0)));
     }
     for (name, value) in LANGUAGES {
@@ -472,7 +466,7 @@ fn renamed(
             let mut out = Node::Map(
                 map.entries().map(|(key, value)| (key.clone(), renamed(value, calls, variables, shadowed))).collect(),
             );
-            let name = text(node, "name");
+            let name = node.text("name");
             if node.kind() == "call" {
                 if let Some(to) = calls.get(name) {
                     out["name"] = to.as_str().into();
@@ -493,10 +487,11 @@ fn renamed(
 }
 
 fn own_names(function: &Node) -> HashSet<String> {
-    list(function, "params")
+    function
+        .list("params")
         .iter()
-        .chain(list(function, "locals"))
-        .map(|declared| text(declared, "name").to_string())
+        .chain(function.list("locals"))
+        .map(|declared| declared.text("name").to_string())
         .collect()
 }
 
@@ -520,17 +515,18 @@ fn joined(
     } else if names::callees(&body).iter().any(|name| name == ORIGINAL) {
         return Err(Error::invalid(format!(
             "{} calls original(), which only a #pragma override function can",
-            text(function, "name")
+            function.text("name")
         )));
     }
-    let locals: Vec<Node> = list(function, "locals")
+    let locals: Vec<Node> = function
+        .list("locals")
         .iter()
         .map(|declared| match declared["size"].as_str().and_then(|size| consts.get(size)) {
             Some(value) if value.kind() == "int" => declared.clone().with("size", value["value"].clone()),
             _ => declared.clone(),
         })
         .collect();
-    let name = calls.get(text(function, "name")).cloned().unwrap_or_else(|| text(function, "name").to_string());
+    let name = calls.get(function.text("name")).cloned().unwrap_or_else(|| function.text("name").to_string());
     let mut out = function
         .clone()
         .with("name", name)
@@ -562,7 +558,7 @@ fn parameter_count(function: &Node) -> usize {
     if function.kind() == "asm" {
         function["arg"].as_i64().unwrap_or(0) as usize
     } else {
-        list(function, "params").len()
+        function.list("params").len()
     }
 }
 
@@ -601,20 +597,20 @@ pub fn merged(
             py_str(&program["natives"])
         )));
     }
-    let mut functions: Vec<Node> = list(program, "functions").to_vec();
+    let mut functions: Vec<Node> = program.list("functions").to_vec();
     let script_libraries: HashSet<&str> =
         functions.iter().filter_map(|function| function["library"].as_str()).collect();
-    let function_names: HashSet<String> = functions.iter().map(|function| text(function, "name").to_string()).collect();
+    let function_names: HashSet<String> = functions.iter().map(|function| function.text("name").to_string()).collect();
     let global_names: HashSet<String> =
-        list(program, "globals").iter().map(|declared| text(declared, "name").to_string()).collect();
+        program.list("globals").iter().map(|declared| declared.text("name").to_string()).collect();
     let mut taken: HashSet<String> = function_names.union(&global_names).cloned().collect();
     let mut calls: IndexMap<String, String> = IndexMap::new();
     let mut variables: IndexMap<String, String> = IndexMap::new();
     let mut mine: Vec<&Node> = Vec::new();
     let mut libraries: IndexMap<String, Brought> = IndexMap::new();
-    for function in list(patch, "functions") {
+    for function in patch.list("functions") {
         if function.kind() != "function" {
-            return Err(Error::invalid(format!("a patch cannot hold asm functions ({})", text(function, "name"))));
+            return Err(Error::invalid(format!("a patch cannot hold asm functions ({})", function.text("name"))));
         }
         let source = function["library"].as_str();
         if source.is_some_and(|source| script_libraries.contains(source)) {
@@ -632,7 +628,7 @@ pub fn merged(
     }
     let is_override = |function: &Node| truthy(&function["override"]);
     for function in &mine {
-        let name = text(function, "name");
+        let name = function.text("name");
         if is_override(function) || !taken.contains(name) {
             continue;
         }
@@ -646,22 +642,23 @@ pub fn merged(
     }
     for function in &mine {
         if !is_override(function) {
-            let name = text(function, "name");
+            let name = function.text("name");
             taken.insert(calls.get(name).cloned().unwrap_or_else(|| name.to_string()));
         }
     }
     // an override of a native the script has no function of wraps it, under a name of its own; a
     // wrapper named otherwise than the native can be called by its name too
-    let natives: HashMap<&str, &Node> = list(&program["declarations"], "natives")
+    let natives: HashMap<&str, &Node> = program["declarations"]
+        .list("natives")
         .iter()
-        .chain(list(&patch["declarations"], "natives"))
-        .map(|declared| (text(declared, "name"), declared))
+        .chain(patch["declarations"].list("natives"))
+        .map(|declared| (declared.text("name"), declared))
         .collect();
     let overridden_name =
-        |function: &Node| function["override_of"].as_str().unwrap_or(text(function, "name")).to_string();
+        |function: &Node| function["override_of"].as_str().unwrap_or(function.text("name")).to_string();
     let mut wrapper_names: HashMap<String, String> = HashMap::new();
     for function in mine.iter().filter(|function| is_override(function)) {
-        let (name, target) = (text(function, "name"), overridden_name(function));
+        let (name, target) = (function.text("name"), overridden_name(function));
         if function_names.contains(&target) || !natives.contains_key(target.as_str()) {
             continue;
         }
@@ -672,8 +669,8 @@ pub fn merged(
         wrapper_names.insert(name.to_string(), fresh);
     }
     let mut added_globals = Vec::new();
-    for declared in list(patch, "globals") {
-        let name = text(declared, "name").to_string();
+    for declared in patch.list("globals") {
+        let name = declared.text("name").to_string();
         let source = declared["source"].as_str();
         if let Some(brought) = source.and_then(|source| done.libraries.get(source)) {
             variables.extend(brought.variables.iter().map(|(from, to)| (from.clone(), to.clone())));
@@ -718,21 +715,21 @@ pub fn merged(
         })
         .collect();
     let mut all_globals = global_names.clone();
-    all_globals.extend(list(patch, "globals").iter().map(|declared| text(declared, "name").to_string()));
+    all_globals.extend(patch.list("globals").iter().map(|declared| declared.text("name").to_string()));
     for function in &mine {
         if let Some(source) = function["library"].as_str().filter(|_| !is_override(function)) {
-            let name = text(function, "name");
+            let name = function.text("name");
             let given = calls.get(name).cloned().unwrap_or_else(|| name.to_string());
             libraries.get_mut(source).unwrap().calls.insert(name.to_string(), given);
         }
     }
     let mut position: HashMap<String, usize> =
-        functions.iter().enumerate().map(|(number, function)| (text(function, "name").to_string(), number)).collect();
+        functions.iter().enumerate().map(|(number, function)| (function.text("name").to_string(), number)).collect();
     let mut appended = Vec::new();
     for function in &mine {
-        let name = text(function, "name");
+        let name = function.text("name");
         if truthy(&function["every_frame"]) {
-            if !list(function, "params").is_empty() || is_override(function) {
+            if !function.list("params").is_empty() || is_override(function) {
                 return Err(Error::invalid(format!(
                     "#pragma every_frame {name}: an every-frame function takes no parameters and overrides nothing"
                 )));
@@ -784,11 +781,11 @@ pub fn merged(
             return Err(Error::invalid(format!("#pragma override {name}: the script has no function {name}{hint}")));
         };
         let old = &functions[at];
-        if parameter_count(old) != list(function, "params").len() {
+        if parameter_count(old) != function.list("params").len() {
             return Err(Error::invalid(format!(
                 "override {} takes {} parameters; the script's {} takes {}",
                 name,
-                list(function, "params").len(),
+                function.list("params").len(),
                 name,
                 parameter_count(old)
             )));
@@ -816,15 +813,15 @@ pub fn merged(
         done.overrides.insert(name.to_string(), owners);
     }
     let mut numbering: HashMap<String, i64> = HashMap::new();
-    for declared in list(&program["declarations"], "programs").iter().chain(list(&patch["declarations"], "programs")) {
-        numbering.insert(text(declared, "name").to_string(), declared["no"].as_i64().unwrap_or(0));
+    for declared in program["declarations"].list("programs").iter().chain(patch["declarations"].list("programs")) {
+        numbering.insert(declared.text("name").to_string(), declared["no"].as_i64().unwrap_or(0));
     }
     let mut present: HashMap<Option<i64>, String> = HashMap::new();
-    for entry in list(program, "programs") {
+    for entry in program.list("programs") {
         present.insert(program_number(&entry["no"], &numbering, &IndexMap::new()), py_str(&entry["function"]));
     }
-    let mut programs: Vec<Node> = list(program, "programs").to_vec();
-    for entry in list(patch, "programs") {
+    let mut programs: Vec<Node> = program.list("programs").to_vec();
+    for entry in patch.list("programs") {
         let (written, function) = (py_str(&entry["no"]), py_str(&entry["function"]));
         let Some(number) = program_number(&entry["no"], &numbering, consts) else {
             return Err(Error::invalid(format!(
@@ -840,7 +837,7 @@ pub fn merged(
         let given = calls.get(&function).cloned().unwrap_or(function);
         programs.push(node!({"no": number, "function": given}));
     }
-    let mut globals: Vec<Node> = list(program, "globals").to_vec();
+    let mut globals: Vec<Node> = program.list("globals").to_vec();
     // a global array or struct takes several slots
     let slots =
         |globals: &[Node]| -> i64 { globals.iter().map(|declared| declared["size"].as_i64().unwrap_or(1)).sum() };
@@ -849,7 +846,7 @@ pub fn merged(
         // slots the script counts but never names: keep them clear of the patch's
         globals.push(node!({"name": format!("unnamed_global_{}", globals.len()), "type": "int"}));
     }
-    done.added.extend(added_globals.iter().map(|declared| text(declared, "name").to_string()));
+    done.added.extend(added_globals.iter().map(|declared| declared.text("name").to_string()));
     // a patch that adds no global leaves the count as the script has it, which in some scripts
     // is no count at all (0xCCCCCCCC, the compiler's fill)
     let count = if added_globals.is_empty() { program["global_num"].clone() } else { Node::Null };
@@ -898,9 +895,9 @@ fn merged_declarations(script: &Node, patch: &Node) -> Node {
         out = Node::Map(Map::new());
     }
     for key in ["natives", "inlines", "programs"] {
-        let have: HashSet<&str> = list(script, key).iter().map(|declared| text(declared, "name")).collect();
-        let mut joined: Vec<Node> = list(script, key).to_vec();
-        joined.extend(list(patch, key).iter().filter(|declared| !have.contains(text(declared, "name"))).cloned());
+        let have: HashSet<&str> = script.list(key).iter().map(|declared| declared.text("name")).collect();
+        let mut joined: Vec<Node> = script.list(key).to_vec();
+        joined.extend(patch.list(key).iter().filter(|declared| !have.contains(declared.text("name"))).cloned());
         out[key] = Node::List(joined);
     }
     let mut kinds = patch["kinds"].as_object().cloned().unwrap_or_default();
@@ -940,7 +937,7 @@ pub fn applied(
 /// The arguments a native takes: how many a call must give, how many it names, and whether it
 /// takes more (...).
 fn native_shape(native: &Node) -> (usize, usize, bool) {
-    let params: Vec<&Node> = list(native, "params").iter().filter(|param| !truthy(&param["result"])).collect();
+    let params: Vec<&Node> = native.list("params").iter().filter(|param| !truthy(&param["result"])).collect();
     (params.iter().filter(|param| !truthy(&param["optional"])).count(), params.len(), truthy(&native["variadic"]))
 }
 
@@ -948,8 +945,8 @@ fn native_shape(native: &Node) -> (usize, usize, bool) {
 /// must give or more than the native names, or returning a value when the native has none (or the
 /// other way round).
 fn wraps(native: &Node, function: &Node, target: &str) -> Result<()> {
-    let name = text(function, "name");
-    let count = list(function, "params").len();
+    let name = function.text("name");
+    let count = function.list("params").len();
     let (required, total, variadic) = native_shape(native);
     if count < required || (count > total && !variadic) {
         let range = match (variadic, required == total) {
@@ -961,7 +958,7 @@ fn wraps(native: &Node, function: &Node, target: &str) -> Result<()> {
             "{name} wraps native {target}, which takes {range} arguments, but {name} takes {count} parameters"
         )));
     }
-    let returns = text(function, "returns") != "void";
+    let returns = function.text("returns") != "void";
     if returns != sdk::has_result(native) {
         return Err(Error::invalid(if returns {
             format!("native {target} returns nothing, so its wrapper {name} is void")
@@ -984,16 +981,17 @@ fn with_wrappers(program: Node, wrappers: &IndexMap<String, Vec<Node>>) -> Resul
     if wrappers.is_empty() {
         return Ok(program);
     }
-    let mut taken: HashSet<String> = list(&program, "functions")
+    let mut taken: HashSet<String> = program
+        .list("functions")
         .iter()
-        .chain(list(&program, "globals"))
+        .chain(program.list("globals"))
         .chain(wrappers.values().flatten())
-        .map(|declared| text(declared, "name").to_string())
+        .map(|declared| declared.text("name").to_string())
         .collect();
     taken.extend(wrappers.keys().cloned());
     let mut wrapping = Wrapping { wrappers, made: HashMap::new(), taken, placed: Vec::new() };
     let mut functions = Vec::new();
-    for function in list(&program, "functions") {
+    for function in program.list("functions") {
         if function.kind() == "function" {
             functions.push(function.clone().with("body", wrapping.routed(&function["body"], None)?));
         } else {
@@ -1007,7 +1005,7 @@ fn with_wrappers(program: Node, wrappers: &IndexMap<String, Vec<Node>>) -> Resul
             chain
                 .iter()
                 .enumerate()
-                .map(move |(at, wrapper)| (text(wrapper, "name"), (native.as_str(), at, list(wrapper, "params").len())))
+                .map(move |(at, wrapper)| (wrapper.text("name"), (native.as_str(), at, wrapper.list("params").len())))
         })
         .collect();
     let mut seen = 0;
@@ -1047,12 +1045,12 @@ impl Wrapping<'_> {
         }
         let wrappers = self.wrappers;
         let wrapper = &wrappers[native][at];
-        let (whole, params) = (text(wrapper, "name"), list(wrapper, "params"));
+        let (whole, params) = (wrapper.text("name"), wrapper.list("params"));
         if count > params.len() {
             return Err(Error::invalid(format!(
                 "the script calls {native} with {count} arguments, but mod {}'s wrapper of it takes {}; give it the \
                  native's parameters",
-                text(wrapper, "mod"),
+                wrapper.text("mod"),
                 params.len()
             )));
         }
@@ -1065,14 +1063,14 @@ impl Wrapping<'_> {
         let mut locals: Vec<Node> = Vec::new();
         let mut body: Vec<Node> = Vec::new();
         for param in &params[count..] {
-            let param_name = text(param, "name");
-            if truthy(&param["array"]) {
+            let param_name = param.text("name");
+            if param.flag("array") {
                 return Err(Error::invalid(format!(
                     "a call to {native} leaves out {param_name}, which mod {}'s wrapper takes as a pointer",
-                    text(wrapper, "mod")
+                    wrapper.text("mod")
                 )));
             }
-            let zero = match text(param, "type") {
+            let zero = match param.text("type") {
                 "float" => node!({"kind": "float", "bits": 0}),
                 "string" => node!({"kind": "string", "text": ""}),
                 _ => int_node(0),
@@ -1082,7 +1080,7 @@ impl Wrapping<'_> {
         }
         let passed = self.passed_on(&wrapper["body"], native, at, count)?;
         body.extend(self.routed(&passed, Some(native))?.as_array().cloned().unwrap_or_default());
-        locals.extend(list(wrapper, "locals").iter().cloned());
+        locals.extend(wrapper.list("locals").iter().cloned());
         self.placed.push(
             wrapper
                 .clone()
@@ -1107,8 +1105,8 @@ impl Wrapping<'_> {
                     out.insert(key.clone(), self.passed_on(value, native, at, count)?);
                 }
                 let mut out = Node::Map(out);
-                if node.kind() == "call" && text(node, "name") == ORIGINAL {
-                    let mut args = list(&out, "args").to_vec();
+                if node.kind() == "call" && node.text("name") == ORIGINAL {
+                    let mut args = out.list("args").to_vec();
                     args.truncate(count);
                     let to = if at == 0 { native.to_string() } else { self.copy(native, at - 1, args.len())? };
                     out = out.with("name", to).with("args", args);
@@ -1128,8 +1126,8 @@ impl Wrapping<'_> {
             Node::List(items) => Node::List(items.iter().map(|item| self.routed(item, own)).collect::<Result<_>>()?),
             Node::Map(map) => {
                 let direct = match node["expr"].kind() {
-                    "call" => text(&node["expr"], "name"),
-                    "assign" if node["expr"]["value"].kind() == "call" => text(&node["expr"]["value"], "name"),
+                    "call" => node["expr"].text("name"),
+                    "assign" if node["expr"]["value"].kind() == "call" => node["expr"]["value"].text("name"),
                     _ => "",
                 };
                 let drop_form = node.kind() == "expr" && wrapped(direct);
@@ -1140,10 +1138,10 @@ impl Wrapping<'_> {
                     }
                 }
                 let mut out = Node::Map(out);
-                let name = text(node, "name");
+                let name = node.text("name");
                 if node.kind() == "call" && wrapped(name) {
                     let last = wrappers[name].len() - 1;
-                    let to = self.copy(name, last, list(node, "args").len())?;
+                    let to = self.copy(name, last, node.list("args").len())?;
                     out = out.with("name", to);
                 }
                 out
@@ -1161,7 +1159,7 @@ fn with_frame_calls(program: Node, hooks: &[String]) -> Result<Node> {
         return Ok(program);
     }
     let by_name: HashMap<&str, &Node> =
-        list(&program, "functions").iter().map(|function| (text(function, "name"), function)).collect();
+        program.list("functions").iter().map(|function| (function.text("name"), function)).collect();
     let mut exempt: HashSet<String> = HashSet::new();
     let mut pending: Vec<String> = hooks.to_vec();
     while let Some(name) = pending.pop() {
@@ -1184,10 +1182,11 @@ fn with_frame_calls(program: Node, hooks: &[String]) -> Result<Node> {
         .iter()
         .map(|hook| node!({"kind": "expr", "expr": {"kind": "call", "name": hook.as_str(), "args": []}}))
         .collect();
-    let functions: Vec<Node> = list(&program, "functions")
+    let functions: Vec<Node> = program
+        .list("functions")
         .iter()
         .map(|function| {
-            if function.kind() == "function" && !exempt.contains(text(function, "name")) {
+            if function.kind() == "function" && !exempt.contains(function.text("name")) {
                 function.clone().with("body", before_waits(&function["body"], &calls))
             } else {
                 function.clone()

@@ -73,10 +73,6 @@ fn text_of<'a>(node: &'a Node, key: &str) -> Result<&'a str> {
     node[key].as_str().ok_or_else(|| Error::invalid(format!("{key} is not text in {}", node.kind())))
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
 /// The flags that let clang read a decompiled tree: the SDK and each definition set's include
 /// folder, the tree's own include folder (disc.h) and its root (for "lib/..." includes). Functions
 /// fall off their end into the compiler's implicit return 0, so that warning is off. Some retail
@@ -164,7 +160,7 @@ pub fn expression(node: &Node) -> Result<(String, i32)> {
             (format!("({}){}", py_str(&node["type"]), wrap(operand, found, UNARY)), UNARY)
         }
         "builtin" => (format!("{}({})", py_str(&node["name"]), expression(&node["operand"])?.0), PRIMARY),
-        "call" => (format!("{}({})", py_str(&node["name"]), arguments(list(node, "args"))?), PRIMARY),
+        "call" => (format!("{}({})", py_str(&node["name"]), arguments(node.list("args"))?), PRIMARY),
         _ => return Err(Error::invalid(format!("unknown expression {kind}"))),
     })
 }
@@ -209,12 +205,12 @@ fn bare_statement(node: &Node, depth: usize) -> Result<Vec<String>> {
             }
         }
         "native" => vec![format!("{pad}{}", native_text(node)?)],
-        "print" => vec![format!("{pad}print({});", arguments(list(node, "args"))?)],
+        "print" => vec![format!("{pad}print({});", arguments(node.list("args"))?)],
         "wait" | "end" | "skip_end" | "break" | "continue" => vec![format!("{pad}{kind};")],
         "if" => conditional(node, depth, &format!("{pad}if"))?,
         "while" => {
             let mut lines = vec![format!("{pad}while ({}) {{", expression(&node["cond"])?.0)];
-            lines.extend(block(list(node, "body"), depth + 1)?);
+            lines.extend(block(node.list("body"), depth + 1)?);
             lines.push(format!("{pad}}}"));
             lines
         }
@@ -229,7 +225,7 @@ pub fn native_text(node: &Node) -> Result<String> {
         _ if base == "direct" => "DIRECT ".to_string(),
         _ => format!("AT({}) ", int(base)?),
     };
-    let mut call = format!("{}({});", py_str(&node["name"]), arguments(list(node, "args"))?);
+    let mut call = format!("{}({});", py_str(&node["name"]), arguments(node.list("args"))?);
     if let Some(result) = node.get("result").filter(|result| !result.is_null()) {
         call = format!("{} = {}", expression(result)?.0, call);
     }
@@ -239,7 +235,7 @@ pub fn native_text(node: &Node) -> Result<String> {
 fn conditional(node: &Node, depth: usize, opening: &str) -> Result<Vec<String>> {
     let pad = INDENT.repeat(depth);
     let mut lines = vec![format!("{} ({}) {{", opening, expression(&node["cond"])?.0)];
-    lines.extend(block(list(node, "then"), depth + 1)?);
+    lines.extend(block(node.list("then"), depth + 1)?);
     let otherwise = &node["else"];
     let Some(otherwise) = otherwise.as_array() else {
         lines.push(format!("{pad}}}"));
@@ -264,10 +260,10 @@ pub fn block(statements: &[Node], depth: usize) -> Result<Vec<String>> {
 }
 
 fn parameter(param: &Node) -> String {
-    if truthy(&param["array"]) && param["type"] == "void" {
+    if param.flag("array") && param["type"] == "void" {
         return format!("void *{}", py_str(&param["name"]));
     }
-    let array = if truthy(&param["array"]) { "[]" } else { "" };
+    let array = if param.flag("array") { "[]" } else { "" };
     format!("{} {}{}", first_or(param, "kind", "type"), py_str(&param["name"]), array)
 }
 
@@ -294,7 +290,7 @@ pub fn doc_lines(text: &str) -> Vec<String> {
 
 pub fn function_text(function: &Node) -> Result<Vec<String>> {
     let mut lines = Vec::new();
-    let unused = list(function, "unused_strings");
+    let unused = function.list("unused_strings");
     if !unused.is_empty() {
         let quoted: Vec<String> = unused.iter().map(|text| asm::quote(&py_str(text))).collect();
         lines.push(format!("#pragma strings {}", quoted.join(" ")));
@@ -302,16 +298,16 @@ pub fn function_text(function: &Node) -> Result<Vec<String>> {
     if let Some(doc) = function.get("doc").filter(|doc| truthy(doc)) {
         lines.extend(doc_lines(&py_str(doc)));
     }
-    let params = parameter_list(list(function, "params").iter().map(parameter).collect());
+    let params = parameter_list(function.list("params").iter().map(parameter).collect());
     let returns = function.get("returns").map_or_else(|| "int".to_string(), py_str);
     lines.push(format!("{} {}({})", returns, py_str(&function["name"]), params));
     lines.push("{".into());
-    let locals = list(function, "locals");
+    let locals = function.list("locals");
     for declared in locals {
         let size = if declared["size"].is_null() { String::new() } else { format!("[{}]", int(&declared["size"])?) };
         lines.push(format!("{INDENT}{} {}{size};", first_or(declared, "kind", "type"), py_str(&declared["name"])));
     }
-    let body = list(function, "body");
+    let body = function.list("body");
     if !locals.is_empty() && !body.is_empty() {
         lines.push(String::new());
     }
@@ -325,7 +321,7 @@ fn asm_text(function: &Node) -> Vec<String> {
         format!("// {}", py_str(&function["reason"])),
         format!("asm {} arg {} {{", py_str(&function["name"]), py_str(&function["arg"])),
     ];
-    lines.extend(list(function, "lines").iter().map(py_str));
+    lines.extend(function.list("lines").iter().map(py_str));
     lines.push("}".into());
     lines
 }
@@ -344,7 +340,7 @@ pub fn text(program: &Node) -> Result<String> {
     if let Some(assembly) = program.get("asm") {
         return Ok(format!("#pragma assembly\n{}", py_str(assembly)));
     }
-    let functions = list(program, "functions");
+    let functions = program.list("functions");
     let mut leading = 0;
     while leading < functions.len() && functions[leading].kind() == "include" && truthy(&functions[leading]["system"]) {
         leading += 1;
@@ -369,7 +365,7 @@ pub fn text(program: &Node) -> Result<String> {
     if header_padding != "00".repeat(crate::stb::HEADER_SIZE - crate::stb::HEADER_FIELDS_SIZE) {
         lines.push(format!("#pragma header_padding {header_padding}"));
     }
-    let globals = list(program, "globals");
+    let globals = program.list("globals");
     if int(&program["global_num"])? != globals.len() as i64 {
         lines.push(format!("#pragma globals {}", int(&program["global_num"])?));
     }
@@ -384,7 +380,7 @@ pub fn text(program: &Node) -> Result<String> {
     if !globals.is_empty() {
         lines.push(String::new());
     }
-    for entry in list(program, "programs") {
+    for entry in program.list("programs") {
         let line = format!("PROGRAM({}, {});", py_str(&entry["no"]), py_str(&entry["function"]));
         match entry.get("note").filter(|note| truthy(note)) {
             Some(note) => lines.push(format!("{line}  // {}", py_str(note))),
@@ -466,15 +462,15 @@ pub fn typed_parameter(param: &Node) -> String {
 }
 
 pub fn inline_text(inline: &Node) -> Result<Vec<String>> {
-    let params = parameter_list(list(inline, "params").iter().map(typed_parameter).collect());
+    let params = parameter_list(inline.list("params").iter().map(typed_parameter).collect());
     let mut lines = vec![format!("static inline void {}({})", py_str(&inline["name"]), params), "{".to_string()];
-    lines.extend(block(list(inline, "body"), 1)?);
+    lines.extend(block(inline.list("body"), 1)?);
     lines.push("}".into());
     Ok(lines)
 }
 
 pub fn native_declaration(declared: &Node) -> Result<String> {
-    let params: Vec<&Node> = list(declared, "params").iter().filter(|param| !truthy(&param["result"])).collect();
+    let params: Vec<&Node> = declared.list("params").iter().filter(|param| !truthy(&param["result"])).collect();
     let mut texts: Vec<String> =
         params.iter().filter(|param| !truthy(&param["optional"])).map(|param| typed_parameter(param)).collect();
     let mut optional: Vec<String> =

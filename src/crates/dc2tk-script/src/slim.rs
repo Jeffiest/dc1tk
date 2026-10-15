@@ -51,14 +51,6 @@ struct Draft {
     early: bool,
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 /// node without what never reaches the bytes: line numbers, notes and doc comments.
 fn bare(node: &Node) -> Node {
     match node {
@@ -109,15 +101,16 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
     }
     let item_name = |item: &Node| -> String {
         if item.kind() == "include" {
-            format!("#include {}", text(item, "path"))
+            format!("#include {}", item.text("path"))
         } else {
-            text(item, "name").to_string()
+            item.text("name").to_string()
         }
     };
     // functions and the libraries that bring them, in order (headers bring none; the patch takes
     // the copy's)
     let items = |program: &Node| -> IndexMap<String, Node> {
-        list(program, "functions")
+        program
+            .list("functions")
             .iter()
             .filter(|item| !(item.kind() == "include" && crate::source::truthy(&item["system"])))
             .map(|item| (item_name(item), item.clone()))
@@ -142,7 +135,7 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
         match item.kind() {
             "include" => {
                 let system = crate::source::truthy(&item["system"]);
-                let path = text(item, "path");
+                let path = item.text("path");
                 includes.push(if system { format!("#include <{path}>") } else { format!("#include \"{path}\"") });
                 added.push(name.clone());
             }
@@ -161,7 +154,7 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
             _ => return refused(format!("it changes {name}, which is kept as assembly")),
         }
     }
-    let (tree_globals, my_globals) = (list(&tree, "globals"), list(&mine, "globals"));
+    let (tree_globals, my_globals) = (tree.list("globals"), mine.list("globals"));
     if my_globals.len() < tree_globals.len()
         || tree_globals.iter().zip(my_globals).any(|(theirs, ours)| bare(theirs) != bare(ours))
     {
@@ -169,7 +162,7 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
     }
     let mut globals: Vec<String> = Vec::new();
     for declared in &my_globals[tree_globals.len()..] {
-        let name = text(declared, "name");
+        let name = declared.text("name");
         let Some(line) = global_line(copy, name) else {
             return refused(format!("its global {name} is not declared on a line of its own"));
         };
@@ -178,8 +171,8 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
         }
         added.push(name.to_string());
     }
-    let tree_programs: Vec<Node> = list(&tree, "programs").iter().map(bare).collect();
-    let my_programs: Vec<Node> = list(&mine, "programs").iter().map(bare).collect();
+    let tree_programs: Vec<Node> = tree.list("programs").iter().map(bare).collect();
+    let my_programs: Vec<Node> = mine.list("programs").iter().map(bare).collect();
     if let Some(gone) = tree_programs.iter().find(|entry| !my_programs.contains(entry)) {
         return refused(format!(
             "it changes or removes PROGRAM({}, {}); override its function instead",
@@ -194,13 +187,13 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
         .collect();
     added.extend(new_programs.iter().map(|entry| format!("program {}", py_str(&entry["no"]))));
     // the file's own constants: #define lines are copied, enums are refused
-    let tree_constants: Vec<Node> = list(&tree["declarations"], "constants").iter().map(bare).collect();
+    let tree_constants: Vec<Node> = tree["declarations"].list("constants").iter().map(bare).collect();
     let mut defines = Vec::new();
-    for declared in list(&mine["declarations"], "constants") {
+    for declared in mine["declarations"].list("constants") {
         if tree_constants.contains(&bare(declared)) {
             continue;
         }
-        let name = text(declared, "name");
+        let name = declared.text("name");
         if !declared["enum"].is_null() {
             return refused(format!("it adds enum member {name}; put the enum in a header of the mod"));
         }

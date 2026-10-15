@@ -121,6 +121,77 @@ impl<K: Into<Key>> FromIterator<(K, Node)> for Map {
     }
 }
 
+/// The kinds of the program tree's nodes, as the parser and the decompiler write them. A pass that
+/// tells nodes apart by kind names them here, so a misspelt kind is a compile error rather than a
+/// kind no node has.
+pub mod kinds {
+    // the program and what it holds
+    pub const PROGRAM: &str = "program";
+    pub const FUNCTION: &str = "function";
+    /// A function kept as assembly.
+    pub const ASM: &str = "asm";
+    pub const INCLUDE: &str = "include";
+
+    // statements
+    pub const EXPR: &str = "expr";
+    pub const RETURN: &str = "return";
+    pub const NATIVE: &str = "native";
+    pub const PRINT: &str = "print";
+    pub const WAIT: &str = "wait";
+    pub const END: &str = "end";
+    pub const SKIP_END: &str = "skip_end";
+    pub const LABEL: &str = "label";
+    pub const GOTO: &str = "goto";
+    pub const IF: &str = "if";
+    pub const WHILE: &str = "while";
+    pub const SWITCH: &str = "switch";
+    pub const BREAK: &str = "break";
+    pub const CONTINUE: &str = "continue";
+
+    // expressions
+    pub const INT: &str = "int";
+    pub const FLOAT: &str = "float";
+    pub const STRING: &str = "string";
+    /// L"...": an array of wchar_t.
+    pub const WIDE: &str = "wide";
+    pub const VAR: &str = "var";
+    /// a[i] of an array or pointer variable of the VM's own types.
+    pub const INDEX: &str = "index";
+    pub const DEREF: &str = "deref";
+    pub const ADDR: &str = "addr";
+    pub const ASSIGN: &str = "assign";
+    /// target op= value.
+    pub const COMPOUND: &str = "compound";
+    pub const BINARY: &str = "binary";
+    /// && and ||.
+    pub const LOGICAL: &str = "logical";
+    pub const UNARY: &str = "unary";
+    pub const CAST: &str = "cast";
+    /// sin and cos, which the VM has instructions for.
+    pub const BUILTIN: &str = "builtin";
+    pub const CALL: &str = "call";
+    /// A call through a function pointer.
+    pub const CALL_PTR: &str = "call_ptr";
+    pub const COMMA: &str = "comma";
+    pub const TERNARY: &str = "ternary";
+    /// s.m and p->m.
+    pub const MEMBER: &str = "member";
+    /// e[i] of any expression of C's other types.
+    pub const SUBSCRIPT: &str = "subscript";
+    pub const VA_ARG: &str = "va_arg";
+    pub const VA_START: &str = "va_start";
+
+    // the forms lowering gives (composite.rs, lower.rs) and the compiler's own
+    /// A slot of a variable's storage at a constant offset.
+    pub const FIELD: &str = "field";
+    /// An element through a pointer an expression gives.
+    pub const AT: &str = "at";
+    /// A value wrapped to a narrow integer type's width.
+    pub const NARROW: &str = "narrow";
+    /// An element through the address a hidden local holds (compile.rs's compound assignments).
+    pub const VIA: &str = "via";
+}
+
 static NULL: Node = Node::Null;
 
 impl Node {
@@ -192,7 +263,23 @@ impl Node {
 
     /// The "kind" of a tree node, or "".
     pub fn kind(&self) -> &str {
-        self.get("kind").and_then(Node::as_str).unwrap_or("")
+        self.text("kind")
+    }
+
+    /// The list under a key; empty for a missing key or one that holds something else.
+    pub fn list(&self, key: &str) -> &[Node] {
+        self.get(key).and_then(Node::as_array).map_or(&[], Vec::as_slice)
+    }
+
+    /// The text under a key; "" for a missing key or one that holds something else.
+    pub fn text(&self, key: &str) -> &str {
+        self.get(key).and_then(Node::as_str).unwrap_or("")
+    }
+
+    /// Whether a flag the parser sets is on: the key holds true. The parser writes a flag only
+    /// when it is on ("pointer": true), so a missing key, false or any other value is off.
+    pub fn flag(&self, key: &str) -> bool {
+        matches!(self.get(key), Some(Node::Bool(true)))
     }
 
     /// Python's ==: objects equal whatever their key order, and numbers by value (1 == 1.0 ==

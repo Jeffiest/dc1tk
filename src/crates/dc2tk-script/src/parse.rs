@@ -992,7 +992,7 @@ struct Scope {
 
 impl Scope {
     fn new(function: &str, params: Vec<Node>) -> Scope {
-        let names = params.iter().map(|param| (field(param, "name").to_string(), field(param, "name").to_string()));
+        let names = params.iter().map(|param| (param.text("name").to_string(), param.text("name").to_string()));
         Scope {
             function: function.to_string(),
             blocks: vec![names.collect()],
@@ -1599,8 +1599,8 @@ fn is_target(node: &Node) -> bool {
 /// The variable an assignment target writes: x, a[i] or *p.
 fn target_name(target: &Node) -> &str {
     match target.kind() {
-        "deref" => field(&target["operand"], "name"),
-        _ => field(target, "name"),
+        "deref" => target["operand"].text("name"),
+        _ => target.text("name"),
     }
 }
 
@@ -1611,7 +1611,7 @@ fn writable(state: &State, target: &Node) -> Parsed<()> {
     let Some(entry) = state.variable(name) else {
         return Ok(());
     };
-    let pointer = entry.get("pointer").is_some() || entry.get("array").is_some_and(|array| *array == Node::Bool(true));
+    let pointer = entry.flag("pointer") || entry.flag("array");
     let constant = if target.kind() == "var" || !pointer {
         entry.get("const").is_some()
     } else {
@@ -2109,9 +2109,9 @@ fn entry_type(state: &State, entry: &Node) -> Ty {
     if let Some(ctype) = entry.get("ctype") {
         return Ty::from_node(ctype);
     }
-    let kind = field(entry, "type");
+    let kind = entry.text("type");
     let scalar = Ty::Scalar(state.kinds.get(kind).cloned().unwrap_or_else(|| kind.to_string()));
-    if entry.get("pointer").is_some() || entry["array"] == Node::Bool(true) {
+    if entry.flag("pointer") || entry.flag("array") {
         return ctype::pointer(scalar);
     }
     match elements(state, entry) {
@@ -2125,11 +2125,11 @@ fn entry_type(state: &State, entry: &Node) -> Ty {
 fn static_type(state: &State, node: &Node) -> Option<Ty> {
     let typed = |name: &str| state.variable(name).filter(|entry| entry.get("ctype").is_some());
     match node.kind() {
-        "var" => typed(field(node, "name")).map(|entry| entry_type(state, &entry)),
+        "var" => typed(node.text("name")).map(|entry| entry_type(state, &entry)),
         "deref" => static_type(state, &node["operand"]).and_then(|ty| ty.target().cloned()),
         "subscript" => {
             let array = static_type(state, &node["array"])
-                .or_else(|| state.variable(field(&node["array"], "name")).map(|entry| entry_type(state, &entry)))?;
+                .or_else(|| state.variable(node["array"].text("name")).map(|entry| entry_type(state, &entry)))?;
             array.target().cloned()
         }
         "member" => member_of(state, node).map(|(ty, _)| ty),
@@ -2146,44 +2146,44 @@ fn static_type(state: &State, node: &Node) -> Option<Ty> {
 /// A member expression's type, and its bits when it is a bit-field.
 fn member_of(state: &State, node: &Node) -> Option<(Ty, Option<ctype::Bits>)> {
     let object = static_type(state, &node["object"])
-        .or_else(|| state.variable(field(&node["object"], "name")).map(|entry| entry_type(state, &entry)))?;
+        .or_else(|| state.variable(node["object"].text("name")).map(|entry| entry_type(state, &entry)))?;
     let object = if node["arrow"] == Node::Bool(true) { object.target()?.clone() } else { object };
     let Ty::Struct(tag) = object else {
         return None;
     };
-    ctype::member_bits(&state.structs, &tag, field(node, "name")).map(|(_, _, ty, bits)| (ty, bits))
+    ctype::member_bits(&state.structs, &tag, node.text("name")).map(|(_, _, ty, bits)| (ty, bits))
 }
 
 /// What sizeof gives for an expression, which it does not evaluate.
 fn size_of(state: &State, node: &Node) -> Parsed<i64> {
     if node.kind() == "member" && member_of(state, node).is_some_and(|(_, bits)| bits.is_some()) {
-        return state.fail(format!("sizeof of bit-field {}, which has no size of its own", field(node, "name")));
+        return state.fail(format!("sizeof of bit-field {}, which has no size of its own", node.text("name")));
     }
     if let Some(ty) = static_type(state, node) {
         return Ok(ty.bytes(&state.structs));
     }
     let entry = |name: &str| state.variable(name);
     Ok(match node.kind() {
-        "string" => match stb::encode_string(field(node, "text")) {
+        "string" => match stb::encode_string(node.text("text")) {
             Ok(bytes) => bytes.len() as i64,
             Err(error) => return state.fail(error),
         },
-        "var" => match entry(field(node, "name")) {
-            Some(found) if found.get("pointer").is_some() || found["array"] == Node::Bool(true) => 4,
-            Some(found) => elements(state, &found)? * type_size(state, field(&found, "type")),
+        "var" => match entry(node.text("name")) {
+            Some(found) if found.flag("pointer") || found.flag("array") => 4,
+            Some(found) => elements(state, &found)? * type_size(state, found.text("type")),
             // sizeof(wchar_t): a header's typedef, which reads as a name here
-            None if state.header_kinds.contains_key(field(node, "name")) => type_size(state, field(node, "name")),
+            None if state.header_kinds.contains_key(node.text("name")) => type_size(state, node.text("name")),
             None => 4,
         },
-        "index" => entry(field(node, "name")).map_or(4, |found| type_size(state, field(&found, "type"))),
-        "deref" => entry(field(&node["operand"], "name")).map_or(4, |found| type_size(state, field(&found, "type"))),
+        "index" => entry(node.text("name")).map_or(4, |found| type_size(state, found.text("type"))),
+        "deref" => entry(node["operand"].text("name")).map_or(4, |found| type_size(state, found.text("type"))),
         "addr" if node.get("row").is_some() => {
             let row = node["row"].as_i64().unwrap_or(1);
-            row * entry(field(&node["target"], "name")).map_or(4, |found| type_size(state, field(&found, "type")))
+            row * entry(node["target"].text("name")).map_or(4, |found| type_size(state, found.text("type")))
         }
-        "cast" if field(node, "type") == "void" => return state.fail("sizeof a void expression"),
-        "cast" if field(node, "type").ends_with('*') => 4,
-        "cast" => type_size(state, field(node, "type")),
+        "cast" if node.text("type") == "void" => return state.fail("sizeof a void expression"),
+        "cast" if node.text("type").ends_with('*') => 4,
+        "cast" => type_size(state, node.text("type")),
         "assign" | "compound" => size_of(state, &node["target"])?,
         "comma" => size_of(state, &node["right"])?,
         "binary" if node.get("postfix").is_some() => size_of(state, &node["left"])?,
@@ -2314,9 +2314,9 @@ fn cast(state: &mut State) -> Parsed<Node> {
 #[inline(never)]
 fn address(state: &State, target: Node) -> Parsed<Node> {
     if target.kind() == "var"
-        && state.variable(field(&target, "name")).is_some_and(|entry| entry.get("register").is_some())
+        && state.variable(target.text("name")).is_some_and(|entry| entry.get("register").is_some())
     {
-        return state.fail(format!("{} is a register variable, which has no address", field(&target, "name")));
+        return state.fail(format!("{} is a register variable, which has no address", target.text("name")));
     }
     Ok(node!({"kind": "addr", "target": target}))
 }
@@ -3173,7 +3173,7 @@ fn sized_by(state: &State, ty: Ty, init: &Option<Init>) -> Parsed<Ty> {
         }
         Some(Init::Value(node)) if node.kind() == "wide" => node["codes"].as_array().map_or(1, Vec::len) as i64,
         Some(Init::Value(node)) if node.kind() == "string" => {
-            stb::encode_string(field(node, "text")).or_else(|error| state.fail(error))?.len() as i64 + 1
+            stb::encode_string(node.text("text")).or_else(|error| state.fail(error))?.len() as i64 + 1
         }
         _ => return Ok(ty),
     };
@@ -3267,7 +3267,7 @@ fn fill_typed(
                     let codes = node["codes"].as_array().map_or(&[][..], Vec::as_slice);
                     codes.iter().map(|code| node!({"kind": "int", "value": code.clone()})).collect()
                 } else {
-                    string_elements(state, field(node, "text"), &of.slot_kind())?
+                    string_elements(state, node.text("text"), &of.slot_kind())?
                 };
                 let fits = if *length >= 0 && codes.len() as i64 == length + 1 { codes.len() - 1 } else { codes.len() };
                 if *length >= 0 && fits as i64 > *length {
@@ -3367,8 +3367,7 @@ fn typed_local(state: &mut State, spec: &Spec, declared: Declared, kind: &str) -
     complete(state, &declared.name, &ty)?;
     let is_static = spec.storage.as_deref() == Some("static");
     let entry = typed_entry(state, "", &ty);
-    let storage =
-        storage_for(state, &declared.name, field(&entry, "type"), &entry["size"], &entry["ctype"], is_static)?;
+    let storage = storage_for(state, &declared.name, entry.text("type"), &entry["size"], &entry["ctype"], is_static)?;
     let entry = entry.with("name", storage.as_str());
     if is_static {
         let mut global = entry.clone();
@@ -3732,7 +3731,7 @@ fn typed_parameter_entry(state: &mut State, spec: &Spec) -> Parsed<Node> {
         complete(state, &name, &ty)?;
     }
     let entry = typed_entry(state, &name, &ty);
-    let pointer = entry.get("pointer").is_some();
+    let pointer = entry.flag("pointer");
     Ok(node!({"name": name, "type": entry["type"].clone(), "array": pointer, "ctype": entry["ctype"].clone()}))
 }
 
@@ -4178,11 +4177,11 @@ fn folded(node: &Node, names: &dyn Fn(&str) -> Option<i64>) -> Option<(i64, bool
     let wrap = |value: i64| value as i32 as i64;
     match node.kind() {
         "int" => Some((wrap(node["value"].as_i64()?), node.get("unsigned").is_some())),
-        "var" => names(field(node, "name")).map(|value| (wrap(value), false)),
-        "cast" if matches!(field(node, "type"), "int" | "long") => folded(&node["operand"], names),
+        "var" => names(node.text("name")).map(|value| (wrap(value), false)),
+        "cast" if matches!(node.text("type"), "int" | "long") => folded(&node["operand"], names),
         "unary" => {
             let (value, unsigned) = folded(&node["operand"], names)?;
-            Some(match field(node, "op") {
+            Some(match node.text("op") {
                 "-" => (wrap(value.wrapping_neg()), unsigned),
                 "+" => (value, unsigned),
                 "!" => (i64::from(value == 0), false),
@@ -4205,7 +4204,7 @@ fn folded(node: &Node, names: &dyn Fn(&str) -> Option<i64>) -> Option<(i64, bool
             let (left, left_unsigned) = folded(&node["left"], names)?;
             let (right, right_unsigned) = folded(&node["right"], names)?;
             let unsigned = left_unsigned || right_unsigned;
-            let op = field(node, "op");
+            let op = node.text("op");
             if unsigned && matches!(op, "/" | "%" | "<" | "<=" | ">" | ">=" | ">>") {
                 return None;
             }
@@ -4234,11 +4233,6 @@ fn folded(node: &Node, names: &dyn Fn(&str) -> Option<i64>) -> Option<(i64, bool
         }
         _ => None,
     }
-}
-
-/// A node's text field, or "".
-fn field<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
 }
 
 fn program_entry(state: &mut State, program: &mut Node) -> Parsed<()> {

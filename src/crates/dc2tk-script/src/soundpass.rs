@@ -14,7 +14,6 @@ use indexmap::IndexMap;
 
 use crate::node::Node;
 use crate::sdk::{named_literal, Context};
-use crate::source::truthy;
 
 /// Natives that take a bank id and an entry of it, by the positions of the two.
 fn sound_entry_args(name: &str) -> Option<(usize, usize)> {
@@ -92,18 +91,10 @@ fn scene_bank(bank: &Node) -> Option<&'static str> {
     }
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 fn assigned_var(node: &Node) -> Option<String> {
     match node.kind() {
-        "var" => Some(text(node, "name").to_string()),
-        "addr" if node["target"].kind() == "var" => Some(text(&node["target"], "name").to_string()),
+        "var" => Some(node.text("name").to_string()),
+        "addr" if node["target"].kind() == "var" => Some(node["target"].text("name").to_string()),
         _ => None,
     }
 }
@@ -116,9 +107,9 @@ fn bank_kind(stem: &str) -> String {
 fn literal_value(node: &Node, found: &Context) -> Option<i64> {
     match node.kind() {
         "int" => node["value"].as_i64(),
-        "unary" if text(node, "op") == "-" => literal_value(&node["operand"], found).map(|value| -value),
+        "unary" if node.text("op") == "-" => literal_value(&node["operand"], found).map(|value| -value),
         "var" => {
-            let value = found.constants.get(text(node, "name"))?;
+            let value = found.constants.get(node.text("name"))?;
             if value.kind() == "int" {
                 value["value"].as_i64()
             } else {
@@ -132,10 +123,10 @@ fn literal_value(node: &Node, found: &Context) -> Option<i64> {
 /// The bank load_sound loads: a path names its bank by file stem ("snd2/sp/sp_000.snd" is SP_000),
 /// a number is a sound set whose event bank it loads (sound_set_banks, from the definition set).
 fn loaded_bank(node: &Node, found: &Context) -> Option<String> {
-    let args = list(node, "args");
+    let args = node.list("args");
     let source = if args.len() > 2 || args[1].kind() != "addr" { &args[1] } else { &args[0] };
     if source.kind() == "string" {
-        let path = text(source, "text").replace('\\', "/");
+        let path = source.text("text").replace('\\', "/");
         let file = path.rsplit('/').next().unwrap_or("");
         let stem = file.split('.').next().unwrap_or("");
         return (!stem.is_empty()).then(|| bank_kind(stem));
@@ -228,7 +219,7 @@ fn calls_native(node: &Node, name: &str) -> bool {
     match node {
         Node::List(items) => items.iter().any(|item| calls_native(item, name)),
         Node::Map(map) => {
-            (node.kind() == "native" && text(node, "name") == name)
+            (node.kind() == "native" && node.text("name") == name)
                 || map.values().any(|value| calls_native(value, name))
         }
         _ => false,
@@ -236,39 +227,38 @@ fn calls_native(node: &Node, name: &str) -> bool {
 }
 
 pub fn sound_flow<'a>(function: &Node, known: &'a Known) -> Flow<'a> {
-    let locals = list(function, "params")
+    let locals = function
+        .list("params")
         .iter()
-        .chain(list(function, "locals"))
-        .map(|variable| text(variable, "name").to_string())
+        .chain(function.list("locals"))
+        .map(|variable| variable.text("name").to_string())
         .collect();
-    let pointers = list(function, "params")
+    let pointers = function
+        .list("params")
         .iter()
         .enumerate()
-        .filter(|(_, param)| truthy(&param["array"]))
-        .map(|(position, param)| (text(param, "name").to_string(), position))
+        .filter(|(_, param)| param.flag("array"))
+        .map(|(position, param)| (param.text("name").to_string(), position))
         .collect();
     let battle_music = calls_native(&function["body"], "get_battle_bgm_volume");
-    Flow { function: text(function, "name").to_string(), locals, pointers, known, battle_music }
+    Flow { function: function.text("name").to_string(), locals, pointers, known, battle_music }
 }
 
 /// The banks a function starts with: its globals and parameters the program pass settled, and the
 /// event port's.
 pub fn sound_banks(function: &Node, known: &Known) -> HashMap<String, String> {
-    let locals: HashSet<&str> = list(function, "params")
-        .iter()
-        .chain(list(function, "locals"))
-        .map(|variable| text(variable, "name"))
-        .collect();
+    let locals: HashSet<&str> =
+        function.list("params").iter().chain(function.list("locals")).map(|variable| variable.text("name")).collect();
     let mut banks: HashMap<String, String> = known
         .globals
         .iter()
         .filter(|(name, _)| !locals.contains(name.as_str()))
         .map(|(name, kind)| (name.clone(), kind.clone()))
         .collect();
-    let name = text(function, "name");
-    for (position, param) in list(function, "params").iter().enumerate() {
+    let name = function.text("name");
+    for (position, param) in function.list("params").iter().enumerate() {
         if let Some(kind) = known.params.get(&(name.to_string(), position)) {
-            banks.insert(text(param, "name").to_string(), kind.clone());
+            banks.insert(param.text("name").to_string(), kind.clone());
         }
     }
     let port = known.port_in.get(name).cloned().unwrap_or_else(|| AT_ENTRY.into());
@@ -318,7 +308,7 @@ fn condition_key(cond: &Node) -> Option<(String, String)> {
                     return false;
                 }
                 if node.kind() == "var" {
-                    vars.insert(text(node, "name").to_string());
+                    vars.insert(node.text("name").to_string());
                 }
                 map.values().all(|value| pure(value, vars))
             }
@@ -398,14 +388,14 @@ fn forget_bank(
 /// The pointer parameter p an assignment writes through (p[0] = ... or *p = ...).
 fn pointer_target(node: &Node, flow: Option<&Flow>) -> Option<String> {
     let flow = flow?;
-    if node.kind() == "index" && flow.pointers.contains_key(text(node, "name")) {
-        return Some(text(node, "name").to_string());
+    if node.kind() == "index" && flow.pointers.contains_key(node.text("name")) {
+        return Some(node.text("name").to_string());
     }
     if node.kind() == "deref"
         && node["operand"].kind() == "var"
-        && flow.pointers.contains_key(text(&node["operand"], "name"))
+        && flow.pointers.contains_key(node["operand"].text("name"))
     {
-        return Some(text(&node["operand"], "name").to_string());
+        return Some(node["operand"].text("name").to_string());
     }
     None
 }
@@ -498,7 +488,7 @@ pub fn named_sounds(
                     }
                 }
             }
-            let then = named_sounds(list(&node, "then"), found, &mut then_banks, flow, info.as_deref_mut());
+            let then = named_sounds(node.list("then"), found, &mut then_banks, flow, info.as_deref_mut());
             let otherwise = match node["else"].as_array() {
                 Some(items) => named_sounds(items, found, &mut else_banks, flow, info.as_deref_mut()),
                 None => Node::Null,
@@ -511,7 +501,7 @@ pub fn named_sounds(
             let cond = sound_expression(&node["cond"], found, banks, flow, &mut info);
             node = node.with("cond", cond);
             let mut body_banks = banks.clone();
-            let body = named_sounds(list(&node, "body"), found, &mut body_banks, flow, info.as_deref_mut());
+            let body = named_sounds(node.list("body"), found, &mut body_banks, flow, info.as_deref_mut());
             node = node.with("body", body);
             let unchanged = banks.clone();
             merge_banks(banks, vec![(body_banks, &[]), (unchanged, &[])], None);
@@ -520,7 +510,7 @@ pub fn named_sounds(
             let value = sound_expression(&node["expr"]["value"], found, banks, flow, &mut info);
             let expr = node["expr"].clone().with("value", value.clone());
             node = node.with("expr", expr);
-            let source = if value.kind() == "var" { Some(text(&value, "name").to_string()) } else { None };
+            let source = if value.kind() == "var" { Some(value.text("name").to_string()) } else { None };
             let written = pointer_target(&target, flow).or_else(|| assigned_var(&target));
             match (&written, source.as_ref().and_then(|source| banks.get(source).cloned())) {
                 (Some(written), Some(bank)) => set_bank(banks, written, &bank, flow, &mut info),
@@ -592,8 +582,8 @@ fn sound_expression(
     if kind != "native" && kind != "call" {
         return node;
     }
-    let args = list(&node, "args").to_vec();
-    if let Some((bank, entry)) = sound_entry_args(text(&node, "name")) {
+    let args = node.list("args").to_vec();
+    if let Some((bank, entry)) = sound_entry_args(node.text("name")) {
         if args.len() > entry {
             if let Some(kind) = assigned_var(&args[bank]).and_then(|name| plain(banks.get(&name)).cloned()) {
                 let mut args = args.clone();
@@ -603,7 +593,7 @@ fn sound_expression(
         }
     }
     if kind == "call" {
-        let name = text(&node, "name").to_string();
+        let name = node.text("name").to_string();
         if let Some(info) = info.as_deref_mut() {
             info.port_in.entry(name.clone()).or_default().insert(port_passed(banks));
         }
@@ -619,7 +609,7 @@ fn sound_expression(
             if !matches!(arg.kind(), "addr" | "int") && info.is_some() {
                 // a number passed for a bank says there is none (-1), not another bank
                 let passed = if arg.kind() == "var" {
-                    plain(banks.get(text(arg, "name"))).cloned().unwrap_or_else(|| UNKNOWN_BANK.into())
+                    plain(banks.get(arg.text("name"))).cloned().unwrap_or_else(|| UNKNOWN_BANK.into())
                 } else {
                     UNKNOWN_BANK.into()
                 };
@@ -654,7 +644,7 @@ fn native_banks(
     banks: &HashMap<String, String>,
     flow: Option<&Flow>,
 ) -> IndexMap<String, Option<String>> {
-    let args = list(node, "args");
+    let args = node.list("args");
     let mut written: IndexMap<String, Option<String>> = IndexMap::new();
     let result = node.get("result").filter(|result| !result.is_null());
     for target in result.into_iter().chain(args.iter().filter(|arg| arg.kind() == "addr")) {
@@ -663,7 +653,7 @@ fn native_banks(
         }
     }
     let result = result.and_then(assigned_var);
-    match text(node, "name") {
+    match node.text("name") {
         "get_system_sound_id" if result.is_some() => {
             written.insert(result.unwrap(), Some("system_se".into()));
         }
@@ -681,9 +671,9 @@ fn native_banks(
             let mut target = result.clone().or_else(|| if last.kind() == "addr" { assigned_var(last) } else { None });
             if target.is_none()
                 && last.kind() == "var"
-                && flow.is_some_and(|flow| flow.pointers.contains_key(text(last, "name")))
+                && flow.is_some_and(|flow| flow.pointers.contains_key(last.text("name")))
             {
-                target = Some(text(last, "name").to_string());
+                target = Some(last.text("name").to_string());
             }
             // the two-argument form, load_sound(set, &id), loads on the event port
             let has_port = args.len() > 2 || args[1].kind() != "addr";
@@ -707,7 +697,7 @@ fn native_banks(
             }
         }
         "get_sound_port_bank" if result.is_some() => {
-            let port = args.first().filter(|arg| arg.kind() == "var").map(|arg| text(arg, "name"));
+            let port = args.first().filter(|arg| arg.kind() == "var").map(|arg| arg.text("name"));
             if port.is_none() || port == Some("SND_PORT_EVENT") {
                 // the dungeon engine plays entry 0 of the event port's bank as the battle music
                 // (DngBattleBgm, dng_event.cpp); a function that keeps its volume handles that
@@ -718,7 +708,7 @@ fn native_banks(
             }
         }
         "reset_sound_port" | "delete_sound_port"
-            if args.first().is_some_and(|arg| arg.kind() == "var" && text(arg, "name") == "SND_PORT_EVENT") =>
+            if args.first().is_some_and(|arg| arg.kind() == "var" && arg.text("name") == "SND_PORT_EVENT") =>
         {
             written.insert(EVENT_PORT.into(), None);
         }
@@ -740,7 +730,7 @@ fn called_functions(node: &Node, out: &mut Vec<String>) {
         Node::List(items) => items.iter().for_each(|item| called_functions(item, out)),
         Node::Map(map) => {
             if node.kind() == "call" {
-                out.push(text(node, "name").to_string());
+                out.push(node.text("name").to_string());
             }
             map.values().for_each(|value| called_functions(value, out));
         }
@@ -752,7 +742,7 @@ fn called_functions(node: &Node, out: &mut Vec<String>) {
 /// callers come before it, so the port it starts with is known when the pass reaches it.
 fn callers_first<'a>(functions: &[&'a Node]) -> (Vec<&'a Node>, HashMap<String, bool>, HashSet<String>) {
     let position: HashMap<&str, usize> =
-        functions.iter().enumerate().rev().map(|(index, function)| (text(function, "name"), index)).collect();
+        functions.iter().enumerate().rev().map(|(index, function)| (function.text("name"), index)).collect();
     let callees: Vec<Vec<usize>> = functions
         .iter()
         .map(|function| {
@@ -785,13 +775,13 @@ fn callers_first<'a>(functions: &[&'a Node]) -> (Vec<&'a Node>, HashMap<String, 
     postorder.reverse();
     let order: HashMap<usize, usize> = postorder.iter().enumerate().map(|(at, &index)| (index, at)).collect();
     let mut complete: HashMap<String, bool> =
-        functions.iter().map(|function| (text(function, "name").to_string(), true)).collect();
+        functions.iter().map(|function| (function.text("name").to_string(), true)).collect();
     let mut called = HashSet::new();
     for (caller, targets) in callees.iter().enumerate() {
         for &callee in targets {
-            called.insert(text(functions[callee], "name").to_string());
+            called.insert(functions[callee].text("name").to_string());
             if order[&caller] >= order[&callee] {
-                complete.insert(text(functions[callee], "name").to_string(), false);
+                complete.insert(functions[callee].text("name").to_string(), false);
             }
         }
     }
@@ -834,7 +824,7 @@ fn touches_port(node: &Node) -> bool {
         Node::List(items) => items.iter().any(touches_port),
         Node::Map(map) => {
             (node.kind() == "native" && {
-                let name = text(node, "name");
+                let name = node.text("name");
                 matches!(name, "load_sound" | "reset_sound_port" | "delete_sound_port") || LEAVES_MAP.contains(&name)
             }) || map.values().any(touches_port)
         }
@@ -897,7 +887,7 @@ fn port_expression(
                     port_expression(value, found, path, outs, loaded);
                 }
             }
-            let name = text(node, "name");
+            let name = node.text("name");
             match node.kind() {
                 "call" => {
                     if let Some(out) = outs.get(name) {
@@ -941,8 +931,8 @@ fn port_statements(
         match node.kind() {
             "if" => {
                 port_expression(&node["cond"], found, path, outs, loaded);
-                let then = list(node, "then");
-                let otherwise = list(node, "else");
+                let then = node.list("then");
+                let otherwise = node.list("else");
                 let (mut then_path, mut else_path) = (path.clone(), path.clone());
                 port_statements(then, found, &mut then_path, outs, exits, loaded);
                 port_statements(otherwise, found, &mut else_path, outs, exits, loaded);
@@ -957,7 +947,7 @@ fn port_statements(
             "while" => {
                 port_expression(&node["cond"], found, path, outs, loaded);
                 let mut body_path = path.clone();
-                port_statements(list(node, "body"), found, &mut body_path, outs, exits, loaded);
+                port_statements(node.list("body"), found, &mut body_path, outs, exits, loaded);
                 if let Some(merged) = PortPath::merged([&*path, &body_path]) {
                     *path = merged;
                 }
@@ -982,12 +972,12 @@ fn port_summaries(functions: &[&Node], found: &Context) -> (HashMap<String, Port
         for function in functions {
             let mut path = PortPath { all: AT_ENTRY.into(), stay: Some(AT_ENTRY.into()) };
             let mut exits = PortOut::default();
-            let body = list(function, "body");
+            let body = function.list("body");
             port_statements(body, found, &mut path, &outs, &mut exits, &mut loaded);
             if body.last().is_none_or(|last| last.kind() != "return") {
                 exits.add(&path);
             }
-            let name = text(function, "name");
+            let name = function.text("name");
             if outs.get(name) != Some(&exits) {
                 outs.insert(name.to_string(), exits);
                 changed = true;
@@ -1022,14 +1012,14 @@ pub fn program_sounds(
     let (ordered, complete, called) = callers_first(&functions);
     let uncalled: HashSet<String> = functions
         .iter()
-        .map(|function| text(function, "name").to_string())
+        .map(|function| function.text("name").to_string())
         .filter(|name| !called.contains(name))
         .collect();
     // only functions that load on the port or leave the map, and their callers, change the port
     let mut related: HashSet<&str> = functions
         .iter()
         .filter(|function| touches_port(&function["body"]))
-        .map(|function| text(function, "name"))
+        .map(|function| function.text("name"))
         .collect();
     let calls: Vec<Vec<String>> = if related.is_empty() {
         Vec::new()
@@ -1047,7 +1037,7 @@ pub fn program_sounds(
     while grown {
         grown = false;
         for (function, called) in functions.iter().zip(&calls) {
-            let name = text(function, "name");
+            let name = function.text("name");
             if !related.contains(name) && called.iter().any(|callee| related.contains(callee.as_str())) {
                 related.insert(name);
                 grown = true;
@@ -1055,13 +1045,13 @@ pub fn program_sounds(
         }
     }
     let callees_first: Vec<&Node> =
-        ordered.iter().rev().copied().filter(|function| related.contains(text(function, "name"))).collect();
+        ordered.iter().rev().copied().filter(|function| related.contains(function.text("name"))).collect();
     let (port_out, loaded) = port_summaries(&callees_first, found);
     // the programs that set the port's resting bank: the script's, or a library's uncalled functions
     let programs: HashSet<String> = match entries {
         Some(entries) => functions
             .iter()
-            .map(|function| text(function, "name").to_string())
+            .map(|function| function.text("name").to_string())
             .filter(|name| entries.contains(name))
             .collect(),
         None => uncalled.clone(),
@@ -1106,7 +1096,7 @@ pub fn program_sounds(
             }
         }
         for function in &ordered {
-            let name = text(function, "name");
+            let name = function.text("name");
             if complete.get(name) == Some(&true) {
                 // every call to it was seen this round
                 let library_resting = known.port.clone().filter(|_| entries.is_none() && uncalled.contains(name));
@@ -1117,7 +1107,7 @@ pub fn program_sounds(
             }
             let flow = sound_flow(function, &known);
             let mut banks = sound_banks(function, &known);
-            named_sounds(list(function, "body"), found, &mut banks, Some(&flow), Some(&mut info));
+            named_sounds(function.list("body"), found, &mut banks, Some(&flow), Some(&mut info));
         }
         let mut port_in = single_kinds(&info.port_in);
         fallback(&mut port_in, &known.port);
@@ -1140,7 +1130,7 @@ pub fn program_sounds(
 /// What a script shows about the library code it includes: the banks it passes each parameter of
 /// the hidden functions, and the bank each global they use holds (UNKNOWN_BANK when not one).
 pub fn passed_sounds(hidden: &[Node], known: &Known, seen: &Info) -> Passed {
-    let hidden_names: HashSet<&str> = hidden.iter().map(|function| text(function, "name")).collect();
+    let hidden_names: HashSet<&str> = hidden.iter().map(|function| function.text("name")).collect();
     let params = seen
         .params
         .iter()
@@ -1149,10 +1139,11 @@ pub fn passed_sounds(hidden: &[Node], known: &Known, seen: &Info) -> Passed {
         .collect();
     let mut used: Vec<String> = Vec::new();
     for function in hidden {
-        let own: HashSet<&str> = list(function, "params")
+        let own: HashSet<&str> = function
+            .list("params")
             .iter()
-            .chain(list(function, "locals"))
-            .map(|variable| text(variable, "name"))
+            .chain(function.list("locals"))
+            .map(|variable| variable.text("name"))
             .collect();
         for name in crate::names::variables(&function["body"]) {
             if !own.contains(name.as_str()) && !used.contains(&name) {

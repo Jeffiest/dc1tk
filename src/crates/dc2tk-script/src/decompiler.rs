@@ -55,12 +55,9 @@ pub fn disc_root(path: &Path) -> Option<PathBuf> {
     full.ancestors().skip(1).find(|folder| folder.join("manifest.json").is_file()).map(Path::to_path_buf)
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
 fn bodies(program: &Node) -> Node {
-    list(program, "functions")
+    program
+        .list("functions")
         .iter()
         .map(|function| function.get("body").cloned().unwrap_or(Node::List(Vec::new())))
         .collect()
@@ -104,7 +101,7 @@ fn with_messages(program: Node, found: Option<&Context>, setup: &Setup, path: &P
     if program.get("asm").is_some() {
         return program;
     }
-    let functions = list(&program, "functions");
+    let functions = program.list("functions");
     let texts = messages::texts_for(&messages::loaded_files(functions, found), &root, code, &mut HashMap::new());
     let params = messages::kind_params(functions, found);
     let lookups = setup.lookups(&root);
@@ -124,7 +121,7 @@ pub fn script_source(setup: &Setup, path: &Path, table: &str) -> Result<String> 
     let entry = definitions::script_entry(&setup.defs, &path.to_string_lossy()).cloned().unwrap_or_default();
     let scripted = names::with_script(named.clone(), &entry, &Default::default(), &Default::default());
     let params = match found {
-        Some(found) if named.get("asm").is_none() => messages::kind_params(list(&named, "functions"), found),
+        Some(found) if named.get("asm").is_none() => messages::kind_params(named.list("functions"), found),
         _ => HashMap::new(),
     };
     let found = sdk::numbered(found.cloned(), sdk::numbering_of(&entry).as_deref());

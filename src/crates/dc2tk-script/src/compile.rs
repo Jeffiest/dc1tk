@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use crate::asm;
 use crate::natives::Table;
 use crate::node;
-use crate::node::Node;
+use crate::node::{kinds, Node};
 use crate::source::py_str;
 use crate::stb;
 use crate::{Error, Result};
@@ -90,14 +90,6 @@ struct Symbol {
     scope: Scope,
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 fn int(node: &Node) -> Result<i64> {
     node.as_i64().ok_or_else(|| Error::invalid(format!("{node} is not a number")))
 }
@@ -106,9 +98,9 @@ fn int(node: &Node) -> Result<i64> {
 fn global_symbols(program: &Node) -> HashMap<String, Symbol> {
     let mut slot = 0;
     let mut symbols = HashMap::new();
-    for declared in list(program, "globals") {
-        let symbol = Symbol { slot, kind: text(declared, "type").to_string(), scope: Scope::Global };
-        symbols.insert(text(declared, "name").to_string(), symbol);
+    for declared in program.list("globals") {
+        let symbol = Symbol { slot, kind: declared.text("type").to_string(), scope: Scope::Global };
+        symbols.insert(declared.text("name").to_string(), symbol);
         slot += declared["size"].as_i64().unwrap_or(1);
     }
     symbols
@@ -117,13 +109,13 @@ fn global_symbols(program: &Node) -> HashMap<String, Symbol> {
 fn frame(function: &Node, globals: &HashMap<String, Symbol>) -> Result<(HashMap<String, Symbol>, i64)> {
     let mut symbols = globals.clone();
     let mut slot = 0;
-    for param in list(function, "params") {
-        let scope = if crate::source::truthy(&param["array"]) { Scope::Pointer } else { Scope::Scalar };
-        symbols.insert(text(param, "name").to_string(), Symbol { slot, kind: text(param, "type").to_string(), scope });
+    for param in function.list("params") {
+        let scope = if param.flag("array") { Scope::Pointer } else { Scope::Scalar };
+        symbols.insert(param.text("name").to_string(), Symbol { slot, kind: param.text("type").to_string(), scope });
         slot += 1;
     }
-    for declared in list(function, "locals") {
-        let pointer = declared.get("pointer").is_some_and(crate::source::truthy);
+    for declared in function.list("locals") {
+        let pointer = declared.flag("pointer");
         let scope = if pointer {
             Scope::Pointer
         } else if declared["size"].is_null() {
@@ -131,10 +123,8 @@ fn frame(function: &Node, globals: &HashMap<String, Symbol>) -> Result<(HashMap<
         } else {
             Scope::Array
         };
-        symbols.insert(
-            text(declared, "name").to_string(),
-            Symbol { slot, kind: text(declared, "type").to_string(), scope },
-        );
+        symbols
+            .insert(declared.text("name").to_string(), Symbol { slot, kind: declared.text("type").to_string(), scope });
         slot += if declared["size"].is_null() { 1 } else { int(&declared["size"])? };
     }
     Ok((symbols, slot))
@@ -228,41 +218,41 @@ fn indexed_mode(symbol: &Symbol, name: &str, node: &Node) -> Result<&'static str
 
 fn access(state: &mut State, node: &Node, mnemonic: &str) -> Result<()> {
     match node.kind() {
-        "deref" => {
+        kinds::DEREF => {
             let operand = &node["operand"];
-            if operand.kind() != "var" {
+            if operand.kind() != kinds::VAR {
                 return fail("* works on a pointer or array variable; write p[i] for the others");
             }
-            let name = text(operand, "name");
+            let name = operand.text("name");
             let symbol = state.lookup(name)?;
             state.emit("push 0");
             state.emit(format!("{} {} {}", mnemonic, indexed_mode(&symbol, name, node)?, symbol.slot));
         }
-        "var" => {
-            let name = text(node, "name");
+        kinds::VAR => {
+            let name = node.text("name");
             let symbol = state.lookup(name)?;
             state.emit(format!("{} {} {}", mnemonic, scalar_mode(&symbol, name)?, symbol.slot));
         }
-        "index" => {
-            let name = text(node, "name");
+        kinds::INDEX => {
+            let name = node.text("name");
             let symbol = state.lookup(name)?;
             expression(state, &node["index"])?;
             state.emit(format!("{} {} {}", mnemonic, indexed_mode(&symbol, name, node)?, symbol.slot));
         }
-        "field" => {
+        kinds::FIELD => {
             // a slot of a variable's storage at a constant offset: the plain mode, no index
-            let name = text(node, "name");
+            let name = node.text("name");
             let symbol = state.lookup(name)?;
-            let kind = text(node, "type");
+            let kind = node.text("type");
             let mode = if symbol.scope == Scope::Global { global_modes(kind) } else { scalar_modes(kind) };
             state.emit(format!("{} {} {}", mnemonic, mode, symbol.slot + int(&node["offset"])?));
         }
-        "at" => {
+        kinds::AT => {
             // through a pointer an expression gives: the VM indexes through a local only
             let slot = state.temporary();
             store_temporary(state, slot, &node["pointer"])?;
             expression(state, &node["index"])?;
-            state.emit(format!("{} {} {}", mnemonic, pointer_modes(text(node, "type")), slot));
+            state.emit(format!("{} {} {}", mnemonic, pointer_modes(node.text("type")), slot));
         }
         other => return fail(format!("cannot take the address of {other}")),
     }
@@ -276,45 +266,45 @@ pub fn float_literal(bits: i64) -> Result<String> {
 fn expression(state: &mut State, node: &Node) -> Result<()> {
     let kind = node.kind();
     match kind {
-        "int" => state.emit(format!("push {}", py_str(&node["value"]))),
-        "float" => state.emit(format!("push {}", float_literal(int(&node["bits"])?)?)),
-        "string" => {
+        kinds::INT => state.emit(format!("push {}", py_str(&node["value"]))),
+        kinds::FLOAT => state.emit(format!("push {}", float_literal(int(&node["bits"])?)?)),
+        kinds::STRING => {
             state.emit(format!("push string {}", state.strings.len()));
-            state.strings.push(text(node, "text").to_string());
+            state.strings.push(node.text("text").to_string());
         }
-        "var" if state.lookup(text(node, "name"))?.scope == Scope::Array => {
+        kinds::VAR if state.lookup(node.text("name"))?.scope == Scope::Array => {
             // An array used as a value is the address of its first element, as in C.
-            let symbol = state.lookup(text(node, "name"))?;
+            let symbol = state.lookup(node.text("name"))?;
             state.emit("push 0");
             state.emit(format!("addr {} {}", array_modes(&symbol.kind), symbol.slot));
         }
-        "var" | "index" | "deref" | "field" | "at" => access(state, node, "load")?,
-        "addr" => access(state, &node["target"], "addr")?,
-        "assign" => {
+        kinds::VAR | kinds::INDEX | kinds::DEREF | kinds::FIELD | kinds::AT => access(state, node, "load")?,
+        kinds::ADDR => access(state, &node["target"], "addr")?,
+        kinds::ASSIGN => {
             access(state, &node["target"], "addr")?;
             expression(state, &node["value"])?;
             state.emit("store");
         }
-        "binary" if node["op"] == "^" => exclusive_or(state, node)?,
-        "binary" if node["op"] == "<<" || node["op"] == ">>" => shift(state, node)?,
-        "binary" => {
+        kinds::BINARY if node["op"] == "^" => exclusive_or(state, node)?,
+        kinds::BINARY if node["op"] == "<<" || node["op"] == ">>" => shift(state, node)?,
+        kinds::BINARY => {
             expression(state, &node["left"])?;
             expression(state, &node["right"])?;
-            let op = text(node, "op");
+            let op = node.text("op");
             match (compare_mnemonic(op), binary_mnemonic(op)) {
                 (Some(compare), _) => state.emit(format!("cmp {compare}")),
                 (None, Some(mnemonic)) => state.emit(mnemonic),
                 _ => return fail(format!("unknown operator {op}")),
             }
         }
-        "comma" => {
+        kinds::COMMA => {
             expression(state, &node["left"])?;
             state.emit("pop");
             expression(state, &node["right"])?;
         }
-        "unary" => {
+        kinds::UNARY => {
             expression(state, &node["operand"])?;
-            match text(node, "op") {
+            match node.text("op") {
                 "-" => state.emit("neg"),
                 "!" => state.emit("not"),
                 // C's unary + only promotes, which the VM's values need not
@@ -322,29 +312,29 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
                 op => return fail(format!("unknown operator {op}")),
             }
         }
-        "cast" => {
+        kinds::CAST => {
             expression(state, &node["operand"])?;
-            match text(node, "type") {
+            match node.text("type") {
                 "float" => state.emit("itof"),
                 "int" => state.emit("ftoi"),
                 // a pointer cast, or an address cast to an enum, passes the address unchanged
                 other if other.ends_with(" *") => {}
                 // the value is worked out and dropped
                 "void" => {}
-                other if other.starts_with("enum ") && node["operand"].kind() == "addr" => {}
+                other if other.starts_with("enum ") && node["operand"].kind() == kinds::ADDR => {}
                 other => return fail(format!("unknown cast to {other}")),
             }
         }
-        "builtin" => {
+        kinds::BUILTIN => {
             expression(state, &node["operand"])?;
-            state.emit(text(node, "name"));
+            state.emit(node.text("name"));
         }
-        "call" => {
-            let name = text(node, "name");
+        kinds::CALL => {
+            let name = node.text("name");
             let Some(&count) = state.functions.get(name) else {
                 return fail(format!("unknown function {name}"));
             };
-            let args = list(node, "args");
+            let args = node.list("args");
             if args.len() as i64 != count {
                 return fail(format!("{name} takes {count} arguments"));
             }
@@ -353,7 +343,7 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
             }
             state.emit(format!("call {name}"));
         }
-        "logical" => {
+        kinds::LOGICAL => {
             expression(state, &node["left"])?;
             let label = state.new_label();
             let jump = if node["op"] == "&&" { "jf_push" } else { "jt_push" };
@@ -362,16 +352,16 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
             expression(state, &node["right"])?;
             state.place_label(label);
         }
-        "compound" => compound(state, node)?,
-        "narrow" => {
+        kinds::COMPOUND => compound(state, node)?,
+        kinds::NARROW => {
             expression(state, &node["operand"])?;
-            narrow(state, text(node, "type"));
+            narrow(state, node.text("type"));
         }
-        "via" => {
+        kinds::VIA => {
             state.emit("push 0");
-            state.emit(format!("load {} {}", pointer_modes(text(node, "type")), int(&node["slot"])?));
+            state.emit(format!("load {} {}", pointer_modes(node.text("type")), int(&node["slot"])?));
         }
-        "ternary" => {
+        kinds::TERNARY => {
             expression(state, &node["cond"])?;
             let otherwise = state.new_label();
             let end = state.new_label();
@@ -415,7 +405,7 @@ fn narrow(state: &mut State, kind: &str) {
 /// for an int target (strict mode), before a narrow type wraps it.
 fn compound(state: &mut State, node: &Node) -> Result<()> {
     let target = &node["target"];
-    if target.kind() == "var" {
+    if target.kind() == kinds::VAR {
         access(state, target, "addr")?;
         expression(
             state,
@@ -434,7 +424,7 @@ fn compound(state: &mut State, node: &Node) -> Result<()> {
     let kind = match target["type"].as_str() {
         Some(kind) => kind.to_string(),
         None => {
-            let name = if target.kind() == "index" { text(target, "name") } else { text(&target["operand"], "name") };
+            let name = if target.kind() == kinds::INDEX { target.text("name") } else { target["operand"].text("name") };
             state.lookup(name)?.kind
         }
     };
@@ -487,7 +477,7 @@ fn exclusive_or(state: &mut State, node: &Node) -> Result<()> {
 fn shift(state: &mut State, node: &Node) -> Result<()> {
     let op = if node["op"] == "<<" { "mul" } else { "div" };
     let count = &node["right"];
-    if count.kind() == "int" {
+    if count.kind() == kinds::INT {
         let shift = u32::try_from(int(&count["value"])?).ok().filter(|shift| *shift < 32);
         let shift = shift.ok_or_else(|| Error::invalid("a shift count out of range (0 to 31)"))?;
         expression(state, &node["left"])?;
@@ -560,11 +550,11 @@ fn statement(state: &mut State, node: &Node) -> Result<()> {
 fn statement_code(state: &mut State, node: &Node) -> Result<()> {
     let kind = node.kind();
     match kind {
-        "expr" => {
+        kinds::EXPR => {
             expression(state, &node["expr"])?;
             state.emit("pop");
         }
-        "return" => {
+        kinds::RETURN => {
             if node["value"].is_null() {
                 state.emit("push 0");
             } else {
@@ -572,8 +562,8 @@ fn statement_code(state: &mut State, node: &Node) -> Result<()> {
             }
             state.emit("ret");
         }
-        "native" => {
-            let number = native_number(state, text(node, "name"))?;
+        kinds::NATIVE => {
+            let number = native_number(state, node.text("name"))?;
             if node["base"].is_null() {
                 state.emit(format!("push {number}"));
             } else {
@@ -582,41 +572,42 @@ fn statement_code(state: &mut State, node: &Node) -> Result<()> {
                 state.emit(format!("push {}", number - base));
                 state.emit("add");
             }
-            let args = list(node, "args");
+            let args = node.list("args");
             for arg in args {
                 expression(state, arg)?;
             }
             state.emit(format!("ext {}", args.len() + 1));
         }
-        "print" => {
-            let args = list(node, "args");
+        kinds::PRINT => {
+            let args = node.list("args");
             for arg in args {
                 expression(state, arg)?;
             }
             state.emit(format!("print {}", args.len()));
         }
-        "wait" | "end" | "skip_end" => state.emit(kind),
-        "label" => {
-            let number = state.user_label(text(node, "name"));
+        kinds::WAIT | kinds::END | kinds::SKIP_END => state.emit(kind),
+        kinds::LABEL => {
+            let number = state.user_label(node.text("name"));
             state.place_label(number);
         }
-        "goto" => {
-            let number = state.user_label(text(node, "name"));
+        kinds::GOTO => {
+            let number = state.user_label(node.text("name"));
             let name = state.label_name(number);
             state.emit(format!("jmp {name}"));
         }
-        "if" => conditional(state, node)?,
-        "while" => while_loop(state, node)?,
-        "switch" => switch(state, node)?,
-        "break" | "continue" => {
-            let target =
-                state
-                    .loops
-                    .iter()
-                    .rev()
-                    .find_map(|entry| if kind == "break" { entry.break_to } else { entry.continue_to });
+        kinds::IF => conditional(state, node)?,
+        kinds::WHILE => while_loop(state, node)?,
+        kinds::SWITCH => switch(state, node)?,
+        kinds::BREAK | kinds::CONTINUE => {
+            let target = state.loops.iter().rev().find_map(|entry| {
+                if kind == kinds::BREAK {
+                    entry.break_to
+                } else {
+                    entry.continue_to
+                }
+            });
             let Some(target) = target else {
-                let place = if kind == "continue" { " outside a loop" } else { " outside a loop or switch" };
+                let place = if kind == kinds::CONTINUE { " outside a loop" } else { " outside a loop or switch" };
                 return fail(format!("{kind}{place}"));
             };
             let name = state.label_name(target);
@@ -639,7 +630,7 @@ fn conditional(state: &mut State, node: &Node) -> Result<()> {
     let otherwise = state.new_label();
     let otherwise_name = state.label_name(otherwise);
     state.emit(format!("jf {otherwise_name}"));
-    block(state, list(node, "then"))?;
+    block(state, node.list("then"))?;
     let Some(else_block) = node["else"].as_array() else {
         state.place_label(otherwise);
         return Ok(());
@@ -661,7 +652,7 @@ fn while_loop(state: &mut State, node: &Node) -> Result<()> {
     let end_name = state.label_name(end);
     state.emit(format!("jf {end_name}"));
     state.loops.push(Loop { continue_to: Some(top), break_to: Some(end) });
-    block(state, list(node, "body"))?;
+    block(state, node.list("body"))?;
     state.loops.pop();
     let top_name = state.label_name(top);
     state.emit(format!("jmp {top_name}"));
@@ -674,7 +665,7 @@ fn while_loop(state: &mut State, node: &Node) -> Result<()> {
 fn switch(state: &mut State, node: &Node) -> Result<()> {
     let slot = state.temporary();
     store_temporary(state, slot, &node["value"])?;
-    let cases = list(node, "cases");
+    let cases = node.list("cases");
     let labels: Vec<i64> = cases.iter().map(|_| state.new_label()).collect();
     let end = state.new_label();
     let mut fallback = end;
@@ -694,7 +685,7 @@ fn switch(state: &mut State, node: &Node) -> Result<()> {
     state.loops.push(Loop { continue_to: None, break_to: Some(end) });
     for (case, &label) in cases.iter().zip(&labels) {
         state.place_label(label);
-        block(state, list(case, "body"))?;
+        block(state, case.list("body"))?;
     }
     state.loops.pop();
     state.place_label(end);
@@ -702,8 +693,7 @@ fn switch(state: &mut State, node: &Node) -> Result<()> {
 }
 
 fn arg_types(params: &[Node]) -> Vec<i32> {
-    let mut types: Vec<i32> =
-        params.iter().take(10).map(|param| if crate::source::truthy(&param["array"]) { 0 } else { 1 }).collect();
+    let mut types: Vec<i32> = params.iter().take(10).map(|param| if param.flag("array") { 0 } else { 1 }).collect();
     while types.last() == Some(&0) {
         types.pop();
     }
@@ -725,8 +715,8 @@ fn strings_of(node: &Node) -> Vec<String> {
 
 fn function_lines(function: &Node, context: &mut Context) -> Result<Vec<String>> {
     let (symbols, size) = frame(function, &context.globals)?;
-    let name = text(function, "name").to_string();
-    let params = list(function, "params");
+    let name = function.text("name").to_string();
+    let params = function.list("params");
     let mut header = format!(".function {} local {} arg {}", name, size, params.len());
     let types = arg_types(params);
     if !types.is_empty() {
@@ -748,7 +738,7 @@ fn function_lines(function: &Node, context: &mut Context) -> Result<Vec<String>>
         notes: context.notes.is_some().then(IndexMap::new),
         labels: HashMap::new(),
     };
-    block(&mut state, list(function, "body"))?;
+    block(&mut state, function.list("body"))?;
     if let (Some(notes), Some(all)) = (state.notes.take(), context.notes.as_deref_mut()) {
         if !notes.is_empty() {
             all.insert(name.clone(), Node::Map(notes.into_iter().collect()));
@@ -836,14 +826,14 @@ fn magic_text(magic: &str) -> String {
 fn header_line(program: &Node) -> Result<String> {
     let mut line = format!(
         ".header {} main {} globals {}",
-        magic_text(text(program, "magic")),
+        magic_text(program.text("magic")),
         py_str(&program["main"]),
         int(&program["global_num"])?
     );
     if int(&program["unk_14"])? != 0 {
         line += &format!(" unk_14 {}", int(&program["unk_14"])?);
     }
-    let padding = text(program, "header_padding");
+    let padding = program.text("header_padding");
     if padding != "00".repeat(stb::HEADER_SIZE - stb::HEADER_FIELDS_SIZE) {
         line += &format!(" padding {padding}");
     }
@@ -863,11 +853,11 @@ pub fn to_asm(
     if program["main"].is_null() {
         return fail("no main function declared");
     }
-    let functions = list(program, "functions");
-    if functions.iter().any(|function| function.kind() == "include") {
+    let functions = program.list("functions");
+    if functions.iter().any(|function| function.kind() == kinds::INCLUDE) {
         return fail("includes must be expanded before compiling");
     }
-    let natives_name = text(program, "natives");
+    let natives_name = program.text("natives");
     let natives = tables
         .get(natives_name)
         .map(|table| table.natives.iter().map(|native| (native.name.clone(), native.no as i64)).collect())
@@ -877,12 +867,12 @@ pub fn to_asm(
         functions: functions
             .iter()
             .map(|function| {
-                let count = if function.kind() == "asm" {
+                let count = if function.kind() == kinds::ASM {
                     int(&function["arg"]).unwrap_or(0)
                 } else {
-                    list(function, "params").len() as i64
+                    function.list("params").len() as i64
                 };
-                (text(function, "name").to_string(), count)
+                (function.text("name").to_string(), count)
             })
             .collect(),
         natives,
@@ -890,8 +880,8 @@ pub fn to_asm(
         pool: program.get("string_pool").is_some_and(crate::source::truthy),
         notes,
     };
-    for entry in list(program, "programs") {
-        let function = text(entry, "function");
+    for entry in program.list("programs") {
+        let function = entry.text("function");
         if !context.functions.contains_key(function) {
             return fail(format!("PROGRAM({}, {function}): no function {function}", py_str(&entry["no"])));
         }
@@ -901,13 +891,13 @@ pub fn to_asm(
         return fail(format!("MAIN({main}): no function {main}"));
     }
     let mut lines = vec![format!(".natives {natives_name}"), header_line(program)?];
-    for entry in list(program, "programs") {
-        lines.push(format!(".program {} {}", int(&entry["no"])?, text(entry, "function")));
+    for entry in program.list("programs") {
+        lines.push(format!(".program {} {}", int(&entry["no"])?, entry.text("function")));
     }
     lines.push(".code".into());
     for function in functions {
         lines.push(String::new());
-        if function.kind() == "asm" {
+        if function.kind() == kinds::ASM {
             let body = strings_of(&function["lines"]);
             if context.pool {
                 context.buffer = asm_block(&body)?;
@@ -920,9 +910,9 @@ pub fn to_asm(
         }
     }
     // the code section ends zero-filled to 16, unless the last block was given in full
-    let last = functions.iter().rev().find(|function| matches!(function.kind(), "function" | "asm"));
+    let last = functions.iter().rev().find(|function| matches!(function.kind(), kinds::FUNCTION | kinds::ASM));
     if let Some(last) = last {
-        if last.kind() == "function" && last["padding"].is_null() {
+        if last.kind() == kinds::FUNCTION && last["padding"].is_null() {
             lines.push(".tail".into());
         }
     }

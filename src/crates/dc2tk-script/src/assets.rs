@@ -35,18 +35,14 @@ fn has_japanese(text: &str) -> bool {
     text.chars().any(|c| matches!(c, '\u{3040}'..='\u{30ff}' | '\u{4e00}'..='\u{9fff}' | '\u{ff00}'..='\u{ffef}'))
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
 /// The asset strings a native call passes: (position, prefix, text).
 fn asset_args(node: &Node, found: &Context) -> Vec<(usize, &'static str, String)> {
     let Some(declared) = found.by_original.get(node["name"].as_str().unwrap_or("")) else {
         return Vec::new();
     };
-    let params = list(declared, "params");
+    let params = declared.list("params");
     let mut out = Vec::new();
-    for (position, arg) in list(node, "args").iter().enumerate() {
+    for (position, arg) in node.list("args").iter().enumerate() {
         if position >= params.len() || arg.kind() != "string" {
             continue;
         }
@@ -83,8 +79,8 @@ pub fn survey(found_names: &mut BTreeSet<(String, String)>, program: &Node, foun
     if program.get("asm").is_some() {
         return;
     }
-    for function in list(program, "functions").iter().filter(|function| function.kind() == "function") {
-        walk(list(function, "body"), found, found_names);
+    for function in program.list("functions").iter().filter(|function| function.kind() == "function") {
+        walk(function.list("body"), found, found_names);
     }
 }
 
@@ -168,7 +164,7 @@ pub fn named(nodes: &Node, found: &Context) -> Node {
                 .map(|node| {
                     let mut node = node.clone();
                     if node.kind() == "native" {
-                        let mut args = list(&node, "args").to_vec();
+                        let mut args = node.list("args").to_vec();
                         for (position, prefix, text) in asset_args(&node, found) {
                             if let Some(name) = found.asset_names.get(&(prefix.to_string(), text)) {
                                 args[position] = node!({"kind": "var", "name": name.clone()});

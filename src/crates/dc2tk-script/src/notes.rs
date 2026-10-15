@@ -72,10 +72,6 @@ fn joined(parts: [Option<String>; 2]) -> String {
     parts.into_iter().flatten().filter(|part| !part.is_empty()).collect::<Vec<_>>().join("; ")
 }
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
 /// Statements with their nested blocks rebuilt by recurse and every other statement passed to
 /// leaf.
 fn each_statement(statements: &[Node], recurse: &dyn Fn(&[Node]) -> Node, leaf: &dyn Fn(Node) -> Node) -> Node {
@@ -87,9 +83,9 @@ fn each_statement(statements: &[Node], recurse: &dyn Fn(&[Node]) -> Node, leaf: 
                     Some(items) => recurse(items),
                     None => Node::Null,
                 };
-                node.clone().with("then", recurse(list(node, "then"))).with("else", otherwise)
+                node.clone().with("then", recurse(node.list("then"))).with("else", otherwise)
             }
-            "while" => node.clone().with("body", recurse(list(node, "body"))),
+            "while" => node.clone().with("body", recurse(node.list("body"))),
             _ => leaf(node.clone()),
         })
         .collect()
@@ -140,7 +136,7 @@ fn on_bodies(functions: &[Node], change: &dyn Fn(&[Node]) -> Node) -> Vec<Node> 
         .iter()
         .map(|function| {
             if function.kind() == "function" {
-                function.clone().with("body", change(list(function, "body")))
+                function.clone().with("body", change(function.list("body")))
             } else {
                 function.clone()
             }
@@ -186,6 +182,6 @@ pub fn annotate(program: Node, translations: &IndexMap<String, String>) -> Node 
     if program.get("asm").is_some() {
         return program;
     }
-    let functions = annotate_functions(list(&program, "functions").to_vec(), translations);
+    let functions = annotate_functions(program.list("functions").to_vec(), translations);
     program.with("functions", functions)
 }

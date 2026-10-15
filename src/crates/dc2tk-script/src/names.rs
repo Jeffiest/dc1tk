@@ -162,7 +162,8 @@ pub fn renamed_variables(node: &Node, mapping: &HashMap<String, String>) -> Node
 /// Each function's exact fingerprint (None for assembly), by name.
 pub fn fingerprints(program: &Node) -> IndexMap<String, Option<String>> {
     let known = &program["fingerprints"];
-    list(program, "functions")
+    program
+        .list("functions")
         .iter()
         .map(|function| {
             let name = function["name"].as_str().unwrap_or("").to_string();
@@ -171,10 +172,6 @@ pub fn fingerprints(program: &Node) -> IndexMap<String, Option<String>> {
             (name, found)
         })
         .collect()
-}
-
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
 }
 
 /// The exact fingerprint to the loose one, for every function that has both.
@@ -299,8 +296,8 @@ pub fn with_positions(
 /// The names an entry gives a function's parameters and locals, made unique and kept off the
 /// SDK's names.
 fn variable_mapping(function: &Node, entry: &Node, reserved: &HashSet<String>) -> HashMap<String, String> {
-    let params = list(function, "params");
-    let locals = list(function, "locals");
+    let params = function.list("params");
+    let locals = function.list("locals");
     let wanted: Vec<(&Node, String)> =
         params.iter().zip(strings(&entry["params"])).chain(locals.iter().zip(strings(&entry["locals"]))).collect();
     let declared_name = |declared: &Node| declared["name"].as_str().unwrap_or("").to_string();
@@ -331,8 +328,8 @@ const RETURN_TYPES: [&str; 3] = ["void", "int", "float"];
 fn returns_value(nodes: &[Node]) -> bool {
     nodes.iter().any(|node| match node.kind() {
         "return" => !node["value"].is_null(),
-        "if" => returns_value(list(node, "then")) || returns_value(list(node, "else")),
-        "while" => returns_value(list(node, "body")),
+        "if" => returns_value(node.list("then")) || returns_value(node.list("else")),
+        "while" => returns_value(node.list("body")),
         _ => false,
     })
 }
@@ -357,8 +354,8 @@ fn with_types(function: Node, entry: &Node) -> Node {
             })
             .collect()
     };
-    let params = kinds(list(&function, "params"), strings(&entry["params"]));
-    let locals = kinds(list(&function, "locals"), strings(&entry["locals"]));
+    let params = kinds(function.list("params"), strings(&entry["params"]));
+    let locals = kinds(function.list("locals"), strings(&entry["locals"]));
     function.with("params", params).with("locals", locals)
 }
 
@@ -375,7 +372,7 @@ fn with_notes(nodes: &[Node], notes: &crate::node::Map) -> Node {
             }
             match node.kind() {
                 "if" => {
-                    let then = with_notes(list(&node, "then"), notes);
+                    let then = with_notes(node.list("then"), notes);
                     let otherwise = match node["else"].as_array() {
                         Some(items) => with_notes(items, notes),
                         None => Node::Null,
@@ -383,7 +380,7 @@ fn with_notes(nodes: &[Node], notes: &crate::node::Map) -> Node {
                     node.with("then", then).with("else", otherwise)
                 }
                 "while" => {
-                    let body = with_notes(list(&node, "body"), notes);
+                    let body = with_notes(node.list("body"), notes);
                     node.with("body", body)
                 }
                 _ => node,
@@ -399,13 +396,13 @@ pub fn with_variables(mut function: Node, entry: &Node, reserved: &HashSet<Strin
     // a declared return type; void only where no return gives a value
     if let Some(returns) = entry.get("returns").and_then(Node::as_str).filter(|returns| RETURN_TYPES.contains(returns))
     {
-        if returns != "void" || !returns_value(list(&function, "body")) {
+        if returns != "void" || !returns_value(function.list("body")) {
             function = function.with("returns", returns);
         }
     }
     function = with_types(function, entry);
     if let Some(notes) = entry.get("notes").filter(|notes| truthy(notes)).and_then(Node::as_object) {
-        let body = with_notes(list(&function, "body"), notes);
+        let body = with_notes(function.list("body"), notes);
         function = function.with("body", body);
     }
     let mapping = variable_mapping(&function, entry, reserved);
@@ -416,14 +413,15 @@ pub fn with_variables(mut function: Node, entry: &Node, reserved: &HashSet<Strin
         let name = declared["name"].as_str().unwrap_or("");
         declared.clone().with("name", mapping.get(name).cloned().unwrap_or_else(|| name.to_string()))
     };
-    let params: Node = list(&function, "params").iter().map(rename).collect();
-    let locals: Node = list(&function, "locals").iter().map(rename).collect();
+    let params: Node = function.list("params").iter().map(rename).collect();
+    let locals: Node = function.list("locals").iter().map(rename).collect();
     let body = renamed_variables(&function["body"], &mapping);
     function.with("params", params).with("locals", locals).with("body", body)
 }
 
 pub fn described(program: Node, found: &[Option<String>], entries: &Lookup, reserved: &HashSet<String>) -> Node {
-    let functions: Node = list(&program, "functions")
+    let functions: Node = program
+        .list("functions")
         .iter()
         .zip(found)
         .map(|(function, fingerprint)| match fingerprint.as_ref().and_then(|print| entries.get(print)) {
@@ -438,7 +436,7 @@ pub fn described(program: Node, found: &[Option<String>], entries: &Lookup, rese
 /// otherwise, and start for main.
 fn entry_names(program: &Node, program_names: &HashMap<i64, String>) -> HashMap<String, String> {
     let mut found = HashMap::new();
-    for entry in list(program, "programs") {
+    for entry in program.list("programs") {
         let function = entry["function"].as_str().unwrap_or("").to_string();
         let no = entry["no"].as_i64();
         let name = match no.and_then(|no| program_names.get(&no)) {
@@ -474,7 +472,7 @@ pub fn assign(
     // the fingerprints named so far, and the later copies of one the numbering named
     let mut prints: HashSet<String> = HashSet::new();
     let mut copies: Vec<(String, String)> = Vec::new();
-    for function in list(program, "functions") {
+    for function in program.list("functions") {
         let name = function["name"].as_str().unwrap_or("");
         let fingerprint = found.get(name).cloned().flatten();
         let mut base = match fingerprint.as_ref().and_then(|print| class_names.get(print)) {
@@ -541,7 +539,7 @@ fn named_copies(
     }
     let renamed: HashSet<&str> = copies.iter().map(|(name, _)| name.as_str()).collect();
     let mut callers: HashMap<String, Vec<String>> = HashMap::new();
-    for function in list(program, "functions") {
+    for function in program.list("functions") {
         let caller = function["name"].as_str().unwrap_or("").to_string();
         for callee in callees(&function["body"]) {
             let found = callers.entry(callee).or_default();
@@ -571,7 +569,7 @@ pub fn rename(program: Node, mapping: &HashMap<String, String>) -> Result<Node> 
         mapping.get(name).cloned().ok_or_else(|| Error::invalid(format!("{name} is not a function")))
     };
     let mut functions = Vec::new();
-    for function in list(&program, "functions") {
+    for function in program.list("functions") {
         let mut renamed = function.clone().with("name", lookup(&function["name"])?);
         if function.kind() == "function" {
             renamed = renamed.with("body", mapped(&function["body"], mapping)?);
@@ -579,7 +577,7 @@ pub fn rename(program: Node, mapping: &HashMap<String, String>) -> Result<Node> 
         functions.push(renamed);
     }
     let mut programs = Vec::new();
-    for entry in list(&program, "programs") {
+    for entry in program.list("programs") {
         programs.push(node!({"no": entry["no"].clone(), "function": lookup(&entry["function"])?}));
     }
     let main = lookup(&program["main"])?;
@@ -592,14 +590,14 @@ pub fn global_mapping(
     protected: &HashSet<String>,
     forced: &HashMap<String, String>,
 ) -> HashMap<String, String> {
-    let globals = list(program, "globals");
+    let globals = program.list("globals");
     let name_of = |declared: &Node| declared["name"].as_str().unwrap_or("").to_string();
     let mut mapping: HashMap<String, String> = globals
         .iter()
         .filter_map(|declared| forced.get(&name_of(declared)).map(|to| (name_of(declared), to.clone())))
         .collect();
     let mut taken: HashSet<String> = mapping.values().cloned().collect();
-    for (declared, wanted) in globals.iter().zip(list(entry, "globals")) {
+    for (declared, wanted) in globals.iter().zip(entry.list("globals")) {
         let name = match wanted.as_str() {
             Some(name) => name.to_string(),
             None => crate::source::py_str(&wanted["name"]),
@@ -624,7 +622,8 @@ pub fn with_script(program: Node, entry: &Node, protected: &HashSet<String>, for
         return program;
     }
     let mapping = global_mapping(&program, entry, protected, forced);
-    let functions: Node = list(&program, "functions")
+    let functions: Node = program
+        .list("functions")
         .iter()
         .map(|function| {
             if function.kind() == "function" {
@@ -634,7 +633,8 @@ pub fn with_script(program: Node, entry: &Node, protected: &HashSet<String>, for
             }
         })
         .collect();
-    let globals: Node = list(&program, "globals")
+    let globals: Node = program
+        .list("globals")
         .iter()
         .map(|declared| {
             let name = declared["name"].as_str().unwrap_or("");
@@ -669,7 +669,7 @@ pub fn apply(
     reserved: &HashSet<String>,
     program_names: &HashMap<i64, String>,
 ) -> Result<Node> {
-    if program.get("asm").is_some() || list(&program, "functions").iter().any(|function| function.kind() == "asm") {
+    if program.get("asm").is_some() || program.list("functions").iter().any(|function| function.kind() == "asm") {
         return Ok(program);
     }
     let found = fingerprints(&program);
@@ -682,7 +682,8 @@ pub fn apply(
             (!reserved.contains(name)).then(|| (print.clone(), name.to_string()))
         })
         .collect();
-    let order: Vec<Option<String>> = list(&program, "functions")
+    let order: Vec<Option<String>> = program
+        .list("functions")
         .iter()
         .map(|function| found.get(function["name"].as_str().unwrap_or("")).cloned().flatten())
         .collect();

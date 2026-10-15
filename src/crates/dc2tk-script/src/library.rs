@@ -20,16 +20,8 @@ use crate::{assets, decompile, disc, maps, names, node, notes, parse, slots, sou
 
 pub const MINIMUM_USERS: usize = 2;
 
-fn list<'a>(node: &'a Node, key: &str) -> &'a [Node] {
-    node[key].as_array().map(Vec::as_slice).unwrap_or(&[])
-}
-
-fn text<'a>(node: &'a Node, key: &str) -> &'a str {
-    node[key].as_str().unwrap_or("")
-}
-
 fn is_assembly(program: &Node) -> bool {
-    program.get("asm").is_some() || list(program, "functions").iter().any(|function| function.kind() == "asm")
+    program.get("asm").is_some() || program.list("functions").iter().any(|function| function.kind() == "asm")
 }
 
 /// A script's functions in order, by fingerprint where they can go in a library.
@@ -45,8 +37,8 @@ pub struct FileEntry {
 fn eligible(program: &Node, found: &IndexMap<String, Option<String>>) -> HashMap<String, bool> {
     let mut usable: HashMap<String, bool> = HashMap::new();
     let mut seen: HashSet<Option<String>> = HashSet::new();
-    for function in list(program, "functions") {
-        let name = text(function, "name");
+    for function in program.list("functions") {
+        let name = function.text("name");
         let fingerprint = found.get(name).cloned().flatten();
         let called = names::callees(function.get("body").unwrap_or(&Node::Null));
         let ok = fingerprint.is_some()
@@ -70,8 +62,8 @@ fn survey(path: &str, program: &Node) -> Result<(FileEntry, IndexMap<String, Nod
         found.iter().filter_map(|(name, print)| Some((name.clone(), print.clone()?))).collect();
     let mut fingerprints = Vec::new();
     let mut shapes = IndexMap::new();
-    for function in list(program, "functions") {
-        let name = text(function, "name");
+    for function in program.list("functions") {
+        let name = function.text("name");
         let fingerprint = if usable[name] { found[name].clone() } else { None };
         if let Some(print) = &fingerprint {
             if !shapes.contains_key(print) {
@@ -272,7 +264,7 @@ fn build(files: &[FileEntry], library_defs: &IndexMap<String, Node>) -> Built {
             .join("/");
         let identity = library_fingerprint(&key.0, &key.1);
         let chosen = library_defs.get(&identity).cloned().unwrap_or_default();
-        let wanted = text(&chosen, "path");
+        let wanted = chosen.text("path");
         if wanted.starts_with("lib/") && wanted.ends_with(source::EXTENSION) && !used_paths.contains(wanted) {
             path = wanted.to_string();
         }
@@ -409,7 +401,7 @@ impl Model {
         for fingerprint in &library.fingerprints {
             if let Some(entry) = self.entry(fingerprint) {
                 for key in ["params", "locals"] {
-                    found.extend(list(entry, key).iter().filter_map(Node::as_str).map(str::to_string));
+                    found.extend(entry.list(key).iter().filter_map(Node::as_str).map(str::to_string));
                 }
             }
         }
@@ -627,20 +619,22 @@ pub fn model_for(
         let exact = &program["fingerprints"];
         script_prints.insert(
             path.clone(),
-            list(program, "functions")
+            program
+                .list("functions")
                 .iter()
-                .map(|function| exact[text(function, "name")].as_str().map(str::to_string))
+                .map(|function| exact[function.text("name")].as_str().map(str::to_string))
                 .collect(),
         );
         if program.get("asm").is_none() {
             let prints = names::fingerprints(program);
-            let passed = decompile::pointer_evidence(list(program, "functions"), list(program, "globals"));
+            let passed = decompile::pointer_evidence(program.list("functions"), program.list("globals"));
             for ((callee, position), types) in passed {
                 if let Some(Some(print)) = prints.get(&callee) {
                     pointer_types.entry((print.clone(), position)).or_default().extend(types);
                 }
             }
-            let bodies: Node = list(program, "functions")
+            let bodies: Node = program
+                .list("functions")
                 .iter()
                 .map(|function| function.get("body").cloned().unwrap_or(Node::List(vec![])))
                 .collect();
@@ -648,9 +642,9 @@ pub fn model_for(
         }
         if let Some(context) = context.filter(|_| program.get("asm").is_none()) {
             let fingerprints = names::fingerprints(program);
-            script_files.insert(path.clone(), messages::loaded_files(list(program, "functions"), context));
+            script_files.insert(path.clone(), messages::loaded_files(program.list("functions"), context));
             let mut by_kind: Vec<(String, messages::ParamsByFunction)> =
-                messages::kind_params(list(program, "functions"), context).into_iter().collect();
+                messages::kind_params(program.list("functions"), context).into_iter().collect();
             by_kind.sort_by(|a, b| a.0.cmp(&b.0));
             for (kind, by_function) in by_kind {
                 let known = kind_params.entry(kind).or_default();
@@ -881,7 +875,7 @@ impl Model {
     ) {
         let mut uses = self.sound_uses.lock().unwrap();
         for (library, functions) in hidden_by_library {
-            let own: HashSet<&str> = functions.iter().map(|function| text(function, "name")).collect();
+            let own: HashSet<&str> = functions.iter().map(|function| function.text("name")).collect();
             let used: HashSet<String> = names::global_uses(functions)
                 .into_iter()
                 .map(|name| global_names.get(&name).cloned().unwrap_or(name))
@@ -916,7 +910,7 @@ impl Model {
         if is_assembly(program) {
             return Ok(program.clone());
         }
-        let natives_name = text(program, "natives").to_string();
+        let natives_name = program.text("natives").to_string();
         let context = slots::in_folder(self.contexts.get(&natives_name).cloned().flatten(), path, &self.folder_slots);
         let map = self.villagers.maps.get(path).map(String::as_str);
         let context = slots::on_map(context, map, &self.villagers);
@@ -927,9 +921,10 @@ impl Model {
             self.own_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
         known.extend(self.class_names.iter().map(|(print, name)| (print.clone(), name.clone())));
         let mapping = names::assign(program, &found, &known, &self.reserved, &program_names);
-        let order: Vec<Option<String>> = list(program, "functions")
+        let order: Vec<Option<String>> = program
+            .list("functions")
             .iter()
-            .map(|function| found.get(text(function, "name")).cloned().flatten())
+            .map(|function| found.get(function.text("name")).cloned().flatten())
             .collect();
         let lookup = self.lookup();
         let renamed = names::described(names::rename(program.clone(), &mapping)?, &order, &lookup, &self.reserved);
@@ -944,7 +939,7 @@ impl Model {
             }
             params.insert(kind.clone(), by_name);
         }
-        let mut functions = list(&renamed, "functions").to_vec();
+        let mut functions = renamed.list("functions").to_vec();
         if let Some(context) = &context {
             functions = messages::annotate_functions(
                 functions,
@@ -958,14 +953,14 @@ impl Model {
         let renamed = renamed.with("functions", functions.clone());
         let mut included: HashMap<usize, (&Library, usize)> = HashMap::new();
         let mut forced: HashMap<String, String> = HashMap::new();
-        let original_functions = list(program, "functions");
+        let original_functions = program.list("functions");
         for segment in self.layouts.get(path).into_iter().flatten() {
             let Some(library) = self.libraries.get(&(natives_name.clone(), segment.fingerprints.clone())) else {
                 continue;
             };
             let span = segment.start..segment.start + segment.fingerprints.len();
             let all_named = span.clone().all(|position| {
-                let name = text(&original_functions[position], "name");
+                let name = original_functions[position].text("name");
                 found[name].as_ref().is_some_and(|print| self.class_names.get(print) == mapping.get(name))
             });
             if all_named {
@@ -989,7 +984,7 @@ impl Model {
             for function in &functions[position..position + count] {
                 hidden.push(function.clone());
                 if !function["padding"].is_null() {
-                    padding_of.insert(text(function, "name").to_string(), function["padding"].clone());
+                    padding_of.insert(function.text("name").to_string(), function["padding"].clone());
                 }
             }
             position += count;
@@ -1018,7 +1013,7 @@ impl Model {
                     })
                     .collect();
                 uses.sort();
-                let name = text(function, "name").to_string();
+                let name = function.text("name").to_string();
                 (name.clone(), format!("{natives_name}\u{0}{numbering:?}\u{0}{name}\u{0}{uses:?}"))
             })
             .collect();
@@ -1027,16 +1022,17 @@ impl Model {
         let mut presented = sdk::present(scripted, numbered.as_ref(), &params, &shown_hidden, &mut sounds);
         if let (Some(notes), Some(found)) = (map.and_then(|map| self.villagers.notes.get(map)), numbered.as_ref()) {
             presented =
-                presented.clone().with("functions", with_villager_notes(list(&presented, "functions"), found, notes));
+                presented.clone().with("functions", with_villager_notes(presented.list("functions"), found, notes));
         }
         if let Some(passed) = &sounds.out {
             self.record_sound_uses(&hidden_by_library, &global_names, passed);
         }
         let folder = slots::folder(path);
         if let Some(triggers) = self.triggers.get(&folder).filter(|triggers| !triggers.is_empty()) {
-            let programs: Vec<Node> = list(&presented, "programs")
+            let programs: Vec<Node> = presented
+                .list("programs")
                 .iter()
-                .zip(list(program, "programs"))
+                .zip(program.list("programs"))
                 .map(|(entry, original)| match original["no"].as_i64().and_then(|no| triggers.get(&no)) {
                     Some(notes) => entry.clone().with("note", notes.join("; ")),
                     None => entry.clone(),
@@ -1119,19 +1115,19 @@ impl Expansion<'_> {
         let mut table = included["natives"].as_str().map(str::to_string);
         let mut inner_chain = chain.to_vec();
         inner_chain.push(path.to_string());
-        for sub in list(&included, "functions") {
+        for sub in included.list("functions") {
             if sub.kind() == "include" && truthy(&sub["system"]) {
-                let header_table = self.absorbed_header(text_of(sub, "path"))?;
+                let header_table = self.absorbed_header(sub.text("path"))?;
                 if table.is_none() {
                     table = header_table;
                 }
             } else if sub.kind() == "include" {
-                let nested = self.inline_library(text_of(sub, "path"), &inner_chain)?;
+                let nested = self.inline_library(sub.text("path"), &inner_chain)?;
                 if let (Some(table), Some(nested)) = (&table, &nested) {
                     if nested != table {
                         return Err(Error::invalid(format!(
                             "{} uses natives {}, not {}",
-                            text_of(sub, "path"),
+                            sub.text("path"),
                             nested,
                             table
                         )));
@@ -1144,10 +1140,6 @@ impl Expansion<'_> {
         }
         Ok(table)
     }
-}
-
-fn text_of<'a>(node: &'a Node, key: &str) -> &'a str {
-    text(node, key)
 }
 
 /// A program with its includes expanded: libraries' functions and declarations inlined, headers'
@@ -1168,21 +1160,21 @@ pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMa
         structs: crate::ctype::structs_of(&program),
     };
     let mut table = program["natives"].as_str().map(str::to_string);
-    for item in list(&program, "functions") {
+    for item in program.list("functions") {
         if item.kind() != "include" {
             state.functions.push(item.clone());
         } else if truthy(&item["system"]) {
-            let header_table = state.absorbed_header(text_of(item, "path"))?;
+            let header_table = state.absorbed_header(item.text("path"))?;
             if table.is_none() {
                 table = header_table;
             }
         } else {
-            let included_table = state.inline_library(text_of(item, "path"), &[])?;
+            let included_table = state.inline_library(item.text("path"), &[])?;
             if let (Some(table), Some(included_table)) = (&table, &included_table) {
                 if included_table != table {
                     return Err(Error::invalid(format!(
                         "{} uses natives {}, not {}",
-                        text_of(item, "path"),
+                        item.text("path"),
                         included_table,
                         table
                     )));
@@ -1191,7 +1183,7 @@ pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMa
         }
     }
     let padding_of = program["padding_of"].as_object().cloned().unwrap_or_default();
-    let defined: HashSet<&str> = state.functions.iter().map(|function| text(function, "name")).collect();
+    let defined: HashSet<&str> = state.functions.iter().map(|function| function.text("name")).collect();
     for name in padding_of.keys() {
         if !defined.contains(name) {
             return Err(Error::invalid(format!("#pragma padding_of names unknown function {name}")));
@@ -1200,7 +1192,7 @@ pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMa
     let functions: Vec<Node> = state
         .functions
         .iter()
-        .map(|function| match padding_of.get(text(function, "name")) {
+        .map(|function| match padding_of.get(function.text("name")) {
             Some(padding) => function.clone().with("padding", padding.clone()),
             None => function.clone(),
         })
@@ -1261,10 +1253,10 @@ pub fn read_includes(
     let directory =
         PathBuf::from(definitions::resolved_posix(source_path)).parent().map(Path::to_path_buf).unwrap_or_default();
     let includes = |node: &Node| -> Vec<String> {
-        list(node, "functions")
+        node.list("functions")
             .iter()
             .filter(|item| item.kind() == "include" && !truthy(&item["system"]))
-            .map(|item| text(item, "path").to_string())
+            .map(|item| item.text("path").to_string())
             .collect()
     };
     let mut pending = includes(program);
@@ -1302,7 +1294,7 @@ fn with_villager_notes(functions: &[Node], found: &sdk::Context, notes: &BTreeMa
         .iter()
         .map(|function| {
             if function.kind() == "function" {
-                function.clone().with("body", Node::List(slots::villager_notes(list(function, "body"), found, notes)))
+                function.clone().with("body", Node::List(slots::villager_notes(function.list("body"), found, notes)))
             } else {
                 function.clone()
             }
