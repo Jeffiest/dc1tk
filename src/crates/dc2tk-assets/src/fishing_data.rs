@@ -19,7 +19,7 @@
 
 use serde_json::Value;
 
-use crate::cfg_text::Arg;
+use crate::cfg_text::{Arg, Script};
 use crate::data_table::{self, Adding, Kind, Place, Record, Table, B8, S16, S32};
 use crate::elf::table_offset;
 use crate::Result;
@@ -58,10 +58,34 @@ fn text_at(elf: &[u8], pointer: u32) -> Option<Value> {
 
 pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     let scripts = data_table::parse_all(&paths(), files)?;
-    // spots: the statements of each FISH_MAP block
+    let spots = spots(&scripts[SPOTS]);
+    let race_fish = race_fish(&scripts);
+    let (groups, prizes) = prizes(&scripts);
+    let mut table = Table::new("a fishing table", scripts, elf.to_vec());
+    table.section("spots", &["spot"], spots);
+    // FISH_MAP_NUM allocates the spots (FISH_PLACE_MAP, 0x88 each, from the scene's stack); a
+    // block past it is dropped
+    let counts = data_table::tagged(&table.scripts[SPOTS], "FISH_MAP_NUM").last().map(|&at| vec![(SPOTS, at, 0)]);
+    table.adding(Adding {
+        counts: counts.unwrap_or_default(),
+        most: SPOTS_MOST,
+        why: "the spots FISH_MAP_NUM allocates from the scene's stack, a size not fixed",
+        place: Some("spot"),
+        ..Adding::default()
+    });
+    table.section("race_fish", &["class", "number"], race_fish);
+    table.section("prize_groups", &["contest", "group"], groups);
+    table.section("prizes", &["contest", "group", "prize"], prizes);
+    table.section("species", &["fish"], species(elf)?);
+    table.section("race_kinds", &["row"], race_kinds(elf)?);
+    Ok(table)
+}
+
+/// The spots: the statements of each FISH_MAP block of fishing.cfg.
+fn spots(script: &Script) -> Vec<Record> {
     let mut spots = Vec::new();
     let mut block: Option<(usize, Vec<usize>, Vec<usize>)> = None;
-    for (at, statement) in scripts[SPOTS].statements.iter().enumerate() {
+    for (at, statement) in script.statements.iter().enumerate() {
         match statement.tag.as_str() {
             "FISH_MAP" => block = Some((at, Vec::new(), Vec::new())),
             "FISH_PLACE" => {
@@ -81,11 +105,10 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
                 let mut record = Record::new(&[("spot", Value::from(spots.len()))]);
                 let head = [(0, head)];
                 record.arg("map", S32, &head, 0);
-                if scripts[SPOTS].statements[head[0].1].args().len() >= 2 {
+                if script.statements[head[0].1].args().len() >= 2 {
                     record.arg("exclusive", S32, &head, 1);
                 }
-                if let Some(&place) = places.last().filter(|&&place| scripts[SPOTS].statements[place].args().len() >= 7)
-                {
+                if let Some(&place) = places.last().filter(|&&place| script.statements[place].args().len() >= 7) {
                     let place = [(0, place)];
                     record.arg("area", S32, &place, 0);
                     record.args("area_values", Kind::Float, &place, 2, 5);
@@ -106,7 +129,13 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
             _ => {}
         }
     }
-    // race opponents: (class, number) to the statement in each language's file
+    spots
+}
+
+/// The race opponents, each with its statement in every language's file, the English one first:
+/// its name labels the fish.
+fn race_fish(scripts: &[Script]) -> Vec<Record> {
+    // (class, number) to the statement in each language's file
     let mut racers: std::collections::BTreeMap<(i32, usize), Vec<(usize, usize)>> = Default::default();
     for (file, script) in scripts.iter().enumerate().skip(RACERS).take(LANGUAGES) {
         let mut class = None;
@@ -129,7 +158,6 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
     }
     let mut race_fish = Vec::new();
     for ((class, number), mut at) in racers {
-        // the English file first: its name labels the fish
         at.sort_by_key(|&(file, _)| file != RACERS + crate::lang::ENGLISH);
         if scripts[at[0].0].statements[at[0].1].args().len() < 9 {
             continue;
@@ -143,6 +171,11 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
         record.arg("stamina", S16, &at, 7).arg("size", S16, &at, 8);
         race_fish.push(record);
     }
+    race_fish
+}
+
+/// Each contest's prize groups (GRP) and their prizes (PRIZE).
+fn prizes(scripts: &[Script]) -> (Vec<Record>, Vec<Record>) {
     let mut groups = Vec::new();
     let mut prizes = Vec::new();
     for (contest, file) in CONTESTS.iter().zip(PRIZES) {
@@ -192,21 +225,11 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
             }
         }
     }
-    let mut table = Table::new("a fishing table", scripts, elf.to_vec());
-    table.section("spots", &["spot"], spots);
-    // FISH_MAP_NUM allocates the spots (FISH_PLACE_MAP, 0x88 each, from the scene's stack); a
-    // block past it is dropped
-    let counts = data_table::tagged(&table.scripts[SPOTS], "FISH_MAP_NUM").last().map(|&at| vec![(SPOTS, at, 0)]);
-    table.adding(Adding {
-        counts: counts.unwrap_or_default(),
-        most: SPOTS_MOST,
-        why: "the spots FISH_MAP_NUM allocates from the scene's stack, a size not fixed",
-        place: Some("spot"),
-        ..Adding::default()
-    });
-    table.section("race_fish", &["class", "number"], race_fish);
-    table.section("prize_groups", &["contest", "group"], groups);
-    table.section("prizes", &["contest", "group", "prize"], prizes);
+    (groups, prizes)
+}
+
+/// The species caught (FishParam), row 0 none.
+fn species(elf: &[u8]) -> Result<Vec<Record>> {
     let start = table_offset(elf, SPECIES_TABLE, SPECIES * SPECIES_RECORD, "fish species table")?;
     let mut species = Vec::new();
     for row in 1..SPECIES {
@@ -229,7 +252,11 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
             .bytes("time_liking", S16, at + 0x4C, 4);
         species.push(record);
     }
-    table.section("species", &["fish"], species);
+    Ok(species)
+}
+
+/// The race figures of each kind of fish (fish_data).
+fn race_kinds(elf: &[u8]) -> Result<Vec<Record>> {
     let start = table_offset(elf, RACE_TABLE, RACE_KINDS * RACE_RECORD, "fish race table")?;
     let mut kinds = Vec::new();
     for row in 0..RACE_KINDS {
@@ -244,8 +271,7 @@ pub fn read(files: &[Vec<u8>], elf: &[u8]) -> Result<Table> {
             .bytes("affinity", S32, at + 0x18, 1);
         kinds.push(record);
     }
-    table.section("race_kinds", &["row"], kinds);
-    Ok(table)
+    Ok(kinds)
 }
 
 #[cfg(test)]
