@@ -1047,10 +1047,10 @@ mod tests {
         assert_eq!(controls, 5);
     }
 
-    /// Every sequence of an extracted disc (C2S_CORPUS) exports to MIDI and builds back to the same
+    /// Every sequence of an extracted disc (DC2TK_CORPUS) exports to MIDI and builds back to the same
     /// bytes, and names only programs its bank has.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_sequences_round_trip_through_midi() {
         let corpus = dc2tk_disc::samples::corpus();
         let banks: Vec<std::path::PathBuf> = crate::files_under(std::path::Path::new(&corpus))
@@ -1089,7 +1089,7 @@ mod tests {
     /// Every music bank of the disc makes a new bank of its own tune: entry 0 plays the same
     /// sequence, renamed, and the bank fits the music memory.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_music_banks_make_new_banks() {
         let corpus = dc2tk_disc::samples::corpus();
         let folder = std::path::Path::new(&corpus).join("snd2").join("bgm");

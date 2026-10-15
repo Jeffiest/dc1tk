@@ -2335,12 +2335,12 @@ mod tests {
         assert!(!close_within(ROTATION, &engine_turn(0, 0.0), &engine_turn(0, 1.0), 1e4));
     }
 
-    /// Every character pack of an extracted disc (C2S_CORPUS) with a motion: its unedited export
+    /// Every character pack of an extracted disc (DC2TK_CORPUS) with a motion: its unedited export
     /// changes no motion, one bone of its first motion turned 30 degrees comes back from a fresh
     /// export of the rebuilt pack as given, every other motion as it was, and that motion's
     /// action deleted takes its KEY out and leaves every other motion as it was.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_motions_come_back_from_gltf() {
         use rayon::prelude::*;
         let corpus = dc2tk_disc::samples::corpus();

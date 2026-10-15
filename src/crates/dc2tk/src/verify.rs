@@ -535,9 +535,9 @@ mod tests {
         assert!(format_report(&report, 5).contains("assembly  fail  map/t01.stb: first difference at 0x0"));
     }
 
-    /// The whole disc round-trips: set C2S_CORPUS to an extracted disc to run it (40 s).
+    /// The whole disc round-trips: set DC2TK_CORPUS to an extracted disc to run it (40 s).
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let defs = dc2tk_script::definitions::load(&[files::default_defs()]).unwrap();

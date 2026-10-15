@@ -1580,12 +1580,12 @@ mod tests {
         ])
     }
 
-    /// Every character pack of an extracted disc (C2S_CORPUS) whose model exports: its export as
+    /// Every character pack of an extracted disc (DC2TK_CORPUS) whose model exports: its export as
     /// Blender gives it back (blender_like) changes no mesh; one mesh moved changes that mesh
     /// alone, and rebuilt it leaves every other frame and weight as they were and keeps its own
     /// vertices' weights.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_characters_compare_by_value() {
         use rayon::prelude::*;
         let corpus = dc2tk_disc::samples::corpus();

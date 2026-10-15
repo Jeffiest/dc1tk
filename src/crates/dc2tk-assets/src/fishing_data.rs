@@ -253,10 +253,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// The fishing files and tables of an extracted disc (C2S_CORPUS) read, write back unchanged,
+    /// The fishing files and tables of an extracted disc (DC2TK_CORPUS) read, write back unchanged,
     /// and their JSON changes nothing; a race fish's edit reaches every language.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_fishing_round_trips() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);

@@ -344,10 +344,10 @@ mod tests {
         assert_eq!(centibels(0.5, 1.0), 60);
     }
 
-    /// Every bank with sequences on an extracted disc (C2S_CORPUS) gives a SoundFont whose chunks
+    /// Every bank with sequences on an extracted disc (DC2TK_CORPUS) gives a SoundFont whose chunks
     /// add up.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_banks_give_soundfonts() {
         let corpus = dc2tk_disc::samples::corpus();
         let folder = std::path::Path::new(&corpus).join("snd2");

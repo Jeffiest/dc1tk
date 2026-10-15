@@ -750,11 +750,11 @@ mod tests {
         .into()
     }
 
-    /// Every map of an extracted disc (C2S_CORPUS) goes to a scene and back unchanged, also after
+    /// Every map of an extracted disc (DC2TK_CORPUS) goes to a scene and back unchanged, also after
     /// a trip through JSON as Blender would leave it (names suffixed, children reversed, ints as
     /// floats).
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_scenes_read_back_unchanged() {
         let corpus = dc2tk_disc::samples::corpus();
         fn walk(folder: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {

@@ -290,10 +290,10 @@ fn map_files_name_their_map() {
 }
 
 /// The disc's own loads stay within every budget, and the largest estimated uses are the
-/// RETAIL_ constants (when one fails, the budget or the estimate is wrong). Set C2S_CORPUS to
+/// RETAIL_ constants (when one fails, the budget or the estimate is wrong). Set DC2TK_CORPUS to
 /// an extracted disc (`extracted/disc`).
 #[test]
-#[ignore = "needs C2S_CORPUS"]
+#[ignore = "needs DC2TK_CORPUS"]
 fn corpus_retail_fits_the_budgets() {
     let corpus = dc2tk_disc::samples::corpus();
     let disc = DiscSource::open(Path::new(&corpus)).unwrap();

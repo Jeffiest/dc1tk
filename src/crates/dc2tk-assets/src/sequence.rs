@@ -498,9 +498,9 @@ mod tests {
         assert_eq!(Sequence::read(&sequence.write().unwrap()).unwrap(), sequence);
     }
 
-    /// Every .sq of an extracted disc (C2S_CORPUS) reads and writes back byte for byte.
+    /// Every .sq of an extracted disc (DC2TK_CORPUS) reads and writes back byte for byte.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_sequences_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let paths: Vec<std::path::PathBuf> = crate::files_under(std::path::Path::new(&corpus))

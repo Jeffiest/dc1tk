@@ -201,10 +201,10 @@ mod tests {
         assert!(refused(json!({"monsters": [{"id": 0, "drops": [1]}]})).contains("list of 2"));
     }
 
-    /// The executable of an extracted disc (C2S_CORPUS): its 343 monsters read, every field's
+    /// The executable of an extracted disc (DC2TK_CORPUS): its 343 monsters read, every field's
     /// bytes are the ones its value writes, and the JSON changes nothing.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_monsters_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let elf = std::fs::read(std::path::Path::new(&corpus).join(EXECUTABLE)).unwrap();

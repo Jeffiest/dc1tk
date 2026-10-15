@@ -320,11 +320,11 @@ mod tests {
         assert!(report.problems[0].contains("builds back to other bytes"));
     }
 
-    /// Real banks of an extracted disc (C2S_CORPUS): a music bank at its own path and inside a
+    /// Real banks of an extracted disc (DC2TK_CORPUS): a music bank at its own path and inside a
     /// pack, and an ambient bank of several sequences. Each sequence is a music asset at every
     /// place, the tree and the index give the same ids, and the tree's MIDI files build back.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_sequences_are_music_in_the_tree_and_build_back() {
         let corpus = dc2tk_disc::samples::corpus();
         let read = |path: &str| std::fs::read(Path::new(&corpus).join(path)).unwrap();

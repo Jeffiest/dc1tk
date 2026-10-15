@@ -646,11 +646,11 @@ mod tests {
         assert_eq!(stored_len(b"Cr[UNI00e9]puscule", 2), 18);
     }
 
-    /// Every copy of neta2.lst of an extracted disc (C2S_CORPUS) reads, writes back unchanged,
+    /// Every copy of neta2.lst of an extracted disc (DC2TK_CORPUS) reads, writes back unchanged,
     /// and its JSON changes nothing; the sort keys follow the letters; an idea is added and
     /// renamed in every copy, in its place; the limits refuse.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_ideas() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);

@@ -508,10 +508,10 @@ mod tests {
         assert!(chests.changes(&json!({"chests": [{"dungeon": 0}]}), "m").unwrap().is_empty());
     }
 
-    /// The chest scripts of an extracted disc (C2S_CORPUS) read, write back unchanged, and their
+    /// The chest scripts of an extracted disc (DC2TK_CORPUS) read, write back unchanged, and their
     /// JSON changes nothing.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_chests_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let files: Vec<Vec<u8>> =

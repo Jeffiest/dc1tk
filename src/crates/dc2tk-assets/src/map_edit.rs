@@ -370,9 +370,9 @@ mod tests {
         assert_eq!(shown, [("door_a", 0), ("door_b", 1), ("door_c", 1)]);
     }
 
-    /// Every map of an extracted disc (C2S_CORPUS) rebuilds from its own scene unchanged.
+    /// Every map of an extracted disc (DC2TK_CORPUS) rebuilds from its own scene unchanged.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_scenes_rebuild_their_maps() {
         let corpus = dc2tk_disc::samples::corpus();
         fn walk(folder: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {

@@ -758,10 +758,10 @@ mod tests {
         assert_eq!((folded('ŷ'), folded('ß'), folded('Ç'), folded('Ø')), (Some("y"), Some("ss"), Some("C"), None));
     }
 
-    /// Every letter the build can draw, from the European font of an extracted disc (C2S_CORPUS):
+    /// Every letter the build can draw, from the European font of an extracted disc (DC2TK_CORPUS):
     /// the composed ones drawn, shown with C2S_SHOW_LETTERS set.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_letters_compose() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);

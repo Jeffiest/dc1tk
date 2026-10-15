@@ -192,10 +192,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// The executable's tables (C2S_CORPUS) read, every value's bytes are the ones it writes, and
+    /// The executable's tables (DC2TK_CORPUS) read, every value's bytes are the ones it writes, and
     /// their JSON changes nothing.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_executable_tables_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::elf::EXECUTABLE)).unwrap();

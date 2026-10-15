@@ -1416,11 +1416,11 @@ mod tests {
         assert_eq!(families, wanted);
     }
 
-    /// Every version of the item data on an extracted disc (C2S_CORPUS: menu/cfg5, cfg6 and the
+    /// Every version of the item data on an extracted disc (DC2TK_CORPUS: menu/cfg5, cfg6 and the
     /// cfg7 the game reads): the scripts round-trip byte for byte, every field's text is the one
     /// its value writes, and the JSON goes back to the same files.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_item_data_round_trips() {
         let corpus = dc2tk_disc::samples::corpus();
         let menu = std::path::Path::new(&corpus).join("menu");
@@ -1458,11 +1458,11 @@ mod tests {
         assert!(checked > 1000);
     }
 
-    /// The game's item tables with their name files (C2S_CORPUS): read back unchanged, and items
+    /// The game's item tables with their name files (DC2TK_CORPUS): read back unchanged, and items
     /// added up to what the engine holds (432 records: here 4 weapons, 2 usable items, 2
     /// attachments and a fish, each family's own limit met too), a tenth refused.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_items_are_added_up_to_the_engine_limits() {
         let corpus = dc2tk_disc::samples::corpus();
         let folder = std::path::Path::new(&corpus).join(FOLDER);

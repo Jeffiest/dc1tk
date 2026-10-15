@@ -775,12 +775,12 @@ mod tests {
         assert!(refused(three).contains("grid_size"));
     }
 
-    /// The room scripts of an extracted disc (C2S_CORPUS) read with the executable's part names,
+    /// The room scripts of an extracted disc (DC2TK_CORPUS) read with the executable's part names,
     /// write back unchanged, and their JSON changes nothing.
-    /// PartsInfoData and MiniMapInfoData of the executable (C2S_CORPUS) as data:parts: they read
+    /// PartsInfoData and MiniMapInfoData of the executable (DC2TK_CORPUS) as data:parts: they read
     /// back as written, and a part renamed in its slot is patched in place.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_parts_table() {
         let corpus = dc2tk_disc::samples::corpus();
         let elf = std::fs::read(std::path::Path::new(&corpus).join(crate::elf::EXECUTABLE)).unwrap();
@@ -809,7 +809,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_layouts_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);

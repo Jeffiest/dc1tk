@@ -344,14 +344,14 @@ void other(void)
 
     /// The game's own scripts load files the disc has, but for a few the retail game lacks too (test
     /// maps, eng_ message files and motion packs it never shipped): the check finds the loads and
-    /// places their directories. Set C2S_CORPUS to the extracted disc, with the decompiled tree
+    /// places their directories. Set DC2TK_CORPUS to the extracted disc, with the decompiled tree
     /// beside it (extracted/scripts).
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn the_games_scripts_load_files_the_disc_has() {
         let disc = dc2tk_disc::samples::corpus();
         let tree = disc.parent().unwrap().join("scripts");
-        assert!(tree.is_dir(), "this test reads the decompiled tree beside C2S_CORPUS: {}", tree.display());
+        assert!(tree.is_dir(), "this test reads the decompiled tree beside DC2TK_CORPUS: {}", tree.display());
         let index = dc2tk_disc::archive::parse_index(&std::fs::read(disc.join("DATA.HD4")).unwrap()).unwrap();
         let known = Known::new(index.iter().map(|entry| entry.path.as_str()), []);
         let members = |path: &str| -> Option<Vec<String>> {

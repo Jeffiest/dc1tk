@@ -107,10 +107,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// Every copy of inv6.lst and the scoop table of an extracted disc (C2S_CORPUS) read, write
+    /// Every copy of inv6.lst and the scoop table of an extracted disc (DC2TK_CORPUS) read, write
     /// back unchanged, and their JSON changes nothing; an edit reaches all 19 copies.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_inventions_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);

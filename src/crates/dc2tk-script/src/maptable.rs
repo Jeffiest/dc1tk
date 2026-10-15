@@ -312,10 +312,10 @@ MAP_NAME \"\",\"\",\"\",0,0;// 1 \r\nMAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\
         assert!(with_new_maps(short, &[]).unwrap_err().to_string().contains("counts 2"));
     }
 
-    /// Every language's table of an extracted disc (C2S_CORPUS) takes a new map as number 189,
+    /// Every language's table of an extracted disc (DC2TK_CORPUS) takes a new map as number 189,
     /// within its buffer.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_tables_take_a_new_map() {
         let corpus = dc2tk_disc::samples::corpus();
         for language in LANGUAGES {

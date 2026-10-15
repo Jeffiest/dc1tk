@@ -18,7 +18,7 @@ through m2c). Corpus: the extracted PAL disc. Map files are in
   reads all 23 scripts (291 room layouts) with the part names of the
   executable's `PartsInfoData` and writes them back byte for byte; every room
   rewritten from its JSON gives its own bytes (`cargo test --release --
-  --include-ignored corpus` with `C2S_CORPUS` set).
+  --include-ignored corpus` with `DC2TK_CORPUS` set).
 - How a floor is laid out, from the layouts, and where its parts, chests,
   monsters and stones go (sections 3 and 4).
 - `data:layouts` in `mod.json` changes rooms and grid sizes and adds rooms

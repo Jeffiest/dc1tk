@@ -544,9 +544,9 @@ mod tests {
         assert!(refused(json!({"shops": [{"shop": 0, "items": vec![1; 64]}]})).contains("at most 63"));
     }
 
-    /// The shop lists of an extracted disc (C2S_CORPUS) round-trip, and their JSON changes nothing.
+    /// The shop lists of an extracted disc (DC2TK_CORPUS) round-trip, and their JSON changes nothing.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_shops_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let menu = std::path::Path::new(&corpus).join(FOLDER);

@@ -246,11 +246,11 @@ mod tests {
         paths.iter().map(|path| std::fs::read(corpus.join(path)).unwrap()).collect()
     }
 
-    /// Every language's requests (C2S_CORPUS) read, write back unchanged, their JSON changes
+    /// Every language's requests (DC2TK_CORPUS) read, write back unchanged, their JSON changes
     /// nothing, the strings fit buff_1271; a request is edited in every language and added to
     /// a town.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_requests_round_trip() {
         let files = corpus(&request_paths());
         let table = requests(&files).unwrap();
@@ -293,10 +293,10 @@ mod tests {
         eprintln!("{conditions} conditions and {requests_found} requests in {LANGUAGES} languages round-trip");
     }
 
-    /// Every language's townspeople (C2S_CORPUS) read, write back unchanged and their JSON
+    /// Every language's townspeople (DC2TK_CORPUS) read, write back unchanged and their JSON
     /// changes nothing; one is added in every language, up to NpcBaseData's 180.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_townspeople_round_trip() {
         let files = corpus(&townspeople_paths());
         let table = townspeople(&files).unwrap();

@@ -329,10 +329,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// Every town's parts in every language and its fixed and starting parts (C2S_CORPUS) read,
+    /// Every town's parts in every language and its fixed and starting parts (DC2TK_CORPUS) read,
     /// write back unchanged, and their JSON changes nothing; an edit reaches every language.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_georama_round_trips() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);

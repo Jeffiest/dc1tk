@@ -1813,10 +1813,10 @@ mod tests {
         assert!(write(&map).is_err());
     }
 
-    /// The whole disc: set C2S_CORPUS to an extracted disc (`extracted/disc`) to round-trip every
+    /// The whole disc: set DC2TK_CORPUS to an extracted disc (`extracted/disc`) to round-trip every
     /// .map under its `map` folder, through JSON too.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_maps_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         fn walk(folder: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {

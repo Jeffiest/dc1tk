@@ -1490,11 +1490,11 @@ pub(crate) mod tests {
         assert!(width_warnings(&edited, &data, path, &fonts).unwrap().is_empty());
     }
 
-    /// Japanese and Korean message files of an extracted disc (C2S_CORPUS) read as text: every
+    /// Japanese and Korean message files of an extracted disc (DC2TK_CORPUS) read as text: every
     /// glyph the game's own files use has its character, and the Japanese font pages have ink in
     /// exactly the cells font::JAPANESE names.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_japanese_and_korean_read_as_text() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);
@@ -1541,10 +1541,10 @@ pub(crate) mod tests {
         assert!(unread.is_empty(), "{unread:?}");
     }
 
-    /// Every message file of an extracted disc (C2S_CORPUS): read and written back, and through
+    /// Every message file of an extracted disc (DC2TK_CORPUS): read and written back, and through
     /// its text, byte for byte.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_message_files_round_trip() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);

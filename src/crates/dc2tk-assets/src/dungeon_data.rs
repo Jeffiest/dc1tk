@@ -146,10 +146,10 @@ mod tests {
         assert_eq!(written[0], b"FLS 1,3;\r\nFL 4,400;\r\nFL;\r\nFLE;\r\n");
     }
 
-    /// The medal and floor files of an extracted disc (C2S_CORPUS) read, write back unchanged,
+    /// The medal and floor files of an extracted disc (DC2TK_CORPUS) read, write back unchanged,
     /// and their JSON changes nothing.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_floors_and_medals_round_trip() {
         let (medal_files, floor_files) = (corpus(&medal_paths()), corpus(&floor_paths()));
         let medals = medals(&medal_files).unwrap();

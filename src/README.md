@@ -19,8 +19,10 @@ above the executable that has `definitions/`, or in the folder `$DC2TK_ROOT`
 names.
 
 The tests use small discs and scripts built in memory
-(`dc2tk_disc::samples`), the SDK and the definitions; no game files. With `C2S_CORPUS` set to the absolute path of an extracted disc
-(`extracted/disc`), `cargo test --release corpus` also round-trips every
+(`dc2tk_disc::samples`), the SDK and the definitions; no game files. The
+tests that read the game's own files are marked ignored: with `DC2TK_CORPUS`
+set to the absolute path of an extracted disc (`extracted/disc`),
+`cargo test --release -- --include-ignored` also round-trips every
 script on it (about 40 s), every `.map` scene file and every message file (a
 few seconds each), the item, shop and monster tables, and checks every load on
 it against the memory budgets of [docs/assets/memory.md](../docs/assets/memory.md).

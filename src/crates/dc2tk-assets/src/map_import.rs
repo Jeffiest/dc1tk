@@ -508,10 +508,10 @@ mod tests {
         }
     }
 
-    /// Every fixed map of an extracted disc (C2S_CORPUS) exported and imported unedited changes
+    /// Every fixed map of an extracted disc (DC2TK_CORPUS) exported and imported unedited changes
     /// nothing: the same .map, no model rebuilt.
     #[test]
-    #[ignore = "needs C2S_CORPUS"]
+    #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_unedited_scenes_change_nothing() {
         let corpus = dc2tk_disc::samples::corpus();
         let root = std::path::Path::new(&corpus);

@@ -124,7 +124,7 @@ the executable once with every table's changes.
 come from is read by `dc2tk-assets`' `cfg_text.rs` (statements with the spaces,
 line breaks and comments around every argument) and written back byte for
 byte; an edit replaces only the arguments it changes. `cargo test --release --
---include-ignored corpus` with `C2S_CORPUS` set checks all three versions of the item tables
+--include-ignored corpus` with `DC2TK_CORPUS` set checks all three versions of the item tables
 (`menu/cfg5`, `cfg6`, `cfg7`: 1,260 records), the 16 shop lists, the monster
 table and every kind above (136 recipes in 19 copies, 53 scoops, 218 Georama
 parts with 5 fixed and 29 starting parts, 161 floors' medals, 129 floors'
@@ -135,7 +135,7 @@ nothing. A build with every table edited reads back as edited from the image
 (packs holding `inv6.lst` rebuilt around it).
 
 The added kinds' corpus tests (`cargo test --release -- --include-ignored
-corpus` with `C2S_CORPUS`) check the same for the requests (54 in 7 languages), the 177
+corpus` with `DC2TK_CORPUS`) check the same for the requests (54 in 7 languages), the 177
 townspeople in 7 languages, rivers and water, gifts, clubs and breeding,
 and add a record of every kind that takes them (items up to the 432, recipes
 up to the 234, a Georama part in every language, a spot and fish, a request
