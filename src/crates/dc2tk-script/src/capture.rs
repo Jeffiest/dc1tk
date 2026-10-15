@@ -17,7 +17,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
+use dc2tk_assets::manifest::Manifest;
+use dc2tk_assets::tree::MANIFEST as ASSET_MANIFEST;
 use dc2tk_disc::archive::{Archive, Entry};
+use dc2tk_disc::extract::{self, MANIFEST};
 use dc2tk_disc::layout::{self, Layout};
 use dc2tk_disc::Image;
 use rayon::prelude::*;
@@ -26,7 +29,7 @@ use sha2::{Digest, Sha256};
 
 use crate::discfiles;
 use crate::replace::{self, FILE};
-use crate::{mods, paths, tree, Error, Result};
+use crate::{mods, paths, tree, Context, Error, Result};
 
 /// The folders under the extracted folder.
 pub const DISC: &str = "disc";
@@ -95,18 +98,23 @@ fn scripts(tree_dir: &Path, changes: &mut Changes) -> Result<()> {
     Ok(())
 }
 
+/// The asset tree's manifest (dc2tk_assets::manifest), read by its typed form.
+fn asset_manifest(assets_dir: &Path) -> Result<Manifest> {
+    let path = assets_dir.join(ASSET_MANIFEST);
+    let data = fs::read(&path).with_context(|| format!("cannot read {}", path.display()))?;
+    Manifest::read(&data).with_context(|| assets_dir.display().to_string())
+}
+
 fn assets(assets_dir: &Path, changes: &mut Changes) -> Result<()> {
-    let manifest_path = assets_dir.join("manifest.json");
-    if !manifest_path.is_file() {
+    if !assets_dir.join(ASSET_MANIFEST).is_file() {
         changes.skipped.push(format!("{}: no asset tree (dc2tk assets writes one)", assets_dir.display()));
         return Ok(());
     }
-    let manifest: Value = serde_json::from_str(&fs::read_to_string(&manifest_path)?)
-        .map_err(|error| Error::invalid(format!("{}: {error}", manifest_path.display())))?;
+    let manifest = asset_manifest(assets_dir)?;
     let mut listed: Vec<(String, String, String)> = Vec::new();
-    for (id, asset) in manifest["assets"].as_object().into_iter().flatten() {
-        for (file, expected) in asset["files"].as_object().into_iter().flatten() {
-            listed.push((id.clone(), file.clone(), expected.as_str().unwrap_or("").to_string()));
+    for (id, asset) in &manifest.assets {
+        for (file, expected) in asset.files().into_iter().flatten() {
+            listed.push((id.clone(), file.clone(), expected.clone()));
         }
     }
     let known: HashSet<String> = listed.iter().map(|(_, file, _)| file.to_lowercase()).collect();
@@ -126,7 +134,7 @@ fn assets(assets_dir: &Path, changes: &mut Changes) -> Result<()> {
     }
     changes.assets_added = files_under(assets_dir)?
         .into_iter()
-        .filter(|file| file != "manifest.json" && !known.contains(&file.to_lowercase()))
+        .filter(|file| file != ASSET_MANIFEST && !known.contains(&file.to_lowercase()))
         .collect();
     Ok(())
 }
@@ -157,19 +165,15 @@ fn disc_copies<'a>(
 }
 
 fn disc(disc_dir: &Path, iso_path: &Path, changes: &mut Changes) -> Result<()> {
-    let manifest_path = disc_dir.join("manifest.json");
+    let manifest_path = disc_dir.join(MANIFEST);
     if !manifest_path.is_file() {
-        changes.skipped.push(format!("{}: not an extracted disc (no manifest.json)", disc_dir.display()));
+        changes.skipped.push(format!("{}: not an extracted disc (no {MANIFEST})", disc_dir.display()));
         return Ok(());
     }
-    let manifest: Value = serde_json::from_str(&fs::read_to_string(&manifest_path)?)
+    let text = fs::read(&manifest_path).with_context(|| format!("cannot read {}", manifest_path.display()))?;
+    let manifest: extract::Manifest = serde_json::from_slice(&text)
         .map_err(|error| Error::invalid(format!("{}: {error}", manifest_path.display())))?;
-    let listed: Vec<String> = manifest["files"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|item| item["path"].as_str().map(str::to_string))
-        .collect();
+    let listed: Vec<String> = manifest.files.iter().map(|item| item.path.clone()).collect();
     let image = Image::open(iso_path)?;
     let archive = Archive::open(image.bytes())?;
     let mut entries: HashMap<String, Vec<&Entry>> = HashMap::new();
@@ -236,11 +240,11 @@ fn disc(disc_dir: &Path, iso_path: &Path, changes: &mut Changes) -> Result<()> {
                 disc_dir.display(),
                 layout::LAYOUT
             ));
-            manifest["boot"].as_str().map(|boot| boot.to_lowercase()).into_iter().collect()
+            manifest.boot.iter().map(|boot| boot.to_lowercase()).collect()
         }
     };
     let known: HashSet<String> = listed.iter().map(|path| path.to_lowercase()).collect();
-    let bookkeeping = ["manifest.json", layout::LAYOUT, layout::STRUCTURE, "map_index.txt"];
+    let bookkeeping = [MANIFEST, layout::LAYOUT, layout::STRUCTURE, "map_index.txt"];
     changes.disc_added = files_under(disc_dir)?
         .into_iter()
         .filter(|path| {
@@ -365,10 +369,11 @@ pub fn make(extracted: &Path, mod_dir: &Path, changes: &Changes) -> Result<Made>
             }
             "model" => {
                 // the glTF and its buffer, whichever changed
-                let manifest: Value = serde_json::from_str(&fs::read_to_string(assets_dir.join("manifest.json"))?)
-                    .map_err(|error| Error::invalid(error.to_string()))?;
+                let manifest = asset_manifest(&assets_dir)?;
                 let mut gltf = None;
-                for file in manifest["assets"][id]["files"].as_object().into_iter().flatten().map(|(file, _)| file) {
+                for file in
+                    manifest.assets.get(id).and_then(|asset| asset.files()).into_iter().flatten().map(|(file, _)| file)
+                {
                     let name = file.rsplit('/').next().unwrap_or(file);
                     let target = format!("models/{}/{}", safe(id), name);
                     copy(&assets_dir.join(file), &mod_dir.join(&target))?;
