@@ -215,122 +215,177 @@ pub fn float_literal(bits: i64) -> Result<String> {
     asm::float_text(bits as i32).ok_or_else(|| Error::invalid("float constant without a decimal form"))
 }
 
+// The compiler recurses once for each level of an expression, so expression only dispatches: each
+// kind is compiled by a function of its own, and a debug build's frame of expression stays small.
 fn expression(state: &mut State, node: &Node) -> Result<()> {
-    let kind = node.kind();
-    match kind {
+    match node.kind() {
+        kinds::INT | kinds::FLOAT | kinds::STRING => constant(state, node),
+        kinds::VAR | kinds::INDEX | kinds::DEREF | kinds::FIELD | kinds::AT => load(state, node),
+        kinds::ADDR => access(state, &node["target"], "addr"),
+        kinds::ASSIGN => assign(state, node),
+        kinds::BINARY => binary(state, node),
+        kinds::COMMA => comma(state, node),
+        kinds::UNARY => unary(state, node),
+        kinds::CAST => cast(state, node),
+        kinds::BUILTIN => then_emit(state, &node["operand"], node.text("name")),
+        kinds::CALL => call(state, node),
+        kinds::LOGICAL => logical(state, node),
+        kinds::COMPOUND => compound(state, node),
+        kinds::NARROW => narrowed(state, node),
+        kinds::VIA => via(state, node),
+        kinds::TERNARY => ternary(state, node),
+        _ => fail(format!("unknown expression {}", node.kind())),
+    }
+}
+
+fn assign(state: &mut State, node: &Node) -> Result<()> {
+    access(state, &node["target"], "addr")?;
+    then_emit(state, &node["value"], "store")
+}
+
+fn comma(state: &mut State, node: &Node) -> Result<()> {
+    then_emit(state, &node["left"], "pop")?;
+    expression(state, &node["right"])
+}
+
+/// An expression, then an instruction.
+fn then_emit(state: &mut State, node: &Node, instruction: &str) -> Result<()> {
+    expression(state, node)?;
+    state.emit(instruction);
+    Ok(())
+}
+
+fn narrowed(state: &mut State, node: &Node) -> Result<()> {
+    expression(state, &node["operand"])?;
+    narrow(state, node.text("type"))
+}
+
+/// An int, a float or a string pushed (the string into the function's block).
+fn constant(state: &mut State, node: &Node) -> Result<()> {
+    match node.kind() {
         kinds::INT => state.emit(format!("push {}", py_str(&node["value"]))),
         kinds::FLOAT => state.emit(format!("push {}", float_literal(int(&node["bits"])?)?)),
-        kinds::STRING => {
+        _ => {
             state.emit(format!("push string {}", state.strings.len()));
             state.strings.push(node.text("text").to_string());
         }
-        kinds::VAR if state.lookup(node.text("name"))?.scope == Scope::Array => {
-            // An array used as a value is the address of its first element, as in C.
-            let symbol = state.lookup(node.text("name"))?;
-            state.emit("push 0");
-            state.emit(format!("addr {} {}", mode(Place::Array, &symbol.kind), symbol.slot));
-        }
-        kinds::VAR | kinds::INDEX | kinds::DEREF | kinds::FIELD | kinds::AT => access(state, node, "load")?,
-        kinds::ADDR => access(state, &node["target"], "addr")?,
-        kinds::ASSIGN => {
-            access(state, &node["target"], "addr")?;
-            expression(state, &node["value"])?;
-            state.emit("store");
-        }
-        kinds::BINARY if node["op"] == "^" => exclusive_or(state, node)?,
-        kinds::BINARY if node["op"] == "<<" || node["op"] == ">>" => shift(state, node)?,
-        kinds::BINARY => {
-            expression(state, &node["left"])?;
-            expression(state, &node["right"])?;
-            let op = node.text("op");
-            match (Compare::from_operator(op), Op::binary(op)) {
-                (Some(compare), _) => state.emit(format!("cmp {}", compare.name())),
-                (None, Some(binary)) => state.emit(binary.mnemonic()),
-                _ => return fail(format!("unknown operator {op}")),
-            }
-        }
-        kinds::COMMA => {
-            expression(state, &node["left"])?;
-            state.emit("pop");
-            expression(state, &node["right"])?;
-        }
-        kinds::UNARY => {
-            expression(state, &node["operand"])?;
-            match node.text("op") {
-                "-" => state.emit("neg"),
-                "!" => state.emit("not"),
-                // C's unary + only promotes, which the VM's values need not
-                "+" => {}
-                op => return fail(format!("unknown operator {op}")),
-            }
-        }
-        kinds::CAST => {
-            expression(state, &node["operand"])?;
-            match node.text("type") {
-                "float" => state.emit("itof"),
-                "int" => state.emit("ftoi"),
-                // a pointer cast, or an address cast to an enum, passes the address unchanged
-                other if other.ends_with(" *") => {}
-                // the value is worked out and dropped
-                "void" => {}
-                other if other.starts_with("enum ") && node["operand"].kind() == kinds::ADDR => {}
-                other => return fail(format!("unknown cast to {other}")),
-            }
-        }
-        kinds::BUILTIN => {
-            expression(state, &node["operand"])?;
-            state.emit(node.text("name"));
-        }
-        kinds::CALL => {
-            let name = node.text("name");
-            let Some(&count) = state.functions.get(name) else {
-                return fail(format!("unknown function {name}"));
-            };
-            let args = node.list("args");
-            if args.len() as i64 != count {
-                return fail(format!("{name} takes {count} arguments"));
-            }
-            for arg in args {
-                expression(state, arg)?;
-            }
-            state.emit(format!("call {name}"));
-        }
-        kinds::LOGICAL => {
-            expression(state, &node["left"])?;
-            let label = state.new_label();
-            let jump = if node["op"] == "&&" { "jf_push" } else { "jt_push" };
-            let target = state.label_name(label);
-            state.emit(format!("{jump} {target}"));
-            expression(state, &node["right"])?;
-            state.place_label(label);
-        }
-        kinds::COMPOUND => compound(state, node)?,
-        kinds::NARROW => {
-            expression(state, &node["operand"])?;
-            narrow(state, node.text("type"))?;
-        }
-        kinds::VIA => {
-            state.emit("push 0");
-            state.emit(format!("load {} {}", mode(Place::Pointer, node.text("type")), int(&node["slot"])?));
-        }
-        kinds::TERNARY => {
-            expression(state, &node["cond"])?;
-            let otherwise = state.new_label();
-            let end = state.new_label();
-            let (otherwise_name, end_name) = (state.label_name(otherwise), state.label_name(end));
-            state.emit(format!("jf {otherwise_name}"));
-            expression(state, &node["then"])?;
-            state.emit(format!("jmp {end_name}"));
-            state.place_label(otherwise);
-            expression(state, &node["else"])?;
-            state.place_label(end);
-        }
-        _ => return fail(format!("unknown expression {kind}")),
     }
     Ok(())
 }
 
-/// A value wrapped to the width of a narrow integer type: masked for an unsigned one, and for a
+/// The element a compound assignment's hidden local points at.
+fn via(state: &mut State, node: &Node) -> Result<()> {
+    state.emit("push 0");
+    state.emit(format!("load {} {}", mode(Place::Pointer, node.text("type")), int(&node["slot"])?));
+    Ok(())
+}
+
+/// A variable's value or an element's; an array used as a value is the address of its first
+/// element, as in C.
+fn load(state: &mut State, node: &Node) -> Result<()> {
+    if node.kind() == kinds::VAR {
+        let symbol = state.lookup(node.text("name"))?;
+        if symbol.scope == Scope::Array {
+            state.emit("push 0");
+            state.emit(format!("addr {} {}", mode(Place::Array, &symbol.kind), symbol.slot));
+            return Ok(());
+        }
+    }
+    access(state, node, "load")
+}
+
+fn binary(state: &mut State, node: &Node) -> Result<()> {
+    let op = node.text("op");
+    match op {
+        "^" => return exclusive_or(state, node),
+        "<<" | ">>" => return shift(state, node),
+        _ => {}
+    }
+    expression(state, &node["left"])?;
+    expression(state, &node["right"])?;
+    operator(state, op)
+}
+
+/// The instruction of a binary operator: a comparison or an arithmetic one.
+fn operator(state: &mut State, op: &str) -> Result<()> {
+    match (Compare::from_operator(op), Op::binary(op)) {
+        (Some(compare), _) => state.emit(format!("cmp {}", compare.name())),
+        (None, Some(binary)) => state.emit(binary.mnemonic()),
+        _ => return fail(format!("unknown operator {op}")),
+    }
+    Ok(())
+}
+
+fn unary(state: &mut State, node: &Node) -> Result<()> {
+    expression(state, &node["operand"])?;
+    match node.text("op") {
+        "-" => state.emit("neg"),
+        "!" => state.emit("not"),
+        // C's unary + only promotes, which the VM's values need not
+        "+" => {}
+        op => return fail(format!("unknown operator {op}")),
+    }
+    Ok(())
+}
+
+fn cast(state: &mut State, node: &Node) -> Result<()> {
+    expression(state, &node["operand"])?;
+    match node.text("type") {
+        "float" => state.emit("itof"),
+        "int" => state.emit("ftoi"),
+        // a pointer cast, or an address cast to an enum, passes the address unchanged
+        other if other.ends_with(" *") => {}
+        // the value is worked out and dropped
+        "void" => {}
+        other if other.starts_with("enum ") && node["operand"].kind() == kinds::ADDR => {}
+        other => return fail(format!("unknown cast to {other}")),
+    }
+    Ok(())
+}
+
+fn call(state: &mut State, node: &Node) -> Result<()> {
+    let name = node.text("name");
+    let Some(&count) = state.functions.get(name) else {
+        return fail(format!("unknown function {name}"));
+    };
+    let args = node.list("args");
+    if args.len() as i64 != count {
+        return fail(format!("{name} takes {count} arguments"));
+    }
+    for arg in args {
+        expression(state, arg)?;
+    }
+    state.emit(format!("call {name}"));
+    Ok(())
+}
+
+/// a && b and a || b: a jump past b that keeps a's value when it decides.
+fn logical(state: &mut State, node: &Node) -> Result<()> {
+    expression(state, &node["left"])?;
+    let label = state.new_label();
+    let jump = if node["op"] == "&&" { "jf_push" } else { "jt_push" };
+    let target = state.label_name(label);
+    state.emit(format!("{jump} {target}"));
+    expression(state, &node["right"])?;
+    state.place_label(label);
+    Ok(())
+}
+
+fn ternary(state: &mut State, node: &Node) -> Result<()> {
+    expression(state, &node["cond"])?;
+    let otherwise = state.new_label();
+    let end = state.new_label();
+    let (otherwise_name, end_name) = (state.label_name(otherwise), state.label_name(end));
+    state.emit(format!("jf {otherwise_name}"));
+    expression(state, &node["then"])?;
+    state.emit(format!("jmp {end_name}"));
+    state.place_label(otherwise);
+    expression(state, &node["else"])?;
+    state.place_label(end);
+    Ok(())
+}
+
+// A value wrapped to the width of a narrow integer type: masked for an unsigned one, and for a
 /// signed one offset into the unsigned range, masked and offset back.
 fn narrow(state: &mut State, kind: &str) -> Result<()> {
     let Some(narrow) = IntType::narrow(kind) else {
@@ -491,44 +546,63 @@ fn statement(state: &mut State, node: &Node) -> Result<()> {
 }
 
 fn statement_code(state: &mut State, node: &Node) -> Result<()> {
+    match node.kind() {
+        kinds::EXPR => then_emit(state, &node["expr"], "pop"),
+        kinds::RETURN => return_statement(state, node),
+        kinds::NATIVE => native(state, node),
+        kinds::PRINT => print(state, node),
+        kinds::LABEL | kinds::GOTO | kinds::BREAK | kinds::CONTINUE | kinds::WAIT | kinds::END | kinds::SKIP_END => {
+            simple(state, node)
+        }
+        kinds::IF => conditional(state, node),
+        kinds::WHILE => while_loop(state, node),
+        kinds::SWITCH => switch(state, node),
+        _ => fail(format!("unknown statement {}", node.kind())),
+    }
+}
+
+fn return_statement(state: &mut State, node: &Node) -> Result<()> {
+    if node["value"].is_null() {
+        state.emit("push 0");
+    } else {
+        expression(state, &node["value"])?;
+    }
+    state.emit("ret");
+    Ok(())
+}
+
+/// A native call: its number (from a base, when the statement gives one), its arguments, and EXT.
+fn native(state: &mut State, node: &Node) -> Result<()> {
+    let number = native_number(state, node.text("name"))?;
+    if node["base"].is_null() {
+        state.emit(format!("push {number}"));
+    } else {
+        let base = int(&node["base"])?;
+        state.emit(format!("push {base}"));
+        state.emit(format!("push {}", number - base));
+        state.emit("add");
+    }
+    let args = node.list("args");
+    for arg in args {
+        expression(state, arg)?;
+    }
+    state.emit(format!("ext {}", args.len() + 1));
+    Ok(())
+}
+
+fn print(state: &mut State, node: &Node) -> Result<()> {
+    let args = node.list("args");
+    for arg in args {
+        expression(state, arg)?;
+    }
+    state.emit(format!("print {}", args.len()));
+    Ok(())
+}
+
+/// The statements with no expression: a label, goto, break, continue, wait, end and skip_end.
+fn simple(state: &mut State, node: &Node) -> Result<()> {
     let kind = node.kind();
     match kind {
-        kinds::EXPR => {
-            expression(state, &node["expr"])?;
-            state.emit("pop");
-        }
-        kinds::RETURN => {
-            if node["value"].is_null() {
-                state.emit("push 0");
-            } else {
-                expression(state, &node["value"])?;
-            }
-            state.emit("ret");
-        }
-        kinds::NATIVE => {
-            let number = native_number(state, node.text("name"))?;
-            if node["base"].is_null() {
-                state.emit(format!("push {number}"));
-            } else {
-                let base = int(&node["base"])?;
-                state.emit(format!("push {base}"));
-                state.emit(format!("push {}", number - base));
-                state.emit("add");
-            }
-            let args = node.list("args");
-            for arg in args {
-                expression(state, arg)?;
-            }
-            state.emit(format!("ext {}", args.len() + 1));
-        }
-        kinds::PRINT => {
-            let args = node.list("args");
-            for arg in args {
-                expression(state, arg)?;
-            }
-            state.emit(format!("print {}", args.len()));
-        }
-        kinds::WAIT | kinds::END | kinds::SKIP_END => state.emit(kind),
         kinds::LABEL => {
             let number = state.user_label(node.text("name"));
             state.place_label(number);
@@ -538,9 +612,6 @@ fn statement_code(state: &mut State, node: &Node) -> Result<()> {
             let name = state.label_name(number);
             state.emit(format!("jmp {name}"));
         }
-        kinds::IF => conditional(state, node)?,
-        kinds::WHILE => while_loop(state, node)?,
-        kinds::SWITCH => switch(state, node)?,
         kinds::BREAK | kinds::CONTINUE => {
             let target = state.loops.iter().rev().find_map(|entry| {
                 if kind == kinds::BREAK {
@@ -556,7 +627,7 @@ fn statement_code(state: &mut State, node: &Node) -> Result<()> {
             let name = state.label_name(target);
             state.emit(format!("jmp {name}"));
         }
-        _ => return fail(format!("unknown statement {kind}")),
+        _ => state.emit(kind),
     }
     Ok(())
 }
