@@ -112,37 +112,88 @@ pub struct Line {
     /// The file as mod.json gives it, and where it is.
     pub shown: String,
     pub file: PathBuf,
-    pub only: Vec<String>,
-    pub volume: Option<i64>,
-    /// The bank an added sound goes into.
-    pub bank: Option<String>,
     pub add: bool,
-    /// For a file: line made whole from a common format, the template: an asset id or disc path;
-    /// for a new map, the map it is made from.
-    pub like: Option<String>,
-    /// A new map's title in the map table (every language's), instead of the like map's.
-    pub title: Option<String>,
-    /// A new map's own event script: a C source of the mod, compiled into the map's script files
-    /// (mapscript).
-    pub script: Option<PathBuf>,
-    /// A map: line's event points given programs: (point, program), the program a number, a
-    /// program's name or a NEW_PROGRAM name of the mod (docs/assets/maps.md section 9).
-    pub programs: Vec<(String, Value)>,
-    /// For a music: line, programs the line adds to the sequence's bank (music::Instrument).
-    pub instruments: Vec<music::Instrument>,
+    /// What the line edits, with the options of that kind of line.
+    pub kind: LineKind,
+}
+
+/// What a line edits (its key's prefix), with the options only that kind of line takes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LineKind {
+    /// An asset id or pattern of the disc (texture:, model:, bank:, text:), replaced at the places
+    /// "only" keeps (every place when it keeps none).
+    Asset { kind: Kind, only: Vec<String> },
+    /// A sound entry (sound:): replaced, with its volume; or added to a bank.
+    Sound {
+        only: Vec<String>,
+        volume: Option<i64>,
+        /// The bank an added sound goes into.
+        bank: Option<String>,
+    },
+    /// A music sequence (music:): replaced, or (under "add") a new music file made like the disc's
+    /// music bank like.
+    Music {
+        only: Vec<String>,
+        like: Option<String>,
+        /// Programs the line adds to the sequence's bank (music::Instrument).
+        instruments: Vec<music::Instrument>,
+    },
+    /// A whole game file (file: and a disc path); one made from a common format has a template,
+    /// like: an asset id or disc path.
+    File { like: Option<String> },
+    /// A map edited as a glTF scene (map:); under "add", a new map.
+    Map {
+        /// The map a new map is made from.
+        like: Option<String>,
+        /// A new map's title in the map table (every language's), instead of the like map's.
+        title: Option<String>,
+        /// A new map's own event script: a C source of the mod, compiled into the map's script
+        /// files (mapscript).
+        script: Option<PathBuf>,
+        /// Event points given programs: (point, program), the program a number, a program's name
+        /// or a NEW_PROGRAM name of the mod (docs/assets/maps.md section 9).
+        programs: Vec<(String, Value)>,
+    },
+    /// A table of game data (data:items).
+    Data,
+}
+
+impl LineKind {
+    /// The kind of line a key makes, with no options yet; None for a key of no kind.
+    fn of_key(key: &str) -> Option<LineKind> {
+        if key.starts_with(FILE) {
+            return Some(LineKind::File { like: None });
+        }
+        if key.starts_with(MAP) {
+            return Some(LineKind::Map { like: None, title: None, script: None, programs: Vec::new() });
+        }
+        if key.get(..DATA.len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case(DATA)) {
+            return Some(LineKind::Data);
+        }
+        Some(match ids::kind_of(key)? {
+            Kind::Sound => LineKind::Sound { only: Vec::new(), volume: None, bank: None },
+            Kind::Music => LineKind::Music { only: Vec::new(), like: None, instruments: Vec::new() },
+            kind => LineKind::Asset { kind, only: Vec::new() },
+        })
+    }
 }
 
 impl Line {
     pub fn is_file(&self) -> bool {
-        self.key.starts_with(FILE)
+        matches!(self.kind, LineKind::File { .. })
     }
 
     pub fn is_map(&self) -> bool {
-        self.key.starts_with(MAP)
+        matches!(self.kind, LineKind::Map { .. })
     }
 
     pub fn is_data(&self) -> bool {
-        self.key.get(..DATA.len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case(DATA))
+        matches!(self.kind, LineKind::Data)
+    }
+
+    /// Whether the line names assets of the disc's index by id (or pattern), to replace or add.
+    pub fn is_asset(&self) -> bool {
+        matches!(self.kind, LineKind::Asset { .. } | LineKind::Sound { .. } | LineKind::Music { .. })
     }
 
     /// The table a data: line edits (items).
@@ -157,7 +208,7 @@ impl Line {
 
     /// Whether the line adds a music file (music:BG_200 under "add").
     pub fn is_new_music(&self) -> bool {
-        self.add && ids::kind_of(&self.key) == Some(Kind::Music)
+        self.add && matches!(self.kind, LineKind::Music { .. })
     }
 
     /// The number of the music file a new-music line adds (200 for music:BG_200).
@@ -170,9 +221,31 @@ impl Line {
         self.key[FILE.len()..].replace('\\', "/").trim_matches('/').to_string()
     }
 
-    fn fail(&self, message: impl std::fmt::Display) -> Error {
-        Error::invalid(format!("{} (mod {}): {message}", self.key, self.module))
+    /// What the line is made like: a file: line's template, a new map's map, a new music file's
+    /// bank.
+    pub fn like(&self) -> Option<&str> {
+        match &self.kind {
+            LineKind::File { like } | LineKind::Map { like, .. } | LineKind::Music { like, .. } => like.as_deref(),
+            _ => None,
+        }
     }
+
+    /// The places an asset line keeps ("only"); none for every place.
+    pub fn only(&self) -> &[String] {
+        match &self.kind {
+            LineKind::Asset { only, .. } | LineKind::Sound { only, .. } | LineKind::Music { only, .. } => only,
+            _ => &[],
+        }
+    }
+
+    fn fail(&self, message: impl std::fmt::Display) -> Error {
+        line_error(&self.key, &self.module, message)
+    }
+}
+
+/// What is wrong with a mod's line.
+fn line_error(key: &str, module: &str, message: impl std::fmt::Display) -> Error {
+    Error::invalid(format!("{key} (mod {module}): {message}"))
 }
 
 /// The number of a music bank named BG_NNN (three digits, as the disc's files and the engine's
@@ -212,16 +285,20 @@ pub fn lines(mod_dir: &Path) -> Result<Vec<Line>> {
 
 /// A music: line's "instruments": {program: a WAV, or a sample {"file", "keys": [low, high],
 /// "root", "loop", "volume", "like"}, or a list of samples by key range}.
-fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::Instrument>> {
+fn instruments(
+    mod_dir: &Path,
+    value: &Value,
+    fail: &dyn Fn(&dyn std::fmt::Display) -> Error,
+) -> Result<Vec<music::Instrument>> {
     let usage = "\"instruments\" maps program numbers to WAVs: {\"100\": \"music/flute.wav\"}, or to samples \
                  {\"file\": ..., \"keys\": [0, 127], \"root\": 60, \"loop\": true, \"volume\": 128, \"like\": 3} or lists of them";
     let Value::Object(programs) = value else {
-        return Err(line.fail(usage));
+        return Err(fail(&usage));
     };
     let mut out = Vec::new();
     for (number, given) in programs {
         let Some(program) = number.trim().parse::<u8>().ok().filter(|&program| program < 128) else {
-            return Err(line.fail(format!("instrument {number}: a program is 0 to 127")));
+            return Err(fail(&format!("instrument {number}: a program is 0 to 127")));
         };
         let samples: Vec<&Value> = match given {
             Value::Array(samples) => samples.iter().collect(),
@@ -229,7 +306,7 @@ fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::
         };
         let mut instrument = music::Instrument { program, zones: Vec::new(), like: None };
         for sample in samples {
-            let fail = |message: &str| line.fail(format!("instrument {number}: {message}"));
+            let fail = |message: &str| fail(&format!("instrument {number}: {message}"));
             let mut zone =
                 music::InstrumentZone { path: PathBuf::new(), low: 0, high: 127, root: 60, looped: None, volume: 128 };
             let file = match sample {
@@ -268,7 +345,7 @@ fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::
                     }
                     fields.get("file").and_then(Value::as_str).ok_or_else(|| fail("no \"file\""))?.to_string()
                 }
-                _ => return Err(line.fail(usage)),
+                _ => return Err(fail(usage)),
             };
             zone.path = paths::inside_mod(mod_dir, &file)
                 .ok_or_else(|| fail(&format!("{file} is not a path inside the mod's folder")))?;
@@ -278,7 +355,7 @@ fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::
             instrument.zones.push(zone);
         }
         if instrument.zones.is_empty() {
-            return Err(line.fail(format!("instrument {number}: no samples")));
+            return Err(fail(&format!("instrument {number}: no samples")));
         }
         out.push(instrument);
     }
@@ -286,112 +363,26 @@ fn instruments(mod_dir: &Path, line: &Line, value: &Value) -> Result<Vec<music::
 }
 
 fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Result<Line> {
-    let mut line = Line {
-        module: module.to_string(),
-        key: key.to_string(),
-        shown: String::new(),
-        file: PathBuf::new(),
-        only: Vec::new(),
-        volume: None,
-        bank: None,
-        add,
-        like: None,
-        title: None,
-        script: None,
-        programs: Vec::new(),
-        instruments: Vec::new(),
-    };
-    let kind = ids::kind_of(key);
-    if kind.is_none() && !line.is_file() && !line.is_map() && !line.is_data() {
-        return Err(line.fail(
-            "a key is an asset id (texture:, model:, sound:, bank:, text:, music:), file: and a disc path, map: and a map's name, \
-             or data: and a table (data:items, data:monsters, ...)",
+    let fail = |message: &dyn std::fmt::Display| line_error(key, module, message);
+    let Some(mut kind) = LineKind::of_key(key) else {
+        return Err(fail(
+            &"a key is an asset id (texture:, model:, sound:, bank:, text:, music:), file: and a disc path, map: and a map's name, \
+              or data: and a table (data:items, data:monsters, ...)",
         ));
-    }
-    let options = match value {
-        Value::String(file) => {
-            line.shown = file.clone();
-            serde_json::Map::new()
-        }
-        Value::Object(options) => options.clone(),
-        _ => return Err(line.fail("give a file of the mod, or {\"file\": ..., options}")),
+    };
+    let (mut shown, options) = match value {
+        Value::String(file) => (file.clone(), serde_json::Map::new()),
+        Value::Object(options) => (String::new(), options.clone()),
+        _ => return Err(fail(&"give a file of the mod, or {\"file\": ..., options}")),
     };
     for (option, value) in &options {
-        match option.as_str() {
-            "file" => line.shown = value.as_str().ok_or_else(|| line.fail("\"file\" is a path"))?.to_string(),
-            "only" if !add && !line.is_file() && !line.is_data() => {
-                line.only = match value {
-                    Value::String(place) => vec![place.clone()],
-                    Value::Array(places) => places
-                        .iter()
-                        .map(|place| place.as_str().map(str::to_string))
-                        .collect::<Option<_>>()
-                        .ok_or_else(|| line.fail("\"only\" lists disc paths"))?,
-                    _ => return Err(line.fail("\"only\" lists disc paths")),
-                };
-                line.only =
-                    line.only.iter().map(|place| place.replace('\\', "/").trim_matches('/').to_string()).collect();
-            }
-            "volume" if kind == Some(Kind::Sound) => {
-                let volume = value.as_i64().filter(|volume| (0..=127).contains(volume));
-                line.volume = Some(volume.ok_or_else(|| line.fail("\"volume\" is 0 to 127"))?);
-            }
-            "like" if add && kind == Some(Kind::Music) => {
-                let like =
-                    value.as_str().ok_or_else(|| line.fail("\"like\" is the disc's music bank to make it like"))?;
-                let like = like.trim();
-                let like = like
-                    .split_once(':')
-                    .filter(|(kind, _)| ["music", "bank"].contains(&kind.trim()))
-                    .map_or(like, |(_, name)| name);
-                line.like = Some(like.trim().to_uppercase());
-            }
-            "instruments" if kind == Some(Kind::Music) => {
-                line.instruments = instruments(mod_dir, &line, value)?;
-            }
-            "bank" if add && kind == Some(Kind::Sound) => {
-                let bank = value.as_str().ok_or_else(|| line.fail("\"bank\" is a bank's id"))?;
-                line.bank = Some(if bank.starts_with("bank:") { bank.to_string() } else { Kind::Bank.id(bank) });
-            }
-            "like" if line.is_file() => {
-                let like = value.as_str().ok_or_else(|| line.fail("\"like\" is an asset id or a disc path"))?;
-                line.like = Some(like.replace('\\', "/").trim_matches('/').to_string());
-            }
-            "like" if line.is_map() && add => {
-                let like = value.as_str().ok_or_else(|| line.fail("\"like\" is the map the new one is made from"))?;
-                line.like = Some(like.trim_start_matches(MAP).to_string());
-            }
-            "title" if line.is_map() && add => {
-                let title = value
-                    .as_str()
-                    .filter(|title| title.chars().all(|c| (' '..='~').contains(&c)) && !title.contains('"'));
-                let title = title.ok_or_else(|| line.fail("\"title\" is text of printable ASCII without quotes"))?;
-                line.title = Some(title.to_string());
-            }
-            "script" if line.is_map() && add => {
-                let script = value.as_str().filter(|script| script.to_lowercase().ends_with(".c"));
-                let script =
-                    script.ok_or_else(|| line.fail("\"script\" is a C file of the mod: the new map's event script"))?;
-                let path = paths::inside_mod(mod_dir, script).filter(|path| path.is_file());
-                let path = path.ok_or_else(|| line.fail(format!("{script} is not a file in the mod's folder")))?;
-                line.script = Some(path);
-            }
-            "programs" if line.is_map() => {
-                let listed = value.as_object().ok_or_else(|| {
-                    line.fail("\"programs\" gives event points programs: {\"door_park\": \"ENTER_PARK\"}")
-                })?;
-                for (point, program) in listed {
-                    if program.as_i64().is_none() && !program.as_str().is_some_and(names::is_c_identifier) {
-                        return Err(
-                            line.fail(format!("\"programs\": {point}'s program is a number or a program's name"))
-                        );
-                    }
-                    line.programs.push((point.clone(), program.clone()));
-                }
-            }
-            _ => return Err(line.fail(format!("unknown option \"{option}\""))),
+        if option == "file" {
+            shown = value.as_str().ok_or_else(|| fail(&"\"file\" is a path"))?.to_string();
+        } else if !take_option(&mut kind, mod_dir, add, option, value, &fail)? {
+            return Err(fail(&format!("unknown option \"{option}\"")));
         }
     }
+    let mut line = Line { module: module.to_string(), key: key.to_string(), shown, file: PathBuf::new(), add, kind };
     if line.shown.is_empty() {
         return Err(line.fail("no \"file\""));
     }
@@ -400,63 +391,155 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     if !line.file.exists() {
         return Err(line.fail(format!("{} is not in the mod's folder", line.shown)));
     }
-    if line.is_data() {
-        if add || !DATA_TABLES.contains(&line.data_table().as_str()) {
+    match &line.kind {
+        LineKind::Data => check_data_line(&line)?,
+        LineKind::Map { .. } => check_map_line(&line)?,
+        _ => check_asset_line(&line)?,
+    }
+    Ok(line)
+}
+
+/// Takes an option (other than "file") of a line of the kind: false when that kind of line has
+/// no such option.
+fn take_option(
+    kind: &mut LineKind,
+    mod_dir: &Path,
+    add: bool,
+    option: &str,
+    value: &Value,
+    fail: &dyn Fn(&dyn std::fmt::Display) -> Error,
+) -> Result<bool> {
+    match (kind, option) {
+        (LineKind::Asset { only, .. } | LineKind::Sound { only, .. } | LineKind::Music { only, .. }, "only")
+            if !add =>
+        {
+            let places: Option<Vec<String>> = match value {
+                Value::String(place) => Some(vec![place.clone()]),
+                Value::Array(places) => places.iter().map(|place| place.as_str().map(str::to_string)).collect(),
+                _ => None,
+            };
+            let places = places.ok_or_else(|| fail(&"\"only\" lists disc paths"))?;
+            *only = places.iter().map(|place| place.replace('\\', "/").trim_matches('/').to_string()).collect();
+        }
+        (LineKind::Sound { volume, .. }, "volume") => {
+            let given = value.as_i64().filter(|volume| (0..=127).contains(volume));
+            *volume = Some(given.ok_or_else(|| fail(&"\"volume\" is 0 to 127"))?);
+        }
+        (LineKind::Sound { bank, .. }, "bank") if add => {
+            let given = value.as_str().ok_or_else(|| fail(&"\"bank\" is a bank's id"))?;
+            *bank = Some(if given.starts_with("bank:") { given.to_string() } else { Kind::Bank.id(given) });
+        }
+        (LineKind::Music { like, .. }, "like") if add => {
+            let given = value.as_str().ok_or_else(|| fail(&"\"like\" is the disc's music bank to make it like"))?;
+            let given = given.trim();
+            let given = given
+                .split_once(':')
+                .filter(|(kind, _)| ["music", "bank"].contains(&kind.trim()))
+                .map_or(given, |(_, name)| name);
+            *like = Some(given.trim().to_uppercase());
+        }
+        (LineKind::Music { instruments: found, .. }, "instruments") => *found = instruments(mod_dir, value, fail)?,
+        (LineKind::File { like }, "like") => {
+            let given = value.as_str().ok_or_else(|| fail(&"\"like\" is an asset id or a disc path"))?;
+            *like = Some(given.replace('\\', "/").trim_matches('/').to_string());
+        }
+        (LineKind::Map { like, .. }, "like") if add => {
+            let given = value.as_str().ok_or_else(|| fail(&"\"like\" is the map the new one is made from"))?;
+            *like = Some(given.trim_start_matches(MAP).to_string());
+        }
+        (LineKind::Map { title, .. }, "title") if add => {
+            let given =
+                value.as_str().filter(|title| title.chars().all(|c| (' '..='~').contains(&c)) && !title.contains('"'));
+            *title =
+                Some(given.ok_or_else(|| fail(&"\"title\" is text of printable ASCII without quotes"))?.to_string());
+        }
+        (LineKind::Map { script, .. }, "script") if add => {
+            let given = value.as_str().filter(|script| script.to_lowercase().ends_with(".c"));
+            let given = given.ok_or_else(|| fail(&"\"script\" is a C file of the mod: the new map's event script"))?;
+            let path = paths::inside_mod(mod_dir, given).filter(|path| path.is_file());
+            *script = Some(path.ok_or_else(|| fail(&format!("{given} is not a file in the mod's folder")))?);
+        }
+        (LineKind::Map { programs, .. }, "programs") => {
+            let listed = value
+                .as_object()
+                .ok_or_else(|| fail(&"\"programs\" gives event points programs: {\"door_park\": \"ENTER_PARK\"}"))?;
+            for (point, program) in listed {
+                if program.as_i64().is_none() && !program.as_str().is_some_and(names::is_c_identifier) {
+                    return Err(fail(&format!("\"programs\": {point}'s program is a number or a program's name")));
+                }
+                programs.push((point.clone(), program.clone()));
+            }
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+/// A data: line replaces one of DATA_TABLES with a .json file.
+fn check_data_line(line: &Line) -> Result<()> {
+    if line.add || !DATA_TABLES.contains(&line.data_table().as_str()) {
+        return Err(line.fail(format!(
+            "a data: line replaces one of the tables {}",
+            DATA_TABLES.map(|table| format!("data:{table}")).join(", ")
+        )));
+    }
+    if !(line.file.is_file() && suffix_is(&line.file, ".json")) {
+        return Err(
+            line.fail(format!("{} is not a .json file (mod asset ISO NAME {} writes one)", line.shown, line.key))
+        );
+    }
+    Ok(())
+}
+
+/// A map: line replaces a map the game names, or adds one named as the engine's file names allow
+/// and made like another, with a .gltf scene.
+fn check_map_line(line: &Line) -> Result<()> {
+    let name = line.map_name();
+    if !line.add && (name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
+        return Err(line.fail("a map: line replaces a map, named as the game names it (map:s17)"));
+    }
+    if line.add {
+        let fits = (1..=MAP_NAME_MOST).contains(&name.len())
+            && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            && name.starts_with(|c: char| c.is_ascii_lowercase());
+        if !fits {
             return Err(line.fail(format!(
-                "a data: line replaces one of the tables {}",
-                DATA_TABLES.map(|table| format!("data:{table}")).join(", ")
+                "a new map is named in lower-case letters, digits and _, from a letter, at most {MAP_NAME_MOST} long (map:m05x)"
             )));
         }
-        if !(line.file.is_file() && suffix_is(&line.file, ".json")) {
-            return Err(
-                line.fail(format!("{} is not a .json file (mod asset ISO NAME {} writes one)", line.shown, line.key))
-            );
+        let like = line.like().unwrap_or_default();
+        if like.is_empty() || !like.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(line.fail("a new map names the map it is made from: {\"file\": ..., \"like\": \"m05\"}"));
         }
-        return Ok(line);
     }
-    if line.is_map() {
-        let name = line.map_name();
-        if !add && (name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
-            return Err(line.fail("a map: line replaces a map, named as the game names it (map:s17)"));
-        }
-        if add {
-            let fits = (1..=MAP_NAME_MOST).contains(&name.len())
-                && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-                && name.starts_with(|c: char| c.is_ascii_lowercase());
-            if !fits {
-                return Err(line.fail(format!(
-                    "a new map is named in lower-case letters, digits and _, from a letter, at most {MAP_NAME_MOST} long (map:m05x)"
-                )));
-            }
-            let like = line.like.as_deref().unwrap_or_default();
-            if like.is_empty() || !like.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                return Err(line.fail("a new map names the map it is made from: {\"file\": ..., \"like\": \"m05\"}"));
-            }
-        }
-        if !(line.file.is_file() && suffix_is(&line.file, ".gltf")) {
-            return Err(line.fail(format!("{} is not a .gltf file (dc2tk map export writes one)", line.shown)));
-        }
-        return Ok(line);
+    if !(line.file.is_file() && suffix_is(&line.file, ".gltf")) {
+        return Err(line.fail(format!("{} is not a .gltf file (dc2tk map export writes one)", line.shown)));
     }
-    if add {
-        match kind {
-            _ if line.is_file() => {}
-            Some(Kind::Sound) => {
-                let name = &key[Kind::Sound.name().len() + 1..];
+    Ok(())
+}
+
+/// An asset line (or a file: line) gives a file of the asset's kind; under "add", a sound entry
+/// with its bank, a music file like one of the disc's, or a file.
+fn check_asset_line(line: &Line) -> Result<()> {
+    if line.add {
+        match &line.kind {
+            LineKind::File { .. } => {}
+            LineKind::Sound { bank, .. } => {
+                let name = &line.key[Kind::Sound.name().len() + 1..];
                 if !names::is_c_identifier(name) {
                     return Err(line.fail("an added sound is named as a C constant (sound:SE_MOD_BEEP)"));
                 }
-                if line.bank.is_none() {
+                if bank.is_none() {
                     return Err(line.fail("say which bank the sound goes into: {\"file\": ..., \"bank\": \"SP_004\"}"));
                 }
             }
-            Some(Kind::Music) => {
+            LineKind::Music { like, .. } => {
                 if line.bgm_number().is_none() {
                     return Err(line.fail(
                         "a new music file is named BG_ and three digits, the number load_bgm takes (music:BG_200)",
                     ));
                 }
-                if !line.like.as_deref().is_some_and(|like| bgm_number(like).is_some()) {
+                if !like.as_deref().is_some_and(|like| bgm_number(like).is_some()) {
                     return Err(line.fail(
                         "a new music file names the disc's music bank it is made like: {\"file\": ..., \"like\": \"BG_193\"}",
                     ));
@@ -469,18 +552,22 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
             }
         }
     }
-    let wanted = match kind {
-        _ if line.is_file() => None,
-        Some(Kind::Texture) if !(line.file.is_file() && suffix_is(&line.file, ".png")) => Some("a PNG file"),
-        Some(Kind::Model) if !(line.file.is_dir() || suffix_is(&line.file, ".gltf")) => {
+    let file = &line.file;
+    let wanted = match &line.kind {
+        LineKind::Asset { kind: Kind::Texture, .. } if !(file.is_file() && suffix_is(file, ".png")) => {
+            Some("a PNG file")
+        }
+        LineKind::Asset { kind: Kind::Model, .. } if !(file.is_dir() || suffix_is(file, ".gltf")) => {
             Some("a .gltf file with its buffer beside it, or a folder as mod asset --as gltf writes it")
         }
-        Some(Kind::Sound) if !(line.file.is_file() && suffix_is(&line.file, ".wav")) => Some("a WAV file"),
-        Some(Kind::Bank) if !line.file.is_dir() => Some("a folder of WAVs named by entry number (004.wav)"),
-        Some(Kind::Text) if !(line.file.is_file() && suffix_is(&line.file, ".txt")) => {
+        LineKind::Sound { .. } if !(file.is_file() && suffix_is(file, ".wav")) => Some("a WAV file"),
+        LineKind::Asset { kind: Kind::Bank, .. } if !file.is_dir() => {
+            Some("a folder of WAVs named by entry number (004.wav)")
+        }
+        LineKind::Asset { kind: Kind::Text, .. } if !(file.is_file() && suffix_is(file, ".txt")) => {
             Some("a .txt file of messages (mod asset text:ID writes one)")
         }
-        Some(Kind::Music) if !(line.file.is_file() && MIDI_SUFFIXES.iter().any(|end| suffix_is(&line.file, end))) => {
+        LineKind::Music { .. } if !(file.is_file() && MIDI_SUFFIXES.iter().any(|end| suffix_is(file, end))) => {
             Some("a MIDI file (.mid)")
         }
         _ => None,
@@ -488,13 +575,13 @@ fn line(mod_dir: &Path, module: &str, key: &str, value: &Value, add: bool) -> Re
     if let Some(wanted) = wanted {
         return Err(line.fail(format!("{} is not {wanted}", line.shown)));
     }
-    if ids::is_pattern(key) && (add || line.is_file()) {
+    if ids::is_pattern(&line.key) && (line.add || line.is_file()) {
         return Err(line.fail("patterns are for replacing ids"));
     }
-    if let Some(like) = line.like.as_ref().filter(|_| line.is_file()) {
-        check_like(&line, like)?;
+    if let LineKind::File { like: Some(like) } = &line.kind {
+        check_like(line, like)?;
     }
-    Ok(line)
+    Ok(())
 }
 
 /// What a file: line made from a common format makes: a texture file (.img, of PNGs, its template
@@ -545,7 +632,7 @@ fn check_like(line: &Line, like: &str) -> Result<()> {
 pub fn templates(lines: &[Line], index: Option<&Index>) -> Result<Templates> {
     let mut out = Templates::new();
     for line in lines {
-        let Some(like) = line.like.as_ref().filter(|_| line.is_file()) else {
+        let LineKind::File { like: Some(like) } = &line.kind else {
             continue;
         };
         let template = match ids::kind_of(like) {
@@ -586,8 +673,8 @@ pub fn raw_files(mod_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
 /// Whether any of the lines names an id, so that the build needs the disc's index.
 pub fn needs_index(lines: &[Line]) -> bool {
     lines.iter().any(|line| {
-        (!line.is_file() && !line.is_map() && !line.is_data() && !line.is_new_music())
-            || line.like.as_deref().is_some_and(|like| ids::kind_of(like).is_some())
+        (line.is_asset() && !line.is_new_music())
+            || matches!(&line.kind, LineKind::File { like: Some(like) } if ids::kind_of(like).is_some())
     })
 }
 
@@ -657,12 +744,8 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
     let mut added_to: HashMap<String, usize> = HashMap::new();
     let at = index.at();
     for module in modules {
-        let mine: Vec<&Line> = lines
-            .iter()
-            .filter(|line| {
-                line.module == module && !line.is_file() && !line.is_map() && !line.is_data() && !line.is_new_music()
-            })
-            .collect();
+        let mine: Vec<&Line> =
+            lines.iter().filter(|line| line.module == module && line.is_asset() && !line.is_new_music()).collect();
         // each id by the line that gives it: an exact id wins over a pattern
         let mut chosen: BTreeMap<String, (&Line, bool)> = BTreeMap::new();
         for line in mine.iter().filter(|line| !line.add) {
@@ -700,7 +783,7 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
             let places: Vec<&(Place, Option<usize>)> = asset
                 .places
                 .iter()
-                .filter(|(place, _)| line.only.is_empty() || line.only.iter().any(|only| covers(only, place)))
+                .filter(|(place, _)| line.only().is_empty() || line.only().iter().any(|only| covers(only, place)))
                 .collect();
             if places.is_empty() {
                 let shown: Vec<String> = asset.places.iter().take(5).map(|(place, _)| place.display()).collect();
@@ -732,14 +815,21 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                     }
                 }
                 Kind::Music => {
+                    let instruments = match &line.kind {
+                        LineKind::Music { instruments, .. } => instruments.clone(),
+                        _ => Vec::new(),
+                    };
                     for (place, _) in places {
-                        resolved.edits.push(edit(place, Change::Sequence(line.file.clone(), line.instruments.clone())));
+                        resolved.edits.push(edit(place, Change::Sequence(line.file.clone(), instruments.clone())));
                     }
                 }
                 Kind::Sound => {
+                    let volume = match line.kind {
+                        LineKind::Sound { volume, .. } => volume,
+                        _ => None,
+                    };
                     for (place, at) in places {
-                        let given =
-                            Given { number: at.unwrap_or(0), name: None, path: line.file.clone(), volume: line.volume };
+                        let given = Given { number: at.unwrap_or(0), name: None, path: line.file.clone(), volume };
                         resolved.edits.push(edit(place, Change::Entry(given)));
                     }
                 }
@@ -755,7 +845,7 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                     }
                     // each entry at every place its sound has: copies of the bank in other packs
                     // whose entry plays alike are the same sound (tree::bank_sounds)
-                    let mut done: Vec<(String, usize)> = Vec::new();
+                    let mut done: HashSet<(String, usize)> = HashSet::new();
                     for (place, _) in places {
                         for (number, _, path) in &wavs {
                             let key = (Kind::Sound, place.display().to_lowercase(), Some(*number));
@@ -769,10 +859,9 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
                                 None => vec![place.clone()],
                             };
                             for place in reached {
-                                if done.contains(&(place.display().to_lowercase(), *number)) {
+                                if !done.insert((place.display().to_lowercase(), *number)) {
                                     continue;
                                 }
-                                done.push((place.display().to_lowercase(), *number));
                                 let given = Given { number: *number, name: None, path: path.clone(), volume: None };
                                 resolved.edits.push(edit(&place, Change::Entry(given)));
                             }
@@ -785,7 +874,8 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
             if let Some(found) = index.get(&line.key) {
                 return Err(line.fail(format!("the disc has {} already; replace it instead", found.id)));
             }
-            let bank_id = line.bank.clone().unwrap_or_default();
+            let LineKind::Sound { bank, volume, .. } = &line.kind else { continue };
+            let bank_id = bank.clone().unwrap_or_default();
             let Some(bank) = index.get(&bank_id).filter(|bank| bank.kind == Kind::Bank) else {
                 return Err(line.fail(format!("the disc has no {bank_id}")));
             };
@@ -794,7 +884,7 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
             *taken += 1;
             let name = line.key[Kind::Sound.name().len() + 1..].to_string();
             for (place, _) in &bank.places {
-                let given = Given { number, name: Some(name.clone()), path: line.file.clone(), volume: line.volume };
+                let given = Given { number, name: Some(name.clone()), path: line.file.clone(), volume: *volume };
                 resolved.edits.push(Edit {
                     id: line.key.clone(),
                     module: module.to_string(),
@@ -1358,23 +1448,22 @@ pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(File
         if files.keys().any(|given| given.eq_ignore_ascii_case(&path)) {
             return Err(line.fail(format!("{path} is given by a file: line or a disc/ file too")));
         }
-        let like = line.like.as_deref().and_then(bgm_number).map(music::bgm_path).unwrap_or_default();
+        let like = line.like().and_then(bgm_number).map(music::bgm_path).unwrap_or_default();
+        let instruments = match &line.kind {
+            LineKind::Music { instruments, .. } => instruments.as_slice(),
+            _ => &[],
+        };
         let Some(entry) = index.get(&like.to_lowercase()) else {
             return Err(line.fail(format!("the disc has no {like} to make it like")));
         };
         let midi = fs::read(&line.file)?;
-        let (data, notes) = music::new_bank(
-            &midi,
-            disc.read(image.bytes(), entry),
-            &name,
-            &line.instruments,
-            Some(music::MUSIC_REGION),
-        )
-        .map_err(|error| line.fail(error))?;
+        let (data, notes) =
+            music::new_bank(&midi, disc.read(image.bytes(), entry), &name, instruments, Some(music::MUSIC_REGION))
+                .map_err(|error| line.fail(error))?;
         files.insert(path.clone(), data.clone());
         out.push(Changed {
             place: Place { path, members: Vec::new() },
-            ids: IndexSet::from([format!("{} like {}", line.key, line.like.as_deref().unwrap_or_default())]),
+            ids: IndexSet::from([format!("{} like {}", line.key, line.like().unwrap_or_default())]),
             modules: IndexSet::from([line.module.clone()]),
             old: 0,
             data,
@@ -1538,14 +1627,14 @@ pub fn described(mod_dir: &Path) -> Result<Vec<String>> {
         .iter()
         .map(|line| {
             let mut text = format!("{} {}: {}", if line.add { "adds" } else { "replaces" }, line.key, line.shown);
-            if let Some(bank) = &line.bank {
+            if let LineKind::Sound { bank: Some(bank), .. } = &line.kind {
                 text.push_str(&format!(" (into {bank})"));
             }
-            if let Some(like) = &line.like {
+            if let Some(like) = line.like() {
                 text.push_str(&format!(" (like {like})"));
             }
-            if !line.only.is_empty() {
-                text.push_str(&format!(" (only {})", line.only.join(", ")));
+            if !line.only().is_empty() {
+                text.push_str(&format!(" (only {})", line.only().join(", ")));
             }
             text
         })

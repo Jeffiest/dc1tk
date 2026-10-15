@@ -258,7 +258,7 @@ pub fn apply_maps(
     let new_maps = dc2tk_script::maptable::new_maps(&lines)?;
     for line in &lines {
         let name = line.map_name();
-        let source = if line.add { line.like.clone().unwrap_or_default() } else { name.clone() };
+        let source = if line.add { line.like().unwrap_or_default().to_string() } else { name.clone() };
         if line.add && mapedit::map_files(disc.entries(), &name).is_ok() {
             bail!(
                 "{} (mod {}): the disc has a map {name}; edit it with a map: line under \"replace\"",
@@ -296,9 +296,13 @@ pub fn apply_maps(
             fs::read(&path).map_err(|error| dc2tk_assets::Error::invalid(format!("{}: {error}", path.display())))
         };
         let mut gltf = fs::read(&line.file).with_context(|| line.file.display().to_string())?;
-        if !line.programs.is_empty() {
+        let programs = match &line.kind {
+            dc2tk_script::replace::LineKind::Map { programs, .. } => programs.as_slice(),
+            _ => &[],
+        };
+        if !programs.is_empty() {
             let mut given = Vec::new();
-            for (point, program) in &line.programs {
+            for (point, program) in programs {
                 let number = program_of(line, program)
                     .with_context(|| format!("{} (mod {}): \"programs\"", line.key, line.module))?;
                 println!("  {} (map {}): point {point} runs program {number}", line.module, name);

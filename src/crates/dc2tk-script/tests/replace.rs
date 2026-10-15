@@ -16,7 +16,7 @@ use dc2tk_assets::text::{self, Fonts, Language, Mes};
 use dc2tk_assets::tree::{self, DiscFile, Kind, Place};
 use dc2tk_disc::archive::Archive;
 use dc2tk_disc::{rebuild, Image};
-use dc2tk_script::replace::{self, Change, Line};
+use dc2tk_script::replace::{self, Change, Line, LineKind};
 use dc2tk_script::{discfiles, migrate};
 use indexmap::IndexSet;
 use serde_json::{json, Value};
@@ -470,6 +470,10 @@ fn lines_are_checked_as_mod_json_is_read() {
     case(json!({"replace": {"model:x": "a.png"}}), "is not a .gltf file");
     case(json!({"replace": {"bank:x": "a.wav"}}), "is not a folder of WAVs");
     case(json!({"replace": {"texture:x": {"file": "a.png", "volume": 3}}}), "unknown option \"volume\"");
+    // each kind of line takes its own options only
+    case(json!({"replace": {"map:s17": {"file": "a.png", "only": "map/s/s17"}}}), "unknown option \"only\"");
+    case(json!({"replace": {"data:items": {"file": "a.png", "like": "x"}}}), "unknown option \"like\"");
+    case(json!({"replace": {"sound:x": {"file": "a.wav", "bank": "SP_004"}}}), "unknown option \"bank\"");
     case(json!({"replace": {"sound:x": {"file": "a.wav", "volume": 300}}}), "0 to 127");
     case(json!({"add": {"sound:SE_NEW": "a.wav"}}), "say which bank");
     case(json!({"add": {"sound:not a name": {"file": "a.wav", "bank": "SP_004"}}}), "named as a C constant");
@@ -481,9 +485,9 @@ fn lines_are_checked_as_mod_json_is_read() {
                               "add": {"sound:SE_NEW": {"file": "a.wav", "bank": "SP_004"}}}),
     );
     let lines = replace::lines(&mod_dir).unwrap();
-    assert_eq!(lines[0].volume, Some(90));
+    assert!(matches!(lines[0].kind, LineKind::Sound { volume: Some(90), .. }));
     assert_eq!(lines[1].disc_path(), "snd2/x.snd");
-    assert_eq!(lines[2].bank.as_deref(), Some("bank:SP_004"));
+    assert!(matches!(&lines[2].kind, LineKind::Sound { bank: Some(bank), .. } if bank == "bank:SP_004"));
     assert_eq!(replace::raw_files(&mod_dir).unwrap(), [("snd2/x.snd".to_string(), mod_dir.join("a.wav"))]);
 }
 
@@ -515,7 +519,7 @@ fn a_music_line_gives_instruments_by_program() {
                                             {"file": "b.wav", "keys": [60, 127], "loop": true, "volume": 90}]})),
     );
     let lines = replace::lines(&mod_dir).unwrap();
-    let instruments = &lines[0].instruments;
+    let LineKind::Music { instruments, .. } = &lines[0].kind else { panic!("not a music: line") };
     assert_eq!(instruments.len(), 2);
     let program = |number: u8| instruments.iter().find(|instrument| instrument.program == number).unwrap();
     let zone = &program(100).zones[0];
@@ -576,21 +580,12 @@ fn bank_index() -> Index {
 }
 
 fn line(module: &str, key: &str, file: &Path, add: bool) -> Line {
-    Line {
-        module: module.into(),
-        key: key.into(),
-        shown: String::new(),
-        file: file.to_path_buf(),
-        only: vec![],
-        volume: None,
-        bank: add.then(|| "bank:SP_004".to_string()),
-        add,
-        like: None,
-        title: None,
-        script: None,
-        programs: vec![],
-        instruments: Vec::new(),
-    }
+    let kind = if key.starts_with("sound:") {
+        LineKind::Sound { only: vec![], volume: None, bank: add.then(|| "bank:SP_004".to_string()) }
+    } else {
+        LineKind::Asset { kind: ids::kind_of(key).unwrap(), only: vec![] }
+    };
+    Line { module: module.into(), key: key.into(), shown: String::new(), file: file.to_path_buf(), add, kind }
 }
 
 #[test]

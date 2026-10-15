@@ -406,7 +406,7 @@ fn new_music_lines(lines: &[replace::Line], module: &str) -> Vec<String> {
             "adds {} ({}, like {}): scripts play it with load_bgm({number}); play_bgm(0);",
             line.key,
             dc2tk_assets::music::bgm_path(number),
-            line.like.as_deref().unwrap_or_default()
+            line.like().unwrap_or_default()
         ));
     }
     out

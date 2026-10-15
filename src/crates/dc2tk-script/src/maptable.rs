@@ -211,12 +211,13 @@ pub fn numbers_with(cfg: &[u8], maps: &[NewMap]) -> Result<IndexMap<String, i64>
 /// refused, naming both mods.
 pub fn new_maps(lines: &[replace::Line]) -> Result<Vec<NewMap>> {
     let mut out: Vec<(NewMap, &str)> = Vec::new();
-    for line in lines.iter().filter(|line| line.is_map() && line.add) {
+    for line in lines.iter().filter(|line| line.add) {
+        let replace::LineKind::Map { like, title, .. } = &line.kind else { continue };
         let name = line.map_name();
         if let Some((_, other)) = out.iter().find(|(known, _)| known.name == name) {
             return Err(Error::invalid(format!("mods {other} and {} both add a map {name}", line.module)));
         }
-        let map = NewMap { name, like: line.like.clone().unwrap_or_default(), title: line.title.clone() };
+        let map = NewMap { name, like: like.clone().unwrap_or_default(), title: title.clone() };
         out.push((map, &line.module));
     }
     Ok(out.into_iter().map(|(map, _)| map).collect())

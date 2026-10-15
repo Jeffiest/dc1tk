@@ -45,9 +45,12 @@ pub struct NewScript {
 pub fn scripts(lines: &[replace::Line]) -> Vec<NewScript> {
     lines
         .iter()
-        .filter(|line| line.is_map() && line.add)
-        .filter_map(|line| {
-            Some(NewScript { module: line.module.clone(), map: line.map_name(), source: line.script.clone()? })
+        .filter(|line| line.add)
+        .filter_map(|line| match &line.kind {
+            replace::LineKind::Map { script: Some(source), .. } => {
+                Some(NewScript { module: line.module.clone(), map: line.map_name(), source: source.clone() })
+            }
+            _ => None,
         })
         .collect()
 }
