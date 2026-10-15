@@ -14,6 +14,8 @@
 //! Binary scripts (`BIN` first) and comments inside a statement are refused: the engine blanks a
 //! comment wherever it is, even inside quotes, which a kept file could not show.
 
+use std::collections::BTreeMap;
+
 use crate::{bail, Result};
 
 /// A script: its statements in order and what follows the last one.
@@ -406,11 +408,11 @@ pub fn block_text(newline: &str, statements: &[Statement]) -> Vec<u8> {
 /// has. An edit of a file, statement or argument the scripts lack is refused.
 pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
     let mut scripts = scripts.to_vec();
-    let mut done: std::collections::BTreeMap<(usize, usize, usize), &Edit> = std::collections::BTreeMap::new();
+    let mut done: BTreeMap<(usize, usize, usize), &Edit> = BTreeMap::new();
     let mut lists = Vec::new();
     // new statements by (file, statement after), each record once
-    let mut inserted: std::collections::BTreeMap<(usize, usize), Vec<&Edit>> = std::collections::BTreeMap::new();
-    let mut records: std::collections::BTreeMap<(usize, &str), &Edit> = std::collections::BTreeMap::new();
+    let mut inserted: BTreeMap<(usize, usize), Vec<&Edit>> = BTreeMap::new();
+    let mut records: BTreeMap<(usize, &str), &Edit> = BTreeMap::new();
     for edit in edits {
         let Some(script) = scripts.get(edit.file) else {
             bail!("{}: there is no file {} (of {})", edit.what, edit.file, scripts.len());
@@ -427,13 +429,7 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
                 None => {
                     if let To::Insert(text) = &edit.to {
                         for statement in Script::parse(text)?.statements {
-                            if statement.args().len() > ARGS_MOST {
-                                bail!(
-                                    "{}: {} arguments; the engine reads at most {ARGS_MOST} a statement",
-                                    edit.what,
-                                    statement.args().len()
-                                );
-                            }
+                            check_arg_count(&edit.what, &statement)?;
                         }
                     }
                     records.insert((edit.file, edit.what.as_str()), edit);
@@ -467,62 +463,74 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
     for list in &lists {
         overwritten_args(&scripts, &done, list)?;
     }
+    for edit in lists {
+        apply_list(&mut scripts[edit.file].statements[edit.statement], edit)?;
+    }
+    Ok(written(&scripts, &inserted))
+}
+
+/// Refuses a statement of more arguments than the engine reads.
+fn check_arg_count(what: &str, statement: &Statement) -> Result<()> {
+    if statement.args().len() > ARGS_MOST {
+        bail!("{what}: {} arguments; the engine reads at most {ARGS_MOST} a statement", statement.args().len());
+    }
+    Ok(())
+}
+
+/// A list edit (To::Rest or To::Span) made in its statement, which may change how many arguments
+/// it has.
+fn apply_list(statement: &mut Statement, edit: &Edit) -> Result<()> {
     let pieces = |texts: &[Vec<u8>]| -> Vec<Piece> {
         texts.iter().map(|text| Piece { before: Vec::new(), text: text.clone(), after: Vec::new() }).collect()
     };
-    for edit in lists {
-        let statement = &mut scripts[edit.file].statements[edit.statement];
-        let counted = statement.args().len();
-        match &edit.to {
-            To::Rest(texts) => {
-                let end = statement.pieces.last().map(|last| last.after.clone()).unwrap_or_default();
-                // an empty last piece holds only the spaces before the ';'
-                let trailing = statement.pieces.len() > counted;
-                // the spaces between the tag and its first argument stay
-                let before =
-                    statement.pieces.get(edit.arg).filter(|_| edit.arg < counted).map(|piece| piece.before.clone());
-                statement.pieces.truncate(edit.arg.min(counted));
-                let mut new = pieces(texts);
-                if let (Some(first), Some(before)) = (new.first_mut(), before) {
-                    first.before = before;
-                }
-                statement.pieces.extend(new);
-                if trailing || statement.pieces.is_empty() {
-                    statement.pieces.push(Piece { before: Vec::new(), text: Vec::new(), after: end });
-                } else if let Some(last) = statement.pieces.last_mut() {
-                    last.after = end;
-                }
+    let counted = statement.args().len();
+    match &edit.to {
+        To::Rest(texts) => {
+            let end = statement.pieces.last().map(|last| last.after.clone()).unwrap_or_default();
+            // an empty last piece holds only the spaces before the ';'
+            let trailing = statement.pieces.len() > counted;
+            // the spaces between the tag and its first argument stay
+            let before =
+                statement.pieces.get(edit.arg).filter(|_| edit.arg < counted).map(|piece| piece.before.clone());
+            statement.pieces.truncate(edit.arg.min(counted));
+            let mut new = pieces(texts);
+            if let (Some(first), Some(before)) = (new.first_mut(), before) {
+                first.before = before;
             }
-            To::Span(texts, tail) => {
-                let Some(end) = counted.checked_sub(*tail).filter(|&end| end >= edit.arg) else {
-                    bail!("{}: the statement has only {counted} arguments", edit.what);
-                };
-                let before = statement.pieces.get(edit.arg).map(|piece| piece.before.clone());
-                let kept = statement.pieces.split_off(end);
-                statement.pieces.truncate(edit.arg);
-                let mut new = pieces(texts);
-                if let (Some(first), Some(before)) = (new.first_mut(), before) {
-                    first.before = before;
-                }
-                statement.pieces.extend(new);
-                statement.pieces.extend(kept);
-            }
-            To::Arg(_) | To::Insert(_) => unreachable!(),
-        }
-        // a first argument written right after the tag would join it
-        if let Some(first) = statement.pieces.first_mut() {
-            if first.before.is_empty() && !first.text.is_empty() {
-                first.before = b" ".to_vec();
+            statement.pieces.extend(new);
+            if trailing || statement.pieces.is_empty() {
+                statement.pieces.push(Piece { before: Vec::new(), text: Vec::new(), after: end });
+            } else if let Some(last) = statement.pieces.last_mut() {
+                last.after = end;
             }
         }
-        if statement.args().len() > ARGS_MOST {
-            bail!(
-                "{}: {} arguments; the engine reads at most {ARGS_MOST} a statement",
-                edit.what,
-                statement.args().len()
-            );
+        To::Span(texts, tail) => {
+            let Some(end) = counted.checked_sub(*tail).filter(|&end| end >= edit.arg) else {
+                bail!("{}: the statement has only {counted} arguments", edit.what);
+            };
+            let before = statement.pieces.get(edit.arg).map(|piece| piece.before.clone());
+            let kept = statement.pieces.split_off(end);
+            statement.pieces.truncate(edit.arg);
+            let mut new = pieces(texts);
+            if let (Some(first), Some(before)) = (new.first_mut(), before) {
+                first.before = before;
+            }
+            statement.pieces.extend(new);
+            statement.pieces.extend(kept);
+        }
+        To::Arg(_) | To::Insert(_) => unreachable!(),
+    }
+    // a first argument written right after the tag would join it
+    if let Some(first) = statement.pieces.first_mut() {
+        if first.before.is_empty() && !first.text.is_empty() {
+            first.before = b" ".to_vec();
         }
     }
+    check_arg_count(&edit.what, statement)
+}
+
+/// The scripts' bytes, with the new statements after the statements they follow.
+fn written(scripts: &[Script], inserted: &BTreeMap<(usize, usize), Vec<&Edit>>) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     for (file, script) in scripts.iter().enumerate() {
         let mut data = Vec::new();
@@ -537,16 +545,12 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
         data.extend_from_slice(&script.tail);
         out.push(data);
     }
-    Ok(out)
+    out
 }
 
 /// Refuses an argument a list of its statement writes over with other text, which would be lost:
 /// a Rest from its argument on, a Span up to its tail.
-fn overwritten_args(
-    scripts: &[Script],
-    done: &std::collections::BTreeMap<(usize, usize, usize), &Edit>,
-    list: &Edit,
-) -> Result<()> {
+fn overwritten_args(scripts: &[Script], done: &BTreeMap<(usize, usize, usize), &Edit>, list: &Edit) -> Result<()> {
     let statement = &scripts[list.file].statements[list.statement];
     let (texts, end) = match &list.to {
         To::Rest(texts) => (texts, usize::MAX),
