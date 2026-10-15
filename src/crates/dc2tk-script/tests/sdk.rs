@@ -433,7 +433,7 @@ fn sound_context(enums: &[(&str, i64, &str)], sound_set_banks: &[(i64, &str)]) -
 
 /// sdk.named_sounds(nodes, found, {}).
 fn named_sounds(nodes: &[Node], found: &Context) -> Node {
-    soundpass::named_sounds(nodes, found, &mut HashMap::new(), None, None)
+    soundpass::named_sounds(nodes, found, &mut soundpass::Banks::default(), None, None)
 }
 
 #[test]
