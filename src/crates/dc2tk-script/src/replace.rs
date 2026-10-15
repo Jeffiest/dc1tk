@@ -735,8 +735,8 @@ pub fn covers(only: &str, place: &Place) -> bool {
     shown == only || shown.starts_with(&format!("{only}/")) || shown.starts_with(&format!("{only}.d/"))
 }
 
-/// The places and changes of the lines, by the disc's index. An id or pattern the disc does not
-/// have, an "only" that keeps no place, or one entry given twice in a mod is refused.
+/// The places and changes of the lines, by the disc's index, mod by mod. An id or pattern the disc
+/// does not have, an "only" that keeps no place, or one entry given twice in a mod is refused.
 pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
     let mut resolved = Resolved::default();
     let modules: IndexSet<&str> = lines.iter().map(|line| line.module.as_str()).collect();
@@ -745,129 +745,12 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
     for module in modules {
         let mine: Vec<&Line> =
             lines.iter().filter(|line| line.module == module && line.is_asset() && !line.is_new_music()).collect();
-        // each id by the line that gives it: an exact id wins over a pattern
-        let mut chosen: BTreeMap<String, (&Line, bool)> = BTreeMap::new();
-        for line in mine.iter().filter(|line| !line.add) {
-            let exact = !ids::is_pattern(&line.key);
-            let kind = ids::kind_of(&line.key);
-            let found: Vec<&ids::Asset> = if exact {
-                index.get(&line.key).into_iter().collect()
-            } else {
-                index.matching(&line.key).into_iter().filter(|asset| Some(asset.kind) == kind).collect()
-            };
-            if found.is_empty() {
-                return Err(line.fail(if exact {
-                    "the disc has no asset of that id"
-                } else {
-                    "the pattern matches no asset of the disc"
-                }));
-            }
-            for asset in found {
-                match chosen.get(&asset.id) {
-                    Some((_, true)) if !exact => {}
-                    Some((other, other_exact)) if exact == *other_exact => {
-                        return Err(line.fail(format!("{} is given by {} too", asset.id, other.key)));
-                    }
-                    _ => {
-                        chosen.insert(asset.id.clone(), (line, exact));
-                    }
-                }
-            }
-        }
+        let chosen = chosen_assets(&mine, index)?;
         let mut reached: IndexMap<&str, Vec<String>> =
             mine.iter().filter(|line| !line.add).map(|line| (line.key.as_str(), Vec::new())).collect();
         for (id, (line, _)) in &chosen {
             reached.get_mut(line.key.as_str()).unwrap().push(id.clone());
-            let asset = &index.assets[id];
-            let places: Vec<&(Place, Option<usize>)> = asset
-                .places
-                .iter()
-                .filter(|(place, _)| line.only().is_empty() || line.only().iter().any(|only| covers(only, place)))
-                .collect();
-            if places.is_empty() {
-                let shown: Vec<String> = asset.places.iter().take(5).map(|(place, _)| place.display()).collect();
-                return Err(line.fail(format!("\"only\" keeps none of the places of {id} ({})", shown.join(", "))));
-            }
-            let edit = |place: &Place, change: Change| Edit {
-                id: id.clone(),
-                module: module.to_string(),
-                key: line.key.clone(),
-                name: asset.name.clone(),
-                place: place.clone(),
-                change,
-            };
-            match asset.kind {
-                Kind::Texture => {
-                    for (place, at) in places {
-                        resolved.edits.push(edit(place, Change::Picture(at.unwrap_or(0), line.file.clone())));
-                    }
-                }
-                Kind::Model => {
-                    for (place, _) in places {
-                        resolved.edits.push(edit(place, Change::Model(line.file.clone())));
-                    }
-                }
-                Kind::Text => {
-                    let reference = asset.places[0].0.clone();
-                    for (place, _) in places {
-                        resolved.edits.push(edit(place, Change::Text(line.file.clone(), reference.clone())));
-                    }
-                }
-                Kind::Music => {
-                    let instruments = match &line.kind {
-                        LineKind::Music { instruments, .. } => instruments.clone(),
-                        _ => Vec::new(),
-                    };
-                    for (place, _) in places {
-                        resolved.edits.push(edit(place, Change::Sequence(line.file.clone(), instruments.clone())));
-                    }
-                }
-                Kind::Sound => {
-                    let volume = match line.kind {
-                        LineKind::Sound { volume, .. } => volume,
-                        _ => None,
-                    };
-                    for (place, at) in places {
-                        let given = Given { number: at.unwrap_or(0), name: None, path: line.file.clone(), volume };
-                        resolved.edits.push(edit(place, Change::Entry(given)));
-                    }
-                }
-                Kind::Bank => {
-                    let count = asset.entries.unwrap_or(0);
-                    let wavs = sounds::numbered(&line.file).map_err(|error| line.fail(error))?;
-                    if let Some((number, _, path)) = wavs.iter().find(|(number, _, _)| *number >= count) {
-                        return Err(line.fail(format!(
-                            "{}: the bank has entries 0 to {}; add new entries with \"add\" (entry {number})",
-                            paths::file_name(path),
-                            count as i64 - 1
-                        )));
-                    }
-                    // each entry at every place its sound has: copies of the bank in other packs
-                    // whose entry plays alike are the same sound (tree::bank_sounds)
-                    let mut done: HashSet<(String, usize)> = HashSet::new();
-                    for (place, _) in places {
-                        for (number, _, path) in &wavs {
-                            let key = (Kind::Sound, place.display().to_lowercase(), Some(*number));
-                            let reached: Vec<Place> = match at.get(&key).and_then(|id| index.assets.get(id)) {
-                                Some(sound) => sound
-                                    .places
-                                    .iter()
-                                    .filter(|(_, entry)| *entry == Some(*number))
-                                    .map(|(place, _)| place.clone())
-                                    .collect(),
-                                None => vec![place.clone()],
-                            };
-                            for place in reached {
-                                if !done.insert((place.display().to_lowercase(), *number)) {
-                                    continue;
-                                }
-                                let given = Given { number: *number, name: None, path: path.clone(), volume: None };
-                                resolved.edits.push(edit(&place, Change::Entry(given)));
-                            }
-                        }
-                    }
-                }
-            }
+            resolved.edits.extend(replaced_edits(module, line, &index.assets[id], index, &at)?);
         }
         for line in mine.iter().filter(|line| line.add) {
             if let Some(found) = index.get(&line.key) {
@@ -896,24 +779,165 @@ pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
             resolved.added.entry(module.to_string()).or_default().insert(name, number as i64);
             reached.insert(&line.key, vec![bank.id.clone()]);
         }
-        // one entry of a bank given twice in a mod (by its bank's folder and by its id, say)
-        let mut seen: HashMap<(String, Option<usize>), &Edit> = HashMap::new();
-        for edit in resolved.edits.iter().filter(|edit| edit.module == module) {
-            if let Some(other) = seen.insert(edit.slot(), edit) {
-                if other.key != edit.key {
-                    return Err(Error::invalid(format!(
-                        "{} and {} (mod {module}) both give {} entry {}",
-                        other.key,
-                        edit.key,
-                        edit.place.display(),
-                        edit.slot().1.unwrap_or(0)
-                    )));
-                }
-            }
-        }
+        refuse_entries_given_twice(&resolved.edits, module)?;
         resolved.reached.extend(reached.into_iter().map(|(key, ids)| (module.to_string(), key.to_string(), ids)));
     }
     Ok(resolved)
+}
+
+/// Each id a mod's replace lines reach, by the line that gives it (and whether it gives it
+/// exactly): an exact id wins over a pattern; two lines alike giving one id are refused.
+fn chosen_assets<'a>(mine: &[&'a Line], index: &Index) -> Result<BTreeMap<String, (&'a Line, bool)>> {
+    let mut chosen: BTreeMap<String, (&Line, bool)> = BTreeMap::new();
+    for &line in mine.iter().filter(|line| !line.add) {
+        let exact = !ids::is_pattern(&line.key);
+        let kind = ids::kind_of(&line.key);
+        let found: Vec<&ids::Asset> = if exact {
+            index.get(&line.key).into_iter().collect()
+        } else {
+            index.matching(&line.key).into_iter().filter(|asset| Some(asset.kind) == kind).collect()
+        };
+        if found.is_empty() {
+            return Err(line.fail(if exact {
+                "the disc has no asset of that id"
+            } else {
+                "the pattern matches no asset of the disc"
+            }));
+        }
+        for asset in found {
+            match chosen.get(&asset.id) {
+                Some((_, true)) if !exact => {}
+                Some((other, other_exact)) if exact == *other_exact => {
+                    return Err(line.fail(format!("{} is given by {} too", asset.id, other.key)));
+                }
+                _ => {
+                    chosen.insert(asset.id.clone(), (line, exact));
+                }
+            }
+        }
+    }
+    Ok(chosen)
+}
+
+/// The edits of a replace line at the places of an asset it reaches ("only" keeping some).
+fn replaced_edits(
+    module: &str,
+    line: &Line,
+    asset: &ids::Asset,
+    index: &Index,
+    at: &HashMap<(Kind, String, Option<usize>), String>,
+) -> Result<Vec<Edit>> {
+    let id = &asset.id;
+    let places: Vec<&(Place, Option<usize>)> = asset
+        .places
+        .iter()
+        .filter(|(place, _)| line.only().is_empty() || line.only().iter().any(|only| covers(only, place)))
+        .collect();
+    if places.is_empty() {
+        let shown: Vec<String> = asset.places.iter().take(5).map(|(place, _)| place.display()).collect();
+        return Err(line.fail(format!("\"only\" keeps none of the places of {id} ({})", shown.join(", "))));
+    }
+    let edit = |place: &Place, change: Change| Edit {
+        id: id.clone(),
+        module: module.to_string(),
+        key: line.key.clone(),
+        name: asset.name.clone(),
+        place: place.clone(),
+        change,
+    };
+    let mut edits = Vec::new();
+    match asset.kind {
+        Kind::Texture => {
+            for (place, at) in places {
+                edits.push(edit(place, Change::Picture(at.unwrap_or(0), line.file.clone())));
+            }
+        }
+        Kind::Model => {
+            for (place, _) in places {
+                edits.push(edit(place, Change::Model(line.file.clone())));
+            }
+        }
+        Kind::Text => {
+            let reference = asset.places[0].0.clone();
+            for (place, _) in places {
+                edits.push(edit(place, Change::Text(line.file.clone(), reference.clone())));
+            }
+        }
+        Kind::Music => {
+            let instruments = match &line.kind {
+                LineKind::Music { instruments, .. } => instruments.clone(),
+                _ => Vec::new(),
+            };
+            for (place, _) in places {
+                edits.push(edit(place, Change::Sequence(line.file.clone(), instruments.clone())));
+            }
+        }
+        Kind::Sound => {
+            let volume = match line.kind {
+                LineKind::Sound { volume, .. } => volume,
+                _ => None,
+            };
+            for (place, at) in places {
+                let given = Given { number: at.unwrap_or(0), name: None, path: line.file.clone(), volume };
+                edits.push(edit(place, Change::Entry(given)));
+            }
+        }
+        Kind::Bank => {
+            let count = asset.entries.unwrap_or(0);
+            let wavs = sounds::numbered(&line.file).map_err(|error| line.fail(error))?;
+            if let Some((number, _, path)) = wavs.iter().find(|(number, _, _)| *number >= count) {
+                return Err(line.fail(format!(
+                    "{}: the bank has entries 0 to {}; add new entries with \"add\" (entry {number})",
+                    paths::file_name(path),
+                    count as i64 - 1
+                )));
+            }
+            // each entry at every place its sound has: copies of the bank in other packs whose
+            // entry plays alike are the same sound (tree::bank_sounds)
+            let mut done: HashSet<(String, usize)> = HashSet::new();
+            for (place, _) in places {
+                for (number, _, path) in &wavs {
+                    let key = (Kind::Sound, place.display().to_lowercase(), Some(*number));
+                    let reached: Vec<Place> = match at.get(&key).and_then(|id| index.assets.get(id)) {
+                        Some(sound) => sound
+                            .places
+                            .iter()
+                            .filter(|(_, entry)| *entry == Some(*number))
+                            .map(|(place, _)| place.clone())
+                            .collect(),
+                        None => vec![place.clone()],
+                    };
+                    for place in reached {
+                        if !done.insert((place.display().to_lowercase(), *number)) {
+                            continue;
+                        }
+                        let given = Given { number: *number, name: None, path: path.clone(), volume: None };
+                        edits.push(edit(&place, Change::Entry(given)));
+                    }
+                }
+            }
+        }
+    }
+    Ok(edits)
+}
+
+/// Refuses one entry of a bank given twice in a mod (by its bank's folder and by its id, say).
+fn refuse_entries_given_twice(edits: &[Edit], module: &str) -> Result<()> {
+    let mut seen: HashMap<(String, Option<usize>), &Edit> = HashMap::new();
+    for edit in edits.iter().filter(|edit| edit.module == module) {
+        if let Some(other) = seen.insert(edit.slot(), edit) {
+            if other.key != edit.key {
+                return Err(Error::invalid(format!(
+                    "{} and {} (mod {module}) both give {} entry {}",
+                    other.key,
+                    edit.key,
+                    edit.place.display(),
+                    edit.slot().1.unwrap_or(0)
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn overlaps(a: &Place, b: &Place) -> bool {
