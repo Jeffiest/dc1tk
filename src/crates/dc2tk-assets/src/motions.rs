@@ -21,9 +21,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::from_gltf::{self, accessor, clean, index, item, Gltf};
 use crate::info_cfg::{self, Arg, Statement};
+use crate::math::{decompose, slerp, Mixing};
 use crate::mds::Mds;
 use crate::mot::{self, KeyList};
-use crate::to_gltf::{decompose, slerp, Target};
+use crate::to_gltf::Target;
 use crate::{bail, Result};
 use serde_json::Value;
 
@@ -95,16 +96,14 @@ fn normalized(q: &Vec4) -> Vec4 {
     }
 }
 
+/// math::slerp, or the straight mix normalised where its numbers fail (a NaN).
 fn quat_slerp(a: &Vec4, b: &Vec4, t: f64) -> Vec4 {
-    match slerp(a, b, t) {
-        Ok(q) if q.len() == 4 => [q[0], q[1], q[2], q[3]],
-        _ => normalized(&lerp(a, b, t)),
-    }
+    slerp(a, b, t).unwrap_or_else(|_| normalized(&lerp(a, b, t)))
 }
 
 impl Curve {
     /// The value at time t, held before the first key and after the last.
-    fn at(&self, t: f64, rotation: bool) -> Vec4 {
+    fn at(&self, t: f64, mixing: Mixing) -> Vec4 {
         let n = self.times.len();
         if n == 1 || t <= self.times[0] {
             return self.values[0];
@@ -118,7 +117,7 @@ impl Curve {
         let (a, b) = (&self.values[k], &self.values[k + 1]);
         match self.interpolation {
             Interpolation::Step => *a,
-            Interpolation::Linear if rotation => quat_slerp(a, b, u),
+            Interpolation::Linear if mixing == Mixing::Spherical => quat_slerp(a, b, u),
             Interpolation::Linear => lerp(a, b, u),
             Interpolation::Cubic => {
                 let (u2, u3) = (u * u, u * u * u);
@@ -130,10 +129,9 @@ impl Curve {
                         + (-2.0 * u3 + 3.0 * u2) * b[i]
                         + (u3 - u2) * dt * into[i]
                 });
-                if rotation {
-                    normalized(&value)
-                } else {
-                    value
+                match mixing {
+                    Mixing::Spherical => normalized(&value),
+                    Mixing::Straight => value,
                 }
             }
         }
@@ -175,7 +173,8 @@ impl Motions<'_> {
     /// the frame's mesh's morph weights), else None.
     fn value(&self, animation: &Animation, channel: Channel, t: f64) -> Option<Vec4> {
         if let Some(curve) = animation.curves.get(&channel) {
-            return Some(curve.at(animation.start + t, channel.1 == ROTATION));
+            let mixing = if channel.1 == ROTATION { Mixing::Spherical } else { Mixing::Straight };
+            return Some(curve.at(animation.start + t, mixing));
         }
         if is_trs(channel.1) {
             return self.rest.get(channel.0).copied().flatten().map(|rest| rest[channel.1 as usize]);
@@ -342,7 +341,7 @@ struct TargetNames<'a> {
 fn read<'m>(
     gltf: &Gltf,
     model: &'m Mds,
-    binds: &HashMap<usize, crate::to_gltf::Matrix>,
+    binds: &HashMap<usize, crate::math::Mat4>,
     names: &TargetNames,
 ) -> Result<Motions<'m>> {
     let j = &gltf.json;
@@ -1722,7 +1721,8 @@ pub fn key_line(name: &str, start: i64, end: i64, step: f64) -> String {
 mod tests {
     use super::*;
     use crate::from_gltf::load_gltf;
-    use crate::mds::{self, Material, Mdt, Node, Prim, IDENT, PRIM_TRIANGLES};
+    use crate::math::IDENT;
+    use crate::mds::{self, Material, Mdt, Node, Prim, PRIM_TRIANGLES};
     use crate::models;
     use dc2tk_disc::rebuild;
     use std::sync::Arc;

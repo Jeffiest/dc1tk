@@ -27,6 +27,7 @@ pub mod map_import;
 pub mod map_scene;
 pub mod map_transform;
 pub mod mapfile;
+pub(crate) mod math;
 pub mod mds;
 pub mod models;
 pub mod monster_data;

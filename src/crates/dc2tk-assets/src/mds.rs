@@ -5,6 +5,7 @@
 use dc2tk_disc::text;
 
 use crate::bytes::{f32s_at, i32_at, u32_at, Reader};
+use crate::math::{mat_mul, IDENT};
 use crate::{bail, numeric, Result};
 
 pub const PRIM_TRIANGLES: u32 = 3;
@@ -12,8 +13,6 @@ pub const PRIM_STRIP: u32 = 4;
 pub const F_NO_UV: u32 = 0x10;
 pub const F_COLOUR: u32 = 0x100;
 pub const F_NO_NORMAL: u32 = 0x200;
-
-pub const IDENT: [f64; 16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
 
 /// The values as little-endian float32s (numeric::f32_bytes).
 pub(crate) fn pack_floats(values: &[f64], out: &mut Vec<u8>) -> Result<()> {
@@ -487,18 +486,6 @@ impl Default for Mds {
     fn default() -> Mds {
         Mds::new()
     }
-}
-
-/// a*b for column-major 4x4 matrices, each element's terms summed with compensation
-/// (numeric::compensated_sum), which the imported bind poses' bytes depend on.
-pub fn mat_mul(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
-    let mut out = [0.0; 16];
-    for c in 0..4 {
-        for r in 0..4 {
-            out[c * 4 + r] = numeric::compensated_sum((0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]));
-        }
-    }
-    out
 }
 
 /// The MDS file header: "MDS\0", the version, the frame count and where the frames start.

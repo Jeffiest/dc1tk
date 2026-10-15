@@ -106,8 +106,7 @@ fn floats(value: &Value) -> Option<Vec<f64>> {
 fn trs_of(node: &Value) -> Result<Option<Trs>> {
     if let Some(matrix) = floats(&node["matrix"]).filter(|matrix| matrix.len() == 16) {
         let matrix: [f64; 16] = matrix.try_into().unwrap();
-        let (translation, rotation, scale) = crate::to_gltf::decompose(&matrix)?;
-        let rotation: [f64; 4] = [rotation[0], rotation[1], rotation[2], rotation[3]];
+        let (translation, rotation, scale) = crate::math::decompose(&matrix)?;
         return Ok(Some(Trs { translation, rotation, scale }));
     }
     let present = ["translation", "rotation", "scale"].iter().any(|key| node.get(key).is_some());

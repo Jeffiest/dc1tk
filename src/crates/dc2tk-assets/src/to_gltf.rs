@@ -6,174 +6,24 @@
 use crate::folder::Folder;
 use crate::info_cfg::Arg;
 use crate::info_cfg::{self, CharInfo};
-use crate::mds::{self, Material, Mds, Slot, IDENT};
+use crate::math::{
+    decompose, mat_inv, normalize, slerp, xform_dir, xform_point, Mat4, Mixing, Quat, IDENT, NO_ROTATION, Z,
+};
+use crate::mds::{self, Material, Mds, Slot};
 use crate::mot::{self, KeyList};
 use crate::{bail, im3, numeric, Result};
 use serde_json::{json, Value};
 
-/// A column-major 4x4 matrix.
-pub type Matrix = [f64; 16];
-
-pub fn mat_mul(a: &Matrix, b: &Matrix) -> Matrix {
-    mds::mat_mul(a, b)
-}
-
-/// The inverse by Gauss-Jordan elimination, or None when singular.
-pub fn mat_inv(m: &Matrix) -> Option<Matrix> {
-    let mut a: Vec<[f64; 8]> = (0..4)
-        .map(|r| {
-            let mut row = [0.0; 8];
-            for c in 0..4 {
-                row[c] = m[c * 4 + r];
-                row[4 + c] = if r == c { 1.0 } else { 0.0 };
-            }
-            row
-        })
-        .collect();
-    for col in 0..4 {
-        // max(range(col, 4), key=abs): the first of the largest
-        let mut pivot = col;
-        for r in col + 1..4 {
-            if a[r][col].abs() > a[pivot][col].abs() {
-                pivot = r;
-            }
-        }
-        if a[pivot][col].abs() < 1e-12 {
-            return None;
-        }
-        a.swap(col, pivot);
-        let p = a[col][col];
-        for x in a[col].iter_mut() {
-            *x /= p;
-        }
-        for r in 0..4 {
-            if r != col && a[r][col] != 0.0 {
-                let f = a[r][col];
-                let pivot_row = a[col];
-                for (x, y) in a[r].iter_mut().zip(pivot_row) {
-                    *x -= f * y;
-                }
-            }
-        }
-    }
-    let mut out = [0.0; 16];
-    for c in 0..4 {
-        for r in 0..4 {
-            out[c * 4 + r] = a[r][4 + c];
-        }
-    }
-    Some(out)
-}
-
-pub fn xform_point(m: &Matrix, v: &[f64]) -> [f64; 3] {
-    [0, 1, 2].map(|r| m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r])
-}
-
-pub fn xform_dir(m: &Matrix, v: &[f64]) -> [f64; 3] {
-    [0, 1, 2].map(|r| m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2])
-}
-
-/// The vector divided by its length, or the fallback when it has none.
-pub fn normalize(v: &[f64], fallback: &[f64]) -> Vec<f64> {
-    let length = numeric::compensated_sum(v.iter().map(|x| x * x)).sqrt();
-    if length > 1e-12 {
-        v.iter().map(|x| x / length).collect()
-    } else {
-        fallback.to_vec()
-    }
-}
-
-const NO_ROTATION: [f64; 4] = [0.0, 0.0, 0.0, 1.0];
-const Z: [f64; 3] = [0.0, 0.0, 1.0];
-
-/// The quaternion (x, y, z, w) of the rotation whose columns are c0, c1, c2.
-fn quat_from_rot(c0: &[f64], c1: &[f64], c2: &[f64]) -> Result<Vec<f64>> {
-    let (m00, m10, m20) = (c0[0], c0[1], c0[2]);
-    let (m01, m11, m21) = (c1[0], c1[1], c1[2]);
-    let (m02, m12, m22) = (c2[0], c2[1], c2[2]);
-    let tr = m00 + m11 + m22;
-    let q = if tr > 0.0 {
-        let s = numeric::sqrt(tr + 1.0)? * 2.0;
-        [numeric::div(m21 - m12, s)?, numeric::div(m02 - m20, s)?, numeric::div(m10 - m01, s)?, 0.25 * s]
-    } else if m00 > m11 && m00 > m22 {
-        let s = numeric::sqrt(1.0 + m00 - m11 - m22)? * 2.0;
-        [0.25 * s, numeric::div(m01 + m10, s)?, numeric::div(m02 + m20, s)?, numeric::div(m21 - m12, s)?]
-    } else if m11 > m22 {
-        let s = numeric::sqrt(1.0 + m11 - m00 - m22)? * 2.0;
-        [numeric::div(m01 + m10, s)?, 0.25 * s, numeric::div(m12 + m21, s)?, numeric::div(m02 - m20, s)?]
-    } else {
-        let s = numeric::sqrt(1.0 + m22 - m00 - m11)? * 2.0;
-        [numeric::div(m02 + m20, s)?, numeric::div(m12 + m21, s)?, 0.25 * s, numeric::div(m10 - m01, s)?]
-    };
-    Ok(normalize(&q, &NO_ROTATION))
-}
-
-/// Translation, rotation and scale of a matrix.
-pub fn decompose(m: &Matrix) -> Result<([f64; 3], Vec<f64>, [f64; 3])> {
-    let t = [m[12], m[13], m[14]];
-    let cols = [&m[0..3], &m[4..7], &m[8..11]];
-    let mut s = cols.map(|c| numeric::compensated_sum(c.iter().map(|x| x * x)).sqrt());
-    let det = cols[0][0] * (cols[1][1] * cols[2][2] - cols[1][2] * cols[2][1])
-        - cols[1][0] * (cols[0][1] * cols[2][2] - cols[0][2] * cols[2][1])
-        + cols[2][0] * (cols[0][1] * cols[1][2] - cols[0][2] * cols[1][1]);
-    if det < 0.0 {
-        s[0] = -s[0];
-    }
-    let rc: Vec<Vec<f64>> = (0..3)
-        .map(|i| {
-            let d = if s[i] == 0.0 { 1.0 } else { s[i] };
-            cols[i].iter().map(|x| x / d).collect()
-        })
-        .collect();
-    Ok((t, quat_from_rot(&rc[0], &rc[1], &rc[2])?, s))
-}
-
-/// The column-major matrix of a translation, rotation (x, y, z, w) and scale.
-pub fn compose(t: &[f64], r: &[f64], s: &[f64]) -> Matrix {
-    let (x, y, z, w) = (r[0], r[1], r[2], r[3]);
-    let columns = [
-        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y + z * w), 2.0 * (x * z - y * w)],
-        [2.0 * (x * y - z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z + x * w)],
-        [2.0 * (x * z + y * w), 2.0 * (y * z - x * w), 1.0 - 2.0 * (x * x + y * y)],
-    ];
-    let mut m = IDENT;
-    for (c, column) in columns.iter().enumerate() {
-        for row in 0..3 {
-            m[c * 4 + row] = column[row] * s[c];
-        }
-    }
-    m[12..15].copy_from_slice(&t[..3]);
-    m
-}
-
 /// .mot rotation keys are (w, x, y, z) fed to QuatToMat, which builds the transpose of the usual
 /// matrix; so the glTF rotation is the conjugate.
-fn engine_quat_to_gltf(q: &[f64; 4]) -> Vec<f64> {
+fn engine_quat_to_gltf(q: &[f64; 4]) -> Quat {
     let [w, x, y, z] = *q;
-    normalize(&[-x, -y, -z, w], &NO_ROTATION)
-}
-
-pub(crate) fn slerp(a: &[f64], b: &[f64], t: f64) -> Result<Vec<f64>> {
-    let mut b = b.to_vec();
-    let mut d = numeric::compensated_sum(a.iter().zip(&b).map(|(x, y)| x * y));
-    if d < 0.0 {
-        b = b.iter().map(|x| -x).collect();
-        d = -d;
-    }
-    if d > 0.9995 {
-        let mixed: Vec<f64> = a.iter().zip(&b).map(|(x, y)| x + (y - x) * t).collect();
-        return Ok(normalize(&mixed, &Z));
-    }
-    let th = numeric::acos(numeric::min(1.0, d))?;
-    let s = th.sin();
-    let (fa, fb) = (numeric::div(((1.0 - t) * th).sin(), s)?, numeric::div((t * th).sin(), s)?);
-    let mixed: Vec<f64> = a.iter().zip(&b).map(|(x, y)| fa * x + fb * y).collect();
-    Ok(normalize(&mixed, &Z))
+    normalize(&[-x, -y, -z, w], NO_ROTATION)
 }
 
 /// The value of a key list at an integer frame, as MotionProc interpolates (slerp or lerp).
-fn sample(list: &KeyList, frames: &[i64], f: i64, rotation: bool) -> Result<Vec<f64>> {
-    // bisect.bisect_right
+fn sample(list: &KeyList, frames: &[i64], f: i64, mixing: Mixing) -> Result<Vec<f64>> {
+    // the first key after f
     let (mut lo, mut hi) = (0, frames.len());
     while lo < hi {
         let mid = (lo + hi) / 2;
@@ -187,15 +37,16 @@ fn sample(list: &KeyList, frames: &[i64], f: i64, rotation: bool) -> Result<Vec<
     let n = lo.min(frames.len() - 1);
     let (a, b) = (&list.keys[k].1, &list.keys[n].1);
     let t = if frames[n] == frames[k] { 0.0 } else { (f - frames[k]) as f64 / (frames[n] - frames[k]) as f64 };
-    if rotation {
+    if mixing == Mixing::Spherical {
         let (qa, qb) = (engine_quat_to_gltf(a), engine_quat_to_gltf(b));
-        return if 0.0 < t && t < 1.0 {
-            slerp(&qa, &qb, t)
+        let q = if 0.0 < t && t < 1.0 {
+            slerp(&qa, &qb, t)?
         } else if t <= 0.0 {
-            Ok(qa)
+            qa
         } else {
-            Ok(qb)
+            qb
         };
+        return Ok(q.to_vec());
     }
     Ok((0..3).map(|i| a[i] + (b[i] - a[i]) * t).collect())
 }
@@ -413,7 +264,7 @@ pub fn at_index<T>(items: &[T], i: i64) -> Result<&T> {
 pub struct Character {
     pub info: CharInfo,
     pub model: Mds,
-    pub bbp: Option<Vec<Matrix>>,
+    pub bbp: Option<Vec<Mat4>>,
     pub wgt: Option<Vec<KeyList>>,
     /// The motion sets whose .mot the pack holds, in the order info.cfg first gives their ids.
     pub motions: Vec<SetMotion>,
@@ -1116,7 +967,7 @@ impl<'a> MeshMotion<'a> {
         g: &mut Gltf,
         t: &mds::Mdt,
         corners: &[[i64; 4]],
-        bind: Option<&Matrix>,
+        bind: Option<&Mat4>,
     ) -> Result<Vec<Value>> {
         let place = |v: &[f64]| -> [f64; 3] {
             match bind {
@@ -1483,10 +1334,15 @@ fn export_parts(
             }
             let mut attributes = json!({"POSITION": g.floats(&pos, "VEC3", Some(ARRAY_BUFFER), true)?});
             if *hn {
-                let mut normals: Vec<Vec<f64>> =
-                    vs.iter().map(|k| Ok(normalize(&at_index(&t.normals, k[1])?[..3], &Z))).collect::<Result<_>>()?;
+                let mut normals: Vec<Vec<f64>> = vs
+                    .iter()
+                    .map(|k| {
+                        Ok(normalize(&at_index(&t.normals, k[1])?[..3].try_into().expect("a normal has 4 numbers"), Z)
+                            .to_vec())
+                    })
+                    .collect::<Result<_>>()?;
                 if skinned {
-                    normals = normals.iter().map(|v| normalize(&xform_dir(&bind, v), &Z)).collect();
+                    normals = normals.iter().map(|v| normalize(&xform_dir(&bind, v), Z).to_vec()).collect();
                 }
                 attributes["NORMAL"] = Value::from(g.floats(&normals, "VEC3", Some(ARRAY_BUFFER), false)?);
             }
@@ -1647,8 +1503,9 @@ fn export_parts(
             for (&(node, path), list) in &channels_of {
                 let key_frames: Vec<i64> = list.keys.iter().map(|(k, _)| *k).collect();
                 let rotation = path == "rotation";
+                let mixing = if rotation { Mixing::Spherical } else { Mixing::Straight };
                 let mut values =
-                    frames.iter().map(|&f| sample(list, &key_frames, f, rotation)).collect::<Result<Vec<_>>>()?;
+                    frames.iter().map(|&f| sample(list, &key_frames, f, mixing)).collect::<Result<Vec<_>>>()?;
                 if rotation {
                     for a in 1..values.len() {
                         if numeric::compensated_sum(values[a - 1].iter().zip(&values[a]).map(|(x, y)| x * y)) < 0.0 {

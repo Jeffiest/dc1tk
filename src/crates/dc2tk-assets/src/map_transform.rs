@@ -5,7 +5,9 @@
 
 use crate::mapfile::Num;
 
-pub type Matrix = [[f64; 4]; 4];
+/// A 4x4 matrix as rows (rows are output coordinates: the translation is column 3): the .map's
+/// transforms' form, where math::Mat4 is the column-major form of glTF and the MDS.
+pub type RowMatrix = [[f64; 4]; 4];
 
 /// glTF's form of a transform: translation, rotation quaternion (x, y, z, w), scale.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,7 +34,7 @@ fn rotation(x: f64, y: f64, z: f64) -> [[f64; 3]; 3] {
 }
 
 /// T·Rz·Ry·Rx·S of a .map transform (rows are output coordinates).
-pub fn matrix(pos: &[Num; 3], rot: &[Num; 3], scale: &[Num; 3]) -> Matrix {
+pub fn matrix(pos: &[Num; 3], rot: &[Num; 3], scale: &[Num; 3]) -> RowMatrix {
     let [x, y, z] = floats(rot);
     let r = rotation(x, y, z);
     let t = floats(pos);
@@ -49,7 +51,7 @@ pub fn matrix(pos: &[Num; 3], rot: &[Num; 3], scale: &[Num; 3]) -> Matrix {
 }
 
 /// The matrix of a glTF transform.
-pub fn trs_matrix(trs: &Trs) -> Matrix {
+pub fn trs_matrix(trs: &Trs) -> RowMatrix {
     let [x, y, z, w] = trs.rotation;
     let r = [
         [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
@@ -86,7 +88,7 @@ pub fn to_trs(pos: &[Num; 3], rot: &[Num; 3], scale: &[Num; 3]) -> Trs {
 
 /// Whether two matrices are the same transform, within what float32 files and glTF's floats
 /// lose: 1e-4 of the larger of 1 and the values compared; positions within 5e-3 and 2e-6 of them.
-pub fn same(a: &Matrix, b: &Matrix) -> bool {
+pub fn same(a: &RowMatrix, b: &RowMatrix) -> bool {
     (0..4).all(|row| {
         (0..4).all(|column| {
             let (x, y) = (a[row][column], b[row][column]);
