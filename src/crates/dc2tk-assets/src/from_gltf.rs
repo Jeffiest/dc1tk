@@ -920,12 +920,6 @@ fn geometry(
     in_frames: bool,
     binds: Option<&HashMap<usize, Mat4>>,
 ) -> Result<BTreeMap<MeshId, Geometry>> {
-    fn strip_suffix(name: &str) -> &str {
-        match name.rsplit_once('.') {
-            Some((stem, digits)) if digits.len() == 3 && digits.chars().all(|c| c.is_ascii_digit()) => stem,
-            _ => name,
-        }
-    }
     let mut out = BTreeMap::new();
     let resolved = frames_of(&gltf.json, model)?;
     // a character's animated nodes at their frames' rests (where Blender writes them posed)
@@ -975,60 +969,14 @@ fn geometry(
                 }
             }
         }
-        let list = |key: &str| -> Option<Vec<f64>> {
-            node.get(key).and_then(Value::as_array).map(|l| l.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
-        };
-        let matrix = match list("matrix").filter(|m| m.len() == 16) {
-            _ if in_frames => IDENT.to_vec(),
-            Some(m) => m,
-            None => {
-                let t = list("translation").filter(|v| v.len() == 3).unwrap_or(vec![0.0; 3]);
-                let s = list("scale").filter(|v| v.len() == 3).unwrap_or(vec![1.0; 3]);
-                let q = list("rotation").filter(|v| v.len() == 4).unwrap_or(vec![0.0, 0.0, 0.0, 1.0]);
-                let (x, y, z, w) = (q[0], q[1], q[2], q[3]);
-                let r = [
-                    [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-                    [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-                    [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
-                ];
-                // column-major, as glTF writes a matrix
-                let mut m = vec![0.0; 16];
-                for col in 0..3 {
-                    for row in 0..3 {
-                        m[col * 4 + row] = r[row][col] * s[col];
-                    }
-                }
-                m[12] = t[0];
-                m[13] = t[1];
-                m[14] = t[2];
-                m[15] = 1.0;
-                m
-            }
-        };
+        let matrix = if in_frames { IDENT.to_vec() } else { mesh_node_matrix(node) };
         let mesh = index(item(&gltf.json, "meshes")?, item(node, "mesh")?)?;
         let Some(primitives) = item(mesh, "primitives")?.as_array() else {
             bail!("a mesh's primitives are not a list");
         };
         let mut groups: BTreeMap<String, Vec<[Vec<f64>; 3]>> = BTreeMap::new();
         for primitive in primitives {
-            let material = match primitive.get("material") {
-                Some(number) => {
-                    let found = index(item(&gltf.json, "materials")?, number)?;
-                    // with the picture it shows, so a material given another picture differs; a
-                    // character's by its base colour image alone, since Blender drops extras
-                    // unless told and a model made in it names materials its own way
-                    let name = strip_suffix(found.get("name").and_then(Value::as_str).unwrap_or(""));
-                    match in_frames {
-                        true => format!("\u{0}{}", picture_of(&gltf.json, found)?),
-                        false => {
-                            let extras = found.get("extras");
-                            let texture = extras.and_then(|extras| extras.get("texture")).and_then(Value::as_str);
-                            format!("{name}\u{0}{}", texture.unwrap_or(""))
-                        }
-                    }
-                }
-                None => String::new(),
-            };
+            let material = material_key(gltf, primitive, in_frames)?;
             let attributes = item(primitive, "attributes")?;
             let read = |key: &str| -> Result<Option<Values>> {
                 match attributes.get(key) {
@@ -1105,6 +1053,62 @@ fn geometry(
         out.insert(id, Geometry { matrix, groups });
     }
     Ok(out)
+}
+
+/// A mesh node's matrix as geometry reads it, in plain floats: as given, or made from its
+/// translation, rotation and scale (column-major, as glTF writes a matrix), a list of the wrong
+/// length taken as left out. (node_matrix reads a frame's, strictly and in exact numbers.)
+fn mesh_node_matrix(node: &Value) -> Vec<f64> {
+    let list = |key: &str| -> Option<Vec<f64>> {
+        node.get(key).and_then(Value::as_array).map(|l| l.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
+    };
+    if let Some(m) = list("matrix").filter(|m| m.len() == 16) {
+        return m;
+    }
+    let t = list("translation").filter(|v| v.len() == 3).unwrap_or(vec![0.0; 3]);
+    let s = list("scale").filter(|v| v.len() == 3).unwrap_or(vec![1.0; 3]);
+    let q = list("rotation").filter(|v| v.len() == 4).unwrap_or(vec![0.0, 0.0, 0.0, 1.0]);
+    let (x, y, z, w) = (q[0], q[1], q[2], q[3]);
+    let r = [
+        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+        [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+        [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+    ];
+    let mut m = vec![0.0; 16];
+    for col in 0..3 {
+        for row in 0..3 {
+            m[col * 4 + row] = r[row][col] * s[col];
+        }
+    }
+    m[12] = t[0];
+    m[13] = t[1];
+    m[14] = t[2];
+    m[15] = 1.0;
+    m
+}
+
+/// What tells a primitive's material from the others: its name with the picture it shows, so a
+/// material given another picture differs; a character's by its base colour image alone, since
+/// Blender drops extras unless told and a model made in it names materials its own way. Empty
+/// for a primitive without one.
+fn material_key(gltf: &Gltf, primitive: &Value, in_frames: bool) -> Result<String> {
+    /// A name without the `.001` Blender adds to a copy.
+    fn strip_suffix(name: &str) -> &str {
+        match name.rsplit_once('.') {
+            Some((stem, digits)) if digits.len() == 3 && digits.chars().all(|c| c.is_ascii_digit()) => stem,
+            _ => name,
+        }
+    }
+    let Some(number) = primitive.get("material") else {
+        return Ok(String::new());
+    };
+    let found = index(item(&gltf.json, "materials")?, number)?;
+    if in_frames {
+        return Ok(format!("\u{0}{}", picture_of(&gltf.json, found)?));
+    }
+    let name = strip_suffix(found.get("name").and_then(Value::as_str).unwrap_or(""));
+    let texture = found.get("extras").and_then(|extras| extras.get("texture")).and_then(Value::as_str);
+    Ok(format!("{name}\u{0}{}", texture.unwrap_or("")))
 }
 
 /// The bind matrix (the inverse of its inverse bind matrix) of each frame a glTF's skins' joints
