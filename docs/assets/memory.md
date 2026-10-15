@@ -3,7 +3,8 @@
 The game loads maps, models, textures, scripts and sound banks into fixed memory. This page gives
 each budget, where the engine sets it, the largest use of it on the PAL disc, and the headroom
 that leaves; `build` checks the loads a mod changes against them (`dc2tk_script::memory`,
-`src/crates/dc2tk-script/src/memory.rs`).
+`src/crates/dc2tk-script/src/memory/`: the disc, stacks, MDS models, character packs, maps, texture
+blocks, sound memory and the check, a file each).
 
 Everything here was worked out statically from the engine's decompilation (`ps2/src`, and its
 assembly where a function is not matched yet) and measured over the extracted disc; nothing was
