@@ -1,5 +1,5 @@
-//! Dark Chronicle's scripts: the .stb format, its text assembly, the native tables, and (to come)
-//! decompiling to C and compiling back.
+//! Dark Chronicle's scripts: the .stb format, its text assembly, the native tables, decompiling
+//! to C and compiling back, and the tools a mod is built with.
 
 pub mod additions;
 pub mod asm;

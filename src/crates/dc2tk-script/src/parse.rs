@@ -1,20 +1,18 @@
 //! The C-like script language: the tokenizer, which is also the preprocessor (comments, trigraphs,
 //! #if/#ifdef/#ifndef/#elif/#else/#endif, #define/#undef and macros, #include, #pragma, #line,
 //! #error, asm blocks; see cpp.rs), and the recursive-descent parser that turns a file into a
-//! program tree, as parse.py did, key for key, for the forms the decompiler writes. C89's other
-//! forms parse to trees of forms the compiler has, or to the ones it lowers (lower.rs, and
-//! composite.rs for C's pointers and composite types, which declarations give their C types,
-//! ctype.rs); see docs/c-standard.md.
+//! program tree. The forms the decompiler writes parse to the tree it was written from, key for
+//! key, so a decompiled script compiles back to its own bytes. C89's other forms parse to trees of
+//! forms the compiler has, or to the ones it lowers (lower.rs, and composite.rs for C's pointers
+//! and composite types, which declarations give their C types, ctype.rs); see docs/c-standard.md.
 //!
-//! Where parse.py keeps a #pragma's words as asm.tokenize gives them, a plain word is a string and
-//! a quoted one {"string": text}.
+//! A #pragma's words are read as the assembly reads a line (asm::tokenize): a plain word is a
+//! string and a quoted one {"string": text}.
 //!
-//! Errors carry parse.py's ValueError messages. Where parse.py fails with another exception (a
-//! token with no text quoted in a message, a bad string in a #pragma, a #pragma missing its value,
-//! recursion past Python's limit), this fails too, with its own message. An integer literal past
-//! 32 bits is an error, as C has no type for it here.
+//! An error names the line it is on. An integer literal past 32 bits is an error, as C has no type
+//! for it here, and so is nesting deeper than NESTING.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -26,30 +24,15 @@ use crate::ctype::{self, Composite, Structs, Ty};
 use crate::node::Node;
 use crate::{asm, stb, Error, Result};
 
-/// How parse.py fails: with a ValueError (its message), or with another exception, which nothing
-/// in parse.py catches.
-#[derive(Debug)]
-enum Fault {
-    Value(String),
-    Crash(String),
-}
-
-impl From<Fault> for Error {
-    fn from(fault: Fault) -> Error {
-        match fault {
-            Fault::Value(message) | Fault::Crash(message) => Error::invalid(message),
-        }
-    }
-}
-
-type Parsed<T> = std::result::Result<T, Fault>;
-
-/// Python's default recursion limit: nesting deep enough that parse.py's functions would hold more
-/// frames fails here too, where Python raises RecursionError. Every function parse.py calls on the
-/// way down is counted; CALLER_FRAMES are the frames below parse.parse, as the old parity check called it
-/// (the point moves by one for each frame another caller has more or fewer).
-const PYTHON_FRAMES: usize = 1000;
-const CALLER_FRAMES: usize = 4;
+/// How deep expressions, statements, initializers and declarators may nest, counted where each
+/// recursion of the parser passes (State::nested), and for each link of a chain the parser reads in
+/// a loop but which nests in the tree (a + b + c is (a + b) + c; State::chain). Past it a file is
+/// refused ("nested too deeply") rather than overflowing the stack: within it the parser keeps to
+/// a 1 MB stack (a Windows main thread's) in a debug build, whose frames are the largest; the
+/// functions on its way down are kept small for that. Parentheses take three of it each (an
+/// assignment, a ternary and a unary expression), a block, if, loop or switch two (the statement
+/// and itself), so parentheses nest 64 deep, statements 97, and an operator chain is 194 long.
+pub const NESTING: usize = 200;
 
 const TYPES: [&str; 3] = ["int", "float", "string"];
 /// Words that start a statement, which a value kind's name can never be.
@@ -116,51 +99,46 @@ fn request(word: &str) -> Option<&'static str> {
     })
 }
 
-/// The escapes of asm.tokenize's quoted words.
-fn asm_escape(c: char) -> Option<char> {
-    Some(match c {
-        '\\' => '\\',
-        '"' => '"',
-        'n' => '\n',
-        'r' => '\r',
-        't' => '\t',
-        _ => return None,
-    })
+fn lex_fail<T>(line: usize, reason: impl std::fmt::Display) -> Result<T> {
+    Err(Error::invalid(format!("line {line}: {reason}")))
 }
 
-fn lex_fail<T>(line: usize, reason: impl std::fmt::Display) -> Parsed<T> {
-    Err(Fault::Value(format!("line {line}: {reason}")))
-}
-
-/// repr() as Python's "%.200R" shows it in an error message.
+/// A text quoted for an error message, its first 200 characters.
 fn short_repr(text: &str) -> String {
     repr(text).chars().take(200).collect()
 }
 
-/// int(text, base), failing with Python's message.
-fn python_int(text: &str, base: u32) -> Parsed<i128> {
+/// A whole number in a base (0: the base its prefix gives, as 0x).
+fn int_in_base(text: &str, base: u32) -> Result<i128> {
     int_base(text, base).map_err(|error| match error {
-        IntError::Invalid => Fault::Value(format!("invalid literal for int() with base {base}: {}", short_repr(text))),
-        IntError::TooLarge => Fault::Crash(format!("{text} is too large a number")),
+        IntError::Invalid => {
+            let kind = match base {
+                8 => "an octal",
+                10 => "a decimal",
+                16 => "a hexadecimal",
+                _ => "a",
+            };
+            Error::invalid(format!("{} is not {kind} number", short_repr(text)))
+        }
+        IntError::TooLarge => Error::invalid(format!("{text} is too large a number")),
     })
 }
 
-/// chr(int(digits, 16)) for a \x escape.
-fn hex_escape(digits: &[char]) -> Parsed<char> {
+/// The character a \x escape's two hexadecimal digits give.
+fn hex_escape(digits: &[char], line: usize) -> Result<char> {
     let digits: String = digits.iter().collect();
-    let value = python_int(&digits, 16)?;
-    u32::try_from(value)
-        .ok()
-        .and_then(char::from_u32)
-        .ok_or_else(|| Fault::Value("chr() arg not in range(0x110000)".into()))
+    match int_base(&digits, 16).ok().and_then(|value| u32::try_from(value).ok()).and_then(char::from_u32) {
+        Some(c) => Ok(c),
+        None => lex_fail(line, format!("\\x takes two hexadecimal digits, not {}", short_repr(&digits))),
+    }
 }
 
 /// A 64-bit integer node value.
-fn int_node(value: i128) -> Parsed<Node> {
-    i64::try_from(value).map(Node::Int).map_err(|_| Fault::Crash(format!("{value} does not fit in 64 bits")))
+fn int_node(value: i128) -> Result<Node> {
+    i64::try_from(value).map(Node::Int).map_err(|_| Error::invalid(format!("{value} does not fit in 64 bits")))
 }
 
-fn int_literal(value: i128) -> Parsed<Node> {
+fn int_literal(value: i128) -> Result<Node> {
     Ok(node!({"kind": "int", "value": int_node(value)?}))
 }
 
@@ -228,7 +206,7 @@ struct Block {
 }
 
 /// The value of an #if or #elif condition, as C works it out (cpp::condition).
-fn condition_value(text: &str, macros: &Macros, line: usize) -> Parsed<bool> {
+fn condition_value(text: &str, macros: &Macros, line: usize) -> Result<bool> {
     cpp::condition(text, macros)
         .or_else(|reason| lex_fail(line, format!("cannot read the condition {}: {reason}", repr(strip(text)))))
 }
@@ -239,7 +217,7 @@ fn conditional_directive(
     conditions: &mut Vec<Block>,
     macros: &Macros,
     line: usize,
-) -> Parsed<()> {
+) -> Result<()> {
     let compiling = conditions.last().is_none_or(|block| block.on);
     if matches!(word, "if" | "ifdef" | "ifndef") {
         let name = strip(before_comment(rest));
@@ -313,7 +291,7 @@ impl Kind {
 struct Token {
     kind: Kind,
     line: usize,
-    /// The text parse.py's token has; #define, #include, #pragma and asm tokens have none.
+    /// The token's text; #define, #include, #pragma and asm tokens have none.
     text: Option<String>,
     /// The comment block right above a name.
     doc: Option<String>,
@@ -355,7 +333,7 @@ impl Token {
 }
 
 /// A string literal from the opening quote: its text and the position after it.
-fn read_string(text: &[char], position: usize, line: usize) -> Parsed<(String, usize)> {
+fn read_string(text: &[char], position: usize, line: usize) -> Result<(String, usize)> {
     let mut out = String::new();
     let mut position = position + 1;
     while position < text.len() && text[position] != '"' {
@@ -370,7 +348,7 @@ fn read_string(text: &[char], position: usize, line: usize) -> Parsed<(String, u
         }
         let next = text.get(position + 1).copied();
         if next == Some('x') {
-            out.push(hex_escape(&text[(position + 2).min(text.len())..(position + 4).min(text.len())])?);
+            out.push(hex_escape(&text[(position + 2).min(text.len())..(position + 4).min(text.len())], line)?);
             position += 4;
         } else if let Some((value, length)) = cpp::escape_value(&text[position + 1..]) {
             out.push(char::from_u32(value).unwrap_or('\0'));
@@ -387,7 +365,7 @@ fn read_string(text: &[char], position: usize, line: usize) -> Parsed<(String, u
 
 /// A character literal, 'a' or '\n', as its character code: an escape's value is a char's, so
 /// '\377' is -1 (char is signed), and another character is its code.
-fn read_char(text: &[char], position: usize, line: usize) -> Parsed<(i64, usize)> {
+fn read_char(text: &[char], position: usize, line: usize) -> Result<(i64, usize)> {
     match cpp::character_constant(&text[position..]) {
         Ok((value, length)) if text[position + 1] == '\\' && value < 256 => {
             Ok((value as u8 as i8 as i64, position + length))
@@ -397,58 +375,19 @@ fn read_char(text: &[char], position: usize, line: usize) -> Parsed<(i64, usize)
     }
 }
 
-/// asm.tokenize: words split at whitespace, a quoted word as {"string": text}.
-fn asm_words(line: &[char]) -> Parsed<Vec<Node>> {
-    if !line.contains(&'"') {
-        return Ok(split(&text_of(line)).into_iter().map(Node::from).collect());
-    }
-    let ended = || Fault::Crash(format!("a string in #pragma or #include {} is not ended", repr(&text_of(line))));
-    let mut words = Vec::new();
-    let mut position = 0;
-    while position < line.len() {
-        let c = line[position];
-        if is_space(c) {
-            position += 1;
-            continue;
-        }
-        if c != '"' {
-            let start = position;
-            while position < line.len() && !is_space(line[position]) {
-                position += 1;
-            }
-            words.push(Node::from(text_of(&line[start..position])));
-            continue;
-        }
-        let mut text = String::new();
-        position += 1;
-        loop {
-            let c = *line.get(position).ok_or_else(ended)?;
-            if c == '"' {
-                break;
-            }
-            if c == '\\' {
-                let next = *line.get(position + 1).ok_or_else(ended)?;
-                if next == 'x' {
-                    text.push(hex_escape(&line[(position + 2).min(line.len())..(position + 4).min(line.len())])?);
-                    position += 4;
-                    continue;
-                }
-                let c = asm_escape(next).ok_or_else(|| Fault::Crash(format!("unknown escape \\{next}")))?;
-                text.push(c);
-                position += 2;
-                continue;
-            }
-            text.push(c);
-            position += 1;
-        }
-        words.push(node!({"string": text}));
-        position += 1;
-    }
-    Ok(words)
+/// A directive's words as the assembly reads a line (asm::tokenize): a plain word as a string, a
+/// quoted one as {"string": text}.
+fn directive_words(rest: &str, line: usize) -> Result<Vec<Node>> {
+    let tokens = asm::tokenize(rest).or_else(|error| lex_fail(line, error))?;
+    let words = tokens.into_iter().map(|token| match token {
+        asm::Token::Word(word) => Node::from(word),
+        asm::Token::Text(text) => node!({"string": text}),
+    });
+    Ok(words.collect())
 }
 
 /// An asm block from after its "asm": the token and the position after its closing }.
-fn read_asm(text: &[char], position: usize, line: usize) -> Parsed<(Token, usize)> {
+fn read_asm(text: &[char], position: usize, line: usize) -> Result<(Token, usize)> {
     let Some(opening) = find(text, position, "{") else {
         return lex_fail(line, "asm block without {");
     };
@@ -655,12 +594,12 @@ thread_local! {
 /// before (library::expand), and its constants stay names in code, so nothing else changes. The
 /// prelude (c2s.h, for C tools only) and a header the headers do not have (an error later) add
 /// none.
-fn header_macros(path: &str, headers: Files, macros: Macros, depth: usize) -> Parsed<Macros> {
+fn header_macros(path: &str, headers: Files, macros: Macros, depth: usize) -> Result<Macros> {
     let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {
         return Ok(macros);
     };
     if depth > INCLUDE_DEPTH {
-        return Err(Fault::Value(format!("#include {path}: files include each other too deeply")));
+        return Err(Error::invalid(format!("#include {path}: files include each other too deeply")));
     }
     let key = {
         use std::hash::{Hash, Hasher};
@@ -678,17 +617,17 @@ fn header_macros(path: &str, headers: Files, macros: Macros, depth: usize) -> Pa
     }
     let chars: Vec<char> = text.chars().collect();
     let mut found = macros;
-    tokenize_with(&chars, &mut found, path, CALLER_FRAMES + 2, Some(headers), depth + 1)
-        .map_err(|fault| Fault::Value(format!("in <{path}>: {}", Error::from(fault))))?;
+    tokenize_with(&chars, &mut found, path, Some(headers), depth + 1)
+        .map_err(|fault| Error::invalid(format!("in <{path}>: {}", fault)))?;
     HEADER_MACROS.with(|cache| cache.borrow_mut().insert(key, found.clone()));
     Ok(found)
 }
 
 /// The tokens of a file. macros are the #defines in force before the first line (a mod patch's
 /// LANGUAGE), which stay constants in code; file is the name __FILE__ gives until a #line names
-/// another. frames: Python frames in use, this function's included.
-fn tokenize(source: &[char], mut macros: Macros, file: &str, frames: usize) -> Parsed<Vec<Token>> {
-    tokenize_with(source, &mut macros, file, frames, None, 0)
+/// another.
+fn tokenize(source: &[char], mut macros: Macros, file: &str) -> Result<Vec<Token>> {
+    tokenize_with(source, &mut macros, file, None, 0)
 }
 
 /// tokenize, reading the headers given for their macros; macros ends as the file leaves them.
@@ -696,10 +635,9 @@ fn tokenize_with(
     source: &[char],
     macros: &mut Macros,
     file: &str,
-    frames: usize,
     headers: Headers,
     depth: usize,
-) -> Parsed<Vec<Token>> {
+) -> Result<Vec<Token>> {
     // the text grows and shrinks as macros are replaced in it
     let mut text = cpp::trigraphs(source);
     let mut file = file.to_string();
@@ -754,7 +692,7 @@ fn tokenize_with(
                     } else {
                         let words: Vec<String> = split_first_word(rest).into_iter().map(String::from).collect();
                         let constant = match words.get(1) {
-                            Some(value) => constant_of(value, frames + 1)?,
+                            Some(value) => constant_of(value)?,
                             None => None,
                         };
                         let integer = constant.as_ref().filter(|value| value.kind() == "int");
@@ -779,7 +717,7 @@ fn tokenize_with(
                             *macros = header_macros(&token.path, headers, std::mem::take(macros), depth)?;
                         }
                     } else {
-                        let words = asm_words(&rest.chars().collect::<Vec<char>>())?;
+                        let words = directive_words(rest, line)?;
                         match words.as_slice() {
                             [word] if word.as_object().is_some() => {
                                 token.path = word["string"].as_str().unwrap().to_string()
@@ -802,7 +740,7 @@ fn tokenize_with(
                     tokens.push(token);
                 }
                 "pragma" => {
-                    let words = asm_words(&rest.chars().collect::<Vec<char>>())?;
+                    let words = directive_words(rest, line)?;
                     if words.first().is_some_and(|word| *word == "assembly") {
                         let rest = text_of(&text[(end + 1).min(text.len())..]);
                         tokens.push(Token::new(Kind::Assembly, line, Some(rest)));
@@ -816,7 +754,7 @@ fn tokenize_with(
                 "line" => {
                     let expanded =
                         cpp::expand_text(rest, macros, true, &[]).or_else(|reason| lex_fail(line, reason))?;
-                    let words = asm_words(&expanded.replace(cpp::PAINT, " ").chars().collect::<Vec<char>>())?;
+                    let words = directive_words(&expanded.replace(cpp::PAINT, " "), line)?;
                     let number = words.first().and_then(Node::as_str).and_then(|word| word.parse::<usize>().ok());
                     let name = words.get(1).map(|word| word.get("string").and_then(Node::as_str));
                     match (number, name, words.len()) {
@@ -862,7 +800,7 @@ fn tokenize_with(
             || (c == '.' && text.get(position + 1).is_some_and(|next| next.is_ascii_digit()))
         {
             let Some((mut word, suffix, end)) = number_at(&text, position) else {
-                return Err(Fault::Crash(format!("line {line}: cannot read the number at {}", repr(&c.to_string()))));
+                return Err(Error::invalid(format!("line {line}: cannot read the number at {}", repr(&c.to_string()))));
             };
             let lower = word.to_lowercase();
             let hexadecimal = lower.starts_with("0x");
@@ -888,7 +826,7 @@ fn tokenize_with(
                 cpp::character_constant(&text[position + 1..]).or_else(|reason| lex_fail(line, reason))?;
             let value = match char::from_u32(value).filter(|_| text[position + 2] != '\\') {
                 Some(character) => dc2tk_disc::text::encode(&character.to_string())
-                    .ok_or_else(|| Fault::Value(format!("line {line}: {character:?} has no Shift-JIS code")))?
+                    .ok_or_else(|| Error::invalid(format!("line {line}: {character:?} has no Shift-JIS code")))?
                     .iter()
                     .fold(0u32, |code, byte| code << 8 | u32::from(*byte)),
                 None => value,
@@ -1041,11 +979,8 @@ struct State {
     /// The globals declared so far, by name, and the hidden globals of static locals.
     globals: HashMap<String, Node>,
     statics: Vec<Node>,
-    /// Python frames in use, the current function's included.
+    /// How deep the parser is nested, against NESTING.
     depth: usize,
-    /// Whether a call went past Python's recursion limit: everything fails from there, as the
-    /// RecursionError would.
-    overflow: Cell<bool>,
     /// #pragma std c89 has been read: the functions and globals after it get C's semantics.
     strict: bool,
     /// The structs and unions declared so far, by tag.
@@ -1065,7 +1000,7 @@ struct State {
 }
 
 impl State {
-    fn new(tokens: Vec<Token>, depth: usize) -> State {
+    fn new(tokens: Vec<Token>) -> State {
         let (constants, kinds) = (HashMap::new(), HashMap::new());
         State {
             tokens: tokens.into(),
@@ -1079,8 +1014,7 @@ impl State {
             scope: None,
             globals: HashMap::new(),
             statics: Vec::new(),
-            depth,
-            overflow: Cell::new(false),
+            depth: 0,
             strict: false,
             structs: Structs::new(),
             // what <stdarg.h>'s va_list stands for: a pointer into a variadic call's arguments
@@ -1167,110 +1101,103 @@ impl State {
         tag
     }
 
-    /// A call of a parse.py helper that holds frames more frames at its deepest.
-    fn leaf(&self, frames: usize) {
-        if self.depth + frames > PYTHON_FRAMES {
-            self.overflow.set(true);
-        }
-    }
-
     fn token(&self, offset: usize) -> &Token {
         &self.tokens[(self.pos + offset).min(self.tokens.len() - 1)]
     }
 
-    fn peek(&self, offset: usize) -> &Token {
-        self.leaf(1);
-        self.token(offset)
-    }
-
     fn at(&self, text: &str, offset: usize) -> bool {
-        self.leaf(2);
         let token = self.token(offset);
         matches!(token.kind, Kind::Op | Kind::Name) && token.text() == text
     }
 
     fn take(&mut self) -> Taken {
-        self.leaf(2);
         let index = (self.pos).min(self.tokens.len() - 1);
         self.pos += 1;
         Taken { tokens: Rc::clone(&self.tokens), index }
     }
 
     fn line(&self) -> usize {
-        self.peek(0).line
+        self.token(0).line
     }
 
-    fn fail<T>(&self, reason: impl std::fmt::Display) -> Parsed<T> {
-        self.leaf(1);
+    fn fail<T>(&self, reason: impl std::fmt::Display) -> Result<T> {
         lex_fail(self.token(0).line, reason)
     }
 
-    /// repr() of a token's text for a message; a token with none fails as Python's KeyError does.
-    fn shown(&self, token: &Token) -> Parsed<String> {
+    /// repr() of a token's text for a message; a directive's or asm block's token has none, and
+    /// is unexpected wherever a message would quote one.
+    fn shown(&self, token: &Token) -> Result<String> {
         match &token.text {
             Some(text) => Ok(repr(text)),
-            None => Err(Fault::Crash(format!("line {}: unexpected {} token", token.line, token.kind.name()))),
+            None => Err(Error::invalid(format!("line {}: unexpected {} token", token.line, token.kind.name()))),
         }
     }
 
-    fn expect(&mut self, text: &str) -> Parsed<Taken> {
-        self.leaf(3);
+    fn expect(&mut self, text: &str) -> Result<Taken> {
         if !self.at(text, 0) {
-            let found = self.shown(self.peek(0))?;
+            let found = self.shown(self.token(0))?;
             return self.fail(format!("expected {}, found {found}", repr(text)));
         }
         Ok(self.take())
     }
 
-    fn expect_kind(&mut self, kind: Kind) -> Parsed<Taken> {
-        self.leaf(3);
-        if self.peek(0).kind != kind {
-            let found = self.shown(self.peek(0))?;
+    fn expect_kind(&mut self, kind: Kind) -> Result<Taken> {
+        if self.token(0).kind != kind {
+            let found = self.shown(self.token(0))?;
             return self.fail(format!("expected {}, found {found}", kind.name()));
         }
         Ok(self.take())
     }
 
-    fn name(&mut self) -> Parsed<String> {
+    fn name(&mut self) -> Result<String> {
         Ok(self.expect_kind(Kind::Name)?.text().to_string())
     }
 
-    /// Runs a parse.py function: one Python frame more.
-    fn framed<T>(&mut self, function: impl FnOnce(&mut State) -> Parsed<T>) -> Parsed<T> {
-        self.leaf(1);
-        let result = if self.overflow.get() {
-            None
-        } else {
-            self.depth += 1;
-            let result = function(self);
-            self.depth -= 1;
-            Some(result)
-        };
-        match result {
-            Some(result) if !self.overflow.get() => result,
-            _ => Err(Fault::Crash(format!("line {}: nested too deeply", self.token(0).line))),
+    /// Parses one level deeper, refusing to go past NESTING.
+    fn nested<T>(&mut self, parse: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
+        self.link()?;
+        let result = parse(self);
+        self.depth -= 1;
+        result
+    }
+
+    /// Parses a chain whose every link nests what came before it in the tree (a + b + c is
+    /// (a + b) + c, and a.b.c is (a.b).c), though the parser reads it in a loop: each State::link
+    /// is a level of NESTING, given back when the chain ends.
+    fn chain<T>(&mut self, parse: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
+        let depth = self.depth;
+        let result = parse(self);
+        self.depth = depth;
+        result
+    }
+
+    /// One more link of a chain (State::chain): a level deeper, refused past NESTING.
+    fn link(&mut self) -> Result<()> {
+        if self.depth >= NESTING {
+            return self.fail("nested too deeply");
         }
+        self.depth += 1;
+        Ok(())
     }
 }
 
 /// An integer literal's value: hexadecimal after 0x, octal after a leading 0, as in C.
-fn int_value(text: &str) -> Parsed<i128> {
+fn int_value(text: &str) -> Result<i128> {
     let hexadecimal = text.starts_with("0x") || text.starts_with("0X");
     if !hexadecimal && text.len() > 1 && text.starts_with('0') && text.chars().all(|c| c.is_ascii_digit()) {
-        return python_int(&text[1..], 8);
+        return int_in_base(&text[1..], 8);
     }
-    python_int(text, if hexadecimal { 16 } else { 10 })
+    int_in_base(text, if hexadecimal { 16 } else { 10 })
 }
 
 /// An unsigned int literal, held as the VM's 32 bits.
-fn unsigned_literal(value: i128) -> Parsed<Node> {
+fn unsigned_literal(value: i128) -> Result<Node> {
     Ok(int_literal(value as u32 as i32 as i128)?.with("unsigned", true))
 }
 
-fn literal(state: &State, token: &Token) -> Parsed<Node> {
-    state.leaf(2);
+fn literal(state: &State, token: &Token) -> Result<Node> {
     if token.kind == Kind::Int {
-        let value = int_value(token.text())?;
+        let value = int_value(token.text()).or_else(|error| lex_fail(token.line, error))?;
         // C89: a literal too large for int (and long) is unsigned; one too large for that has no type
         let unsigned = token.words.first().is_some_and(|suffix| suffix.contains(['u', 'U']));
         if value > u32::MAX as i128 {
@@ -1281,128 +1208,176 @@ fn literal(state: &State, token: &Token) -> Parsed<Node> {
         }
         return int_literal(value);
     }
-    let bits = asm::float_bits(&ascii_digits(token.text())).map_err(|error| Fault::Crash(error.to_string()))?;
+    let bits = asm::float_bits(&ascii_digits(token.text())).or_else(|error| lex_fail(token.line, error))?;
     Ok(node!({"kind": "float", "bits": bits}))
 }
 
-fn arguments(state: &mut State) -> Parsed<Vec<Node>> {
-    state.framed(|state| {
-        state.expect("(")?;
-        let mut args = Vec::new();
-        while !state.at(")", 0) {
-            args.push(assignment(state)?);
-            if !state.at(")", 0) {
-                state.expect(",")?;
-            }
+fn arguments(state: &mut State) -> Result<Vec<Node>> {
+    state.expect("(")?;
+    let mut args = Vec::new();
+    while !state.at(")", 0) {
+        args.push(assignment(state)?);
+        if !state.at(")", 0) {
+            state.expect(",")?;
         }
-        state.expect(")")?;
-        Ok(args)
-    })
+    }
+    state.expect(")")?;
+    Ok(args)
 }
 
-fn primary(state: &mut State) -> Parsed<Node> {
-    state.framed(|state| {
-        let token = state.take();
-        match token.kind {
-            Kind::Int | Kind::Float if state.at("[", 0) => {
-                // 1[a] is a[1]
-                let number = literal(state, &token)?;
-                return postfix_operators(state, number);
-            }
-            Kind::Int | Kind::Float => return literal(state, &token),
-            Kind::Str => {
-                // adjacent string literals are one
-                let mut text = token.text().to_string();
-                while state.peek(0).kind == Kind::Str {
-                    let next = state.take();
-                    if next.wide != token.wide {
-                        return state.fail("a wide string literal cannot be joined to a plain one");
-                    }
-                    text.push_str(next.text());
-                }
-                if token.wide {
-                    return postfix_operators(state, wide_string(state, &text)?);
-                }
-                let string = node!({"kind": "string", "text": text});
-                if state.at("[", 0) {
-                    // "abc"[1]: the literal as an array
-                    return postfix_operators(state, string);
-                }
-                return Ok(string);
-            }
-            Kind::Op if token.text() == "(" => {
-                let node = expression(state)?;
-                state.expect(")")?;
-                return postfix_operators(state, node);
-            }
-            Kind::Name => {}
-            _ => {
-                state.pos -= 1;
-                let found = state.shown(&token)?;
-                return state.fail(format!("expected an expression, found {found}"));
-            }
+// The expression parser recurses once for each level of nesting, so the functions on its way
+// down are kept small (a debug build gives a function's every temporary a place of its own in its
+// frame): each form is read by a function of its own, and the nodes are built apart from the
+// recursion where they are large.
+
+/// A primary expression, and the postfix operators after it.
+fn primary(state: &mut State) -> Result<Node> {
+    let token = state.take();
+    match token.kind {
+        Kind::Int | Kind::Float => {
+            let number = literal(state, &token)?;
+            // 1[a] is a[1]
+            subscripted(state, number)
         }
-        let name = token.text();
-        if BUILTINS.contains(&name) && state.at("(", 0) {
-            state.expect("(")?;
-            let operand = assignment(state)?;
-            state.expect(")")?;
-            return Ok(node!({"kind": "builtin", "name": name, "operand": operand}));
+        Kind::Str if token.wide => {
+            let wide = string_literal(state, &token)?;
+            postfix_operators(state, wide)
         }
-        if state.at("(", 0) {
-            match name {
-                "__offsetof" => return offsetof(state),
-                "__va_arg" => return va_arg(state),
-                "__va_start" => return va_start(state),
-                _ => {}
-            }
-            let storage = state.storage_name(name);
-            if state.variable(&storage).is_some() {
-                // a call through a function pointer
-                let callee = node!({"kind": "var", "name": storage});
-                let call = node!({"kind": "call_ptr", "callee": callee, "args": arguments(state)?});
-                return postfix_operators(state, call);
-            }
-            let call = node!({"kind": "call", "name": name, "args": arguments(state)?});
-            return postfix_operators(state, call);
+        Kind::Str => {
+            // "abc"[1]: the literal as an array
+            let string = string_literal(state, &token)?;
+            subscripted(state, string)
         }
+        Kind::Op if token.text() == "(" => parenthesised(state),
+        Kind::Name => named_primary(state, token.text()),
+        _ => not_an_expression(state, &token),
+    }
+}
+
+fn not_an_expression(state: &mut State, token: &Token) -> Result<Node> {
+    state.pos -= 1;
+    let found = state.shown(token)?;
+    state.fail(format!("expected an expression, found {found}"))
+}
+
+/// A literal followed by [, which subscripts it; else the literal alone.
+fn subscripted(state: &mut State, node: Node) -> Result<Node> {
+    if state.at("[", 0) {
+        return postfix_operators(state, node);
+    }
+    Ok(node)
+}
+
+/// A string literal and those right after it, which are one: plain, or wide (L"...").
+fn string_literal(state: &mut State, token: &Token) -> Result<Node> {
+    let mut text = token.text().to_string();
+    while state.token(0).kind == Kind::Str {
+        let next = state.take();
+        if next.wide != token.wide {
+            return state.fail("a wide string literal cannot be joined to a plain one");
+        }
+        text.push_str(next.text());
+    }
+    if token.wide {
+        return wide_string(state, &text);
+    }
+    Ok(node!({"kind": "string", "text": text}))
+}
+
+/// ( expression ) after its (, and the postfix operators after it.
+fn parenthesised(state: &mut State) -> Result<Node> {
+    let node = expression(state)?;
+    state.expect(")")?;
+    postfix_operators(state, node)
+}
+
+/// What a name starts: sin(x) or cos(x), a call (of a function, or through a function pointer
+/// variable), offsetof, va_arg or va_start, or a variable; and the postfix operators after it.
+fn named_primary(state: &mut State, name: &str) -> Result<Node> {
+    if !state.at("(", 0) {
         let node = named(state, name)?;
-        postfix_operators(state, node)
+        return postfix_operators(state, node);
+    }
+    if BUILTINS.contains(&name) {
+        return builtin(state, name);
+    }
+    match name {
+        "__offsetof" => return offsetof(state),
+        "__va_arg" => return va_arg(state),
+        "__va_start" => return va_start(state),
+        _ => {}
+    }
+    let call = call(state, name)?;
+    postfix_operators(state, call)
+}
+
+/// sin(x) or cos(x), which the VM has instructions for.
+fn builtin(state: &mut State, name: &str) -> Result<Node> {
+    state.expect("(")?;
+    let operand = assignment(state)?;
+    state.expect(")")?;
+    Ok(node!({"kind": "builtin", "name": name, "operand": operand}))
+}
+
+/// name(args): a call of a function, or through a function pointer the name is a variable of.
+fn call(state: &mut State, name: &str) -> Result<Node> {
+    let storage = state.storage_name(name);
+    let pointer = state.variable(&storage).is_some();
+    let args = arguments(state)?;
+    Ok(if pointer {
+        node!({"kind": "call_ptr", "callee": {"kind": "var", "name": storage}, "args": args})
+    } else {
+        node!({"kind": "call", "name": name, "args": args})
     })
 }
 
 /// The postfix operators after a primary expression: s.m, p->m, a[i] (of any expression), a call
-/// through a function pointer, x++ and x--.
-fn postfix_operators(state: &mut State, mut node: Node) -> Parsed<Node> {
-    loop {
-        if state.at(".", 0) || state.at("->", 0) {
-            let arrow = state.take().text() == "->";
+/// through a function pointer, x++ and x--. Each nests what comes before it.
+fn postfix_operators(state: &mut State, node: Node) -> Result<Node> {
+    state.chain(|state| {
+        let mut node = node;
+        loop {
+            let Some(op) = [".", "->", "[", "(", "++", "--"].into_iter().find(|op| state.at(op, 0)) else {
+                return Ok(node);
+            };
+            state.link()?;
+            node = postfix_operator(state, op, node)?;
+        }
+    })
+}
+
+/// One postfix operator applied to what comes before it.
+fn postfix_operator(state: &mut State, op: &str, node: Node) -> Result<Node> {
+    match op {
+        "." | "->" => {
+            state.take();
             let name = state.name()?;
-            node = node!({"kind": "member", "object": node, "name": name, "arrow": arrow});
-        } else if state.at("[", 0) {
+            Ok(node!({"kind": "member", "object": node, "name": name, "arrow": op == "->"}))
+        }
+        "[" => {
             state.take();
             let index = expression(state)?;
             state.expect("]")?;
-            node = node!({"kind": "subscript", "array": node, "index": index});
-        } else if state.at("(", 0) {
+            Ok(node!({"kind": "subscript", "array": node, "index": index}))
+        }
+        "(" => {
             let args = arguments(state)?;
-            node = node!({"kind": "call_ptr", "callee": node, "args": args});
-        } else if state.at("++", 0) || state.at("--", 0) {
+            Ok(node!({"kind": "call_ptr", "callee": node, "args": args}))
+        }
+        _ => {
             if !is_target(&node) {
                 return state.fail("++ and -- need a variable");
             }
-            let op = state.take();
+            state.take();
             writable(state, &node)?;
-            node = postfix(state, node, op.text());
-        } else {
-            return Ok(node);
+            Ok(postfix(node, op))
         }
     }
 }
 
 /// L"...": the characters' Shift-JIS codes, then 0, as an array of wchar_t (composite.rs gives it
 /// storage).
-fn wide_string(state: &State, text: &str) -> Parsed<Node> {
+fn wide_string(state: &State, text: &str) -> Result<Node> {
     let mut codes = Vec::new();
     for character in text.chars() {
         let code = if (character as u32) < 0x80 {
@@ -1423,7 +1398,7 @@ fn wide_string(state: &State, text: &str) -> Parsed<Node> {
 
 /// offsetof(type, member) from <stddef.h>: the member's offset in C's bytes, a size_t constant. The
 /// member may be a path (a.b[2].c).
-fn offsetof(state: &mut State) -> Parsed<Node> {
+fn offsetof(state: &mut State) -> Result<Node> {
     state.expect("(")?;
     let mut ty = abstract_type(state)?;
     state.expect(",")?;
@@ -1461,7 +1436,7 @@ fn offsetof(state: &mut State) -> Parsed<Node> {
 }
 
 /// va_arg(ap, type) from <stdarg.h>: the next of a variadic function's other arguments.
-fn va_arg(state: &mut State) -> Parsed<Node> {
+fn va_arg(state: &mut State) -> Result<Node> {
     state.expect("(")?;
     let list = assignment(state)?;
     state.expect(",")?;
@@ -1472,7 +1447,7 @@ fn va_arg(state: &mut State) -> Parsed<Node> {
 
 /// va_start(ap, last) from <stdarg.h>: ap at the first of the arguments after last, which must be
 /// the function's last parameter.
-fn va_start(state: &mut State) -> Parsed<Node> {
+fn va_start(state: &mut State) -> Result<Node> {
     state.expect("(")?;
     let list = assignment(state)?;
     state.expect(",")?;
@@ -1487,28 +1462,36 @@ fn va_start(state: &mut State) -> Parsed<Node> {
 
 /// A variable, or an element of an array, by the name code wrote: x, a[i], m[i][j].
 #[inline(never)]
-fn named(state: &mut State, name: &str) -> Parsed<Node> {
+fn named(state: &mut State, name: &str) -> Result<Node> {
     let name = state.storage_name(name);
     if !state.at("[", 0) {
         return Ok(node!({"kind": "var", "name": name}));
     }
     if state.variable(&name).is_some_and(|entry| entry.get("ctype").is_some()) {
         // a variable of C's other types: each [] subscripts what the one before gave
-        let mut node = node!({"kind": "var", "name": name});
+        return state.chain(|state| {
+            let mut node = node!({"kind": "var", "name": name});
+            while state.at("[", 0) {
+                state.link()?;
+                state.take();
+                let index = expression(state)?;
+                state.expect("]")?;
+                node = node!({"kind": "subscript", "array": node, "index": index});
+            }
+            Ok(node)
+        });
+    }
+    // element() nests a term for each index
+    let mut indices = state.chain(|state| {
+        let mut indices = Vec::new();
         while state.at("[", 0) {
-            state.take();
-            let index = expression(state)?;
+            state.link()?;
+            state.expect("[")?;
+            indices.push(expression(state)?);
             state.expect("]")?;
-            node = node!({"kind": "subscript", "array": node, "index": index});
         }
-        return Ok(node);
-    }
-    let mut indices = Vec::new();
-    while state.at("[", 0) {
-        state.expect("[")?;
-        indices.push(expression(state)?);
-        state.expect("]")?;
-    }
+        Ok(indices)
+    })?;
     if indices.len() == 1 && state.variable(&name).is_none_or(|entry| entry.get("dims").is_none()) {
         return Ok(node!({"kind": "index", "name": name, "index": indices.pop().unwrap()}));
     }
@@ -1529,7 +1512,7 @@ fn inner_sizes(entry: &Node) -> Vec<i64> {
 
 /// a[i][j] of a multi-dimensional array: the element at i * columns + j, or, with fewer indices
 /// than the array has sizes, the address of that row (a[i] passes a row).
-fn element(state: &State, name: &str, indices: Vec<Node>) -> Parsed<Node> {
+fn element(state: &State, name: &str, indices: Vec<Node>) -> Result<Node> {
     let Some(entry) = state.variable(name) else {
         return state.fail(format!("unknown variable {name}"));
     };
@@ -1557,37 +1540,32 @@ fn element(state: &State, name: &str, indices: Vec<Node>) -> Parsed<Node> {
 
 /// target op= value, as in x += 2. The compiler works out the target's address once, so an index
 /// with side effects (a[i++] += 1) runs them once.
-fn compound(state: &State, target: Node, op: &str, value: Node) -> Node {
-    state.leaf(1);
+fn compound(target: Node, op: &str, value: Node) -> Node {
     node!({"kind": "compound", "op": op, "target": target, "value": value})
 }
 
-fn stepped(state: &State, target: Node, op: &str) -> Node {
-    state.leaf(2);
-    compound(state, target, op, one())
+fn stepped(target: Node, op: &str) -> Node {
+    compound(target, op, one())
 }
 
 /// x++ and x--: the variable steps, and the expression's value is the old one, worked back from the
 /// new so no temporary is needed. As a statement only the step remains.
-fn postfix(state: &State, target: Node, text: &str) -> Node {
-    state.leaf(3);
+fn postfix(target: Node, text: &str) -> Node {
     let (op, undo) = if text == "++" { ("+", "-") } else { ("-", "+") };
-    node!({"kind": "binary", "op": undo, "left": stepped(state, target, op), "right": one(), "postfix": true})
+    node!({"kind": "binary", "op": undo, "left": stepped(target, op), "right": one(), "postfix": true})
 }
 
 fn cast_ahead(state: &State) -> bool {
-    state.leaf(3);
     state.at("(", 0)
-        && state.peek(1).kind == Kind::Name
-        && CAST_TYPES.contains(&state.peek(1).text())
+        && state.token(1).kind == Kind::Name
+        && CAST_TYPES.contains(&state.token(1).text())
         && state.at(")", 2)
 }
 
 fn pointer_cast_ahead(state: &State) -> bool {
-    state.leaf(3);
     state.at("(", 0)
-        && state.peek(1).kind == Kind::Name
-        && CAST_TYPES.contains(&state.peek(1).text())
+        && state.token(1).kind == Kind::Name
+        && CAST_TYPES.contains(&state.token(1).text())
         && state.at("*", 2)
         && state.at(")", 3)
 }
@@ -1606,7 +1584,7 @@ fn target_name(target: &Node) -> &str {
 
 /// Refuses writing a const object: a const variable, an element of a const array, or what a
 /// pointer to const points at.
-fn writable(state: &State, target: &Node) -> Parsed<()> {
+fn writable(state: &State, target: &Node) -> Result<()> {
     let name = target_name(target);
     let Some(entry) = state.variable(name) else {
         return Ok(());
@@ -1708,8 +1686,8 @@ fn integer_type(words: &[String]) -> std::result::Result<&'static str, String> {
 }
 
 /// A declaration's specifiers. header_kinds: an unknown name followed by a name or * is a value
-/// kind from a header (bgm_file track;), which sdk.resolve reads as its base type.
-fn specifiers(state: &mut State, header_kinds: bool) -> Parsed<Spec> {
+/// kind from a header (bgm_file track;), which sdk::resolve reads as its base type.
+fn specifiers(state: &mut State, header_kinds: bool) -> Result<Spec> {
     let mut spec = Spec::default();
     let mut words: Vec<String> = Vec::new();
     let mut base: Option<String> = None;
@@ -1786,119 +1764,121 @@ fn specifiers(state: &mut State, header_kinds: bool) -> Parsed<Spec> {
 
 /// struct TAG { members } or union TAG { ... } after its keyword (or TAG alone, naming one): the
 /// tag, a made-up one for an unnamed struct. A member takes whole slots, so bit-fields are refused.
-fn struct_specifier(state: &mut State, union: bool) -> Parsed<String> {
-    let word = if union { "union" } else { "struct" };
-    let tag = if state.peek(0).kind == Kind::Name {
-        let name = state.name()?;
-        if state.at("{", 0) || state.at(";", 0) {
-            // defined or declared alone here: in a block, a struct of the block's
-            state.declared_tag(&name)
-        } else {
-            state.tag(&name)
-        }
-    } else if state.at("{", 0) {
-        state.anonymous += 1;
-        format!("__anonymous_{}_{}", state.file_key, state.anonymous)
-    } else {
-        let found = state.shown(state.peek(0))?;
-        return state.fail(format!("expected the name of a {word}, found {found}"));
-    };
-    let shown = ctype::tag_shown(&tag);
-    let other = if union { "struct" } else { "union" };
-    if state.structs.get(&tag).is_some_and(|known| known.union != union) {
-        return state.fail(format!("{shown} is a {other}, not a {word}"));
-    }
-    if !state.at("{", 0) {
-        // declared here, defined (or not) elsewhere: an incomplete type until then
-        state.structs.entry(tag.clone()).or_insert(Composite::new(union, Vec::new()));
-        return Ok(tag);
-    }
-    state.take();
-    let mut members: Vec<(String, Ty)> = Vec::new();
-    let mut bits: Vec<Option<ctype::Bits>> = Vec::new();
-    // the bits the slot bit-fields are filling has used, while one is
-    let mut used: Option<i64> = None;
-    while !state.at("}", 0) {
-        let spec = specifiers(state, true)?;
-        if spec.storage.is_some() {
-            return state.fail(format!("a member of {word} {shown} has no storage class"));
-        }
-        let base = base_ty(state, &spec)?;
-        loop {
-            let (name, ty) = declarator(state, base.clone())?;
-            if !name.is_empty() && members.iter().any(|(known, _)| *known == name) {
-                return state.fail(format!("{word} {shown} has two members named {name}"));
-            }
-            if state.at(":", 0) {
-                state.take();
-                let width = constant_expression(state)?;
-                let kind = match &ty {
-                    Ty::Scalar(kind) => state.base_kind(kind),
-                    _ => String::new(),
-                };
-                if kind != "int" && kind != "unsigned int" {
-                    return state.fail(format!(
-                        "bit-field {name} is of {}: a bit-field is an int or an unsigned int",
-                        ty.shown()
-                    ));
-                }
-                if !(0..=32).contains(&width) {
-                    return state.fail(format!("bit-field {name} has {width} bits; an int has 32"));
-                }
-                match width {
-                    0 if !name.is_empty() => {
-                        return state.fail(format!("bit-field {name} has 0 bits; only an unnamed one may"))
-                    }
-                    // :0 ends the slot: the next bit-field starts another
-                    0 => used = None,
-                    32 => {
-                        // the whole slot, an int of its own
-                        members.push((name, ty));
-                        bits.push(None);
-                        used = None;
-                    }
-                    _ => {
-                        let offset = match used {
-                            Some(taken) if !union && taken + width <= 32 => taken,
-                            _ => 0,
-                        };
-                        members.push((name, ty));
-                        bits.push(Some(ctype::Bits { offset, width }));
-                        used = Some(offset + width);
-                    }
-                }
+fn struct_specifier(state: &mut State, union: bool) -> Result<String> {
+    state.nested(|state| {
+        let word = if union { "union" } else { "struct" };
+        let tag = if state.token(0).kind == Kind::Name {
+            let name = state.name()?;
+            if state.at("{", 0) || state.at(";", 0) {
+                // defined or declared alone here: in a block, a struct of the block's
+                state.declared_tag(&name)
             } else {
-                if name.is_empty() {
-                    return state.fail(format!("a member of {word} {shown} needs a name"));
-                }
-                complete(state, &name, &ty)?;
-                members.push((name, ty));
-                bits.push(None);
-                used = None;
+                state.tag(&name)
             }
-            if !state.at(",", 0) {
-                break;
-            }
-            state.take();
+        } else if state.at("{", 0) {
+            state.anonymous += 1;
+            format!("__anonymous_{}_{}", state.file_key, state.anonymous)
+        } else {
+            let found = state.shown(state.token(0))?;
+            return state.fail(format!("expected the name of a {word}, found {found}"));
+        };
+        let shown = ctype::tag_shown(&tag);
+        let other = if union { "struct" } else { "union" };
+        if state.structs.get(&tag).is_some_and(|known| known.union != union) {
+            return state.fail(format!("{shown} is a {other}, not a {word}"));
         }
-        state.expect(";")?;
-    }
-    state.expect("}")?;
-    if members.is_empty() {
-        return state.fail(format!("{word} {shown} needs a member"));
-    }
-    let bits = if bits.iter().any(Option::is_some) { bits } else { Vec::new() };
-    let composite = Composite { union, members, bits };
-    if state.structs.get(&tag).is_some_and(|known| !known.members.is_empty() && *known != composite) {
-        return state.fail(format!("{word} {shown} is defined twice"));
-    }
-    state.structs.insert(tag.clone(), composite);
-    Ok(tag)
+        if !state.at("{", 0) {
+            // declared here, defined (or not) elsewhere: an incomplete type until then
+            state.structs.entry(tag.clone()).or_insert(Composite::new(union, Vec::new()));
+            return Ok(tag);
+        }
+        state.take();
+        let mut members: Vec<(String, Ty)> = Vec::new();
+        let mut bits: Vec<Option<ctype::Bits>> = Vec::new();
+        // the bits the slot bit-fields are filling has used, while one is
+        let mut used: Option<i64> = None;
+        while !state.at("}", 0) {
+            let spec = specifiers(state, true)?;
+            if spec.storage.is_some() {
+                return state.fail(format!("a member of {word} {shown} has no storage class"));
+            }
+            let base = base_ty(state, &spec)?;
+            loop {
+                let (name, ty) = declarator(state, base.clone())?;
+                if !name.is_empty() && members.iter().any(|(known, _)| *known == name) {
+                    return state.fail(format!("{word} {shown} has two members named {name}"));
+                }
+                if state.at(":", 0) {
+                    state.take();
+                    let width = constant_expression(state)?;
+                    let kind = match &ty {
+                        Ty::Scalar(kind) => state.base_kind(kind),
+                        _ => String::new(),
+                    };
+                    if kind != "int" && kind != "unsigned int" {
+                        return state.fail(format!(
+                            "bit-field {name} is of {}: a bit-field is an int or an unsigned int",
+                            ty.shown()
+                        ));
+                    }
+                    if !(0..=32).contains(&width) {
+                        return state.fail(format!("bit-field {name} has {width} bits; an int has 32"));
+                    }
+                    match width {
+                        0 if !name.is_empty() => {
+                            return state.fail(format!("bit-field {name} has 0 bits; only an unnamed one may"))
+                        }
+                        // :0 ends the slot: the next bit-field starts another
+                        0 => used = None,
+                        32 => {
+                            // the whole slot, an int of its own
+                            members.push((name, ty));
+                            bits.push(None);
+                            used = None;
+                        }
+                        _ => {
+                            let offset = match used {
+                                Some(taken) if !union && taken + width <= 32 => taken,
+                                _ => 0,
+                            };
+                            members.push((name, ty));
+                            bits.push(Some(ctype::Bits { offset, width }));
+                            used = Some(offset + width);
+                        }
+                    }
+                } else {
+                    if name.is_empty() {
+                        return state.fail(format!("a member of {word} {shown} needs a name"));
+                    }
+                    complete(state, &name, &ty)?;
+                    members.push((name, ty));
+                    bits.push(None);
+                    used = None;
+                }
+                if !state.at(",", 0) {
+                    break;
+                }
+                state.take();
+            }
+            state.expect(";")?;
+        }
+        state.expect("}")?;
+        if members.is_empty() {
+            return state.fail(format!("{word} {shown} needs a member"));
+        }
+        let bits = if bits.iter().any(Option::is_some) { bits } else { Vec::new() };
+        let composite = Composite { union, members, bits };
+        if state.structs.get(&tag).is_some_and(|known| !known.members.is_empty() && *known != composite) {
+            return state.fail(format!("{word} {shown} is defined twice"));
+        }
+        state.structs.insert(tag.clone(), composite);
+        Ok(tag)
+    })
 }
 
 /// Refuses an object of a type with no size: void, a function, a struct not defined, an array
 /// whose size nothing gave.
-fn complete(state: &State, name: &str, ty: &Ty) -> Parsed<()> {
+fn complete(state: &State, name: &str, ty: &Ty) -> Result<()> {
     match ty {
         Ty::Void => state.fail(format!("{name} cannot be void")),
         Ty::Function(..) => state.fail(format!("{name} is a function; declare functions at file scope")),
@@ -1913,7 +1893,7 @@ fn complete(state: &State, name: &str, ty: &Ty) -> Parsed<()> {
 
 /// The type specifiers give: a struct or typedef'd type as it is, void, or a scalar by its base
 /// type (a typedef's, int for an enum; a header's value kind as it is named).
-fn base_ty(state: &State, spec: &Spec) -> Parsed<Ty> {
+fn base_ty(state: &State, spec: &Spec) -> Result<Ty> {
     if let Some(ty) = &spec.ty {
         return Ok(ty.clone());
     }
@@ -1928,53 +1908,55 @@ fn base_ty(state: &State, spec: &Spec) -> Parsed<Ty> {
 /// parentheses, then [N]s and (parameters). The name ("" in a type name) and the type it gives
 /// the name, built from base inside out: int *a[3] is an array of pointers, int (*f)(int) a pointer
 /// to a function.
-fn declarator(state: &mut State, base: Ty) -> Parsed<(String, Ty)> {
-    let mut ty = base;
-    while state.at("*", 0) {
-        state.take();
-        while state.at("const", 0) || state.at("volatile", 0) {
+fn declarator(state: &mut State, base: Ty) -> Result<(String, Ty)> {
+    state.nested(|state| {
+        let mut ty = base;
+        while state.at("*", 0) {
             state.take();
-        }
-        ty = ctype::pointer(ty);
-    }
-    let nested = state.at("(", 0)
-        && (state.at("*", 1)
-            || state.at("(", 1)
-            || state.at("[", 1)
-            || (state.token(1).kind == Kind::Name && !type_word(state, state.token(1).text())));
-    if nested {
-        // what follows the parentheses applies first: read it, then the declarator inside
-        state.take();
-        let inner = state.pos;
-        let mut depth = 1;
-        while depth > 0 {
-            if state.peek(0).kind == Kind::Eof {
-                return state.fail("expected ')'");
+            while state.at("const", 0) || state.at("volatile", 0) {
+                state.take();
             }
-            let token = state.take();
-            if token.kind == Kind::Op {
-                depth += match token.text() {
-                    "(" => 1,
-                    ")" => -1,
-                    _ => 0,
-                };
-            }
+            ty = ctype::pointer(ty);
         }
-        let ty = suffixes(state, ty)?;
-        let end = state.pos;
-        state.pos = inner;
-        let (name, ty) = declarator(state, ty)?;
-        state.expect(")")?;
-        state.pos = end;
-        return Ok((name, ty));
-    }
-    let named = state.peek(0).kind == Kind::Name && !type_word(state, state.peek(0).text());
-    let name = if named { state.name()? } else { String::new() };
-    Ok((name, suffixes(state, ty)?))
+        let nested = state.at("(", 0)
+            && (state.at("*", 1)
+                || state.at("(", 1)
+                || state.at("[", 1)
+                || (state.token(1).kind == Kind::Name && !type_word(state, state.token(1).text())));
+        if nested {
+            // what follows the parentheses applies first: read it, then the declarator inside
+            state.take();
+            let inner = state.pos;
+            let mut depth = 1;
+            while depth > 0 {
+                if state.token(0).kind == Kind::Eof {
+                    return state.fail("expected ')'");
+                }
+                let token = state.take();
+                if token.kind == Kind::Op {
+                    depth += match token.text() {
+                        "(" => 1,
+                        ")" => -1,
+                        _ => 0,
+                    };
+                }
+            }
+            let ty = suffixes(state, ty)?;
+            let end = state.pos;
+            state.pos = inner;
+            let (name, ty) = declarator(state, ty)?;
+            state.expect(")")?;
+            state.pos = end;
+            return Ok((name, ty));
+        }
+        let named = state.token(0).kind == Kind::Name && !type_word(state, state.token(0).text());
+        let name = if named { state.name()? } else { String::new() };
+        Ok((name, suffixes(state, ty)?))
+    })
 }
 
 /// The [N]s and (parameters) after a declarator's name, applied to ty from the last in.
-fn suffixes(state: &mut State, ty: Ty) -> Parsed<Ty> {
+fn suffixes(state: &mut State, ty: Ty) -> Result<Ty> {
     let mut found: Vec<std::result::Result<i64, (Vec<Ty>, bool)>> = Vec::new();
     loop {
         if state.at("[", 0) {
@@ -2013,7 +1995,7 @@ fn adjusted(ty: Ty) -> Ty {
 }
 
 /// The parameter types of a function type, after its (: names allowed and ignored.
-fn parameter_types(state: &mut State) -> Parsed<(Vec<Ty>, bool)> {
+fn parameter_types(state: &mut State) -> Result<(Vec<Ty>, bool)> {
     let mut params = Vec::new();
     let mut variadic = false;
     if !no_parameters(state) {
@@ -2057,7 +2039,7 @@ fn complex_ahead(state: &State, spec: &Spec) -> bool {
 }
 
 /// A type name in a cast, sizeof or offsetof: specifiers and an abstract declarator.
-fn abstract_type(state: &mut State) -> Parsed<Ty> {
+fn abstract_type(state: &mut State) -> Result<Ty> {
     let spec = specifiers(state, false)?;
     if spec.storage.is_some() {
         return state.fail("a type name has no storage class");
@@ -2072,7 +2054,7 @@ fn abstract_type(state: &mut State) -> Parsed<Ty> {
 
 /// An integer constant expression (an array size): numbers, the integer #defines and enum members
 /// of this file and the files it includes, sizeof, and C's operators.
-fn constant_expression(state: &mut State) -> Parsed<i64> {
+fn constant_expression(state: &mut State) -> Result<i64> {
     let node = ternary(state)?;
     let found = |name: &str| state.constant(name).map(|value| value as i64);
     match folded(&node, &found) {
@@ -2093,7 +2075,7 @@ fn type_size(state: &State, kind: &str) -> i64 {
 }
 
 /// The number of elements a local's or global's size gives (1 for a scalar).
-fn elements(state: &State, entry: &Node) -> Parsed<i64> {
+fn elements(state: &State, entry: &Node) -> Result<i64> {
     match &entry["size"] {
         Node::Null => Ok(1),
         Node::Str(name) => match state.constant(name) {
@@ -2155,7 +2137,7 @@ fn member_of(state: &State, node: &Node) -> Option<(Ty, Option<ctype::Bits>)> {
 }
 
 /// What sizeof gives for an expression, which it does not evaluate.
-fn size_of(state: &State, node: &Node) -> Parsed<i64> {
+fn size_of(state: &State, node: &Node) -> Result<i64> {
     if node.kind() == "member" && member_of(state, node).is_some_and(|(_, bits)| bits.is_some()) {
         return state.fail(format!("sizeof of bit-field {}, which has no size of its own", node.text("name")));
     }
@@ -2196,82 +2178,102 @@ fn size_literal(size: i64) -> Node {
     node!({"kind": "int", "value": size, "unsigned": true})
 }
 
-fn unary(state: &mut State) -> Parsed<Node> {
-    state.framed(|state| {
-        if state.at("-", 0) || state.at("!", 0) {
-            let op = state.take();
-            return Ok(node!({"kind": "unary", "op": op.text(), "operand": unary(state)?}));
+fn unary(state: &mut State) -> Result<Node> {
+    state.nested(prefixed)
+}
+
+/// A unary expression: an operator and its operand, sizeof, a cast, or a primary expression.
+fn prefixed(state: &mut State) -> Result<Node> {
+    if ["-", "!", "+", "~", "*"].iter().any(|op| state.at(op, 0)) {
+        return prefix_operator(state);
+    }
+    if state.at("sizeof", 0) {
+        return sizeof(state);
+    }
+    if state.at("++", 0) || state.at("--", 0) {
+        return increment(state);
+    }
+    if state.at("&", 0) {
+        return address(state);
+    }
+    if cast_ahead(state) {
+        return plain_cast(state);
+    }
+    if state.at("(", 0) && state.at("enum", 1) && state.token(2).kind == Kind::Name && state.at(")", 3) {
+        return enum_cast(state);
+    }
+    if pointer_cast_ahead(state) {
+        return pointer_cast(state);
+    }
+    if state.at("(", 0) && starts_type(state, 1) {
+        return cast(state);
+    }
+    primary(state)
+}
+
+/// -x, !x, +x, ~x (-x - 1, the VM having no instruction for it) and *p.
+fn prefix_operator(state: &mut State) -> Result<Node> {
+    let op = state.take();
+    let operand = unary(state)?;
+    Ok(prefix_node(op.text(), operand))
+}
+
+fn prefix_node(op: &str, operand: Node) -> Node {
+    match op {
+        "~" => {
+            node!({"kind": "binary", "op": "-", "left": {"kind": "unary", "op": "-", "operand": operand}, "right": one()})
         }
-        if state.at("+", 0) {
-            state.take();
-            return Ok(node!({"kind": "unary", "op": "+", "operand": unary(state)?}));
-        }
-        if state.at("sizeof", 0) {
-            return sizeof(state);
-        }
-        if state.at("~", 0) {
-            state.take();
-            let operand = node!({"kind": "unary", "op": "-", "operand": unary(state)?});
-            return Ok(node!({"kind": "binary", "op": "-", "left": operand, "right": one()}));
-        }
-        if state.at("++", 0) || state.at("--", 0) {
-            let op = if state.take().text() == "++" { "+" } else { "-" };
-            let target = unary(state)?;
-            if !is_target(&target) {
-                return state.fail("++ and -- need a variable");
-            }
-            writable(state, &target)?;
-            return Ok(stepped(state, target, op));
-        }
-        if state.at("&", 0) {
-            state.take();
-            let target = unary(state)?;
-            if !is_target(&target) {
-                return state.fail("& needs a variable");
-            }
-            return address(state, target);
-        }
-        if state.at("*", 0) {
-            state.take();
-            return Ok(node!({"kind": "deref", "operand": unary(state)?}));
-        }
-        if cast_ahead(state) {
-            state.take();
-            let kind = state.take();
-            state.take();
-            return Ok(node!({"kind": "cast", "type": kind.text(), "operand": unary(state)?}));
-        }
-        if state.at("(", 0) && state.at("enum", 1) && state.peek(2).kind == Kind::Name && state.at(")", 3) {
-            // (enum flags)&x passes x's address where a native takes an enum, as it is
-            state.take();
-            state.take();
-            let kind = format!("enum {}", state.take().text());
-            state.take();
-            let operand = unary(state)?;
-            if operand.kind() != "addr" {
-                return state.fail("a cast to an enum takes an address (&x)");
-            }
-            return Ok(node!({"kind": "cast", "type": kind, "operand": operand}));
-        }
-        if pointer_cast_ahead(state) {
-            // (int *)&x passes x's address as it is: C's view of a pointer of another type
-            state.take();
-            let kind = state.take().text().to_string();
-            state.take();
-            state.take();
-            let operand = unary(state)?;
-            return Ok(node!({"kind": "cast", "type": format!("{kind} *"), "operand": operand}));
-        }
-        if state.at("(", 0) && starts_type(state, 1) {
-            return cast(state);
-        }
-        primary(state)
-    })
+        "*" => node!({"kind": "deref", "operand": operand}),
+        _ => node!({"kind": "unary", "op": op, "operand": operand}),
+    }
+}
+
+/// ++x and --x: the variable steps, and the expression's value is the new one.
+fn increment(state: &mut State) -> Result<Node> {
+    let op = if state.take().text() == "++" { "+" } else { "-" };
+    let target = unary(state)?;
+    if !is_target(&target) {
+        return state.fail("++ and -- need a variable");
+    }
+    writable(state, &target)?;
+    Ok(stepped(target, op))
+}
+
+/// The decompiler's casts, (int)x and (float)x, which convert between the VM's ints and floats.
+fn plain_cast(state: &mut State) -> Result<Node> {
+    state.take();
+    let kind = state.take();
+    state.take();
+    let operand = unary(state)?;
+    Ok(node!({"kind": "cast", "type": kind.text(), "operand": operand}))
+}
+
+/// (enum flags)&x passes x's address where a native takes an enum, as it is.
+fn enum_cast(state: &mut State) -> Result<Node> {
+    state.take();
+    state.take();
+    let kind = format!("enum {}", state.take().text());
+    state.take();
+    let operand = unary(state)?;
+    if operand.kind() != "addr" {
+        return state.fail("a cast to an enum takes an address (&x)");
+    }
+    Ok(node!({"kind": "cast", "type": kind, "operand": operand}))
+}
+
+/// (int *)&x passes x's address as it is: C's view of a pointer of another type.
+fn pointer_cast(state: &mut State) -> Result<Node> {
+    state.take();
+    let kind = state.take().text().to_string();
+    state.take();
+    state.take();
+    let operand = unary(state)?;
+    Ok(node!({"kind": "cast", "type": format!("{kind} *"), "operand": operand}))
 }
 
 /// sizeof(type) or sizeof expression.
 #[inline(never)]
-fn sizeof(state: &mut State) -> Parsed<Node> {
+fn sizeof(state: &mut State) -> Result<Node> {
     state.take();
     if state.at("(", 0) && starts_type(state, 1) {
         state.take();
@@ -2291,7 +2293,7 @@ fn sizeof(state: &mut State) -> Parsed<Node> {
 
 /// Any cast but the decompiler's: (unsigned char)x, (void)f(), (long)y, (const int)z.
 #[inline(never)]
-fn cast(state: &mut State) -> Parsed<Node> {
+fn cast(state: &mut State) -> Result<Node> {
     state.take();
     let ty = abstract_type(state)?;
     state.expect(")")?;
@@ -2311,8 +2313,12 @@ fn cast(state: &mut State) -> Parsed<Node> {
 }
 
 /// &x; a register variable has no address.
-#[inline(never)]
-fn address(state: &State, target: Node) -> Parsed<Node> {
+fn address(state: &mut State) -> Result<Node> {
+    state.take();
+    let target = unary(state)?;
+    if !is_target(&target) {
+        return state.fail("& needs a variable");
+    }
     if target.kind() == "var"
         && state.variable(target.text("name")).is_some_and(|entry| entry.get("register").is_some())
     {
@@ -2321,61 +2327,84 @@ fn address(state: &State, target: Node) -> Parsed<Node> {
     Ok(node!({"kind": "addr", "target": target}))
 }
 
-fn binary(state: &mut State, minimum: u32) -> Parsed<Node> {
-    state.framed(|state| {
+fn binary(state: &mut State, minimum: u32) -> Result<Node> {
+    state.chain(|state| {
         let mut left = unary(state)?;
-        while state.peek(0).kind == Kind::Op && precedence(state.peek(0).text()).unwrap_or(0) >= minimum {
-            let op = state.take().text().to_string();
-            let right = binary(state, precedence(&op).unwrap() + 1)?;
-            let kind = if op == "&&" || op == "||" { "logical" } else { "binary" };
-            left = node!({"kind": kind, "op": op, "left": left, "right": right});
+        while state.token(0).kind == Kind::Op && precedence(state.token(0).text()).unwrap_or(0) >= minimum {
+            state.link()?;
+            let op = state.take();
+            let right = binary(state, precedence(op.text()).unwrap() + 1)?;
+            left = binary_node(op.text(), left, right);
         }
         Ok(left)
     })
 }
 
-fn ternary(state: &mut State) -> Parsed<Node> {
-    state.framed(|state| {
+fn binary_node(op: &str, left: Node, right: Node) -> Node {
+    let kind = if op == "&&" || op == "||" { "logical" } else { "binary" };
+    node!({"kind": kind, "op": op, "left": left, "right": right})
+}
+
+fn ternary(state: &mut State) -> Result<Node> {
+    state.nested(|state| {
         let cond = binary(state, 2)?;
         if !state.at("?", 0) {
             return Ok(cond);
         }
-        state.take();
-        let then = assignment(state)?;
-        state.expect(":")?;
-        Ok(node!({"kind": "ternary", "cond": cond, "then": then, "else": ternary(state)?}))
+        choice(state, cond)
     })
 }
 
-fn assignment(state: &mut State) -> Parsed<Node> {
-    state.framed(|state| {
+/// cond ? then : else, after cond.
+fn choice(state: &mut State, cond: Node) -> Result<Node> {
+    state.take();
+    let then = assignment(state)?;
+    state.expect(":")?;
+    let otherwise = ternary(state)?;
+    Ok(node!({"kind": "ternary", "cond": cond, "then": then, "else": otherwise}))
+}
+
+fn assignment(state: &mut State) -> Result<Node> {
+    state.nested(|state| {
         let left = ternary(state)?;
-        let token = state.peek(0);
+        let token = state.token(0);
         if token.kind != Kind::Op || (token.text() != "=" && compound_op(token.text()).is_none()) {
             return Ok(left);
         }
-        if !is_target(&left) {
-            return state.fail("cannot assign to this expression");
-        }
-        writable(state, &left)?;
-        let op = state.take();
-        let value = assignment(state)?;
-        if let Some(op) = compound_op(op.text()) {
-            return Ok(compound(state, left, op, value));
-        }
-        Ok(node!({"kind": "assign", "target": left, "value": value}))
+        assigned(state, left)
+    })
+}
+
+/// target = value or target op= value, after the target.
+fn assigned(state: &mut State, target: Node) -> Result<Node> {
+    if !is_target(&target) {
+        return state.fail("cannot assign to this expression");
+    }
+    writable(state, &target)?;
+    let op = state.take();
+    let value = assignment(state)?;
+    Ok(match compound_op(op.text()) {
+        Some(op) => compound(target, op, value),
+        None => node!({"kind": "assign", "target": target, "value": value}),
     })
 }
 
 /// An expression with C's comma operator: a, b works out a, then gives b.
-fn expression(state: &mut State) -> Parsed<Node> {
-    let mut node = assignment(state)?;
-    while state.at(",", 0) {
-        state.take();
-        let right = assignment(state)?;
-        node = node!({"kind": "comma", "left": discarded(node), "right": right});
-    }
-    Ok(node)
+fn expression(state: &mut State) -> Result<Node> {
+    state.chain(|state| {
+        let mut node = assignment(state)?;
+        while state.at(",", 0) {
+            state.link()?;
+            state.take();
+            let right = assignment(state)?;
+            node = comma(node, right);
+        }
+        Ok(node)
+    })
+}
+
+fn comma(left: Node, right: Node) -> Node {
+    node!({"kind": "comma", "left": discarded(left), "right": right})
 }
 
 /// An expression whose value is not used: x++ is only its step.
@@ -2387,23 +2416,25 @@ fn discarded(node: Node) -> Node {
     }
 }
 
-fn expression_statement(state: &State, node: Node) -> Node {
-    state.leaf(1);
+fn expression_statement(node: Node) -> Node {
     node!({"kind": "expr", "expr": discarded(node)})
 }
 
 /// The statements of an expression statement: one for each operand of a comma at its top.
-fn expression_statements(state: &State, node: Node) -> Vec<Node> {
+fn expression_statements(mut node: Node) -> Vec<Node> {
     if node.kind() == "comma" {
-        let mut found = expression_statements(state, node["left"].clone());
-        found.extend(expression_statements(state, node["right"].clone()));
+        let mut found = expression_statements(std::mem::take(&mut node["left"]));
+        found.extend(expression_statements(std::mem::take(&mut node["right"])));
         return found;
     }
-    vec![expression_statement(state, node)]
+    vec![expression_statement(node)]
 }
 
-fn braced(state: &mut State) -> Parsed<Vec<Node>> {
-    state.framed(|state| {
+// The statements, as the expressions, keep the functions on the parser's way down small: each
+// form is read by a function of its own.
+
+fn braced(state: &mut State) -> Result<Vec<Node>> {
+    state.nested(|state| {
         state.expect("{")?;
         state.open_block();
         let mut statements = Vec::new();
@@ -2417,31 +2448,38 @@ fn braced(state: &mut State) -> Parsed<Vec<Node>> {
 }
 
 /// A loop or branch body: a braced block or one statement.
-fn body(state: &mut State) -> Parsed<Vec<Node>> {
-    state.framed(|state| if state.at("{", 0) { braced(state) } else { statement(state) })
+fn body(state: &mut State) -> Result<Vec<Node>> {
+    if state.at("{", 0) {
+        braced(state)
+    } else {
+        statement(state)
+    }
 }
 
-fn conditional(state: &mut State) -> Parsed<Node> {
-    state.framed(|state| {
+fn conditional(state: &mut State) -> Result<Node> {
+    state.nested(|state| {
         let line = state.expect("if")?.line;
         state.expect("(")?;
         let cond = expression(state)?;
         state.expect(")")?;
         let then = body(state)?;
-        let mut otherwise = Node::Null;
-        if state.at("else", 0) {
-            state.take();
-            otherwise =
-                if state.at("if", 0) { Node::List(vec![conditional(state)?]) } else { Node::List(body(state)?) };
-        }
+        let otherwise = if state.at("else", 0) { otherwise(state)? } else { Node::Null };
         Ok(node!({"kind": "if", "cond": cond, "then": then, "else": otherwise, "line": line}))
     })
+}
+
+/// An if's else, after the else: another if, or a body.
+fn otherwise(state: &mut State) -> Result<Node> {
+    state.take();
+    if state.at("if", 0) {
+        return Ok(Node::List(vec![conditional(state)?]));
+    }
+    Ok(Node::List(body(state)?))
 }
 
 /// Puts extra statements in front of every continue of a loop body (not of loops inside it), so a
 /// for loop's step and a do loop's test run when an iteration is cut short.
 fn before_continue(nodes: &[Node], extra: &[Node]) -> Vec<Node> {
-    let list = |node: &Node| node.as_array().map_or(&[][..], Vec::as_slice).to_vec();
     let mut out = Vec::new();
     for node in nodes {
         let node = match node.kind() {
@@ -2453,16 +2491,17 @@ fn before_continue(nodes: &[Node], extra: &[Node]) -> Vec<Node> {
                 let otherwise = if node["else"].is_null() {
                     Node::Null
                 } else {
-                    Node::List(before_continue(&list(&node["else"]), extra))
+                    Node::List(before_continue(node.list("else"), extra))
                 };
-                node.clone().with("then", before_continue(&list(&node["then"]), extra)).with("else", otherwise)
+                node.clone().with("then", before_continue(node.list("then"), extra)).with("else", otherwise)
             }
             "switch" => {
-                let cases: Vec<Node> = list(&node["cases"])
-                    .into_iter()
+                let cases: Vec<Node> = node
+                    .list("cases")
+                    .iter()
                     .map(|case| {
-                        let body = before_continue(&list(&case["body"]), extra);
-                        case.with("body", body)
+                        let body = before_continue(case.list("body"), extra);
+                        case.clone().with("body", body)
                     })
                     .collect();
                 node.clone().with("cases", cases)
@@ -2474,66 +2513,84 @@ fn before_continue(nodes: &[Node], extra: &[Node]) -> Vec<Node> {
     out
 }
 
-fn expression_list(state: &mut State, closing: &str) -> Parsed<Vec<Node>> {
-    state.framed(|state| {
-        let mut found = Vec::new();
-        while !state.at(closing, 0) {
-            let node = assignment(state)?;
-            found.push(expression_statement(state, node));
-            if !state.at(closing, 0) {
-                state.expect(",")?;
-            }
+fn expression_list(state: &mut State, closing: &str) -> Result<Vec<Node>> {
+    let mut found = Vec::new();
+    while !state.at(closing, 0) {
+        let node = assignment(state)?;
+        found.push(expression_statement(node));
+        if !state.at(closing, 0) {
+            state.expect(",")?;
         }
-        state.expect(closing)?;
-        Ok(found)
+    }
+    state.expect(closing)?;
+    Ok(found)
+}
+
+fn while_loop(state: &mut State) -> Result<Vec<Node>> {
+    state.nested(|state| {
+        state.take();
+        state.expect("(")?;
+        let cond = expression(state)?;
+        state.expect(")")?;
+        let body = body(state)?;
+        Ok(vec![node!({"kind": "while", "cond": cond, "body": body})])
     })
 }
 
 /// for (init; cond; step) body becomes init; while (cond) { body step }, with the step also run
 /// before each continue.
-fn for_loop(state: &mut State) -> Parsed<Vec<Node>> {
-    state.framed(|state| {
+fn for_loop(state: &mut State) -> Result<Vec<Node>> {
+    state.nested(|state| {
         let line = state.expect("for")?.line;
         state.expect("(")?;
         // a declaration in the first part belongs to the loop (as C99 has it)
         state.open_block();
-        let mut init = if declaration_ahead(state) { declaration(state)? } else { expression_list(state, ";")? };
+        let init = if declaration_ahead(state) { declaration(state)? } else { expression_list(state, ";")? };
         let cond = if state.at(";", 0) { one() } else { expression(state)? };
         state.expect(";")?;
         let step = expression_list(state, ")")?;
-        let mut loop_body = before_continue(&body(state)?, &step);
+        let body = body(state)?;
         state.close_block();
-        loop_body.extend(step);
-        init.push(node!({"kind": "while", "cond": cond, "body": loop_body, "line": line}));
-        Ok(init)
+        Ok(for_nodes(init, cond, step, &body, line))
     })
+}
+
+fn for_nodes(mut init: Vec<Node>, cond: Node, step: Vec<Node>, body: &[Node], line: usize) -> Vec<Node> {
+    let mut body = before_continue(body, &step);
+    body.extend(step);
+    init.push(node!({"kind": "while", "cond": cond, "body": body, "line": line}));
+    init
 }
 
 /// do body while (cond); becomes while (1) { body if (!cond) break; }, with the test also run before
 /// each continue.
-fn do_loop(state: &mut State) -> Parsed<Vec<Node>> {
-    state.framed(|state| {
+fn do_loop(state: &mut State) -> Result<Vec<Node>> {
+    state.nested(|state| {
         let line = state.expect("do")?.line;
-        let loop_body = body(state)?;
+        let body = body(state)?;
         state.expect("while")?;
         state.expect("(")?;
         let cond = expression(state)?;
         state.expect(")")?;
         state.expect(";")?;
-        let leave = node!({
-            "kind": "if",
-            "cond": {"kind": "unary", "op": "!", "operand": cond},
-            "then": [{"kind": "break"}],
-            "else": null,
-        });
-        let mut body = before_continue(&loop_body, std::slice::from_ref(&leave));
-        body.push(leave);
-        Ok(vec![node!({"kind": "while", "cond": one(), "body": body, "line": line})])
+        Ok(do_nodes(&body, cond, line))
     })
 }
 
-fn switch(state: &mut State) -> Parsed<Node> {
-    state.framed(|state| {
+fn do_nodes(body: &[Node], cond: Node, line: usize) -> Vec<Node> {
+    let leave = node!({
+        "kind": "if",
+        "cond": {"kind": "unary", "op": "!", "operand": cond},
+        "then": [{"kind": "break"}],
+        "else": null,
+    });
+    let mut body = before_continue(body, std::slice::from_ref(&leave));
+    body.push(leave);
+    vec![node!({"kind": "while", "cond": one(), "body": body, "line": line})]
+}
+
+fn switch(state: &mut State) -> Result<Node> {
+    state.nested(|state| {
         let line = state.expect("switch")?.line;
         state.expect("(")?;
         let value = expression(state)?;
@@ -2543,25 +2600,9 @@ fn switch(state: &mut State) -> Parsed<Node> {
         // the case values known here, which C allows once each
         let mut numbers: Vec<i64> = Vec::new();
         while !state.at("}", 0) {
-            if state.at("case", 0) {
-                state.take();
-                let value = ternary(state)?;
-                let found = |name: &str| state.constant(name).map(|value| value as i64);
-                if let Some((number, _)) = folded(&value, &found) {
-                    if numbers.contains(&number) {
-                        return state.fail(format!("case {number} is in the switch twice"));
-                    }
-                    numbers.push(number);
-                }
-                cases.push(node!({"value": value, "default": false, "body": []}));
-                state.expect(":")?;
-            } else if state.at("default", 0) {
-                state.take();
-                state.expect(":")?;
-                if cases.iter().any(|case| case["default"] == Node::Bool(true)) {
-                    return state.fail("a switch has one default");
-                }
-                cases.push(node!({"value": null, "default": true, "body": []}));
+            if state.at("case", 0) || state.at("default", 0) {
+                let case = case_label(state, &cases, &mut numbers)?;
+                cases.push(case);
             } else if cases.is_empty() {
                 return state.fail("expected case or default");
             } else {
@@ -2574,127 +2615,159 @@ fn switch(state: &mut State) -> Parsed<Node> {
     })
 }
 
-fn statement(state: &mut State) -> Parsed<Vec<Node>> {
-    state.framed(|state| {
+/// case value: or default:, as a case of the switch with no statements yet.
+fn case_label(state: &mut State, cases: &[Node], numbers: &mut Vec<i64>) -> Result<Node> {
+    if state.take().text() == "default" {
+        state.expect(":")?;
+        if cases.iter().any(|case| case.flag("default")) {
+            return state.fail("a switch has one default");
+        }
+        return Ok(node!({"value": null, "default": true, "body": []}));
+    }
+    let value = ternary(state)?;
+    let found = |name: &str| state.constant(name).map(|value| value as i64);
+    if let Some((number, _)) = folded(&value, &found) {
+        if numbers.contains(&number) {
+            return state.fail(format!("case {number} is in the switch twice"));
+        }
+        numbers.push(number);
+    }
+    state.expect(":")?;
+    Ok(node!({"value": value, "default": false, "body": []}))
+}
+
+fn statement(state: &mut State) -> Result<Vec<Node>> {
+    state.nested(|state| {
         let line = state.line();
         // a "// note: ..." comment right above a statement is a line note the definitions keep
-        let doc = state.peek(0).doc.clone().unwrap_or_default();
-        let mut nodes: Vec<Node> = statement_nodes(state)?
-            .into_iter()
-            .map(|node| if node.get("line").is_some() { node } else { node.with("line", line) })
-            .collect();
-        // the last such paragraph
-        let note = doc
-            .split('\n')
-            .rfind(|paragraph| paragraph.get(..NOTE.len()).is_some_and(|start| start.eq_ignore_ascii_case(NOTE)));
-        if let (Some(first), Some(note)) = (nodes.first_mut(), note) {
-            *first = std::mem::take(first).with("note", strip(&note[NOTE.len()..]));
-        }
-        Ok(nodes)
+        let doc = state.token(0).doc.clone();
+        let nodes = statement_nodes(state)?;
+        Ok(placed(nodes, line, doc.as_deref()))
     })
 }
 
-fn statement_nodes(state: &mut State) -> Parsed<Vec<Node>> {
-    state.framed(|state| {
-        let token = state.peek(0);
-        let word = if token.kind == Kind::Name { token.text().to_string() } else { String::new() };
-        match word.as_str() {
-            "AT" => {
-                state.take();
-                state.expect("(")?;
-                let base = int_node(int_value(state.expect_kind(Kind::Int)?.text())?)?;
-                state.expect(")")?;
-                return Ok(statement(state)?.into_iter().map(|node| node.with("at", base.clone())).collect());
-            }
-            "DIRECT" => {
-                state.take();
-                return Ok(statement(state)?.into_iter().map(|node| node.with("at", "direct")).collect());
-            }
-            _ => {}
-        }
-        if state.at("{", 0) {
-            return braced(state);
-        }
-        if state.at(";", 0) {
-            state.take();
-            return Ok(Vec::new());
-        }
-        if declaration_ahead(state) {
-            return declaration(state);
-        }
-        if state.token(0).kind == Kind::Name
-            && !STATEMENT_WORDS.contains(&word.as_str())
-            && state.token(1).kind == Kind::Op
-            && state.token(1).text() == ":"
-        {
-            // a label: the statement after it follows it in the list
-            state.take();
-            state.take();
-            let Some(scope) = state.scope.as_mut() else {
-                return state.fail("labels belong in functions");
-            };
-            if scope.labels.contains(&word) {
-                return state.fail(format!("label {word} is defined twice"));
-            }
-            scope.labels.push(word.clone());
-            let mut found = vec![node!({"kind": "label", "name": &word})];
-            if !state.at("}", 0) {
-                found.extend(statement(state)?);
-            }
-            return Ok(found);
-        }
-        match word.as_str() {
-            "if" => return Ok(vec![conditional(state)?]),
-            "while" => {
-                state.take();
-                state.expect("(")?;
-                let cond = expression(state)?;
-                state.expect(")")?;
-                return Ok(vec![node!({"kind": "while", "cond": cond, "body": body(state)?})]);
-            }
-            "for" => return for_loop(state),
-            "do" => return do_loop(state),
-            "switch" => return Ok(vec![switch(state)?]),
-            "goto" => {
-                let line = state.take().line;
-                let label = state.name()?;
-                state.expect(";")?;
-                let Some(scope) = state.scope.as_mut() else {
-                    return state.fail("goto belongs in functions");
-                };
-                scope.gotos.push((label.clone(), line));
-                return Ok(vec![node!({"kind": "goto", "name": label})]);
-            }
-            "return" => {
-                state.take();
-                if state.at(";", 0) {
-                    state.take();
-                    return Ok(vec![node!({"kind": "return", "value": null})]);
-                }
-                let value = expression(state)?;
-                state.expect(";")?;
-                return Ok(vec![node!({"kind": "return", "value": value})]);
-            }
-            "print" => {
-                state.take();
-                let args = arguments(state)?;
-                state.expect(";")?;
-                return Ok(vec![node!({"kind": "print", "args": args})]);
-            }
-            word if SIMPLE.contains(&word) => {
-                state.take();
-                state.expect(";")?;
-                return Ok(vec![node!({"kind": word})]);
-            }
-            _ => {}
-        }
-        let node = expression(state)?;
-        state.expect(";")?;
-        Ok(expression_statements(state, node))
-    })
+/// A statement's nodes with its line, where they have none, and the first with its note: the last
+/// paragraph of the comment above it that starts "note:".
+fn placed(nodes: Vec<Node>, line: usize, doc: Option<&str>) -> Vec<Node> {
+    let mut nodes: Vec<Node> =
+        nodes.into_iter().map(|node| if node.get("line").is_some() { node } else { node.with("line", line) }).collect();
+    let note = doc
+        .unwrap_or_default()
+        .split('\n')
+        .rfind(|paragraph| paragraph.get(..NOTE.len()).is_some_and(|start| start.eq_ignore_ascii_case(NOTE)));
+    if let (Some(first), Some(note)) = (nodes.first_mut(), note) {
+        *first = std::mem::take(first).with("note", strip(&note[NOTE.len()..]));
+    }
+    nodes
 }
 
-fn type_name(state: &mut State, allowed: &[&str]) -> Parsed<String> {
+fn statement_nodes(state: &mut State) -> Result<Vec<Node>> {
+    let token = state.token(0);
+    let word = if token.kind == Kind::Name { token.text().to_string() } else { String::new() };
+    if word == "AT" || word == "DIRECT" {
+        return placed_at(state);
+    }
+    if state.at("{", 0) {
+        return braced(state);
+    }
+    if state.at(";", 0) {
+        state.take();
+        return Ok(Vec::new());
+    }
+    if declaration_ahead(state) {
+        return declaration(state);
+    }
+    if state.token(0).kind == Kind::Name
+        && !STATEMENT_WORDS.contains(&word.as_str())
+        && state.token(1).kind == Kind::Op
+        && state.token(1).text() == ":"
+    {
+        return label(state, word);
+    }
+    match word.as_str() {
+        "if" => Ok(vec![conditional(state)?]),
+        "while" => while_loop(state),
+        "for" => for_loop(state),
+        "do" => do_loop(state),
+        "switch" => Ok(vec![switch(state)?]),
+        "goto" => goto(state),
+        "return" => return_statement(state),
+        "print" => print(state),
+        word if SIMPLE.contains(&word) => {
+            state.take();
+            state.expect(";")?;
+            Ok(vec![node!({"kind": word})])
+        }
+        _ => {
+            let node = expression(state)?;
+            state.expect(";")?;
+            Ok(expression_statements(node))
+        }
+    }
+}
+
+/// AT(base) statement or DIRECT statement: the native call the statement makes, at a base or
+/// direct (sdk::resolve).
+fn placed_at(state: &mut State) -> Result<Vec<Node>> {
+    let at = if state.take().text() == "DIRECT" {
+        Node::from("direct")
+    } else {
+        state.expect("(")?;
+        let base = int_node(int_value(state.expect_kind(Kind::Int)?.text())?)?;
+        state.expect(")")?;
+        base
+    };
+    Ok(statement(state)?.into_iter().map(|node| node.with("at", at.clone())).collect())
+}
+
+/// A label: the statement after it follows it in the list.
+fn label(state: &mut State, word: String) -> Result<Vec<Node>> {
+    state.take();
+    state.take();
+    let Some(scope) = state.scope.as_mut() else {
+        return state.fail("labels belong in functions");
+    };
+    if scope.labels.contains(&word) {
+        return state.fail(format!("label {word} is defined twice"));
+    }
+    scope.labels.push(word.clone());
+    let mut found = vec![node!({"kind": "label", "name": word})];
+    if !state.at("}", 0) {
+        found.extend(statement(state)?);
+    }
+    Ok(found)
+}
+
+fn goto(state: &mut State) -> Result<Vec<Node>> {
+    let line = state.take().line;
+    let label = state.name()?;
+    state.expect(";")?;
+    let Some(scope) = state.scope.as_mut() else {
+        return state.fail("goto belongs in functions");
+    };
+    scope.gotos.push((label.clone(), line));
+    Ok(vec![node!({"kind": "goto", "name": label})])
+}
+
+fn return_statement(state: &mut State) -> Result<Vec<Node>> {
+    state.take();
+    if state.at(";", 0) {
+        state.take();
+        return Ok(vec![node!({"kind": "return", "value": null})]);
+    }
+    let value = expression(state)?;
+    state.expect(";")?;
+    Ok(vec![node!({"kind": "return", "value": value})])
+}
+
+fn print(state: &mut State) -> Result<Vec<Node>> {
+    state.take();
+    let args = arguments(state)?;
+    state.expect(";")?;
+    Ok(vec![node!({"kind": "print", "args": args})])
+}
+
+fn type_name(state: &mut State, allowed: &[&str]) -> Result<String> {
     let kind = state.name()?;
     if !allowed.contains(&kind.as_str()) {
         state.pos -= 1;
@@ -2712,7 +2785,7 @@ enum Size {
 }
 
 impl Size {
-    fn node(&self) -> Parsed<Node> {
+    fn node(&self) -> Result<Node> {
         match self {
             Size::None => Ok(Node::Null),
             Size::Number(value) => int_node(*value),
@@ -2722,10 +2795,9 @@ impl Size {
 }
 
 /// An array size: a number, or a constant's name. A name this file does not define is kept and
-/// resolved with the constants of the headers and libraries the script includes (sdk.resolve).
+/// resolved with the constants of the headers and libraries the script includes (sdk::resolve).
 /// Any other integer constant expression is worked out here.
-fn array_size(state: &mut State) -> Parsed<Size> {
-    state.leaf(3);
+fn array_size(state: &mut State) -> Result<Size> {
     let token = state.token(0);
     let alone = state.token(1).kind == Kind::Op && state.token(1).text() == "]";
     if alone && matches!(token.kind, Kind::Int | Kind::Name) {
@@ -2751,8 +2823,8 @@ enum Init {
     List(Vec<Init>),
 }
 
-fn initializer(state: &mut State) -> Parsed<Init> {
-    state.framed(|state| {
+fn initializer(state: &mut State) -> Result<Init> {
+    state.nested(|state| {
         if !state.at("{", 0) {
             return Ok(Init::Value(assignment(state)?));
         }
@@ -2790,7 +2862,7 @@ impl Declared {
 }
 
 /// The *, and const after it, before a declarator's name.
-fn pointer_part(state: &mut State) -> Parsed<(bool, bool)> {
+fn pointer_part(state: &mut State) -> Result<(bool, bool)> {
     let pointer = state.at("*", 0);
     let mut constant = false;
     if pointer {
@@ -2805,73 +2877,70 @@ fn pointer_part(state: &mut State) -> Parsed<(bool, bool)> {
     Ok((pointer, constant))
 }
 
-fn declarators(state: &mut State, spec: &Spec) -> Parsed<Vec<Declared>> {
-    state.framed(|state| {
-        let mut found = Vec::new();
-        loop {
-            let line = state.line();
-            if complex_ahead(state, spec) {
-                let base = base_ty(state, spec)?;
-                let (name, ty) = declarator(state, base)?;
-                if name.is_empty() {
-                    let found = state.shown(state.peek(0))?;
-                    return state.fail(format!("expected a name, found {found}"));
-                }
-                let mut init = None;
-                if state.at("=", 0) {
-                    state.take();
-                    init = Some(initializer(state)?);
-                }
-                let (pointer, pointer_const, dims) = (false, false, Vec::new());
-                found.push(Declared { name, dims, init, line, pointer, pointer_const, ty: Some(ty) });
-                if !state.at(",", 0) {
-                    break;
-                }
-                state.take();
-                continue;
-            }
-            let (pointer, pointer_const) = pointer_part(state)?;
-            let name = state.name()?;
-            let mut dims = Vec::new();
-            while state.at("[", 0) {
-                state.take();
-                let open = dims.is_empty() && state.at("]", 0);
-                dims.push(if open { Size::Number(-1) } else { array_size(state)? });
-                state.expect("]")?;
+fn declarators(state: &mut State, spec: &Spec) -> Result<Vec<Declared>> {
+    let mut found = Vec::new();
+    loop {
+        let line = state.line();
+        if complex_ahead(state, spec) {
+            let base = base_ty(state, spec)?;
+            let (name, ty) = declarator(state, base)?;
+            if name.is_empty() {
+                let found = state.shown(state.token(0))?;
+                return state.fail(format!("expected a name, found {found}"));
             }
             let mut init = None;
             if state.at("=", 0) {
                 state.take();
                 init = Some(initializer(state)?);
             }
-            if dims.first() == Some(&Size::Number(-1)) && init.is_none() && spec.storage.as_deref() != Some("extern") {
-                return state.fail(format!("{name}[] needs a size or a list of values"));
-            }
-            if matches!(init, Some(Init::List(_))) && dims.is_empty() && pointer {
-                return state.fail(format!("too many values for {name}"));
-            }
-            found.push(Declared { name, dims, init, line, pointer, pointer_const, ty: None });
+            let (pointer, pointer_const, dims) = (false, false, Vec::new());
+            found.push(Declared { name, dims, init, line, pointer, pointer_const, ty: Some(ty) });
             if !state.at(",", 0) {
                 break;
             }
             state.take();
+            continue;
         }
-        state.expect(";")?;
-        Ok(found)
-    })
+        let (pointer, pointer_const) = pointer_part(state)?;
+        let name = state.name()?;
+        let mut dims = Vec::new();
+        while state.at("[", 0) {
+            state.take();
+            let open = dims.is_empty() && state.at("]", 0);
+            dims.push(if open { Size::Number(-1) } else { array_size(state)? });
+            state.expect("]")?;
+        }
+        let mut init = None;
+        if state.at("=", 0) {
+            state.take();
+            init = Some(initializer(state)?);
+        }
+        if dims.first() == Some(&Size::Number(-1)) && init.is_none() && spec.storage.as_deref() != Some("extern") {
+            return state.fail(format!("{name}[] needs a size or a list of values"));
+        }
+        if matches!(init, Some(Init::List(_))) && dims.is_empty() && pointer {
+            return state.fail(format!("too many values for {name}"));
+        }
+        found.push(Declared { name, dims, init, line, pointer, pointer_const, ty: None });
+        if !state.at(",", 0) {
+            break;
+        }
+        state.take();
+    }
+    state.expect(";")?;
+    Ok(found)
 }
 
 fn declaration_ahead(state: &State) -> bool {
-    state.leaf(2);
-    let token = state.peek(0);
+    let token = state.token(0);
     if token.kind != Kind::Name {
         return false;
     }
     if token.text() == "enum" {
         let defined = |offset: usize| state.token(offset).kind == Kind::Op && state.token(offset).text() == "{";
-        return defined(1) || (state.peek(1).kind == Kind::Name && (state.peek(2).kind == Kind::Name || defined(2)));
+        return defined(1) || (state.token(1).kind == Kind::Name && (state.token(2).kind == Kind::Name || defined(2)));
     }
-    let following = state.peek(1);
+    let following = state.token(1);
     if TYPES.contains(&token.text()) {
         // int (*f)(int): a declarator in parentheses
         return following.kind == Kind::Name || (following.kind == Kind::Op && ["*", "("].contains(&following.text()));
@@ -2882,9 +2951,9 @@ fn declaration_ahead(state: &State) -> bool {
     if STATEMENT_WORDS.contains(&token.text()) {
         return false;
     }
-    // a value kind or typedef from a header (bgm_file track;), which sdk.resolve reads as its base type
+    // a value kind or typedef from a header (bgm_file track;), which sdk::resolve reads as its base type
     following.kind == Kind::Name
-        && state.peek(2).text.as_deref().is_some_and(|text| [";", "=", "[", ","].contains(&text))
+        && state.token(2).text.as_deref().is_some_and(|text| [";", "=", "[", ","].contains(&text))
 }
 
 /// The zero an element of a type starts at when its array's initializer leaves it out.
@@ -2897,7 +2966,7 @@ fn zero(kind: &str) -> Node {
 }
 
 /// A string's bytes as the elements of a char array (with its 0).
-fn string_elements(state: &State, text: &str, kind: &str) -> Parsed<Vec<Node>> {
+fn string_elements(state: &State, text: &str, kind: &str) -> Result<Vec<Node>> {
     let bytes = stb::encode_string(text).or_else(|error| state.fail(error))?;
     Ok(bytes
         .into_iter()
@@ -2924,7 +2993,7 @@ fn fill(
     base: i64,
     kind: &str,
     out: &mut std::collections::BTreeMap<i64, Node>,
-) -> Parsed<i64> {
+) -> Result<i64> {
     let stride: i64 = dims[1..].iter().product();
     let chars = matches!(kind, "char" | "unsigned char");
     let mut row = 0;
@@ -2967,7 +3036,7 @@ fn put_string(
     base: i64,
     kind: &str,
     out: &mut std::collections::BTreeMap<i64, Node>,
-) -> Parsed<i64> {
+) -> Result<i64> {
     let mut elements = string_elements(state, text, kind)?;
     if length >= 0 && elements.len() as i64 == length + 1 {
         elements.pop();
@@ -2987,7 +3056,7 @@ type Elements = Vec<(i64, Node)>;
 
 /// An array's sizes as numbers, and the assignments its initializer makes: every element, the
 /// ones the list leaves out set to 0 as C sets them.
-fn array_values(state: &State, declared: &Declared, kind: &str) -> Parsed<(Vec<i64>, Elements)> {
+fn array_values(state: &State, declared: &Declared, kind: &str) -> Result<(Vec<i64>, Elements)> {
     let mut dims = Vec::new();
     for (at, size) in declared.dims.iter().enumerate() {
         match size {
@@ -3044,97 +3113,98 @@ fn array_values(state: &State, declared: &Declared, kind: &str) -> Parsed<(Vec<i
 /// name declared again in another block reuses the slot when the type matches. Initializers become
 /// assignments where the declaration stands. A static local is a hidden global, set once before
 /// the script runs (see lower.rs).
-fn declaration(state: &mut State) -> Parsed<Vec<Node>> {
-    state.framed(|state| {
-        if state.scope.is_none() {
-            return state.fail("declarations belong inside functions");
+fn declaration(state: &mut State) -> Result<Vec<Node>> {
+    if state.scope.is_none() {
+        return state.fail("declarations belong inside functions");
+    }
+    let spec = specifiers(state, true)?;
+    if spec.storage.as_deref() == Some("typedef") {
+        return local_typedef(state, &spec);
+    }
+    if state.at(";", 0) && (matches!(spec.ty, Some(Ty::Struct(_))) || spec.kind.starts_with("enum ")) {
+        // struct T { ... }; or struct T;: declares the tag, in this block
+        state.take();
+        return Ok(Vec::new());
+    }
+    // a typedef of this function's stands for its type
+    let kind =
+        state.kinds.get(&spec.kind).filter(|_| local_kind(state, &spec.kind)).cloned().unwrap_or(spec.kind.clone());
+    if kind == "any" || (kind == "void" && !complex_ahead(state, &spec)) {
+        return state.fail(format!("unknown type {kind}"));
+    }
+    let mut statements = Vec::new();
+    for declared in declarators(state, &spec)? {
+        if spec.storage.as_deref() == Some("extern") {
+            // names a global this file declares
+            continue;
         }
-        let spec = specifiers(state, true)?;
-        if spec.storage.as_deref() == Some("typedef") {
-            return local_typedef(state, &spec);
+        let static_aggregate =
+            spec.storage.as_deref() == Some("static") && (declared.pointer || !declared.dims.is_empty());
+        let wide = matches!(&declared.init, Some(Init::Value(value)) if value.kind() == "wide");
+        if declared.ty.is_some() || static_aggregate || wide {
+            statements.extend(typed_local(state, &spec, declared, &kind)?);
+            continue;
         }
-        if state.at(";", 0) && (matches!(spec.ty, Some(Ty::Struct(_))) || spec.kind.starts_with("enum ")) {
-            // struct T { ... }; or struct T;: declares the tag, in this block
-            state.take();
-            return Ok(Vec::new());
+        let line = declared.line;
+        let (dims, values) =
+            if declared.dims.is_empty() { (Vec::new(), Vec::new()) } else { array_values(state, &declared, &kind)? };
+        let size = match dims.as_slice() {
+            [] => declared.size().node()?,
+            dims => int_node(dims.iter().product::<i64>() as i128)?,
+        };
+        let is_static = spec.storage.as_deref() == Some("static");
+        let storage = storage_for(state, &declared.name, &kind, &size, &Node::Null, is_static)?;
+        if spec.storage.as_deref() == Some("static") {
+            static_local(state, &declared, &storage, &kind, &spec)?;
+            continue;
         }
-        // a typedef of this function's stands for its type
-        let kind = state.kinds.get(&spec.kind).filter(|_| local_kind(state, &spec.kind)).cloned().unwrap_or(spec.kind.clone());
-        if kind == "any" || (kind == "void" && !complex_ahead(state, &spec)) {
-            return state.fail(format!("unknown type {kind}"));
+        let mut entry = node!({"name": &storage, "type": &kind, "size": size});
+        if declared.pointer {
+            entry["pointer"] = Node::Bool(true);
         }
-        let mut statements = Vec::new();
-        for declared in declarators(state, &spec)? {
-            if spec.storage.as_deref() == Some("extern") {
-                // names a global this file declares
-                continue;
+        if dims.len() > 1 {
+            entry["dims"] = Node::List(dims.iter().map(|size| Node::from(*size)).collect());
+        }
+        if (spec.constant && !declared.pointer) || declared.pointer_const {
+            entry["const"] = Node::Bool(true);
+        }
+        if spec.constant && declared.pointer {
+            entry["pointee_const"] = Node::Bool(true);
+        }
+        if spec.storage.as_deref() == Some("register") {
+            entry["register"] = Node::Bool(true);
+        }
+        let scope = state.scope.as_mut().unwrap();
+        if !scope.locals.contains(&entry) {
+            scope.locals.push(entry);
+        }
+        let assign = |target: Node, value: Node| node!({"kind": "expr", "expr": {"kind": "assign", "target": target, "value": value}, "line": line});
+        match declared.init {
+            Some(Init::Value(value)) if declared.dims.is_empty() => {
+                statements.push(assign(node!({"kind": "var", "name": &storage}), value));
             }
-            let static_aggregate = spec.storage.as_deref() == Some("static") && (declared.pointer || !declared.dims.is_empty());
-            let wide = matches!(&declared.init, Some(Init::Value(value)) if value.kind() == "wide");
-            if declared.ty.is_some() || static_aggregate || wide {
-                statements.extend(typed_local(state, &spec, declared, &kind)?);
-                continue;
-            }
-            let line = declared.line;
-            let (dims, values) = if declared.dims.is_empty() { (Vec::new(), Vec::new()) } else { array_values(state, &declared, &kind)? };
-            let size = match dims.as_slice() {
-                [] => declared.size().node()?,
-                dims => int_node(dims.iter().product::<i64>() as i128)?,
-            };
-            let is_static = spec.storage.as_deref() == Some("static");
-            let storage = storage_for(state, &declared.name, &kind, &size, &Node::Null, is_static)?;
-            if spec.storage.as_deref() == Some("static") {
-                static_local(state, &declared, &storage, &kind, &spec)?;
-                continue;
-            }
-            let mut entry = node!({"name": &storage, "type": &kind, "size": size});
-            if declared.pointer {
-                entry["pointer"] = Node::Bool(true);
-            }
-            if dims.len() > 1 {
-                entry["dims"] = Node::List(dims.iter().map(|size| Node::from(*size)).collect());
-            }
-            if (spec.constant && !declared.pointer) || declared.pointer_const {
-                entry["const"] = Node::Bool(true);
-            }
-            if spec.constant && declared.pointer {
-                entry["pointee_const"] = Node::Bool(true);
-            }
-            if spec.storage.as_deref() == Some("register") {
-                entry["register"] = Node::Bool(true);
-            }
-            let scope = state.scope.as_mut().unwrap();
-            if !scope.locals.contains(&entry) {
-                scope.locals.push(entry);
-            }
-            let assign = |target: Node, value: Node| {
-                node!({"kind": "expr", "expr": {"kind": "assign", "target": target, "value": value}, "line": line})
-            };
-            match declared.init {
-                Some(Init::Value(value)) if declared.dims.is_empty() => {
-                    statements.push(assign(node!({"kind": "var", "name": &storage}), value));
+            Some(Init::List(items)) if declared.dims.is_empty() => match items.as_slice() {
+                // int x = {5};
+                [Init::Value(value)] => {
+                    statements.push(assign(node!({"kind": "var", "name": &storage}), value.clone()))
                 }
-                Some(Init::List(items)) if declared.dims.is_empty() => match items.as_slice() {
-                    // int x = {5};
-                    [Init::Value(value)] => statements.push(assign(node!({"kind": "var", "name": &storage}), value.clone())),
-                    _ => return state.fail(format!("too many values for {}", declared.name)),
-                },
-                Some(_) => {
-                    for (offset, value) in values {
-                        let cell = node!({"kind": "index", "name": &storage, "index": {"kind": "int", "value": offset}});
-                        statements.push(assign(cell, value));
-                    }
+                _ => return state.fail(format!("too many values for {}", declared.name)),
+            },
+            Some(_) => {
+                for (offset, value) in values {
+                    let cell = node!({"kind": "index", "name": &storage, "index": {"kind": "int", "value": offset}});
+                    statements.push(assign(cell, value));
                 }
-                None => {}
             }
+            None => {}
         }
-        Ok(statements)
-    })
+    }
+    Ok(statements)
 }
 
 /// A declaration's type when its declarator has the plain fields only (a static or global array
 /// or pointer, an array a wide string fills).
-fn plain_type(state: &State, declared: &Declared, kind: &str) -> Parsed<Ty> {
+fn plain_type(state: &State, declared: &Declared, kind: &str) -> Result<Ty> {
     let kind = state.base_kind(kind);
     let scalar = if kind.starts_with("enum ") { ctype::int() } else { Ty::Scalar(kind) };
     if declared.pointer {
@@ -3162,7 +3232,7 @@ fn plain_type(state: &State, declared: &Declared, kind: &str) -> Parsed<Ty> {
 
 /// An array's open size ([]) given by its initializer: as many elements as the list fills, or the
 /// string's characters and its 0.
-fn sized_by(state: &State, ty: Ty, init: &Option<Init>) -> Parsed<Ty> {
+fn sized_by(state: &State, ty: Ty, init: &Option<Init>) -> Result<Ty> {
     let Ty::Array(of, -1) = &ty else {
         return Ok(ty);
     };
@@ -3189,9 +3259,9 @@ fn fill_typed(
     at: &mut usize,
     base: i64,
     out: &mut std::collections::BTreeMap<i64, Node>,
-) -> Parsed<i64> {
+) -> Result<i64> {
     let structs = &state.structs;
-    let one = |item: &Init| -> Parsed<Node> {
+    let one = |item: &Init| -> Result<Node> {
         match item {
             Init::Value(node) => Ok(node.clone()),
             Init::List(inner) => match inner.as_slice() {
@@ -3301,7 +3371,7 @@ fn fill_typed(
 
 /// The values an initializer gives an object of a type, by slot: every scalar slot, those it
 /// leaves out 0, as C sets them (only the given ones for a global, whose slots start at 0).
-fn initial_values(state: &State, name: &str, ty: &Ty, init: &Init, every: bool) -> Parsed<Vec<(i64, Ty, Node)>> {
+fn initial_values(state: &State, name: &str, ty: &Ty, init: &Init, every: bool) -> Result<Vec<(i64, Ty, Node)>> {
     let mut values = std::collections::BTreeMap::new();
     match init {
         Init::List(items) => {
@@ -3358,7 +3428,7 @@ fn typed_entry(state: &State, name: &str, ty: &Ty) -> Node {
 /// A local of C's other types (a struct, a pointer to a pointer, a function pointer...) or a
 /// static array or pointer: its slots, and assignments for its initializer. A static one is a
 /// hidden global, as for static scalars.
-fn typed_local(state: &mut State, spec: &Spec, declared: Declared, kind: &str) -> Parsed<Vec<Node>> {
+fn typed_local(state: &mut State, spec: &Spec, declared: Declared, kind: &str) -> Result<Vec<Node>> {
     let ty = match &declared.ty {
         Some(ty) => ty.clone(),
         None => plain_type(state, &declared, kind)?,
@@ -3405,7 +3475,7 @@ fn typed_local(state: &mut State, spec: &Spec, declared: Declared, kind: &str) -
 
 /// A global of C's other types: an array (its slots one after another), a pointer, a struct, a
 /// function pointer. Its initializer is set once per load, as a scalar's.
-fn typed_global(state: &mut State, program: &mut Node, spec: &Spec, declared: Declared) -> Parsed<()> {
+fn typed_global(state: &mut State, program: &mut Node, spec: &Spec, declared: Declared) -> Result<()> {
     let ty = match &declared.ty {
         Some(ty) => ty.clone(),
         None => plain_type(state, &declared, &spec.kind)?,
@@ -3444,7 +3514,7 @@ fn typed_global(state: &mut State, program: &mut Node, spec: &Spec, declared: De
 
 /// A global's (or static local's hidden global's) initializer, as its "init" (a scalar's value) or
 /// "inits" (each slot an aggregate's list gives), set once per load (lower.rs).
-fn global_values(state: &State, mut entry: Node, declared: &Declared, ty: &Ty) -> Parsed<Node> {
+fn global_values(state: &State, mut entry: Node, declared: &Declared, ty: &Ty) -> Result<Node> {
     let Some(init) = &declared.init else {
         return Ok(entry);
     };
@@ -3471,15 +3541,15 @@ fn global_values(state: &State, mut entry: Node, declared: &Declared, ty: &Ty) -
 }
 
 /// Whether a typedef name is one a function declared, which a declaration reads as its base type
-/// (a file's typedefs reach sdk.resolve through the program's kinds).
+/// (a file's typedefs reach sdk::resolve through the program's kinds).
 fn local_kind(state: &State, name: &str) -> bool {
     state.scope.as_ref().is_some_and(|scope| scope.typedefs.iter().any(|known| known == name))
 }
 
 /// typedef of a type beyond the scalars (a struct, a pointer, an array, a function): the name
 /// stands for the type from here on. false, reading nothing, for a scalar's typedef.
-fn typed_typedef(state: &mut State, spec: &Spec) -> Parsed<bool> {
-    let plain = spec.ty.is_none() && state.peek(0).kind == Kind::Name && state.at(";", 1);
+fn typed_typedef(state: &mut State, spec: &Spec) -> Result<bool> {
+    let plain = spec.ty.is_none() && state.token(0).kind == Kind::Name && state.at(";", 1);
     if plain {
         return Ok(false);
     }
@@ -3494,7 +3564,7 @@ fn typed_typedef(state: &mut State, spec: &Spec) -> Parsed<bool> {
 }
 
 /// typedef inside a function: the name stands for the type in the declarations after it.
-fn local_typedef(state: &mut State, spec: &Spec) -> Parsed<Vec<Node>> {
+fn local_typedef(state: &mut State, spec: &Spec) -> Result<Vec<Node>> {
     if typed_typedef(state, spec)? {
         return Ok(Vec::new());
     }
@@ -3507,7 +3577,7 @@ fn local_typedef(state: &mut State, spec: &Spec) -> Parsed<Vec<Node>> {
 }
 
 /// The type a typedef stands for: int, float, string, an integer type, or another typedef's.
-fn base_type(state: &State, kind: &str) -> Parsed<String> {
+fn base_type(state: &State, kind: &str) -> Result<String> {
     let base =
         state.kinds.get(kind).or_else(|| state.header_kinds.get(kind)).cloned().unwrap_or_else(|| kind.to_string());
     let base = if base.starts_with("enum ") { "int".to_string() } else { base };
@@ -3527,7 +3597,7 @@ fn storage_for(
     size: &Node,
     ctype: &Node,
     is_static: bool,
-) -> Parsed<String> {
+) -> Result<String> {
     let scope = state.scope.as_ref().unwrap();
     let innermost = scope.blocks.len() - 1;
     if scope.blocks[innermost].contains_key(name) {
@@ -3571,7 +3641,7 @@ fn storage_for(
 
 /// A static local: a hidden global that keeps its value between calls, which code in the function
 /// reaches by the local's name.
-fn static_local(state: &mut State, declared: &Declared, hidden: &str, kind: &str, spec: &Spec) -> Parsed<()> {
+fn static_local(state: &mut State, declared: &Declared, hidden: &str, kind: &str, spec: &Spec) -> Result<()> {
     if !declared.dims.is_empty() {
         return state
             .fail(format!("static arrays are not supported: the script VM cannot index a global ({})", declared.name));
@@ -3612,7 +3682,7 @@ fn no_parameters(state: &mut State) -> bool {
 
 /// A function's parameters, and whether they are a K&R identifier list (int f(a, b) int a; ...),
 /// whose types the declarations after the ) give. A prototype's parameters may go unnamed.
-fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool, bool)> {
+fn parameters(state: &mut State) -> Result<(Vec<Node>, bool, bool)> {
     state.expect("(")?;
     let mut params = Vec::new();
     let mut variadic = false;
@@ -3671,7 +3741,7 @@ fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool, bool)> {
             } else {
                 pointer_part(state)?
             };
-            let name = if state.peek(0).kind == Kind::Name { state.name()? } else { String::new() };
+            let name = if state.token(0).kind == Kind::Name { state.name()? } else { String::new() };
             let array = state.at("[", 0);
             let mut inner = Vec::new();
             if array {
@@ -3723,7 +3793,7 @@ fn parameters(state: &mut State) -> Parsed<(Vec<Node>, bool, bool)> {
 
 /// A parameter of C's other types: a pointer to a pointer or a struct, a struct (passed by value,
 /// composite.rs), a function pointer; an array or function declared as one is its pointer.
-fn typed_parameter_entry(state: &mut State, spec: &Spec) -> Parsed<Node> {
+fn typed_parameter_entry(state: &mut State, spec: &Spec) -> Result<Node> {
     let base = base_ty(state, spec)?;
     let (name, ty) = declarator(state, base)?;
     let ty = adjusted(ty);
@@ -3736,7 +3806,7 @@ fn typed_parameter_entry(state: &mut State, spec: &Spec) -> Parsed<Node> {
 }
 
 /// The declarations of a K&R definition's parameters, between its ) and its {.
-fn identifier_types(state: &mut State, params: &mut [Node]) -> Parsed<()> {
+fn identifier_types(state: &mut State, params: &mut [Node]) -> Result<()> {
     while !state.at("{", 0) {
         let spec = specifiers(state, true)?;
         if spec.storage.as_ref().is_some_and(|storage| storage != "register") {
@@ -3780,7 +3850,7 @@ fn function_definition(
     name: &str,
     doc: Option<&str>,
     returns_ty: Option<Ty>,
-) -> Parsed<Option<Node>> {
+) -> Result<Option<Node>> {
     if name.starts_with('_') {
         state.pos -= 1;
         return state.fail("function names cannot start with _, which marks natives");
@@ -3849,7 +3919,7 @@ fn native_ahead(state: &State) -> bool {
 
 /// A declaration at file scope: a function's definition or prototype, or globals. A global's value
 /// is set once before the script runs (see lower.rs). Ok(true) for a function's definition.
-fn top_declaration(state: &mut State, program: &mut Node, pending: &Pending, doc: Option<&str>) -> Parsed<bool> {
+fn top_declaration(state: &mut State, program: &mut Node, pending: &Pending, doc: Option<&str>) -> Result<bool> {
     let spec = specifiers(state, false)?;
     if matches!(spec.storage.as_deref(), Some("auto" | "register")) {
         return state.fail("auto and register belong inside functions");
@@ -3860,7 +3930,7 @@ fn top_declaration(state: &mut State, program: &mut Node, pending: &Pending, doc
     }
     // a function returning a pointer: its *s, then its name and (
     let stars = (0..).take_while(|offset| state.at("*", *offset)).count();
-    if state.peek(stars).kind == Kind::Name && state.at("(", stars + 1) {
+    if state.token(stars).kind == Kind::Name && state.at("(", stars + 1) {
         let mut returns_ty = spec.ty.clone();
         if stars > 0 {
             let mut ty = base_ty(state, &spec)?;
@@ -3872,8 +3942,7 @@ fn top_declaration(state: &mut State, program: &mut Node, pending: &Pending, doc
         }
         let returns = if returns_ty.is_some() { "int".to_string() } else { spec.kind.clone() };
         let name = state.name()?;
-        let function =
-            state.framed(|state| function_definition(state, pending, &returns, &name, doc, returns_ty.clone()))?;
+        let function = function_definition(state, pending, &returns, &name, doc, returns_ty.clone())?;
         let Some(function) = function else {
             return Ok(false);
         };
@@ -3936,7 +4005,7 @@ fn result_name(name: &str) -> String {
     }
 }
 
-fn typed_parameter(state: &mut State) -> Parsed<Node> {
+fn typed_parameter(state: &mut State) -> Result<Node> {
     let mut enumeration = None;
     let mut value_kind = None;
     let kind;
@@ -3948,7 +4017,7 @@ fn typed_parameter(state: &mut State) -> Parsed<Node> {
         // an out parameter that takes a pointer to anything: any *, as C reads int * and float *
         state.take();
         kind = "any".to_string();
-    } else if state.peek(0).kind == Kind::Name && state.kinds.contains_key(state.peek(0).text()) {
+    } else if state.token(0).kind == Kind::Name && state.kinds.contains_key(state.token(0).text()) {
         let name = state.take().text().to_string();
         kind = state.kinds[&name].clone();
         value_kind = Some(name);
@@ -3969,7 +4038,7 @@ fn typed_parameter(state: &mut State) -> Parsed<Node> {
     Ok(found)
 }
 
-fn native_declaration(state: &mut State) -> Parsed<Node> {
+fn native_declaration(state: &mut State) -> Result<Node> {
     let returns = type_name(state, &NATIVE_RETURN_TYPES)?;
     let name = state.name()?;
     state.expect("(")?;
@@ -4032,7 +4101,7 @@ fn native_declaration(state: &mut State) -> Parsed<Node> {
     }))
 }
 
-fn inline_definition(state: &mut State) -> Parsed<Node> {
+fn inline_definition(state: &mut State) -> Result<Node> {
     let returns = type_name(state, &RETURN_TYPES)?;
     if returns != "void" {
         return state.fail("inline helpers are statements and return void");
@@ -4055,7 +4124,7 @@ fn inline_definition(state: &mut State) -> Parsed<Node> {
 
 /// An enumerator's value: a number, as headers write them, or any integer constant expression of
 /// numbers, the integer #defines (this file's and its includes') and the enumerators before it.
-fn enum_value(state: &mut State) -> Parsed<i128> {
+fn enum_value(state: &mut State) -> Result<i128> {
     let negative = state.at("-", 0);
     let offset = usize::from(negative);
     let plain = state.token(offset).kind == Kind::Int
@@ -4076,7 +4145,7 @@ fn declarations<'a>(program: &'a mut Node, key: &str) -> &'a mut Vec<Node> {
 }
 
 /// enum NAME { ... }; or an anonymous enum { ... };.
-fn enumeration(state: &mut State, program: &mut Node) -> Parsed<()> {
+fn enumeration(state: &mut State, program: &mut Node) -> Result<()> {
     let enumeration = if state.at("{", 0) { None } else { Some(state.name()?) };
     let members = enumerators(state, enumeration.as_deref())?;
     let key = if enumeration.as_deref() == Some("program") { "programs" } else { "constants" };
@@ -4086,7 +4155,7 @@ fn enumeration(state: &mut State, program: &mut Node) -> Parsed<()> {
 }
 
 /// An enum's { ... }: its members as constants (as program names for enum program).
-fn enumerators(state: &mut State, enumeration: Option<&str>) -> Parsed<Vec<Node>> {
+fn enumerators(state: &mut State, enumeration: Option<&str>) -> Result<Vec<Node>> {
     state.expect("{")?;
     let mut members = Vec::new();
     let mut value = 0i128;
@@ -4123,17 +4192,15 @@ fn enum_alone(state: &State) -> bool {
 
 /// The constant a #define's value stands for, when the compiler keeps it as a name: a number or a
 /// string, a negative number, or a unary expression of integer constants (a parenthesised one, as
-/// (-2147483647 - 1)). Any other value is text the tokenizer puts where the name is used.
-/// frames: Python frames in use, this function's included.
-fn constant_of(value: &str, frames: usize) -> Parsed<Option<Node>> {
+/// (-2147483647 - 1)). Any other value, one that does not parse as such an expression included,
+/// is text the tokenizer puts where the name is used (and fails there, if it fails).
+fn constant_of(value: &str) -> Result<Option<Node>> {
     let chars: Vec<char> = value.chars().collect();
-    let mut inner = State::new(tokenize(&chars, Macros::default(), "", frames + 1)?, frames);
-    let mut value = match unary(&mut inner) {
-        Ok(value) => value,
-        Err(Fault::Value(_)) => return Ok(None),
-        Err(crash) => return Err(crash),
+    let mut inner = State::new(tokenize(&chars, Macros::default(), "")?);
+    let Ok(mut value) = unary(&mut inner) else {
+        return Ok(None);
     };
-    if inner.peek(0).kind != Kind::Eof {
+    if inner.token(0).kind != Kind::Eof {
         return Ok(None);
     }
     if value.kind() == "unary" && value["op"] == "-" && value["operand"].kind() == "int" {
@@ -4155,12 +4222,11 @@ fn constant_of(value: &str, frames: usize) -> Parsed<Option<Node>> {
 }
 
 /// A #define whose value is a number or a string: a constant, and an integer one sizes arrays.
-fn definition(state: &mut State, token: &Token, program: &mut Node) -> Parsed<()> {
+fn definition(state: &mut State, token: &Token, program: &mut Node) -> Result<()> {
     let [name, value] = token.words.as_slice() else {
         return Ok(());
     };
-    // definition's own frame, then tokenize's
-    if let Some(value) = constant_of(value, state.depth + 1)? {
+    if let Some(value) = constant_of(value)? {
         let integer = value["value"].as_i64().filter(|_| value.kind() == "int");
         declarations(program, "constants").push(node!({"name": name, "value": value, "enum": null}));
         if let Some(integer) = integer {
@@ -4235,7 +4301,7 @@ fn folded(node: &Node, names: &dyn Fn(&str) -> Option<i64>) -> Option<(i64, bool
     }
 }
 
-fn program_entry(state: &mut State, program: &mut Node) -> Parsed<()> {
+fn program_entry(state: &mut State, program: &mut Node) -> Result<()> {
     state.expect("(")?;
     let token = state.take();
     let number = match token.kind {
@@ -4254,43 +4320,29 @@ fn program_entry(state: &mut State, program: &mut Node) -> Parsed<()> {
     Ok(())
 }
 
-fn asm_function(state: &mut State, token: &Token) -> Parsed<Node> {
+fn asm_function(state: &mut State, token: &Token) -> Result<Node> {
     let words = &token.words;
     if words.len() != 3 || words[1] != "arg" {
         state.pos -= 1;
         return state.fail("asm block header must be: asm NAME arg COUNT {");
     }
-    let arg = int_node(python_int(&words[2], 10)?)?;
+    let arg = int_node(int_in_base(&words[2], 10).or_else(|error| lex_fail(token.line, error))?)?;
     Ok(node!({"kind": "asm", "name": &words[0], "arg": arg, "reason": "", "lines": token.lines.clone()}))
 }
 
-/// asm.magic_bytes: 0x and hex digits, or ASCII text and a 0 byte; as a str of bytes, as latin-1
-/// decodes them.
-fn magic(token: &str) -> Parsed<Node> {
+/// #pragma magic's four bytes, as the assembly's .header writes them (asm::magic_bytes): 0x and
+/// hexadecimal digits, or ASCII text and a 0 byte; as a text of those bytes, a character each.
+fn magic(token: &str, line: usize) -> Result<Node> {
     let bytes = if let Some(digits) = token.strip_prefix("0x") {
-        from_hex(digits).map_err(|position| {
-            Fault::Value(format!("non-hexadecimal number found in fromhex() arg at position {position}"))
-        })?
-    } else {
-        let chars: Vec<char> = token.chars().collect();
-        if let Some(start) = chars.iter().position(|c| !c.is_ascii()) {
-            let end = (start..chars.len()).find(|&at| chars[at].is_ascii()).unwrap_or(chars.len());
-            let message = if end == start + 1 {
-                let c = chars[start] as u32;
-                let shown = match c {
-                    0..=0xff => format!("\\x{c:02x}"),
-                    0x100..=0xffff => format!("\\u{c:04x}"),
-                    _ => format!("\\U{c:08x}"),
-                };
-                format!("'ascii' codec can't encode character '{shown}' in position {start}: ordinal not in range(128)")
-            } else {
-                format!(
-                    "'ascii' codec can't encode characters in position {start}-{}: ordinal not in range(128)",
-                    end - 1
-                )
-            };
-            return Err(Fault::Value(message));
+        match from_hex(digits) {
+            Some(bytes) => bytes,
+            None => {
+                return lex_fail(line, format!("#pragma magic 0x{digits}: the digits after 0x are not hexadecimal"))
+            }
         }
+    } else if !token.is_ascii() {
+        return lex_fail(line, format!("#pragma magic {token}: the magic is ASCII text, or 0x and hexadecimal digits"));
+    } else {
         let mut bytes = token.as_bytes().to_vec();
         bytes.push(0);
         bytes
@@ -4298,57 +4350,55 @@ fn magic(token: &str) -> Parsed<Node> {
     Ok(Node::from(bytes.iter().map(|&byte| byte as char).collect::<String>()))
 }
 
-/// bytes.fromhex(): pairs of hex digits, whitespace between pairs; Err(position) where it fails.
-fn from_hex(text: &str) -> std::result::Result<Vec<u8>, usize> {
+/// Pairs of hexadecimal digits, with whitespace allowed between pairs; None when they are not.
+fn from_hex(text: &str) -> Option<Vec<u8>> {
     let chars: Vec<char> = text.chars().collect();
-    if let Some(position) = chars.iter().position(|c| !c.is_ascii()) {
-        return Err(position);
-    }
-    let digit = |i: usize| chars.get(i).and_then(|c| c.to_digit(16)).ok_or(i);
+    let digit = |i: usize| chars.get(i).and_then(|c| c.to_digit(16));
+    let space = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c');
     let mut bytes = Vec::new();
     let mut i = 0;
     while i < chars.len() {
-        if matches!(chars[i], ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c') {
-            while i < chars.len() && matches!(chars[i], ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c') {
+        if space(chars[i]) {
+            while i < chars.len() && space(chars[i]) {
                 i += 1;
             }
             if i >= chars.len() {
                 break;
             }
         }
-        let top = digit(i)?;
-        let bottom = digit(i + 1)?;
-        bytes.push((top * 16 + bottom) as u8);
+        bytes.push((digit(i)? * 16 + digit(i + 1)?) as u8);
         i += 2;
     }
-    Ok(bytes)
+    Some(bytes)
 }
 
-fn pragma(state: &mut State, token: &Token, program: &mut Node, pending: &mut Pending) -> Parsed<()> {
+fn pragma(state: &mut State, token: &Token, program: &mut Node, pending: &mut Pending) -> Result<()> {
     let words = &token.pragma;
     if words.is_empty() {
         // #pragma alone, which C ignores
         return Ok(());
     }
     let line = token.line;
-    let crash = |what: &str| Fault::Crash(format!("line {line}: #pragma {what}"));
+    let refused = |what: &str| Error::invalid(format!("line {line}: #pragma {what}"));
     let rest = &words[1..];
-    let first = || rest.first().ok_or_else(|| crash("is missing its value"));
-    let word = |node: &Node| node.as_str().map(String::from).ok_or_else(|| crash("takes a word, not a string"));
-    let integer = |node: &Node| -> Parsed<Node> { int_node(python_int(&word(node)?, 0)?) };
+    let first = || rest.first().ok_or_else(|| refused("is missing its value"));
+    let word = |node: &Node| node.as_str().map(String::from).ok_or_else(|| refused("takes a word, not a string"));
+    let integer = |node: &Node| -> Result<Node> {
+        int_node(int_in_base(&word(node)?, 0).or_else(|error| lex_fail(line, error))?)
+    };
     let Some(key) = words[0].as_str() else {
-        return Err(crash("name is a string"));
+        return Err(refused("name is a string"));
     };
     match key {
         "natives" => program["natives"] = first()?.clone(),
-        "magic" => program["magic"] = magic(&word(first()?)?)?,
+        "magic" => program["magic"] = magic(&word(first()?)?, line)?,
         "unk_14" => program["unk_14"] = integer(first()?)?,
         "header_padding" => program["header_padding"] = first()?.clone(),
         "globals" => program["global_num"] = integer(first()?)?,
         "strings" => {
             let strings =
-                rest.iter().map(|word| word.get("string").cloned().ok_or_else(|| crash("strings are quoted")));
-            pending.strings = Some(strings.collect::<Parsed<Vec<Node>>>()?);
+                rest.iter().map(|word| word.get("string").cloned().ok_or_else(|| refused("strings are quoted")));
+            pending.strings = Some(strings.collect::<Result<Vec<Node>>>()?);
         }
         "padding" => pending.padding = Some(rest.first().cloned().unwrap_or_else(|| Node::from(""))),
         "padding_of" => {
@@ -4357,7 +4407,7 @@ fn pragma(state: &mut State, token: &Token, program: &mut Node, pending: &mut Pe
         }
         "string_pool" => program["string_pool"] = Node::Bool(true),
         "target" => {
-            // the scripts a mod patch changes: #pragma target map s51 (see patches.py)
+            // the scripts a mod patch changes: #pragma target map s51 (see patches.rs)
             let values: Vec<Node> =
                 rest.iter().skip(1).map(|word| word.get("string").unwrap_or(word).clone()).collect();
             let kind = rest.first().and_then(Node::as_str).filter(|kind| TARGET_KINDS.contains(kind));
@@ -4415,18 +4465,18 @@ pub fn parse(text: &str) -> Result<Node> {
 /// parse.parse(text, defines): with #defines in force before the first line (a mod patch's
 /// LANGUAGE).
 pub fn parse_with(text: &str, defines: &HashMap<String, String>) -> Result<Node> {
-    Ok(parse_program(text, defines, UNNAMED_FILE, None)?)
+    parse_program(text, defines, UNNAMED_FILE, None)
 }
 
 /// The program a file's source holds, with its name for __FILE__.
 pub fn parse_file(text: &str, file: &str) -> Result<Node> {
-    Ok(parse_program(text, &HashMap::new(), file, None)?)
+    parse_program(text, &HashMap::new(), file, None)
 }
 
 /// A source file as a compiler reads it: its #include <...> headers (from those given) read as text
 /// for their macros, so a header's #defines reach the file's #if as C has it.
 pub fn parse_source(text: &str, file: &str, headers: &IndexMap<String, String>) -> Result<Node> {
-    Ok(parse_program(text, &HashMap::new(), file, Some(Files { headers, libraries: None }))?)
+    parse_program(text, &HashMap::new(), file, Some(Files { headers, libraries: None }))
 }
 
 /// parse_source with #defines in force before the first line (a mod patch's LANGUAGE), and the
@@ -4439,10 +4489,10 @@ pub fn parse_source_with(
     headers: &IndexMap<String, String>,
     libraries: &IndexMap<String, String>,
 ) -> Result<Node> {
-    Ok(parse_program(text, defines, file, Some(Files { headers, libraries: Some(libraries) }))?)
+    parse_program(text, defines, file, Some(Files { headers, libraries: Some(libraries) }))
 }
 
-fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, headers: Headers) -> Parsed<Node> {
+fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, headers: Headers) -> Result<Node> {
     Ok(parse_state(text, defines, file, headers)?.0)
 }
 
@@ -4475,7 +4525,7 @@ fn file_key(text: &str) -> String {
 }
 
 /// What an included file declares, for the file including it.
-fn included(path: &str, headers: Files) -> Parsed<Included> {
+fn included(path: &str, headers: Files) -> Result<Included> {
     let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {
         return Ok(Included::default());
     };
@@ -4489,7 +4539,7 @@ fn included(path: &str, headers: Files) -> Parsed<Included> {
         return Ok(found);
     }
     let (_, found) = parse_state(text, &HashMap::new(), path, Some(headers))
-        .map_err(|fault| Fault::Value(format!("in {path}: {}", Error::from(fault))))?;
+        .map_err(|fault| Error::invalid(format!("in {path}: {}", fault)))?;
     INCLUDED.with(|cache| cache.borrow_mut().insert(key, found.clone()));
     Ok(found)
 }
@@ -4500,7 +4550,7 @@ fn parse_state(
     defines: &HashMap<String, String>,
     file: &str,
     headers: Headers,
-) -> Parsed<(Node, Included)> {
+) -> Result<(Node, Included)> {
     let chars: Vec<char> = text.chars().collect();
     let mut macros = Macros::default();
     for (name, value) in defines {
@@ -4510,8 +4560,8 @@ fn parse_state(
         }
     }
     let predefined = macros.values.clone();
-    let tokens = tokenize_with(&chars, &mut macros, file, CALLER_FRAMES + 2, headers, 0)?;
-    let mut state = State::new(tokens, CALLER_FRAMES + 1);
+    let tokens = tokenize_with(&chars, &mut macros, file, headers, 0)?;
+    let mut state = State::new(tokens);
     // the constants in force before the first line (LANGUAGE), as a header's are
     state.included_constants = predefined;
     state.file_key = file_key(text);
@@ -4539,7 +4589,7 @@ fn parse_state(
         program["doc"] = Node::from(doc);
     }
     let mut pending = Pending::default();
-    while state.peek(0).kind != Kind::Eof {
+    while state.token(0).kind != Kind::Eof {
         let token = state.take();
         let word = if token.kind == Kind::Name { token.text() } else { "" };
         match token.kind {
@@ -4581,7 +4631,7 @@ fn parse_state(
             }
             _ if word == "PROGRAM" => program_entry(&mut state, &mut program)?,
             _ if request(word).is_some() => {
-                // NEW_FLAG(name): a number build gives the mod (numbers.py)
+                // NEW_FLAG(name): a number build gives the mod (numbers.rs)
                 state.expect("(")?;
                 let name = state.name()?;
                 state.expect(")")?;
@@ -4618,7 +4668,7 @@ fn parse_state(
             }
             _ if word == "static" && state.at("inline", 0) => {
                 state.expect("inline")?;
-                let inline = state.framed(inline_definition)?;
+                let inline = inline_definition(&mut state)?;
                 declarations(&mut program, "inlines").push(inline);
             }
             _ if token.kind == Kind::Name && (type_word(&state, word) || header_type(&state, word, state.token(0))) => {
@@ -4700,7 +4750,7 @@ mod tests {
     #[test]
     fn for_loops_continue_and_notes() {
         // the step runs before the continue; a note above a line goes to every statement that
-        // starts on it, as parse.py's per-name docs give it
+        // starts on it
         let text = "// Doc.\n\nint g;\nvoid f(int a) {\n  // note: first\n  for (int i = 0; i < a; i++) { if (i) continue; g += i; }\n}\n";
         let want = r#""globals":[{"name":"g","type":"int"}],"global_num":1,"main":null,"programs":[],"functions":[{"kind":"function","name":"f","returns":"void","params":[{"name":"a","type":"int","array":false}],"locals":[{"name":"i","type":"int","size":null}],"body":[{"kind":"expr","expr":{"kind":"assign","target":{"kind":"var","name":"i"},"value":{"kind":"int","value":0}},"line":6,"note":"first"},{"kind":"while","cond":{"kind":"binary","op":"<","left":{"kind":"var","name":"i"},"right":{"kind":"var","name":"a"}},"body":[{"kind":"if","cond":{"kind":"var","name":"i"},"then":[{"kind":"expr","expr":{"kind":"compound","op":"+","target":{"kind":"var","name":"i"},"value":{"kind":"int","value":1}}},{"kind":"continue","line":6,"note":"first"}],"else":null,"line":6,"note":"first"},{"kind":"expr","expr":{"kind":"compound","op":"+","target":{"kind":"var","name":"g"},"value":{"kind":"var","name":"i"}},"line":6,"note":"first"},{"kind":"expr","expr":{"kind":"compound","op":"+","target":{"kind":"var","name":"i"},"value":{"kind":"int","value":1}}}],"line":6}],"unused_strings":[],"padding":null}],"string_pool":false,"padding_of":{},"declarations":{"natives":[],"programs":[],"inlines":[],"constants":[],"kinds":{}},"doc":"Doc."}"#;
         assert_eq!(dump(text), format!("{HEADER}{want}"));
@@ -4741,18 +4791,22 @@ mod tests {
     }
 
     #[test]
-    fn errors_keep_python_messages() {
+    fn errors_name_the_line_and_what_is_wrong() {
         let cases = [
             ("void f() { x = 1 }", "line 1: expected ';', found '}'"),
-            ("void f() { s = \"\\q\"; }", "line 1: unknown escape \\q"),
-            ("void f() { s = \"\\xzz\"; }", "invalid literal for int() with base 16: 'zz'"),
+            (r#"void f() { s = "\q"; }"#, r"line 1: unknown escape \q"),
+            (r#"void f() { s = "\xzz"; }"#, r"line 1: \x takes two hexadecimal digits, not 'zz'"),
+            ("void f() { x = 08; }", "line 1: '8' is not an octal number"),
             ("#if 1\nint a;\n", "line 1: #if without #endif"),
             ("/* open", "line 1: unterminated comment"),
             ("#if (1\n#endif\n", "line 1: cannot read the condition '(1': ( without )"),
             (
                 "#pragma magic S\u{e9}\n",
-                "'ascii' codec can't encode character '\\xe9' in position 1: ordinal not in range(128)",
+                "line 1: #pragma magic S\u{e9}: the magic is ASCII text, or 0x and hexadecimal digits",
             ),
+            ("#pragma magic 0x5342zz\n", "line 1: #pragma magic 0x5342zz: the digits after 0x are not hexadecimal"),
+            ("#pragma globals x\n", "line 1: 'x' is not a number"),
+            ("#pragma target map \"s51\n", r#"line 1: a string in "target map \"s51" is not ended"#),
             ("void f() { x = \u{3042}; }", "line 1: unexpected character '\u{3042}'"),
         ];
         for (text, message) in cases {
@@ -4761,17 +4815,29 @@ mod tests {
     }
 
     #[test]
-    fn nesting_stops_where_python_recursion_does() {
-        // on a thread with a 1 MB stack, as Windows gives a main thread
+    fn nesting_deeper_than_the_limit_is_an_error_not_a_crash() {
+        // on a thread with a 1 MB stack, as Windows gives a main thread, in a debug build too
         let thread = std::thread::Builder::new().stack_size(1 << 20);
         thread
             .spawn(|| {
-                let nots = |count: usize| format!("void f() {{ x = {}1; }}", "!".repeat(count));
-                assert!(parse(&nots(983)).is_ok());
-                assert_eq!(error(&nots(984)), "line 1: nested too deeply");
-                let parens = |count: usize| format!("void f() {{ x = {}1{}; }}", "(".repeat(count), ")".repeat(count));
-                assert!(parse(&parens(196)).is_ok());
-                assert!(parse(&parens(197)).is_err());
+                // the deepest each form nests within NESTING, and one deeper
+                let deepest = |form: &dyn Fn(usize) -> String, count: usize| {
+                    assert!(parse(&form(count)).is_ok(), "{}", form(count));
+                    assert_eq!(error(&form(count + 1)), "line 1: nested too deeply");
+                };
+                let r = |text: &str, count: usize| text.repeat(count);
+                deepest(&|count| format!("void f() {{ x = {}1; }}", r("!", count)), 194);
+                deepest(&|count| format!("void f() {{ x = 1{}; }}", r(" + 1", count)), 194);
+                deepest(&|count| format!("void f() {{ x = {}1{}; }}", r("(", count), r(")", count)), 64);
+                deepest(&|count| format!("void f() {{ x = {}1{}; }}", r("f(", count), r(")", count)), 64);
+                deepest(&|count| format!("void f() {{ {}x = 1;{} }}", r("{ ", count), r(" }", count)), 97);
+                deepest(&|count| format!("void f() {{ {}x = 1; }}", r("if (x) ", count)), 97);
+                deepest(&|count| format!("void f() {{ {}x = 1; }}", r("while (x) ", count)), 97);
+                deepest(
+                    &|count| format!("void f() {{ {}x = 1;{} }}", r("switch (x) { case 0: ", count), r(" }", count)),
+                    97,
+                );
+                deepest(&|count| format!("int {}x{};", r("(", count), r(")", count)), 199);
             })
             .unwrap()
             .join()

@@ -78,7 +78,9 @@ C89 leaves these to the implementation and asks it to say what it does.
   defined (it came with C95).
 - **Limits.** Identifiers have no length limit and are case-sensitive, external ones too. A
   function can take at least 31 parameters (the VM keeps a type for the first 10 only, which
-  the engine never reads). Parentheses nest about 190 deep, blocks and loops at least 15.
+  the engine never reads). Parentheses nest 64 deep, blocks, ifs, loops and switches 97, and
+  an expression's operators chain 194 long (`a + b + ...`); deeper is refused ("nested too
+  deeply", parse::NESTING) rather than overflowing the stack.
 - **register** asks nothing of the VM (every variable is a slot); taking a register
   variable's address is refused, as C requires.
 - **Pointers** are the VM's addresses, all of one size, and a null pointer is the int 0. A
