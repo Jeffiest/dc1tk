@@ -5,20 +5,21 @@
 //! version of the tools wrote, reads the same. Game files are never read or written through here:
 //! they keep their bytes.
 
-use std::io;
 use std::path::Path;
 
 use serde::Serialize;
 
-/// A text file's contents, with \r\n read as \n.
-pub fn read_text(path: &Path) -> io::Result<String> {
-    let text = std::fs::read_to_string(path)?;
+use crate::{Result, WithPath};
+
+/// A text file's contents, with \r\n read as \n. An error names the file.
+pub fn read_text(path: &Path) -> Result<String> {
+    let text = std::fs::read_to_string(path).with_path("read", path)?;
     Ok(if text.contains('\r') { text.replace("\r\n", "\n") } else { text })
 }
 
-/// Writes text as it is: its \n line endings stay \n.
-pub fn write_text(path: &Path, text: &str) -> io::Result<()> {
-    std::fs::write(path, text)
+/// Writes text as it is: its \n line endings stay \n. An error names the file.
+pub fn write_text(path: &Path, text: &str) -> Result<()> {
+    std::fs::write(path, text).with_path("write", path)
 }
 
 /// A value as the JSON files the tools write hold it: pretty, with a final newline.
@@ -38,6 +39,16 @@ mod tests {
         write_text(&path, "a\nb\n").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"a\nb\n");
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_or_written_is_named() {
+        let folder = std::env::temp_dir().join(format!("dc2tk-textfile-missing-{}", std::process::id()));
+        let missing = folder.join("none.txt");
+        let error = read_text(&missing).unwrap_err().to_string();
+        assert!(error.starts_with(&format!("cannot read {}: ", missing.display())), "{error}");
+        let error = write_text(&missing, "a\n").unwrap_err().to_string();
+        assert!(error.starts_with(&format!("cannot write {}: ", missing.display())), "{error}");
     }
 
     #[test]

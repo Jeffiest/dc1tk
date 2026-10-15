@@ -4,10 +4,10 @@
 //! the set already knows.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 use regex::Regex;
 
@@ -353,7 +353,7 @@ fn write_script(target: &Path, path: &str, entry: &Node) -> Result<()> {
     for (key, value) in entry.as_object().into_iter().flat_map(Map::iter) {
         merged = merged.with(key.to_string(), value.clone());
     }
-    fs::create_dir_all(file.parent().unwrap())?;
+    files::create_dir_all(file.parent().unwrap())?;
     write_json(&file, &merged)
 }
 
@@ -408,7 +408,7 @@ pub fn learn(
         }
     }
     let directory = target.join("names");
-    fs::create_dir_all(&directory)?;
+    files::create_dir_all(&directory)?;
     let existing = names::load(&directory)?;
     for (table, entries) in &collected {
         let mut merged = existing.get(table).cloned().unwrap_or_default();
@@ -486,6 +486,8 @@ pub fn write_libraries(target: &Path, found: &IndexMap<String, Node>) -> Result<
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use crate::{decompile, source};
 

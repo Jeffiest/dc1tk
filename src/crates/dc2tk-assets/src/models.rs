@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use dc2tk_disc::files;
 use dc2tk_disc::{archive, rebuild};
 
 use crate::folder::Folder;
@@ -382,14 +383,14 @@ pub fn build_on_disc(folder: &Path, original: &[u8], path: &str, disc: &DiscFile
 fn folder_files(folder: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     crate::files_under(folder)?
         .into_iter()
-        .map(|path| Ok((crate::relative_posix(&path, folder), std::fs::read(&path)?)))
+        .map(|path| Ok((crate::relative_posix(&path, folder), files::read(&path)?)))
         .collect()
 }
 
 /// A glTF read from a folder on disk.
 fn load_from_disk(path: &Path) -> Result<Gltf> {
     let folder = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-    from_gltf::load_gltf(&std::fs::read(path)?, &|uri| Ok(std::fs::read(folder.join(uri))?))
+    from_gltf::load_gltf(&files::read(path)?, &|uri| Ok(files::read(folder.join(uri))?))
 }
 
 /// A glTF read from the export's files.
@@ -743,7 +744,7 @@ fn gltf_file(source: &Path) -> Result<std::path::PathBuf> {
     if !source.is_dir() {
         return Ok(source.to_path_buf());
     }
-    let mut found: Vec<std::path::PathBuf> = std::fs::read_dir(source)?
+    let mut found: Vec<std::path::PathBuf> = files::read_dir(source)?
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| {
@@ -821,7 +822,7 @@ pub fn new_pack(source: &Path, template: &[u8], template_name: &str, stem: &str)
         let file = here.join(crate::tree::uri_decoded(uri));
         std::fs::read(&file).with_context(|| file.display().to_string())
     };
-    let mut gltf = from_gltf::load_gltf(&std::fs::read(&path)?, &read)?;
+    let mut gltf = from_gltf::load_gltf(&files::read(&path)?, &read)?;
     let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
     let wrap = |error: Error| match error {
         Error::Invalid(message) => Error::invalid(format!("{name}: {message}")),

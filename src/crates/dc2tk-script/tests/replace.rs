@@ -930,7 +930,12 @@ fn a_mod_adds_a_music_file_made_like_a_bank_of_the_disc() {
     mod_json(&other, json!({"add": {"music:bg_200": {"file": "tuna.mid", "like": "BG_001"}}}));
     let both = replace::all_lines(&[mod_dir.clone(), other.clone()]).unwrap();
     fails(replace::add_music(&disc.iso, &both, &BTreeMap::new()), "both add music file 200");
-    assert_eq!(replace::key_clashes(&[mod_dir.clone(), other]).unwrap().len(), 1);
+    assert_eq!(replace::key_clashes(&[mod_dir.clone(), other.clone()]).unwrap().len(), 1);
+    // a file gone after its line was read is named
+    let lines = replace::lines(&other).unwrap();
+    fs::remove_file(other.join("tuna.mid")).unwrap();
+    let error = replace::add_music(&disc.iso, &lines, &BTreeMap::new()).unwrap_err().to_string();
+    assert!(error.starts_with("cannot read") && error.contains("tuna.mid"), "{error}");
 
     // and as mod.json is read: a name that is no music file's, a missing or wrong "like", no MIDI
     let case = |body: Value, words: &str| {

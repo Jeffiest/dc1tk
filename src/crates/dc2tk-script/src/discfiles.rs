@@ -19,11 +19,11 @@
 //! pack), with the disc's file at another place as the template: new files of the mod's own.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use dc2tk_assets::text::{self, Fonts};
 use dc2tk_assets::tree::Place;
+use dc2tk_disc::files;
 use dc2tk_disc::{rebuild, DiscSource};
 use indexmap::IndexMap;
 
@@ -223,7 +223,7 @@ fn game_bytes_for(target: &str, source: &Path, original: &[u8], fonts: &Fonts, d
             "{} is a folder, which stands only for a texture file (.img), sound bank (.snd) or character pack (.chr)",
             source.display()
         ))),
-        None => Ok(fs::read(source)?),
+        None => Ok(files::read(source)?),
         Some(converter) => converter.build(source, original, target, fonts, disc),
     }
 }
@@ -374,7 +374,7 @@ pub fn replaced(
                         "a new file is given as the game file itself, or made \"like\" one of the disc's".into(),
                     ))
                 }
-                None => fs::read(file)?,
+                None => files::read(file)?,
             };
             files.insert(top, new.clone());
             report.push(Replaced {
@@ -415,7 +415,7 @@ pub fn replaced(
                                 members.join("/")
                             )));
                         }
-                        None => fs::read(file)?,
+                        None => files::read(file)?,
                     };
                     // at the end of its pack, so the members it had keep their positions: the
                     // engine finds members by name, ignoring case (GetPackFile in dataread.cpp),
@@ -482,24 +482,24 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, paths: &[String], form: Option<
             let exported = converter.export(&data, &path, &fonts, &others)?;
             let folder = target.with_file_name(format!("{}{}", paths::file_name(&target), suffix));
             if !converter.folder {
-                fs::create_dir_all(target.parent().unwrap())?;
+                files::create_dir_all(target.parent().unwrap())?;
                 for (_, content) in exported {
-                    fs::write(&folder, content)?;
+                    files::write(&folder, content)?;
                     written.push(format!("{path}{suffix}"));
                 }
                 continue;
             }
-            fs::create_dir_all(&folder)?;
+            files::create_dir_all(&folder)?;
             for (name, content) in exported {
                 let file = paths::join_relative(&folder, &name);
-                fs::create_dir_all(file.parent().unwrap())?;
-                fs::write(&file, content)?;
+                files::create_dir_all(file.parent().unwrap())?;
+                files::write(&file, content)?;
                 written.push(format!("{path}{suffix}/{name}"));
             }
             continue;
         }
-        fs::create_dir_all(target.parent().unwrap())?;
-        fs::write(&target, &data)?;
+        files::create_dir_all(target.parent().unwrap())?;
+        files::write(&target, &data)?;
         written.push(path);
     }
     Ok(written)

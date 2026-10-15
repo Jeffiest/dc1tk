@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
+use dc2tk_disc::files;
 use dc2tk_disc::rebuild;
 
 use crate::manifest::{self, Manifest};
@@ -147,7 +148,7 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
         if !folder.is_dir() {
             // a bank with no entry playing a sample has no WAVs
             folder = temp.join("no WAVs");
-            std::fs::create_dir_all(&folder)?;
+            files::create_dir_all(&folder)?;
         }
         let mut out = Vec::new();
         for place in asset.places().iter().map(manifest::AssetPlace::place) {

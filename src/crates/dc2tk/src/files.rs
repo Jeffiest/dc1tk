@@ -49,11 +49,6 @@ pub fn shown_path(path: impl AsRef<Path>) -> String {
     }
 }
 
-/// A text file (dc2tk_disc::textfile::read_text), naming the file when it cannot be read.
-pub fn read_text(path: &Path) -> Result<String> {
-    dc2tk_disc::textfile::read_text(path).with_context(|| format!("cannot read {}", path.display()))
-}
-
 /// Writes text to a file, or to standard output when there is no path.
 pub fn write_output(path: Option<&Path>, text: &str) -> Result<()> {
     match path {

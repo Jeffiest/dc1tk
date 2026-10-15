@@ -3,9 +3,9 @@
 //! statement's strings say in English.
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 
 use crate::node::Node;
@@ -22,7 +22,7 @@ pub fn load(directory: &Path, language: &str) -> Result<IndexMap<String, String>
     if !path.is_file() {
         return Ok(IndexMap::new());
     }
-    let mut value: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)
+    let mut value: serde_json::Value = serde_json::from_str(&files::read_to_string(&path)?)
         .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?;
     let serde_json::Value::Object(strings) = value["strings"].take() else {
         return Err(Error::invalid(format!("{} has no strings", path.display())));

@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use dc2tk_assets::ids::Index;
 use dc2tk_assets::tree::{self, Kind};
 use dc2tk_assets::{im3, sounds, textures};
+use dc2tk_disc::files;
 use dc2tk_disc::DiscSource;
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -48,14 +49,14 @@ fn same_content(a: &Path, b: &Path) -> Result<bool> {
         return Ok(false);
     }
     if !a.is_dir() {
-        return Ok(fs::read(a)? == fs::read(b)?);
+        return Ok(files::read(a)? == files::read(b)?);
     }
     let (left, right) = (discfiles::files_in(a)?, discfiles::files_in(b)?);
     if left != right {
         return Ok(false);
     }
     for path in &left {
-        if fs::read(paths::join_relative(a, path))? != fs::read(paths::join_relative(b, path))? {
+        if files::read(paths::join_relative(a, path))? != files::read(paths::join_relative(b, path))? {
             return Ok(false);
         }
     }
@@ -290,7 +291,7 @@ fn moved(mod_dir: &Path, planned: &[Planned], used: &[PathBuf], notes: &mut Vec<
     let root = mod_dir.join(DISC);
     for plan in planned {
         let target = paths::join_relative(mod_dir, &plan.target);
-        fs::create_dir_all(target.parent().unwrap())?;
+        files::create_dir_all(target.parent().unwrap())?;
         fs::rename(&plan.sources[0], &target)?;
     }
     for relative in discfiles::files_in(&root)? {
@@ -301,7 +302,7 @@ fn moved(mod_dir: &Path, planned: &[Planned], used: &[PathBuf], notes: &mut Vec<
         let duplicate = used.iter().any(|file| from.starts_with(file));
         let target =
             paths::join_relative(&mod_dir.join(if duplicate { "unused/duplicates" } else { "unused" }), &relative);
-        fs::create_dir_all(target.parent().unwrap())?;
+        files::create_dir_all(target.parent().unwrap())?;
         fs::rename(&from, &target)?;
         let why = if duplicate { "a copy of a file a line has" } else { "used by no line" };
         notes.push(format!(
@@ -309,6 +310,6 @@ fn moved(mod_dir: &Path, planned: &[Planned], used: &[PathBuf], notes: &mut Vec<
             target.strip_prefix(mod_dir).unwrap_or(&target).display()
         ));
     }
-    fs::remove_dir_all(&root)?;
+    files::remove_dir_all(&root)?;
     Ok(())
 }

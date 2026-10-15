@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 use rayon::prelude::*;
 
 use dc2tk_disc::extract::MANIFEST;
+use dc2tk_disc::files;
 
 use crate::definitions::{self, Definitions};
 use crate::messages::{self, NameTable};
@@ -119,7 +120,7 @@ fn with_messages(program: Node, found: Option<&Context>, setup: &Setup, path: &P
 
 /// A script's readable source, as dc2tk decompile writes it for one script.
 pub fn script_source(setup: &Setup, path: &Path, table: &str) -> Result<String> {
-    let program = decompile::decompile(&stb::read(&std::fs::read(path)?), table, &setup.tables);
+    let program = decompile::decompile(&stb::read(&files::read(path)?), table, &setup.tables);
     let found = setup.context(table);
     let program_names = found.map(|found| found.program_names.clone()).unwrap_or_default();
     let lookup = setup.known.with_loose(&names::loose_map(&program));
@@ -191,7 +192,7 @@ fn write_file(out: &Path, relative: &str, text: &str) -> Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("cannot create {}", parent.display()))?;
     }
-    dc2tk_disc::textfile::write_text(&target, text).with_context(|| format!("cannot write {}", target.display()))
+    Ok(dc2tk_disc::textfile::write_text(&target, text)?)
 }
 
 /// The path of a script's source in a tree without readable names: map/s/s51/s51_1.c.

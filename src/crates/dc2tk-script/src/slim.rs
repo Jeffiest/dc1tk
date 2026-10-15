@@ -16,6 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use regex::Regex;
@@ -391,17 +392,17 @@ pub fn slim(
             dc2tk_disc::textfile::write_text(patch, &draft.text)?;
         }
         let place = paths::join_relative(&mod_dir.join(mods::FILES), &file);
-        let held = fs::read(&place)?;
-        fs::remove_file(&place)?;
+        let held = files::read(&place)?;
+        files::remove_file(&place)?;
         let after = compiled(&dirs, tree, tools, consts, &scripts);
         let differs = match &after {
             Ok(after) => scripts.iter().find(|script| after.get(*script) != before.get(*script)).cloned(),
             Err(_) => None,
         };
         if after.is_err() || differs.is_some() {
-            fs::write(&place, &held)?;
+            files::write(&place, &held)?;
             if let Some(patch) = &patch {
-                fs::remove_file(patch)?;
+                files::remove_file(patch)?;
             }
             let after = after?;
             let script = differs.unwrap();

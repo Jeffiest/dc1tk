@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -40,7 +41,7 @@ struct TableRule {
 }
 
 fn read_json(path: &Path) -> Result<serde_json::Value> {
-    serde_json::from_str(&fs::read_to_string(path)?)
+    serde_json::from_str(&files::read_to_string(path)?)
         .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))
 }
 

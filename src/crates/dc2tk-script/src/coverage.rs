@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 use rayon::prelude::*;
 
@@ -25,7 +26,7 @@ pub fn disc_functions(root: &Path, paths: &[String], defs: &Definitions) -> Resu
         .par_iter()
         .map(|path| -> Result<Vec<DiscFunction>> {
             let table = natives::table_for(path, &defs.tables);
-            let prints = fingerprint::both_fingerprints(&stb::read(&std::fs::read(root.join(path))?), table);
+            let prints = fingerprint::both_fingerprints(&stb::read(&files::read(root.join(path))?), table);
             Ok(prints
                 .exact
                 .iter()
@@ -199,10 +200,7 @@ pub fn todo(
 
 /// The hashes of an extracted disc's scripts (paths from paths::scripts_under), by path.
 pub fn disc_hashes(root: &Path, paths: &[String]) -> Result<Vec<(String, String)>> {
-    paths
-        .par_iter()
-        .map(|path| Ok((path.clone(), definitions::script_hash(&std::fs::read(root.join(path))?))))
-        .collect()
+    paths.par_iter().map(|path| Ok((path.clone(), definitions::script_hash(&files::read(root.join(path))?)))).collect()
 }
 
 /// Writes a set's disc.json: the hashes of the disc's scripts. Returns how many.

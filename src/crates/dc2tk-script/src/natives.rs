@@ -2,9 +2,9 @@
 //! ChronicleTwo decompilation into JSON, and which table a script calls into.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
 use std::path::Path;
 
+use dc2tk_disc::files;
 use serde::{Deserialize, Serialize};
 
 use crate::Result;
@@ -48,7 +48,7 @@ pub fn load(directory: &Path) -> Result<BTreeMap<String, Table>> {
     for name in TABLES {
         let path = directory.join(format!("{name}.json"));
         if path.exists() {
-            let table: Table = serde_json::from_str(&fs::read_to_string(&path)?)
+            let table: Table = serde_json::from_str(&files::read_to_string(&path)?)
                 .map_err(|error| crate::Error::invalid(format!("{}: {error}", path.display())))?;
             tables.insert(name.to_string(), table);
         }
@@ -163,7 +163,7 @@ impl Patterns {
 
 /// A source file's text, with what is not UTF-8 replaced and \r\n read as \n.
 fn read_source(path: &Path) -> Result<String> {
-    let bytes = fs::read(path)?;
+    let bytes = files::read(path)?;
     Ok(String::from_utf8_lossy(&bytes).replace("\r\n", "\n"))
 }
 
@@ -301,7 +301,7 @@ pub fn build_table(root: &Path, spec: &Spec) -> Result<Generated> {
 /// Writes every table into out_dir as <table>.json, one after another (a table that fails leaves
 /// the ones before it written), and returns them.
 pub fn generate(root: &Path, out_dir: &Path) -> Result<Vec<Generated>> {
-    fs::create_dir_all(out_dir)?;
+    files::create_dir_all(out_dir)?;
     let patterns = Patterns::new();
     let mut tables = Vec::new();
     for spec in &SPECS {
@@ -315,6 +315,7 @@ pub fn generate(root: &Path, out_dir: &Path) -> Result<Vec<Generated>> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
 
     use super::*;

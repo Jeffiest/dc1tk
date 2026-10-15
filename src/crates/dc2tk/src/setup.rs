@@ -158,7 +158,7 @@ mod tests {
         dc2tk_disc::textfile::write_text(&out.join("map/t01.c"), "// mine\n").unwrap();
         let error = decompiled(&folder, false).expect_err("decompile should refuse to overwrite an edit");
         assert!(error.to_string().contains("map/t01.c"));
-        assert_eq!(files::read_text(&out.join("map/t01.c")).unwrap(), "// mine\n");
+        assert_eq!(dc2tk_disc::textfile::read_text(&out.join("map/t01.c")).unwrap(), "// mine\n");
         decompiled(&folder, true).unwrap();
         assert!(tree::status(&out).unwrap().unwrap().edited.is_empty());
         std::fs::remove_dir_all(&folder).unwrap();

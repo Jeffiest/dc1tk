@@ -7,6 +7,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use dc2tk_disc::files;
+
 use crate::soundbank::{self, Bank, Mode, Sound};
 use crate::{bail, Error, Result};
 
@@ -47,7 +49,7 @@ fn parse_name(name: &str) -> Option<(usize, Option<String>)> {
 /// The WAVs of a folder: (entry number, name, path), sorted by number.
 pub fn numbered(folder: &Path) -> Result<Vec<(usize, Option<String>, PathBuf)>> {
     let mut paths = Vec::new();
-    for entry in std::fs::read_dir(folder)? {
+    for entry in files::read_dir(folder)? {
         paths.push(entry?.path());
     }
     let mut found = Vec::new();

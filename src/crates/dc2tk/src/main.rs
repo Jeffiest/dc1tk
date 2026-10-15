@@ -272,7 +272,7 @@ fn run_disassemble(path: &Path, output: Option<&Path>, table: Option<&str>, comm
 }
 
 fn run_assemble(source: &Path, output: &Path, natives: &NativesArg) -> Result<ExitCode> {
-    let text = files::read_text(source)?;
+    let text = dc2tk_disc::textfile::read_text(source)?;
     let data = asm::assemble(&text, &natives.tables()?).with_context(|| source.display().to_string())?;
     std::fs::write(output, data).with_context(|| format!("cannot write {}", output.display()))?;
     Ok(ExitCode::SUCCESS)
@@ -344,8 +344,7 @@ fn run_verify(extracted: &Path, json: Option<&Path>, limit: usize, common: &Comm
     let report = verify::verify(extracted, &tools.tables, tools.defs, tools.headers)?;
     println!("{}", verify::format_report(&report, limit));
     if let Some(json) = json {
-        dc2tk_disc::textfile::write_text(json, &dc2tk_disc::textfile::json_text(&report))
-            .with_context(|| format!("cannot write {}", json.display()))?;
+        dc2tk_disc::textfile::write_text(json, &dc2tk_disc::textfile::json_text(&report))?;
     }
     Ok(if report.summary.ok { ExitCode::SUCCESS } else { ExitCode::from(1) })
 }

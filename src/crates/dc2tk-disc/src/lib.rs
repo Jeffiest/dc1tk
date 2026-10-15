@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 pub mod archive;
 mod cp932_fixes;
 pub mod extract;
+pub mod files;
 pub mod iso;
 pub mod layout;
 pub mod rebuild;

@@ -5,9 +5,9 @@
 //! in decompiled trees and mods. A tree's files that held no edits are recorded again, so changes
 //! and build still tell them from edited ones. Names never change what a script compiles to.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 use regex::Regex;
 
@@ -51,12 +51,12 @@ fn files_under(folder: &Path, extensions: &[&str]) -> Result<Vec<String>> {
 
 /// Rewrites a file with edit; true when it changed. Line endings are kept as they are.
 fn rewrite(path: &Path, edit: impl Fn(&str) -> String) -> Result<bool> {
-    let text = fs::read_to_string(path)?;
+    let text = files::read_to_string(path)?;
     let changed = edit(&text);
     if changed == text {
         return Ok(false);
     }
-    fs::write(path, changed)?;
+    files::write(path, changed)?;
     Ok(true)
 }
 
@@ -84,7 +84,7 @@ pub fn rename(
     let own = files_under(&include, &["h"])?;
     let mut declared = false;
     for path in &own {
-        let text = fs::read_to_string(include.join(path))?;
+        let text = files::read_to_string(include.join(path))?;
         if new_word.is_match(&text) {
             return Err(Error::invalid(format!("{new} is already used in {path}")));
         }
@@ -185,7 +185,7 @@ pub fn renamed(set: &Path) -> Result<Vec<(String, String)>> {
     if !path.is_file() {
         return Ok(Vec::new());
     }
-    let map: IndexMap<String, String> = serde_json::from_str(&fs::read_to_string(&path)?)
+    let map: IndexMap<String, String> = serde_json::from_str(&files::read_to_string(&path)?)
         .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?;
     Ok(map.into_iter().collect())
 }
@@ -197,7 +197,7 @@ fn record(set: &Path, old: &str, new: &str) -> Result<()> {
     map.insert(old.to_string(), new.to_string());
     let mut text = serde_json::to_string_pretty(&map).map_err(|error| Error::invalid(error.to_string()))?;
     text.push('\n');
-    fs::write(set.join(RENAMED), text)?;
+    files::write(set.join(RENAMED), text)?;
     Ok(())
 }
 

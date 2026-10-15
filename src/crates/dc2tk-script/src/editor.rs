@@ -11,6 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 use serde_json::Value;
 
@@ -195,7 +196,7 @@ pub fn write(
             let relative = path.strip_prefix(mod_dir).map_err(|_| Error::invalid("a patch outside its mod"))?;
             let header_path = mod_dir.join(FOLDER).join(relative).with_extension("h");
             let name = relative.to_string_lossy().replace('\\', "/");
-            std::fs::create_dir_all(header_path.parent().unwrap())?;
+            files::create_dir_all(header_path.parent().unwrap())?;
             dc2tk_disc::textfile::write_text(&header_path, &header(&text, &name, tree, &scripts, tools)?)?;
             arguments.extend(["-include".to_string(), posix(&header_path)]);
             written.push(header_path);
@@ -209,7 +210,7 @@ pub fn write(
     // over compile_commands.json
     let flags = mod_dir.join(source::EDITOR_FLAGS);
     if flags.is_file() && dc2tk_disc::textfile::read_text(&flags)?.starts_with("-xc\n") {
-        std::fs::remove_file(&flags)?;
+        files::remove_file(&flags)?;
     }
     Ok(written)
 }

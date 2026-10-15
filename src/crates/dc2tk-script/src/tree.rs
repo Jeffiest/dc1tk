@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 use sha2::{Digest, Sha256};
 
@@ -21,7 +22,7 @@ fn hex(bytes: &[u8]) -> String {
 /// A file's hash; line endings do not count, since an editor that rewrites them has not edited the
 /// file.
 pub fn file_hash(path: &Path) -> Result<String> {
-    let data = fs::read(path)?;
+    let data = files::read(path)?;
     let mut plain = Vec::with_capacity(data.len());
     let mut at = 0;
     while at < data.len() {
@@ -143,10 +144,10 @@ pub fn stale(tree: &Path, written: &[String]) -> Result<(Vec<String>, Vec<String
 pub fn remove_files(tree: &Path, paths: &[String]) -> Result<()> {
     for path in paths {
         let file = tree.join(path);
-        fs::remove_file(&file)?;
+        files::remove_file(&file)?;
         let mut folder = file.parent().map(Path::to_path_buf);
         while let Some(current) = folder {
-            if current == tree || !current.is_dir() || fs::read_dir(&current)?.next().is_some() {
+            if current == tree || !current.is_dir() || files::read_dir(&current)?.next().is_some() {
                 break;
             }
             fs::remove_dir(&current)?;
@@ -277,7 +278,7 @@ pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Resul
         library,
         scripts.join(", ")
     );
-    fs::create_dir_all(tree.join(copy).parent().unwrap())?;
+    files::create_dir_all(tree.join(copy).parent().unwrap())?;
     dc2tk_disc::textfile::write_text(&tree.join(copy), &(header + &text))?;
     for script in scripts {
         let path = tree.join(script);

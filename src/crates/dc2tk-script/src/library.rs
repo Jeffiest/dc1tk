@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 
 use crate::definitions::{self, Definitions};
@@ -770,7 +771,7 @@ fn decompiled(
         .par_iter()
         .map(|path| -> Result<(String, Node)> {
             let table = natives::table_for(path, &defs.tables);
-            let data = std::fs::read(root.join(path))?;
+            let data = files::read(root.join(path))?;
             Ok((path.clone(), decompile::decompile(&stb::read(&data), table, tables)))
         })
         .collect()

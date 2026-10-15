@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use dc2tk_disc::files;
+
 use crate::{bail, im3, Error, Result};
 
 pub const SUFFIX: &str = ".png";
@@ -42,7 +44,7 @@ pub fn export(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
 /// in crate::sorted_paths order.
 pub(crate) fn glob_suffix(folder: &Path, suffix: &str) -> Result<Vec<std::path::PathBuf>> {
     let mut found = Vec::new();
-    for entry in std::fs::read_dir(folder)? {
+    for entry in files::read_dir(folder)? {
         let path = entry?.path();
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let matches = if cfg!(windows) { name.to_lowercase().ends_with(suffix) } else { name.ends_with(suffix) };
@@ -59,7 +61,7 @@ pub fn build(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
         .into_iter()
         .map(|path| {
             let name = path.file_name().unwrap().to_string_lossy().to_string();
-            Ok((name, std::fs::read(&path)?))
+            Ok((name, files::read(&path)?))
         })
         .collect::<Result<Vec<_>>>()?;
     build_from(&pngs, original)
@@ -221,7 +223,7 @@ pub fn pngs_in(source: &Path) -> Result<Vec<(String, Vec<u8>)>> {
             if !name.to_lowercase().ends_with(SUFFIX) {
                 bail!("{name} is not a PNG file");
             }
-            Ok((name[..name.len() - SUFFIX.len()].to_string(), std::fs::read(&path)?))
+            Ok((name[..name.len() - SUFFIX.len()].to_string(), files::read(&path)?))
         })
         .collect()
 }

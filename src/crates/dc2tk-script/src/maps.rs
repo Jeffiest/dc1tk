@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use dc2tk_assets::mapfile::{self, MapFile, Num, Placement, PointData};
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 
 use crate::definitions::Definitions;
@@ -142,7 +143,7 @@ pub fn map_points(map: &MapFile) -> Vec<Point> {
 
 /// The trigger points of a map file (`map_points`).
 pub fn trigger_points(path: &Path) -> Result<Vec<Point>> {
-    Ok(map_points(&mapfile::parse(&std::fs::read(path)?)?))
+    Ok(map_points(&mapfile::parse(&files::read(path)?)?))
 }
 
 /// The programs a trigger point starts, with a note saying what it is. An event point starts its

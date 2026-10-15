@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
+use dc2tk_disc::files;
 use regex::Regex;
 
 use crate::maptable::{int_arg, quoted_bytes};
@@ -90,8 +91,8 @@ impl Tables {
     pub fn read(root: &Path) -> Option<Tables> {
         let schedule = read_text(root, "npc_place4.cfg")?;
         let places_text = read_text(root, "place.cfg")?;
-        let models_data = std::fs::read(root.join("npc.cfg")).ok()?;
-        let maps_data = std::fs::read(root.join(startat::map_table_path(Some(1)))).ok()?;
+        let models_data = files::read(root.join("npc.cfg")).ok()?;
+        let maps_data = files::read(root.join(startat::map_table_path(Some(1)))).ok()?;
         let number = |text: &str| text.trim().parse::<i64>().ok();
         let mut progress = BTreeMap::new();
         let mut schedules: BTreeMap<i64, Vec<Point>> = BTreeMap::new();

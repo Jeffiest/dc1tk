@@ -26,6 +26,7 @@ use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 use dc2tk_disc::extract::{MAX_PACK_DEPTH, PACK_SUFFIX};
+use dc2tk_disc::files;
 use dc2tk_disc::{archive, rebuild};
 
 use crate::manifest::{self, Manifest};
@@ -1297,9 +1298,9 @@ pub fn model_stem(data: &[u8], name: &str) -> Result<String> {
 pub fn build_model_from(gltf: &[u8], bin: &[u8], data: &[u8], name: &str, folder: &std::path::Path) -> Result<Vec<u8>> {
     let (stem, exported) = exported_gltf(gltf, data, name)?;
     let _ = std::fs::remove_dir_all(folder);
-    std::fs::create_dir_all(folder)?;
-    std::fs::write(folder.join(format!("{stem}.gltf")), &exported)?;
-    std::fs::write(folder.join(format!("{stem}.bin")), bin)?;
+    files::create_dir_all(folder)?;
+    files::write(folder.join(format!("{stem}.gltf")), &exported)?;
+    files::write(folder.join(format!("{stem}.bin")), bin)?;
     let built = build_model(folder, data, name);
     let _ = std::fs::remove_dir_all(folder);
     built

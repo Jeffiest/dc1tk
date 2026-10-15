@@ -61,6 +61,7 @@ use dc2tk_assets::sounds::{self, Given};
 use dc2tk_assets::text::{self, Fonts};
 use dc2tk_assets::tree::{self, Kind, Place};
 use dc2tk_assets::{music, soundfont};
+use dc2tk_disc::files;
 use dc2tk_disc::{rebuild, DiscSource};
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
@@ -1040,7 +1041,7 @@ pub fn built_model(source: &Path, pack: &[u8], name: &str, temp: &Path) -> Resul
         if source.join(format!("{stem}.gltf")).is_file() {
             return Ok(tree::build_model(source, pack, name)?);
         }
-        let gltfs: Vec<PathBuf> = fs::read_dir(source)?
+        let gltfs: Vec<PathBuf> = files::read_dir(source)?
             .flatten()
             .map(|entry| entry.path())
             .filter(|path| path.is_file() && suffix_is(path, ".gltf"))
@@ -1053,7 +1054,7 @@ pub fn built_model(source: &Path, pack: &[u8], name: &str, temp: &Path) -> Resul
         };
         return built_model(gltf, pack, name, temp);
     }
-    let gltf = fs::read(source)?;
+    let gltf = files::read(source)?;
     let bin = tree::gltf_buffer(source, &gltf)?;
     Ok(tree::build_model_from(&gltf, &bin, pack, name, temp)?)
 }
@@ -1243,7 +1244,7 @@ impl Applying<'_> {
         let bank_name = bank_path.rsplit('/').next().unwrap_or(bank_path).to_uppercase();
         let region = bank_name.starts_with("BG_").then_some(music::MUSIC_REGION);
         let (bank, notes) = music::build_with_instruments(
-            &fs::read(source)?,
+            &files::read(source)?,
             bank_data.unwrap_or_default(),
             sequence,
             instruments,
@@ -1458,7 +1459,7 @@ pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(File
         let Some(like_bank) = disc.member(&like, &[])? else {
             return Err(line.fail(format!("the disc has no {like} to make it like")));
         };
-        let midi = fs::read(&line.file)?;
+        let midi = files::read(&line.file)?;
         let (data, notes) = music::new_bank(&midi, &like_bank, &name, instruments, Some(music::MUSIC_REGION))
             .map_err(|error| line.fail(error))?;
         files.insert(path.clone(), data.clone());
@@ -1499,7 +1500,7 @@ pub fn add_lines(mod_dir: &Path, new: &[(String, Value)]) -> Result<()> {
         listed.insert(key.clone(), value.clone());
     }
     body.insert(REPLACE.to_string(), Value::Object(listed));
-    fs::create_dir_all(mod_dir)?;
+    files::create_dir_all(mod_dir)?;
     let text = dc2tk_disc::textfile::json_text(&Value::Object(body));
     dc2tk_disc::textfile::write_text(&path, &text)?;
     Ok(())
@@ -1607,8 +1608,8 @@ pub fn copy_out(
             if fresh {
                 for (path, content) in files {
                     let file = paths::join_relative(mod_dir, &path);
-                    fs::create_dir_all(file.parent().unwrap())?;
-                    fs::write(file, content)?;
+                    files::create_dir_all(file.parent().unwrap())?;
+                    files::write(file, content)?;
                 }
             }
             new_lines.push((asset.id.clone(), Value::String(target.clone())));

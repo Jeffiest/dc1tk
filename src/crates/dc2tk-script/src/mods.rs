@@ -32,6 +32,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use regex::Regex;
@@ -245,7 +246,7 @@ pub fn patch_plan(mod_dirs: &[PathBuf], tree_dir: &Path, consts: &IndexMap<Strin
     let mut written = Vec::new();
     if let Some(parent) = parent.as_ref().filter(|parent| parent.is_dir() || parent.as_os_str().is_empty()) {
         let listing = if parent.as_os_str().is_empty() { Path::new(".") } else { parent.as_path() };
-        let mut others: Vec<PathBuf> = fs::read_dir(listing)?
+        let mut others: Vec<PathBuf> = files::read_dir(listing)?
             .flatten()
             .map(|entry| parent.join(entry.file_name()))
             .filter(|path| path.is_dir() && !mod_dirs.contains(path) && exists(path))
@@ -334,7 +335,7 @@ pub fn override_functions(
     let safe: String =
         stem.chars().map(|c| if c.is_ascii_alphanumeric() || "_.-".contains(c) { c } else { '_' }).collect();
     let path = mod_dir.join(format!("{safe}{}", source::EXTENSION));
-    fs::create_dir_all(path.parent().unwrap())?;
+    files::create_dir_all(path.parent().unwrap())?;
     let mut text = if path.is_file() {
         dc2tk_disc::textfile::read_text(&path)?
     } else {
@@ -471,7 +472,7 @@ pub fn mod_files(mod_dir: &Path) -> Result<Vec<String>> {
 
 pub fn write_editor_flags(mod_dir: &Path, tree_dir: &Path, sdk_dir: &Path, definition_sets: &[PathBuf]) -> Result<()> {
     let root = mod_dir.join(FILES);
-    fs::create_dir_all(&root)?;
+    files::create_dir_all(&root)?;
     dc2tk_disc::textfile::write_text(
         &root.join(source::EDITOR_FLAGS),
         &source::editor_flags(sdk_dir, definition_sets, Some(tree_dir)),
@@ -491,7 +492,7 @@ pub fn add(tree_dir: &Path, mod_dir: &Path, paths: &[String], overwrite: bool) -
         if target.exists() && !overwrite {
             continue;
         }
-        fs::create_dir_all(target.parent().unwrap())?;
+        files::create_dir_all(target.parent().unwrap())?;
         fs::copy(paths::join_relative(tree_dir, path), &target)?;
         copied.push(path.clone());
         found["files"][path] = serde_json::json!({
@@ -515,7 +516,7 @@ pub fn new(tree_dir: &Path, mod_dir: &Path, paths: &[String]) -> Result<Vec<Stri
     if !missing.is_empty() {
         return Err(Error::invalid(format!("not in {}:\n  {}", tree_dir.display(), missing.join("\n  "))));
     }
-    fs::create_dir_all(mod_dir)?;
+    files::create_dir_all(mod_dir)?;
     add(tree_dir, mod_dir, paths, false)
 }
 
@@ -529,13 +530,13 @@ pub fn save(tree_dir: &Path, mod_dir: &Path) -> Result<(Vec<String>, Vec<String>
             tree::ORIGINALS
         )));
     };
-    if mod_dir.exists() && !mod_dir.join(INDEX).is_file() && fs::read_dir(mod_dir)?.next().is_some() {
+    if mod_dir.exists() && !mod_dir.join(INDEX).is_file() && files::read_dir(mod_dir)?.next().is_some() {
         return Err(Error::invalid(format!(
             "{} is not empty and holds no mod; choose another name",
             mod_dir.display()
         )));
     }
-    fs::create_dir_all(mod_dir)?;
+    files::create_dir_all(mod_dir)?;
     let paths: Vec<String> = found.edited.iter().chain(&found.added).cloned().collect();
     Ok((add(tree_dir, mod_dir, &paths, true)?, found.removed))
 }
@@ -698,7 +699,7 @@ pub fn apply(
     }
     for (path, text) in &texts {
         let target = paths::join_relative(tree_dir, path);
-        fs::create_dir_all(target.parent().unwrap())?;
+        files::create_dir_all(target.parent().unwrap())?;
         dc2tk_disc::textfile::write_text(&target, text)?;
     }
     let mut warnings = Vec::new();
@@ -729,7 +730,7 @@ pub fn apply(
 
 pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>) -> Result<String> {
     let mut mods: Vec<PathBuf> = if mods_dir.is_dir() {
-        fs::read_dir(mods_dir)?
+        files::read_dir(mods_dir)?
             .flatten()
             .map(|entry| mods_dir.join(entry.file_name()))
             .filter(|path| exists(path))

@@ -24,6 +24,7 @@ use crate::sequence::{
 use crate::soundbank::{self, Bank};
 use crate::{bail, Context, Error, Result};
 use dc2tk_disc::archive::PackMember;
+use dc2tk_disc::files;
 
 pub const SUFFIX: &str = ".mid";
 pub const MARKER_START: &str = "loopStart";
@@ -572,7 +573,7 @@ pub fn build_bank(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
     let bank = Bank::from_bytes(original)?;
     let sequences = soundbank::find(&pack, "sq");
     let mut changed = false;
-    let mut paths: Vec<_> = std::fs::read_dir(folder)?.flatten().map(|entry| entry.path()).collect();
+    let mut paths: Vec<_> = files::read_dir(folder)?.flatten().map(|entry| entry.path()).collect();
     paths.sort();
     for path in paths {
         let file = path.file_name().unwrap_or_default().to_string_lossy().to_string();

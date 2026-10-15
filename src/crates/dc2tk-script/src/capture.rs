@@ -22,6 +22,7 @@ use dc2tk_assets::manifest::Manifest;
 use dc2tk_assets::tree::MANIFEST as ASSET_MANIFEST;
 use dc2tk_disc::archive;
 use dc2tk_disc::extract::{self, MANIFEST};
+use dc2tk_disc::files;
 use dc2tk_disc::layout::{self, Layout};
 use dc2tk_disc::DiscSource;
 use rayon::prelude::*;
@@ -72,7 +73,7 @@ impl Changes {
 }
 
 fn hash(path: &Path) -> Option<String> {
-    let data = fs::read(path).ok()?;
+    let data = files::read(path).ok()?;
     Some(Sha256::digest(&data).iter().map(|b| format!("{b:02x}")).collect())
 }
 
@@ -322,7 +323,7 @@ fn safe(id: &str) -> String {
 
 fn copy(from: &Path, to: &Path) -> Result<()> {
     if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
+        files::create_dir_all(parent)?;
     }
     fs::copy(from, to).map_err(|error| Error::invalid(format!("{}: {error}", from.display())))?;
     Ok(())
@@ -337,13 +338,13 @@ pub struct Made {
 /// Makes a mod of the changes: the scripts whole (files/), changed assets by id (textures/,
 /// models/, sounds/) and changed or added disc files (raw/), each with its mod.json line.
 pub fn make(extracted: &Path, mod_dir: &Path, changes: &Changes) -> Result<Made> {
-    if mod_dir.exists() && fs::read_dir(mod_dir)?.next().is_some() {
+    if mod_dir.exists() && files::read_dir(mod_dir)?.next().is_some() {
         return Err(Error::invalid(format!("{} is there already; choose another name", mod_dir.display())));
     }
     if changes.is_empty() {
         return Err(Error::invalid("nothing a mod can carry has changed since extracting"));
     }
-    fs::create_dir_all(mod_dir)?;
+    files::create_dir_all(mod_dir)?;
     let tree_dir = extracted.join(SCRIPTS);
     let script_paths: Vec<String> = changes.scripts_edited.iter().chain(&changes.scripts_added).cloned().collect();
     let scripts =

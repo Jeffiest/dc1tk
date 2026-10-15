@@ -25,6 +25,7 @@ use dc2tk_assets::idea_data::{self, Ideas};
 use dc2tk_assets::item_data::{self, ItemText, Items};
 use dc2tk_assets::shop_data::{self, Shops};
 use dc2tk_assets::{exe_tables, game_data, json, text};
+use dc2tk_disc::files;
 use dc2tk_disc::{rebuild, DiscSource};
 
 /// The item tables and every language's item names.
@@ -283,8 +284,8 @@ pub fn copy_out(iso_path: &Path, mod_dir: &Path, keys: &[String]) -> Result<Vec<
         }
         let relative = format!("data/{table}.json");
         let file = mod_dir.join("data").join(format!("{table}.json"));
-        fs::create_dir_all(file.parent().unwrap())?;
-        fs::write(&file, export(iso_path, &table)?)?;
+        files::create_dir_all(file.parent().unwrap())?;
+        files::write(&file, export(iso_path, &table)?)?;
         new_lines.push((id.clone(), Value::String(relative)));
         out.push((id, file, true));
     }

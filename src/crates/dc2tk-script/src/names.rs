@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
+use dc2tk_disc::files;
 use indexmap::IndexMap;
 
 use crate::node::Node;
@@ -48,7 +49,7 @@ pub fn load(directory: &Path) -> Result<IndexMap<String, Entries>> {
     let mut tables = IndexMap::new();
     for path in paths {
         let file = path.file_name().unwrap().to_string_lossy().into_owned();
-        let mut value: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)
+        let mut value: serde_json::Value = serde_json::from_str(&files::read_to_string(&path)?)
             .map_err(|error| Error::invalid(format!("{file}: {error}")))?;
         let serde_json::Value::Object(functions) = value["functions"].take() else {
             return Err(Error::invalid(format!("{file} has no functions")));
