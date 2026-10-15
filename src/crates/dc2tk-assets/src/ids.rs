@@ -10,11 +10,10 @@
 use std::collections::{BTreeMap, HashMap};
 
 use rayon::prelude::*;
-use serde_json::Value;
 
+use crate::manifest::{self, Manifest};
 use crate::soundbank::Bank;
 use crate::tree::{self, DiscFile, Kind, Place, SoundNames};
-use crate::{Error, Result};
 
 /// An asset of the index: its id, kind, the game's name for it and its places, each with the
 /// picture (of a texture) or entry (of a sound) there.
@@ -37,15 +36,9 @@ pub struct Index {
     pub aliases: BTreeMap<String, String>,
 }
 
-fn kind_named(name: &str) -> Option<Kind> {
-    [Kind::Texture, Kind::Model, Kind::Bank, Kind::Sound, Kind::Text, Kind::Music]
-        .into_iter()
-        .find(|kind| kind.name() == name)
-}
-
 /// The kind an id or pattern names by its prefix (texture:, model:, bank:, sound:, text:, music:).
 pub fn kind_of(id: &str) -> Option<Kind> {
-    kind_named(&id.split_once(':')?.0.to_lowercase())
+    Kind::from_name(&id.split_once(':')?.0.to_lowercase())
 }
 
 /// Whether a pattern with * (any run of characters) and ? (one character) matches the text,
@@ -136,39 +129,20 @@ impl Index {
     }
 
     /// The index an asset tree's manifest gives.
-    pub fn from_manifest(manifest: &Value) -> Result<Index> {
-        let mut index = Index::default();
-        let empty = serde_json::Map::new();
-        for (id, asset) in manifest["assets"].as_object().unwrap_or(&empty) {
-            let kind =
-                asset["kind"].as_str().and_then(kind_named).ok_or_else(|| Error::invalid(format!("{id}: no kind")))?;
-            let places = asset["places"]
-                .as_array()
-                .map(Vec::as_slice)
-                .unwrap_or_default()
-                .iter()
-                .map(|place| {
-                    let at = place.get("picture").or_else(|| place.get("entry")).and_then(Value::as_u64);
-                    Some((Place::from_json(place)?, at.map(|at| at as usize)))
-                })
-                .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| Error::invalid(format!("{id}: a place without a path")))?;
-            index.assets.insert(
-                id.clone(),
-                Asset {
-                    id: id.clone(),
-                    kind,
-                    name: asset["name"].as_str().unwrap_or_default().to_string(),
-                    places,
-                    bank: asset["bank"].as_str().map(str::to_string),
-                    entries: asset["sounds"].as_array().map(Vec::len),
-                },
-            );
+    pub fn from_manifest(manifest: &Manifest) -> Index {
+        let mut index = Index { aliases: manifest.aliases.clone(), ..Index::default() };
+        for (id, asset) in &manifest.assets {
+            let (bank, entries) = match asset {
+                manifest::Asset::Sound { bank, .. } => (Some(bank.clone()), None),
+                manifest::Asset::Bank { sounds, .. } => (None, Some(sounds.len())),
+                _ => (None, None),
+            };
+            let places = asset.places().iter().map(|place| (place.place(), place.at())).collect();
+            let found =
+                Asset { id: id.clone(), kind: asset.kind(), name: asset.name().to_string(), places, bank, entries };
+            index.assets.insert(id.clone(), found);
         }
-        for (alias, id) in manifest["aliases"].as_object().unwrap_or(&empty) {
-            index.aliases.insert(alias.clone(), id.as_str().unwrap_or_default().to_string());
-        }
-        Ok(index)
+        index
     }
 
     fn insert(&mut self, kind: Kind, name: &str, shown: &str, places: Vec<(Place, Option<usize>)>) {
@@ -253,10 +227,10 @@ mod tests {
     fn the_disc_and_the_tree_give_the_same_ids_and_places() {
         let disc = disc();
         let (_, written) = build_disc(&disc);
-        let manifest: Value = serde_json::from_slice(&written[tree::MANIFEST]).unwrap();
+        let manifest = Manifest::read(&written[tree::MANIFEST]).unwrap();
         let files: Vec<DiscFile> = disc.iter().map(|(path, data)| DiscFile { path: path.clone(), data }).collect();
         let from_disc = Index::from_disc(&files, &tree::sound_names(""));
-        assert_eq!(from_disc, Index::from_manifest(&manifest).unwrap());
+        assert_eq!(from_disc, Index::from_manifest(&manifest));
         assert_eq!(from_disc.get("TEXTURE:Wall@B02").unwrap().id, "texture:wall@b02");
         let ids: Vec<&str> = from_disc.matching("texture:wall*").iter().map(|asset| asset.id.as_str()).collect();
         assert_eq!(ids, ["texture:wall", "texture:wall@b02"]);
@@ -276,10 +250,10 @@ mod tests {
             ("menu/n.pac".to_string(), tree::tests::pack(&[("SP_009.snd", &test_bank(&[22050, 16000], 100))])),
         ];
         let (_, written) = build_disc(&disc);
-        let manifest: Value = serde_json::from_slice(&written[tree::MANIFEST]).unwrap();
+        let manifest = Manifest::read(&written[tree::MANIFEST]).unwrap();
         let files: Vec<DiscFile> = disc.iter().map(|(path, data)| DiscFile { path: path.clone(), data }).collect();
         let index = Index::from_disc(&files, &tree::sound_names(""));
-        assert_eq!(index, Index::from_manifest(&manifest).unwrap());
+        assert_eq!(index, Index::from_manifest(&manifest));
         let shown = |id: &str| -> Vec<(String, Option<usize>)> {
             index.get(id).unwrap().places.iter().map(|(place, at)| (place.display(), *at)).collect()
         };

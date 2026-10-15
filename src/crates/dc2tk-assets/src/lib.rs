@@ -57,6 +57,7 @@ pub mod invention_data;
 pub mod item_data;
 pub mod json;
 pub mod lang;
+pub mod manifest;
 pub mod monster_data;
 pub mod shop_data;
 pub mod text;

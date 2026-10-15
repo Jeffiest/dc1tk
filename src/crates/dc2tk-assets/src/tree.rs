@@ -23,12 +23,12 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rayon::prelude::*;
-use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
 use dc2tk_disc::extract::{MAX_PACK_DEPTH, PACK_SUFFIX};
 use dc2tk_disc::{archive, rebuild};
 
+use crate::manifest::{self, Manifest};
 use crate::soundbank::{self, Bank, EntryKind};
 use crate::{im3, models, text, Context, Error, Result};
 
@@ -86,20 +86,6 @@ impl Place {
         }
         self.group().replace('/', "-")
     }
-
-    fn json(&self) -> Map<String, Value> {
-        let mut out = Map::new();
-        out.insert("path".into(), json!(self.path));
-        out.insert("members".into(), json!(self.members));
-        out
-    }
-
-    pub fn from_json(value: &Value) -> Option<Place> {
-        let path = value.get("path")?.as_str()?.to_string();
-        let members =
-            value.get("members")?.as_array()?.iter().map(|m| m.as_str().map(str::to_string)).collect::<Option<_>>()?;
-        Some(Place { path, members })
-    }
 }
 
 /// The kinds of asset, by their id's prefix.
@@ -128,6 +114,13 @@ impl Kind {
 
     pub fn id(self, name: &str) -> String {
         format!("{}:{name}", self.name())
+    }
+
+    /// The kind an id's prefix names (texture, model, bank, sound, text, music).
+    pub fn from_name(name: &str) -> Option<Kind> {
+        [Kind::Texture, Kind::Model, Kind::Bank, Kind::Sound, Kind::Text, Kind::Music]
+            .into_iter()
+            .find(|kind| kind.name() == name)
     }
 }
 
@@ -503,11 +496,6 @@ pub struct Summary {
 /// Writes a file of the tree, by its path in the tree ("/" between parts).
 pub type Write<'w> = dyn Fn(&str, &[u8]) -> Result<()> + Sync + 'w;
 
-/// The manifest's JSON text, as the tools write every JSON file (dc2tk_disc::textfile::json_text).
-pub fn manifest_text(manifest: &Value) -> Vec<u8> {
-    dc2tk_disc::textfile::json_text(manifest).into_bytes()
-}
-
 /// The disc's texture files, character packs and banks grouped into distinct contents and named:
 /// what the tree and the index of ids (ids::Index) share, so both give every asset the same id.
 pub(crate) struct Named<'a> {
@@ -753,240 +741,259 @@ pub(crate) fn bank_sounds(
 /// it holds.
 pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Summary> {
     let found = named(disc);
-    let Named {
-        files, shadowed, texture_files, pictures, textures, packs, banks, texts, sequences, mut failed, ..
-    } = found;
-    let mut summary = Summary {
-        shadowed,
-        texture_files,
-        pack_places: found.pack_places,
-        bank_places: found.bank_places,
-        distinct_pack_contents: found.pack_contents,
-        distinct_packs: packs.len(),
-        ..Summary::default()
-    };
-    summary.picture_places = pictures.len();
-    summary.distinct_pictures = pictures.iter().map(|p| &p.game_hash).collect::<HashSet<_>>().len();
-    let shapes: HashMap<(usize, usize), (&'static str, usize, usize)> =
-        pictures.iter().map(|p| ((p.file, p.entry), (p.format, p.width, p.height))).collect();
-    let mut versions: HashMap<&str, usize> = HashMap::new();
-    for asset in &textures {
-        *versions.entry(asset.name.as_str()).or_default() += 1;
-    }
-    summary.names_with_versions = versions.values().filter(|&&n| n > 1).count();
-
-    let texture_outs = export_textures(&textures, &files, write)?;
-    let texture_ids = texture_lookup(&textures, &texture_outs);
-    let texture_files: HashMap<String, (String, String)> = textures
+    let files = &found.files;
+    let texture_outs = export_textures(&found.textures, files, write)?;
+    let texture_ids = texture_lookup(&found.textures, &texture_outs);
+    let texture_files: HashMap<String, (String, String)> = found
+        .textures
         .iter()
         .zip(&texture_outs)
         .map(|(asset, out)| (Kind::Texture.id(&asset.id), (out.file.clone(), files[asset.first()].place.group())))
         .collect();
-    let model_outs: Vec<Result<ModelOut>> = packs
+    let model_outs: Vec<Result<ModelOut>> = found
+        .packs
         .par_iter()
-        .map(|asset| export_model(asset, &files, &texture_ids, &texture_files, write))
+        .map(|asset| export_model(asset, files, &texture_ids, &texture_files, write))
         .collect::<Result<Vec<_>>>()?;
     let bank_outs: Vec<Result<Vec<EntryOut>>> =
-        banks.par_iter().map(|asset| export_bank(asset, &files, names, write)).collect::<Result<Vec<_>>>()?;
+        found.banks.par_iter().map(|asset| export_bank(asset, files, names, write)).collect::<Result<Vec<_>>>()?;
     let fonts = text::Fonts::from_files(disc.iter().map(|file| (file.path.as_str(), file.data)));
     let text_outs: Vec<Result<(String, String)>> =
-        texts.par_iter().map(|asset| export_text(asset, &files, &fonts, write)).collect::<Result<Vec<_>>>()?;
-    summary.message_places = found.message_places;
+        found.texts.par_iter().map(|asset| export_text(asset, files, &fonts, write)).collect::<Result<Vec<_>>>()?;
+    let music_outs = export_music(&found.sequences, files, write)?;
 
-    let mut assets: BTreeMap<String, Value> = BTreeMap::new();
-    let mut aliases: BTreeMap<String, Value> = BTreeMap::new();
+    let mut tree = Building::new(&found);
+    tree.textures(&found.textures, &found.pictures, texture_outs);
+    tree.models(&found.packs, model_outs);
     let bank_entries: Vec<Option<Vec<usize>>> = bank_outs
         .iter()
         .map(|out| out.as_ref().ok().map(|entries| entries.iter().map(|entry| entry.index).collect()))
         .collect();
-    let sounds = bank_sounds(&banks, &files, &bank_entries, names);
-    let place_json = |file: usize, key: &str, entry: Option<usize>| {
-        let mut out = files[file].place.json();
-        if let Some(entry) = entry {
-            out.insert(key.into(), json!(entry));
-        }
-        Value::Object(out)
-    };
-    for (asset, out) in textures.iter().zip(&texture_outs) {
-        let (format, width, height) = shapes[&(asset.first(), asset.places[0].1.unwrap_or(0))];
-        let places: Vec<Value> = asset.places.iter().map(|&(file, entry)| place_json(file, "picture", entry)).collect();
-        assets.insert(
-            Kind::Texture.id(&asset.id),
-            json!({
-                "kind": "texture",
-                "name": asset.shown,
-                "files": {out.file.clone(): out.hash},
-                "game_hash": asset.game_hash,
-                "format": format,
-                "width": width,
-                "height": height,
-                "places": places,
-            }),
-        );
-    }
-    summary.textures = textures.len();
-    for (asset, out) in packs.iter().zip(model_outs) {
-        let places: Vec<Value> = asset.places.iter().map(|&(file, _)| place_json(file, "", None)).collect();
-        let out = match out {
-            Ok(out) => out,
-            Err(error) => {
-                failed.extend(asset.places.iter().map(|&(file, _)| (file, error.to_string())));
-                continue;
-            }
-        };
-        summary.models += 1;
-        summary.placeholders += out.placeholders.len();
-        let files_json: Map<String, Value> = out.files.into_iter().map(|(path, hash)| (path, json!(hash))).collect();
-        assets.insert(
-            Kind::Model.id(&asset.id),
-            json!({
-                "kind": "model",
-                "name": asset.shown,
-                "files": files_json,
-                "game_hash": asset.game_hash,
-                "textures": out.textures,
-                "placeholders": out.placeholders,
-                "places": places,
-            }),
-        );
-    }
-    for (alias, id) in &sounds.aliases {
-        aliases.insert(alias.clone(), json!(id));
-    }
-    for (at, (asset, out)) in banks.iter().zip(bank_outs).enumerate() {
-        let entries = match out {
-            Ok(entries) => entries,
-            Err(error) => {
-                failed.extend(asset.places.iter().map(|&(file, _)| (file, error.to_string())));
-                continue;
-            }
-        };
-        summary.banks += 1;
-        let bank_id = Kind::Bank.id(&asset.id);
-        let folder = format!("{SOUNDS}/{}", file_stem(&asset.id));
-        let mut sound_ids = Vec::new();
-        for (entry, (_, id)) in entries.iter().zip(&sounds.ids[at]) {
-            let id = id.clone();
-            sound_ids.push(json!(id));
-            // an entry another version of the bank plays alike is that version's sound
-            let reached = &sounds.places[&id];
-            if reached[0].0 != at {
-                continue;
-            }
-            if sounds.named.contains(&id) {
-                summary.sounds_named += 1;
-            }
-            let places: Vec<Value> = reached
-                .iter()
-                .flat_map(|&(bank, entry)| {
-                    banks[bank].places.iter().map(move |&(file, _)| (file, entry)).collect::<Vec<_>>()
-                })
-                .map(|(file, entry)| place_json(file, "entry", Some(entry)))
-                .collect();
-            let mut sound = Map::new();
-            sound.insert("kind".into(), json!("sound"));
-            sound.insert("bank".into(), json!(bank_id));
-            sound.insert("entry".into(), json!(entry.index));
-            sound.insert("plays".into(), json!(entry.plays));
-            sound.insert("label".into(), json!(entry.label));
-            sound.insert("category".into(), json!(entry.category));
-            if let Some((name, hash, game_hash)) = &entry.wav {
-                summary.sounds_exported += 1;
-                sound.insert("files".into(), json!({format!("{folder}/{name}"): hash}));
-                sound.insert("game_hash".into(), json!(game_hash));
-            }
-            sound.insert("places".into(), Value::Array(places));
-            summary.sounds += 1;
-            assets.insert(id, Value::Object(sound));
-        }
-        let places: Vec<Value> = asset.places.iter().map(|&(file, _)| place_json(file, "", None)).collect();
-        assets.insert(
-            bank_id,
-            json!({
-                "kind": "bank",
-                "name": asset.shown,
-                "folder": folder,
-                "game_hash": asset.game_hash,
-                "sounds": sound_ids,
-                "places": places,
-            }),
-        );
-    }
-    for (asset, out) in texts.iter().zip(text_outs) {
-        let (file, hash) = match out {
-            Ok(out) => out,
-            Err(error) => {
-                failed.extend(asset.places.iter().map(|&file| (file, error.to_string())));
-                continue;
-            }
-        };
-        summary.texts += 1;
-        let places: Vec<Value> = asset.places.iter().map(|&file| place_json(file, "", None)).collect();
-        assets.insert(
-            Kind::Text.id(&asset.id),
-            json!({
-                "kind": "text",
-                "name": asset.name,
-                "language": asset.language.short(),
-                "files": {file: hash},
-                "game_hash": asset.game_hash,
-                "versions": asset.versions,
-                "places": places,
-            }),
-        );
-    }
-    let music_outs = export_music(&sequences, &files, write)?;
-    for (asset, out) in sequences.iter().zip(music_outs) {
-        let out = match out {
-            Ok(out) => out,
-            Err(error) => {
-                failed.extend(asset.places.iter().map(|&(file, _)| (file, error.to_string())));
-                continue;
-            }
-        };
-        summary.music += 1;
-        summary.music_places += asset.places.len();
-        let places: Vec<Value> =
-            asset.places.iter().map(|&(file, at)| Value::Object(sequence_place(&files, file, at).json())).collect();
-        let files_json: Map<String, Value> = out.into_iter().map(|(path, hash)| (path, json!(hash))).collect();
-        assets.insert(
-            Kind::Music.id(&asset.id),
-            json!({
-                "kind": "music",
-                "name": asset.shown,
-                "files": files_json,
-                "game_hash": asset.game_hash,
-                "places": places,
-            }),
-        );
-    }
-    failed.sort_by_key(|(file, _)| *file);
-    summary.failed = failed.iter().map(|(file, error)| (files[*file].place.clone(), error.clone())).collect();
-    let failed_json: Vec<Value> = failed
-        .iter()
-        .map(|(file, error)| {
-            let mut place = files[*file].place.json();
-            place.insert("error".into(), json!(error));
-            Value::Object(place)
-        })
-        .collect();
-    let counts = json!({
-        "texture": summary.textures,
-        "model": summary.models,
-        "bank": summary.banks,
-        "sound": summary.sounds,
-        "text": summary.texts,
-        "music": summary.music,
-    });
-    let manifest = json!({
-        "format": FORMAT,
-        "counts": counts,
-        "assets": assets.into_iter().collect::<Map<String, Value>>(),
-        "aliases": aliases.into_iter().collect::<Map<String, Value>>(),
-        "unconverted": failed_json,
-    });
-    write(MANIFEST, &manifest_text(&manifest))?;
+    let sounds = bank_sounds(&found.banks, files, &bank_entries, names);
+    tree.banks(&found.banks, bank_outs, &sounds);
+    tree.texts(&found.texts, text_outs);
+    tree.music(&found.sequences, music_outs);
+    let (manifest, summary) = tree.finish(sounds.aliases);
+    write(MANIFEST, &manifest.text())?;
     Ok(summary)
+}
+
+/// The manifest and summary as the tree's assets are added to them, kind by kind.
+struct Building<'a> {
+    files: &'a [GameFile<'a>],
+    assets: BTreeMap<String, manifest::Asset>,
+    summary: Summary,
+    /// Game files that give no asset, by their index in files, and why.
+    failed: Vec<(usize, String)>,
+}
+
+impl<'a> Building<'a> {
+    fn new(found: &'a Named<'a>) -> Building<'a> {
+        let pictures = &found.pictures;
+        let mut versions: HashMap<&str, usize> = HashMap::new();
+        for asset in &found.textures {
+            *versions.entry(asset.name.as_str()).or_default() += 1;
+        }
+        let summary = Summary {
+            shadowed: found.shadowed,
+            texture_files: found.texture_files,
+            pack_places: found.pack_places,
+            bank_places: found.bank_places,
+            distinct_pack_contents: found.pack_contents,
+            distinct_packs: found.packs.len(),
+            picture_places: pictures.len(),
+            distinct_pictures: pictures.iter().map(|p| &p.game_hash).collect::<HashSet<_>>().len(),
+            names_with_versions: versions.values().filter(|&&n| n > 1).count(),
+            message_places: found.message_places,
+            ..Summary::default()
+        };
+        Building { files: &found.files, assets: BTreeMap::new(), summary, failed: found.failed.clone() }
+    }
+
+    /// The manifest's place of a game file, with the picture or entry there.
+    fn place(&self, file: usize) -> manifest::AssetPlace {
+        manifest::AssetPlace::new(&self.files[file].place)
+    }
+
+    /// What an asset's export gave, or, when it could not be exported, None with every game
+    /// file it is at recorded as not converted, and why.
+    fn exported<T>(&mut self, files: impl Iterator<Item = usize>, out: Result<T>) -> Option<T> {
+        match out {
+            Ok(out) => Some(out),
+            Err(error) => {
+                self.failed.extend(files.map(|file| (file, error.to_string())));
+                None
+            }
+        }
+    }
+
+    fn textures(&mut self, textures: &[Asset], pictures: &[Picture], outs: Vec<TextureOut>) {
+        let shapes: HashMap<(usize, usize), (&'static str, usize, usize)> =
+            pictures.iter().map(|p| ((p.file, p.entry), (p.format, p.width, p.height))).collect();
+        for (asset, out) in textures.iter().zip(outs) {
+            let (format, width, height) = shapes[&(asset.first(), asset.places[0].1.unwrap_or(0))];
+            let places = asset
+                .places
+                .iter()
+                .map(|&(file, picture)| manifest::AssetPlace { picture, ..self.place(file) })
+                .collect();
+            let texture = manifest::Asset::Texture {
+                name: asset.shown.clone(),
+                files: [(out.file, out.hash)].into_iter().collect(),
+                game_hash: asset.game_hash.clone(),
+                format: format.to_string(),
+                width,
+                height,
+                places,
+            };
+            self.assets.insert(Kind::Texture.id(&asset.id), texture);
+        }
+        self.summary.textures = textures.len();
+    }
+
+    fn models(&mut self, packs: &[Asset], outs: Vec<Result<ModelOut>>) {
+        for (asset, out) in packs.iter().zip(outs) {
+            let Some(out) = self.exported(asset.places.iter().map(|&(file, _)| file), out) else {
+                continue;
+            };
+            self.summary.models += 1;
+            self.summary.placeholders += out.placeholders.len();
+            let model = manifest::Asset::Model {
+                name: asset.shown.clone(),
+                files: out.files.into_iter().collect(),
+                game_hash: asset.game_hash.clone(),
+                textures: out.textures,
+                placeholders: out.placeholders,
+                places: asset.places.iter().map(|&(file, _)| self.place(file)).collect(),
+            };
+            self.assets.insert(Kind::Model.id(&asset.id), model);
+        }
+    }
+
+    /// Each bank, and each of its entries that is its own sound (an entry another version of the
+    /// bank plays alike is that version's sound).
+    fn banks(&mut self, banks: &[Asset], outs: Vec<Result<Vec<EntryOut>>>, sounds: &BankSounds) {
+        for (at, (asset, out)) in banks.iter().zip(outs).enumerate() {
+            let Some(entries) = self.exported(asset.places.iter().map(|&(file, _)| file), out) else {
+                continue;
+            };
+            self.summary.banks += 1;
+            let bank_id = Kind::Bank.id(&asset.id);
+            let folder = format!("{SOUNDS}/{}", file_stem(&asset.id));
+            let mut sound_ids = Vec::new();
+            for (entry, (_, id)) in entries.iter().zip(&sounds.ids[at]) {
+                sound_ids.push(id.clone());
+                let reached = &sounds.places[id];
+                if reached[0].0 != at {
+                    continue;
+                }
+                if sounds.named.contains(id) {
+                    self.summary.sounds_named += 1;
+                }
+                let places = reached
+                    .iter()
+                    .flat_map(|&(bank, entry)| banks[bank].places.iter().map(move |&(file, _)| (file, entry)))
+                    .map(|(file, entry)| manifest::AssetPlace { entry: Some(entry), ..self.place(file) })
+                    .collect();
+                let (files, game_hash) = match &entry.wav {
+                    Some((name, hash, game_hash)) => {
+                        self.summary.sounds_exported += 1;
+                        (
+                            Some([(format!("{folder}/{name}"), hash.clone())].into_iter().collect()),
+                            Some(game_hash.clone()),
+                        )
+                    }
+                    None => (None, None),
+                };
+                let sound = manifest::Asset::Sound {
+                    bank: bank_id.clone(),
+                    entry: entry.index,
+                    plays: entry.plays.to_string(),
+                    label: entry.label.clone(),
+                    category: entry.category.clone(),
+                    files,
+                    game_hash,
+                    places,
+                };
+                self.summary.sounds += 1;
+                self.assets.insert(id.clone(), sound);
+            }
+            let bank = manifest::Asset::Bank {
+                name: asset.shown.clone(),
+                folder,
+                game_hash: asset.game_hash.clone(),
+                sounds: sound_ids,
+                places: asset.places.iter().map(|&(file, _)| self.place(file)).collect(),
+            };
+            self.assets.insert(bank_id, bank);
+        }
+    }
+
+    fn texts(&mut self, texts: &[text::TextAsset], outs: Vec<Result<(String, String)>>) {
+        for (asset, out) in texts.iter().zip(outs) {
+            let Some((file, hash)) = self.exported(asset.places.iter().copied(), out) else {
+                continue;
+            };
+            self.summary.texts += 1;
+            let text = manifest::Asset::Text {
+                name: asset.name.clone(),
+                language: asset.language.short().to_string(),
+                files: [(file, hash)].into_iter().collect(),
+                game_hash: asset.game_hash.clone(),
+                versions: asset.versions,
+                places: asset.places.iter().map(|&file| self.place(file)).collect(),
+            };
+            self.assets.insert(Kind::Text.id(&asset.id), text);
+        }
+    }
+
+    fn music(&mut self, sequences: &[Asset], outs: Vec<MusicOut>) {
+        for (asset, out) in sequences.iter().zip(outs) {
+            let Some(out) = self.exported(asset.places.iter().map(|&(file, _)| file), out) else {
+                continue;
+            };
+            self.summary.music += 1;
+            self.summary.music_places += asset.places.len();
+            let places = asset
+                .places
+                .iter()
+                .map(|&(file, at)| manifest::AssetPlace::new(&sequence_place(self.files, file, at)))
+                .collect();
+            let music = manifest::Asset::Music {
+                name: asset.shown.clone(),
+                files: out.into_iter().collect(),
+                game_hash: asset.game_hash.clone(),
+                places,
+            };
+            self.assets.insert(Kind::Music.id(&asset.id), music);
+        }
+    }
+
+    /// The manifest of the assets added, with the aliases and the files not converted, and the
+    /// summary.
+    fn finish(mut self, aliases: BTreeMap<String, String>) -> (Manifest, Summary) {
+        self.failed.sort_by_key(|(file, _)| *file);
+        let place = |file: usize| self.files[file].place.clone();
+        self.summary.failed = self.failed.iter().map(|(file, error)| (place(*file), error.clone())).collect();
+        let unconverted = self
+            .failed
+            .iter()
+            .map(|(file, error)| {
+                let place = place(*file);
+                manifest::Unconverted { path: place.path, members: place.members, error: error.clone() }
+            })
+            .collect();
+        let counts = manifest::Counts {
+            texture: self.summary.textures,
+            model: self.summary.models,
+            bank: self.summary.banks,
+            sound: self.summary.sounds,
+            text: self.summary.texts,
+            music: self.summary.music,
+        };
+        let manifest = Manifest { format: FORMAT, counts, assets: self.assets, aliases, unconverted };
+        (manifest, self.summary)
+    }
 }
 
 /// What a sequence's export gives the manifest: its files and their hashes.
@@ -1400,6 +1407,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::im3::{Format, Image};
     use crate::mds::{self, Material, Mds, Mdt, Node, Prim, PRIM_TRIANGLES};
+    use serde_json::{json, Value};
     use std::sync::Mutex;
 
     pub fn pack(members: &[(&str, &[u8])]) -> Vec<u8> {

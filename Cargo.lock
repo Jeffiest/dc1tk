@@ -218,6 +218,7 @@ version = "0.1.0"
 dependencies = [
  "dc2tk-disc",
  "flate2",
+ "indexmap",
  "rayon",
  "serde",
  "serde_json",

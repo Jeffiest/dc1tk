@@ -3,15 +3,15 @@
 //! place the manifest lists, and every texture file, character pack, bank and message file of the
 //! disc is in the manifest.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
-use serde_json::Value;
 
 use dc2tk_disc::rebuild;
 
-use crate::tree::{self, DiscFile, FileKind, Place};
+use crate::manifest::{self, Manifest};
+use crate::tree::{self, DiscFile, FileKind, Kind, Place};
 use crate::{im3, sounds, text, Context, Error, Result};
 
 /// What a check found.
@@ -38,6 +38,17 @@ fn kind_name(kind: FileKind) -> &'static str {
     }
 }
 
+/// The kind of game file an asset of a kind is at, for those the disc's walk finds.
+fn file_kind_of(kind: Kind) -> Option<FileKind> {
+    match kind {
+        Kind::Texture => Some(FileKind::Textures),
+        Kind::Model => Some(FileKind::Pack),
+        Kind::Bank => Some(FileKind::Bank),
+        Kind::Text => Some(FileKind::Messages),
+        Kind::Sound | Kind::Music => None,
+    }
+}
+
 fn read(root: &Path, path: &str) -> Result<Vec<u8>> {
     std::fs::read(root.join(path)).context(path)
 }
@@ -51,82 +62,166 @@ fn at<'a>(tops: &HashMap<&str, &'a [u8]>, place: &Place) -> Result<&'a [u8]> {
         .ok_or_else(|| Error::invalid(format!("{}: no such member", place.display())))
 }
 
-fn places(asset: &Value) -> Vec<(Place, Option<usize>)> {
-    let found = asset["places"].as_array().map(Vec::as_slice).unwrap_or_default();
-    found
-        .iter()
-        .filter_map(|place| {
-            let entry = place.get("picture").or_else(|| place.get("entry")).and_then(Value::as_u64);
-            Some((Place::from_json(place)?, entry.map(|e| e as usize)))
-        })
+/// The assets of a kind, in id order.
+fn of_kind(manifest: &Manifest, kind: Kind) -> Vec<(&String, &manifest::Asset)> {
+    manifest.assets.iter().filter(|(_, asset)| asset.kind() == kind).collect()
+}
+
+/// The problems each asset's check finds, in parallel: what `check` gives, or the error that
+/// stopped it, named by the asset's id.
+fn check_assets<'m>(
+    assets: &[(&'m String, &'m manifest::Asset)],
+    check: impl Fn(usize, &str, &'m manifest::Asset) -> Result<Vec<String>> + Sync,
+) -> Vec<String> {
+    assets
+        .par_iter()
+        .enumerate()
+        .flat_map(|(index, (id, asset))| check(index, id, asset).unwrap_or_else(|error| vec![format!("{id}: {error}")]))
         .collect()
 }
 
-fn first_file<'a>(asset: &'a Value, suffix: &str) -> Option<&'a str> {
-    asset["files"].as_object()?.keys().find(|path| path.ends_with(suffix)).map(String::as_str)
+/// A built asset compared with the disc's bytes at a place.
+fn built_back(id: &str, built: &[u8], disc: &[u8], place: &Place) -> Option<String> {
+    (built != disc).then(|| format!("{id}: builds back to other bytes at {}", place.display()))
 }
 
 /// Checks the tree at `root` against the disc's files; `temp` is a scratch folder for the models'
 /// builds (removed afterwards).
 pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
-    let manifest: Value = serde_json::from_slice(&read(root, tree::MANIFEST)?).context(tree::MANIFEST)?;
+    let manifest = Manifest::read(&read(root, tree::MANIFEST)?)?;
     let mut tops: HashMap<&str, &[u8]> = HashMap::new();
     for file in disc {
         tops.entry(file.path.as_str()).or_insert(file.data);
     }
-    let empty = serde_json::Map::new();
-    let assets = manifest["assets"].as_object().unwrap_or(&empty);
+    let tops = &tops;
     let mut report = Report::default();
+    let places_of =
+        |kind: Kind| -> usize { of_kind(&manifest, kind).iter().map(|(_, asset)| asset.places().len()).sum() };
+    report.picture_places = places_of(Kind::Texture);
+    report.pack_places = places_of(Kind::Model);
+    report.bank_places = places_of(Kind::Bank);
+    report.message_places = places_of(Kind::Text);
+    report.music_places = places_of(Kind::Music);
 
     // every file has the hash the manifest gives
-    let hashes: Vec<(&str, &str)> = assets
-        .values()
-        .flat_map(|asset| asset["files"].as_object().into_iter().flatten())
-        .map(|(path, hash)| (path.as_str(), hash.as_str().unwrap_or("")))
-        .collect();
+    let hashes: Vec<(&String, &String)> =
+        manifest.assets.values().flat_map(|asset| asset.files().into_iter().flatten()).collect();
     report.files = hashes.len();
     let mut problems: Vec<String> = hashes
         .par_iter()
         .filter_map(|(path, hash)| match read(root, path) {
-            Ok(data) if tree::sha256(&[&data]) == *hash => None,
+            Ok(data) if tree::sha256(&[&data]) == **hash => None,
             Ok(_) => Some(format!("{path}: differs from the hash in the manifest")),
             Err(error) => Some(error.to_string()),
         })
         .collect();
+    problems.extend(check_textures(&manifest, root, tops));
 
-    // textures, by the texture file holding them, so each is read once: (picture entry, PNG, name)
+    // models: the tree's glTF and buffer, as the export names them, built at each place
+    let _ = std::fs::remove_dir_all(temp);
+    problems.extend(check_assets(&of_kind(&manifest, Kind::Model), |index, id, asset| {
+        let (Some(gltf), Some(bin)) = (asset.file(".gltf"), asset.file(".bin")) else {
+            return Ok(vec![format!("{id}: no glTF and buffer")]);
+        };
+        let (gltf, bin) = (read(root, gltf)?, read(root, bin)?);
+        let folder: PathBuf = temp.join(index.to_string());
+        let mut out = Vec::new();
+        for place in asset.places().iter().map(manifest::AssetPlace::place) {
+            let pack = at(tops, &place)?;
+            out.extend(built_back(
+                id,
+                &tree::build_model_from(&gltf, &bin, pack, asset.name(), &folder)?,
+                pack,
+                &place,
+            ));
+        }
+        Ok(out)
+    }));
+
+    // banks: the bank's folder of WAVs, built at each place
+    problems.extend(check_assets(&of_kind(&manifest, Kind::Bank), |_, id, asset| {
+        let manifest::Asset::Bank { folder, .. } = asset else {
+            return Ok(Vec::new());
+        };
+        let mut folder = root.join(folder);
+        if !folder.is_dir() {
+            // a bank with no entry playing a sample has no WAVs
+            folder = temp.join("no WAVs");
+            std::fs::create_dir_all(&folder)?;
+        }
+        let mut out = Vec::new();
+        for place in asset.places().iter().map(manifest::AssetPlace::place) {
+            let bank = at(tops, &place)?;
+            out.extend(built_back(id, &sounds::build(&folder, bank)?, bank, &place));
+        }
+        Ok(out)
+    }));
+    let _ = std::fs::remove_dir_all(temp);
+
+    // message files: the text built into each place, with the first (the one exported) as the
+    // reference
+    let fonts = text::Fonts::from_files(disc.iter().map(|file| (file.path.as_str(), file.data)));
+    problems.extend(check_assets(&of_kind(&manifest, Kind::Text), |_, id, asset| {
+        let Some(file) = asset.file(".txt") else {
+            return Ok(vec![format!("{id}: no text")]);
+        };
+        let written =
+            String::from_utf8(read(root, file)?).map_err(|_| Error::invalid(format!("{file} is not UTF-8")))?;
+        let places: Vec<Place> = asset.places().iter().map(manifest::AssetPlace::place).collect();
+        let Some(reference) = places.first() else {
+            return Ok(Vec::new());
+        };
+        let reference = at(tops, reference)?;
+        let mut out = Vec::new();
+        for place in &places {
+            let data = at(tops, place)?;
+            out.extend(built_back(id, &text::build(&written, data, reference, &place.display(), &fonts)?, data, place));
+        }
+        Ok(out)
+    }));
+
+    // sequences: the MIDI file built at each place
+    problems.extend(check_assets(&of_kind(&manifest, Kind::Music), |_, id, asset| {
+        let Some(file) = asset.file(crate::music::SUFFIX) else {
+            return Ok(vec![format!("{id}: no MIDI file")]);
+        };
+        let midi = read(root, file)?;
+        let mut out = Vec::new();
+        for place in asset.places().iter().map(manifest::AssetPlace::place) {
+            let sq = at(tops, &place)?;
+            out.extend(built_back(id, &crate::music::build(&midi, sq, None)?, sq, &place));
+        }
+        Ok(out)
+    }));
+
+    listed_files(disc, &manifest, &mut report);
+    problems.sort();
+    report.problems = problems;
+    Ok(report)
+}
+
+/// Textures, by the texture file holding them, so each is read once: each picture's PNG built
+/// back into the file at every place.
+fn check_textures(manifest: &Manifest, root: &Path, tops: &HashMap<&str, &[u8]>) -> Vec<String> {
+    // (picture entry, PNG, name) by the texture file's place
     type Wanted<'m> = Vec<(usize, &'m str, &'m str)>;
     let mut pictures: BTreeMap<String, (Place, Wanted)> = BTreeMap::new();
-    let mut packs = Vec::new();
-    let mut banks = Vec::new();
-    let mut texts = Vec::new();
-    let mut music = Vec::new();
-    for (id, asset) in assets {
-        match asset["kind"].as_str() {
-            Some("texture") => {
-                let Some(file) = first_file(asset, ".png") else {
-                    problems.push(format!("{id}: no PNG"));
-                    continue;
-                };
-                for (place, entry) in places(asset) {
-                    report.picture_places += 1;
-                    let name = asset["name"].as_str().unwrap_or("");
-                    let slot = pictures.entry(place.display()).or_insert_with(|| (place, Vec::new()));
-                    slot.1.push((entry.unwrap_or(0), file, name));
-                }
-            }
-            Some("model") => packs.push((id, asset)),
-            Some("bank") => banks.push((id, asset)),
-            Some("text") => texts.push((id, asset)),
-            Some("music") => music.push((id, asset)),
-            _ => {}
+    let mut problems = Vec::new();
+    for (id, asset) in of_kind(manifest, Kind::Texture) {
+        let Some(file) = asset.file(".png") else {
+            problems.push(format!("{id}: no PNG"));
+            continue;
+        };
+        for place in asset.places() {
+            let slot = pictures.entry(place.place().display()).or_insert_with(|| (place.place(), Vec::new()));
+            slot.1.push((place.picture.unwrap_or(0), file, asset.name()));
         }
     }
-    let texture_problems: Vec<String> = pictures
+    let found: Vec<String> = pictures
         .par_iter()
         .flat_map(|(shown, (place, wanted))| -> Vec<String> {
             let check = || -> Result<Vec<String>> {
-                let img = at(&tops, place)?;
+                let img = at(tops, place)?;
                 let images = im3::read(img)?;
                 let mut out = Vec::new();
                 for &(entry, file, name) in wanted {
@@ -149,150 +244,34 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
             check().unwrap_or_else(|error| vec![format!("{shown}: {error}")])
         })
         .collect();
-    problems.extend(texture_problems);
+    problems.extend(found);
+    problems
+}
 
-    // models: the tree's glTF and buffer, as the export names them, built at each place
-    let _ = std::fs::remove_dir_all(temp);
-    report.pack_places = packs.iter().map(|(_, asset)| places(asset).len()).sum();
-    let model_problems: Vec<String> = packs
-        .par_iter()
-        .enumerate()
-        .flat_map(|(index, (id, asset))| -> Vec<String> {
-            let check = || -> Result<Vec<String>> {
-                let (Some(gltf), Some(bin)) = (first_file(asset, ".gltf"), first_file(asset, ".bin")) else {
-                    return Ok(vec![format!("{id}: no glTF and buffer")]);
-                };
-                let (gltf, bin) = (read(root, gltf)?, read(root, bin)?);
-                let folder: PathBuf = temp.join(index.to_string());
-                let mut out = Vec::new();
-                for (place, _) in places(asset) {
-                    let pack = at(&tops, &place)?;
-                    let name = asset["name"].as_str().unwrap_or("");
-                    if tree::build_model_from(&gltf, &bin, pack, name, &folder)? != pack {
-                        out.push(format!("{id}: builds back to other bytes at {}", place.display()));
-                    }
-                }
-                Ok(out)
-            };
-            check().unwrap_or_else(|error| vec![format!("{id}: {error}")])
-        })
-        .collect();
-    problems.extend(model_problems);
-
-    // banks: the bank's folder of WAVs, built at each place
-    report.bank_places = banks.iter().map(|(_, asset)| places(asset).len()).sum();
-    let bank_problems: Vec<String> = banks
-        .par_iter()
-        .flat_map(|(id, asset)| -> Vec<String> {
-            let check = || -> Result<Vec<String>> {
-                let mut folder = root.join(asset["folder"].as_str().unwrap_or(""));
-                if !folder.is_dir() {
-                    // a bank with no entry playing a sample has no WAVs
-                    folder = temp.join("no WAVs");
-                    std::fs::create_dir_all(&folder)?;
-                }
-                let mut out = Vec::new();
-                for (place, _) in places(asset) {
-                    let bank = at(&tops, &place)?;
-                    if sounds::build(&folder, bank)? != bank {
-                        out.push(format!("{id}: builds back to other bytes at {}", place.display()));
-                    }
-                }
-                Ok(out)
-            };
-            check().unwrap_or_else(|error| vec![format!("{id}: {error}")])
-        })
-        .collect();
-    problems.extend(bank_problems);
-    let _ = std::fs::remove_dir_all(temp);
-
-    // message files: the text built into each place, with the first (the one exported) as the
-    // reference
-    let fonts = text::Fonts::from_files(disc.iter().map(|file| (file.path.as_str(), file.data)));
-    report.message_places = texts.iter().map(|(_, asset)| places(asset).len()).sum();
-    let text_problems: Vec<String> = texts
-        .par_iter()
-        .flat_map(|(id, asset)| -> Vec<String> {
-            let check = || -> Result<Vec<String>> {
-                let Some(file) = first_file(asset, ".txt") else {
-                    return Ok(vec![format!("{id}: no text")]);
-                };
-                let written =
-                    String::from_utf8(read(root, file)?).map_err(|_| Error::invalid(format!("{file} is not UTF-8")))?;
-                let found = places(asset);
-                let Some((reference, _)) = found.first() else {
-                    return Ok(Vec::new());
-                };
-                let reference = at(&tops, reference)?;
-                let mut out = Vec::new();
-                for (place, _) in &found {
-                    let data = at(&tops, place)?;
-                    if text::build(&written, data, reference, &place.display(), &fonts)? != data {
-                        out.push(format!("{id}: builds back to other bytes at {}", place.display()));
-                    }
-                }
-                Ok(out)
-            };
-            check().unwrap_or_else(|error| vec![format!("{id}: {error}")])
-        })
-        .collect();
-    problems.extend(text_problems);
-
-    // sequences: the MIDI file built at each place
-    report.music_places = music.iter().map(|(_, asset)| places(asset).len()).sum();
-    let music_problems: Vec<String> = music
-        .par_iter()
-        .flat_map(|(id, asset)| -> Vec<String> {
-            let check = || -> Result<Vec<String>> {
-                let Some(file) = first_file(asset, crate::music::SUFFIX) else {
-                    return Ok(vec![format!("{id}: no MIDI file")]);
-                };
-                let midi = read(root, file)?;
-                let mut out = Vec::new();
-                for (place, _) in places(asset) {
-                    let sq = at(&tops, &place)?;
-                    if crate::music::build(&midi, sq, None)? != sq {
-                        out.push(format!("{id}: builds back to other bytes at {}", place.display()));
-                    }
-                }
-                Ok(out)
-            };
-            check().unwrap_or_else(|error| vec![format!("{id}: {error}")])
-        })
-        .collect();
-    problems.extend(music_problems);
-
-    // every game file of the disc is listed
+/// Every game file of the disc, by kind, and those the manifest lists (as assets or failures).
+fn listed_files(disc: &[DiscFile], manifest: &Manifest, report: &mut Report) {
     for file in tree::game_files(disc).files {
         *report.on_disc.entry(kind_name(file.kind)).or_default() += 1;
     }
-    let mut listed: BTreeMap<FileKind, std::collections::BTreeSet<String>> = BTreeMap::new();
-    for asset in assets.values() {
-        let kind = match asset["kind"].as_str() {
-            Some("texture") => FileKind::Textures,
-            Some("model") => FileKind::Pack,
-            Some("bank") => FileKind::Bank,
-            Some("text") => FileKind::Messages,
-            _ => continue,
+    let mut listed: BTreeMap<FileKind, BTreeSet<String>> = BTreeMap::new();
+    for asset in manifest.assets.values() {
+        let Some(kind) = file_kind_of(asset.kind()) else {
+            continue;
         };
-        for (place, _) in places(asset) {
-            listed.entry(kind).or_default().insert(place.display());
+        for place in asset.places() {
+            listed.entry(kind).or_default().insert(place.place().display());
         }
     }
-    for failed in manifest["unconverted"].as_array().map(Vec::as_slice).unwrap_or_default() {
-        if let Some(place) = Place::from_json(failed) {
-            let name = place.members.last().cloned().unwrap_or_else(|| place.path.clone());
-            if let Some(kind) = tree::file_kind(&name) {
-                listed.entry(kind).or_default().insert(place.display());
-            }
+    for failed in &manifest.unconverted {
+        let place = failed.place();
+        let name = place.members.last().cloned().unwrap_or_else(|| place.path.clone());
+        if let Some(kind) = tree::file_kind(&name) {
+            listed.entry(kind).or_default().insert(place.display());
         }
     }
     for (kind, found) in listed {
         report.listed.insert(kind_name(kind), found.len());
     }
-    problems.sort();
-    report.problems = problems;
-    Ok(report)
 }
 
 #[cfg(test)]
@@ -358,9 +337,9 @@ mod tests {
         ];
         let (summary, written) = build_disc(&disc);
         let files: Vec<DiscFile> = disc.iter().map(|(path, data)| DiscFile { path: path.clone(), data }).collect();
-        let manifest: Value = serde_json::from_slice(&written[tree::MANIFEST]).unwrap();
+        let manifest = Manifest::read(&written[tree::MANIFEST]).unwrap();
         let index = crate::ids::Index::from_disc(&files, &tree::sound_names(""));
-        assert_eq!(index, crate::ids::Index::from_manifest(&manifest).unwrap());
+        assert_eq!(index, crate::ids::Index::from_manifest(&manifest));
         let music = index.get("music:BG_193_000").unwrap();
         let places: Vec<String> = music.places.iter().map(|(place, _)| place.display()).collect();
         assert_eq!(places, ["sg/fish/fish.pak.d/BG_193.snd.d/BG_193_000.sq", "snd2/bgm/BG_193.snd.d/BG_193_000.sq"]);
