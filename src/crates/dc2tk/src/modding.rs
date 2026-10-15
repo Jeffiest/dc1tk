@@ -619,8 +619,8 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         println!(
             "replaced: {} ({}; mod {}, {} bytes, was {})",
             item.place.display(),
-            item.ids.join(", "),
-            item.modules.join(", "),
+            joined(&item.ids),
+            joined(&item.modules),
             item.data.len(),
             item.old
         );
@@ -636,8 +636,8 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         println!(
             "added: {} ({}; mod {}, {} bytes, a new file)",
             item.place.display(),
-            item.ids.join(", "),
-            item.modules.join(", "),
+            joined(&item.ids),
+            joined(&item.modules),
             item.data.len()
         );
         for warning in &item.warnings {
@@ -1191,6 +1191,11 @@ pub fn launch(image: &Path, pcsx2: Option<&Path>, fast_boot: bool) -> Result<Pat
     let parts = command(&found, image, fast_boot);
     std::process::Command::new(&parts[0]).args(&parts[1..]).spawn()?;
     Ok(found)
+}
+
+/// A set's texts, in order, with ", " between.
+fn joined(texts: &indexmap::IndexSet<String>) -> String {
+    texts.iter().map(String::as_str).collect::<Vec<_>>().join(", ")
 }
 
 #[cfg(test)]

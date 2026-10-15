@@ -66,6 +66,9 @@ pub enum Error {
     /// What is wrong with a statement of a source file, and its line there.
     #[error("line {line}: {error}")]
     At { line: i64, error: Box<Error> },
+    /// An error with what was being done when it happened ("texture:tex02 (mod fish) at ...").
+    #[error("{what}: {error}")]
+    Context { what: String, error: Box<Error> },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -89,7 +92,11 @@ impl Error {
     /// Whether the error is one of the input (a source file, a tree) rather than of reading or
     /// writing a file.
     pub fn is_input(&self) -> bool {
-        matches!(self, Error::Invalid(_) | Error::At { .. })
+        match self {
+            Error::Invalid(_) | Error::At { .. } => true,
+            Error::Context { error, .. } => error.is_input(),
+            Error::Io(_) | Error::Disc(_) => false,
+        }
     }
 }
 
@@ -114,5 +121,16 @@ mod tests {
         assert!(inner.is_input());
         assert_eq!(inner.at(&node::Node::Int(5)).to_string(), "line 6: unknown variable x");
         assert_eq!(Error::invalid("no main").at(&node::Node::Null).to_string(), "no main");
+    }
+
+    #[test]
+    fn an_error_in_context_says_what_was_being_done_and_keeps_its_cause() {
+        let wrap = |error: Error| Error::Context { what: "texture:tex02 (mod fish)".into(), error: Box::new(error) };
+        let input = wrap(Error::invalid("no picture 3"));
+        assert_eq!(input.to_string(), "texture:tex02 (mod fish): no picture 3");
+        assert!(input.is_input());
+        let io = wrap(Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "gone")));
+        assert!(!io.is_input());
+        assert!(matches!(io, Error::Context { error, .. } if matches!(*error, Error::Io(_))));
     }
 }

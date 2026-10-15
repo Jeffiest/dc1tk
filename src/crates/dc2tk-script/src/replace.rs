@@ -58,12 +58,12 @@ use dc2tk_assets::ids::{self, Index};
 use dc2tk_assets::im3;
 use dc2tk_assets::soundbank::Bank;
 use dc2tk_assets::sounds::{self, Given};
-use dc2tk_assets::text;
+use dc2tk_assets::text::{self, Fonts};
 use dc2tk_assets::tree::{self, Kind, Place};
 use dc2tk_assets::{music, soundfont};
-use dc2tk_disc::archive::Archive;
+use dc2tk_disc::archive::{Archive, Entry};
 use dc2tk_disc::{rebuild, Image};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 
 use crate::discfiles::{self, Files, Template, Templates, Wanted};
@@ -653,12 +653,7 @@ pub fn covers(only: &str, place: &Place) -> bool {
 /// have, an "only" that keeps no place, or one entry given twice in a mod is refused.
 pub fn resolve(lines: &[Line], index: &Index) -> Result<Resolved> {
     let mut resolved = Resolved::default();
-    let mut modules: Vec<&str> = Vec::new();
-    for line in lines {
-        if !modules.contains(&line.module.as_str()) {
-            modules.push(&line.module);
-        }
-    }
+    let modules: IndexSet<&str> = lines.iter().map(|line| line.module.as_str()).collect();
     let mut added_to: HashMap<String, usize> = HashMap::new();
     let at = index.at();
     for module in modules {
@@ -913,8 +908,8 @@ pub fn clashes(resolved: &Resolved, raw: &Wanted) -> Vec<String> {
 #[derive(Clone, Debug)]
 pub struct Changed {
     pub place: Place,
-    pub ids: Vec<String>,
-    pub modules: Vec<String>,
+    pub ids: IndexSet<String>,
+    pub modules: IndexSet<String>,
     pub old: usize,
     pub data: Vec<u8>,
     /// What the build says of it, each line "warning: ..." or "note: ...": a text's lines wider than
@@ -1039,6 +1034,155 @@ pub fn apply(iso_path: &Path, resolved: &Resolved, files: &Files) -> Result<(Fil
     apply_with(iso_path, resolved, files, &english_letters(iso_path, resolved, Vec::new())?)
 }
 
+/// The order apply puts changes in: models, then banks' entries, then pictures, then texts, then
+/// the sequences inside banks; within a stage, outer places first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Stage {
+    Model,
+    Entry,
+    Picture,
+    Text,
+    Sequence,
+}
+
+impl Change {
+    fn stage(&self) -> Stage {
+        match self {
+            Change::Model(_) => Stage::Model,
+            Change::Entry(_) => Stage::Entry,
+            Change::Picture(..) => Stage::Picture,
+            Change::Text(..) => Stage::Text,
+            Change::Sequence(..) => Stage::Sequence,
+        }
+    }
+}
+
+/// What apply_with builds from: the disc and its fonts, and what it has built so far.
+struct Applying<'a> {
+    image: &'a Image,
+    disc: &'a Archive,
+    index: &'a HashMap<String, &'a Entry>,
+    fonts: Fonts,
+    /// Where models are built.
+    temp: PathBuf,
+    /// The models built so far, (id, the pack built on, the pack built): an id's model goes in
+    /// every place of the id, most of them the same pack.
+    models: Vec<(String, Vec<u8>, Vec<u8>)>,
+    /// What the build says of a place (place, line).
+    warnings: Vec<(String, String)>,
+}
+
+/// An error of a group of edits, said with the first edit's line and place.
+type Fail<'a> = dyn Fn(Error) -> Error + 'a;
+
+impl Applying<'_> {
+    /// The disc's own bytes of a place.
+    fn disc_member(&self, place: &Place) -> Option<&[u8]> {
+        let entry = self.index.get(&place.path.to_lowercase())?;
+        rebuild::read_member(self.disc.read(self.image.bytes(), entry), &place.members)
+    }
+
+    /// The model a line gives, built on the pack it replaces.
+    fn model(&mut self, edit: &Edit, source: &Path, old: &[u8], fail: &Fail) -> Result<Vec<u8>> {
+        if let Some((_, _, built)) = self.models.iter().find(|(id, from, _)| *id == edit.id && from == old) {
+            return Ok(built.clone());
+        }
+        let built = built_model(source, old, &edit.name, &self.temp).map_err(fail)?;
+        self.models.push((edit.id.clone(), old.to_vec(), built.clone()));
+        Ok(built)
+    }
+
+    /// A text file's messages written into the text at place, which was exported from reference.
+    #[allow(clippy::too_many_arguments)]
+    fn text(
+        &mut self,
+        place: &Place,
+        source: &Path,
+        reference: &Place,
+        old: &[u8],
+        shown: &str,
+        fail: &Fail,
+    ) -> Result<Vec<u8>> {
+        let written = dc2tk_disc::textfile::read_text(source)?;
+        let original = self
+            .disc_member(reference)
+            .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
+        let place = place.display();
+        let built = text::build(&written, old, original, &place, &self.fonts).map_err(|error| fail(error.into()))?;
+        let widths =
+            text::width_warnings(&written, original, &place, &self.fonts).map_err(|error| fail(error.into()))?;
+        self.warnings.extend(widths.into_iter().map(|warning| (shown.to_string(), format!("warning: {warning}"))));
+        Ok(built)
+    }
+
+    /// A sequence built from a MIDI file, by the programs of the bank holding it. With instruments,
+    /// the bank gains them first: data then holds the new bank.
+    #[allow(clippy::too_many_arguments)]
+    fn sequence(
+        &mut self,
+        place: &Place,
+        source: &Path,
+        instruments: &[music::Instrument],
+        old: &[u8],
+        data: &mut Vec<u8>,
+        shown: &str,
+        fail: &Fail,
+    ) -> Result<Vec<u8>> {
+        let Some((sequence, bank_members)) = place.members.split_last() else {
+            return Err(fail(Error::invalid("a sequence is a member of a bank".to_string())));
+        };
+        let bank_data = rebuild::read_member(data, bank_members);
+        if instruments.is_empty() || bank_data.is_none() {
+            let bank = bank_data.map(Bank::from_bytes).transpose().map_err(|error| fail(error.into()))?;
+            return music::build(&fs::read(source)?, old, bank.as_ref()).map_err(|error| fail(error.into()));
+        }
+        // the bank gains the instruments, then the sequence goes into it
+        let bank_path = bank_members.last().unwrap_or(&place.path);
+        let bank_name = bank_path.rsplit('/').next().unwrap_or(bank_path).to_uppercase();
+        let region = bank_name.starts_with("BG_").then_some(music::MUSIC_REGION);
+        let (bank, notes) = music::build_with_instruments(
+            &fs::read(source)?,
+            bank_data.unwrap_or_default(),
+            sequence,
+            instruments,
+            region,
+        )
+        .map_err(|error| fail(error.into()))?;
+        self.warnings.extend(notes.into_iter().map(|note| (shown.to_string(), format!("note: {note}"))));
+        *data = rebuild::replaced_member(data, bank_members, &bank)?;
+        Ok(rebuild::read_member(data, &place.members).map(<[u8]>::to_vec).unwrap_or_default())
+    }
+}
+
+/// A bank's entries replaced or added, in entry order.
+fn entries(edits: &[&Edit], old: &[u8], fail: &Fail) -> Result<Vec<u8>> {
+    let mut given: Vec<Given> = edits
+        .iter()
+        .filter_map(|edit| match &edit.change {
+            Change::Entry(given) => Some(given.clone()),
+            _ => None,
+        })
+        .collect();
+    given.sort_by_key(|given| given.number);
+    sounds::build_entries(&given, old).map_err(|error| fail(error.into()))
+}
+
+/// A texture file's pictures replaced, each from its PNG.
+fn pictures(edits: &[&Edit], old: &[u8], fail: &Fail) -> Result<Vec<u8>> {
+    let mut images = im3::read(old).map_err(|error| fail(error.into()))?;
+    for edit in edits {
+        let Change::Picture(at, png) = &edit.change else { continue };
+        let Some(position) = images.iter().position(|image| image.index == Some(*at)) else {
+            return Err(fail(Error::invalid(format!("no picture {at}"))));
+        };
+        let picture = im3::from_png(&fs::read(png)?, &images[position]).map_err(|error| {
+            Error::invalid(format!("{} (mod {}): {}: {error}", edit.key, edit.module, paths::file_name(png)))
+        })?;
+        images[position] = picture;
+    }
+    im3::write(&images, Some(old)).map_err(|error| fail(error.into()))
+}
+
 /// apply, with the letters the English font gains (english_letters, which may count other English
 /// text than the text: lines'): the text: lines are written with them, and the English font
 /// texture drawn with them when any text uses one.
@@ -1052,36 +1196,26 @@ pub fn apply_with(
     let disc = Archive::open(image.bytes())?;
     let index = discfiles::disc_index(&disc);
     let mut files = files.clone();
-    // models, then banks, then pictures, then texts, then the sequences inside banks; outer places
-    // first
-    let stage = |edit: &Edit| match edit.change {
-        Change::Model(_) => 0,
-        Change::Entry(_) => 1,
-        Change::Picture(..) => 2,
-        Change::Text(..) => 3,
-        Change::Sequence(..) => 4,
-    };
     let mut fonts = discfiles::disc_fonts(&disc, &image, &index);
     if !english.slots.is_empty() {
         fonts = fonts.with_english_extra(&english.slots);
     }
-    let mut groups: BTreeMap<(usize, usize, String), Vec<&Edit>> = BTreeMap::new();
+    let mut groups: BTreeMap<(Stage, usize, String), Vec<&Edit>> = BTreeMap::new();
     for edit in &resolved.edits {
-        let key = (stage(edit), edit.place.members.len(), edit.place.display().to_lowercase());
+        let key = (edit.change.stage(), edit.place.members.len(), edit.place.display().to_lowercase());
         groups.entry(key).or_default().push(edit);
     }
     static BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let build = BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let temp = std::env::temp_dir().join(format!("dc2tk-build-model-{}-{build}", std::process::id()));
-    let mut models: Vec<(String, Vec<u8>, Vec<u8>)> = Vec::new();
+    let mut applying =
+        Applying { image: &image, disc: &disc, index: &index, fonts, temp, models: Vec::new(), warnings: Vec::new() };
     let mut touched: IndexMap<String, Changed> = IndexMap::new();
-    let mut warnings: Vec<(String, String)> = Vec::new();
     for ((stage, _, shown), edits) in groups {
         let first = edits[0];
         let place = &first.place;
-        let fail = |error: Error| {
-            Error::invalid(format!("{} (mod {}) at {}: {error}", first.key, first.module, place.display()))
-        };
+        let what = format!("{} (mod {}) at {}", first.key, first.module, place.display());
+        let fail = |error: Error| Error::Context { what: what.clone(), error: Box::new(error) };
         let Some(entry) = index.get(&place.path.to_lowercase()) else {
             return Err(fail(Error::invalid(format!("{} is not a file on the disc", place.path))));
         };
@@ -1092,153 +1226,39 @@ pub fn apply_with(
         let Some(old) = rebuild::read_member(&data, &place.members).map(<[u8]>::to_vec) else {
             return Err(fail(Error::invalid("the pack has no such member".to_string())));
         };
-        let new = match stage {
-            0 => {
-                let Change::Model(source) = &first.change else { unreachable!() };
-                match models.iter().find(|(id, from, _)| *id == first.id && *from == old) {
-                    Some((_, _, built)) => built.clone(),
-                    None => {
-                        let built = built_model(source, &old, &first.name, &temp).map_err(fail)?;
-                        models.push((first.id.clone(), old.clone(), built.clone()));
-                        built
-                    }
-                }
-            }
-            3 => {
-                let Change::Text(source, reference) = &first.change else { unreachable!() };
-                let written = dc2tk_disc::textfile::read_text(source)?;
-                let original = index
-                    .get(&reference.path.to_lowercase())
-                    .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
-                    .ok_or_else(|| fail(Error::invalid(format!("{} is not on the disc", reference.display()))))?;
-                let built = text::build(&written, &old, original, &place.display(), &fonts)
-                    .map_err(|error| fail(error.into()))?;
-                let widths = text::width_warnings(&written, original, &place.display(), &fonts)
-                    .map_err(|error| fail(error.into()))?;
-                warnings.extend(widths.into_iter().map(|warning| (shown.clone(), format!("warning: {warning}"))));
-                built
-            }
-            4 => {
-                let Change::Sequence(source, instruments) = &first.change else { unreachable!() };
-                // the bank holding the sequence, for its programs
-                let Some((sequence, bank_members)) = place.members.split_last() else {
-                    return Err(fail(Error::invalid("a sequence is a member of a bank".to_string())));
-                };
-                let bank_data = rebuild::read_member(&data, bank_members);
-                if instruments.is_empty() || bank_data.is_none() {
-                    let bank = bank_data.map(Bank::from_bytes).transpose().map_err(|error| fail(error.into()))?;
-                    music::build(&fs::read(source)?, &old, bank.as_ref()).map_err(|error| fail(error.into()))?
-                } else {
-                    // the bank gains the instruments, then the sequence goes into it
-                    let bank_path = bank_members.last().unwrap_or(&place.path);
-                    let bank_name = bank_path.rsplit('/').next().unwrap_or(bank_path).to_uppercase();
-                    let region = bank_name.starts_with("BG_").then_some(music::MUSIC_REGION);
-                    let (bank, notes) = music::build_with_instruments(
-                        &fs::read(source)?,
-                        bank_data.unwrap_or_default(),
-                        sequence,
-                        instruments,
-                        region,
-                    )
-                    .map_err(|error| fail(error.into()))?;
-                    warnings.extend(notes.into_iter().map(|note| (shown.clone(), format!("note: {note}"))));
-                    data = rebuild::replaced_member(&data, bank_members, &bank)?;
-                    rebuild::read_member(&data, &place.members).map(<[u8]>::to_vec).unwrap_or_default()
-                }
-            }
-            1 => {
-                let mut given: Vec<Given> = edits
-                    .iter()
-                    .filter_map(|edit| if let Change::Entry(given) = &edit.change { Some(given.clone()) } else { None })
-                    .collect();
-                given.sort_by_key(|given| given.number);
-                sounds::build_entries(&given, &old).map_err(|error| fail(error.into()))?
-            }
-            _ => {
-                let mut images = im3::read(&old).map_err(|error| fail(error.into()))?;
-                for edit in &edits {
-                    let Change::Picture(at, png) = &edit.change else { unreachable!() };
-                    let Some(position) = images.iter().position(|image| image.index == Some(*at)) else {
-                        return Err(fail(Error::invalid(format!("no picture {at}"))));
-                    };
-                    let picture = im3::from_png(&fs::read(png)?, &images[position]).map_err(|error| {
-                        Error::invalid(format!(
-                            "{} (mod {}): {}: {error}",
-                            edit.key,
-                            edit.module,
-                            paths::file_name(png)
-                        ))
-                    })?;
-                    images[position] = picture;
-                }
-                im3::write(&images, Some(&old)).map_err(|error| fail(error.into()))?
+        let new = match &first.change {
+            Change::Model(source) => applying.model(first, source, &old, &fail)?,
+            Change::Entry(_) => entries(&edits, &old, &fail)?,
+            Change::Picture(..) => pictures(&edits, &old, &fail)?,
+            Change::Text(source, reference) => applying.text(place, source, reference, &old, &shown, &fail)?,
+            Change::Sequence(source, instruments) => {
+                applying.sequence(place, source, instruments, &old, &mut data, &shown, &fail)?
             }
         };
         files.insert(entry.path.clone(), rebuild::replaced_member(&data, &place.members, &new)?);
         let changed = touched.entry(shown).or_insert_with(|| Changed {
             place: Place { path: entry.path.clone(), members: place.members.clone() },
-            ids: Vec::new(),
-            modules: Vec::new(),
+            ids: IndexSet::new(),
+            modules: IndexSet::new(),
             old: old.len(),
             data: Vec::new(),
             warnings: Vec::new(),
             details: Vec::new(),
         });
-        if stage == 0 {
+        if stage == Stage::Model {
             changed.details = dc2tk_assets::models::pack_changes(&old, &new).unwrap_or_default();
         }
         for edit in edits {
-            if !changed.ids.contains(&edit.id) {
-                changed.ids.push(edit.id.clone());
-            }
-            if !changed.modules.contains(&edit.module) {
-                changed.modules.push(edit.module.clone());
-            }
+            changed.ids.insert(edit.id.clone());
+            changed.modules.insert(edit.module.clone());
         }
     }
     if !english.users.is_empty() {
-        // the English font texture with the letters drawn in (dc2tk_assets::font): a debug menu's
-        // leftover Japanese has glyph numbers there already, so only the messages the mods change
-        // count (english_letters)
-        let read = |path: &str| {
-            index.get(&path.to_lowercase()).map(|entry| (entry.path.clone(), disc.read(image.bytes(), entry).to_vec()))
-        };
-        let (Some((path, english_texture)), Some((_, european))) =
-            (read(font::ENGLISH_TEXTURE), read(font::EUROPEAN_TEXTURE))
-        else {
-            return Err(Error::invalid(format!(
-                "an English text uses letters past the English font's own, but the disc has no {} or {} to draw them from",
-                font::ENGLISH_TEXTURE,
-                font::EUROPEAN_TEXTURE
-            )));
-        };
-        let english_texture = files.get(&path).cloned().unwrap_or(english_texture);
-        let extended = font::extended_english(&english_texture, &european, &english.slots)?;
-        let (mut ids, mut modules): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
-        for (id, module, _) in &english.users {
-            if !ids.contains(id) {
-                ids.push(id.clone());
-            }
-            if !modules.contains(module) {
-                modules.push(module.clone());
-            }
-        }
-        let letters: String = english.used().into_iter().collect();
-        touched.insert(
-            path.to_lowercase(),
-            Changed {
-                place: Place { path: path.clone(), members: Vec::new() },
-                ids: vec![format!("the English font's added letters {letters}, for {}", ids.join(", "))],
-                modules,
-                old: english_texture.len(),
-                data: Vec::new(),
-                warnings: Vec::new(),
-                details: Vec::new(),
-            },
-        );
+        let (path, changed, extended) = english_font(&applying, &files, english)?;
+        touched.insert(path.to_lowercase(), changed);
         files.insert(path, extended);
     }
-    for (shown, warning) in warnings {
+    for (shown, warning) in applying.warnings {
         if let Some(changed) = touched.get_mut(&shown) {
             changed.warnings.push(warning);
         }
@@ -1250,6 +1270,41 @@ pub fn apply_with(
     }
     out.sort_by_key(|changed| changed.place.display().to_lowercase());
     Ok((files, out))
+}
+
+/// The English font texture with the letters drawn in (dc2tk_assets::font): a debug menu's
+/// leftover Japanese has glyph numbers there already, so only the messages the mods change count
+/// (english_letters). Its path, its change and its bytes.
+fn english_font(applying: &Applying, files: &Files, english: &EnglishLetters) -> Result<(String, Changed, Vec<u8>)> {
+    let read = |path: &str| {
+        let entry = applying.index.get(&path.to_lowercase())?;
+        Some((entry.path.clone(), applying.disc.read(applying.image.bytes(), entry).to_vec()))
+    };
+    let (Some((path, english_texture)), Some((_, european))) =
+        (read(font::ENGLISH_TEXTURE), read(font::EUROPEAN_TEXTURE))
+    else {
+        return Err(Error::invalid(format!(
+            "an English text uses letters past the English font's own, but the disc has no {} or {} to draw them from",
+            font::ENGLISH_TEXTURE,
+            font::EUROPEAN_TEXTURE
+        )));
+    };
+    let english_texture = files.get(&path).cloned().unwrap_or(english_texture);
+    let extended = font::extended_english(&english_texture, &european, &english.slots)?;
+    let ids: IndexSet<&str> = english.users.iter().map(|(id, _, _)| id.as_str()).collect();
+    let modules: IndexSet<String> = english.users.iter().map(|(_, module, _)| module.clone()).collect();
+    let letters: String = english.used().into_iter().collect();
+    let shown_ids = ids.into_iter().collect::<Vec<_>>().join(", ");
+    let changed = Changed {
+        place: Place { path: path.clone(), members: Vec::new() },
+        ids: IndexSet::from([format!("the English font's added letters {letters}, for {shown_ids}")]),
+        modules,
+        old: english_texture.len(),
+        data: Vec::new(),
+        warnings: Vec::new(),
+        details: Vec::new(),
+    };
+    Ok((path, changed, extended))
 }
 
 /// The changed places that read back out of a built image differently.
@@ -1319,8 +1374,8 @@ pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(File
         files.insert(path.clone(), data.clone());
         out.push(Changed {
             place: Place { path, members: Vec::new() },
-            ids: vec![format!("{} like {}", line.key, line.like.as_deref().unwrap_or_default())],
-            modules: vec![line.module.clone()],
+            ids: IndexSet::from([format!("{} like {}", line.key, line.like.as_deref().unwrap_or_default())]),
+            modules: IndexSet::from([line.module.clone()]),
             old: 0,
             data,
             warnings: notes.into_iter().map(|note| format!("note: {note}")).collect(),

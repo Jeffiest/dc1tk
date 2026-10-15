@@ -18,6 +18,7 @@ use dc2tk_disc::archive::Archive;
 use dc2tk_disc::{rebuild, Image};
 use dc2tk_script::replace::{self, Change, Line};
 use dc2tk_script::{discfiles, migrate};
+use indexmap::IndexSet;
 use serde_json::{json, Value};
 
 fn picture(name: &str, colour: [u8; 4]) -> Picture {
@@ -178,7 +179,7 @@ fn a_texture_is_replaced_at_every_place_or_only_some() {
         assert_eq!(pixels(&img, "wall"), [9, 9, 9, 0x80].repeat(64));
     }
     assert_eq!(changed.len(), 2);
-    assert_eq!(changed[0].ids, ["texture:tex02"]);
+    assert_eq!(changed[0].ids, IndexSet::from(["texture:tex02".to_string()]));
 
     mod_json(&mod_dir, json!({"replace": {"texture:tex02": {"file": "anywhere/deep/blue.png", "only": ["map/b"]}}}));
     let (files, _) = built(&disc, &["blue"]).unwrap();
@@ -816,7 +817,7 @@ fn a_mod_adds_a_music_file_made_like_a_bank_of_the_disc() {
     let (files, changed) = replace::add_music(&disc.iso, &lines, &BTreeMap::new()).unwrap();
     assert_eq!(files.keys().collect::<Vec<_>>(), ["snd2/bgm/BG_200.snd"]);
     assert_eq!((changed[0].place.display(), changed[0].old), ("snd2/bgm/BG_200.snd".to_string(), 0));
-    assert_eq!(changed[0].ids, ["music:BG_200 like BG_001"]);
+    assert_eq!(changed[0].ids, IndexSet::from(["music:BG_200 like BG_001".to_string()]));
     assert!(changed[0].warnings.iter().any(|note| note.contains("cut to stubs")), "{:?}", changed[0].warnings);
 
     // written into an image, the new file reads back: a bank whose entry 0 plays the MIDI file,
