@@ -29,10 +29,9 @@ it against the memory budgets of [docs/assets/memory.md](../docs/assets/memory.m
 
 | crate | holds |
 |---|---|
-| `dc2tk-disc` | the disc: ISO 9660, `DATA.HD4` and `DATA.DAT`, the packs inside its files, extracting them all, writing a new image with files replaced or added, cp932 names |
+| `dc2tk-disc` | the disc: ISO 9660, `DATA.HD4` and `DATA.DAT`, the packs inside its files, extracting them all, writing a new image with files replaced or added, cp932 names, and the text files the tools write (`textfile`: UTF-8, LF line endings, JSON as serde_json writes it pretty) |
 | `dc2tk-script` | the scripts: the `.stb` format, its assembly, the native tables, definition sets, the C parser, the decompiler, names, notes and messages, libraries, the SDK, the compiler, a VM interpreter for `mod test`, the source index (flags, xref, maps), learning definitions, build and mods (patches, additions, numbers, `start_at`, assets by id, editor headers, overrides followed by fingerprint, wrapped natives, whole files slimmed into patches), and the memory budgets build checks |
 | `dc2tk-assets` | textures (IM3/TIM2 to and from PNG), sound banks (SPU2 ADPCM to and from WAV), character packs (MDS, motions, skin weights to and from glTF), map scene files (`.map` as a typed tree), message files (`.mes` to and from text), game data tables (items, shops, monsters) as JSON, the asset tree and its ids |
-| `dc2tk-py` | number and text formatting as CPython does it (float repr, `%g`, `int(x, 0)`, `json.dumps`, `textwrap`, `difflib`, Unicode `str` methods): `dc2tk` was ported from a Python tool and writes the same bytes it did, so trees and mods made with that tool still match |
 | `dc2tk` | the command line: one module per group of commands (`setup.rs`, `tree_decompile.rs`, `modding.rs`, `verify.rs`, `defs.rs`, `xref.rs`, `asset_tree.rs`, `data_cmd.rs`) |
 
 Each module starts with a doc comment saying what it is for. The program
@@ -42,28 +41,25 @@ ordered maps and lists with static keys, built with `node!` (serde_json's
 compared. serde_json's own `Value` was three times slower, since every node
 hashed and allocated its keys.
 
-Some hidden commands run a stage over every script or asset at once
-(`disassemble-tree`, `assemble-tree`, `decompile-dump`, `script-sources`,
-`compile-tree`, `to-asm-tree`, `resolve-tree`, `index-dump`, `disc-header`,
-`asset-export`, `asset-build`, `assets-check`, `write-disc`), for checking a
-change against the whole disc. `dc2tk assets-check DISC TREE` builds every asset
-of a tree back and compares it with the disc's bytes at every place the
-manifest lists.
+Two hidden commands check a change against the whole disc: `dc2tk compile-tree TREE EXTRACTED`
+compiles every script of a decompiled tree and compares it with the disc's, and
+`dc2tk assets-check DISC TREE` builds every asset of a tree back and compares it with the disc's
+bytes at every place the manifest lists.
 
 ## Speed
 
-Against the old Python tool, on the PAL disc (16 cores):
+On the PAL disc (16 cores):
 
-| | Python | dc2tk |
-|---|---|---|
-| set up the disc (extract and decompile) | 837 s | 81 s |
-| decompile the whole disc to C | 8 min 38 s | 20.6 s |
-| disassemble all 1,398 scripts | 27.7 s | 1.7 s |
-| `build`, every script compiled, per mod set | 248-410 s | 15-47 s |
-| `verify` the whole disc | 15 min 32 s | 40 s |
-| export every texture, sound bank and character pack | 38-70 s, 16.5 s, 102-152 s | 8.6 s, 3.0 s, 5.9 s |
-| write the asset tree (`dc2tk assets`) | | 12-16 s |
+| | dc2tk |
+|---|---|
+| set up the disc (extract and decompile) | 81 s |
+| decompile the whole disc to C | 20.6 s |
+| disassemble all 1,398 scripts | 1.7 s |
+| `build`, every script compiled, per mod set | 15-47 s |
+| `verify` the whole disc | 40 s |
+| export every texture, sound bank and character pack | 8.6 s, 3.0 s, 5.9 s |
+| write the asset tree (`dc2tk assets`) | 12-16 s |
 
-Writing a 4.7 GB image takes about 2 s either way: it is a file copy that
+Writing a 4.7 GB image takes about 2 s: it is a file copy that
 Windows does by cloning blocks, as long as nothing has the source image
 mapped, so `write_disc` copies before it maps.
