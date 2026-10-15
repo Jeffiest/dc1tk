@@ -120,7 +120,7 @@ pub struct Definitions {
 }
 
 impl Definitions {
-    /// No definitions (--defs none).
+    /// No definitions (--no-defs).
     pub fn empty() -> Definitions {
         Definitions { language: "en".into(), ..Definitions::default() }
     }

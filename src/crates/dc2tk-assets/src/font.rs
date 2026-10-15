@@ -759,7 +759,7 @@ mod tests {
     }
 
     /// Every letter the build can draw, from the European font of an extracted disc (DC2TK_CORPUS):
-    /// the composed ones drawn, shown with C2S_SHOW_LETTERS set.
+    /// the composed ones drawn, shown with DC2TK_SHOW_LETTERS set.
     #[test]
     #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_letters_compose() {
@@ -769,7 +769,7 @@ mod tests {
         let mut refused = String::new();
         for c in drawable_letters() {
             match letter_cell(&source, c) {
-                Ok(cell) if std::env::var_os("C2S_SHOW_LETTERS").is_some() => {
+                Ok(cell) if std::env::var_os("DC2TK_SHOW_LETTERS").is_some() => {
                     eprintln!("{c}");
                     for row in cell.chunks(16) {
                         eprintln!(
