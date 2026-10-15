@@ -478,7 +478,7 @@ def main():
     for name in ("m01", "m07"):
         if not os.path.isfile(os.path.join(MAPS, name, name + ".gltf")):
             raise SystemExit("export the map first: dc2tk map-export %s" % name)
-    sys.path.insert(0, os.path.join(REPO, "src", "blender"))
+    sys.path.insert(0, os.path.join(REPO, "blender-plugin"))
     import addon_utils
 
     if os.path.isdir(os.path.join(MOD, "maps")):

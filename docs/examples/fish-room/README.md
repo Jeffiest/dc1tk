@@ -7,7 +7,7 @@ door behind where you arrive takes you back.
 
 Everything in it is made here; nothing of the game's is in this folder:
 
-- `make_mod.py` (run by Blender, with the [dc2tk_maps add-on](../../../src/blender/README.md)
+- `make_mod.py` (run by Blender, with the [dc2tk_maps add-on](../../../blender-plugin/README.md)
   on the path) imports your export of `m07` (the opening's Palm Brinks at
   night, chosen because it has no sky), deletes every placement, makes the
   background black and the fog off, and models:

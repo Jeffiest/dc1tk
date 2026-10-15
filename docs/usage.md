@@ -584,7 +584,7 @@ character pack; packs inside packs work the same way).
 - **Maps in Blender.** `dc2tk map-export s17` writes the map as one glTF scene
   (`extracted/maps/s17/`): placements, pieces with their meshes, trigger
   points, lights, cameras, collision and textures. The
-  [dc2tk_maps add-on](../src/blender/README.md) imports it as the game draws it;
+  [dc2tk_maps add-on](../blender-plugin/README.md) imports it as the game draws it;
   move and add placements, doors, chests, spawn points and lights, paint
   collision, edit meshes and textures, model new objects, and export into a
   mod, which gets the line `"map:s17": "maps/s17/s17.gltf"` under `replace`.

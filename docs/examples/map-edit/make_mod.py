@@ -103,7 +103,7 @@ def crate_material(image):
 def main():
     if not os.path.isfile(SCENE):
         raise SystemExit("export the map first: dc2tk map-export s17 (writes %s)" % SCENE)
-    sys.path.insert(0, os.path.join(REPO, "src", "blender"))
+    sys.path.insert(0, os.path.join(REPO, "blender-plugin"))
     import addon_utils
 
     bpy.ops.wm.read_factory_settings(use_empty=True)

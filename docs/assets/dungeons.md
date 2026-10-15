@@ -366,7 +366,7 @@ each template once (the first of a name), on the ground in rows by family
 placement node marked `"preview": true` with no slot. Its pieces (drawn
 model, `-a` floor and wall collision, `-c` camera collision) and points
 (`point` positions, `kaifuku`, doors' `key` events) are edited as in any map
-([the add-on](../../src/blender/README.md)), and the export into a mod
+([the add-on](../../blender-plugin/README.md)), and the export into a mod
 writes them into the template: moving, adding and deleting pieces and
 points, editing the meshes, painting collision (area 5 where things spawn,
 section 4), new models. A preview itself places nothing, and moving it

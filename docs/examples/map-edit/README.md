@@ -1,6 +1,6 @@
 # map-edit: a map edited in Blender
 
-Barga's Valley (`s17`) edited with the [dc2tk_maps add-on](../../../src/blender/README.md),
+Barga's Valley (`s17`) edited with the [dc2tk_maps add-on](../../../blender-plugin/README.md),
 built into a disc (checked in the game):
 
 - the valley's grass and cliff picture (`s17_02`) turned to autumn colours;

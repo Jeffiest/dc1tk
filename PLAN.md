@@ -127,7 +127,7 @@ See [the design](docs/design.md). In order:
 ## Done: editing maps in Blender
 
 Any fixed map opens in Blender (`dc2tk map-export`, the `dc2tk_maps` add-on in
-[src/blender](src/blender/README.md)) as the game draws it, and a mod's
+[blender-plugin](blender-plugin/README.md)) as the game draws it, and a mod's
 `"map:NAME"` line builds the edited scene back: placements, pieces and
 trigger points moved, added and deleted, collision painted, meshes and
 pictures edited, new models with collision, animated pieces (`FUNC_ANIME_DATA`,

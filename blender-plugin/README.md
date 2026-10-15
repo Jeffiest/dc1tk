@@ -17,16 +17,16 @@ Either way, then set the repository folder in the add-on's preferences
 (Edit, Preferences, Add-ons, "Dark Chronicle Maps (dc2tk)"). When the add-on is
 linked from this repository, the repository is found by itself.
 
-- **Link it (follows the repository):** link `src/blender/dc2tk_maps` into
+- **Link it (follows the repository):** link `blender-plugin/dc2tk_maps` into
   Blender's add-ons folder and enable it.
   - Windows (Blender 4.2+: the extensions folder):
     `mklink /J "%APPDATA%\Blender Foundation\Blender\5.1\extensions\user_default\dc2tk_maps" "C:\path\to\DC2-Toolkit\src\blender\dc2tk_maps"`
-  - Linux, macOS: `ln -s /path/to/DC2-Toolkit/src/blender/dc2tk_maps ~/.config/blender/5.1/extensions/user_default/dc2tk_maps`
+  - Linux, macOS: `ln -s /path/to/DC2-Toolkit/blender-plugin/dc2tk_maps ~/.config/blender/5.1/extensions/user_default/dc2tk_maps`
     (`~/Library/Application Support/Blender/5.1/...` on macOS)
   - Blender 3.6-4.1: the same into `scripts/addons/` instead of
     `extensions/user_default/`.
 - **Install a zip:** zip the `dc2tk_maps` folder (the zip holds `dc2tk_maps/...`),
-  or `blender --command extension build --source-dir src/blender/dc2tk_maps`,
+  or `blender --command extension build --source-dir blender-plugin/dc2tk_maps`,
   then Edit, Preferences, Add-ons, Install from Disk.
 
 Preferences:
@@ -192,7 +192,7 @@ text "dc2tk output".
 ## Tests
 
 ```
-blender --background --factory-startup --python src/blender/tests/test_addon.py
+blender --background --factory-startup --python blender-plugin/tests/test_addon.py
 ```
 
 enables the add-on, writes a small map with `tests/make_test_map.py` (two

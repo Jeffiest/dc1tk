@@ -1,8 +1,8 @@
 """End-to-end test of the dc2tk_maps add-on, headless:
 
-    blender --background --factory-startup --python src/blender/tests/test_addon.py
+    blender --background --factory-startup --python blender-plugin/tests/test_addon.py
 
-Enables the add-on from src/blender, writes the synthetic map of make_test_map.py, imports it
+Enables the add-on from blender-plugin, writes the synthetic map of make_test_map.py, imports it
 (through a stand-in dc2tk on Windows, which copies the map as `dc2tk map-export` would, otherwise
 from the file), edits fields, adds points, duplicates a placement, paints collision, validates,
 exports into a mod and checks the written glTF: every node and extras.c2 of the source is kept

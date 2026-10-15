@@ -682,7 +682,7 @@ what the importer needs and the importer allows for the rest:
   the original's and keeps the original (its int or float form and text) when
   they agree within 1e-5 of the larger of 1 and the value.
 - **Point data** is an object of named fields (Blender cannot store lists
-  mixing text and numbers). The names (`src/blender/dc2tk_maps/schema.py`):
+  mixing text and numbers). The names (`blender-plugin/dc2tk_maps/schema.py`):
   - `invent`: `id`, `min[3]`, `max[3]`, `unknown_int`, `unknown_float`, `angle`
   - `event`: `kind`, `event_no`, `program`, `args[3]`, `target`, `flags[3]` (action button, use item, 0x100)
   - `fire`, `flare`: `color[3]`, `draw`, `extra[2]` (when the line has it)

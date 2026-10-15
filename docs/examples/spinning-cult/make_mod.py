@@ -264,7 +264,7 @@ def main():
         if not os.path.isfile(os.path.join(HERE, "model", name)):
             raise SystemExit("make the gyros first: blender --background --python %s" % os.path.join(HERE, "make_gyros.py"))
     dc2tk, iso = arguments()
-    sys.path.insert(0, os.path.join(REPO, "src", "blender"))
+    sys.path.insert(0, os.path.join(REPO, "blender-plugin"))
     import addon_utils
     import bpy
 

@@ -104,9 +104,9 @@ def absolute(path):
 
 
 def _own_repo():
-    """The repository around the add-on when it is linked from src/blender/dc2tk_maps."""
+    """The repository around the add-on when it is linked from blender-plugin/dc2tk_maps."""
     here = os.path.dirname(os.path.realpath(__file__))
-    root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    root = os.path.dirname(os.path.dirname(here))
     if os.path.isfile(os.path.join(root, "dc2tk.bat")) and os.path.isfile(os.path.join(root, "Cargo.toml")):
         return root
     return ""
