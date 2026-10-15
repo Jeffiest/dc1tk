@@ -416,9 +416,7 @@ fn new_music_lines(lines: &[replace::Line], module: &str) -> Vec<String> {
 /// (dc2tk_script::memory, docs/assets/memory.md); true when a budget that is certain is exceeded.
 /// The image is mapped only here, so writing the new image can still clone the original.
 fn memory_check(iso: &Path, files: &discfiles::Files) -> Result<bool> {
-    let image = dc2tk_disc::Image::open(iso)?;
-    let archive = dc2tk_disc::archive::Archive::open(image.bytes())?;
-    let original = memory::Image::new(image.bytes(), &archive);
+    let original = dc2tk_disc::DiscSource::open(iso)?;
     let modded = memory::Overlay::new(&original, files);
     let changed: Vec<String> = files.keys().cloned().collect();
     let findings = memory::check(&original, &modded, &changed);

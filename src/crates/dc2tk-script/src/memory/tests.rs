@@ -1,5 +1,6 @@
 use super::*;
 use dc2tk_assets::mds as mdsfile;
+use std::path::Path;
 
 /// A disc of files given in memory.
 struct Files(BTreeMap<String, Vec<u8>>);
@@ -295,7 +296,7 @@ fn map_files_name_their_map() {
 #[ignore = "needs C2S_CORPUS"]
 fn corpus_retail_fits_the_budgets() {
     let corpus = dc2tk_disc::samples::corpus();
-    let disc = Folder::open(Path::new(&corpus)).unwrap();
+    let disc = DiscSource::open(Path::new(&corpus)).unwrap();
     let mut wrong = Vec::new();
     let mut largest: BTreeMap<MapKind, (u64, String)> = BTreeMap::new();
     let entries = map_entries(&disc);
@@ -358,13 +359,13 @@ fn corpus_retail_fits_the_budgets() {
     for path in disc.paths() {
         let lower = path.to_lowercase();
         if lower.ends_with(".stb") && lower.starts_with("map/") {
-            let size = disc.read(&path).unwrap().len() as u64;
+            let size = disc.read(path).unwrap().len() as u64;
             if size > SCRIPT_FILE {
                 wrong.push(format!("{path}: script {size}"));
             }
         }
         if lower.ends_with(".sky") {
-            for (name, img) in img_members(&disc.read(&path).unwrap()) {
+            for (name, img) in img_members(&disc.read(path).unwrap()) {
                 if shared_block(&[img]).blocks > 1 {
                     wrong.push(format!("{path}: {name} spills"));
                 }
@@ -373,7 +374,7 @@ fn corpus_retail_fits_the_budgets() {
         if !lower.ends_with(".chr") {
             continue;
         }
-        let data = disc.read(&path).unwrap();
+        let data = disc.read(path).unwrap();
         // e612_gri_kao.chr (6.2 MB) is never loaded: no script names it
         if data.len() as u64 > READ_BUFFER && !lower.ends_with("e612_gri_kao.chr") {
             wrong.push(format!("{path}: {} bytes", data.len()));
@@ -385,7 +386,7 @@ fn corpus_retail_fits_the_budgets() {
         // the packs a party slot loads with LoadPack (LoadSkin's costumes and shoes are only
         // estimated the same way); Max loads c01_base2 to 4 (his sword's model number + 2,
         // GetMainCharaModelName), so c01_base0 and 1 are left out
-        let Some((stack, quadwords, _)) = party_stack(&path) else { continue };
+        let Some((stack, quadwords, _)) = party_stack(path) else { continue };
         let skin = [1, 5].contains(&stack);
         let unused = lower.ends_with("c01_base0.chr") || lower.ends_with("c01_base1.chr");
         let estimate = chara_pack_bytes(&data).unwrap();

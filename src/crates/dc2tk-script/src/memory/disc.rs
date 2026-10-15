@@ -1,5 +1,5 @@
-//! The disc's files, as the check reads them: an extracted folder, an image, or an image with
-//! a build's files over it.
+//! The disc's files, as the check reads them: an extracted folder or an image (a DiscSource), or
+//! an image with a build's files over it.
 
 use super::*;
 
@@ -10,57 +10,15 @@ pub trait Disc: Sync {
     fn paths(&self) -> Vec<String>;
 }
 
-/// An extracted disc folder (`extracted/disc`): its files outside the packs' `.d` folders.
-pub struct Folder {
-    root: PathBuf,
-    index: HashMap<String, String>,
-}
-
-impl Folder {
-    pub fn open(root: &Path) -> std::io::Result<Folder> {
-        // a folder that is not there is an error, not an empty disc
-        fs::read_dir(root)?;
-        let files = crate::paths::walk(root, |entry| !(entry.is_dir && entry.relative.ends_with(".d")))?;
-        let index = files.into_iter().map(|relative| (relative.to_lowercase(), relative)).collect();
-        Ok(Folder { root: root.to_path_buf(), index })
-    }
-}
-
-impl Disc for Folder {
+/// The disc as given: an image, or an extracted disc folder (its files outside the packs' `.d`
+/// folders, as its manifest lists them).
+impl Disc for DiscSource {
     fn read(&self, path: &str) -> Option<Cow<'_, [u8]>> {
-        let relative = self.index.get(&path.to_lowercase())?;
-        fs::read(self.root.join(relative)).ok().map(Cow::Owned)
+        DiscSource::read(self, path).ok()
     }
 
     fn paths(&self) -> Vec<String> {
-        let mut paths: Vec<String> = self.index.values().cloned().collect();
-        paths.sort();
-        paths
-    }
-}
-
-/// The files of a disc image's DATA.DAT.
-pub struct Image<'a> {
-    image: &'a [u8],
-    archive: &'a archive::Archive,
-    index: HashMap<String, usize>,
-}
-
-impl<'a> Image<'a> {
-    pub fn new(image: &'a [u8], archive: &'a archive::Archive) -> Image<'a> {
-        let index = archive.entries.iter().enumerate().map(|(at, entry)| (entry.path.to_lowercase(), at)).collect();
-        Image { image, archive, index }
-    }
-}
-
-impl Disc for Image<'_> {
-    fn read(&self, path: &str) -> Option<Cow<'_, [u8]>> {
-        let entry = &self.archive.entries[*self.index.get(&path.to_lowercase())?];
-        Some(Cow::Borrowed(self.archive.read(self.image, entry)))
-    }
-
-    fn paths(&self) -> Vec<String> {
-        self.archive.entries.iter().map(|entry| entry.path.clone()).collect()
+        DiscSource::paths(self).to_vec()
     }
 }
 

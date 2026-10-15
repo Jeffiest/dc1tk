@@ -12,13 +12,11 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
-use std::path::{Path, PathBuf};
 
 use dc2tk_assets::im3;
 use dc2tk_assets::info_cfg::{self, Arg};
 use dc2tk_assets::mds::{self as mdsfile, F_COLOUR, PRIM_STRIP};
-use dc2tk_disc::{archive, text};
+use dc2tk_disc::{archive, text, DiscSource};
 
 /// Bytes in a quadword: mgCMemory sizes and allocations count quadwords.
 const QW: u64 = 16;

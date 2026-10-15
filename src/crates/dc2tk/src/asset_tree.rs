@@ -3,19 +3,18 @@
 //! every place the disc has it), and the hidden assets-check that builds every asset back at every
 //! place.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use clap::Subcommand;
 use rayon::prelude::*;
-use serde_json::Value;
 
 use dc2tk_assets::ids::Index;
 use dc2tk_assets::tree::{self, DiscFile, SoundNames};
 use dc2tk_assets::tree_check;
-use dc2tk_disc::archive::Archive;
-use dc2tk_disc::Image;
+use dc2tk_disc::DiscSource;
 
 use crate::files;
 
@@ -55,69 +54,38 @@ pub fn run(command: &Command) -> Result<ExitCode> {
     }
 }
 
-/// The disc's files: mapped from the image, or read from an extracted disc.
-enum Source {
-    Image(Image),
-    Files(Vec<(String, Vec<u8>)>),
-}
-
-impl Source {
-    fn open(path: &Path) -> Result<Source> {
-        if path.is_file() {
-            return Ok(Source::Image(Image::open(path)?));
-        }
-        if !path.is_dir() {
-            bail!("{} is neither a disc image nor an extracted disc", path.display());
-        }
-        let manifest_path = path.join("manifest.json");
-        let text = std::fs::read(&manifest_path)
-            .with_context(|| format!("{} is not an extracted disc (no manifest.json)", path.display()))?;
-        let manifest: Value = serde_json::from_slice(&text).with_context(|| manifest_path.display().to_string())?;
-        // the disc files whose bytes hold a texture file, character pack, bank or message file
-        // (members follow the file holding them in the list), and the English font's table the
-        // message files' text needs
-        let mut wanted: Vec<String> = Vec::new();
-        let mut current: Option<(String, bool)> = None;
-        let mut close = |current: &mut Option<(String, bool)>| {
-            if let Some((path, true)) = current.take() {
-                wanted.push(path);
-            }
-        };
-        for item in manifest["files"].as_array().map(Vec::as_slice).unwrap_or_default() {
-            let file = item["path"].as_str().unwrap_or("");
-            let relevant = tree::file_kind(file).is_some() || dc2tk_assets::text::Fonts::reads(file);
-            if item["packed"].as_bool() == Some(false) {
-                close(&mut current);
-                current = Some((file.to_string(), relevant));
-            } else if let Some((_, found)) = current.as_mut() {
+/// The disc's files the asset tree is made from, by DATA.DAT path: an image's every file (mapped,
+/// so reading one costs nothing), an extracted disc's only those whose bytes hold a texture file,
+/// character pack, bank or message file, and the English font's table the message files' text
+/// needs (read in parallel).
+fn tree_files(disc: &DiscSource) -> Result<Vec<(String, Cow<'_, [u8]>)>> {
+    let Some(manifest) = disc.manifest() else {
+        return disc.paths().iter().map(|path| Ok((path.clone(), disc.read(path)?))).collect();
+    };
+    // members follow the file holding them in the manifest's list: (a file, whether it or one of
+    // its members is wanted)
+    let mut wanted: Vec<&str> = Vec::new();
+    let mut current: Option<(&str, bool)> = None;
+    for item in &manifest.files {
+        let relevant = tree::file_kind(&item.path).is_some() || dc2tk_assets::text::Fonts::reads(&item.path);
+        if item.packed {
+            if let Some((_, found)) = current.as_mut() {
                 *found |= relevant;
             }
+        } else if let Some((path, true)) = current.replace((&item.path, relevant)) {
+            wanted.push(path);
         }
-        close(&mut current);
-        wanted.dedup();
-        let files = wanted
-            .into_par_iter()
-            .map(|file| {
-                let data = std::fs::read(path.join(&file)).with_context(|| format!("cannot read {file}"))?;
-                Ok((file, data))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(Source::Files(files))
     }
+    if let Some((path, true)) = current {
+        wanted.push(path);
+    }
+    wanted.dedup();
+    wanted.into_par_iter().map(|path| Ok((path.to_string(), disc.read(path)?))).collect()
+}
 
-    fn files(&self) -> Result<Vec<DiscFile<'_>>> {
-        Ok(match self {
-            Source::Image(image) => {
-                let archive = Archive::open(image.bytes())?;
-                archive
-                    .entries
-                    .iter()
-                    .map(|entry| DiscFile { path: entry.path.clone(), data: archive.read(image.bytes(), entry) })
-                    .collect()
-            }
-            Source::Files(files) => files.iter().map(|(path, data)| DiscFile { path: path.clone(), data }).collect(),
-        })
-    }
+/// The files of tree_files as the asset tree's functions take them.
+fn disc_files<'a>(files: &'a [(String, Cow<'_, [u8]>)]) -> Vec<DiscFile<'a>> {
+    files.iter().map(|(path, data)| DiscFile { path: path.clone(), data }).collect()
 }
 
 /// The sound entry names of the definition sets' headers (include/*.h), later sets winning.
@@ -146,8 +114,8 @@ pub(crate) fn sound_names(defs: &[PathBuf]) -> Result<SoundNames> {
 /// disc (as `dc2tk assets` names them, without converting anything), the definition sets naming the
 /// sound entries.
 pub(crate) fn index_of(source: &Path, defs: &[PathBuf]) -> Result<Index> {
-    let disc = Source::open(source)?;
-    Ok(Index::from_disc(&disc.files()?, &sound_names(defs)?))
+    let disc = DiscSource::open(source)?;
+    Ok(Index::from_disc(&disc_files(&tree_files(&disc)?), &sound_names(defs)?))
 }
 
 /// What a tree's folder holds that a new tree replaces.
@@ -169,14 +137,14 @@ pub fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -
             }
         }
     }
-    let disc = Source::open(source)?;
+    let disc = DiscSource::open(source)?;
     let write = |path: &str, data: &[u8]| -> dc2tk_assets::Result<()> {
         let target = output.join(path);
         std::fs::create_dir_all(target.parent().expect("a tree file is in a folder"))?;
         std::fs::write(target, data)?;
         Ok(())
     };
-    let summary = tree::build(&disc.files()?, &names, &write)?;
+    let summary = tree::build(&disc_files(&tree_files(&disc)?), &names, &write)?;
     println!(
         "{} textures from {} pictures in {} texture files ({} distinct by their bytes alone; {} names with more than one version)",
         summary.textures,
@@ -220,9 +188,9 @@ pub fn run_assets(source: &Path, output: &Path, force: bool, defs: &[PathBuf]) -
 }
 
 fn run_check(source: &Path, assets: &Path) -> Result<ExitCode> {
-    let disc = Source::open(source)?;
+    let disc = DiscSource::open(source)?;
     let temp = std::env::temp_dir().join(format!("dc2tk-assets-check-{}", std::process::id()));
-    let report = tree_check::check(&disc.files()?, assets, &temp)?;
+    let report = tree_check::check(&disc_files(&tree_files(&disc)?), assets, &temp)?;
     println!("{} files have the manifest's hashes", report.files);
     println!(
         "built back: {} picture places, {} character pack places, {} bank places, {} message file places, {} sequence places",

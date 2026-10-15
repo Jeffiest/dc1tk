@@ -12,6 +12,8 @@ pub mod layout;
 pub mod rebuild;
 #[cfg(any(test, feature = "test-support"))]
 pub mod samples;
+pub mod source;
+pub use source::DiscSource;
 pub mod text;
 pub mod textfile;
 

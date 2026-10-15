@@ -1,8 +1,6 @@
 //! Maps a mod edits as glTF scenes (`"map:s17": "maps/s17/s17.gltf"` in mod.json; see
 //! docs/assets/maps.md sections 7 and 8): where a map's files are on the disc.
 
-use dc2tk_disc::archive::Entry;
-
 use crate::{Error, Result};
 
 /// A map's files on the disc, by DATA.DAT path: the scene, its model packs and texture packs, and
@@ -37,26 +35,24 @@ pub fn rule_folder(name: &str) -> String {
     folder
 }
 
-/// A map's files by its name: the engine's own path first; a map only found elsewhere (six sit
-/// where the rule never reaches) when exactly one .map of that name is on the disc.
-pub fn map_files(entries: &[Entry], name: &str) -> Result<MapFiles> {
+/// A map's files by its name, from the disc's DATA.DAT paths: the engine's own path first; a map
+/// only found elsewhere (six sit where the rule never reaches) when exactly one .map of that name
+/// is on the disc.
+pub fn map_files(paths: &[String], name: &str) -> Result<MapFiles> {
     let lower = |text: &str| text.to_lowercase();
-    let has =
-        |path: &str| entries.iter().find(|entry| lower(&entry.path) == lower(path)).map(|entry| entry.path.clone());
+    let has = |wanted: &str| paths.iter().find(|path| lower(path) == lower(wanted)).cloned();
     let file_name = format!("{}.map", lower(name));
     let ruled = format!("{}/{}", rule_folder(name), file_name);
     let map = match has(&ruled) {
         Some(path) => path,
         None => {
-            let found: Vec<&Entry> = entries
-                .iter()
-                .filter(|entry| lower(&entry.path).rsplit('/').next() == Some(file_name.as_str()))
-                .collect();
+            let found: Vec<&String> =
+                paths.iter().filter(|path| lower(path).rsplit('/').next() == Some(file_name.as_str())).collect();
             match found.as_slice() {
-                [one] => one.path.clone(),
+                [one] => one.to_string(),
                 [] => return Err(Error::invalid(format!("the disc has no map {name}"))),
                 many => {
-                    let paths: Vec<&str> = many.iter().map(|entry| entry.path.as_str()).collect();
+                    let paths: Vec<&str> = many.iter().map(|path| path.as_str()).collect();
                     return Err(Error::invalid(format!("map {name} is at more than one place: {}", paths.join(", "))));
                 }
             }
@@ -81,24 +77,21 @@ pub fn map_files(entries: &[Entry], name: &str) -> Result<MapFiles> {
 mod tests {
     use super::*;
 
-    fn entry(path: &str) -> Entry {
-        Entry { path: path.into(), size: 1, sector: 0 }
-    }
-
     #[test]
     fn maps_are_found_by_the_engine_rule_then_by_name() {
         assert_eq!(rule_folder("s17"), "map/s/s17");
         assert_eq!(rule_folder("i03h02"), "map/i/i03/h02");
         assert_eq!((rule_folder("m05x"), rule_folder("d02f01r")), ("map/m/m05".into(), "map/d/d02/f01".into()));
         let entries = [
-            entry("map/s/s17/s17.map"),
-            entry("map/s/s17/s17.mpk"),
-            entry("map/s/s17/s17.ipk"),
-            entry("map/s/s38/i03h02.map"),
-            entry("map/s/s43/i03h02.map"),
-            entry("map/i/i03/h02/i03h02.map"),
-            entry("map/d/d06/b01/m07.map"),
-        ];
+            "map/s/s17/s17.map",
+            "map/s/s17/s17.mpk",
+            "map/s/s17/s17.ipk",
+            "map/s/s38/i03h02.map",
+            "map/s/s43/i03h02.map",
+            "map/i/i03/h02/i03h02.map",
+            "map/d/d06/b01/m07.map",
+        ]
+        .map(String::from);
         let s17 = map_files(&entries, "S17").unwrap();
         assert_eq!(
             (s17.map.as_str(), s17.mpk.as_deref(), s17.efp.as_deref()),

@@ -12,8 +12,8 @@ use rayon::prelude::*;
 use dc2tk_assets::map_export::{self, ModelPack};
 use dc2tk_assets::mapfile;
 use dc2tk_assets::to_gltf::TextureSearch;
-use dc2tk_disc::archive::{self, Archive, Entry};
-use dc2tk_disc::Image;
+use dc2tk_disc::archive;
+use dc2tk_disc::DiscSource;
 use dc2tk_script::mapedit;
 
 #[derive(Args)]
@@ -31,58 +31,6 @@ pub struct MapExportArgs {
     all: bool,
 }
 
-/// The disc's DATA.DAT files, from the image or an extracted disc.
-pub enum Disc {
-    Image(Image, Archive),
-    Folder(PathBuf, Vec<Entry>),
-}
-
-impl Disc {
-    pub fn open(path: &Path) -> Result<Disc> {
-        if path.is_file() {
-            let image = Image::open(path)?;
-            let archive = Archive::open(image.bytes())?;
-            return Ok(Disc::Image(image, archive));
-        }
-        if !path.join("manifest.json").is_file() {
-            bail!("{} is neither a disc image nor an extracted disc (no manifest.json)", path.display());
-        }
-        let mut entries = Vec::new();
-        let mut folders = vec![path.join("map")];
-        while let Some(folder) = folders.pop() {
-            for entry in fs::read_dir(&folder).with_context(|| format!("cannot read {}", folder.display()))?.flatten() {
-                let file = entry.path();
-                let relative = file.strip_prefix(path).unwrap().to_string_lossy().replace('\\', "/");
-                if file.is_dir() {
-                    if !relative.ends_with(".d") {
-                        folders.push(file);
-                    }
-                } else {
-                    entries.push(Entry { path: relative, size: 0, sector: 0 });
-                }
-            }
-        }
-        Ok(Disc::Folder(path.to_path_buf(), entries))
-    }
-
-    pub fn entries(&self) -> &[Entry] {
-        match self {
-            Disc::Image(_, archive) => &archive.entries,
-            Disc::Folder(_, entries) => entries,
-        }
-    }
-
-    pub fn read(&self, path: &str) -> Result<Vec<u8>> {
-        match self {
-            Disc::Image(image, archive) => {
-                let entry = archive.entry(path).with_context(|| format!("the disc has no {path}"))?;
-                Ok(archive.read(image.bytes(), entry).to_vec())
-            }
-            Disc::Folder(root, _) => fs::read(root.join(path)).with_context(|| format!("cannot read {path}")),
-        }
-    }
-}
-
 /// A pack's members with their bytes.
 fn members(data: &[u8]) -> Vec<(String, Vec<u8>)> {
     archive::parse_pack(data)
@@ -91,7 +39,7 @@ fn members(data: &[u8]) -> Vec<(String, Vec<u8>)> {
 }
 
 /// Every .img a map's .ipk holds.
-fn images_of(disc: &Disc, ipk: &Option<String>) -> Result<Vec<(String, Vec<u8>)>> {
+fn images_of(disc: &DiscSource, ipk: &Option<String>) -> Result<Vec<(String, Vec<u8>)>> {
     match ipk {
         Some(path) => Ok(members(&disc.read(path)?)
             .into_iter()
@@ -105,20 +53,20 @@ fn images_of(disc: &Disc, ipk: &Option<String>) -> Result<Vec<(String, Vec<u8>)>
 /// image or an extracted folder): the map's own first, then the shared ones (map/cmn), then every
 /// other map's by path. A few maps use pictures of shared or paired maps, and several maps have
 /// pictures of the same name.
-fn texture_packs(disc: &Disc, own: &mapedit::MapFiles) -> Vec<String> {
+fn texture_packs(disc: &DiscSource, own: &mapedit::MapFiles) -> Vec<String> {
     let mut others: Vec<String> = disc
-        .entries()
+        .paths()
         .iter()
-        .map(|entry| entry.path.clone())
         .filter(|path| path.to_lowercase().starts_with("map/") && path.to_lowercase().ends_with(".ipk"))
-        .filter(|path| Some(path) != own.ipk.as_ref())
+        .filter(|path| Some(*path) != own.ipk.as_ref())
+        .cloned()
         .collect();
     others.sort_by_key(|path| (!path.to_lowercase().starts_with("map/cmn/"), path.to_lowercase()));
     own.ipk.iter().cloned().chain(others).collect()
 }
 
 /// Texture files to look pictures up in, from texture_packs.
-fn texture_search(disc: &Disc, own: &mapedit::MapFiles) -> Result<TextureSearch> {
+fn texture_search(disc: &DiscSource, own: &mapedit::MapFiles) -> Result<TextureSearch> {
     let packs = texture_packs(disc, own);
     let files: Vec<Vec<(String, Vec<u8>)>> =
         packs.par_iter().map(|path| images_of(disc, &Some(path.clone()))).collect::<Result<_>>()?;
@@ -126,8 +74,8 @@ fn texture_search(disc: &Disc, own: &mapedit::MapFiles) -> Result<TextureSearch>
 }
 
 /// Exports one map; returns the report line.
-fn export_one(disc: &Disc, name: &str, out: &Path, search: Option<&TextureSearch>) -> Result<String> {
-    let files = mapedit::map_files(disc.entries(), name)?;
+fn export_one(disc: &DiscSource, name: &str, out: &Path, search: Option<&TextureSearch>) -> Result<String> {
+    let files = mapedit::map_files(disc.paths(), name)?;
     let map = mapfile::parse(&disc.read(&files.map)?).with_context(|| files.map.clone())?;
     let mut packs = Vec::new();
     if let Some(mpk) = &files.mpk {
@@ -185,12 +133,12 @@ fn export_one(disc: &Disc, name: &str, out: &Path, search: Option<&TextureSearch
 }
 
 pub fn run_map_export(args: &MapExportArgs) -> Result<ExitCode> {
-    let disc = Disc::open(&args.disc)?;
+    let disc = DiscSource::open(&args.disc)?;
     if args.all {
         let root = args.output.clone().unwrap_or_else(|| PathBuf::from("extracted/maps"));
         let mut names: BTreeMap<String, ()> = BTreeMap::new();
-        for entry in disc.entries() {
-            let lower = entry.path.to_lowercase();
+        for path in disc.paths() {
+            let lower = path.to_lowercase();
             if lower.starts_with("map/") && lower.ends_with(".map") {
                 let name = lower.rsplit('/').next().unwrap().trim_end_matches(".map").to_string();
                 names.insert(name, ());
@@ -198,7 +146,7 @@ pub fn run_map_export(args: &MapExportArgs) -> Result<ExitCode> {
         }
         let mut done = 0;
         for name in names.keys() {
-            let files = mapedit::map_files(disc.entries(), name)?;
+            let files = mapedit::map_files(disc.paths(), name)?;
             let map = mapfile::parse(&disc.read(&files.map)?).with_context(|| files.map.clone())?;
             if map.placements.is_empty() {
                 continue;
@@ -254,27 +202,27 @@ pub fn apply_maps(
     if lines.is_empty() {
         return Ok((out, changes));
     }
-    let disc = Disc::open(iso)?;
+    let disc = DiscSource::open(iso)?;
     let new_maps = dc2tk_script::maptable::new_maps(&lines)?;
     for line in &lines {
         let name = line.map_name();
         let source = if line.add { line.like().unwrap_or_default().to_string() } else { name.clone() };
-        if line.add && mapedit::map_files(disc.entries(), &name).is_ok() {
+        if line.add && mapedit::map_files(disc.paths(), &name).is_ok() {
             bail!(
                 "{} (mod {}): the disc has a map {name}; edit it with a map: line under \"replace\"",
                 line.key,
                 line.module
             );
         }
-        let found = mapedit::map_files(disc.entries(), &source)
-            .with_context(|| format!("{} (mod {})", line.key, line.module))?;
+        let found =
+            mapedit::map_files(disc.paths(), &source).with_context(|| format!("{} (mod {})", line.key, line.module))?;
         // where a file of the map goes: its own place, or a new map's
         let place = |path: &str| if line.add { new_map_path(path, &found, &name) } else { path.to_string() };
         // a file an earlier step rewrote is the one to build on
         let current = |path: &str| -> Result<Vec<u8>> {
             match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
                 Some((_, data)) => Ok(data.clone()),
-                None => disc.read(path),
+                None => Ok(disc.read(path)?.into_owned()),
             }
         };
         let original = current(&found.map)?;
@@ -369,7 +317,7 @@ pub fn apply_maps(
             let current = |path: &str| -> Result<Vec<u8>> {
                 match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
                     Some((_, data)) => Ok(data.clone()),
-                    None => disc.read(path),
+                    None => Ok(disc.read(path)?.into_owned()),
                 }
             };
             let rewritten = with_pictures(&disc, &found, &imported.textures, &current)
@@ -412,7 +360,7 @@ pub fn apply_maps(
                 if !out.contains_key(&target) {
                     let data = match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
                         Some((_, data)) => data.clone(),
-                        None => disc.read(path)?,
+                        None => disc.read(path)?.into_owned(),
                     };
                     copies.push((path.clone(), target, data));
                 }
@@ -440,7 +388,7 @@ pub fn apply_maps(
             let table = match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(&path)) {
                 Some((_, data)) => data.clone(),
                 None => match disc.read(&path) {
-                    Ok(data) => data,
+                    Ok(data) => data.into_owned(),
                     Err(_) => continue,
                 },
             };
@@ -537,7 +485,7 @@ struct Rewritten {
 /// texture file holding it (the map's own first, then other maps', which then show it changed
 /// too), a new one at the end of the map's own first texture file.
 fn with_pictures(
-    disc: &Disc,
+    disc: &DiscSource,
     own: &mapedit::MapFiles,
     edits: &[dc2tk_assets::map_import::TextureEdit],
     current: &dyn Fn(&str) -> Result<Vec<u8>>,

@@ -3,7 +3,7 @@
 //! `meswin/system_N.mes` (what item slots and the menus show), its description the allmenu.mes
 //! message of that number in the language's menu packs.
 
-use std::fs;
+use std::borrow::Cow;
 
 use anyhow::{anyhow, bail, Context, Result};
 
@@ -11,7 +11,7 @@ use dc2tk_assets::item_data::{self, ItemText};
 use dc2tk_assets::text;
 use dc2tk_disc::rebuild;
 
-use crate::map_cmd::Disc;
+use dc2tk_disc::DiscSource;
 
 /// The system message file of a language (LoadSystemMes: system.mes for Japanese).
 pub fn system_path(language: usize) -> String {
@@ -23,28 +23,17 @@ pub fn system_path(language: usize) -> String {
 }
 
 /// The menu packs of a language's folder (`menu/N/*.pac`), by DATA.DAT path.
-pub fn menu_packs(disc: &Disc, language: usize) -> Vec<String> {
+pub fn menu_packs(disc: &DiscSource, language: usize) -> Vec<String> {
     let folder = format!("menu/{language}/");
-    let mut out: Vec<String> = match disc {
-        Disc::Image(..) => disc
-            .entries()
-            .iter()
-            .map(|entry| entry.path.clone())
-            .filter(|path| {
-                let lower = path.to_lowercase();
-                lower.starts_with(&folder) && lower.ends_with(".pac") && !lower[folder.len()..].contains('/')
-            })
-            .collect(),
-        Disc::Folder(root, _) => match fs::read_dir(root.join(&folder)) {
-            Ok(entries) => entries
-                .flatten()
-                .map(|entry| entry.file_name().to_string_lossy().to_string())
-                .filter(|name| name.to_lowercase().ends_with(".pac") && root.join(&folder).join(name).is_file())
-                .map(|name| format!("{folder}{name}"))
-                .collect(),
-            Err(_) => Vec::new(),
-        },
-    };
+    let mut out: Vec<String> = disc
+        .paths()
+        .iter()
+        .filter(|path| {
+            let lower = path.to_lowercase();
+            lower.starts_with(&folder) && lower.ends_with(".pac") && !lower[folder.len()..].contains('/')
+        })
+        .cloned()
+        .collect();
     out.sort();
     out
 }
@@ -59,14 +48,14 @@ const FIRST_DESCRIPTION: u16 = (item_data::MESSAGE_BASE + 1) as u16;
 /// the letters the build draws as the English font's glyphs 288 on (font::english_slots; empty for
 /// font::ENGLISH_EXTRA). Returns the disc files that change.
 pub fn item_messages(
-    disc: &Disc,
+    disc: &DiscSource,
     current: &dyn Fn(&str) -> Result<Vec<u8>>,
     texts: &[ItemText],
     english_extra: &[char],
 ) -> Result<Vec<(String, Vec<u8>)>> {
     let fonts = text::Fonts {
-        english_table: disc.read(text::ENGLISH_FONT).ok(),
-        korean_table: disc.read(dc2tk_assets::font::KOREAN_TABLE).ok(),
+        english_table: disc.read(text::ENGLISH_FONT).ok().map(Cow::into_owned),
+        korean_table: disc.read(dc2tk_assets::font::KOREAN_TABLE).ok().map(Cow::into_owned),
         english_extra: (!english_extra.is_empty()).then(|| english_extra.to_vec()),
     };
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();

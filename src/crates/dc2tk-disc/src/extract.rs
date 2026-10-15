@@ -8,15 +8,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::archive::{self, Archive};
 use crate::{iso, Result, WithPath};
 
 pub const MAX_PACK_DEPTH: usize = 4;
 pub const PACK_SUFFIX: &str = ".d";
+/// The listing extract writes last, which marks a finished extraction.
+pub const MANIFEST: &str = "manifest.json";
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileItem {
     pub path: String,
     pub size: usize,
@@ -24,7 +26,7 @@ pub struct FileItem {
 }
 
 /// What extract wrote; written as manifest.json, which marks a finished extraction.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
     pub files: Vec<FileItem>,
     pub scripts: Vec<String>,
@@ -138,9 +140,9 @@ pub fn extract(image: &[u8], out_dir: &Path) -> Result<Manifest> {
     let manifest = Manifest { files, scripts, boot };
     // The manifest marks a finished extraction (setup reuses a folder that has one), so it is written
     // whole or not at all.
-    let partial = out_dir.join("manifest.json.partial");
+    let partial = out_dir.join(format!("{MANIFEST}.partial"));
     fs::write(&partial, crate::textfile::json_text(&manifest)).with_path("write", &partial)?;
-    let done = out_dir.join("manifest.json");
+    let done = out_dir.join(MANIFEST);
     fs::rename(&partial, &done).with_path("write", &done)?;
     Ok(manifest)
 }

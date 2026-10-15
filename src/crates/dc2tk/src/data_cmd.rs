@@ -6,6 +6,7 @@
 //! patched in place in the built image, every table's patches together. The inventions table
 //! carries the ideas' names (`ideas`, the copies of `neta2.lst`).
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,23 +23,9 @@ use dc2tk_assets::idea_data::{self, Ideas};
 use dc2tk_assets::item_data::{self, ItemText, Items};
 use dc2tk_assets::shop_data::{self, Shops};
 use dc2tk_assets::{exe_tables, game_data, json, text};
-use dc2tk_disc::{iso, rebuild, Image};
+use dc2tk_disc::{rebuild, DiscSource};
 use dc2tk_script::discfiles::{self, Files};
 use dc2tk_script::replace::{self, Line};
-
-use crate::map_cmd::Disc;
-
-/// The boot executable's bytes, from the image's directory tree or an extracted disc's folder.
-pub fn executable(iso_path: &Path) -> Result<Vec<u8>> {
-    if iso_path.is_file() {
-        let image = Image::open(iso_path)?;
-        let record = iso::find(image.bytes(), elf::EXECUTABLE)?
-            .with_context(|| format!("the disc has no {}", elf::EXECUTABLE))?;
-        return Ok(iso::read_file(image.bytes(), &record).to_vec());
-    }
-    let path = iso_path.join(elf::EXECUTABLE);
-    fs::read(&path).with_context(|| format!("cannot read {}", path.display()))
-}
 
 /// The item tables and every language's item names.
 fn item_paths() -> Vec<String> {
@@ -262,8 +249,8 @@ impl Table {
 
 /// The table as the JSON text `mod asset` writes.
 pub fn export(iso_path: &Path, table: &str) -> Result<String> {
-    let disc = Disc::open(iso_path)?;
-    let loaded = load(table, &executable(iso_path)?, &|path| disc.read(path))?;
+    let disc = DiscSource::open(iso_path)?;
+    let loaded = load(table, &disc.disc_file(elf::EXECUTABLE)?, &|path| Ok(disc.read(path)?.into_owned()))?;
     Ok(json::json_text(&loaded.to_json()))
 }
 
@@ -323,15 +310,16 @@ pub fn english_item_letters(iso_path: &Path, mod_dirs: &[PathBuf]) -> Result<Vec
     if lines.is_empty() {
         return Ok(Vec::new());
     }
-    let disc = Disc::open(iso_path)?;
-    let loaded = load("items", &executable(iso_path)?, &|path| disc.read(path))?;
+    let disc = DiscSource::open(iso_path)?;
+    let loaded = load("items", &disc.disc_file(elf::EXECUTABLE)?, &|path| Ok(disc.read(path)?.into_owned()))?;
     let mut given = Vec::new();
     for line in &lines {
         given.push((line.module.clone(), read_table(line)?));
     }
     let mine: Vec<&Line> = lines.iter().collect();
     let (_, _, texts) = loaded.changes(&given).with_context(|| format!("data:items ({})", modules_of(&mine)))?;
-    let fonts = text::Fonts { english_table: disc.read(text::ENGLISH_FONT).ok(), ..Default::default() };
+    let fonts =
+        text::Fonts { english_table: disc.read(text::ENGLISH_FONT).ok().map(Cow::into_owned), ..Default::default() };
     let mut out = Vec::new();
     for item_text in texts.iter().filter(|item_text| item_text.language == text::Language::English as usize) {
         let Some(body) = &item_text.text else {
@@ -362,8 +350,8 @@ pub fn apply_data(
     if lines.is_empty() {
         return Ok((out, None, changes));
     }
-    let disc = Disc::open(iso_path)?;
-    let elf = executable(iso_path)?;
+    let disc = DiscSource::open(iso_path)?;
+    let elf = disc.disc_file(elf::EXECUTABLE)?.into_owned();
     let mut patches: Vec<Patch> = Vec::new();
     for table in replace::DATA_TABLES {
         let mine: Vec<&Line> = lines.iter().filter(|line| line.data_table() == table).collect();
@@ -373,7 +361,7 @@ pub fn apply_data(
         let current = |path: &str| -> Result<Vec<u8>> {
             match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
                 Some((_, data)) => Ok(data.clone()),
-                None => disc.read(path),
+                None => Ok(disc.read(path)?.into_owned()),
             }
         };
         // the layouts name parts as a data:parts line of the build names them
@@ -461,7 +449,7 @@ pub fn apply_data(
             let current = |path: &str| -> Result<Vec<u8>> {
                 match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
                     Some((_, data)) => Ok(data.clone()),
-                    None => disc.read(path),
+                    None => Ok(disc.read(path)?.into_owned()),
                 }
             };
             let written = crate::item_text::item_messages(&disc, &current, &texts, english_extra)?;
@@ -492,13 +480,12 @@ pub fn check(out_path: &Path, changes: &[DataChange], files: &Files, executable:
     if changes.iter().all(|change| change.files.is_empty()) {
         return Ok(wrong);
     }
-    let disc = Disc::open(out_path)?;
+    let disc = DiscSource::open(out_path)?;
     for change in changes {
         for (path, _, _) in &change.files {
-            let wanted =
-                if path == elf::EXECUTABLE { executable.map(<[u8]>::to_vec) } else { files.get(path).cloned() };
-            let read = if path == elf::EXECUTABLE { self::executable(out_path).ok() } else { disc.read(path).ok() };
-            if wanted.is_none() || read != wanted {
+            let wanted = if path == elf::EXECUTABLE { executable } else { files.get(path).map(Vec::as_slice) };
+            let read = if path == elf::EXECUTABLE { disc.disc_file(path).ok() } else { disc.read(path).ok() };
+            if wanted.is_none() || read.as_deref() != wanted {
                 wrong.push(path.clone());
             }
         }
