@@ -167,6 +167,27 @@ impl Script {
         out.extend_from_slice(&self.tail);
         out
     }
+
+    /// The line break the script's new statements are written with: its own, `\r\n` in every cfg
+    /// script of the disc, and `\r\n` too in a script of one line.
+    pub fn newline(&self) -> &'static str {
+        let text = self.write();
+        if text.windows(2).any(|pair| pair == b"\r\n") || !text.contains(&b'\n') {
+            "\r\n"
+        } else {
+            "\n"
+        }
+    }
+}
+
+/// The statements of a text, the first with `before` in front of it in place of what the text
+/// has: a record written again where the old one was, or after another.
+pub fn statements_of(text: &str, before: Vec<u8>) -> Result<Vec<Statement>> {
+    let mut statements = Script::parse(text.as_bytes())?.statements;
+    if let Some(first) = statements.first_mut() {
+        first.before = before;
+    }
+    Ok(statements)
 }
 
 impl Statement {
@@ -332,9 +353,10 @@ pub enum To {
 /// SPI_STACK_SIZE: the arguments one statement may have; PushStack drops the rest.
 pub const ARGS_MOST: usize = 64;
 
-/// The text of a new statement: a line break, the tag and the arguments' texts.
-pub fn statement_text(tag: &str, args: &[Vec<u8>]) -> Vec<u8> {
-    let mut out = b"\r\n".to_vec();
+/// The text of a new statement: a line break (the file's, Script::newline), the tag and the
+/// arguments' texts.
+pub fn statement_text(newline: &str, tag: &str, args: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = newline.as_bytes().to_vec();
     out.extend_from_slice(tag.as_bytes());
     for (number, arg) in args.iter().enumerate() {
         out.push(if number == 0 { b' ' } else { b',' });
@@ -344,15 +366,15 @@ pub fn statement_text(tag: &str, args: &[Vec<u8>]) -> Vec<u8> {
     out
 }
 
-/// The text of a run of statements of a script, `from` to `to` (inclusive), as new statements:
-/// the line break before the first stands for whatever was before it (a comment naming the
-/// record it was copied from), the rest kept as they are.
-pub fn block_text(statements: &[Statement]) -> Vec<u8> {
+/// The text of a run of statements copied from a script, as new statements: a line break (the
+/// file's, Script::newline) stands for whatever was before the first (a comment naming the record
+/// it was copied from), the rest kept as they are.
+pub fn block_text(newline: &str, statements: &[Statement]) -> Vec<u8> {
     let mut out = Vec::new();
     for (number, statement) in statements.iter().enumerate() {
         let mut copy = statement.clone();
         if number == 0 {
-            copy.before = b"\r\n".to_vec();
+            copy.before = newline.as_bytes().to_vec();
         }
         copy.write_into(&mut out);
     }
@@ -583,6 +605,17 @@ mod tests {
     }
 
     #[test]
+    fn new_statements_take_the_files_line_break() {
+        let crlf = Script::parse(b"A 1;\r\nB 2;\r\n").unwrap();
+        let lf = Script::parse(b"A 1;\nB 2;\n").unwrap();
+        assert_eq!((crlf.newline(), lf.newline(), Script::parse(b"A 1;").unwrap().newline()), ("\r\n", "\n", "\r\n"));
+        assert_eq!(statement_text(lf.newline(), "C", &[b"3".to_vec()]), b"\nC 3;");
+        assert_eq!(block_text(crlf.newline(), &lf.statements), b"\r\nA 1;\nB 2;");
+        let placed = statements_of("D 4;\nE 5;", b"\n\n".to_vec()).unwrap();
+        assert_eq!((placed[0].before.as_slice(), placed[1].before.as_slice()), (&b"\n\n"[..], &b"\n"[..]));
+    }
+
+    #[test]
     fn what_cannot_be_kept_is_refused() {
         assert!(Script::parse(b"BIN\0").is_err());
         assert!(Script::parse(b"TAG 1 // two\r\n,2;").is_err());
@@ -630,9 +663,9 @@ mod tests {
             what: what.into(),
             module: module.into(),
         };
-        let block = block_text(&script.statements[1..3]);
+        let block = block_text(script.newline(), &script.statements[1..3]);
         assert_eq!(block, b"\r\nWEP 1,2;\r\nWEP_BUILD 0;");
-        let new = To::Insert(statement_text("WEP", &[b"3".to_vec(), b"4".to_vec()]));
+        let new = To::Insert(statement_text(script.newline(), "WEP", &[b"3".to_vec(), b"4".to_vec()]));
         let edits = [
             edit(2, new.clone(), "weapon 1", "a"),
             edit(2, new.clone(), "weapon 1", "b"),

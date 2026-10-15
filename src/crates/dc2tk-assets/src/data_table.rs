@@ -711,7 +711,7 @@ impl Table {
             let mut scripts = Vec::new();
             for &(file, first, last) in &like.block {
                 let mut statements = self.scripts[file].statements[first..=last].to_vec();
-                statements[0].before = b"\r\n".to_vec();
+                statements[0].before = self.scripts[file].newline().as_bytes().to_vec();
                 let language = adding.languages.iter().find(|(known, _)| *known == file).map(|&(_, language)| language);
                 for statement in statements.iter_mut() {
                     for (tag, arg, text) in &key_texts {
@@ -929,7 +929,7 @@ impl Table {
                     let &(file, last) = at.last().expect("lines");
                     let tag = self.scripts[file].statements[last].tag.clone();
                     for (number, chunk) in rest.chunks((*per_line).max(1) * entry.len()).enumerate() {
-                        let text = cfg_text::statement_text(&tag, chunk);
+                        let text = cfg_text::statement_text(self.scripts[file].newline(), &tag, chunk);
                         edits.push(edit(file, last, 0, To::Insert(text), format!("{what} (new line {})", number + 1)));
                     }
                 }

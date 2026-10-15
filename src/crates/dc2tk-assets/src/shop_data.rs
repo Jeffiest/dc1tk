@@ -223,7 +223,7 @@ impl Shops {
             file,
             statement: after,
             arg: 0,
-            to: To::Insert(cfg_text::statement_text(tag, &args)),
+            to: To::Insert(cfg_text::statement_text(self.scripts[file].newline(), tag, &args)),
             what,
             module: module.to_string(),
         })

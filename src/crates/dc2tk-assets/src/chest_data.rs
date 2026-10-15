@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
 
-use crate::cfg_text::{Arg, Script, Statement};
+use crate::cfg_text::{self, Arg, Script, Statement};
 use crate::json::{self, member};
 use crate::{bail, Context, Result};
 
@@ -67,7 +67,6 @@ struct File {
     floor_start: Option<usize>,
     groups: Vec<Group>,
     floors: Vec<Floor>,
-    newline: Vec<u8>,
 }
 
 fn ints(statement: &Statement) -> Vec<i32> {
@@ -82,7 +81,6 @@ impl File {
             floor_start: None,
             groups: Vec::new(),
             floors: Vec::new(),
-            newline: if data.windows(2).any(|pair| pair == b"\r\n") { b"\r\n".to_vec() } else { b"\n".to_vec() },
             script: Script { statements: Vec::new(), tail: Vec::new() },
         };
         for (at, statement) in script.statements.iter().enumerate() {
@@ -354,15 +352,11 @@ fn floor_text(floor: i32, groups: &[i32]) -> String {
 /// The file with its changed groups and floors written again in place, the new ones after the last
 /// of their kind, and the start lines' counts made true.
 fn rewritten(file: &File, groups: &[(i32, Vec<Item>, bool)], floors: &[(i32, Vec<i32>, bool)]) -> Result<Vec<u8>> {
-    let nl_bytes = file.newline.clone();
-    let nl = String::from_utf8_lossy(&nl_bytes).into_owned();
+    let nl = file.script.newline();
+    let nl_bytes = nl.as_bytes().to_vec();
     let mut statements: Vec<Statement> = Vec::new();
     let push = |statements: &mut Vec<Statement>, text: String, before: Vec<u8>| -> Result<()> {
-        let mut parsed = Script::parse(text.as_bytes())?.statements;
-        if let Some(first) = parsed.first_mut() {
-            first.before = before;
-        }
-        statements.extend(parsed);
+        statements.extend(cfg_text::statements_of(&text, before)?);
         Ok(())
     };
     let item_count: usize = groups.iter().map(|(_, items, _)| items.len()).sum();
@@ -396,7 +390,7 @@ fn rewritten(file: &File, groups: &[(i32, Vec<Item>, bool)], floors: &[(i32, Vec
             )?;
         } else if let Some(group) = file.groups.iter().find(|group| group.at[0] == at) {
             match groups.iter().find(|(id, _, changed)| *id == group.id && *changed) {
-                Some((id, items, _)) => push(&mut statements, group_text(*id, items, &nl), statement.before.clone())?,
+                Some((id, items, _)) => push(&mut statements, group_text(*id, items, nl), statement.before.clone())?,
                 None => statements.push(statement.clone()),
             }
         } else if let Some(floor) = file.floors.iter().find(|floor| floor.at == at) {
@@ -410,7 +404,7 @@ fn rewritten(file: &File, groups: &[(i32, Vec<Item>, bool)], floors: &[(i32, Vec
         // new groups and floors after the last of their kind
         if Some(at) == last_group {
             for (id, items, _) in groups.iter().filter(|(id, _, _)| !file.groups.iter().any(|group| group.id == *id)) {
-                push(&mut statements, group_text(*id, items, &nl), nl_bytes.clone())?;
+                push(&mut statements, group_text(*id, items, nl), nl_bytes.clone())?;
             }
         }
         if Some(at) == last_floor {

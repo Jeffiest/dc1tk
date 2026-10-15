@@ -897,7 +897,8 @@ impl Items {
                     let Some(after) = self.last_tagged(file, "MES_SYS") else {
                         bail!("{what}: {} has no MES_SYS to add one after", NAME_FILES[language]);
                     };
-                    let line = cfg_text::statement_text("MES_SYS", &[cfg_text::int_text(item as i64), text]);
+                    let args = [cfg_text::int_text(item as i64), text];
+                    let line = cfg_text::statement_text(self.scripts[file].newline(), "MES_SYS", &args);
                     out.push(Edit {
                         file,
                         statement: after,
@@ -1034,7 +1035,7 @@ impl Items {
             file: COMDAT,
             statement: last_com,
             arg: 0,
-            to: To::Insert(cfg_text::block_text(std::slice::from_ref(&com))),
+            to: To::Insert(cfg_text::block_text(self.scripts[COMDAT].newline(), std::slice::from_ref(&com))),
             what: format!("{label} common data"),
             module: new.module.into(),
         });
@@ -1141,7 +1142,7 @@ impl Items {
             file: block_file,
             statement: after,
             arg: 0,
-            to: To::Insert(cfg_text::block_text(&block)),
+            to: To::Insert(cfg_text::block_text(self.scripts[block_file].newline(), &block)),
             what: format!("{label} {}", FILES[block_file]),
             module: new.module.into(),
         });

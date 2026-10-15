@@ -472,7 +472,7 @@ impl Ideas {
                 file,
                 statement: after,
                 arg: 0,
-                to: To::Insert(cfg_text::statement_text("PIC_NAME", &args)),
+                to: To::Insert(cfg_text::statement_text(self.scripts[file].newline(), "PIC_NAME", &args)),
                 what: format!("idea {} (new)", entry.id),
                 module: module_of(at),
             });

@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Map, Value};
 
-use crate::cfg_text::{Arg, Script, Statement};
+use crate::cfg_text::{self, Arg, Script, Statement};
 use crate::elf::file_offset;
 use crate::{bail, json, Context, Error, Result};
 
@@ -169,7 +169,6 @@ struct Layout {
     grid: Option<usize>,
     /// Each room's statements: ROOM_ID to ROOM_END.
     rooms: Vec<(usize, usize)>,
-    newline: Vec<u8>,
 }
 
 fn int_of(statement: &Statement, arg: usize) -> i32 {
@@ -198,8 +197,7 @@ impl Layout {
         if open.is_some() {
             bail!("{what}: a room without ROOM_END");
         }
-        let newline = if data.windows(2).any(|pair| pair == b"\r\n") { b"\r\n".to_vec() } else { b"\n".to_vec() };
-        let layout = Layout { script, grid, rooms, newline };
+        let layout = Layout { script, grid, rooms };
         for number in 0..layout.rooms.len() {
             layout.room(number, what)?;
         }
@@ -573,19 +571,16 @@ impl Layouts {
                     layout.rooms.len()
                 );
             }
-            let nl = &layout.newline;
+            let nl = layout.script.newline();
+            let nl_bytes = nl.as_bytes().to_vec();
             let mut statements = Vec::new();
             let mut taken = 0;
             let separator = layout.rooms.get(1).map_or_else(
-                || [nl.as_slice(); 4].concat(),
+                || nl.repeat(4).into_bytes(),
                 |&(start, _)| layout.script.statements[start].before.clone(),
             );
             let push = |statements: &mut Vec<Statement>, text: String, before: Vec<u8>| -> Result<()> {
-                let mut parsed = Script::parse(text.as_bytes())?.statements;
-                if let Some(first) = parsed.first_mut() {
-                    first.before = before;
-                }
-                statements.extend(parsed);
+                statements.extend(cfg_text::statements_of(&text, before)?);
                 Ok(())
             };
             let grid_text = |[w, d]: [f32; 2]| format!("GRID_SIZE {w:.6}, {d:.6};");
@@ -610,7 +605,7 @@ impl Layouts {
                 statements.push(statement.clone());
                 if layout.grid.is_none() && statement.tag == "VER" {
                     if let Some(size) = grid {
-                        push(&mut statements, grid_text(size), nl.clone())?;
+                        push(&mut statements, grid_text(size), nl_bytes.clone())?;
                     }
                 }
             }
@@ -621,7 +616,7 @@ impl Layouts {
             if rooms.len() > ROOMS_MOST {
                 bail!("{name}: {} rooms; the generator holds {ROOMS_MOST}", rooms.len());
             }
-            let tail = if layout.script.tail.is_empty() { nl.clone() } else { layout.script.tail.clone() };
+            let tail = if layout.script.tail.is_empty() { nl_bytes.clone() } else { layout.script.tail.clone() };
             out.push(Script { statements, tail }.write());
         }
         Ok(out)
@@ -633,8 +628,7 @@ fn number_of(value: &Value, what: &str, key: &str) -> Result<i32> {
 }
 
 /// A room's statements as the disc's files write them (no indent, one statement a line).
-fn room_text(room: &Room, nl: &[u8]) -> String {
-    let nl = String::from_utf8_lossy(nl);
+fn room_text(room: &Room, nl: &str) -> String {
     let (width, height) = (room.cells.first().map_or(0, Vec::len), room.cells.len());
     let mut text = format!(
         "ROOM_ID {};{nl}ROOM_SIZE {width},{height};{nl}ROOM_RATE {};{nl}ROOM_FIXED {};",
