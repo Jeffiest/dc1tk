@@ -25,7 +25,8 @@ use std::collections::BTreeMap;
 use serde_json::{json, Value};
 
 use crate::cfg_text::{Arg, Script, Statement};
-use crate::{bail, Result};
+use crate::json::{self, member};
+use crate::{bail, Context, Result};
 
 pub const FOLDER: &str = "dungeon/cfg_file";
 /// The chest scripts on the disc: tbox_d01.cfg to tbox_d08.cfg (d08, "back dungeon 2", has none).
@@ -75,7 +76,7 @@ fn ints(statement: &Statement) -> Vec<i32> {
 
 impl File {
     fn parse(data: &[u8], what: &str) -> Result<File> {
-        let script = Script::parse(data).map_err(|error| crate::Error::invalid(format!("{what}: {error}")))?;
+        let script = Script::parse(data).context(what)?;
         let mut file = File {
             group_start: None,
             floor_start: None,
@@ -207,27 +208,33 @@ impl Chests {
             }
             bail!("a chest table is {{\"chests\": [...]}}");
         };
-        for record in records.as_array().into_iter().flatten() {
-            let dungeon = whole(&record["dungeon"], "a dungeon's \"dungeon\" (0 is tbox_d01.cfg)")?;
+        let Some(records) = records.as_array() else {
+            bail!("\"chests\" is a list of dungeons, not {}", json::shape(records));
+        };
+        for record in records {
+            let record = json::object(record, "each of \"chests\"")?;
+            let dungeon = whole(member(record, "dungeon"), "a dungeon's \"dungeon\" (0 is tbox_d01.cfg)")?;
             if !(0..DUNGEONS as i32).contains(&dungeon) {
                 bail!("dungeon {dungeon}: the dungeons are 0 to {}", DUNGEONS - 1);
             }
             let dungeon = dungeon as usize;
             let file = &self.files[dungeon];
-            for key in record.as_object().into_iter().flatten().map(|(key, _)| key.as_str()) {
-                if !["dungeon", "groups", "floors"].contains(&key) {
+            for key in record.keys() {
+                if !["dungeon", "groups", "floors"].contains(&key.as_str()) {
                     bail!("dungeon {dungeon}: no field {key} (a dungeon has groups and floors)");
                 }
             }
-            for group in record["groups"].as_array().into_iter().flatten() {
-                let id = whole(&group["group"], &format!("dungeon {dungeon}: a group's \"group\" (its id)"))?;
+            for group in json::list(record, "groups", format!("dungeon {dungeon}"))? {
+                let group = json::object(group, format!("dungeon {dungeon}: each of \"groups\""))?;
+                let id = whole(member(group, "group"), &format!("dungeon {dungeon}: a group's \"group\" (its id)"))?;
                 let what = format!("dungeon {dungeon} group {id}");
-                let Some(listed) = group["items"].as_array() else {
+                let Some(listed) = group.get("items").and_then(Value::as_array) else {
                     bail!("{what}: items is a list of {{item, rank, count}}")
                 };
                 let mut items = Vec::new();
                 for entry in listed {
-                    let field = |key: &str| whole(&entry[key], &format!("{what}: an item's {key}"));
+                    let entry = json::object(entry, format!("{what}: each of \"items\""))?;
+                    let field = |key: &str| whole(member(entry, key), &format!("{what}: an item's {key}"));
                     items.push((field("item")?, field("rank")?, field("count")?));
                 }
                 if items.is_empty() || items.len() > ITEMS_MOST {
@@ -238,13 +245,16 @@ impl Chests {
                     out.push(Change { dungeon, field: Field::Group(id, items), module: module.into(), what: shown });
                 }
             }
-            for floor in record["floors"].as_array().into_iter().flatten() {
-                let number = whole(&floor["floor"], &format!("dungeon {dungeon}: a floor's \"floor\""))?;
+            for floor in json::list(record, "floors", format!("dungeon {dungeon}"))? {
+                let floor = json::object(floor, format!("dungeon {dungeon}: each of \"floors\""))?;
+                let number = whole(member(floor, "floor"), &format!("dungeon {dungeon}: a floor's \"floor\""))?;
                 let what = format!("dungeon {dungeon} floor {number}");
                 if !(0..FLOORS).contains(&number) {
                     bail!("{what}: the floors are 0 to {}", FLOORS - 1);
                 }
-                let Some(listed) = floor["groups"].as_array() else { bail!("{what}: groups is a list of group ids") };
+                let Some(listed) = floor.get("groups").and_then(Value::as_array) else {
+                    bail!("{what}: groups is a list of group ids")
+                };
                 let groups =
                     listed.iter().map(|id| whole(id, &format!("{what}: a group id"))).collect::<Result<Vec<_>>>()?;
                 if groups.is_empty() || groups.len() > FLOOR_GROUPS_MOST {
@@ -467,6 +477,21 @@ mod tests {
         let mut both = chests.changes(&edit, "a").unwrap();
         both.extend(chests.changes(&other, "b").unwrap());
         assert!(chests.apply(&both).unwrap_err().to_string().contains("a and b"));
+    }
+
+    #[test]
+    fn a_member_of_the_wrong_shape_is_refused_not_ignored() {
+        let chests = Chests::read(&sample()).unwrap();
+        let refused = |edit: Value| chests.changes(&edit, "m").unwrap_err().to_string();
+        let error = refused(json!({"chests": [{"dungeon": 0, "groups": {"group": 13, "items": []}}]}));
+        assert_eq!(error, "dungeon 0: \"groups\" is a list, not an object");
+        assert!(refused(json!({"chests": [{"dungeon": 0, "floors": 3}]})).contains("\"floors\" is a list"));
+        assert!(refused(json!({"chests": {"dungeon": 0}})).contains("a list of dungeons"));
+        assert!(refused(json!({"chests": [[0]]})).contains("is an object"));
+        let bad_item = json!({"chests": [{"dungeon": 0, "groups": [{"group": 1, "items": [5]}]}]});
+        assert!(refused(bad_item).contains("an object"));
+        // absent, they change nothing
+        assert!(chests.changes(&json!({"chests": [{"dungeon": 0}]}), "m").unwrap().is_empty());
     }
 
     /// The chest scripts of an extracted disc (C2S_CORPUS) read, write back unchanged, and their

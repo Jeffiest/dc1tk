@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use crate::cfg_text::{self, Arg, Edit, Script, To};
-use crate::{bail, Result};
+use crate::{bail, Context, Result};
 
 pub const FOLDER: &str = "menu";
 pub const CHAPTERS: usize = 8;
@@ -85,7 +85,7 @@ impl Shops {
         }
         let mut scripts = Vec::new();
         for (name, data) in wanted.iter().zip(files) {
-            scripts.push(Script::parse(data).map_err(|error| crate::Error::invalid(format!("{name}: {error}")))?);
+            scripts.push(Script::parse(data).context(name)?);
         }
         let mut shown = BTreeMap::new();
         if let Some(names) = names {
@@ -203,20 +203,17 @@ impl Shops {
     pub fn changes_all(&self, tables: &[(String, Value)]) -> Result<Vec<Edit>> {
         let mut priced = std::collections::BTreeSet::new();
         for (_, table) in tables {
+            // a malformed record is refused below, by changes_with
             for record in table.get("prices").and_then(Value::as_array).into_iter().flatten() {
-                if let Some(item) = record.get("item").and_then(Value::as_i64) {
-                    if !self.prices.contains_key(&(item as i32)) {
-                        priced.insert(item as i32);
-                    }
+                let item = record.get("item").and_then(Value::as_i64).and_then(|item| i32::try_from(item).ok());
+                if let Some(item) = item.filter(|item| !self.prices.contains_key(item)) {
+                    priced.insert(item);
                 }
             }
         }
         let mut out = Vec::new();
         for (module, table) in tables {
-            out.extend(
-                self.changes_with(table, module, &priced)
-                    .map_err(|error| crate::Error::invalid(format!("mod {module}: {error}")))?,
-            );
+            out.extend(self.changes_with(table, module, &priced).with_context(|| format!("mod {module}"))?);
         }
         Ok(out)
     }
@@ -265,7 +262,7 @@ impl Shops {
             let Some(item) = record.get("item").and_then(Value::as_i64) else {
                 bail!("each price names its item: {{\"item\": 11, \"buy\": 450}}");
             };
-            let Some(places) = self.prices.get(&(item as i32)) else {
+            let Some(places) = i32::try_from(item).ok().and_then(|item| self.prices.get(&item)) else {
                 // a new price: a PRICE line in every file
                 if !(1..PRICE_SLOTS).contains(&item) {
                     bail!("price of item {item}: CShop::price has items 1 to {}", PRICE_SLOTS - 1);
@@ -340,7 +337,7 @@ impl Shops {
                 bail!("each shop names its id: {{\"shop\": 0, \"items\": [...]}}");
             };
             let none = vec![None; files];
-            let places = match self.shops.get(&(shop as i32)) {
+            let places = match i32::try_from(shop).ok().and_then(|shop| self.shops.get(&shop)) {
                 Some(places) => places,
                 None if (0..=i16::MAX as i64).contains(&shop) => {
                     if !record.contains_key("items") {
@@ -474,6 +471,17 @@ mod tests {
         assert!(refused(json!({"shops": [{"shop": 40000, "items": []}]})).contains("shop number"));
         assert!(refused(json!({"prices": [{"item": 429, "buy": 1}]})).contains("\"buy\" and \"sell\""));
         assert!(refused(json!({"prices": [{"item": 512, "buy": 1, "sell": 0}]})).contains("1 to 511"));
+    }
+
+    #[test]
+    fn numbers_past_an_int_are_refused_not_taken_for_a_smaller_one() {
+        let shops = Shops::read(&sample(), None).unwrap();
+        let refused = |edit: Value| shops.changes(&edit, "m").unwrap_err().to_string();
+        // 4294967297 is 1 in 32 bits: it must not edit item 1's price, nor 4294967296 shop 0
+        let error = refused(json!({"prices": [{"item": 4294967297_i64, "buy": 7}]}));
+        assert!(error.contains("item 4294967297") && error.contains("1 to 511"), "{error}");
+        let error = refused(json!({"shops": [{"shop": 4294967296_i64, "items": [1]}]}));
+        assert!(error.contains("shop 4294967296") && error.contains("0 to 32767"), "{error}");
     }
 
     #[test]

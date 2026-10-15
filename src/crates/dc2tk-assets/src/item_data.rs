@@ -647,6 +647,14 @@ fn texts_by_language(
     Ok(out)
 }
 
+/// The id of an item's name and description messages: MESSAGE_BASE + its `message`.
+fn message_id(message: i64, label: &str) -> Result<u16> {
+    match u16::try_from(MESSAGE_BASE + message) {
+        Ok(id) if message >= 0 => Ok(id),
+        _ => bail!("{label}: message {message} gives no message id (10000 + message is at most 65535)"),
+    }
+}
+
 /// A description as an allmenu.mes message: the item slot line the menu fills, then the text.
 fn description_text(text: &str) -> String {
     format!("[String1]\n{text}")
@@ -816,7 +824,8 @@ impl Items {
 
     /// The edits and messages of an item's names and descriptions: each language's MES_SYS (a
     /// changed one rewritten, a missing one added) and system message, and its allmenu message;
-    /// `like` copies that item's description where none is given (a new item).
+    /// `like`, the message number of the item a new one is like, copies that item's description
+    /// where none is given.
     #[allow(clippy::too_many_arguments)]
     fn text_changes(
         &self,
@@ -835,9 +844,7 @@ impl Items {
         if names.is_empty() && descriptions.is_empty() && like.is_none() {
             return Ok(());
         }
-        let Some(id) = u16::try_from(MESSAGE_BASE + message).ok().filter(|_| message >= 0) else {
-            bail!("{label}: message {message} gives no message id (10000 + message is at most 65535)");
-        };
+        let id = message_id(message, label)?;
         if !names.is_empty() && !self.has_names() {
             bail!("{label}: names need the name files (comdatmes0..6)");
         }
@@ -900,7 +907,7 @@ impl Items {
                     language,
                     id,
                     text: None,
-                    copy: (MESSAGE_BASE + like) as u16,
+                    copy: message_id(like, label)?,
                     what,
                     module: module.into(),
                 }),
@@ -1073,8 +1080,11 @@ impl Items {
                     LANGUAGE_NAMES.join(", ")
                 );
             }
-            let at = (item as i32, item_type);
-            self.text_changes(at.0, at.1, message, &label, &names, object, Some(like_number), module, out, texts)?;
+            // the description the like item shows is the message its own `message` numbers (the
+            // game's tables give every item its item number, but a table need not)
+            let like_message = self.common_value(like, "message").as_i64().unwrap_or(like_number);
+            let like = Some(like_message);
+            self.text_changes(item as i32, item_type, message, &label, &names, object, like, module, out, texts)?;
         }
         for (table, &(count_old, added)) in next.iter().enumerate() {
             if added == 0 {
@@ -1364,6 +1374,29 @@ mod tests {
         assert!(String::from_utf8_lossy(&files[8]).contains("MES_SYS 1,\"Big Wrench\";"));
         assert!(String::from_utf8_lossy(&files[10]).contains("MES_SYS 1,\"Schl[UNI00fc]ssel\";"));
         assert_eq!(texts.len(), 2);
+    }
+
+    #[test]
+    fn a_new_item_copies_the_description_its_like_items_message_numbers() {
+        let mut files = sample_named();
+        // the wrench's message is 7, not its item number
+        files[0] = String::from_utf8(files[0].clone()).unwrap().replace("0,0,1,\"wm001\"", "0,0,7,\"wm001\"").into();
+        let items = Items::read(&files, None).unwrap();
+        let edit = serde_json::json!({"items": [{"item": 429, "like": 1, "name": "Mega Wrench"}]});
+        let (_, texts) = items.changes_all(&[("m".into(), edit)]).unwrap();
+        let copies: Vec<(u16, u16)> =
+            texts.iter().filter(|text| text.file == "allmenu").map(|text| (text.id, text.copy)).collect();
+        assert_eq!(copies, vec![(10429, 10007); LANGUAGE_NAMES.len()]);
+    }
+
+    #[test]
+    fn renaming_an_item_whose_name_line_has_no_name_is_refused_not_a_panic() {
+        let mut files = sample_named();
+        files[FILES.len() + 1] = b"MES_SYS 1;\r\n".to_vec();
+        let items = Items::read(&files, None).unwrap();
+        let edits = items.changes(&serde_json::json!({"items": [{"item": 1, "name": "Big Wrench"}]}), "m").unwrap();
+        let error = items.apply(&edits).unwrap_err().to_string();
+        assert!(error.contains("item 1 name (en)") && error.contains("no argument 1"), "{error}");
     }
 
     #[test]

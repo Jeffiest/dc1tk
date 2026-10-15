@@ -54,6 +54,7 @@ pub mod idea_data;
 pub mod info_cfg;
 pub mod invention_data;
 pub mod item_data;
+pub mod json;
 pub mod monster_data;
 pub mod shop_data;
 pub mod text;

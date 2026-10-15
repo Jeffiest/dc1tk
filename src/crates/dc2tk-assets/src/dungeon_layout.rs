@@ -26,7 +26,7 @@ use serde_json::{json, Map, Value};
 
 use crate::cfg_text::{Arg, Script, Statement};
 use crate::monster_data::file_offset;
-use crate::{bail, Error, Result};
+use crate::{bail, json, Context, Error, Result};
 
 /// The room scripts on the disc, by name (`dungeon/cfg_file/<name>.cfg`). d04f01 and d07f02 are
 /// named by no script (d04f01's floors load d01f01's); `_d03f03.cfg` is an older copy, left out.
@@ -177,7 +177,7 @@ fn int_of(statement: &Statement, arg: usize) -> i32 {
 
 impl Layout {
     fn parse(data: &[u8], what: &str) -> Result<Layout> {
-        let script = Script::parse(data).map_err(|error| Error::invalid(format!("{what}: {error}")))?;
+        let script = Script::parse(data).context(what)?;
         let mut grid = None;
         let mut rooms = Vec::new();
         let mut open: Option<usize> = None;
@@ -268,11 +268,16 @@ fn cell_from(parts: &[Part], text: &str) -> Result<(i32, i32)> {
     let part = if name == "." {
         -1
     } else if let Some(number) = name.strip_prefix('#') {
-        let number: i32 = number.parse().map_err(|_| Error::invalid(format!("cell {text}: #N is a part number")))?;
-        if number < -1 || number as usize >= parts.len() {
-            bail!("cell {text}: the parts are 0 to {}", parts.len() - 1);
-        }
-        number
+        // #N names a part by its entry (cell_text writes it for a part with no name); an empty
+        // cell, -1, is "."
+        let found = number.parse::<usize>().ok().filter(|&number| number < parts.len());
+        let Some(number) = found else {
+            match parts.len() {
+                0 => bail!("cell {text}: the executable's table has no parts"),
+                count => bail!("cell {text}: #N is a part, 0 to {} (an empty cell is .)", count - 1),
+            }
+        };
+        number as i32
     } else {
         match parts.iter().position(|part| part.name == name) {
             Some(at) => at as i32,
@@ -387,7 +392,7 @@ impl Layouts {
                 .split_whitespace()
                 .map(|cell| cell_from(&self.parts, cell))
                 .collect::<Result<Vec<_>>>()
-                .map_err(|error| Error::invalid(format!("{what}: {error}")))?;
+                .context(what)?;
             cells.push(row);
         }
         let width = cells.first().map_or(0, Vec::len);
@@ -414,22 +419,24 @@ impl Layouts {
         };
         let Some(records) = records.as_array() else { bail!("layouts is a list of layouts") };
         for record in records {
-            let Some(name) = record["layout"].as_str() else {
+            let record = json::object(record, "each of \"layouts\"")?;
+            let Some(name) = record.get("layout").and_then(Value::as_str) else {
                 bail!("each layout names its file: {{\"layout\": \"d01f01\", ...}}")
             };
             let Some(index) = LAYOUTS.iter().position(|known| *known == name) else {
                 bail!("no layout {name} (the layouts are {})", LAYOUTS.join(", "));
             };
             let layout = &self.layouts[index];
-            for key in record.as_object().into_iter().flatten().map(|(key, _)| key.as_str()) {
-                if !["layout", "grid_size", "rooms"].contains(&key) {
+            for key in record.keys() {
+                if !["layout", "grid_size", "rooms"].contains(&key.as_str()) {
                     bail!("layout {name}: no field {key} (a layout has grid_size and rooms)");
                 }
             }
             if let Some(size) = record.get("grid_size") {
+                // every item a number: one that is not is an error, not left out
                 let values: Option<Vec<f32>> = size
                     .as_array()
-                    .map(|items| items.iter().filter_map(|item| item.as_f64().map(|v| v as f32)).collect());
+                    .and_then(|items| items.iter().map(|item| item.as_f64().map(|v| v as f32)).collect());
                 let Some([w, d]) = values.as_deref().and_then(|values| <[f32; 2]>::try_from(values).ok()) else {
                     bail!("layout {name}: grid_size is [width, depth] of a cell");
                 };
@@ -445,9 +452,10 @@ impl Layouts {
             }
             let rooms = self.rooms(index);
             let mut seen = Vec::new();
-            for room in record["rooms"].as_array().into_iter().flatten() {
+            for room in json::list(record, "rooms", format!("layout {name}"))? {
+                let room = json::object(room, format!("layout {name}: each of \"rooms\""))?;
                 let number = number(
-                    &room["room"],
+                    json::member(room, "room"),
                     &format!("layout {name}: a room's \"room\" (its place in the file, from 0)"),
                 )?;
                 if number < 0 || number as usize >= ROOMS_MOST {
@@ -463,7 +471,7 @@ impl Layouts {
                 if current.is_none() && room.get("cells").is_none() {
                     bail!("{what}: a new room needs its cells");
                 }
-                for (key, value) in room.as_object().into_iter().flatten() {
+                for (key, value) in room {
                     let field = match key.as_str() {
                         "room" => continue,
                         "id" => Field::Id(number_of(value, &what, key)?),
@@ -560,7 +568,10 @@ impl Layouts {
                 changed[number] = true;
             }
             if let Some(gap) = rooms.iter().position(Option::is_none) {
-                bail!("{name}: room {gap} is missing; new rooms follow the last ({})", layout.rooms.len() - 1);
+                bail!(
+                    "{name}: room {gap} is missing; new rooms follow the last (the next is room {})",
+                    layout.rooms.len()
+                );
             }
             let nl = &layout.newline;
             let mut statements = Vec::new();
@@ -716,6 +727,41 @@ mod tests {
             .changes(&json!({"layouts": [{"layout": "d01f01", "rooms": [{"room": 4, "cells": ["way00"]}]}]}), "m")
             .unwrap();
         assert!(layouts.apply(&gap).unwrap_err().to_string().contains("room 2 is missing"));
+    }
+
+    #[test]
+    fn part_numbers_are_the_tables_entries_and_an_empty_cell_is_a_dot() {
+        assert_eq!(cell_from(&parts(), "#4:3").unwrap(), (4, 3));
+        assert_eq!(cell_from(&parts(), ".").unwrap(), (-1, 0));
+        for wrong in ["#-1", "#5", "#x"] {
+            let error = cell_from(&parts(), wrong).unwrap_err().to_string();
+            assert!(error.contains("0 to 4") && error.contains("an empty cell is ."), "{error}");
+        }
+        assert!(cell_from(&[], "#0").unwrap_err().to_string().contains("no parts"));
+    }
+
+    #[test]
+    fn a_room_past_a_file_without_rooms_is_refused_not_a_panic() {
+        let mut files = sample();
+        files[2] = b"VER 1.00;\r\n".to_vec();
+        let layouts = Layouts::read(&files, parts()).unwrap();
+        let gap = layouts
+            .changes(&json!({"layouts": [{"layout": LAYOUTS[2], "rooms": [{"room": 1, "cells": ["way00"]}]}]}), "m")
+            .unwrap();
+        let error = layouts.apply(&gap).unwrap_err().to_string();
+        assert!(error.contains("room 0 is missing") && error.contains("the next is room 0"), "{error}");
+    }
+
+    #[test]
+    fn a_member_of_the_wrong_shape_is_refused_not_ignored() {
+        let layouts = Layouts::read(&sample(), parts()).unwrap();
+        let refused = |edit: Value| layouts.changes(&edit, "m").unwrap_err().to_string();
+        let error = refused(json!({"layouts": [{"layout": "d01f01", "rooms": {"room": 0}}]}));
+        assert_eq!(error, "layout d01f01: \"rooms\" is a list, not an object");
+        assert!(refused(json!({"layouts": [{"layout": "d01f01", "rooms": [3]}]})).contains("is an object"));
+        assert!(refused(json!({"layouts": [{"layout": "d01f01", "grid_size": [400, "x"]}]})).contains("grid_size"));
+        let three = json!({"layouts": [{"layout": "d01f01", "grid_size": [400, null, 400]}]});
+        assert!(refused(three).contains("grid_size"));
     }
 
     /// The room scripts of an extracted disc (C2S_CORPUS) read with the executable's part names,

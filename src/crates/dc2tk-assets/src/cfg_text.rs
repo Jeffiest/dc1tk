@@ -360,9 +360,10 @@ pub fn block_text(statements: &[Statement]) -> Vec<u8> {
 }
 
 /// The scripts with the edits made. Edits that agree are made once; two that give one argument
-/// (or one statement's list) different texts are refused, naming both mods. Single arguments are
-/// changed first, by their places in the disc's statements, then lists, which may change how many
-/// arguments a statement has.
+/// (or one statement's list) different texts are refused, naming both mods, as is an argument a
+/// list of its statement writes over with other text. Single arguments are changed first, by their
+/// places in the disc's statements, then lists, which may change how many arguments a statement
+/// has. An edit of a file, statement or argument the scripts lack is refused.
 pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
     let mut scripts = scripts.to_vec();
     let mut done: std::collections::BTreeMap<(usize, usize, usize), &Edit> = std::collections::BTreeMap::new();
@@ -371,10 +372,13 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
     let mut inserted: std::collections::BTreeMap<(usize, usize), Vec<&Edit>> = std::collections::BTreeMap::new();
     let mut records: std::collections::BTreeMap<(usize, &str), &Edit> = std::collections::BTreeMap::new();
     for edit in edits {
+        let Some(script) = scripts.get(edit.file) else {
+            bail!("{}: there is no file {} (of {})", edit.what, edit.file, scripts.len());
+        };
+        if edit.statement >= script.statements.len() {
+            bail!("{}: the file has no statement {}", edit.what, edit.statement);
+        }
         if let To::Insert(_) = edit.to {
-            if edit.statement >= scripts[edit.file].statements.len() {
-                bail!("{}: the file has no statement {} to add after", edit.what, edit.statement);
-            }
             match records.get(&(edit.file, edit.what.as_str())) {
                 Some(other) if other.to != edit.to || other.statement != edit.statement => {
                     bail!("{} is given two ways, by mod {} and mod {}", edit.what, other.module, edit.module)
@@ -411,11 +415,17 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
         done.insert((edit.file, edit.statement, slot), edit);
         match &edit.to {
             To::Arg(text) => {
-                let piece = &mut scripts[edit.file].statements[edit.statement].pieces[edit.arg];
+                let statement = &mut scripts[edit.file].statements[edit.statement];
+                let Some(piece) = statement.pieces.get_mut(edit.arg) else {
+                    bail!("{}: {} has no argument {}", edit.what, statement.tag, edit.arg);
+                };
                 *piece = piece.with_text(text.clone());
             }
             _ => lists.push(edit),
         }
+    }
+    for list in &lists {
+        overwritten_args(&scripts, &done, list)?;
     }
     let pieces = |texts: &[Vec<u8>]| -> Vec<Piece> {
         texts.iter().map(|text| Piece { before: Vec::new(), text: text.clone(), after: Vec::new() }).collect()
@@ -488,6 +498,40 @@ pub fn apply_edits(scripts: &[Script], edits: &[Edit]) -> Result<Vec<Vec<u8>>> {
         out.push(data);
     }
     Ok(out)
+}
+
+/// Refuses an argument a list of its statement writes over with other text, which would be lost:
+/// a Rest from its argument on, a Span up to its tail.
+fn overwritten_args(
+    scripts: &[Script],
+    done: &std::collections::BTreeMap<(usize, usize, usize), &Edit>,
+    list: &Edit,
+) -> Result<()> {
+    let statement = &scripts[list.file].statements[list.statement];
+    let (texts, end) = match &list.to {
+        To::Rest(texts) => (texts, usize::MAX),
+        To::Span(texts, tail) => (texts, statement.args().len().saturating_sub(*tail)),
+        To::Arg(_) | To::Insert(_) => return Ok(()),
+    };
+    // the single arguments' slots, below the lists' (usize::MAX)
+    let singles =
+        done.range((list.file, list.statement, list.arg)..(list.file, list.statement, end.min(usize::MAX - 1)));
+    for (&(.., arg), single) in singles {
+        let To::Arg(text) = &single.to else {
+            continue;
+        };
+        if texts.get(arg - list.arg) != Some(text) {
+            bail!(
+                "{} and {} both change {} argument {arg}, by mod {} and mod {}",
+                single.what,
+                list.what,
+                statement.tag,
+                single.module,
+                list.module
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -603,6 +647,51 @@ mod tests {
         let clash = [edit(2, new, "weapon 1", "a"), edit(2, To::Insert(block), "weapon 1", "b")];
         let error = apply_edits(&[script], &clash).unwrap_err().to_string();
         assert!(error.contains("mod a and mod b"), "{error}");
+    }
+
+    #[test]
+    fn an_edit_of_what_the_scripts_lack_is_refused() {
+        let script = Script::parse(b"MES_SYS 5;\r\n").unwrap();
+        let edit = |file: usize, statement: usize, arg: usize| Edit {
+            file,
+            statement,
+            arg,
+            to: To::Arg(b"\"Wrench\"".to_vec()),
+            what: "item 5 name".into(),
+            module: "m".into(),
+        };
+        let refused = |edit: Edit| apply_edits(std::slice::from_ref(&script), &[edit]).unwrap_err().to_string();
+        assert_eq!(refused(edit(0, 0, 1)), "item 5 name: MES_SYS has no argument 1");
+        assert_eq!(refused(edit(0, 3, 0)), "item 5 name: the file has no statement 3");
+        assert_eq!(refused(edit(2, 0, 0)), "item 5 name: there is no file 2 (of 1)");
+    }
+
+    #[test]
+    fn an_argument_a_list_writes_over_is_refused_unless_the_list_agrees() {
+        let script = Script::parse(b"SHOP 0,1,22;\r\nDATASET 309,4,11,12,210,5,0,0.99;\r\n").unwrap();
+        let edit = |statement: usize, arg: usize, to: To, module: &str| Edit {
+            file: 0,
+            statement,
+            arg,
+            to,
+            what: format!("statement {statement} arg {arg}"),
+            module: module.into(),
+        };
+        let texts = |items: &[&str]| items.iter().map(|item| item.as_bytes().to_vec()).collect::<Vec<_>>();
+        let apply = |edits: &[Edit]| apply_edits(std::slice::from_ref(&script), edits);
+        // the list from argument 1 puts 7 at argument 2, where the single edit puts 8
+        let rest = edit(0, 1, To::Rest(texts(&["5", "7"])), "a");
+        let error = apply(&[edit(0, 2, To::Arg(b"8".to_vec()), "b"), rest.clone()]).unwrap_err().to_string();
+        assert!(error.contains("argument 2") && error.contains("mod b and mod a"), "{error}");
+        // the same text, or an argument before the list, is kept
+        assert!(apply(&[edit(0, 2, To::Arg(b"7".to_vec()), "b"), rest.clone()]).is_ok());
+        let written = apply(&[edit(0, 0, To::Arg(b"3".to_vec()), "b"), rest]).unwrap();
+        assert!(written[0].starts_with(b"SHOP 3,5,7;"));
+        // inside a span, refused; in the arguments after it, kept
+        let span = edit(1, 4, To::Span(texts(&["1", "2"]), 2), "a");
+        assert!(apply(&[edit(1, 5, To::Arg(b"9".to_vec()), "b"), span.clone()]).is_err());
+        let written = apply(&[edit(1, 7, To::Arg(b"2.5".to_vec()), "b"), span]).unwrap();
+        assert!(written[0].ends_with(b"DATASET 309,4,11,12,1,2,0,2.5;\r\n"));
     }
 
     #[test]
