@@ -139,7 +139,8 @@ pub struct Unnamed {
     pub name: String,
 }
 
-/// Python's list[:limit].
+/// How many of `length` items a limit keeps: up to the limit, or with a negative limit all but
+/// that many.
 fn slice_end(length: usize, limit: i64) -> usize {
     if limit < 0 {
         length.saturating_sub(limit.unsigned_abs() as usize)
@@ -260,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn limits_slice_as_python_does() {
+    fn a_limit_keeps_up_to_it_and_a_negative_one_drops_that_many() {
         assert_eq!(slice_end(10, 50), 10);
         assert_eq!(slice_end(10, 3), 3);
         assert_eq!(slice_end(10, 0), 0);

@@ -1,5 +1,5 @@
-//! Carried over from the Python tool's test_library.py
-
+//! Libraries: functions shared by scripts made into one library, named, documented, included and
+//! resolved.
 mod common;
 
 use std::collections::HashSet;

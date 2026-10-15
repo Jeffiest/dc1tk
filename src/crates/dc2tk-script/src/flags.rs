@@ -164,7 +164,7 @@ pub fn scan_counters(tree: &Path, consts: &IndexMap<String, i64>) -> Result<Foun
 pub fn scan_space(space: &'static Space, tree: &Path, consts: &IndexMap<String, i64>) -> Result<Found> {
     let names: BTreeSet<String> = space.functions.iter().map(|(name, _)| name.to_string()).collect();
     let mut found = Found { space, uses: BTreeMap::new(), computed: Vec::new() };
-    // index::calls lists files in order and calls in each in order, as the Python does
+    // index::calls lists files in order and calls in each in order
     for call in index::calls(tree, &names)? {
         // an old-numbered call that lands on a flag native was written for another one
         if call.args.is_empty() || call.meant.is_some() {

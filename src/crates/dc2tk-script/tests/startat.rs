@@ -1,4 +1,4 @@
-//! Carried over from the Python tool's test_startat.py: build --start-at's warp into a scene on a new game.
+//! Build --start-at's warp into a scene on a new game.
 
 mod build_common;
 

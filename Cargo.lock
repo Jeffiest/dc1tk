@@ -217,7 +217,6 @@ name = "dc2tk-assets"
 version = "0.1.0"
 dependencies = [
  "dc2tk-disc",
- "dc2tk-py",
  "flate2",
  "rayon",
  "serde",
@@ -236,14 +235,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
-]
-
-[[package]]
-name = "dc2tk-py"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]

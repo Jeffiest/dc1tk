@@ -28,8 +28,8 @@ pub const KEYWORDS: [&str; 28] = [
 ];
 const DECLARATION_KEYS: [&str; 5] = ["natives", "programs", "inlines", "constants", "kinds"];
 
-/// Files under a folder with an extension, sorted as Python sorts Windows paths (by lowercased
-/// parts), as paths from the folder with "/".
+/// Files under a folder with an extension, sorted by their parts (lowercased on Windows, whose
+/// names ignore case), as paths from the folder with "/".
 pub fn files_under(base: &Path, extension: &str) -> Vec<String> {
     let mut found: Vec<PathBuf> = Vec::new();
     let mut folders = vec![base.to_path_buf()];

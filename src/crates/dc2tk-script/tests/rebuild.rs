@@ -1,4 +1,4 @@
-//! Carried over from the Python tool's test_rebuild.py: build's changed scripts written into a copy of a tiny disc.
+//! Build's changed scripts written into a copy of a tiny disc.
 
 mod build_common;
 

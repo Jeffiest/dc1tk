@@ -1,4 +1,4 @@
-//! Carried over from the Python tool's test_discfiles.py: game files a mod replaces or adds, in packs and the disc index.
+//! Game files a mod replaces or adds, in packs and the disc index.
 
 mod build_common;
 

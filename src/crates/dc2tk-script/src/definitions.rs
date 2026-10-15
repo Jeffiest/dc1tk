@@ -52,7 +52,7 @@ fn manifest(directory: &Path) -> Result<Manifest> {
     serde_json::from_value(read_json(&path)?).map_err(|error| Error::invalid(format!("{}: {error}", path.display())))
 }
 
-/// A path made absolute with symlinks and "..", resolved as Python's Path.resolve() does, written
+/// A path made absolute, its symlinks and ".." resolved (as far as it exists), written
 /// with "/".
 pub fn resolved_posix(path: &Path) -> String {
     let full = fs::canonicalize(path).or_else(|_| std::path::absolute(path)).unwrap_or_else(|_| path.to_path_buf());
@@ -126,7 +126,7 @@ impl Definitions {
     }
 }
 
-/// Python's dict(old, **new) for two objects.
+/// old with new's keys set over it: a key both have keeps old's place, new's others come after.
 fn updated(old: Option<&Node>, new: Node) -> Node {
     match (old.and_then(Node::as_object), new) {
         (Some(old), Node::Map(new)) => {
@@ -147,7 +147,7 @@ fn object(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value
     }
 }
 
-/// Every .json under a folder, sorted as Windows paths sort in Python (by lowercased parts).
+/// Every .json under a folder, sorted by their parts (lowercased on Windows, whose names ignore case).
 fn json_files(directory: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut folders = vec![directory.to_path_buf()];

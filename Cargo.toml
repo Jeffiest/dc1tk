@@ -9,7 +9,6 @@ license = "MIT"
 [workspace.dependencies]
 dc2tk-disc = { path = "src/crates/dc2tk-disc" }
 dc2tk-script = { path = "src/crates/dc2tk-script" }
-dc2tk-py = { path = "src/crates/dc2tk-py" }
 dc2tk-assets = { path = "src/crates/dc2tk-assets" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

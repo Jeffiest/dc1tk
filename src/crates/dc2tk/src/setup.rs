@@ -106,7 +106,7 @@ mod tests {
         Common { natives: None, sdk: None, defs: vec![PathBuf::from("none")] }
     }
 
-    // tests/test_commands.py: decompile EXTRACTED -o OUT --defs none, extracting the sample disc
+    // decompile EXTRACTED -o OUT --defs none, extracting the sample disc
     // first when needed.
     fn decompiled(folder: &Path, force: bool) -> Result<PathBuf> {
         let extracted = folder.join("extracted");

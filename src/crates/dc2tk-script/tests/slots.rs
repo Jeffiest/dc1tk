@@ -1,5 +1,4 @@
-//! Carried over from the Python tool's test_slots.py
-
+//! Character slots: the names they take from what fills them, the villager tables and loads.
 use std::collections::BTreeMap;
 
 use dc2tk_script::messages::{NameKey, NameTable};

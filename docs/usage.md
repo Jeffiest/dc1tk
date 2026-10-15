@@ -68,6 +68,13 @@ The tests run with `cargo test --release` in the repository folder.
   `effect`, `arg`) instead of choosing it from the script's path.
 - `--time` prints how long the command took.
 
+The text files `dc2tk` writes (decompiled C, headers, `mod.json` and the
+other JSON files, reports) are UTF-8 with LF line endings on every system,
+and its JSON is indented by two spaces. It reads CRLF as well, so files an
+editor saved with Windows line endings, or trees and mods written by older
+versions (CRLF on Windows, one-space JSON), read the same. Game files keep
+their bytes.
+
 ## Decompiling
 
 Given a single `.stb`, `decompile` prints one self-contained file: every

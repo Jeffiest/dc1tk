@@ -2,7 +2,8 @@
 //! jump targets are, so the definitions can name a function wherever a disc puts it. The loose
 //! fingerprint also ignores the text of its strings, for a script translated into another language.
 //!
-//! The hash is of the payload as Python's compact JSON, which is written here directly:
+//! The hash is of the payload as compact JSON (no spaces, text as it is), written here directly so
+//! that fingerprints stored in definitions and mods keep matching:
 //! {"version":1,"table":..,"arg":..,"local":..,"arg_types":[..],"unused":[..],"code":[[op,arg1,arg2],..]}
 //! with jumps as ["jump", offset in the function], calls as ["call", callee's fingerprint or
 //! offset] and pushed strings as ["string", text or offset].
@@ -16,7 +17,8 @@ use crate::stb::{self, Function, Script};
 pub const VERSION: i64 = 1;
 const CONST_STR: i32 = 3;
 
-/// A JSON string as Python's json.dumps(ensure_ascii=False) writes it.
+/// A JSON string as compact JSON writes it: quotes, backslashes and control characters escaped,
+/// everything else as it is.
 pub fn push_string(out: &mut String, text: &str) {
     out.push('"');
     for c in text.chars() {

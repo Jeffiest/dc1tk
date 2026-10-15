@@ -289,7 +289,7 @@ pub fn resolved(copies: &[Node], existing: &Node) -> Node {
 }
 
 /// The source files to learn from: the file, or every .c of a tree outside its lib/ folder, sorted
-/// as Python sorts Windows paths.
+/// by their parts (lowercased on Windows, whose names ignore case).
 pub fn source_files(tree: &Path) -> Vec<PathBuf> {
     if tree.is_file() {
         return vec![tree.to_path_buf()];

@@ -1,5 +1,4 @@
-//! Carried over from the Python tool's test_sdk.py
-
+//! The SDK: its names, helpers, groups and declarations, from bytes to C and back.
 mod common;
 
 use std::collections::{BTreeSet, HashMap, HashSet};

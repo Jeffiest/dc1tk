@@ -454,8 +454,7 @@ fn merge_banks(
     }
 }
 
-/// Names the entries of the sound natives in a function's statements and follows the banks, as
-/// the Python's named_sounds.
+/// Names the entries of the sound natives in a function's statements and follows the banks.
 pub fn named_sounds(
     nodes: &[Node],
     found: &Context,

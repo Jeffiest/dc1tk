@@ -1,5 +1,5 @@
-//! Carried over from the Python tool's test_assets.py
-
+//! Asset names: constants named from the definitions' glosses, and the asset strings passed to
+//! known parameters replaced by them.
 use std::collections::{BTreeSet, HashSet};
 
 use dc2tk_script::node;

@@ -238,7 +238,7 @@ impl Lookup<'_> {
         self.known.entries.get(fingerprint).or_else(|| self.added.get(fingerprint).copied())
     }
 
-    /// Every entry, the added ones after the rest (as Python's dict copy with them set).
+    /// Every entry: an added one replaces a known one in its place, the others come after the rest.
     pub fn entries(&self) -> Entries {
         let mut out = self.known.entries.clone();
         for (exact, entry) in &self.added {

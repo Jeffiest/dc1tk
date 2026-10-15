@@ -158,8 +158,8 @@ pub fn converter_folder(relative: &str) -> Option<String> {
     (1..parts.len()).map(|end| parts[..end].join("/")).find(|folder| converter_for(folder, true).1.is_some())
 }
 
-/// Files under a folder, sorted as Python sorts Windows paths (by lowercased parts), as paths
-/// from the folder with "/".
+/// Files under a folder, sorted by their parts (lowercased on Windows, whose names ignore case),
+/// as paths from the folder with "/".
 pub fn files_in(root: &Path) -> Vec<String> {
     let mut found = Vec::new();
     let mut folders = vec![root.to_path_buf()];

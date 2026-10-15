@@ -1,4 +1,4 @@
-//! Carried over from the Python tool's test_patches.py: mods' patches merged into the scripts they target, run in the VM.
+//! Mods' patches merged into the scripts they target, run in the VM.
 
 mod build_common;
 

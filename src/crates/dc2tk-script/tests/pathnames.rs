@@ -1,5 +1,5 @@
-//! Carried over from the Python tool's test_pathnames.py
-
+//! Named paths: a decompiled tree's folders and files named after what they hold, and the tools
+//! finding the disc's scripts through them.
 mod common;
 
 use std::collections::HashMap;
@@ -91,7 +91,7 @@ fn a_tree_records_what_each_named_path_was() {
     assert_eq!(pathnames::named(tree, "map/s/s51/s51_1.c").unwrap(), "map/s/s51_raybrandt_castle/s51_1.c");
 }
 
-// src/tests/test_rebuild.py's fixtures
+// the build fixtures: a script template
 
 const SCRIPT: &str = "#pragma natives event\n\nPROGRAM(100, f);\nMAIN(f);\n\nvoid f(void)\n{\n%s}\n";
 

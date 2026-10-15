@@ -1,4 +1,4 @@
-//! Carried over from the Python tool's test_flags.py: the flags scripts use, the free ones and who uses one.
+//! Flags: the ones scripts use, the free ones, and who uses one.
 
 mod build_common;
 

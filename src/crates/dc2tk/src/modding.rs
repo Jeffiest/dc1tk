@@ -242,7 +242,7 @@ pub enum ModCommand {
 }
 
 /// The constants mods' additions see: the shipped definitions' and the default SDK's, with the
-/// tree's own headers (as mods.py's tree_constants).
+/// tree's own headers.
 fn default_constants(tree_dir: &Path) -> Result<IndexMap<String, i64>> {
     let defs = definitions::load(&[files::default_defs()])?;
     Ok(index::constants(index::tree_headers(tree_dir, &defs, &files::root().join("sdk"))?.values()))
@@ -1196,8 +1196,6 @@ pub fn launch(image: &Path, pcsx2: Option<&Path>, fast_boot: bool) -> Result<Pat
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // tests/test_play.py
 
     #[test]
     fn pcsx2_is_found_where_given_then_in_the_environment_path_and_install_folders() {

@@ -1,5 +1,5 @@
-//! What the ported tests share: the repository's data folders, the native tables, the fixtures of
-//! the Python tool's tests/build.py, a temporary folder, and running C text in the test VM (the Python tool's vm.run).
+//! What the tests share: the repository's data folders, the native tables, tiny discs, packs
+//! and scripts built in memory, a temporary folder, and running C text in the test VM.
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
@@ -91,8 +91,8 @@ pub fn write(path: &Path, data: impl AsRef<[u8]>) {
     std::fs::write(path, data).unwrap();
 }
 
-/// A small deterministic generator for the tests that used random.Random (only the spread of the
-/// values matters, not Python's exact sequence).
+/// A small deterministic generator for tests that want varied data (only the spread of the
+/// values matters).
 pub struct Random(u64);
 
 impl Random {
@@ -119,8 +119,7 @@ impl Random {
     }
 }
 
-// the Python tool's tests/build.py
-
+// tiny discs, file indexes, packs and scripts
 pub const SECTOR: usize = 2048;
 const ROOT_SECTOR: usize = 18;
 const PACK_SLOT: i32 = 0x50;
@@ -289,8 +288,7 @@ pub fn sample_script() -> Vec<u8> {
     out
 }
 
-// the Python tool's vm.py
-
+// running C text in the test VM
 /// vm.functions(text): the text with the SDK's headers, compiled to the VM's function table.
 pub fn functions(text: &str) -> dc2tk_script::Result<vm::Functions> {
     let program = library::expand(parse::parse(text)?, &no_texts(), sdk_texts())?;

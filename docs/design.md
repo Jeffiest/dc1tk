@@ -1,11 +1,10 @@
 # Design: Rust, an asset tree, and mods by name
 
-Three changes, in this order: decide the formats below, port the tools to
-Rust with the Python as the reference, then build the asset tree and the new
-mod format in Rust only. Nothing is written twice.
+Three changes, in this order: decide the formats below, move the tools to
+one Rust program, then build the asset tree and the new mod format on it.
 
-All three are done: `dc2tk` is the only tool, and the Python it was ported
-from has been removed. Section 3 is kept as the plan the port followed.
+All three are done: `dc2tk` is the only tool. (It began as a port of an
+earlier Python tool, which it has replaced.)
 
 ## 1. The asset tree
 
@@ -422,80 +421,19 @@ migrated, the images are identical, and identical to `castle-showcase.iso`
 as built before. The old `disc/` layout keeps working, alone or beside
 `replace` lines.
 
-## 3. The Rust port
+## 3. One Rust tool
 
-One Rust tool, `dc2tk`, doing everything the Python tool (`cli.py`) did, with
-the same command names and output, so the docs change little. Done: what
-was built is described in [src/README.md](../src/README.md).
+One program, `dc2tk`, does everything: what was built is described in
+[src/README.md](../src/README.md). A Cargo workspace (`Cargo.toml` at the
+root, the crates in `src/crates/`):
 
-### Layout
-
-A Cargo workspace at `rust/` (now `Cargo.toml` at the root and the crates in
-`src/crates/`):
-
-| crate | Python modules it takes over |
+| crate | what it holds |
 |---|---|
-| `dc2tk-disc` | iso, archive, rebuild, extract, discfiles, index |
-| `dc2tk-script` | stb, vm, asm, stack, slots, decompile, parse, compile, source, sdk, definitions, names, tables |
-| `dc2tk-assets` | im3, textures, soundbank, sounds, mds, mot, info_cfg, to_gltf, from_gltf, models |
-| `dc2tk-mods` | mods, patches, additions, numbers, flags, startat, assets (manifest) |
-| `dc2tk` | the command line, maps, xref, verify, coverage, learn, play |
+| `dc2tk-disc` | the ISO image, the file index and packs, extract, writing a disc, text files |
+| `dc2tk-script` | stb, the VM, assembly, decompile, parse, compile, the SDK, definitions, names, mods |
+| `dc2tk-assets` | textures, sound banks, models and motions, the asset tree, the data tables |
+| `dc2tk` | the command line |
 
-As built, the mod modules went into `dc2tk-script` rather than a crate of
-their own, and a `dc2tk-py` crate does the number and text formatting the
-output depends on as CPython did.
-
-The definitions (`definitions/`), tables (now `src/natives/*.json`) and SDK
-headers stay data files, read by both tools during the port.
-
-### Speed
-
-The Python runs on one core. Most work is per file (decompile 1,398
-scripts, convert 5,217 texture files), so the port runs it across all cores
-(rayon) on top of being compiled. Baselines to beat, measured on this
-machine (16 cores):
-
-| task | Python |
-|---|---|
-| decompile every script (`decompile extracted`) | 8 min 42 s |
-| verify every script round-trips (`verify extracted`) | 15 min 32 s |
-| read every picture, mesh and bank once | 1 min 40 s |
-| build an image | about 2 min of compiling, plus writing 4.7 GB |
-
-### Parity
-
-The Python stays until the Rust gives the same bytes everywhere. A `parity`
-script runs both on the same inputs and compares:
-
-1. **Disc**: `extract` gives the same tree; an unmodified build gives
-   `pal.iso` byte for byte.
-2. **Scripts**: `disassemble` the same text for all 1,398 scripts;
-   `decompile` the same tree; `compile` the same `.stb` for every file;
-   `verify` passes.
-3. **Mods**: `castle-golems` builds `modded.iso` byte for byte; `calculator`
-   tests pass 4 of 4; `mod check`/`mod list` print the same.
-4. **Assets**: `mod asset --as png|wav|gltf` exports the same files for
-   every texture file, bank and character pack, and the same rebuilt bytes
-   for edited ones (the Python test fixtures).
-5. **Commands**: every command in `docs/usage.md` prints the same.
-
-Each milestone ends with its parity check passing and its tests ported to
-`cargo test`. Order, by dependency:
-
-1. `dc2tk-disc`: ISO, index, packs, extract, write a disc.
-2. `dc2tk-script` reading: stb, vm, disassemble, definitions, names.
-3. Decompile.
-4. Parse, compile, SDK; then build (scripts only).
-5. Mods: patches, additions, numbers, start_at.
-6. Assets: textures, sounds, models.
-7. The remaining commands; port the last tests; delete the Python.
-8. New: the asset tree (`dc2tk assets`) and `mod.json` replacements.
-
-### Open choices
-
-- **glTF**: write it with `serde_json` as the Python does (output stays
-  identical) rather than the `gltf` crate; read it with the `gltf` crate.
-- **PNG**: the `png` crate, with the encoder settings matched to the
-  Python's so exports are byte-identical, or compare decoded pixels only.
-- **Python tests**: 201 tests; most are format round trips that become
-  `cargo test`, a few check printed text and become parity checks.
+The definitions (`definitions/`), native tables (`src/natives/*.json`) and
+SDK headers are data files. Most work is per file (decompile 1,398 scripts,
+convert 5,217 texture files), so it runs across all cores (rayon).

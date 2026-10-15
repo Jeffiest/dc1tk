@@ -52,7 +52,7 @@ pub struct Target {
 
 pub fn parse_target(text: &str) -> Result<Target> {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    // Python's $ also matches before a final newline
+    // a final newline is allowed (a value read from a file)
     let pattern = CELL.get_or_init(|| Regex::new(r"^([A-Za-z0-9_]+)(?:/([A-Za-z0-9_]+))?:(-?\w+)\n?$").unwrap());
     let Some(found) = pattern.captures(text) else {
         return Err(Error::invalid(

@@ -1,5 +1,5 @@
-//! Carried over from the Python tool's test_disc.py
-
+//! disc.h: the monster table read from the executable, the lines it gives each kind, and the
+//! identifiers it makes.
 use std::collections::HashSet;
 
 use dc2tk_script::disc::{self, MonsterRow};

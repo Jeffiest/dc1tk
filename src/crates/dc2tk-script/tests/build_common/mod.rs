@@ -1,6 +1,5 @@
-//! Shared helpers for the build and modding tests (ports of the Python tool's tests/build.py and the small
-//! helpers the Python tests share): temporary folders, trees of source files, the toolchain the
-//! Python tests compile with (no definitions, the SDK and native tables of this repository) and
+//! Shared helpers for the build and modding tests: temporary folders, trees of source files, the
+//! toolchain they compile with (no definitions, the SDK and native tables of this repository) and
 //! tiny discs made of DATA.HD4, DATA.DAT and a filler.
 #![allow(dead_code)]
 
@@ -52,7 +51,7 @@ pub fn tables() -> BTreeMap<String, Table> {
     natives::load(&repo().join("src").join("natives")).unwrap()
 }
 
-/// What the Python tests compile with: definitions.empty() (so no table rules), the headers
+/// What the tests compile with: empty definitions (so no table rules), the headers
 /// given, the native tables and the SDK folder.
 pub struct Tools {
     pub headers: IndexMap<String, String>,
@@ -109,7 +108,7 @@ pub fn consts(pairs: &[(&str, i64)]) -> IndexMap<String, i64> {
     pairs.iter().map(|(key, value)| (key.to_string(), *value)).collect()
 }
 
-/// The Python tests' fails(): the action is refused with an error that says words.
+/// The action is refused with an error that says words.
 pub fn fails<T, E: Display>(result: Result<T, E>, words: &str) {
     match result {
         Ok(_) => panic!("did not fail: {words}"),
@@ -120,8 +119,7 @@ pub fn fails<T, E: Display>(result: Result<T, E>, words: &str) {
     }
 }
 
-// The rest ports the Python tool's tests/build.py.
-
+// tiny discs, file indexes, packs and scripts
 pub const SECTOR: usize = 2048;
 const ROOT_SECTOR: usize = 18;
 pub const PACK_SLOT: usize = 0x50;

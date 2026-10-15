@@ -1,5 +1,5 @@
-//! Carried over from the Python tool's test_index.py
-
+//! The source index: header constants, folded values, calls with their arguments, includers and
+//! language variants, read from a tree as text.
 mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
