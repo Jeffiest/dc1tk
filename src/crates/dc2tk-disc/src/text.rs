@@ -8,15 +8,13 @@ use encoding_rs::SHIFT_JIS;
 
 use crate::cp932_fixes;
 
-/// cp932's single bytes that WHATWG Shift_JIS has no character for.
+/// cp932's single bytes that WHATWG Shift_JIS has no character for, with the private use
+/// characters Python's codec gives them (both ways).
+const PRIVATE_SINGLES: [(u8, char); 4] =
+    [(0xA0, '\u{F8F0}'), (0xFD, '\u{F8F1}'), (0xFE, '\u{F8F2}'), (0xFF, '\u{F8F3}')];
+
 fn single(byte: u8) -> Option<char> {
-    match byte {
-        0xA0 => Some('\u{F8F0}'),
-        0xFD => Some('\u{F8F1}'),
-        0xFE => Some('\u{F8F2}'),
-        0xFF => Some('\u{F8F3}'),
-        _ => None,
-    }
+    PRIVATE_SINGLES.iter().find(|&&(single, _)| single == byte).map(|&(_, c)| c)
 }
 
 /// Decodes cp932, or None when the bytes are not valid cp932 (Python's errors="strict"): runs
@@ -76,24 +74,27 @@ pub fn decode_lossy(bytes: &[u8]) -> String {
     out
 }
 
-/// Python's bytes for a character where they differ from WHATWG's (Some(None) when Python has
-/// none): its one-byte private use characters, and the table of the rest.
-fn fixed(c: char) -> Option<Option<Vec<u8>>> {
-    let bytes = match c {
-        '\u{F8F0}' => 0xA0,
-        '\u{F8F1}' => 0xFD,
-        '\u{F8F2}' => 0xFE,
-        '\u{F8F3}' => 0xFF,
-        _ => {
-            let point = u16::try_from(c as u32).ok()?;
-            let at = cp932_fixes::ENCODE_FIXES.binary_search_by_key(&point, |&(from, _)| from).ok()?;
-            cp932_fixes::ENCODE_FIXES[at].1
-        }
-    };
-    Some(match bytes {
-        cp932_fixes::NO_BYTES => None,
-        0..=0xFF => Some(vec![bytes as u8]),
-        _ => Some(bytes.to_be_bytes().to_vec()),
+/// How Python's codec encodes a character whose cp932 bytes differ from WHATWG's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fixed {
+    One(u8),
+    Two([u8; 2]),
+    /// Python's codec has no bytes for it (WHATWG has).
+    None,
+}
+
+/// Python's bytes for a character where they differ from WHATWG's: its one-byte private use
+/// characters, and the table of the rest (cp932_fixes, sorted by code point).
+fn fixed(c: char) -> Option<Fixed> {
+    if let Some(&(byte, _)) = PRIVATE_SINGLES.iter().find(|&&(_, single)| single == c) {
+        return Some(Fixed::One(byte));
+    }
+    let point = u16::try_from(c as u32).ok()?;
+    let at = cp932_fixes::ENCODE_FIXES.binary_search_by_key(&point, |&(from, _)| from).ok()?;
+    Some(match cp932_fixes::ENCODE_FIXES[at].1 {
+        cp932_fixes::NO_BYTES => Fixed::None,
+        byte @ 0..=0xFF => Fixed::One(byte as u8),
+        pair => Fixed::Two(pair.to_be_bytes()),
     })
 }
 
@@ -105,13 +106,16 @@ pub fn encode(text: &str) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     let mut run = String::new();
     for c in text.chars() {
-        match fixed(c) {
-            Some(bytes) => {
-                out.extend(encode_run(&run)?);
-                run.clear();
-                out.extend(bytes?);
-            }
-            None => run.push(c),
+        let Some(fix) = fixed(c) else {
+            run.push(c);
+            continue;
+        };
+        out.extend(encode_run(&run)?);
+        run.clear();
+        match fix {
+            Fixed::One(byte) => out.push(byte),
+            Fixed::Two(pair) => out.extend(pair),
+            Fixed::None => return None,
         }
     }
     out.extend(encode_run(&run)?);
@@ -145,6 +149,25 @@ mod tests {
         assert_eq!(decode_strict(&[0x80]).unwrap(), "\u{80}");
         assert_eq!(decode_strict(&[0x41, 0xA0, 0xFF]).unwrap(), "A\u{F8F0}\u{F8F3}");
         assert_eq!(encode("A\u{F8F0}\u{F8F3}").unwrap(), vec![0x41, 0xA0, 0xFF]);
+    }
+
+    /// fixed() searches the table by code point, so it must be sorted, each character once.
+    #[test]
+    fn the_encode_fixes_are_sorted_and_unique() {
+        let table = &cp932_fixes::ENCODE_FIXES;
+        assert!(table.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        // the private use singles are handled apart, not in the table
+        assert!(PRIVATE_SINGLES
+            .iter()
+            .all(|&(_, c)| table.binary_search_by_key(&(c as u16), |&(from, _)| from).is_err()));
+    }
+
+    #[test]
+    fn python_bytes_where_whatwg_differs() {
+        assert_eq!(encode("\u{A2}").unwrap(), [0x81, 0x91]); // ¢
+        assert_eq!(encode("a\u{A5}"), None); // ¥: WHATWG gives 0x5C, cp932 has none
+        assert_eq!(fixed('\u{F8F2}'), Some(Fixed::One(0xFE)));
+        assert_eq!(fixed('A'), None);
     }
 
     #[test]

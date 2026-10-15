@@ -1,6 +1,6 @@
 // Generated from Python's cp932 codec: the characters whose cp932 encoding differs from what
 // WHATWG Shift_JIS (encoding_rs) gives, with Python's bytes as a big-endian u16 (one byte below
-// 0x100) or NO_BYTES where Python has none. Sorted by code point.
+// 0x100) or NO_BYTES where Python has none. Sorted by code point. Written by examples/cp932_fixes.py.
 
 pub(crate) const NO_BYTES: u16 = 0xFFFF;
 
