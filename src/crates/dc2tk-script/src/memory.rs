@@ -687,7 +687,7 @@ impl MapKind {
     }
 }
 
-/// A map the game lists: map/map.cfg and map0.cfg-map6.cfg, `MAP_NAME "name","title","add",type,...`.
+/// A map the game lists: a row of a map table (maptable::rows).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapEntry {
     pub name: String,
@@ -695,22 +695,24 @@ pub struct MapEntry {
     pub kind: MapKind,
 }
 
-/// The maps of the disc's map lists, first listing of each name wins. Types 7 and 8 load in the
-/// dungeon loop; 4 and 6 (interiors) and the four parts of Palm Brinks after m01 (numbers 11 to 14,
-/// EditMapJump) load as sub maps.
+/// The older map table, which the game never reads (LoadMapName reads map<language>.cfg).
+const OLD_MAP_TABLE: &str = "map/map.cfg";
+
+/// The maps of the disc's map tables, first listing of each name wins: the older map/map.cfg
+/// first, then the languages' (which list the maps alike). Types 7 and 8 load in the dungeon
+/// loop; 4 and 6 (interiors) and the four parts of Palm Brinks after m01 (rows 11 to 14 of
+/// map.cfg, EditMapJump) load as sub maps.
+///
+/// map.cfg's types and add maps differ from the game's tables for some maps: s19 is a town there
+/// and a dungeon in the game's (which loads it with load_dungeon_map), i03h02 an interior there
+/// and a town in the game's. The retail budgets above (RETAIL_INTERIOR_MAP) were measured with
+/// map.cfg's kinds; which table tells how each map really loads is not settled.
 pub fn map_entries(disc: &dyn Disc) -> Vec<MapEntry> {
+    let tables = std::iter::once(OLD_MAP_TABLE.to_string())
+        .chain(crate::maptable::LANGUAGES.map(|language| crate::startat::map_table_path(Some(language))));
     let mut out: Vec<MapEntry> = Vec::new();
-    for list in [
-        "map/map.cfg",
-        "map/map0.cfg",
-        "map/map1.cfg",
-        "map/map2.cfg",
-        "map/map3.cfg",
-        "map/map4.cfg",
-        "map/map5.cfg",
-        "map/map6.cfg",
-    ] {
-        let Some(data) = disc.read(list) else { continue };
+    for table in tables {
+        let Some(data) = disc.read(&table) else { continue };
         for row in crate::maptable::rows(&data) {
             if row.code.is_empty() || out.iter().any(|entry| entry.name.eq_ignore_ascii_case(&row.code)) {
                 continue;
@@ -718,7 +720,7 @@ pub fn map_entries(disc: &dyn Disc) -> Vec<MapEntry> {
             let kind = match row.kind {
                 7 | 8 => MapKind::Dungeon,
                 4 | 6 => MapKind::Interior,
-                _ if (11..=14).contains(&row.number) && list == "map/map.cfg" => MapKind::Interior,
+                _ if (11..=14).contains(&row.number) && table == OLD_MAP_TABLE => MapKind::Interior,
                 _ => MapKind::Town,
             };
             out.push(MapEntry { name: row.code, add: row.add, kind });
@@ -1943,6 +1945,42 @@ mod tests {
         // an IM3 file returns the blocks it went past
         let three: Vec<(&str, i32, Vec<u8>)> = (0..5).map(|_| ("p", 0, big.clone())).collect();
         assert_eq!(enter_img(&mut Blocks::new(), &im3(&three), 0, TOWN_BLOCKS), 1);
+    }
+
+    #[test]
+    fn map_entries_take_the_first_listing_of_a_map() {
+        let row =
+            |code: &str, kind: i64, number: usize| format!("MAP_NAME \"{code}\",\"\",\"\",{kind},1;// {number}\r\n");
+        let mut old = String::from("MAP_NAME_NUM 16;\r\n");
+        for number in 0..11 {
+            old += &row("", 0, number);
+        }
+        old += &row("m02", 3, 11);
+        for number in 12..15 {
+            old += &row("", 0, number);
+        }
+        old += &row("s19", 3, 15);
+        let game = format!(
+            "MAP_NAME_NUM 3;\r\n{}{}// {}{}",
+            row("s19", 8, 0),
+            row("m02", 3, 1),
+            row("x01", 7, 2),
+            row("s51", 7, 2)
+        );
+        let disc = Files(BTreeMap::from([
+            ("map/map.cfg".to_string(), old.into_bytes()),
+            ("map/map1.cfg".to_string(), game.into_bytes()),
+        ]));
+        let kinds: Vec<(String, MapKind)> =
+            map_entries(&disc).into_iter().map(|entry| (entry.name, entry.kind)).collect();
+        assert_eq!(
+            kinds,
+            [
+                ("m02".to_string(), MapKind::Interior),
+                ("s19".to_string(), MapKind::Town),
+                ("s51".to_string(), MapKind::Dungeon)
+            ]
+        );
     }
 
     #[test]
