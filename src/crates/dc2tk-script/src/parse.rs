@@ -1162,6 +1162,7 @@ impl State {
     }
 
     /// Parses one level deeper, refusing to go past NESTING.
+    #[inline(always)]
     fn nested<T>(&mut self, parse: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
         self.link()?;
         let result = parse(self);
@@ -1693,74 +1694,35 @@ fn integer_type(words: &[String]) -> std::result::Result<&'static str, String> {
     Ok(if unsigned { "unsigned int" } else { "int" })
 }
 
+/// The specifiers read so far: the integer keywords, and the base type other words give.
+#[derive(Default)]
+struct Specifiers {
+    spec: Spec,
+    words: Vec<String>,
+    base: Option<String>,
+    any: bool,
+}
+
 /// A declaration's specifiers. header_kinds: an unknown name followed by a name or * is a value
 /// kind from a header (bgm_file track;), which sdk::resolve reads as its base type.
 fn specifiers(state: &mut State, header_kinds: bool) -> Result<Spec> {
-    let mut spec = Spec::default();
-    let mut words: Vec<String> = Vec::new();
-    let mut base: Option<String> = None;
-    let mut any = false;
+    let mut found = Specifiers::default();
     while state.token(0).kind == Kind::Name {
-        let text = state.token(0).text().to_string();
-        if STORAGE.contains(&text.as_str()) {
-            if spec.storage.is_some() {
-                return state.fail("a declaration has one storage class");
-            }
-            spec.storage = Some(text);
-        } else if text == "const" {
-            spec.constant = true;
-        } else if text == "volatile" {
-            spec.volatile = true;
-        } else if INTEGER_WORDS.contains(&text.as_str()) && base.is_none() {
-            words.push(text);
-        } else if base.is_none() && words.is_empty() {
-            if ["float", "string", "void"].contains(&text.as_str()) || state.kinds.contains_key(&text) {
-                base = Some(text);
-            } else if text == "struct" || text == "union" {
-                state.take();
-                let tag = struct_specifier(state, text == "union")?;
-                base = Some(format!("{text} {tag}"));
-                spec.ty = Some(Ty::Struct(tag));
-                any = true;
-                continue;
-            } else if let Some(ty) = state.types.get(&text).cloned() {
-                spec.ty = Some(ty);
-                base = Some(text);
-            } else if text == "enum" {
-                state.take();
-                let name = if state.at("{", 0) { None } else { Some(state.name()?) };
-                if state.at("{", 0) {
-                    // the enum is defined here; its members are the file's constants
-                    let members = enumerators(state, name.as_deref())?;
-                    state.constants_found.extend(members);
-                }
-                base = Some(name.map_or("int".to_string(), |name| format!("enum {name}")));
-                any = true;
-                continue;
-            } else if header_type_ahead(state, 0)
-                || (header_kinds
-                    && (state.token(1).kind == Kind::Name
-                        || (state.token(1).kind == Kind::Op && state.token(1).text() == "*")))
-                // an unnamed parameter of a header's type: int f(size_t, size_t);
-                || (header_kinds
-                    && state.header_kinds.contains_key(&text)
-                    && state.token(1).kind == Kind::Op
-                    && [",", "["].contains(&state.token(1).text()))
-            {
-                base = Some(text);
-            } else {
-                break;
-            }
-        } else {
+        let tagged_ahead = ["struct", "union", "enum"].contains(&state.token(0).text());
+        if tagged_ahead && found.base.is_none() && found.words.is_empty() {
+            // read apart from the other words: a struct's members nest specifiers in it
+            let word = state.take();
+            tagged(state, &mut found, word.text())?;
+        } else if !specifier(state, &mut found, header_kinds)? {
             break;
         }
-        state.take();
-        any = true;
+        found.any = true;
     }
-    if !any {
+    if !found.any {
         let found = state.shown(state.token(0))?;
         return state.fail(format!("expected a type, found {found}"));
     }
+    let Specifiers { mut spec, words, base, .. } = found;
     spec.kind = match base {
         Some(base) if words.is_empty() => base,
         Some(base) => return state.fail(format!("{} {base} is not a type", words.join(" "))),
@@ -1770,121 +1732,251 @@ fn specifiers(state: &mut State, header_kinds: bool) -> Result<Spec> {
     Ok(spec)
 }
 
+/// Reads the specifier word ahead into found: false, reading nothing, when it is not one (the
+/// declarator starts there).
+fn specifier(state: &mut State, found: &mut Specifiers, header_kinds: bool) -> Result<bool> {
+    let text = state.token(0).text().to_string();
+    if STORAGE.contains(&text.as_str()) {
+        if found.spec.storage.is_some() {
+            return state.fail("a declaration has one storage class");
+        }
+        found.spec.storage = Some(text);
+    } else if text == "const" {
+        found.spec.constant = true;
+    } else if text == "volatile" {
+        found.spec.volatile = true;
+    } else if INTEGER_WORDS.contains(&text.as_str()) && found.base.is_none() {
+        found.words.push(text);
+    } else if found.base.is_some() || !found.words.is_empty() {
+        return Ok(false);
+    } else if ["float", "string", "void"].contains(&text.as_str()) || state.kinds.contains_key(&text) {
+        found.base = Some(text);
+    } else if let Some(ty) = state.types.get(&text).cloned() {
+        found.spec.ty = Some(ty);
+        found.base = Some(text);
+    } else if header_type_ahead(state, 0)
+        || (header_kinds
+            && (state.token(1).kind == Kind::Name || (state.token(1).kind == Kind::Op && state.token(1).text() == "*")))
+        // an unnamed parameter of a header's type: int f(size_t, size_t);
+        || (header_kinds
+            && state.header_kinds.contains_key(&text)
+            && state.token(1).kind == Kind::Op
+            && [",", "["].contains(&state.token(1).text()))
+    {
+        found.base = Some(text);
+    } else {
+        return Ok(false);
+    }
+    state.take();
+    Ok(true)
+}
+
+/// struct, union or enum, after its keyword: the type it names (or defines here).
+fn tagged(state: &mut State, found: &mut Specifiers, word: &str) -> Result<()> {
+    if word == "enum" {
+        return enum_specifier(state, found);
+    }
+    let tag = struct_specifier(state, word == "union")?;
+    found.tagged(word, tag);
+    Ok(())
+}
+
+/// enum NAME, or enum NAME { ... } or enum { ... } defined here, after its keyword.
+fn enum_specifier(state: &mut State, found: &mut Specifiers) -> Result<()> {
+    let name = if state.at("{", 0) { None } else { Some(state.name()?) };
+    if state.at("{", 0) {
+        // the enum is defined here; its members are the file's constants
+        let members = enumerators(state, name.as_deref())?;
+        state.constants_found.extend(members);
+    }
+    found.base = Some(name.map_or("int".to_string(), |name| format!("enum {name}")));
+    Ok(())
+}
+
+impl Specifiers {
+    /// A struct or union a declaration's specifiers name.
+    fn tagged(&mut self, word: &str, tag: String) {
+        self.base = Some(format!("{word} {tag}"));
+        self.spec.ty = Some(Ty::Struct(tag));
+    }
+}
+
 /// struct TAG { members } or union TAG { ... } after its keyword (or TAG alone, naming one): the
-/// tag, a made-up one for an unnamed struct. A member takes whole slots, so bit-fields are refused.
+/// tag, a made-up one for an unnamed struct.
 fn struct_specifier(state: &mut State, union: bool) -> Result<String> {
     state.nested(|state| {
-        let word = if union { "union" } else { "struct" };
-        let tag = if state.token(0).kind == Kind::Name {
-            let name = state.name()?;
-            if state.at("{", 0) || state.at(";", 0) {
-                // defined or declared alone here: in a block, a struct of the block's
-                state.declared_tag(&name)
-            } else {
-                state.tag(&name)
-            }
-        } else if state.at("{", 0) {
-            state.anonymous += 1;
-            format!("__anonymous_{}_{}", state.file_key, state.anonymous)
-        } else {
-            let found = state.shown(state.token(0))?;
-            return state.fail(format!("expected the name of a {word}, found {found}"));
-        };
-        let shown = ctype::tag_shown(&tag);
-        let other = if union { "struct" } else { "union" };
-        if state.structs.get(&tag).is_some_and(|known| known.union != union) {
-            return state.fail(format!("{shown} is a {other}, not a {word}"));
-        }
+        let tag = struct_tag(state, union)?;
         if !state.at("{", 0) {
-            // declared here, defined (or not) elsewhere: an incomplete type until then
-            state.structs.entry(tag.clone()).or_insert(Composite::new(union, Vec::new()));
-            return Ok(tag);
+            return Ok(declared_struct(state, tag, union));
         }
-        state.take();
-        let mut members: Vec<(String, Ty)> = Vec::new();
-        let mut bits: Vec<Option<ctype::Bits>> = Vec::new();
-        // the bits the slot bit-fields are filling has used, while one is
-        let mut used: Option<i64> = None;
-        while !state.at("}", 0) {
-            let spec = specifiers(state, true)?;
-            if spec.storage.is_some() {
-                return state.fail(format!("a member of {word} {shown} has no storage class"));
-            }
-            let base = base_ty(state, &spec)?;
-            loop {
-                let (name, ty) = declarator(state, base.clone())?;
-                if !name.is_empty() && members.iter().any(|(known, _)| *known == name) {
-                    return state.fail(format!("{word} {shown} has two members named {name}"));
-                }
-                if state.at(":", 0) {
-                    state.take();
-                    let width = constant_expression(state)?;
-                    let kind = match &ty {
-                        Ty::Scalar(kind) => state.base_kind(kind),
-                        _ => String::new(),
-                    };
-                    if kind != "int" && kind != "unsigned int" {
-                        return state.fail(format!(
-                            "bit-field {name} is of {}: a bit-field is an int or an unsigned int",
-                            ty.shown()
-                        ));
-                    }
-                    if !(0..=32).contains(&width) {
-                        return state.fail(format!("bit-field {name} has {width} bits; an int has 32"));
-                    }
-                    match width {
-                        0 if !name.is_empty() => {
-                            return state.fail(format!("bit-field {name} has 0 bits; only an unnamed one may"))
-                        }
-                        // :0 ends the slot: the next bit-field starts another
-                        0 => used = None,
-                        32 => {
-                            // the whole slot, an int of its own
-                            members.push((name, ty));
-                            bits.push(None);
-                            used = None;
-                        }
-                        _ => {
-                            let offset = match used {
-                                Some(taken) if !union && taken + width <= 32 => taken,
-                                _ => 0,
-                            };
-                            members.push((name, ty));
-                            bits.push(Some(ctype::Bits { offset, width }));
-                            used = Some(offset + width);
-                        }
-                    }
-                } else {
-                    if name.is_empty() {
-                        return state.fail(format!("a member of {word} {shown} needs a name"));
-                    }
-                    complete(state, &name, &ty)?;
-                    members.push((name, ty));
-                    bits.push(None);
-                    used = None;
-                }
-                if !state.at(",", 0) {
-                    break;
-                }
-                state.take();
-            }
-            state.expect(";")?;
-        }
-        state.expect("}")?;
-        if members.is_empty() {
-            return state.fail(format!("{word} {shown} needs a member"));
-        }
-        let bits = if bits.iter().any(Option::is_some) { bits } else { Vec::new() };
-        let composite = Composite { union, members, bits };
-        if state.structs.get(&tag).is_some_and(|known| !known.members.is_empty() && *known != composite) {
-            return state.fail(format!("{word} {shown} is defined twice"));
-        }
-        state.structs.insert(tag.clone(), composite);
-        Ok(tag)
+        let composite = struct_members(state, union, &tag)?;
+        defined(state, tag, composite)
     })
 }
 
-/// Refuses an object of a type with no size: void, a function, a struct not defined, an array
+/// A struct declared here, defined (or not) elsewhere: an incomplete type until then.
+fn declared_struct(state: &mut State, tag: String, union: bool) -> String {
+    state.structs.entry(tag.clone()).or_insert(Composite::new(union, Vec::new()));
+    tag
+}
+
+/// A struct or union as a message names it: struct T.
+fn struct_shown(union: bool, tag: &str) -> String {
+    format!("{} {}", if union { "union" } else { "struct" }, ctype::tag_shown(tag))
+}
+
+/// A struct's definition, kept unless the struct is defined differently already.
+fn defined(state: &mut State, tag: String, composite: Composite) -> Result<String> {
+    if state.structs.get(&tag).is_some_and(|known| !known.members.is_empty() && *known != composite) {
+        return state.fail(format!("{} is defined twice", struct_shown(composite.union, &tag)));
+    }
+    state.structs.insert(tag.clone(), composite);
+    Ok(tag)
+}
+
+/// The tag of a struct or union: its name's (a struct of the block's own, where a block defines
+/// or declares it), or a made-up one for an unnamed struct.
+fn struct_tag(state: &mut State, union: bool) -> Result<String> {
+    let tag = if state.token(0).kind == Kind::Name {
+        let name = state.name()?;
+        if state.at("{", 0) || state.at(";", 0) {
+            // defined or declared alone here: in a block, a struct of the block's
+            state.declared_tag(&name)
+        } else {
+            state.tag(&name)
+        }
+    } else if state.at("{", 0) {
+        state.anonymous += 1;
+        format!("__anonymous_{}_{}", state.file_key, state.anonymous)
+    } else {
+        let found = state.shown(state.token(0))?;
+        let word = if union { "union" } else { "struct" };
+        return state.fail(format!("expected the name of a {word}, found {found}"));
+    };
+    if state.structs.get(&tag).is_some_and(|known| known.union != union) {
+        let (word, other) = if union { ("union", "struct") } else { ("struct", "union") };
+        return state.fail(format!("{} is a {other}, not a {word}", ctype::tag_shown(&tag)));
+    }
+    Ok(tag)
+}
+
+/// A struct's or union's { members }.
+fn struct_members(state: &mut State, union: bool, tag: &str) -> Result<Composite> {
+    state.take();
+    let shown = struct_shown(union, tag);
+    let mut members = Members { union, shown, members: Vec::new(), bits: Vec::new(), used: None };
+    while !state.at("}", 0) {
+        member_declaration(state, &mut members)?;
+    }
+    state.expect("}")?;
+    members.composite(state)
+}
+
+/// A declaration of members, which nests what its type defines (a struct inside a struct).
+fn member_declaration(state: &mut State, members: &mut Members) -> Result<()> {
+    state.nested(|state| {
+        let spec = specifiers(state, true)?;
+        member_declarators(state, members, spec)
+    })
+}
+
+/// The members a declaration's declarators give, after its specifiers.
+fn member_declarators(state: &mut State, members: &mut Members, spec: Spec) -> Result<()> {
+    if spec.storage.is_some() {
+        return state.fail(format!("a member of {} has no storage class", members.shown));
+    }
+    let base = base_ty(state, &spec)?;
+    loop {
+        let (name, ty) = declarator(state, base.clone())?;
+        members.add(state, name, ty)?;
+        if !state.at(",", 0) {
+            break;
+        }
+        state.take();
+    }
+    state.expect(";")?;
+    Ok(())
+}
+
+/// A struct's members as they are read: each takes whole slots, but bit-fields share them.
+struct Members {
+    union: bool,
+    /// The struct as messages name it.
+    shown: String,
+    members: Vec<(String, Ty)>,
+    bits: Vec<Option<ctype::Bits>>,
+    /// The bits of the slot bit-fields are filling the fields so far have used, while one is.
+    used: Option<i64>,
+}
+
+impl Members {
+    fn composite(self, state: &State) -> Result<Composite> {
+        if self.members.is_empty() {
+            return state.fail(format!("{} needs a member", self.shown));
+        }
+        let bits = if self.bits.iter().any(Option::is_some) { self.bits } else { Vec::new() };
+        Ok(Composite { union: self.union, members: self.members, bits })
+    }
+
+    /// A member's declarator read: a bit-field when a width follows it.
+    fn add(&mut self, state: &mut State, name: String, ty: Ty) -> Result<()> {
+        if !name.is_empty() && self.members.iter().any(|(known, _)| *known == name) {
+            return state.fail(format!("{} has two members named {name}", self.shown));
+        }
+        if state.at(":", 0) {
+            state.take();
+            let width = constant_expression(state)?;
+            return self.bit_field(state, name, ty, width);
+        }
+        if name.is_empty() {
+            return state.fail(format!("a member of {} needs a name", self.shown));
+        }
+        complete(state, &name, &ty)?;
+        self.members.push((name, ty));
+        self.bits.push(None);
+        self.used = None;
+        Ok(())
+    }
+
+    fn bit_field(&mut self, state: &State, name: String, ty: Ty, width: i64) -> Result<()> {
+        let kind = match &ty {
+            Ty::Scalar(kind) => state.base_kind(kind),
+            _ => String::new(),
+        };
+        if kind != "int" && kind != "unsigned int" {
+            return state
+                .fail(format!("bit-field {name} is of {}: a bit-field is an int or an unsigned int", ty.shown()));
+        }
+        if !(0..=32).contains(&width) {
+            return state.fail(format!("bit-field {name} has {width} bits; an int has 32"));
+        }
+        match width {
+            0 if !name.is_empty() => {
+                return state.fail(format!("bit-field {name} has 0 bits; only an unnamed one may"))
+            }
+            // :0 ends the slot: the next bit-field starts another
+            0 => self.used = None,
+            32 => {
+                // the whole slot, an int of its own
+                self.members.push((name, ty));
+                self.bits.push(None);
+                self.used = None;
+            }
+            _ => {
+                let offset = match self.used {
+                    Some(taken) if !self.union && taken + width <= 32 => taken,
+                    _ => 0,
+                };
+                self.members.push((name, ty));
+                self.bits.push(Some(ctype::Bits { offset, width }));
+                self.used = Some(offset + width);
+            }
+        }
+        Ok(())
+    }
+}
+
+// Refuses an object of a type with no size: void, a function, a struct not defined, an array
 /// whose size nothing gave.
 fn complete(state: &State, name: &str, ty: &Ty) -> Result<()> {
     match ty {
