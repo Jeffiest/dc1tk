@@ -146,6 +146,8 @@ mod tests {
         let error = DiscSource::open(&folder).err().unwrap().to_string();
         assert!(error.contains("not an extracted disc"), "{error}");
         assert!(DiscSource::open(&folder.join("missing")).is_err());
+        let error = Image::open(&folder).err().unwrap().to_string();
+        assert!(error.ends_with("is a folder, not a disc image"), "{error}");
         fs::remove_dir_all(&folder).unwrap();
     }
 }

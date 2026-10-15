@@ -62,6 +62,9 @@ pub struct Image {
 
 impl Image {
     pub fn open(path: &Path) -> Result<Image> {
+        if path.is_dir() {
+            return Err(Error::invalid(format!("{} is a folder, not a disc image", path.display())));
+        }
         let file = File::open(path).with_path("read", path)?;
         // Safety: a mapped file must not change while it is mapped. The tools only read an image
         // they map, no other process writes it meanwhile, and a build never writes the image it

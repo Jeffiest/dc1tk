@@ -120,3 +120,65 @@ fn patched_new_game_script_compiles_with_the_town_warp() {
     assert!(text.contains("push 14") && !text.contains("m05"));
     assert!(text.contains(&format!("push {}", startat::START_FLAG)));
 }
+
+#[test]
+fn a_target_is_the_whole_text() {
+    assert!(startat::parse_target("s51:story_50\n").is_err());
+    assert!(startat::parse_start("m05\n").is_err());
+}
+
+#[test]
+fn the_chosen_mods_agree_on_one_scene_or_name_none() {
+    let folder = TempDir::new("startat-chosen");
+    let mods = folder.path().join("mods");
+    let mod_json = |name: &str, text: &str| {
+        build_common::write(&mods, &format!("{name}/mod.json"), text);
+        mods.join(name)
+    };
+    let (castle, again, plain) = (
+        mod_json("castle", r#"{"start_at": "s51:story_50"}"#),
+        mod_json("again", r#"{"start_at": "s51:story_50"}"#),
+        mod_json("plain", "{}"),
+    );
+    assert_eq!(startat::chosen_scene(std::slice::from_ref(&plain)).unwrap(), None);
+    assert_eq!(startat::chosen_scene(&[castle.clone(), again, plain]).unwrap().as_deref(), Some("s51:story_50"));
+    let town = mod_json("town", r#"{"start_at": "m05"}"#);
+    let error = startat::chosen_scene(&[castle, town]).unwrap_err().to_string();
+    assert!(error.contains("different scenes (m05, s51:story_50)"), "{error}");
+}
+
+#[test]
+fn a_scene_resolves_to_a_patched_new_game_with_a_mods_program_number() {
+    let folder = TempDir::new("startat-resolve");
+    let root = make_tree(
+        folder.path(),
+        &[
+            ("map/d/d01/d01_1.c", NEW_GAME),
+            ("map/d/d07/d07_1.c", "void w(void)\n{\n    go_to_edit_mode(14, 1100);\n}\n"),
+        ],
+    );
+    let numbers =
+        std::collections::BTreeMap::from([("town".to_string(), IndexMap::from([("my_scene".to_string(), 9001)]))]);
+    let map_numbers = || Ok(IndexMap::from([("m05".to_string(), 14)]));
+    let start = startat::resolve(
+        &root,
+        &consts(&[("my_scene", 9001)]),
+        "m05:my_scene",
+        &numbers,
+        &IndexMap::new(),
+        &[],
+        map_numbers,
+    )
+    .unwrap();
+    assert_eq!((start.target.program.as_str(), start.warp), ("9001", startat::Warp::Town(14)));
+    assert!(start.warnings.is_empty(), "{:?}", start.warnings);
+    assert_eq!(start.overrides.keys().collect::<Vec<_>>(), ["map/d/d01/d01_1.c"]);
+    assert_eq!(
+        start.summary(),
+        format!(
+            "start at: a new game goes to map m05 at program 9001, entered as a town with go_to_edit_mode(14, 9001) \
+             (patched map/d/d01/d01_1.c; flag {} marks it done)",
+            startat::START_FLAG
+        )
+    );
+}

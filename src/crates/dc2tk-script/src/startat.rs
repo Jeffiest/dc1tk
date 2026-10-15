@@ -20,8 +20,8 @@
 //! clears the skip of the next music load that New Game sets for the opening, so the town's
 //! default music plays (town_function_text).
 
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use dc2tk_disc::archive::Archive;
@@ -30,7 +30,7 @@ use indexmap::IndexMap;
 use regex::Regex;
 
 use crate::index::{self, Folded};
-use crate::{discfiles, maptable, pathnames, sdk, source, Error, Result};
+use crate::{discfiles, maptable, mods, pathnames, sdk, source, Error, Result};
 
 pub const START_PROGRAM: &str = "floor_start";
 pub const START_FLAG: i64 = 2047;
@@ -51,8 +51,7 @@ pub struct Target {
 
 pub fn parse_target(text: &str) -> Result<Target> {
     static PATTERN: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+)(?:/([A-Za-z0-9_]+))?:(-?\w+)\n?$").unwrap());
-    // a final newline is allowed (a value read from a file)
+        LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+)(?:/([A-Za-z0-9_]+))?:(-?\w+)$").unwrap());
     let Some(found) = PATTERN.captures(text) else {
         return Err(Error::invalid(
             "--start-at takes MAP:PROGRAM or MAP/SCRIPT:PROGRAM, as in s51:story_50 or s06/s06b:500",
@@ -69,7 +68,7 @@ pub fn parse_target(text: &str) -> Result<Target> {
 /// A --start-at or mod.json "start_at" target: what parse_target takes, or MAP (or MAP/SCRIPT)
 /// alone, which starts at DEFAULT_PROGRAM.
 pub fn parse_start(text: &str) -> Result<Target> {
-    static BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)?)\n?$").unwrap());
+    static BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)?)$").unwrap());
     let given = match BARE.captures(text) {
         Some(found) => format!("{}:{DEFAULT_PROGRAM}", &found[1]),
         None => text.to_string(),
@@ -339,6 +338,91 @@ pub fn warp_warnings(tree: &Path, consts: &IndexMap<String, i64>, target: &Targe
     Ok(lines)
 }
 
+/// The scene the chosen mods' mod.json "start_at" names, for a build given no --start-at: none, or
+/// the one they agree on. Mods that name different scenes are an error.
+pub fn chosen_scene(mod_dirs: &[PathBuf]) -> Result<Option<String>> {
+    let mut wanted: Vec<String> = Vec::new();
+    for mod_dir in mod_dirs {
+        if let Some(scene) = mods::entries(mod_dir)?["start_at"].as_str().filter(|scene| !scene.is_empty()) {
+            if !wanted.iter().any(|known| known == scene) {
+                wanted.push(scene.to_string());
+            }
+        }
+    }
+    wanted.sort();
+    if wanted.len() > 1 {
+        return Err(Error::invalid(format!(
+            "the chosen mods start at different scenes ({}); pick one with --start-at, or --no-start-at",
+            wanted.join(", ")
+        )));
+    }
+    Ok(wanted.pop())
+}
+
+/// Where a test image's new game goes and how: the target, the warp, what may keep it from
+/// working, and the new game's scripts patched to go there.
+pub struct StartAt {
+    pub target: Target,
+    pub warp: Warp,
+    pub warnings: Vec<String>,
+    /// The patched new-game scripts, by path from the tree (warp_overrides).
+    pub overrides: IndexMap<String, String>,
+}
+
+impl StartAt {
+    /// What a new game does, as build says it.
+    pub fn summary(&self) -> String {
+        let target = &self.target;
+        let how = match self.warp {
+            Warp::Dungeon => format!(
+                "loaded dungeon-style with load_dungeon_map and load_event_script {}/{}.stb",
+                target.map, target.script
+            ),
+            Warp::Town(number) => format!("entered as a town with go_to_edit_mode({number}, {})", target.program),
+        };
+        let mut patched: Vec<&str> = self.overrides.keys().map(String::as_str).collect();
+        patched.sort();
+        format!(
+            "start at: a new game goes to map {} at program {}, {} (patched {}; flag {START_FLAG} marks it done)",
+            target.map,
+            target.program,
+            how,
+            patched.join(", ")
+        )
+    }
+}
+
+/// A --start-at (or start_at) scene resolved over the tree and the chosen mods: a program a mod
+/// names with NEW_PROGRAM takes the number build gives it (`numbers`, by mod), the warp is chosen
+/// by how the game enters the map (`map_numbers` numbers the disc's maps and the mods' new ones,
+/// after the disc's, read only for a town), and the new game's scripts are patched over the mods'
+/// texts of them (`texts`). A mod's new map is entered by no script of the game's, so the
+/// warning that the game never goes there is left out for one.
+pub fn resolve(
+    tree: &Path,
+    consts: &IndexMap<String, i64>,
+    scene: &str,
+    numbers: &BTreeMap<String, IndexMap<String, i64>>,
+    texts: &IndexMap<String, String>,
+    new_maps: &[maptable::NewMap],
+    map_numbers: impl FnOnce() -> Result<IndexMap<String, i64>>,
+) -> Result<StartAt> {
+    let mut target = parse_start(scene)?;
+    let given: IndexMap<&String, &i64> = numbers.values().flat_map(|found| found.iter()).collect();
+    if let Some(number) = given.get(&target.program) {
+        // a mod's NEW_PROGRAM name
+        target.program = number.to_string();
+    }
+    let warp = warp(tree, consts, &target, map_numbers)?;
+    let new_map = new_maps.iter().any(|map| map.name == target.map);
+    let warnings = warp_warnings(tree, consts, &target, warp)?
+        .into_iter()
+        .filter(|warning| !(new_map && warning.contains("go_to_edit_mode")))
+        .collect();
+    let overrides = warp_overrides(tree, &target, warp, texts)?;
+    Ok(StartAt { target, warp, warnings, overrides })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,11 +448,10 @@ MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n;MAP_NAME \
             parse_start("m05").unwrap(),
             Target { map: "m05".into(), script: "m05".into(), program: "map_start".into() }
         );
-        assert_eq!(parse_start("m05\n").unwrap().program, "map_start");
         assert_eq!(parse_start("s06/s06b").unwrap().script, "s06b");
         assert_eq!(parse_start("s51:story_50").unwrap(), parse_target("s51:story_50").unwrap());
         assert_eq!(parse_start("s06/s06b:500").unwrap(), parse_target("s06/s06b:500").unwrap());
-        for wrong in ["", "m05:", "m05 map_start", "a/b/c"] {
+        for wrong in ["", "m05:", "m05 map_start", "a/b/c", "m05\n"] {
             assert!(parse_start(wrong).unwrap_err().to_string().contains("MAP, MAP:PROGRAM"), "{wrong:?}");
         }
     }

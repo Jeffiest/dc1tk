@@ -1698,6 +1698,17 @@ pub fn wav_constants(mod_dir: &Path) -> Result<IndexMap<String, i64>> {
     Ok(found)
 }
 
+/// The sound entries the lines add, numbered 0 ({mod: {name: 0}}): an added entry's number needs
+/// the disc (resolve gives it), but its name compiles all the same, as mod check without the disc
+/// compiles it.
+pub fn unnumbered_sounds(lines: &[Line]) -> BTreeMap<String, IndexMap<String, i64>> {
+    let mut found: BTreeMap<String, IndexMap<String, i64>> = BTreeMap::new();
+    for line in lines.iter().filter(|line| line.add && matches!(line.kind, LineKind::Sound { .. })) {
+        found.entry(line.module.clone()).or_default().insert(line.key[Kind::Sound.name().len() + 1..].to_string(), 0);
+    }
+    found
+}
+
 /// The sound constants each chosen mod's patches see, {mod: {name: entry number}}: the entries
 /// its add lines make (added, from resolve) and the names of its WAVs (wav_constants). A name the
 /// game's headers (consts) give another value is refused; one they give the same value is left to

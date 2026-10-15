@@ -47,7 +47,7 @@ use regex::Regex;
 use crate::asm::{self, Token};
 use crate::index;
 use crate::node::{Map, Node};
-use crate::{additions, library, names, numbers, parse, pathnames, sdk, Error, Result};
+use crate::{additions, library, names, numbers, parse, pathnames, paths, sdk, Error, Result};
 
 pub const LANGUAGES: [(&str, i64); 6] = [
     ("LANGUAGE_JAPANESE", 0),
@@ -274,6 +274,32 @@ impl Plan {
     pub fn for_script(&self, script: &str) -> Option<Vec<&Patch>> {
         self.scripts.get(script).map(|found| found.iter().map(|at| &self.patches[*at]).collect())
     }
+
+    /// The constants mods' additions name (their sound entries, the new maps), which each mod's
+    /// patches see as its own numbers.
+    pub fn with_constants(&mut self, constants: &ModConstants) {
+        merge_constants(&mut self.numbers, constants);
+        for patch in &mut self.patches {
+            if let Some(found) = constants.get(&patch.module) {
+                patch.numbers.extend(found.iter().map(|(name, number)| (name.clone(), *number)));
+            }
+        }
+    }
+}
+
+/// Names mods' additions give numbers, by mod: {mod: {name: number}}.
+pub type ModConstants = BTreeMap<String, IndexMap<String, i64>>;
+
+/// Adds more's constants to into's, mod by mod; a name more numbers again takes its number.
+pub fn merge_constants(into: &mut ModConstants, more: &ModConstants) {
+    for (module, found) in more {
+        into.entry(module.clone()).or_default().extend(found.iter().map(|(name, number)| (name.clone(), *number)));
+    }
+}
+
+/// Constants every chosen mod sees (the new maps' MAP_ constants), as ModConstants.
+pub fn for_every_mod(constants: &IndexMap<String, i64>, mod_dirs: &[PathBuf]) -> ModConstants {
+    mod_dirs.iter().map(|dir| (paths::file_name(dir), constants.clone())).collect()
 }
 
 /// Which scripts each patch of the chosen mods changes, and the numbers the mods ask for. written

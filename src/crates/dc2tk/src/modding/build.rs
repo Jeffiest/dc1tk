@@ -1,0 +1,428 @@
+//! dc2tk build: a source tree compiled with the chosen mods layered over it into a new disc image,
+//! with every game file the mods change put in, step by step, saying what each step did.
+
+use std::collections::{BTreeMap, HashSet};
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use anyhow::{bail, Result};
+use clap::Args;
+use indexmap::IndexMap;
+
+use dc2tk_disc::rebuild;
+use dc2tk_script::discfiles::{self, Files};
+use dc2tk_script::mapedit::{self, MapChange};
+use dc2tk_script::{
+    build, datatables, disc, index, mapscript, maptable, memory, mods, patches, renames, replace, startat, tree,
+};
+
+use super::{default_constants, joined, launch, mod_folders, new_music_lines, reached_lines, resolved, shown};
+use crate::options::{Common, ModsDir, Tools};
+
+#[derive(Args)]
+pub struct BuildArgs {
+    /// The source tree, as setup or decompile wrote it.
+    source: PathBuf,
+    /// The retail disc image the source came from.
+    iso: PathBuf,
+    /// Disc image to write.
+    #[arg(short, long)]
+    output: PathBuf,
+    /// Test image only: a new game goes straight to this map and program, as in s51:story_50, or
+    /// to a map at map_start, as in m05.
+    #[arg(long, value_name = "MAP[:PROGRAM]")]
+    start_at: Option<String>,
+    /// Layer this mod over the tree; repeat for several, which may not change the same file. The
+    /// mods each requires are layered in too, and "requires" and "after" set the order.
+    #[arg(long = "mod", value_name = "NAME")]
+    mod_names: Vec<String>,
+    #[command(flatten)]
+    mods: ModsDir,
+    /// Ignore a chosen mod's start_at.
+    #[arg(long)]
+    no_start_at: bool,
+    /// Boot the image in PCSX2 when it is built.
+    #[arg(long)]
+    play: bool,
+    /// PCSX2's executable, for --play.
+    #[arg(long)]
+    pcsx2: Option<PathBuf>,
+    /// Compile every script, not only those edited, modded or including an edited library.
+    #[arg(long)]
+    full: bool,
+    #[command(flatten)]
+    common: Common,
+}
+
+/// What the chosen mods bring, gathered before anything is compiled.
+struct Planned {
+    mod_dirs: Vec<PathBuf>,
+    /// The mods' texts of the tree's files (and the start_at patch's), by path from the tree.
+    overrides: IndexMap<String, String>,
+    /// The game files the mods give by path.
+    disc_files: discfiles::Wanted,
+    resolved: replace::Resolved,
+    templates: discfiles::Templates,
+    consts: IndexMap<String, i64>,
+    plan: patches::Plan,
+    lines: Vec<replace::Line>,
+    new_maps: Vec<maptable::NewMap>,
+    language: Option<i64>,
+}
+
+/// What the build puts into the image besides scripts, step by step; data.files holds every file
+/// it writes.
+struct GameFiles {
+    replaced: Vec<discfiles::Replaced>,
+    changed: Vec<replace::Changed>,
+    new_music: Vec<replace::Changed>,
+    map_changes: Vec<MapChange>,
+    data: datatables::DataBuilt,
+}
+
+pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
+    let tools = args.common.tools()?;
+    let mut planned = plan(args, &tools)?;
+    print_mods(args, &planned)?;
+    if let Some(start) = start_at(args, &planned)? {
+        planned.overrides.extend(start.overrides);
+    }
+    print_tree_notes(args, &planned.mod_dirs)?;
+    let found = compile(args, &tools, &mut planned)?;
+    let made = game_files(args, &tools, &planned, &found)?;
+    let over_budget = memory_check(args, &made.data.files)?;
+    let written = rebuild::write_disc(&args.iso, &args.output, &made.data.files)?;
+    if let Some(executable) = &made.data.executable {
+        // the executable tables (monsters, spectrumising, ...): the boot executable patched in
+        // place, its size kept
+        rebuild::overwrite_iso_file(&args.output, dc2tk_assets::elf::EXECUTABLE, executable)?;
+    }
+    print_written(&written);
+    let wrong = read_back(args, &found, &made)?;
+    let data_files: usize = made.data.changes.iter().map(|change| change.files.len()).sum();
+    println!(
+        "{} scripts changed, {} game files replaced or added, {} disc files rewritten, written to {}",
+        found.scripts.len(),
+        made.replaced.len() + made.changed.len() + made.new_music.len() + made.map_changes.len() + data_files,
+        made.data.files.len(),
+        shown(&args.output)
+    );
+    if !wrong.is_empty() {
+        return Ok(ExitCode::from(1));
+    }
+    if over_budget {
+        println!("the image was written, but the game will not load it as built: see the errors above (docs/assets/memory.md)");
+        return Ok(ExitCode::from(1));
+    }
+    if args.play {
+        println!("started PCSX2: {}", launch(&args.output, args.pcsx2.as_deref(), true)?.display());
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The chosen mods, what they change and the numbers they are given; mods that change one thing
+/// two ways are an error.
+fn plan(args: &BuildArgs, tools: &Tools) -> Result<Planned> {
+    let mod_dirs = mod_folders(args.mods.path(), &args.mod_names)?;
+    let (overrides, clashes) = mods::overlay(&mod_dirs, &args.source, &default_constants(&args.source)?)?;
+    if !clashes.is_empty() {
+        bail!(mods::clash_text(&clashes));
+    }
+    let (disc_files, disc_clashes) = discfiles::collect(&mod_dirs)?;
+    if !disc_clashes.is_empty() {
+        bail!(discfiles::clash_text(&disc_clashes));
+    }
+    let (resolved, templates) = resolved(&mod_dirs, &args.iso, &args.common.def_sets())?;
+    let id_clashes = replace::clashes(&resolved, &disc_files);
+    if !id_clashes.is_empty() {
+        bail!("the chosen mods cannot be built together:\n  {}", id_clashes.join("\n  "));
+    }
+    let consts = index::constants(index::tree_headers(&args.source, &tools.defs, &tools.sdk_dir)?.values());
+    let mut plan = mods::patch_plan(&mod_dirs, &args.source, &consts, true)?;
+    plan.with_constants(&replace::sound_constants(&mod_dirs, &consts, &resolved.added)?);
+    let language = disc::language_code(&tools.defs);
+    // the chosen mods' new maps, numbered after the disc's; every mod's scripts see MAP_<NAME>
+    let lines = replace::all_lines(&mod_dirs)?;
+    let new_maps = maptable::new_maps(&lines)?;
+    if !new_maps.is_empty() {
+        let numbers = maptable::disc_numbers_with(&args.iso, language, &new_maps)?;
+        plan.with_constants(&patches::for_every_mod(&mapscript::map_constants(&new_maps, &numbers), &mod_dirs));
+    }
+    Ok(Planned { mod_dirs, overrides, disc_files, resolved, templates, consts, plan, lines, new_maps, language })
+}
+
+/// Each mod: its patches, files and game files, what its id lines reach, its new music, the numbers
+/// it was given, and its files the decompiler has written differently since.
+fn print_mods(args: &BuildArgs, planned: &Planned) -> Result<()> {
+    for mod_dir in &planned.mod_dirs {
+        let name = mods::name(mod_dir);
+        let mine: Vec<&patches::Patch> = planned.plan.patches.iter().filter(|patch| patch.module == name).collect();
+        println!(
+            "mod {}: {} patches, {} files, {} game files",
+            name,
+            mine.len(),
+            mods::contents(mod_dir, &args.source)?.len(),
+            discfiles::game_files(mod_dir)?.len()
+        );
+        for patch in mine {
+            println!("  patch {}", patches::summary(patch));
+        }
+        for line in reached_lines(&planned.resolved, &name) {
+            println!("  {line}");
+        }
+        for line in new_music_lines(&planned.lines, &name) {
+            println!("  {line}");
+        }
+        let given: BTreeMap<&String, &i64> =
+            planned.plan.numbers.get(&name).map(|found| found.iter().collect()).unwrap_or_default();
+        for (constant, number) in given {
+            println!("  {constant} = {number}");
+        }
+        for path in mods::stale(mod_dir, &args.source)? {
+            println!("warning: {path} changed in the decompiler's output since {name} was made; compare them");
+        }
+    }
+    Ok(())
+}
+
+/// The scene a test image's new game starts at (--start-at, else a chosen mod's start_at), with
+/// the new game's scripts patched to go there.
+fn start_at(args: &BuildArgs, planned: &Planned) -> Result<Option<startat::StartAt>> {
+    let mut scene = args.start_at.clone();
+    if scene.is_none() && !args.no_start_at {
+        scene = startat::chosen_scene(&planned.mod_dirs)?;
+        if let Some(scene) = &scene {
+            println!("start at {scene}, from the chosen mod (--no-start-at for a normal New Game)");
+        }
+    }
+    let Some(scene) = scene.filter(|scene| !scene.is_empty()) else {
+        return Ok(None);
+    };
+    // the chosen mods' new maps are numbered after the disc's
+    let map_numbers = || maptable::disc_numbers_with(&args.iso, planned.language, &planned.new_maps);
+    let start = startat::resolve(
+        &args.source,
+        &planned.consts,
+        &scene,
+        &planned.plan.numbers,
+        &planned.overrides,
+        &planned.new_maps,
+        map_numbers,
+    )?;
+    for warning in &start.warnings {
+        println!("warning: {warning}");
+    }
+    println!("{}", start.summary());
+    Ok(Some(start))
+}
+
+/// The tree's own edits, which build builds in under the mods, and the libraries edited there.
+fn print_tree_notes(args: &BuildArgs, mod_dirs: &[PathBuf]) -> Result<()> {
+    let Some(status) = tree::status(&args.source)? else {
+        return Ok(());
+    };
+    if !mod_dirs.is_empty() && (!status.edited.is_empty() || !status.added.is_empty()) {
+        println!(
+            "note: {} itself has {} edited or added files, which are built in under the mods",
+            shown(&args.source),
+            status.edited.len() + status.added.len()
+        );
+    }
+    for note in tree::library_notes(&args.source, &status)? {
+        println!("note: {note}");
+    }
+    Ok(())
+}
+
+/// The overridden functions followed to their new names, and every script that can have changed
+/// compiled and compared with the disc's.
+fn compile(args: &BuildArgs, tools: &Tools, planned: &mut Planned) -> Result<build::Changes> {
+    let toolchain = tools.toolchain();
+    let following =
+        renames::follow(&planned.mod_dirs, &mut planned.plan, &args.source, &toolchain, &planned.overrides)?;
+    for followed in &following.followed {
+        println!("note: {}; dc2tk mod check --rename writes the new name into the mod", renames::describe(followed));
+    }
+    for note in &following.notes {
+        println!("note: {note}");
+    }
+    let found =
+        build::changes(&args.source, &args.iso, &toolchain, &planned.overrides, args.full, Some(&planned.plan))?;
+    match &found.all_because {
+        Some(why) => println!("compiled all {} scripts: {}", found.compiled, why),
+        None => println!("compiled {} scripts; the rest are unchanged since decompiling", found.compiled),
+    }
+    for path in &found.skipped {
+        println!("not on the disc, skipped: {path}");
+    }
+    for change in &found.scripts {
+        println!("changed: {}", change.source);
+    }
+    if found.scripts.is_empty() {
+        println!("no script differs from the disc");
+    }
+    Ok(found)
+}
+
+/// Every game file the build writes, step by step over the files the steps before wrote: the
+/// mods' own files, the assets their id lines replace, new music, maps and their scripts, and the
+/// data tables.
+fn game_files(args: &BuildArgs, tools: &Tools, planned: &Planned, found: &build::Changes) -> Result<GameFiles> {
+    let (mod_dirs, iso) = (&planned.mod_dirs, &args.iso);
+    let tops: HashSet<String> = found.scripts.iter().map(|change| change.top.clone()).collect();
+    let (files, replaced) = discfiles::replaced(iso, &planned.disc_files, &found.files, &tops, &planned.templates)?;
+    for item in &replaced {
+        let Some(old) = item.old else {
+            let new = if item.new_file { ", a new file" } else { "" };
+            println!("added: {} (mod {}, {} bytes{new})", item.path, item.module, item.data.len());
+            continue;
+        };
+        println!("replaced: {} (mod {}, {} bytes, was {})", item.path, item.module, item.data.len(), old);
+        for detail in &item.details {
+            println!("  {detail}");
+        }
+    }
+    // the letters the English font gains, for every changed English text: the text: lines' and
+    // the items' names and descriptions
+    let item_letters = datatables::english_item_letters(iso, mod_dirs)?;
+    let english = replace::english_letters(iso, &planned.resolved, item_letters)?;
+    let (files, changed) = replace::apply_with(iso, &planned.resolved, &files, &english)?;
+    for item in &changed {
+        println!(
+            "replaced: {} ({}; mod {}, {} bytes, was {})",
+            item.place.display(),
+            joined(&item.ids),
+            joined(&item.modules),
+            item.data.len(),
+            item.old
+        );
+        for detail in &item.details {
+            println!("  {detail}");
+        }
+        for warning in &item.warnings {
+            println!("{warning}");
+        }
+    }
+    let (files, new_music) = replace::add_music(iso, &planned.lines, &files)?;
+    for item in &new_music {
+        println!(
+            "added: {} ({}; mod {}, {} bytes, a new file)",
+            item.place.display(),
+            joined(&item.ids),
+            joined(&item.modules),
+            item.data.len()
+        );
+        for warning in &item.warnings {
+            println!("{warning}");
+        }
+    }
+    let (files, map_changes) = maps(args, tools, planned, &files)?;
+    let data = datatables::apply_data(iso, mod_dirs, &files, &english.slots)?;
+    for change in &data.changes {
+        for line in datatables::described(change) {
+            println!("  {line}");
+        }
+        for (path, new, old) in &change.files {
+            println!("replaced: {path} (data:{}; {new} bytes, was {old})", change.table);
+        }
+    }
+    Ok(GameFiles { replaced, changed, new_music, map_changes, data })
+}
+
+/// The mods' map: lines built into their maps' files, and their new maps' own scripts.
+fn maps(args: &BuildArgs, tools: &Tools, planned: &Planned, files: &Files) -> Result<(Files, Vec<MapChange>)> {
+    let program_of = |line: &replace::Line, value: &serde_json::Value| {
+        mapscript::program_number(value, &line.module, &planned.plan.numbers, &planned.consts)
+    };
+    let maps = mapedit::apply_maps(&args.iso, &planned.mod_dirs, files, &program_of)?;
+    for line in &maps.said {
+        println!("{line}");
+    }
+    let mut files = maps.files;
+    let scripts = mapscript::build_all(
+        &planned.lines,
+        &planned.mod_dirs,
+        &args.source,
+        &tools.toolchain(),
+        &planned.plan.numbers,
+    )?;
+    for built in scripts {
+        for (path, data) in built.files {
+            println!(
+                "added: {path} (map:{}'s script; mod {}, {} bytes, a new file)",
+                built.map,
+                built.module,
+                data.len()
+            );
+            files.insert(path, data);
+        }
+    }
+    for item in &maps.changes {
+        if item.old == 0 {
+            println!("added: {} (map:{}; mod {}, {} bytes)", item.path, item.map, item.module, item.new);
+            continue;
+        }
+        println!(
+            "replaced: {} (map:{}; mod {}, {} bytes, was {})",
+            item.path, item.map, item.module, item.new, item.old
+        );
+    }
+    Ok((files, maps.changes))
+}
+
+/// Prints what the loads of the files the build rewrites use of the game's fixed memory
+/// (dc2tk_script::memory, docs/assets/memory.md); true when a budget that is certain is exceeded.
+/// The image is mapped only here, so writing the new image can still clone the original.
+fn memory_check(args: &BuildArgs, files: &Files) -> Result<bool> {
+    let original = dc2tk_disc::DiscSource::open(&args.iso)?;
+    let modded = memory::Overlay::new(&original, files);
+    let changed: Vec<String> = files.keys().cloned().collect();
+    let findings = memory::check(&original, &modded, &changed);
+    for item in &findings {
+        let label = match item.level {
+            memory::Level::Error => "error",
+            memory::Level::Warning => "warning",
+            memory::Level::Note => "memory",
+        };
+        println!("{label}: {}", item.text);
+    }
+    Ok(findings.iter().any(|item| item.level == memory::Level::Error))
+}
+
+/// Where the build put each file it wrote into the image, and what room the file index has left.
+fn print_written(written: &rebuild::Written) {
+    for item in &written.placed {
+        let how = if item.added {
+            "new"
+        } else if item.moved {
+            "moved"
+        } else {
+            "in place"
+        };
+        println!("{} {} ({} bytes)", how, item.path, item.size);
+    }
+    if written.grown > 0 {
+        println!("the image grew by {} sectors", written.grown);
+    }
+    if written.placed.iter().any(|item| item.added) {
+        println!(
+            "the game's file index has {} bytes free for more new files (each takes {} plus its path)",
+            written.index_free,
+            dc2tk_disc::archive::INDEX_COST_PER_FILE
+        );
+    }
+}
+
+/// The files that read back from the written image other than as the build wrote them.
+fn read_back(args: &BuildArgs, found: &build::Changes, made: &GameFiles) -> Result<Vec<String>> {
+    let output = &args.output;
+    let mut wrong = build::check(output, &found.scripts)?;
+    wrong.extend(discfiles::check(output, &made.replaced)?);
+    wrong.extend(replace::check(output, &made.changed)?);
+    wrong.extend(replace::check(output, &made.new_music)?);
+    wrong.extend(datatables::check(output, &made.data.changes, &made.data.files, made.data.executable.as_deref())?);
+    for path in &wrong {
+        println!("reads back wrong: {path}");
+    }
+    Ok(wrong)
+}
