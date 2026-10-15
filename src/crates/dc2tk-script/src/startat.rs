@@ -27,11 +27,10 @@ use std::sync::OnceLock;
 use dc2tk_disc::archive::Archive;
 use dc2tk_disc::{rebuild, Image};
 use indexmap::IndexMap;
-use regex::bytes::Regex as BytesRegex;
 use regex::Regex;
 
 use crate::index::{self, Folded};
-use crate::{discfiles, pathnames, sdk, source, Error, Result};
+use crate::{discfiles, maptable, pathnames, sdk, source, Error, Result};
 
 pub const START_PROGRAM: &str = "floor_start";
 pub const START_FLAG: i64 = 2047;
@@ -92,17 +91,13 @@ pub enum Warp {
     Town(i64),
 }
 
-/// The map table's rows by map code: {code: map number}. Each MAP_NAME line is a row, numbered
-/// from 0 in file order, empty ones included (mlMAP_NAME in mapselect.cpp). Codes are read as
-/// bytes, so the names' encoding does not matter.
+/// The map table's rows by map code: {code: map number}. Each MAP_NAME row is numbered from 0 in
+/// file order, empty ones included (maptable::rows); the first row of a code gives its number.
 pub fn map_numbers(cfg: &[u8]) -> IndexMap<String, i64> {
-    static CELL: OnceLock<BytesRegex> = OnceLock::new();
-    let row = CELL.get_or_init(|| BytesRegex::new(r#"(?m)^[ \t]*MAP_NAME[ \t]+"([^"\r\n]*)""#).unwrap());
     let mut found = IndexMap::new();
-    for (number, capture) in row.captures_iter(cfg).enumerate() {
-        let code = String::from_utf8_lossy(&capture[1]).into_owned();
-        if !code.is_empty() {
-            found.entry(code).or_insert(number as i64);
+    for row in maptable::rows(cfg) {
+        if !row.code.is_empty() {
+            found.entry(row.code).or_insert(row.number);
         }
     }
     found
@@ -351,8 +346,9 @@ mod tests {
     use super::*;
 
     const TABLE: &[u8] = b"MAP_NAME_NUM 4 ;\r\nMAP_NAME \"g01\",\"Sindain\",\"g00/g00\", 1 , 1 , 2000 , 2 ;// 0 \r\n\
-MAP_NAME \"\",\"\",\"\",0,0;// 1 \r\n;MAP_NAME \"x99\",\"commented out\",\"\",0,0;\r\n\
-MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n MAP_NAME \"g01\",\"again\",\"\",0,0;// 3\r\n";
+MAP_NAME \"\",\"\",\"\",0,0;// 1 \r\n// MAP_NAME \"x99\",\"commented out\",\"\",0,0;\r\n\
+MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n;MAP_NAME \"s01\",\"after a ;\",\"\",3,3;// 3\r\n\
+ MAP_NAME \"g01\",\"again\",\"\",0,0;// 4\r\n";
 
     #[test]
     fn targets() {
@@ -381,8 +377,12 @@ MAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\", 3 , 2 , 1000 ;// 2 \r\n MAP_NAME \
 
     #[test]
     fn map_numbers_count_every_row_in_order() {
+        // a commented row is no row; a ';' ends an empty statement, so the row after it is read
         let found = map_numbers(TABLE);
-        assert_eq!(found.into_iter().collect::<Vec<_>>(), [("g01".to_string(), 0), ("m05".to_string(), 2)]);
+        assert_eq!(
+            found.into_iter().collect::<Vec<_>>(),
+            [("g01".to_string(), 0), ("m05".to_string(), 2), ("s01".to_string(), 3)]
+        );
     }
 
     #[test]

@@ -297,20 +297,19 @@ pub fn disc_names(root: &Path, code: i64) -> IndexMap<String, NameTable> {
             }
         }
     }
-    if let Some(text) = read(&root.join(format!("map/map{code}.cfg"))) {
-        for (index, capture) in regex(r#"MAP_NAME\s+"([^"]*)"\s*,\s*"([^"]*)""#).captures_iter(&text).enumerate() {
-            let (short, name) = (&capture[1], &capture[2]);
-            if !short.is_empty() {
-                let table = &mut found["map_id"];
-                table.entry(NameKey::Int(index as i64)).or_insert_with(|| name.to_string());
-                table.entry(NameKey::Text(short.to_string())).or_insert_with(|| name.to_string());
-            }
+    let table = |path: String| fs::read(root.join(path)).ok();
+    if let Some(cfg) = table(crate::startat::map_table_path(Some(code))) {
+        for row in crate::maptable::rows(&cfg).into_iter().filter(|row| !row.code.is_empty()) {
+            let name = expanded(&decoded(&row.title, code));
+            let names = &mut found["map_id"];
+            names.entry(NameKey::Int(row.number)).or_insert_with(|| name.clone());
+            names.entry(NameKey::Text(row.code)).or_insert(name);
         }
     }
-    if let Some(text) = read(&root.join(format!("npc{code}.cfg"))) {
-        for capture in regex(r#"NPC_INFO\s+(\d+)\s*,\s*"([^"]*)"\s*,\s*"([^"]*)""#).captures_iter(&text) {
-            let (name, pack) = (capture[2].to_string(), NameKey::Text(capture[3].to_string()));
-            if let Ok(number) = capture[1].parse::<i64>() {
+    if let Some(cfg) = table(format!("npc{code}.cfg")) {
+        for npc in crate::villagers::npc_info(&cfg) {
+            let (name, pack) = (expanded(&decoded(&npc.name, code)), NameKey::Text(npc.pack));
+            if let Some(number) = npc.number {
                 found["npc_id"].entry(NameKey::Int(number)).or_insert_with(|| name.clone());
             }
             let packs = &mut found["chara_pack"];

@@ -15,7 +15,9 @@ use std::path::Path;
 
 use regex::Regex;
 
+use crate::maptable::{int_arg, quoted_bytes};
 use crate::messages::{NameKey, NameTable};
+use crate::{maptable, startat};
 
 /// Main villager slots start at 8 (16 of them), an interior's at 24 (8).
 const MAIN_TOP: i64 = 8;
@@ -46,6 +48,34 @@ pub struct Tables {
     pub maps: BTreeMap<i64, (String, i64)>,
 }
 
+/// A character of the NPC table (npc.cfg, npc<language>.cfg) as _NPC_INFO (npccfg.cpp) reads
+/// it: `NPC_INFO id,"name","pack",...;`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Npc {
+    /// The character's number; None when the row gives no integer.
+    pub number: Option<i64>,
+    /// The name, in the bytes of the table's language.
+    pub name: Vec<u8>,
+    /// The character pack's name ("p01_03a"), empty for a character without a model.
+    pub pack: String,
+}
+
+/// The NPC_INFO rows of an NPC table, read with CScriptInterpreter's rules (comments skipped).
+pub fn npc_info(cfg: &[u8]) -> Vec<Npc> {
+    dc2tk_assets::info_cfg::statements(cfg)
+        .iter()
+        .filter(|statement| statement.tag == "NPC_INFO")
+        .map(|statement| {
+            let string = |at: usize| statement.args.get(at).and_then(|arg| quoted_bytes(cfg, arg)).unwrap_or_default();
+            Npc {
+                number: int_arg(statement.args.first()),
+                name: string(1).to_vec(),
+                pack: dc2tk_disc::text::decode_lossy(string(2)),
+            }
+        })
+        .collect()
+}
+
 fn read_text(root: &Path, name: &str) -> Option<String> {
     std::fs::read(root.join(name)).ok().map(|data| dc2tk_disc::text::decode_lossy(&data))
 }
@@ -59,8 +89,8 @@ impl Tables {
     pub fn read(root: &Path) -> Option<Tables> {
         let schedule = read_text(root, "npc_place4.cfg")?;
         let places_text = read_text(root, "place.cfg")?;
-        let models_text = read_text(root, "npc.cfg")?;
-        let maps_text = read_text(root, "map/map1.cfg")?;
+        let models_data = std::fs::read(root.join("npc.cfg")).ok()?;
+        let maps_data = std::fs::read(root.join(startat::map_table_path(Some(1)))).ok()?;
         let number = |text: &str| text.trim().parse::<i64>().ok();
         let mut progress = BTreeMap::new();
         let mut schedules: BTreeMap<i64, Vec<Point>> = BTreeMap::new();
@@ -107,18 +137,16 @@ impl Tables {
             .captures_iter(&places_text)
             .filter_map(|found| Some((found[1].parse().ok()?, found[2].parse().ok()?)))
             .collect();
-        let models = Regex::new(r#"(?m)^NPC_INFO\s+(\d+)\s*,\s*"[^"]*"\s*,\s*"([^"]+)""#)
-            .unwrap()
-            .captures_iter(&models_text)
-            .filter_map(|found| found[1].parse().ok())
+        let models = npc_info(&models_data)
+            .into_iter()
+            .filter(|npc| !npc.pack.is_empty())
+            .filter_map(|npc| npc.number)
             .collect();
         // a map's number is its row, the empty rows counted
-        let maps = Regex::new(r#"(?m)^MAP_NAME\s+"([^"]*)"\s*,\s*"[^"]*"\s*,\s*"[^"]*"\s*,\s*(-?\d+)"#)
-            .unwrap()
-            .captures_iter(&maps_text)
-            .enumerate()
-            .filter(|(_, found)| !found[1].is_empty())
-            .map(|(row, found)| (row as i64, (found[1].to_string(), found[2].parse().unwrap_or(0))))
+        let maps = maptable::rows(&maps_data)
+            .into_iter()
+            .filter(|row| !row.code.is_empty())
+            .map(|row| (row.number, (row.code, row.kind)))
             .collect();
         Some(Tables { progress, schedules, places, models, maps })
     }
@@ -207,4 +235,22 @@ pub fn villager_name(villager: i64, npc_names: &NameTable) -> String {
         .filter(|name| !name.is_empty())
         .cloned()
         .unwrap_or_else(|| format!("villager {villager}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn npc_rows_are_read_with_the_engines_rules() {
+        let table = b"NPC_NUM 3;\r\nNPC_INFO  1 ,\"Cedric\",\"p01_03a\",2,3,64,12,18,64,0,1;\r\n\
+// NPC_INFO  2 ,\"Old\",\"p01_06a\",1,0,0,0,0,0,4,1;\r\nNPC_INFO  51 ,\"\x83jA\",\"\",0;\r\n";
+        assert_eq!(
+            npc_info(table),
+            [
+                Npc { number: Some(1), name: b"Cedric".to_vec(), pack: "p01_03a".into() },
+                Npc { number: Some(51), name: b"\x83jA".to_vec(), pack: String::new() },
+            ]
+        );
+    }
 }

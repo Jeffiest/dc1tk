@@ -699,7 +699,6 @@ pub struct MapEntry {
 /// dungeon loop; 4 and 6 (interiors) and the four parts of Palm Brinks after m01 (numbers 11 to 14,
 /// EditMapJump) load as sub maps.
 pub fn map_entries(disc: &dyn Disc) -> Vec<MapEntry> {
-    let pattern = regex::Regex::new(r#"MAP_NAME\s+"([^"]*)"\s*,\s*"[^"]*"\s*,\s*"([^"]*)"\s*,\s*(-?\d+)"#).unwrap();
     let mut out: Vec<MapEntry> = Vec::new();
     for list in [
         "map/map.cfg",
@@ -712,19 +711,17 @@ pub fn map_entries(disc: &dyn Disc) -> Vec<MapEntry> {
         "map/map6.cfg",
     ] {
         let Some(data) = disc.read(list) else { continue };
-        let source = text::decode_lossy(&data);
-        for (number, capture) in pattern.captures_iter(&source).enumerate() {
-            let name = capture[1].to_string();
-            if name.is_empty() || out.iter().any(|entry| entry.name.eq_ignore_ascii_case(&name)) {
+        for row in crate::maptable::rows(&data) {
+            if row.code.is_empty() || out.iter().any(|entry| entry.name.eq_ignore_ascii_case(&row.code)) {
                 continue;
             }
-            let kind = match capture[3].parse::<i64>().unwrap_or(0) {
+            let kind = match row.kind {
                 7 | 8 => MapKind::Dungeon,
                 4 | 6 => MapKind::Interior,
-                _ if (11..=14).contains(&number) && list == "map/map.cfg" => MapKind::Interior,
+                _ if (11..=14).contains(&row.number) && list == "map/map.cfg" => MapKind::Interior,
                 _ => MapKind::Town,
             };
-            out.push(MapEntry { name, add: capture[2].to_string(), kind });
+            out.push(MapEntry { name: row.code, add: row.add, kind });
         }
     }
     out

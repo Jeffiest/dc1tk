@@ -11,10 +11,11 @@
 //! (SAVE_MAP_FLAG_MAX); a map numbered past that loads but keeps none.
 
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
+use dc2tk_assets::info_cfg::{self, Arg, Statement};
 use dc2tk_disc::archive::Archive;
-use dc2tk_disc::Image;
+use dc2tk_disc::{text, Image};
 use indexmap::IndexMap;
 use regex::bytes::Regex;
 
@@ -38,48 +39,105 @@ pub struct NewMap {
     pub title: Option<String>,
 }
 
-fn row_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r#"(?-u)(?m)^[ \t]*MAP_NAME[ \t]+"([^"\r\n]*)"[^\r\n]*"#).unwrap())
+/// A row of the map table, as mlMAP_NAME (mapselect.cpp) stores it:
+/// `MAP_NAME "code","title","add_path",type,sel_type[,snd_id[,area_no]];`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Row {
+    /// The map's number: the row's place among the table's MAP_NAME rows, from 0, empty rows
+    /// counted (mlMAP_NAME fills `map_name[now_no++]`).
+    pub number: i64,
+    /// The map's code ("m05"); empty in an unused row.
+    pub code: String,
+    /// The title, in the bytes of the table's language (cp932 for Japanese and English, Latin-1
+    /// for the others).
+    pub title: Vec<u8>,
+    /// The add map's path under map/cmn/ ("trn/train"), empty when the map has none.
+    pub add: String,
+    /// The map's type (7 and 8 load in the dungeon loop, 4 and 6 are interiors); 0 when the row
+    /// gives none.
+    pub kind: i64,
+    /// The bytes of MapNameBuff the row's strings take: each one that is not empty, with its NUL.
+    strings: usize,
+    /// The row's line in the table, without its line break; the leading spaces too when the row
+    /// starts the line.
+    line: std::ops::Range<usize>,
 }
 
-fn strings_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r#"(?-u)MAP_NAME[ \t]+"([^"]*)"\s*,\s*"([^"]*)"\s*,\s*"([^"]*)""#).unwrap())
+/// A statement's argument as the bytes inside its quotes, in the file's own encoding; None when it
+/// is not a string.
+pub(crate) fn quoted_bytes<'a>(cfg: &'a [u8], (arg, at): &(Arg, std::ops::Range<usize>)) -> Option<&'a [u8]> {
+    match arg {
+        Arg::Str(_) => cfg.get(at.start + 1..at.end - 1),
+        _ => None,
+    }
 }
 
-fn count_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r"MAP_NAME_NUM[ \t]+([0-9]+)").unwrap())
+/// A statement's argument as an integer; None when it is not one.
+pub(crate) fn int_arg(arg: Option<&(Arg, std::ops::Range<usize>)>) -> Option<i64> {
+    match arg {
+        Some((Arg::Int(value), _)) => Some(*value),
+        _ => None,
+    }
+}
+
+/// The line a statement is on, without its line break: from the line's start when only spaces
+/// come before the statement, otherwise from the statement.
+fn line_of(cfg: &[u8], statement: &Statement) -> std::ops::Range<usize> {
+    let line = cfg[..statement.start].iter().rposition(|&b| b == b'\n').map_or(0, |at| at + 1);
+    let start = if cfg[line..statement.start].iter().all(|b| b" \t".contains(b)) { line } else { statement.start };
+    let end =
+        cfg[statement.end..].iter().position(|&b| b == b'\r' || b == b'\n').map_or(cfg.len(), |at| statement.end + at);
+    start..end
+}
+
+/// The table's rows, read as LoadMapName reads them: CScriptInterpreter's statements (comments
+/// skipped), each MAP_NAME one the next row.
+pub fn rows(cfg: &[u8]) -> Vec<Row> {
+    info_cfg::statements(cfg)
+        .iter()
+        .filter(|statement| statement.tag == "MAP_NAME")
+        .enumerate()
+        .map(|(number, statement)| {
+            let string = |at: usize| statement.args.get(at).and_then(|arg| quoted_bytes(cfg, arg)).unwrap_or_default();
+            let (code, title, add) = (string(0), string(1), string(2));
+            Row {
+                number: number as i64,
+                code: text::decode_lossy(code),
+                title: title.to_vec(),
+                add: text::decode_lossy(add),
+                kind: int_arg(statement.args.get(3)).unwrap_or(0),
+                strings: [code, title, add].iter().filter(|text| !text.is_empty()).map(|text| text.len() + 1).sum(),
+                line: line_of(cfg, statement),
+            }
+        })
+        .collect()
 }
 
 /// MAP_NAME_NUM's count, and where its number is.
 fn count(cfg: &[u8]) -> Result<(usize, std::ops::Range<usize>)> {
-    let found = count_pattern().captures(cfg).ok_or_else(|| Error::invalid("the map table has no MAP_NAME_NUM"))?;
-    let digits = found.get(1).unwrap();
-    let number = std::str::from_utf8(digits.as_bytes())
-        .unwrap()
-        .parse()
-        .map_err(|_| Error::invalid("MAP_NAME_NUM is too large"))?;
-    Ok((number, digits.range()))
+    let statements = info_cfg::statements(cfg);
+    let found = statements
+        .iter()
+        .find(|statement| statement.tag == "MAP_NAME_NUM")
+        .ok_or_else(|| Error::invalid("the map table has no MAP_NAME_NUM"))?;
+    match found.args.first() {
+        Some((Arg::Int(number), at)) if *number >= 0 => Ok((*number as usize, at.clone())),
+        _ => Err(Error::invalid("MAP_NAME_NUM is not a count of maps")),
+    }
 }
 
 /// The bytes of MapNameBuff a table fills: its rows and its strings, as mlMAP_NAME_NUM and
 /// LoadMapName round them.
 pub fn buffer_use(cfg: &[u8]) -> Result<usize> {
-    let (rows, _) = count(cfg)?;
-    let strings: usize = strings_pattern()
-        .captures_iter(cfg)
-        .map(|found| (1..=3).map(|at| found[at].len()).filter(|&len| len > 0).map(|len| len + 1).sum::<usize>())
-        .sum();
-    Ok(((((rows + 1) * ROW) >> 4) + 1) * 16 + (strings / 16 + 1) * 16)
+    let (rows_counted, _) = count(cfg)?;
+    let strings: usize = rows(cfg).iter().map(|row| row.strings).sum();
+    Ok(((((rows_counted + 1) * ROW) >> 4) + 1) * 16 + (strings / 16 + 1) * 16)
 }
 
 /// The table with a row for each new map after its last, each a copy of its like map's row with
 /// the new name (and title), MAP_NAME_NUM raised to match; and the new maps' numbers.
 pub fn with_new_maps(cfg: &[u8], maps: &[NewMap]) -> Result<(Vec<u8>, Vec<i64>)> {
-    let rows: Vec<(Vec<u8>, Vec<u8>)> =
-        row_pattern().captures_iter(cfg).map(|found| (found[1].to_vec(), found[0].to_vec())).collect();
+    let rows: Vec<(String, &[u8])> = rows(cfg).into_iter().map(|row| (row.code, &cfg[row.line])).collect();
     let (counted, digits) = count(cfg)?;
     if counted != rows.len() {
         return Err(Error::invalid(format!(
@@ -94,12 +152,12 @@ pub fn with_new_maps(cfg: &[u8], maps: &[NewMap]) -> Result<(Vec<u8>, Vec<i64>)>
     }
     let mut numbers = Vec::new();
     for (at, map) in maps.iter().enumerate() {
-        if rows.iter().any(|(name, _)| name.eq_ignore_ascii_case(map.name.as_bytes()))
+        if rows.iter().any(|(name, _)| name.eq_ignore_ascii_case(&map.name))
             || maps[..at].iter().any(|known| known.name == map.name)
         {
             return Err(Error::invalid(format!("the map table already has a map {}", map.name)));
         }
-        let Some((_, like)) = rows.iter().find(|(name, _)| name.as_slice() == map.like.as_bytes()) else {
+        let Some((_, like)) = rows.iter().find(|(name, _)| *name == map.like) else {
             return Err(Error::invalid(format!("the map table has no map {} to copy", map.like)));
         };
         let number = (rows.len() + at) as i64;
@@ -120,10 +178,10 @@ pub fn with_new_maps(cfg: &[u8], maps: &[NewMap]) -> Result<(Vec<u8>, Vec<i64>)>
 
 /// The like map's row with the new map's name, title and number.
 fn new_row(like: &[u8], map: &NewMap, number: i64) -> Result<Vec<u8>> {
-    static QUOTED: OnceLock<Regex> = OnceLock::new();
-    static NUMBER: OnceLock<Regex> = OnceLock::new();
-    let quoted = QUOTED.get_or_init(|| Regex::new(r#"(?-u)"[^"]*""#).unwrap());
-    let mut spans = quoted.find_iter(like).map(|found| found.range());
+    static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?-u)"[^"]*""#).unwrap());
+    // the row's number in the comment the tables end each row with
+    static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"//[ \t]*[0-9]+").unwrap());
+    let mut spans = QUOTED.find_iter(like).map(|found| found.range());
     let (Some(name), Some(title)) = (spans.next(), spans.next()) else {
         return Err(Error::invalid(format!("map {}'s row has no title", map.like)));
     };
@@ -136,9 +194,7 @@ fn new_row(like: &[u8], map: &NewMap, number: i64) -> Result<Vec<u8>> {
         None => row.extend_from_slice(&like[title.clone()]),
     }
     row.extend_from_slice(&like[title.end..]);
-    // the row's number in the comment the tables end each row with
-    let comment = NUMBER.get_or_init(|| Regex::new(r"//[ \t]*[0-9]+").unwrap());
-    let row = match comment.find(&row) {
+    let row = match NUMBER.find(&row) {
         Some(found) => [&row[..found.start()], format!("// {number}").as_bytes(), &row[found.end()..]].concat(),
         None => row,
     };
@@ -212,6 +268,37 @@ MAP_NAME \"\",\"\",\"\",0,0;// 1 \r\nMAP_NAME \"m05\",\"\x83p\x81[\x83\x8b\",\"\
         assert_eq!(String::from_utf8_lossy(&table), String::from_utf8_lossy(&expected));
         let numbers = numbers_with(TABLE, &maps).unwrap();
         assert_eq!((numbers["m05"], numbers["m05x"], numbers["g01b"]), (2, 3, 4));
+    }
+
+    #[test]
+    fn rows_are_numbered_as_the_engine_reads_them() {
+        let table = b"MAP_NAME_NUM 4 ;\r\n// MAP_NAME \"old\",\"Old\",\"\",1,1;\r\n  MAP_NAME \"g01\",\"Sindain\",\"g00/g00\", 1 , 1 ;// 0\r\n\
+/* MAP_NAME \"x\",\"\",\"\",3,3; */MAP_NAME \"\",\"\",\"\",0,0;\r\nMAP_NAME \"m05\",\"Park\",\"\";\r\nMAP_NAME \"s01\",\"Reservoir\",\"trn/train\",3,3;\r\n";
+        let rows = rows(table);
+        let read: Vec<(i64, &str, &[u8], &str, i64)> = rows
+            .iter()
+            .map(|row| (row.number, row.code.as_str(), row.title.as_slice(), row.add.as_str(), row.kind))
+            .collect();
+        assert_eq!(
+            read,
+            [
+                (0, "g01", b"Sindain".as_slice(), "g00/g00", 1),
+                (1, "", b"".as_slice(), "", 0),
+                // a row without its type is still a row: the next keeps its number
+                (2, "m05", b"Park".as_slice(), "", 0),
+                (3, "s01", b"Reservoir".as_slice(), "trn/train", 3),
+            ]
+        );
+        // a row's line keeps its leading spaces and comment, and a row after a comment starts at its tag
+        assert_eq!(&table[rows[0].line.clone()], b"  MAP_NAME \"g01\",\"Sindain\",\"g00/g00\", 1 , 1 ;// 0");
+        assert_eq!(&table[rows[1].line.clone()], b"MAP_NAME \"\",\"\",\"\",0,0;");
+        let numbers = startat::map_numbers(table);
+        assert_eq!(numbers.into_iter().collect::<Vec<_>>(), [("g01".into(), 0), ("m05".into(), 2), ("s01".into(), 3)]);
+        // the commented rows take no space in MapNameBuff
+        assert_eq!(
+            buffer_use(table).unwrap(),
+            (((5 * ROW) >> 4) + 1) * 16 + ((4 + 8 + 8 + 4 + 5 + 4 + 10 + 10) / 16 + 1) * 16
+        );
     }
 
     #[test]
