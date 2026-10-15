@@ -105,14 +105,19 @@ fn draft(module: &str, original: &str, copy: &str, kind: TargetKind, value: &str
             .filter(|line| SYSTEM.is_match(line))
             .map(str::to_string),
     );
+    // one blank line between blocks; the libraries and defines follow the system includes directly
     for (block, separate) in [(changed.includes, false), (defines, false), (globals, true), (programs, true)] {
         if block.is_empty() {
             continue;
         }
-        if separate || lines.last().is_some_and(|line| !line.starts_with("#include")) {
+        let last = lines.last().map_or("", String::as_str);
+        if !last.is_empty() && (separate || !last.starts_with("#include")) {
             lines.push(String::new());
         }
         lines.extend(block);
+    }
+    if lines.last().is_some_and(String::is_empty) {
+        lines.pop();
     }
     let mut out = lines.join("\n") + "\n";
     for function in changed.functions {
@@ -469,7 +474,6 @@ mod tests {
             [
                 "#pragma target script map/x.c",
                 "",
-                "",
                 "#define LIMIT 4",
                 "",
                 "int h;",
@@ -487,6 +491,21 @@ mod tests {
                 "    h = LIMIT;",
                 "}",
             ]
+        );
+    }
+
+    #[test]
+    fn a_draft_has_one_blank_line_between_its_parts() {
+        let only_override = "PROGRAM(100, f);\nMAIN(f);\n\nint g;\n\nvoid f(void)\n{\n    g = 3;\n}\n";
+        let drafted = draft("m", ORIGINAL, only_override, TargetKind::Script, "map/x.c").unwrap();
+        let body: Vec<&str> = drafted.text.lines().skip(2).take(3).collect();
+        assert_eq!(body, ["#pragma target script map/x.c", "", "#pragma override"]);
+        let included = format!("#include <stdio.h>\n#define LIMIT 4\n\n{only_override}");
+        let drafted = draft("m", ORIGINAL, &included, TargetKind::Script, "map/x.c").unwrap();
+        let body: Vec<&str> = drafted.text.lines().skip(2).take(6).collect();
+        assert_eq!(
+            body,
+            ["#pragma target script map/x.c", "", "#include <stdio.h>", "#define LIMIT 4", "", "#pragma override"]
         );
     }
 
