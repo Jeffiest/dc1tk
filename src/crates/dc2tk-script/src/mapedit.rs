@@ -14,7 +14,7 @@ use dc2tk_assets::to_gltf::TextureSearch;
 use dc2tk_assets::{info_cfg, map_import, textures};
 use dc2tk_disc::{archive, rebuild, DiscSource};
 
-use crate::discfiles::Files;
+use crate::discfiles::{current, Files};
 use crate::replace::{self, Line, LineKind};
 use crate::{maptable, paths, startat, Context, Error, Result};
 
@@ -149,14 +149,6 @@ fn new_map_path(path: &str, like: &MapFiles, name: &str) -> String {
     let file = path.rsplit('/').next().unwrap_or(path);
     let suffix = file.get(like.name.len()..).unwrap_or_default();
     format!("{}/{name}{}", rule_folder(name), suffix.to_lowercase())
-}
-
-/// A file as the build has it so far: one an earlier step rewrote, else the disc's.
-fn current(out: &Files, disc: &DiscSource, path: &str) -> Result<Vec<u8>> {
-    match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
-        Some((_, data)) => Ok(data.clone()),
-        None => Ok(disc.read(path)?.into_owned()),
-    }
 }
 
 /// Builds the chosen mods' map: lines (an edited scene of `dc2tk map-export`) into the disc files:

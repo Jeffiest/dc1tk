@@ -7,13 +7,15 @@
 //! carries the ideas' names (`ideas`, the copies of `neta2.lst`).
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{Map, Value};
 
+use crate::discfiles::{self, Files};
+use crate::replace::{self, Line};
+use crate::{itemtext, mods, Context, Error, Result};
 use dc2tk_assets::cfg_text::Edit;
 use dc2tk_assets::chest_data::{self, Chests};
 use dc2tk_assets::data_table::Table as DataTable;
@@ -24,8 +26,6 @@ use dc2tk_assets::item_data::{self, ItemText, Items};
 use dc2tk_assets::shop_data::{self, Shops};
 use dc2tk_assets::{exe_tables, game_data, json, text};
 use dc2tk_disc::{rebuild, DiscSource};
-use dc2tk_script::discfiles::{self, Files};
-use dc2tk_script::replace::{self, Line};
 
 /// The item tables and every language's item names.
 fn item_paths() -> Vec<String> {
@@ -62,7 +62,7 @@ fn read_path(current: &dyn Fn(&str) -> Result<Vec<u8>>, path: &str) -> Result<Ve
     let data = current(&top)?;
     match rebuild::read_member(&data, &members) {
         Some(member) => Ok(member.to_vec()),
-        None => bail!("{top} has no member {}", members.join("/")),
+        None => Err(Error::invalid(format!("{top} has no member {}", members.join("/")))),
     }
 }
 
@@ -86,7 +86,10 @@ fn load(table: &str, elf: &[u8], current: &dyn Fn(&str) -> Result<Vec<u8>>) -> R
         "chests" => Table::Chests(Chests::read(&read_all(&chest_data::paths())?)?),
         _ => {
             let Ok(kind) = game_data::kind(table) else {
-                bail!("no data table {table} (the tables are {})", replace::DATA_TABLES.join(", "));
+                return Err(Error::invalid(format!(
+                    "no data table {table} (the tables are {})",
+                    replace::DATA_TABLES.join(", ")
+                )));
             };
             let mut paths = (kind.paths)();
             let read = (kind.read)(&read_all(&paths)?, elf)?;
@@ -101,33 +104,35 @@ fn load(table: &str, elf: &[u8], current: &dyn Fn(&str) -> Result<Vec<u8>>) -> R
     })
 }
 
-/// Each item record of `items` with the `spectrumise` of the same item from `extra`.
+/// The item table `mod asset` writes: each item record of `items` (Items::to_json) with the
+/// `spectrumise` of the same item from `extra` (the executable's spectrumising table).
 fn merged_items(mut items: Value, extra: &Value) -> Value {
-    let spectrum: std::collections::HashMap<i64, &Value> = extra["items"]
+    let spectrum: HashMap<i64, &Value> = extra["items"]
         .as_array()
-        .into_iter()
-        .flatten()
+        .expect("the spectrumising table has items")
+        .iter()
         .filter_map(|record| Some((record["item"].as_i64()?, record.get("spectrumise")?)))
         .collect();
-    for record in items["items"].as_array_mut().into_iter().flatten() {
-        if let (Some(item), Some(object)) = (record["item"].as_i64(), record.as_object_mut()) {
-            if let Some(&value) = spectrum.get(&item) {
-                object.insert("spectrumise".into(), value.clone());
-            }
+    let records = items["items"].as_array_mut().expect("the item table has items");
+    for record in records.iter_mut().filter_map(Value::as_object_mut) {
+        if let Some(&value) = record.get("item").and_then(Value::as_i64).and_then(|item| spectrum.get(&item)) {
+            record.insert("spectrumise".into(), value.clone());
         }
     }
     items
 }
 
-/// A mod's item table split into the cfg part and the spectrumising part.
-fn split_items(given: &Value) -> (Value, Value) {
-    let mut items = given.clone();
+/// A mod's item table split into the cfg part and the spectrumising part. A record that is not
+/// an object is left for the item table to say what is wrong with it.
+fn split_items(given: &Value) -> Result<(Value, Value)> {
+    let mut items = json::object(given, "the table")?.clone();
+    json::list(&items, "items", "the table")?;
     let mut spectrum = Vec::new();
-    for record in items.get_mut("items").and_then(Value::as_array_mut).into_iter().flatten() {
-        if let Some(object) = record.as_object_mut() {
-            if let Some(value) = object.remove("spectrumise") {
+    if let Some(Value::Array(records)) = items.get_mut("items") {
+        for record in records.iter_mut().filter_map(Value::as_object_mut) {
+            if let Some(value) = record.remove("spectrumise") {
                 let mut part = Map::new();
-                part.insert("item".into(), object.get("item").cloned().unwrap_or(Value::Null));
+                part.insert("item".into(), json::member(record, "item").clone());
                 part.insert("spectrumise".into(), value);
                 spectrum.push(Value::Object(part));
             }
@@ -135,24 +140,25 @@ fn split_items(given: &Value) -> (Value, Value) {
     }
     let mut extra = Map::new();
     extra.insert("items".into(), Value::Array(spectrum));
-    (items, Value::Object(extra))
+    Ok((Value::Object(items), Value::Object(extra)))
 }
 
 /// A mod's invention table split into the recipes and scoops and the ideas (a list).
-fn split_inventions(given: &Value) -> (Value, Value) {
-    let mut inventions = given.clone();
-    let ideas = inventions.as_object_mut().and_then(|object| object.remove("ideas"));
-    (inventions, ideas.unwrap_or_else(|| Value::Array(Vec::new())))
+fn split_inventions(given: &Value) -> Result<(Value, Value)> {
+    let mut inventions = json::object(given, "the table")?.clone();
+    let ideas = json::list(&inventions, "ideas", "the table")?.to_vec();
+    inventions.remove("ideas");
+    Ok((Value::Object(inventions), Value::Array(ideas)))
 }
 
 /// A mod's shop table split into the cfg part and Donny's shop.
-fn split_shops(given: &Value) -> (Value, Value) {
-    let mut shops = given.clone();
+fn split_shops(given: &Value) -> Result<(Value, Value)> {
+    let mut shops = json::object(given, "the table")?.clone();
     let mut extra = Map::new();
-    if let Some(donny) = shops.as_object_mut().and_then(|object| object.remove("donny")) {
+    if let Some(donny) = shops.remove("donny") {
         extra.insert("donny".into(), donny);
     }
-    (shops, Value::Object(extra))
+    Ok((Value::Object(shops), Value::Object(extra)))
 }
 
 impl Table {
@@ -188,7 +194,7 @@ impl Table {
             Table::Items(items, _, spectrum) => {
                 let mut tables = Vec::new();
                 for (module, table) in given {
-                    let (table, extra) = split_items(table);
+                    let (table, extra) = split_items(table).with_context(|| format!("mod {module}"))?;
                     patches.extend(spectrum.changes(&extra, module).with_context(|| format!("mod {module}"))?.1);
                     tables.push((module.clone(), table));
                 }
@@ -198,7 +204,7 @@ impl Table {
             Table::Shops(shops, _, donny) => {
                 let mut tables = Vec::new();
                 for (module, table) in given {
-                    let (table, extra) = split_shops(table);
+                    let (table, extra) = split_shops(table).with_context(|| format!("mod {module}"))?;
                     patches.extend(donny.changes(&extra, module).with_context(|| format!("mod {module}"))?.1);
                     tables.push((module.clone(), table));
                 }
@@ -211,7 +217,7 @@ impl Table {
             Table::Inventions(table, ideas, paths) => {
                 let (mut tables, mut lists) = (Vec::new(), Vec::new());
                 for (module, given) in given {
-                    let (inventions, ideas) = split_inventions(given);
+                    let (inventions, ideas) = split_inventions(given).with_context(|| format!("mod {module}"))?;
                     tables.push((module.clone(), inventions));
                     lists.push((module.clone(), ideas));
                 }
@@ -223,7 +229,9 @@ impl Table {
                 );
                 (edits, patches, Vec::new())
             }
-            Table::Layouts(_) | Table::Chests(_) => bail!("layouts and chests are changed whole, in apply_data"),
+            Table::Layouts(_) | Table::Chests(_) => {
+                return Err(Error::invalid("layouts and chests are changed whole, in apply_data"))
+            }
         })
     }
 
@@ -257,17 +265,16 @@ pub fn export(iso_path: &Path, table: &str) -> Result<String> {
 /// Writes each data: key's table into the mod (data/<table>.json) and adds its line to mod.json;
 /// a table the mod has a line for already is left as it is. Returns (key, file, whether written).
 pub fn copy_out(iso_path: &Path, mod_dir: &Path, keys: &[String]) -> Result<Vec<(String, PathBuf, bool)>> {
-    let known: Vec<Line> =
-        if mod_dir.join(dc2tk_script::mods::INDEX).is_file() { replace::lines(mod_dir)? } else { Vec::new() };
+    let known: Vec<Line> = if mod_dir.join(mods::INDEX).is_file() { replace::lines(mod_dir)? } else { Vec::new() };
     let mut out = Vec::new();
     let mut new_lines = Vec::new();
     for key in keys {
         let table = key[replace::DATA.len()..].trim().to_lowercase();
         if !replace::DATA_TABLES.contains(&table.as_str()) {
-            bail!(
+            return Err(Error::invalid(format!(
                 "{key}: the data tables are {}",
                 replace::DATA_TABLES.map(|table| format!("data:{table}")).join(", ")
-            );
+            )));
         }
         let id = format!("{}{table}", replace::DATA);
         if let Some(line) = known.iter().find(|line| line.is_data() && line.data_table() == table) {
@@ -296,7 +303,8 @@ pub struct DataChange {
 
 fn read_table(line: &Line) -> Result<Value> {
     let text = fs::read_to_string(&line.file).with_context(|| line.file.display().to_string())?;
-    serde_json::from_str(&text).with_context(|| format!("{} (mod {}): {}", line.key, line.module, line.shown))
+    serde_json::from_str(&text)
+        .map_err(|error| Error::invalid(format!("{} (mod {}): {}: {error}", line.key, line.module, line.shown)))
 }
 
 /// The letters past the English font's own table that the chosen mods' data:items English names
@@ -327,10 +335,18 @@ pub fn english_item_letters(iso_path: &Path, mod_dirs: &[PathBuf]) -> Result<Vec
         };
         let letters = fonts
             .english_letters(body)
-            .map_err(|error| anyhow!("{} (mod {}): {error}", item_text.what, item_text.module))?;
+            .map_err(|error| Error::invalid(format!("{} (mod {}): {error}", item_text.what, item_text.module)))?;
         out.push(("data:items".to_string(), item_text.module.clone(), letters));
     }
     Ok(out)
+}
+
+/// What the chosen mods' data: lines build: the files with theirs put in, the boot executable when
+/// any table patches it, and what changed, table by table.
+pub struct DataBuilt {
+    pub files: Files,
+    pub executable: Option<Vec<u8>>,
+    pub changes: Vec<DataChange>,
 }
 
 /// The edits of the chosen mods' data: lines, table by table, checked against the disc: what
@@ -338,17 +354,11 @@ pub fn english_item_letters(iso_path: &Path, mod_dirs: &[PathBuf]) -> Result<Vec
 /// executable comes back patched when any table changes it. `english_extra` is the letters the
 /// build draws as the English font's glyphs 288 on (replace::english_letters; empty for
 /// font::ENGLISH_EXTRA), which the items' English names and descriptions are written with.
-pub fn apply_data(
-    iso_path: &Path,
-    mod_dirs: &[PathBuf],
-    files: &Files,
-    english_extra: &[char],
-) -> Result<(Files, Option<Vec<u8>>, Vec<DataChange>)> {
+pub fn apply_data(iso_path: &Path, mod_dirs: &[PathBuf], files: &Files, english_extra: &[char]) -> Result<DataBuilt> {
     let lines: Vec<Line> = replace::all_lines(mod_dirs)?.into_iter().filter(Line::is_data).collect();
-    let mut out = files.clone();
-    let mut changes = Vec::new();
+    let mut built = DataBuilt { files: files.clone(), executable: None, changes: Vec::new() };
     if lines.is_empty() {
-        return Ok((out, None, changes));
+        return Ok(built);
     }
     let disc = DiscSource::open(iso_path)?;
     let elf = disc.disc_file(elf::EXECUTABLE)?.into_owned();
@@ -358,110 +368,131 @@ pub fn apply_data(
         if mine.is_empty() {
             continue;
         }
-        let current = |path: &str| -> Result<Vec<u8>> {
-            match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
-                Some((_, data)) => Ok(data.clone()),
-                None => Ok(disc.read(path)?.into_owned()),
-            }
-        };
+        let current = |path: &str| discfiles::current(&built.files, &disc, path);
         // the layouts name parts as a data:parts line of the build names them
         let renamed =
             if table == "layouts" && !patches.is_empty() { Some(elf::apply_patches(&elf, &patches)?) } else { None };
         let loaded = load(table, renamed.as_deref().unwrap_or(&elf), &current)?;
-        let mut change = DataChange { table: table.to_string(), changed: Vec::new(), files: Vec::new() };
-        if let Table::Layouts(layouts) = &loaded {
+        let TableBuilt { mut change, rewritten, patches: found, texts } = match &loaded {
             // whole rooms, written again where they change (no pack holds a room script)
-            let mut found = Vec::new();
-            for line in &mine {
-                let given = layouts
-                    .changes(&read_table(line)?, &line.module)
-                    .with_context(|| format!("{} (mod {})", line.key, line.module))?;
-                change.changed.extend(given.iter().map(|edit| (edit.module.clone(), edit.what.clone())));
-                found.extend(given);
-            }
-            let written = layouts.apply(&found)?;
-            let mut rewritten = Vec::new();
-            for (path, data) in dungeon_layout::paths().into_iter().zip(written) {
-                let old = current(&path)?;
-                if data != old {
-                    change.files.push((path.clone(), data.len(), old.len()));
-                    rewritten.push((path, data));
-                }
-            }
-            out.extend(rewritten);
-            changes.push(change);
-            continue;
-        }
-        if let Table::Chests(chests) = &loaded {
-            let mut found = Vec::new();
-            for line in &mine {
-                let given = chests
-                    .changes(&read_table(line)?, &line.module)
-                    .with_context(|| format!("{} (mod {})", line.key, line.module))?;
-                change.changed.extend(given.iter().map(|edit| (edit.module.clone(), edit.what.clone())));
-                found.extend(given);
-            }
-            let mut rewritten = Vec::new();
-            for (path, data) in chest_data::paths().into_iter().zip(chests.apply(&found)?) {
-                let old = current(&path)?;
-                if data != old {
-                    change.files.push((path.clone(), data.len(), old.len()));
-                    rewritten.push((path, data));
-                }
-            }
-            out.extend(rewritten);
-            changes.push(change);
-            continue;
-        }
-        let mut given = Vec::new();
-        for line in &mine {
-            given.push((line.module.clone(), read_table(line)?));
-        }
-        let (edits, found_patches, texts) =
-            loaded.changes(&given).with_context(|| format!("data:{table} ({})", modules_of(&mine)))?;
-        change.changed.extend(edits.iter().map(|edit| (edit.module.clone(), edit.what.clone())));
-        change.changed.extend(found_patches.iter().map(|patch| (patch.module.clone(), patch.what.clone())));
-        change.changed.extend(texts.iter().map(|text| (text.module.clone(), text.what.clone())));
-        let patched = !found_patches.is_empty();
-        patches.extend(found_patches);
-        // every file of the table, each member put back into its pack
-        let (written, paths) = loaded.apply(&edits)?;
-        let mut rewritten: Vec<(String, Vec<u8>)> = Vec::new();
-        for (path, data) in paths.iter().zip(written) {
-            if data == read_path(&current, path)? {
-                continue;
-            }
-            let (top, members) = discfiles::location(path);
-            let holder = match rewritten.iter().position(|(known, _)| *known == top) {
-                Some(at) => rewritten.remove(at).1,
-                None => current(&top)?,
-            };
-            rewritten.push((top, rebuild::replaced_member(&holder, &members, &data)?));
-        }
-        for (top, data) in &rewritten {
-            change.files.push((top.clone(), data.len(), current(top)?.len()));
-        }
-        if patched {
-            change.files.push((elf::EXECUTABLE.to_string(), elf.len(), elf.len()));
-        }
-        out.extend(rewritten);
+            Table::Layouts(layouts) => whole_files(
+                table,
+                &mine,
+                &current,
+                |given, module| layouts.changes(given, module),
+                |edit| (edit.module.clone(), edit.what.clone()),
+                |found| layouts.apply(found),
+                dungeon_layout::paths(),
+            )?,
+            Table::Chests(chests) => whole_files(
+                table,
+                &mine,
+                &current,
+                |given, module| chests.changes(given, module),
+                |edit| (edit.module.clone(), edit.what.clone()),
+                |found| chests.apply(found),
+                chest_data::paths(),
+            )?,
+            _ => edited_files(&loaded, table, &mine, &current, elf.len())?,
+        };
+        patches.extend(found);
+        built.files.extend(rewritten);
         if !texts.is_empty() {
-            let current = |path: &str| -> Result<Vec<u8>> {
-                match out.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
-                    Some((_, data)) => Ok(data.clone()),
-                    None => Ok(disc.read(path)?.into_owned()),
-                }
-            };
-            let written = crate::item_text::item_messages(&disc, &current, &texts, english_extra)?;
+            let current = |path: &str| discfiles::current(&built.files, &disc, path);
+            let written = itemtext::item_messages(&disc, &current, &texts, english_extra)?;
             for (top, data) in &written {
                 change.files.push((top.clone(), data.len(), current(top)?.len()));
             }
-            out.extend(written);
+            built.files.extend(written);
         }
-        changes.push(change);
+        built.changes.push(change);
     }
-    let executable_out = if patches.is_empty() { None } else { Some(elf::apply_patches(&elf, &patches)?) };
-    Ok((out, executable_out, changes))
+    if !patches.is_empty() {
+        built.executable = Some(elf::apply_patches(&elf, &patches)?);
+    }
+    Ok(built)
+}
+
+/// One table's part of DataBuilt: what changed and the files rewritten, and for a table of
+/// values the executable's patches and the item messages it makes.
+struct TableBuilt {
+    change: DataChange,
+    rewritten: Vec<(String, Vec<u8>)>,
+    patches: Vec<Patch>,
+    texts: Vec<ItemText>,
+}
+
+/// A table changed by whole records (layouts, chests): each line's changes, and the table's files
+/// written again where they differ.
+#[allow(clippy::too_many_arguments)]
+fn whole_files<E>(
+    table: &str,
+    lines: &[&Line],
+    current: &dyn Fn(&str) -> Result<Vec<u8>>,
+    changes: impl Fn(&Value, &str) -> dc2tk_assets::Result<Vec<E>>,
+    what: impl Fn(&E) -> (String, String),
+    apply: impl FnOnce(&[E]) -> dc2tk_assets::Result<Vec<Vec<u8>>>,
+    paths: Vec<String>,
+) -> Result<TableBuilt> {
+    let mut change = DataChange { table: table.to_string(), changed: Vec::new(), files: Vec::new() };
+    let mut found = Vec::new();
+    for line in lines {
+        let given =
+            changes(&read_table(line)?, &line.module).with_context(|| format!("{} (mod {})", line.key, line.module))?;
+        change.changed.extend(given.iter().map(&what));
+        found.extend(given);
+    }
+    let mut rewritten = Vec::new();
+    for (path, data) in paths.into_iter().zip(apply(&found)?) {
+        let old = current(&path)?;
+        if data != old {
+            change.files.push((path.clone(), data.len(), old.len()));
+            rewritten.push((path, data));
+        }
+    }
+    Ok(TableBuilt { change, rewritten, patches: Vec::new(), texts: Vec::new() })
+}
+
+/// A table changed by edits of its values: the mods' tables taken together, every file of the
+/// table with its edits made (each member put back into its pack), the executable's patches and
+/// the item messages to write. `elf_size` is the executable's, which patches keep.
+fn edited_files(
+    loaded: &Table,
+    table: &str,
+    lines: &[&Line],
+    current: &dyn Fn(&str) -> Result<Vec<u8>>,
+    elf_size: usize,
+) -> Result<TableBuilt> {
+    let mut given = Vec::new();
+    for line in lines {
+        given.push((line.module.clone(), read_table(line)?));
+    }
+    let (edits, patches, texts) =
+        loaded.changes(&given).with_context(|| format!("data:{table} ({})", modules_of(lines)))?;
+    let mut change = DataChange { table: table.to_string(), changed: Vec::new(), files: Vec::new() };
+    change.changed.extend(edits.iter().map(|edit| (edit.module.clone(), edit.what.clone())));
+    change.changed.extend(patches.iter().map(|patch| (patch.module.clone(), patch.what.clone())));
+    change.changed.extend(texts.iter().map(|text| (text.module.clone(), text.what.clone())));
+    let (written, paths) = loaded.apply(&edits)?;
+    let mut rewritten: Vec<(String, Vec<u8>)> = Vec::new();
+    for (path, data) in paths.iter().zip(written) {
+        if data == read_path(current, path)? {
+            continue;
+        }
+        let (top, members) = discfiles::location(path);
+        let holder = match rewritten.iter().position(|(known, _)| *known == top) {
+            Some(at) => rewritten.remove(at).1,
+            None => current(&top)?,
+        };
+        rewritten.push((top, rebuild::replaced_member(&holder, &members, &data)?));
+    }
+    for (top, data) in &rewritten {
+        change.files.push((top.clone(), data.len(), current(top)?.len()));
+    }
+    if !patches.is_empty() {
+        change.files.push((elf::EXECUTABLE.to_string(), elf_size, elf_size));
+    }
+    Ok(TableBuilt { change, rewritten, patches, texts })
 }
 
 fn modules_of(lines: &[&Line]) -> String {
@@ -545,14 +576,60 @@ mod tests {
     #[test]
     fn executable_parts_split_from_and_merge_into_their_tables() {
         let given = json!({"items": [{"item": 1, "max": 5, "spectrumise": {"value": 3}}, {"item": 2}]});
-        let (items, extra) = split_items(&given);
+        let (items, extra) = split_items(&given).unwrap();
         assert_eq!(items, json!({"items": [{"item": 1, "max": 5}, {"item": 2}]}));
         assert_eq!(extra, json!({"items": [{"item": 1, "spectrumise": {"value": 3}}]}));
         assert_eq!(merged_items(items, &extra)["items"][0]["spectrumise"]["value"], 3);
-        let (shops, extra) = split_shops(&json!({"prices": [], "donny": [{"row": 0, "level": 2}]}));
+        let (shops, extra) = split_shops(&json!({"prices": [], "donny": [{"row": 0, "level": 2}]})).unwrap();
         assert_eq!((shops, extra["donny"][0]["level"].clone()), (json!({"prices": []}), json!(2)));
-        let (inventions, ideas) = split_inventions(&json!({"recipes": [], "ideas": [{"idea": 251, "name": "x"}]}));
+        let (inventions, ideas) =
+            split_inventions(&json!({"recipes": [], "ideas": [{"idea": 251, "name": "x"}]})).unwrap();
         assert_eq!((inventions, ideas), (json!({"recipes": []}), json!([{"idea": 251, "name": "x"}])));
-        assert_eq!(split_inventions(&json!({"scoops": []})).1, json!([]));
+        assert_eq!(split_inventions(&json!({"scoops": []})).unwrap().1, json!([]));
+    }
+
+    /// A mod's table of the wrong shape is an error saying which member, not a table that
+    /// changes nothing.
+    #[test]
+    fn a_table_of_the_wrong_shape_is_an_error_naming_the_member() {
+        let error = |result: Result<(Value, Value)>| result.err().unwrap().to_string();
+        assert_eq!(error(split_items(&json!([1]))), "the table is an object, not a list");
+        assert_eq!(error(split_items(&json!({"items": {"item": 1}}))), "the table: \"items\" is a list, not an object");
+        assert_eq!(error(split_shops(&json!("shops"))), "the table is an object, not a string (\"shops\")");
+        assert_eq!(error(split_inventions(&json!({"ideas": 5}))), "the table: \"ideas\" is a list, not the number 5");
+    }
+
+    /// Mods without data: lines leave the build's files as they are, without opening the disc.
+    #[test]
+    fn mods_without_tables_change_nothing() {
+        let folder = std::env::temp_dir().join(format!("dc2tk-datatables-{}", std::process::id()));
+        let mod_dir = folder.join("plain");
+        fs::create_dir_all(&mod_dir).unwrap();
+        fs::write(mod_dir.join(mods::INDEX), "{}\n").unwrap();
+        let files = Files::from([("map/t01.stb".to_string(), vec![1, 2])]);
+        let built = apply_data(&folder.join("no.iso"), std::slice::from_ref(&mod_dir), &files, &[]).unwrap();
+        let letters = english_item_letters(&folder.join("no.iso"), &[mod_dir]).unwrap();
+        fs::remove_dir_all(&folder).unwrap();
+        assert_eq!(built.files, files);
+        assert!(built.executable.is_none() && built.changes.is_empty() && letters.is_empty());
+    }
+
+    #[test]
+    fn a_tables_changes_are_said_per_mod_each_value_once() {
+        let mut changed: Vec<(String, String)> =
+            (1..=8).map(|item| ("fish".to_string(), format!("item {item} price"))).collect();
+        changed.push(("fish".into(), "item 1 price".into()));
+        changed.push(("golem".into(), "monster 3 hp".into()));
+        let change = DataChange { table: "items".into(), changed, files: Vec::new() };
+        assert_eq!(
+            described(&change),
+            [
+                "fish (data:items): 8 values changed: item 1 price; item 2 price; item 3 price; item 4 price; \
+                 item 5 price; item 6 price and 2 more",
+                "golem (data:items): 1 values changed: monster 3 hp",
+            ]
+        );
+        let none = DataChange { table: "shops".into(), changed: Vec::new(), files: Vec::new() };
+        assert_eq!(described(&none), ["data:shops: the tables given change nothing"]);
     }
 }

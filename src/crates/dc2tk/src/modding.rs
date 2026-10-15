@@ -11,8 +11,8 @@ use indexmap::IndexMap;
 
 use dc2tk_disc::rebuild;
 use dc2tk_script::{
-    build, definitions, discfiles, editor, index, loads, memory, migrate, mods, patches, paths, renames, replace, sdk,
-    slim, startat, tree,
+    build, datatables, definitions, discfiles, editor, index, loads, memory, migrate, mods, patches, paths, renames,
+    replace, sdk, slim, startat, tree,
 };
 
 use crate::options::{Common, ModsDir};
@@ -596,7 +596,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     }
     // the letters the English font gains, for every changed English text: the text: lines' and
     // the items' names and descriptions
-    let item_letters = crate::data_cmd::english_item_letters(&args.iso, &mod_dirs)?;
+    let item_letters = datatables::english_item_letters(&args.iso, &mod_dirs)?;
     let english = replace::english_letters(&args.iso, &resolved, item_letters)?;
     let (files, changed) = replace::apply_with(&args.iso, &resolved, &files, &english)?;
     for item in &changed {
@@ -657,9 +657,10 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
             item.path, item.map, item.module, item.new, item.old
         );
     }
-    let (files, executable, data_changes) = crate::data_cmd::apply_data(&args.iso, &mod_dirs, &files, &english.slots)?;
+    let data = datatables::apply_data(&args.iso, &mod_dirs, &files, &english.slots)?;
+    let (files, executable, data_changes) = (data.files, data.executable, data.changes);
     for change in &data_changes {
-        for line in crate::data_cmd::described(change) {
+        for line in datatables::described(change) {
             println!("  {line}");
         }
         for (path, new, old) in &change.files {
@@ -678,7 +679,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     wrong.extend(discfiles::check(&args.output, &replaced)?);
     wrong.extend(replace::check(&args.output, &changed)?);
     wrong.extend(replace::check(&args.output, &new_music)?);
-    wrong.extend(crate::data_cmd::check(&args.output, &data_changes, &files, executable.as_deref())?);
+    wrong.extend(datatables::check(&args.output, &data_changes, &files, executable.as_deref())?);
     for path in &wrong {
         println!("reads back wrong: {path}");
     }
@@ -783,12 +784,11 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
                             }
                         }
                     }
-                    let item_letters = crate::data_cmd::english_item_letters(disc, &mod_dirs)?;
+                    let item_letters = datatables::english_item_letters(disc, &mod_dirs)?;
                     let english = replace::english_letters(disc, &resolved, item_letters)?;
-                    let (_, _, data_changes) =
-                        crate::data_cmd::apply_data(disc, &mod_dirs, &Default::default(), &english.slots)?;
-                    for change in &data_changes {
-                        for line in crate::data_cmd::described(change) {
+                    let data = datatables::apply_data(disc, &mod_dirs, &Default::default(), &english.slots)?;
+                    for change in &data.changes {
+                        for line in datatables::described(change) {
                             println!("{line}");
                         }
                     }
@@ -969,7 +969,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             let mod_dir = mods_dir.folder(name)?;
             let (tables, paths): (Vec<String>, Vec<String>) =
                 paths.iter().cloned().partition(|path| path.to_lowercase().starts_with(replace::DATA));
-            for (id, file, written) in crate::data_cmd::copy_out(iso, &mod_dir, &tables)? {
+            for (id, file, written) in datatables::copy_out(iso, &mod_dir, &tables)? {
                 if written {
                     println!(
                         "{}: {id}; edit it there and keep only what you change, and build writes it",

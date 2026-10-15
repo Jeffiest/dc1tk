@@ -1,10 +1,8 @@
 //! dc2tk, the DC2-Toolkit command line: extract, decompile, compile, mod and rebuild Dark Chronicle.
 
 mod asset_tree;
-mod data_cmd;
 mod defs;
 mod files;
-mod item_text;
 mod map_cmd;
 mod modding;
 mod options;

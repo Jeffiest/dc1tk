@@ -251,6 +251,15 @@ pub fn location(path: &str) -> (String, Vec<String>) {
 /// DATA.DAT files by path.
 pub type Files = BTreeMap<String, Vec<u8>>;
 
+/// A file by its DATA.DAT path as the build has it so far: one an earlier step rewrote, else the
+/// disc's.
+pub fn current(files: &Files, disc: &dc2tk_disc::DiscSource, path: &str) -> Result<Vec<u8>> {
+    match files.iter().find(|(known, _)| known.eq_ignore_ascii_case(path)) {
+        Some((_, data)) => Ok(data.clone()),
+        None => Ok(disc.read(path)?.into_owned()),
+    }
+}
+
 /// The disc file a file: line's game file is made like: its place, the picture of a texture file
 /// to take the format from (None: its first), and its name (a model's, for packs whose cfg is named
 /// after them).

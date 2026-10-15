@@ -5,13 +5,11 @@
 
 use std::borrow::Cow;
 
-use anyhow::{anyhow, bail, Context, Result};
-
 use dc2tk_assets::item_data::{self, ItemText};
 use dc2tk_assets::text;
-use dc2tk_disc::rebuild;
+use dc2tk_disc::{rebuild, DiscSource};
 
-use dc2tk_disc::DiscSource;
+use crate::{Context, Error, Result};
 
 /// The system message file of a language (LoadSystemMes: system.mes for Japanese).
 pub fn system_path(language: usize) -> String {
@@ -94,8 +92,9 @@ pub fn item_messages(
                 let mut changed = false;
                 for item_text in &mine {
                     let codes = match &item_text.text {
-                        Some(body) => text::encode(body, &font)
-                            .map_err(|error| anyhow!("{} (mod {}): {error}", item_text.what, item_text.module))?,
+                        Some(body) => text::encode(body, &font).map_err(|error| {
+                            Error::invalid(format!("{} (mod {}): {error}", item_text.what, item_text.module))
+                        })?,
                         None => match mes.get(item_text.copy) {
                             Some(codes) => codes.to_vec(),
                             None => continue,
@@ -115,7 +114,10 @@ pub fn item_messages(
                 let built = mes.write().with_context(|| place.clone())?;
                 if let Some(limit) = text::buffer_size(&place) {
                     if built.len() > limit {
-                        bail!("{place}: {} bytes with the item names; the game loads it into {limit}", built.len());
+                        return Err(Error::invalid(format!(
+                            "{place}: {} bytes with the item names; the game loads it into {limit}",
+                            built.len()
+                        )));
                     }
                 }
                 out.push((top, rebuild::replaced_member(&holder, &members, &built)?));
