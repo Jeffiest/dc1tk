@@ -1,15 +1,15 @@
 //! The game's names are cp932 (Microsoft's Shift-JIS). encoding_rs follows WHATWG Shift_JIS,
-//! which agrees with Python's cp932 codec on every two-byte code but not on four single bytes
-//! (private use characters in cp932), on what errors="replace" replaces, nor on which bytes some
-//! characters encode to. The tools have always used Python's codec, so these follow it; checked
-//! against it on every code and every character (examples/cp932_table.rs).
+//! which agrees with cp932 on every two-byte code but not on four single bytes (private use
+//! characters in cp932), on how much of a bad sequence one replacement character stands for, nor
+//! on which bytes some characters encode to. These follow cp932 and the bytes the tools have always
+//! written; the encoder's corrections are cp932_fixes, which examples/cp932_fixes.rs generates.
 
 use encoding_rs::SHIFT_JIS;
 
 use crate::cp932_fixes;
 
 /// cp932's single bytes that WHATWG Shift_JIS has no character for, with the private use
-/// characters Python's codec gives them (both ways).
+/// characters cp932 gives them (both ways).
 const PRIVATE_SINGLES: [(u8, char); 4] =
     [(0xA0, '\u{F8F0}'), (0xFD, '\u{F8F1}'), (0xFE, '\u{F8F2}'), (0xFF, '\u{F8F3}')];
 
@@ -17,7 +17,7 @@ fn single(byte: u8) -> Option<char> {
     PRIVATE_SINGLES.iter().find(|&&(single, _)| single == byte).map(|&(_, c)| c)
 }
 
-/// Decodes cp932, or None when the bytes are not valid cp932 (Python's errors="strict"): runs
+/// Decodes cp932, or None when the bytes are not valid cp932: runs
 /// WHATWG decodes as cp932 does, and the single bytes it has no character for.
 pub fn decode_strict(bytes: &[u8]) -> Option<String> {
     let mut out = String::new();
@@ -49,7 +49,7 @@ fn is_lead(byte: u8) -> bool {
     matches!(byte, 0x81..=0x9F | 0xE0..=0xFC)
 }
 
-/// Decodes cp932 with U+FFFD for what is not valid (Python's errors="replace"): a lead byte that
+/// Decodes cp932 with U+FFFD for what is not valid: a lead byte that
 /// does not make a character with the next byte becomes U+FFFD alone, and the next byte is decoded
 /// on its own.
 pub fn decode_lossy(bytes: &[u8]) -> String {
@@ -74,16 +74,16 @@ pub fn decode_lossy(bytes: &[u8]) -> String {
     out
 }
 
-/// How Python's codec encodes a character whose cp932 bytes differ from WHATWG's.
+/// How cp932 encodes a character whose cp932 bytes differ from WHATWG's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Fixed {
     One(u8),
     Two([u8; 2]),
-    /// Python's codec has no bytes for it (WHATWG has).
+    /// cp932 has no bytes for it (WHATWG has).
     None,
 }
 
-/// Python's bytes for a character where they differ from WHATWG's: its one-byte private use
+/// cp932's bytes for a character where they differ from WHATWG's: its one-byte private use
 /// characters, and the table of the rest (cp932_fixes, sorted by code point).
 fn fixed(c: char) -> Option<Fixed> {
     if let Some(&(byte, _)) = PRIVATE_SINGLES.iter().find(|&&(_, single)| single == c) {
@@ -98,7 +98,7 @@ fn fixed(c: char) -> Option<Fixed> {
     })
 }
 
-/// Encodes text as cp932, or None when it has a character cp932 lacks (Python's errors="strict").
+/// Encodes text as cp932, or None when it has a character cp932 lacks.
 pub fn encode(text: &str) -> Option<Vec<u8>> {
     if text.is_ascii() {
         return Some(text.as_bytes().to_vec());
@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn single_bytes_follow_python() {
+    fn single_bytes_follow_cp932() {
         assert_eq!(decode_strict(&[0x80]).unwrap(), "\u{80}");
         assert_eq!(decode_strict(&[0x41, 0xA0, 0xFF]).unwrap(), "A\u{F8F0}\u{F8F3}");
         assert_eq!(encode("A\u{F8F0}\u{F8F3}").unwrap(), vec![0x41, 0xA0, 0xFF]);
@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn python_bytes_where_whatwg_differs() {
+    fn cp932_bytes_where_whatwg_differs() {
         assert_eq!(encode("\u{A2}").unwrap(), [0x81, 0x91]); // ¢
         assert_eq!(encode("a\u{A5}"), None); // ¥: WHATWG gives 0x5C, cp932 has none
         assert_eq!(fixed('\u{F8F2}'), Some(Fixed::One(0xFE)));
