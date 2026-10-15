@@ -1248,12 +1248,20 @@ pub(crate) fn model_pack<'a>(data: &'a [u8], name: &str) -> (std::borrow::Cow<'a
     let Some(cfg) = found else {
         return unchanged;
     };
-    let field = cfg.offset - archive::PACK_SLOT;
     let mut renamed = data.to_vec();
-    let old = renamed[field..field + archive::PACK_NAME].to_vec();
-    renamed[field..field + archive::PACK_NAME].fill(0);
-    renamed[field..field + INFO_CFG.len()].copy_from_slice(INFO_CFG.as_bytes());
+    let old = rename_in_place(&mut renamed, cfg, INFO_CFG.as_bytes());
     (std::borrow::Cow::Owned(renamed), Some(old))
+}
+
+/// Writes a member's name field in place, the rest of the pack as it is, and gives the field's old
+/// bytes. archive::Pack, read and written whole, would write the members' padding as zeros, and a
+/// template pack must keep every byte for the build to give the disc's.
+fn rename_in_place(pack: &mut [u8], member: &archive::Member, name: &[u8]) -> Vec<u8> {
+    let field = member.offset - archive::PACK_SLOT;
+    let old = pack[field..field + archive::PACK_NAME].to_vec();
+    pack[field..field + archive::PACK_NAME].fill(0);
+    pack[field..field + name.len()].copy_from_slice(name);
+    old
 }
 
 /// models::build for a character pack read as model_pack reads it.
@@ -1266,8 +1274,7 @@ pub fn build_model(folder: &std::path::Path, data: &[u8], name: &str) -> Result<
             .iter()
             .find(|member| member.name == INFO_CFG)
             .ok_or_else(|| Error::invalid("the built pack has no info.cfg"))?;
-        let field = cfg.offset - archive::PACK_SLOT;
-        built[field..field + archive::PACK_NAME].copy_from_slice(&old);
+        rename_in_place(&mut built, cfg, &old);
     }
     Ok(built)
 }
@@ -1411,20 +1418,7 @@ pub(crate) mod tests {
     use std::sync::Mutex;
 
     pub fn pack(members: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut out = Vec::new();
-        for (name, data) in members {
-            let mut slot = vec![0u8; archive::PACK_SLOT];
-            slot[..name.len()].copy_from_slice(name.as_bytes());
-            let pad = archive::padding(data.len());
-            slot[64..68].copy_from_slice(&(archive::PACK_SLOT as i32).to_le_bytes());
-            slot[68..72].copy_from_slice(&(data.len() as i32).to_le_bytes());
-            slot[72..76].copy_from_slice(&((archive::PACK_SLOT + data.len() + pad) as i32).to_le_bytes());
-            out.extend(slot);
-            out.extend(*data);
-            out.extend(vec![0u8; pad]);
-        }
-        out.extend(vec![0u8; archive::PACK_SLOT]);
-        out
+        archive::write_pack(members).unwrap()
     }
 
     pub fn picture(name: &str, colour: [u8; 4]) -> Image {
