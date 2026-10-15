@@ -12,12 +12,12 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use regex::Regex;
 use serde_json::Value;
 
 use crate::compile::Toolchain;
-use crate::patches::{self, Plan};
+use crate::patches::{self, Patch, Plan};
 use crate::{definitions, fingerprint, library, mods, natives, parse, pathnames, paths, source, stb, Error, Result};
 
 pub const LOCK: &str = "fingerprints.json";
@@ -178,64 +178,14 @@ pub fn follow(
             }
             let relative = patch.path.strip_prefix(mod_dir).unwrap_or(&patch.path).to_string_lossy().replace('\\', "/");
             let mine = recorded.entry(relative.clone()).or_default();
-            let mut renamed: IndexMap<String, Vec<String>> = IndexMap::new();
-            for script in patch.scripts.clone() {
-                let present = patches::function_texts(tree, &script, &names)?;
-                for name in names.iter().filter(|name| !present.contains_key(*name)) {
-                    let Some(wanted) = mine.get(name) else {
-                        continue;
-                    };
-                    let Some(prints) = prints_of(&script) else {
-                        continue;
-                    };
-                    if prints.contains_key(name) {
-                        continue;
-                    }
-                    let candidates = matches(&prints, wanted);
-                    match candidates.as_slice() {
-                        [] => {}
-                        [new] => {
-                            patch.follow.entry(script.clone()).or_default().insert(name.clone(), new.clone());
-                            let seen = renamed.entry(name.clone()).or_default();
-                            if !seen.contains(new) {
-                                seen.push(new.clone());
-                            }
-                        }
-                        several => found.notes.push(format!(
-                            "{relative} (mod {module}): {script} has no {name}; its code is in {}, so put the one meant \
-                             after #pragma override",
-                            several.join(", ")
-                        )),
-                    }
-                }
-            }
+            let renamed = renamed_overrides(patch, &names, mine, tree, &mut prints_of, &mut found.notes, &relative)?;
             for (old, news) in renamed {
                 for new in news {
-                    found.followed.push(Followed {
-                        module: module.clone(),
-                        patch: relative.clone(),
-                        old: old.clone(),
-                        new,
-                    });
+                    let followed = Followed { module: module.clone(), patch: relative.clone(), old: old.clone(), new };
+                    found.followed.push(followed);
                 }
             }
-            let unrecorded: Vec<&String> = names.iter().filter(|name| !mine.contains_key(*name)).collect();
-            if unrecorded.is_empty() || patch.scripts.is_empty() {
-                continue;
-            }
-            let model = patch
-                .scripts
-                .iter()
-                .find(|script| patch.plain[*script].ends_with(&format!("_1{}", source::EXTENSION)))
-                .unwrap_or(&patch.scripts[0])
-                .clone();
-            if let Some(prints) = prints_of(&model) {
-                for name in unrecorded {
-                    if let Some(print) = prints.get(name) {
-                        mine.insert(name.clone(), print.clone());
-                    }
-                }
-            }
+            record_overridden(patch, &names, mine, &mut prints_of);
         }
         recorded.retain(|_, functions| !functions.is_empty());
         if recorded != before {
@@ -243,6 +193,75 @@ pub fn follow(
         }
     }
     Ok(found)
+}
+
+/// The overridden names a target of the patch no longer has, each with the names the target has
+/// its recorded code under (one each, put in the patch's follow); a name whose code is in several
+/// functions gets a note instead.
+fn renamed_overrides(
+    patch: &mut Patch,
+    names: &[String],
+    mine: &BTreeMap<String, Print>,
+    tree: &Path,
+    prints_of: &mut dyn FnMut(&str) -> Option<IndexMap<String, Print>>,
+    notes: &mut Vec<String>,
+    relative: &str,
+) -> Result<IndexMap<String, IndexSet<String>>> {
+    let mut renamed: IndexMap<String, IndexSet<String>> = IndexMap::new();
+    for script in patch.scripts.clone() {
+        let present = patches::function_texts(tree, &script, names)?;
+        for name in names.iter().filter(|name| !present.contains_key(*name)) {
+            let Some(wanted) = mine.get(name) else {
+                continue;
+            };
+            let Some(prints) = prints_of(&script) else {
+                continue;
+            };
+            if prints.contains_key(name) {
+                continue;
+            }
+            match matches(&prints, wanted).as_slice() {
+                [] => {}
+                [new] => {
+                    patch.follow.entry(script.clone()).or_default().insert(name.clone(), new.clone());
+                    renamed.entry(name.clone()).or_default().insert(new.clone());
+                }
+                several => notes.push(format!(
+                    "{relative} (mod {}): {script} has no {name}; its code is in {}, so put the one meant after \
+                     #pragma override",
+                    patch.module,
+                    several.join(", ")
+                )),
+            }
+        }
+    }
+    Ok(renamed)
+}
+
+/// Records the fingerprints of the overridden names the LOCK lacks, from the patch's model script
+/// (the English one of a map's languages, else its first target).
+fn record_overridden(
+    patch: &Patch,
+    names: &[String],
+    mine: &mut BTreeMap<String, Print>,
+    prints_of: &mut dyn FnMut(&str) -> Option<IndexMap<String, Print>>,
+) {
+    let unrecorded: Vec<&String> = names.iter().filter(|name| !mine.contains_key(*name)).collect();
+    if unrecorded.is_empty() || patch.scripts.is_empty() {
+        return;
+    }
+    let model = patch
+        .scripts
+        .iter()
+        .find(|script| patch.plain[*script].ends_with(&format!("_1{}", source::EXTENSION)))
+        .unwrap_or(&patch.scripts[0]);
+    if let Some(prints) = prints_of(model) {
+        for name in unrecorded {
+            if let Some(print) = prints.get(name) {
+                mine.insert(name.clone(), print.clone());
+            }
+        }
+    }
 }
 
 /// One line for a followed override.
@@ -292,4 +311,43 @@ pub fn rename(mod_dir: &Path, followed: &[Followed]) -> Result<Vec<PathBuf>> {
     }
     write_lock(mod_dir, &recorded)?;
     Ok(changed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn print(exact: &str, loose: &str) -> Print {
+        Print { exact: exact.into(), loose: loose.into() }
+    }
+
+    #[test]
+    fn a_function_is_found_by_its_exact_fingerprint_else_its_loose_one() {
+        let prints: IndexMap<String, Print> = [
+            ("greet".to_string(), print("e1", "l1")),
+            ("salute".to_string(), print("e2", "l1")),
+            ("wave".to_string(), print("e3", "l3")),
+        ]
+        .into_iter()
+        .collect();
+        // the exact one wins over the loose ones it shares
+        assert_eq!(matches(&prints, &print("e2", "l1")), ["salute"]);
+        // another language's copy: only the loose fingerprint is the same, here twice
+        assert_eq!(matches(&prints, &print("e9", "l1")), ["greet", "salute"]);
+        assert!(matches(&prints, &print("e9", "l9")).is_empty());
+    }
+
+    #[test]
+    fn the_lock_keeps_each_patchs_fingerprints() {
+        let folder = std::env::temp_dir().join(format!("dc2tk-renames-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        assert!(read_lock(&folder).unwrap().is_empty());
+        let mut recorded = Recorded::new();
+        recorded.entry("p.c".into()).or_default().insert("greet".into(), print("e1", "l1"));
+        recorded.entry("empty.c".into()).or_default();
+        write_lock(&folder, &recorded).unwrap();
+        recorded.remove("empty.c");
+        assert_eq!(read_lock(&folder).unwrap(), recorded);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
 }
