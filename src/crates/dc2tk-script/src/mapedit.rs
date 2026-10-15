@@ -235,11 +235,11 @@ fn apply_map(
         }
         gltf = with_programs(&gltf, &given)?;
     }
-    let imported = map_import::import_map(&gltf, &read, &original, &packs, &search)?;
+    let mut imported = map_import::import_map(&gltf, &read, &original, &packs, &search)?;
     for note in &imported.notes {
         built.said.push(format!("note: {} (mod {}): {note}", line.key, line.module));
     }
-    if let Some(text) = imported.map {
+    if let Some(text) = imported.map.take() {
         built.changes.push(change(place(&found.map), original.len(), text.len()));
         built.files.insert(place(&found.map), text);
     }
@@ -248,31 +248,9 @@ fn apply_map(
             return Err(Error::invalid("the map has no model pack to rebuild models in"));
         };
         let old_size = mpk_data.len();
-        for (model, data) in &imported.models {
-            let Some(pack) = packs.iter().find(|pack| pack.files.contains_key(&model.to_lowercase())) else {
-                continue;
-            };
-            // the member's own spelling, as the pack lists it
-            let pcp_data = members(&mpk_data)
-                .into_iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case(&pack.name))
-                .map(|(_, data)| data);
-            let member = pcp_data
-                .as_deref()
-                .map(members)
-                .and_then(|list| {
-                    list.into_iter().find(|(name, _)| name.eq_ignore_ascii_case(model)).map(|(name, _)| name)
-                })
-                .unwrap_or_else(|| model.clone());
-            mpk_data = rebuild::replaced_member(&mpk_data, &[pack.name.clone(), member.clone()], data)?;
-            built.said.push(said(&format!("rebuilt {} in {}", member, pack.name)));
-        }
-        if !imported.new_models.is_empty() {
-            mpk_data = with_new_models(mpk_data, &found.name, &imported.new_models)?;
-            for model in &imported.new_models {
-                built.said.push(said(&format!("added {} ({})", model.file, model.kind.name())));
-            }
-        }
+        let mut done = Vec::new();
+        mpk_data = with_models(mpk_data, &packs, &imported, &found.name, &mut done)?;
+        built.said.extend(done.iter().map(|text| said(text)));
         built.changes.push(change(place(&mpk_path), old_size, mpk_data.len()));
         built.files.insert(place(&mpk_path), mpk_data);
     }
@@ -323,6 +301,41 @@ fn apply_map(
         }
     }
     Ok(())
+}
+
+/// The map's model pack with the scene's rebuilt models put into their packs and its new models
+/// added, each said in `done`.
+fn with_models(
+    mut mpk_data: Vec<u8>,
+    packs: &[ModelPack],
+    imported: &map_import::Imported,
+    map_name: &str,
+    done: &mut Vec<String>,
+) -> Result<Vec<u8>> {
+    for (model, data) in &imported.models {
+        let Some(pack) = packs.iter().find(|pack| pack.files.contains_key(&model.to_lowercase())) else {
+            continue;
+        };
+        // the member's own spelling, as the pack lists it
+        let pcp_data = members(&mpk_data)
+            .into_iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(&pack.name))
+            .map(|(_, data)| data);
+        let member = pcp_data
+            .as_deref()
+            .map(members)
+            .and_then(|list| list.into_iter().find(|(name, _)| name.eq_ignore_ascii_case(model)).map(|(name, _)| name))
+            .unwrap_or_else(|| model.clone());
+        mpk_data = rebuild::replaced_member(&mpk_data, &[pack.name.clone(), member.clone()], data)?;
+        done.push(format!("rebuilt {} in {}", member, pack.name));
+    }
+    if !imported.new_models.is_empty() {
+        mpk_data = with_new_models(mpk_data, map_name, &imported.new_models)?;
+        for model in &imported.new_models {
+            done.push(format!("added {} ({})", model.file, model.kind.name()));
+        }
+    }
+    Ok(mpk_data)
 }
 
 /// A row for each new map in every language's map table.
