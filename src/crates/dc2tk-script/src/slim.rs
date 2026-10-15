@@ -14,6 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use rayon::prelude::*;
@@ -212,11 +213,11 @@ fn draft(module: &str, original: &str, copy: &str, kind: &str, value: &str) -> R
         format!("#pragma target {kind} {value}"),
         String::new(),
     ];
-    let system = Regex::new(r"^#include\s*<").unwrap();
+    static SYSTEM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#include\s*<").unwrap());
     lines.extend(
         copy.split('\n')
             .map(|line| line.trim_end_matches('\r'))
-            .filter(|line| system.is_match(line))
+            .filter(|line| SYSTEM.is_match(line))
             .map(str::to_string),
     );
     for (block, separate) in [(includes, false), (defines, false), (globals, true), (programs, true)] {

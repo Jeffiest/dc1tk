@@ -6,7 +6,7 @@
 //! from the disc and the English from the set, as with the item and monster names in disc.h.
 
 use std::collections::BTreeSet;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use regex::Regex;
@@ -85,9 +85,8 @@ pub fn survey(found_names: &mut BTreeSet<(String, String)>, program: &Node, foun
 }
 
 fn identifier(gloss: &str) -> String {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    let separators = CELL.get_or_init(|| Regex::new("[^A-Za-z0-9]+").unwrap());
-    let spaced = separators.replace_all(gloss, " ");
+    static SEPARATORS: LazyLock<Regex> = LazyLock::new(|| Regex::new("[^A-Za-z0-9]+").unwrap());
+    let spaced = SEPARATORS.replace_all(gloss, " ");
     spaced.split_whitespace().take(MOST_WORDS).collect::<Vec<_>>().join("_").to_uppercase()
 }
 

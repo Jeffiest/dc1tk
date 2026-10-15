@@ -30,7 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use rayon::prelude::*;
@@ -49,9 +49,8 @@ pub const FILES: &str = "files";
 const SOURCE_SUFFIXES: [&str; 2] = ["c", "h"];
 
 pub fn folder(mods_dir: &Path, name: &str) -> Result<PathBuf> {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    let pattern = CELL.get_or_init(|| Regex::new(r"^[A-Za-z0-9_.-]+\n?$").unwrap());
-    if !pattern.is_match(name) {
+    static MOD_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.-]+\n?$").unwrap());
+    if !MOD_NAME.is_match(name) {
         return Err(Error::invalid(format!("a mod name uses letters, digits, '.', '_' and '-' only: {name}")));
     }
     Ok(mods_dir.join(name))
@@ -282,11 +281,9 @@ pub fn override_functions(
         .clone();
     let mut found = patches::function_texts(tree_dir, &model, functions)?;
     let model_text = dc2tk_disc::textfile::read_text(&tree_dir.join(&model))?;
-    let included: Vec<String> = Regex::new(r"(?m)^#include\s*<([^>]+)>")
-        .unwrap()
-        .captures_iter(&model_text)
-        .map(|capture| capture[1].to_string())
-        .collect();
+    static SYSTEM_INCLUDE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#include\s*<([^>]+)>").unwrap());
+    let included: Vec<String> =
+        SYSTEM_INCLUDE.captures_iter(&model_text).map(|capture| capture[1].to_string()).collect();
     let wrappers: IndexMap<String, String> = functions
         .iter()
         .filter(|name| !found.contains_key(*name))
@@ -493,7 +490,7 @@ pub fn add(tree_dir: &Path, mod_dir: &Path, paths: &[String], overwrite: bool) -
             "unnamed": pathnames::unnamed(tree_dir, path)?,
         });
         if path.ends_with(source::EXTENSION) {
-            for capture in index::include_pattern().captures_iter(&dc2tk_disc::textfile::read_text(&target)?) {
+            for capture in index::INCLUDE_PATTERN.captures_iter(&dc2tk_disc::textfile::read_text(&target)?) {
                 found["includes"][&capture[1]] = pathnames::unnamed(tree_dir, &capture[1])?.into();
             }
         }
@@ -535,11 +532,10 @@ pub fn save(tree_dir: &Path, mod_dir: &Path) -> Result<(Vec<String>, Vec<String>
 }
 
 fn with_includes(text: &str, includes: &IndexMap<String, String>, tree_dir: &Path) -> Result<String> {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    let include = CELL.get_or_init(|| Regex::new(r#"^#include\s+"([^"]+)""#).unwrap());
+    static INCLUDE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"^#include\s+"([^"]+)""#).unwrap());
     let mut lines = Vec::new();
     for line in text.split('\n') {
-        match include.captures(line) {
+        match INCLUDE.captures(line) {
             Some(found) => {
                 let place = match includes.get(&found[1]).filter(|place| !place.is_empty()) {
                     Some(place) => place.clone(),

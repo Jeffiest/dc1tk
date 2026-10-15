@@ -254,7 +254,7 @@ pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Resul
         return Err(Error::invalid(format!("the copy must be a lib/...{} path", crate::source::EXTENSION)));
     }
     let includes_library = |line: &str| {
-        crate::index::include_pattern()
+        crate::index::INCLUDE_PATTERN
             .captures(line)
             .is_some_and(|found| found.get(0).unwrap().start() == 0 && &found[1] == library)
     };

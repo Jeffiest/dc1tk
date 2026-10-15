@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 use indexmap::IndexMap;
 use regex::Regex;
@@ -13,46 +13,29 @@ use regex::Regex;
 use crate::definitions::Definitions;
 use crate::{sdk, source, Result};
 
-fn regex(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
-    cell.get_or_init(|| Regex::new(pattern).expect("a valid pattern"))
-}
+static CONSTANT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^\s*(?:#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+|([A-Za-z_][A-Za-z0-9_]*)\s*=\s*)(-?(?:0x[0-9A-Fa-f]+|[0-9]+))\s*,?\s*(?://.*)?$").unwrap()
+});
 
-fn constant_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(
-        &CELL,
-        r"(?m)^\s*(?:#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+|([A-Za-z_][A-Za-z0-9_]*)\s*=\s*)(-?(?:0x[0-9A-Fa-f]+|[0-9]+))\s*,?\s*(?://.*)?$",
-    )
-}
+static DEFINITION_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^(?:void|int|float|string)\s+\**([A-Za-z0-9_]+)\s*\(").unwrap());
 
-fn definition_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"(?m)^(?:void|int|float|string)\s+\**([A-Za-z0-9_]+)\s*\(")
-}
+static PROGRAM_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*([A-Za-z0-9_]+)\s*\);").unwrap());
 
-fn program_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*([A-Za-z0-9_]+)\s*\);")
-}
-
-pub fn include_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r#"(?m)^#include\s+"([^"]+)""#)
-}
+pub static INCLUDE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?m)^#include\s+"([^"]+)""#).unwrap());
 
 /// The decompiler's comment on a call written for an older native table: the engine runs the
 /// native the call names, but the script meant another.
-fn old_numbering() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"//.*\bold numbering, meant as ([A-Za-z0-9_]+)")
-}
+static OLD_NUMBERING: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"//.*\bold numbering, meant as ([A-Za-z0-9_]+)").unwrap());
 
 /// Every integer constant the headers define: enum members (including program names such as
 /// story_50) and #defines.
 pub fn constants<'a>(texts: impl IntoIterator<Item = &'a String>) -> IndexMap<String, i64> {
     let mut found = IndexMap::new();
     for text in texts {
-        for capture in constant_pattern().captures_iter(text) {
+        for capture in CONSTANT_PATTERN.captures_iter(text) {
             let name = capture.get(1).or_else(|| capture.get(2)).unwrap().as_str();
             if let Some(value) = integer(&capture[3]) {
                 found.insert(name.to_string(), value);
@@ -429,8 +412,8 @@ pub fn code(path: &Path) -> Result<Arc<String>> {
 /// Language variants of one script (s51_1.c to s51_5.c) share a key, so reports can list them
 /// once.
 pub fn variant_key(path: &str) -> String {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"_[0-9](\.[^./]+)$").replace(path, "_N$1").into_owned()
+    static LANGUAGE_DIGIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"_[0-9](\.[^./]+)$").unwrap());
+    LANGUAGE_DIGIT.replace(path, "_N$1").into_owned()
 }
 
 /// The tree's source files, by path from it, sorted.
@@ -464,7 +447,7 @@ pub fn calls(tree: &Path, names: &BTreeSet<String>) -> Result<Vec<Call>> {
         if !pattern.is_match(&text) {
             continue;
         }
-        let definitions_at: Vec<(usize, String)> = definition_pattern()
+        let definitions_at: Vec<(usize, String)> = DEFINITION_PATTERN
             .captures_iter(&text)
             .map(|capture| (capture.get(0).unwrap().start(), capture[1].to_string()))
             .collect();
@@ -475,7 +458,7 @@ pub fn calls(tree: &Path, names: &BTreeSet<String>) -> Result<Vec<Call>> {
             };
             let line_start = text[..whole.start()].rfind('\n').map_or(0, |at| at + 1);
             let before = &text[line_start..whole.end()];
-            if definition_pattern().find(before).is_some_and(|found| found.start() == 0)
+            if DEFINITION_PATTERN.find(before).is_some_and(|found| found.start() == 0)
                 || in_string(&text[line_start..whole.start()])
             {
                 continue;
@@ -486,7 +469,7 @@ pub fn calls(tree: &Path, names: &BTreeSet<String>) -> Result<Vec<Call>> {
                 .last()
                 .map(|(_, name)| name.clone());
             let line_end = text[end..].find('\n').map_or(text.len(), |at| end + at);
-            let meant = old_numbering().captures(&text[end..line_end]).map(|found| found[1].to_string());
+            let meant = OLD_NUMBERING.captures(&text[end..line_end]).map(|found| found[1].to_string());
             found.push(Call {
                 path: relative.clone(),
                 line: text[..whole.start()].matches('\n').count() + 1,
@@ -514,11 +497,11 @@ pub fn outlines(tree: &Path) -> Result<IndexMap<String, Outline>> {
     let mut found = IndexMap::new();
     for relative in source_files(tree)? {
         let text = code(&tree.join(&relative))?;
-        let programs = program_pattern()
+        let programs = PROGRAM_PATTERN
             .captures_iter(&text)
             .map(|capture| (capture[1].trim().to_string(), capture[2].to_string()))
             .collect();
-        let includes = include_pattern().captures_iter(&text).map(|capture| capture[1].to_string()).collect();
+        let includes = INCLUDE_PATTERN.captures_iter(&text).map(|capture| capture[1].to_string()).collect();
         found.insert(relative, Outline { programs, includes });
     }
     Ok(found)

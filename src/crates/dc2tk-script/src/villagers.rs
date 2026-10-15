@@ -12,6 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
@@ -96,8 +97,9 @@ impl Tables {
         let mut schedules: BTreeMap<i64, Vec<Point>> = BTreeMap::new();
         let mut villager = None;
         let mut alternative = 0;
-        let progress_line = Regex::new(r#"^PROGRESS\s+(\d+)\s*,\s*(\d+)\s*,\s*"(.*?)""#).unwrap();
-        let place_line = Regex::new(r"^(NOON|NIGHT)_PLACE\s+(\d+)").unwrap();
+        static PROGRESS_LINE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#"^PROGRESS\s+(\d+)\s*,\s*(\d+)\s*,\s*"(.*?)""#).unwrap());
+        static PLACE_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(NOON|NIGHT)_PLACE\s+(\d+)").unwrap());
         for line in schedule.lines().map(without_comment) {
             let fields: Vec<&str> = line.splitn(2, char::is_whitespace).collect();
             match fields[0] {
@@ -117,13 +119,13 @@ impl Tables {
                     let Some(points) = villager.and_then(|villager| schedules.get_mut(&villager)) else {
                         continue;
                     };
-                    if let Some(found) = progress_line.captures(line) {
+                    if let Some(found) = PROGRESS_LINE.captures(line) {
                         let id: i64 = found[1].parse().unwrap_or(0);
                         alternative = found[2].parse().unwrap_or(0);
                         if points.last().is_none_or(|point| point.progress != id) {
                             points.push(Point { progress: id, after: &found[3] == "以後", places: BTreeMap::new() });
                         }
-                    } else if let Some(found) = place_line.captures(line) {
+                    } else if let Some(found) = PLACE_LINE.captures(line) {
                         let time = if &found[1] == "NOON" { 0 } else { 1 };
                         if let (Some(point), Ok(place)) = (points.last_mut(), found[2].parse()) {
                             point.places.insert((alternative, time), place);
@@ -132,8 +134,9 @@ impl Tables {
                 }
             }
         }
-        let places = Regex::new(r"(?m)^NPC_PLACE\s+(\d+)\s*,\s*(-?\d+)")
-            .unwrap()
+        static NPC_PLACE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"(?m)^NPC_PLACE\s+(\d+)\s*,\s*(-?\d+)").unwrap());
+        let places = NPC_PLACE
             .captures_iter(&places_text)
             .filter_map(|found| Some((found[1].parse().ok()?, found[2].parse().ok()?)))
             .collect();
@@ -218,7 +221,8 @@ impl Tables {
     /// map of its own runs on the map it extends (i01h01b on i01h01).
     pub fn map_of(&self, path: &str) -> Option<String> {
         let name = path.rsplit('/').next()?.split('.').next()?;
-        let stem = Regex::new(r"_\d$").unwrap().replace(name, "").to_string();
+        static PART: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"_\d$").unwrap());
+        let stem = PART.replace(name, "").to_string();
         let codes: BTreeSet<&str> = self.maps.values().map(|(code, _)| code.as_str()).collect();
         if codes.contains(stem.as_str()) {
             return Some(stem);

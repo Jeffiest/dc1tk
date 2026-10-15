@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use regex::Regex;
@@ -125,9 +126,9 @@ pub fn tables(root: &Path, defs: &Definitions) -> IndexMap<String, NameTable> {
 /// A name as a constant: PREFIX_WORDS_IN_CAPITALS, accents folded away; None when nothing is
 /// left.
 pub fn identifier(text: &str, prefix: &str) -> Option<String> {
+    static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new("[A-Za-z0-9]+").unwrap());
     let plain: String = text.nfkd().filter(char::is_ascii).collect::<String>().replace('\'', "");
-    let words: Vec<String> =
-        Regex::new("[A-Za-z0-9]+").unwrap().find_iter(&plain).map(|word| word.as_str().to_uppercase()).collect();
+    let words: Vec<String> = WORD.find_iter(&plain).map(|word| word.as_str().to_uppercase()).collect();
     if words.is_empty() {
         return None;
     }
@@ -209,8 +210,9 @@ pub fn with_lines_before_endif(header: &str, lines: &str) -> String {
 
 /// The constants headers define (enum members and #defines), which disc.h's names must not take.
 pub fn header_constants(headers: &IndexMap<String, String>) -> HashSet<String> {
-    let constant = Regex::new(r"(?m)^\s*(?:#define\s+)?([A-Z][A-Z0-9_]*)\b").unwrap();
-    headers.values().flat_map(|text| constant.captures_iter(text).map(|found| found[1].to_string())).collect()
+    static CONSTANT: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?m)^\s*(?:#define\s+)?([A-Z][A-Z0-9_]*)\b").unwrap());
+    headers.values().flat_map(|text| CONSTANT.captures_iter(text).map(|found| found[1].to_string())).collect()
 }
 
 /// The definitions and headers with disc.h added, and its text; unchanged when the disc gives no

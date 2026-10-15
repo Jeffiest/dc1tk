@@ -7,7 +7,7 @@
 //! definitions/pal/notes/characters.md.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use regex::Regex;
@@ -65,17 +65,16 @@ pub fn survey(found: &mut Survey, path: &str, program: &Node) {
 }
 
 fn identifier(text: &str) -> String {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    let separators = CELL.get_or_init(|| Regex::new("[^A-Z0-9]+").unwrap());
-    separators.replace_all(&text.to_uppercase(), "_").trim_matches('_').to_string()
+    static SEPARATORS: LazyLock<Regex> = LazyLock::new(|| Regex::new("[^A-Z0-9]+").unwrap());
+    SEPARATORS.replace_all(&text.to_uppercase(), "_").trim_matches('_').to_string()
 }
 
 /// A character's name for its pack: the villager the disc's NPC table names for it when there is
 /// exactly one, Max or Monica for their packs, otherwise the pack's file name without its event
 /// prefix (e109_starbre is starbre). None for a villager model shared by several villagers.
 fn character_name(pack: &str, pack_names: &NameTable) -> Option<String> {
-    static EVENT_PREFIX: OnceLock<Regex> = OnceLock::new();
-    static VILLAGER_MODEL: OnceLock<Regex> = OnceLock::new();
+    static EVENT_PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^e\d+[a-z]?_").unwrap());
+    static VILLAGER_MODEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^p\d+_\d+[a-z]$").unwrap());
     if let Some(known) = pack_names.get(&NameKey::Text(pack.to_string())).filter(|known| !known.is_empty()) {
         if !known.contains(" or ") {
             return Some(identifier(known));
@@ -84,8 +83,8 @@ fn character_name(pack: &str, pack_names: &NameTable) -> Option<String> {
     let path = pack.replace('\\', "/");
     let name = path.rsplit('/').next().unwrap_or("");
     let stem = name.split('.').next().unwrap_or("");
-    let stem = EVENT_PREFIX.get_or_init(|| Regex::new(r"^e\d+[a-z]?_").unwrap()).replace(stem, "").into_owned();
-    if VILLAGER_MODEL.get_or_init(|| Regex::new(r"^p\d+_\d+[a-z]$").unwrap()).is_match(&stem) {
+    let stem = EVENT_PREFIX.replace(stem, "").into_owned();
+    if VILLAGER_MODEL.is_match(&stem) {
         return None;
     }
     let (head, rest) = stem.split_once('_').unwrap_or((stem.as_str(), ""));

@@ -39,7 +39,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 
 use indexmap::IndexMap;
 use regex::Regex;
@@ -61,22 +61,13 @@ pub const LANGUAGES: [(&str, i64); 6] = [
 pub const NO_LANGUAGE: i64 = -1;
 const ORIGINAL: &str = "original";
 
-fn regex(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
-    cell.get_or_init(|| Regex::new(pattern).unwrap())
-}
+static VARIANT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"_([1-5])\.c$").unwrap());
 
-fn variant() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"_([1-5])\.c$")
-}
-
-fn target_line() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"(?m)^[ \t]*#[ \t]*pragma[ \t]+target\b(.*)$")
-}
+static TARGET_LINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^[ \t]*#[ \t]*pragma[ \t]+target\b(.*)$").unwrap());
 
 pub fn language_of(plain: &str) -> i64 {
-    if let Some(found) = variant().captures(plain) {
+    if let Some(found) = VARIANT.captures(plain) {
         return found[1].parse().unwrap();
     }
     if plain.starts_with("map/") {
@@ -131,7 +122,7 @@ pub struct Target {
 
 pub fn targets_in(text: &str) -> Result<Vec<Target>> {
     let mut found = Vec::new();
-    for capture in target_line().captures_iter(&index::without_comments(text)) {
+    for capture in TARGET_LINE.captures_iter(&index::without_comments(text)) {
         let line = &capture[1];
         let words: Vec<String> = asm::tokenize(line)?
             .into_iter()
@@ -153,18 +144,18 @@ pub fn targets_in(text: &str) -> Result<Vec<Target>> {
 }
 
 pub fn is_patch(text: &str) -> bool {
-    target_line().is_match(&index::without_comments(text))
+    TARGET_LINE.is_match(&index::without_comments(text))
 }
 
 /// {name in upper case: AI script code} from the tree's disc.h, with the kind's number as a name
 /// too.
 pub fn monster_scripts(tree: &Path) -> Result<HashMap<String, String>> {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    let line = regex(&CELL, r"(?m)^\s*MONSTER_(\w+)\s*=\s*(\d+),\s*//\s*model\s+\S+,\s*AI\s+(\w+)");
+    static MONSTER_ROW: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?m)^\s*MONSTER_(\w+)\s*=\s*(\d+),\s*//\s*model\s+\S+,\s*AI\s+(\w+)").unwrap());
     let path = tree.join("include").join("disc.h");
     let mut found = HashMap::new();
     if path.is_file() {
-        for capture in line.captures_iter(&dc2tk_disc::textfile::read_text(&path)?) {
+        for capture in MONSTER_ROW.captures_iter(&dc2tk_disc::textfile::read_text(&path)?) {
             found.insert(capture[1].to_string(), capture[3].to_string());
             found.entry(capture[2].to_string()).or_insert_with(|| capture[3].to_string());
         }
@@ -197,7 +188,7 @@ impl Scripts {
         // the PAL game loads the numbered language variants; the unnumbered Japanese script only
         // when a map has nothing else
         let variants: Vec<&String> =
-            found.iter().copied().filter(|path| variant().is_match(&self.plain[*path])).collect();
+            found.iter().copied().filter(|path| VARIANT.is_match(&self.plain[*path])).collect();
         if variants.is_empty() { found } else { variants }.into_iter().cloned().collect()
     }
 
@@ -1453,7 +1444,7 @@ pub fn function_texts(tree: &Path, script: &str, wanted: &[String]) -> Result<In
                 }
             }
         }
-        pending.extend(index::include_pattern().captures_iter(&text).map(|capture| capture[1].to_string()));
+        pending.extend(index::INCLUDE_PATTERN.captures_iter(&text).map(|capture| capture[1].to_string()));
     }
     Ok(found)
 }
@@ -1548,8 +1539,7 @@ pub fn language_text(copies: &BTreeMap<i64, String>) -> String {
 
 /// The start of a new patch file: what it is, its target and the headers the script includes.
 pub fn patch_header(module: &str, kind: TargetKind, value: &str, script_text: &str) -> String {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    let system = regex(&CELL, r"^#include\s*<");
+    static SYSTEM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#include\s*<").unwrap());
     let mut lines = vec![
         format!("// Mod {module}: a patch, merged into the scripts below when the mod is built. A function after"),
         "// #pragma override replaces the script's own, and original() inside it runs the one it replaced;".into(),
@@ -1557,20 +1547,19 @@ pub fn patch_header(module: &str, kind: TargetKind, value: &str, script_text: &s
         format!("#pragma target {kind} {value}"),
         String::new(),
     ];
-    lines.extend(script_text.split('\n').filter(|line| system.is_match(line)).map(str::to_string));
+    lines.extend(script_text.split('\n').filter(|line| SYSTEM.is_match(line)).map(str::to_string));
     lines.join("\n") + "\n"
 }
 
-fn overrides_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    regex(&CELL, r"#[ \t]*pragma[ \t]+override(?:[ \t]+(\w+))?[ \t]*\r?\n\s*(?:\w+\s+)*?(\w+)\s*\(")
-}
+static OVERRIDES_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"#[ \t]*pragma[ \t]+override(?:[ \t]+(\w+))?[ \t]*\r?\n\s*(?:\w+\s+)*?(\w+)\s*\(").unwrap()
+});
 
 /// The functions (and natives) a patch's text overrides, in order, each once: the name after
 /// #pragma override, else the function's.
 pub fn overridden(patch_text: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
-    for capture in overrides_pattern().captures_iter(&index::without_comments(patch_text)) {
+    for capture in OVERRIDES_PATTERN.captures_iter(&index::without_comments(patch_text)) {
         let name = capture.get(1).or(capture.get(2)).map_or("", |name| name.as_str());
         if !found.iter().any(|known| known == name) {
             found.push(name.to_string());
@@ -1581,14 +1570,14 @@ pub fn overridden(patch_text: &str) -> Vec<String> {
 
 /// One line per patch for mod list and build: what it targets, overrides, adds and asks for.
 pub fn summary(patch: &Patch) -> String {
-    static EVERY_FRAME: OnceLock<Regex> = OnceLock::new();
-    static PROGRAMS: OnceLock<Regex> = OnceLock::new();
-    let every_frame = regex(&EVERY_FRAME, r"#[ \t]*pragma[ \t]+every_frame\s+(?:\w+\s+)*?(\w+)\s*\(");
-    let programs = regex(&PROGRAMS, r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*(\w+)\s*\);");
+    static EVERY_FRAME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"#[ \t]*pragma[ \t]+every_frame\s+(?:\w+\s+)*?(\w+)\s*\(").unwrap());
+    static PROGRAMS: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*(\w+)\s*\);").unwrap());
     let text = index::without_comments(&patch.text);
     let first =
         |pattern: &Regex| -> Vec<String> { pattern.captures_iter(&text).map(|found| found[1].to_string()).collect() };
-    let (overridden, every, added) = (overridden(&patch.text), first(every_frame), first(programs));
+    let (overridden, every, added) = (overridden(&patch.text), first(&EVERY_FRAME), first(&PROGRAMS));
     let count = patch.scripts.len();
     let mut parts = vec![format!("{} script{}", count, if count == 1 { "" } else { "s" })];
     if !overridden.is_empty() {

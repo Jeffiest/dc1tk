@@ -12,7 +12,7 @@
 //! After load_pack_file, loads in the same function may come from that pack and are not checked.
 
 use std::collections::HashSet;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use regex::Regex;
@@ -70,18 +70,13 @@ pub struct Load {
     pub after_pack: bool,
 }
 
-fn definition_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r"(?m)^(?:static\s+inline\s+)?(?:void|int|float|string)\s+\**(\w+)\s*\(").unwrap())
-}
+static DEFINITION_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^(?:static\s+inline\s+)?(?:void|int|float|string)\s+\**(\w+)\s*\(").unwrap());
 
-fn call_pattern() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| {
-        let names: Vec<&str> = LOADS.iter().map(|(name, _, _)| *name).chain(ANY_STRING).chain(DIRECTORY).collect();
-        Regex::new(&format!(r"\b({})\s*\(", names.join("|"))).unwrap()
-    })
-}
+static CALL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    let names: Vec<&str> = LOADS.iter().map(|(name, _, _)| *name).chain(ANY_STRING).chain(DIRECTORY).collect();
+    Regex::new(&format!(r"\b({})\s*\(", names.join("|"))).unwrap()
+});
 
 fn text_of(arg: Option<&String>, consts: &IndexMap<String, i64>) -> Option<String> {
     match index::value(arg?, consts) {
@@ -104,13 +99,13 @@ fn directory(args: &[String], consts: &IndexMap<String, i64>) -> Option<String> 
 /// The loads by name in a script's text, with the directory each is opened in.
 pub fn loads(text: &str, consts: &IndexMap<String, i64>) -> Vec<Load> {
     let text = index::without_comments(text);
-    let starts: Vec<usize> = definition_pattern().find_iter(&text).map(|found| found.start()).collect();
+    let starts: Vec<usize> = DEFINITION_PATTERN.find_iter(&text).map(|found| found.start()).collect();
     let mut found = Vec::new();
     let mut dir: Option<String> = None;
     let mut dirs: Vec<String> = Vec::new();
     let mut after_pack = false;
     let mut function = usize::MAX;
-    for capture in call_pattern().captures_iter(&text) {
+    for capture in CALL_PATTERN.captures_iter(&text) {
         let whole = capture.get(0).unwrap();
         let line_start = text[..whole.start()].rfind('\n').map_or(0, |at| at + 1);
         if index::in_string(&text[line_start..whole.start()]) {
@@ -127,7 +122,7 @@ pub fn loads(text: &str, consts: &IndexMap<String, i64>) -> Vec<Load> {
         let Some(end) = index::closing_paren(&text, whole.end() - 1) else {
             continue;
         };
-        if definition_pattern().find(&text[line_start..whole.end()]).is_some_and(|found| found.start() == 0) {
+        if DEFINITION_PATTERN.find(&text[line_start..whole.end()]).is_some_and(|found| found.start() == 0) {
             continue;
         }
         let name = &capture[1];

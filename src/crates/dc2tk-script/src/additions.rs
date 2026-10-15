@@ -13,7 +13,7 @@
 //! returns, which a program that warps to another map never does.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use regex::Regex;
@@ -22,10 +22,8 @@ use crate::index::{self, Folded};
 use crate::node::Node;
 use crate::{Error, Result};
 
-fn program_line() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*(\w+)\s*\);$").unwrap())
-}
+static PROGRAM_LINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^PROGRAM\(\s*([^,]+?)\s*,\s*(\w+)\s*\);$").unwrap());
 
 /// Whether a script, by its path without names, belongs to a map: in a folder named after it, or a
 /// file named after it (s17.c, s17_1.c, s17b_1.c).
@@ -104,11 +102,10 @@ fn identifier(text: &str) -> String {
 }
 
 fn insert_programs(text: &str, lines: &[String]) -> String {
-    static MAIN: OnceLock<Regex> = OnceLock::new();
-    let main = MAIN.get_or_init(|| Regex::new(r"(?m)^MAIN\(").unwrap());
-    let position = match main.find(text) {
+    static MAIN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^MAIN\(").unwrap());
+    let position = match MAIN.find(text) {
         Some(found) => found.start(),
-        None => program_line().find_iter(text).last().map_or(0, |found| (found.end() + 1).min(text.len())),
+        None => PROGRAM_LINE.find_iter(text).last().map_or(0, |found| (found.end() + 1).min(text.len())),
     };
     let added: String = lines.iter().map(|line| format!("{line}\n")).collect();
     format!("{}{}{}", &text[..position], added, &text[position..])
@@ -116,9 +113,8 @@ fn insert_programs(text: &str, lines: &[String]) -> String {
 
 /// Code appended before the trailing #pragma padding_of lines.
 pub fn append_code(text: &str, code: &str) -> String {
-    static PRAGMAS: OnceLock<Regex> = OnceLock::new();
-    let pragmas = PRAGMAS.get_or_init(|| Regex::new(r"(?m)^#pragma padding_of ").unwrap());
-    let found = pragmas.find(text);
+    static PRAGMAS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#pragma padding_of ").unwrap());
+    let found = PRAGMAS.find(text);
     let position = found.map_or(text.len(), |found| found.start());
     let tail = if found.is_some() { format!("\n{}", &text[position..]) } else { String::new() };
     format!("{}\n\n{}\n{}", text[..position].trim_end_matches('\n'), code.trim_end_matches('\n'), tail)
@@ -126,7 +122,7 @@ pub fn append_code(text: &str, code: &str) -> String {
 
 fn existing(text: &str, consts: &IndexMap<String, i64>) -> HashMap<ProgramKey, (String, String, usize, usize)> {
     let mut found = HashMap::new();
-    for capture in program_line().captures_iter(text) {
+    for capture in PROGRAM_LINE.captures_iter(text) {
         let whole = capture.get(0).unwrap();
         found.insert(
             number_of(&capture[1], consts),

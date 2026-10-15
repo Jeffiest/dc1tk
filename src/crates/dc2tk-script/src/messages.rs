@@ -6,6 +6,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use regex::Regex;
@@ -24,10 +25,6 @@ pub enum NameKey {
 }
 
 pub type NameTable = IndexMap<NameKey, String>;
-
-fn regex(pattern: &str) -> Regex {
-    Regex::new(pattern).expect("a valid pattern")
-}
 
 fn record_body(data: &[u8], start: usize) -> &[u8] {
     let mut end = start;
@@ -291,7 +288,8 @@ pub fn disc_names(root: &Path, code: i64) -> IndexMap<String, NameTable> {
         ["item_id", "map_id", "npc_id", "chara_pack"].iter().map(|kind| (kind.to_string(), NameTable::new())).collect();
     let read = |path: &Path| fs::read(path).ok().map(|data| expanded(&decoded(&data, code)));
     if let Some(text) = read(&root.join(format!("menu/cfg7/comdatmes{code}.cfg"))) {
-        for capture in regex(r#"MES_SYS\s+(\d+)\s*,\s*"([^"]*)""#).captures_iter(&text) {
+        static MES_SYS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"MES_SYS\s+(\d+)\s*,\s*"([^"]*)""#).unwrap());
+        for capture in MES_SYS.captures_iter(&text) {
             if let Ok(number) = capture[1].parse::<i64>() {
                 found["item_id"].entry(NameKey::Int(number)).or_insert_with(|| capture[2].to_string());
             }

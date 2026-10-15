@@ -22,7 +22,7 @@
 
 use std::collections::BTreeSet;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use dc2tk_disc::archive::Archive;
 use dc2tk_disc::{rebuild, Image};
@@ -38,8 +38,8 @@ pub const START_FLAG: i64 = 2047;
 pub const DEFAULT_PROGRAM: &str = "map_start";
 
 fn new_game_script(path: &str) -> bool {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| Regex::new(r"^map/d/d01/d01_[0-9]\.c$").unwrap()).is_match(path)
+    static NEW_GAME_SCRIPT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^map/d/d01/d01_[0-9]\.c$").unwrap());
+    NEW_GAME_SCRIPT.is_match(path)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,10 +50,10 @@ pub struct Target {
 }
 
 pub fn parse_target(text: &str) -> Result<Target> {
-    static CELL: OnceLock<Regex> = OnceLock::new();
+    static PATTERN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+)(?:/([A-Za-z0-9_]+))?:(-?\w+)\n?$").unwrap());
     // a final newline is allowed (a value read from a file)
-    let pattern = CELL.get_or_init(|| Regex::new(r"^([A-Za-z0-9_]+)(?:/([A-Za-z0-9_]+))?:(-?\w+)\n?$").unwrap());
-    let Some(found) = pattern.captures(text) else {
+    let Some(found) = PATTERN.captures(text) else {
         return Err(Error::invalid(
             "--start-at takes MAP:PROGRAM or MAP/SCRIPT:PROGRAM, as in s51:story_50 or s06/s06b:500",
         ));
@@ -69,9 +69,8 @@ pub fn parse_target(text: &str) -> Result<Target> {
 /// A --start-at or mod.json "start_at" target: what parse_target takes, or MAP (or MAP/SCRIPT)
 /// alone, which starts at DEFAULT_PROGRAM.
 pub fn parse_start(text: &str) -> Result<Target> {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    let bare = CELL.get_or_init(|| Regex::new(r"^([A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)?)\n?$").unwrap());
-    let given = match bare.captures(text) {
+    static BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)?)\n?$").unwrap());
+    let given = match BARE.captures(text) {
         Some(found) => format!("{}:{DEFAULT_PROGRAM}", &found[1]),
         None => text.to_string(),
     };
@@ -251,15 +250,14 @@ pub fn patched(text: &str, target: &Target) -> Option<String> {
 
 /// The new-game script with floor_start running the warp first.
 pub fn patched_with(text: &str, target: &Target, warp: Warp) -> Option<String> {
-    static PROGRAM: OnceLock<Regex> = OnceLock::new();
-    static PRAGMAS: OnceLock<Regex> = OnceLock::new();
-    let program = PROGRAM.get_or_init(|| Regex::new(&format!(r"(?m)^PROGRAM\({START_PROGRAM}, (\w+)\);$")).unwrap());
-    let found = program.captures(text)?;
+    static PROGRAM: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(&format!(r"(?m)^PROGRAM\({START_PROGRAM}, (\w+)\);$")).unwrap());
+    static PRAGMAS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#pragma padding_of ").unwrap());
+    let found = PROGRAM.captures(text)?;
     let whole = found.get(0).unwrap();
     let original = found[1].to_string();
     let text = format!("{}PROGRAM({START_PROGRAM}, start_at_scene);{}", &text[..whole.start()], &text[whole.end()..]);
-    let pragmas = PRAGMAS.get_or_init(|| Regex::new(r"(?m)^#pragma padding_of ").unwrap());
-    let at = pragmas.find(&text).map_or(text.len(), |found| found.start());
+    let at = PRAGMAS.find(&text).map_or(text.len(), |found| found.start());
     let function = match warp {
         Warp::Dungeon => function_text(target, &original),
         Warp::Town(number) => town_function_text(target, number, &original),
