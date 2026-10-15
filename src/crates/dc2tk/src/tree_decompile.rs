@@ -86,11 +86,12 @@ pub fn run(
     let headers_used = sdk::header_texts(&defs, sdk_dir)?;
     let (defs, headers, generated) = disc::with_header(&root, defs, headers_used.clone());
     let mut model = library::model_for(&root, &paths, &tables, &defs, &headers)?;
-    let generated = slots::with_header(generated, &model.folder_slots, &model.villagers);
-    let generated = assets::with_header(generated, &model.asset_names);
+    let generated = slots::with_header(generated, &model.naming.folder_slots, &model.naming.villagers);
+    let generated = assets::with_header(generated, &model.naming.asset_names);
     let naming = pathnames::lookups(&root, &defs);
     let mut renamed: IndexMap<String, String> = IndexMap::new();
     let libraries: Vec<(String, String)> = model
+        .shared
         .libraries
         .values()
         .map(|library| (library.path.clone(), pathnames::named_library(&library.path, &naming)))
@@ -99,7 +100,7 @@ pub fn run(
         renamed.insert(plain.clone(), named.clone());
     }
     // the scripts include libraries by their named paths
-    for library in model.libraries.values_mut() {
+    for library in model.shared.libraries.values_mut() {
         library.path = pathnames::named_library(&library.path, &naming);
     }
     for path in &paths {
@@ -128,7 +129,7 @@ pub fn run(
         write(&out, &format!("include/{}", disc::HEADER), text)?;
     }
     paths.par_iter().try_for_each(|path| -> Result<()> {
-        let program = &model.programs[path];
+        let program = &model.survey.programs[path];
         let text = source::text(&model.script_program(program, path)?)?;
         write(&out, &renamed[&plain_source(path)], &text)
     })?;
@@ -136,7 +137,7 @@ pub fn run(
     for (path, text) in model.library_texts()? {
         write(&out, &path, &text)?;
     }
-    write(&out, source::EDITOR_FLAGS, &source::editor_flags(sdk_dir, &model.defs.sets, None))?;
+    write(&out, source::EDITOR_FLAGS, &source::editor_flags(sdk_dir, &model.source.defs.sets, None))?;
     let mut removed = Vec::new();
     if prefix == "." {
         // a whole-disc decompile replaces the tree: files the last one wrote and this one does not

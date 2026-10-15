@@ -96,7 +96,7 @@ fn name_table_renames_everywhere() {
     let folder = TempDir::new();
     let (root, paths) = corpus(folder.path());
     let first = model(&root, &paths, &Definitions::empty());
-    let fingerprint = first.class_names.iter().find(|(_, name)| *name == "map_1_1").unwrap().0.clone();
+    let fingerprint = first.shared.class_names.iter().find(|(_, name)| *name == "map_1_1").unwrap().0.clone();
     let table = folder.path().join("names");
     std::fs::create_dir(&table).unwrap();
     let entry = serde_json::json!({"name": "wait_frames", "params": ["frames"]});
@@ -185,7 +185,7 @@ fn libraries_json_moves_and_documents_a_library() {
     let folder = TempDir::new();
     let (root, paths) = corpus(folder.path());
     let first = model(&root, &paths, &Definitions::empty());
-    let identity = first.libraries.values().next().unwrap().fingerprint.clone();
+    let identity = first.shared.libraries.values().next().unwrap().fingerprint.clone();
     let libraries: IndexMap<String, Node> =
         [(identity, node!({"path": "lib/town/waiting.c", "doc": "Waiting helpers."}))].into_iter().collect();
     let defs = Definitions { libraries, ..Definitions::empty() };
@@ -228,7 +228,7 @@ fn libraries_json_names_the_globals_a_library_uses() {
         paths.push(path);
     }
     let first = model(root, &paths, &Definitions::empty());
-    let identity = first.libraries.values().next().unwrap().fingerprint.clone();
+    let identity = first.shared.libraries.values().next().unwrap().fingerprint.clone();
     let libraries: IndexMap<String, Node> = [(identity, node!({"globals": {"g0": "visits"}}))].into_iter().collect();
     let defs = Definitions { libraries, ..Definitions::empty() };
     let model = model(root, &paths, &defs);

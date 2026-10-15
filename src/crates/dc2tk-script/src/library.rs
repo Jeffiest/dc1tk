@@ -51,12 +51,15 @@ fn eligible(program: &Node, found: &IndexMap<String, Option<String>>) -> HashMap
 
 /// A script's entry for finding shared runs, and the shapes of its shareable functions (their
 /// calls by callee fingerprint).
-fn survey(path: &str, program: &Node) -> Result<(FileEntry, IndexMap<String, Node>)> {
+fn survey(
+    path: &str,
+    program: &Node,
+    found: &IndexMap<String, Option<String>>,
+) -> Result<(FileEntry, IndexMap<String, Node>)> {
     if is_assembly(program) {
         return Ok((FileEntry { path: path.to_string(), table: None, fingerprints: Vec::new() }, IndexMap::new()));
     }
-    let found = names::fingerprints(program);
-    let usable = eligible(program, &found);
+    let usable = eligible(program, found);
     let mapping: HashMap<String, String> =
         found.iter().filter_map(|(name, print)| Some((name.clone(), print.clone()?))).collect();
     let mut fingerprints = Vec::new();
@@ -198,36 +201,84 @@ type Built = (IndexMap<String, Vec<Segment>>, IndexMap<LibraryKey, Library>, Ind
 
 /// What a whole-disc decompile knows across its scripts.
 pub struct Model {
-    pub layouts: IndexMap<String, Vec<Segment>>,
-    pub libraries: IndexMap<LibraryKey, Library>,
-    pub class_names: IndexMap<String, String>,
-    pub shapes: IndexMap<String, Node>,
+    /// What the model was made from.
+    pub source: Source,
+    /// The decompiled scripts and what surveying them found.
+    pub survey: Surveyed,
+    /// What the scripts share: the libraries, and the names functions take across the disc.
+    pub shared: Shared,
+    /// What presenting a script names things by: the headers' contexts and the disc's names.
+    pub naming: Naming,
+    /// What presenting the scripts fills in as it goes.
+    caches: Caches,
+}
+
+/// The extracted disc and the definition set a model was made from.
+pub struct Source {
+    pub root: PathBuf,
     pub defs: Definitions,
     pub tables: BTreeMap<String, Table>,
-    pub asset_names: IndexMap<(String, String), String>,
-    pub contexts: HashMap<String, Option<Context>>,
-    pub root: PathBuf,
+}
+
+/// The decompiled scripts, and what the survey of all of them found.
+pub struct Surveyed {
+    /// The decompiled programs, by path.
+    pub programs: IndexMap<String, Node>,
+    /// Each script's functions as runs of shared code (segments), by path.
+    pub layouts: IndexMap<String, Vec<Segment>>,
+    /// Each script's functions' exact fingerprints, in order (None for a function without one).
+    pub script_prints: IndexMap<String, Vec<Option<String>>>,
+    /// {exact fingerprint: loose fingerprint}.
+    pub exact_to_loose: IndexMap<String, String>,
+    /// The message files each script loads, by path.
+    pub script_files: HashMap<String, Vec<String>>,
     /// {kind: {fingerprint: positions}}: the parameters that carry a kind of value.
     pub kind_params: IndexMap<String, IndexMap<String, BTreeSet<usize>>>,
-    pub script_files: HashMap<String, Vec<String>>,
+    /// {path: {string: the English the same script in the set's language gives it}}.
+    pub siblings: HashMap<String, HashMap<String, String>>,
+    /// What starts each program, by the disc folder of the map (maps::folder_triggers).
+    pub triggers: BTreeMap<String, IndexMap<i64, Vec<String>>>,
+}
+
+/// The functions the scripts share, and their names.
+pub struct Shared {
+    pub libraries: IndexMap<LibraryKey, Library>,
+    /// The names of the functions libraries hold, by fingerprint.
+    pub class_names: IndexMap<String, String>,
+    /// Each shared function as the libraries write it, by fingerprint.
+    pub shapes: IndexMap<String, Node>,
+    /// The definition set's entries, with the variants' and loose fingerprints' added.
+    pub entries: names::Known,
+    /// The names the definition set gives functions no library holds, by fingerprint.
+    pub own_names: IndexMap<String, String>,
+    /// The names the SDK's headers take, for every table.
+    reserved: HashSet<String>,
+}
+
+/// What presenting a script names things by.
+pub struct Naming {
+    /// Each native table's header context (None for a table without headers).
+    pub contexts: HashMap<String, Option<Context>>,
+    /// {(prefix, text): name} for the asset strings with a gloss (assets::names).
+    pub asset_names: IndexMap<(String, String), String>,
+    /// The definition set's language (disc::language_code).
     pub language_code: Option<i64>,
+    /// The names the disc's tables give items, maps, characters and packs (messages::disc_names).
     pub disc_names: IndexMap<String, NameTable>,
+    /// {folder: {slot: constant}} for the slots each folder always fills with one pack
+    /// (slots::names).
     pub folder_slots: BTreeMap<String, BTreeMap<i64, String>>,
     /// The villager slots of the maps the scripts run on.
     pub villagers: slots::Changing,
-    pub exact_to_loose: IndexMap<String, String>,
-    pub script_prints: IndexMap<String, Vec<Option<String>>>,
-    pub siblings: HashMap<String, HashMap<String, String>>,
-    pub triggers: BTreeMap<String, IndexMap<i64, Vec<String>>>,
-    /// The definition set's entries, with the variants' and loose fingerprints' added.
-    pub entries: names::Known,
-    pub own_names: IndexMap<String, String>,
-    /// The decompiled programs, by path.
-    pub programs: IndexMap<String, Node>,
-    message_cache: Mutex<HashMap<String, IndexMap<i64, String>>>,
+}
+
+/// What presenting the scripts fills in as it goes.
+#[derive(Default)]
+struct Caches {
+    /// The message files read, by name.
+    messages: Mutex<HashMap<String, IndexMap<i64, String>>>,
     /// What each script that includes a library passes it, by library path.
     sound_uses: Mutex<HashMap<String, Vec<Passed>>>,
-    reserved: HashSet<String>,
 }
 
 fn build(files: &[FileEntry], library_defs: &IndexMap<String, Node>) -> Built {
@@ -305,13 +356,13 @@ fn build(files: &[FileEntry], library_defs: &IndexMap<String, Node>) -> Built {
 
 impl Model {
     fn shared_runs(&self) -> HashSet<&Vec<String>> {
-        self.libraries.keys().map(|key| &key.1).collect()
+        self.shared.libraries.keys().map(|key| &key.1).collect()
     }
 
     fn clashes(&self, class_names: &IndexMap<String, String>) -> HashSet<String> {
         let shared = self.shared_runs();
         let mut clashing = HashSet::new();
-        for layout in self.layouts.values() {
+        for layout in self.survey.layouts.values() {
             let mut owners: HashMap<&String, &String> = HashMap::new();
             for segment in layout.iter().filter(|segment| shared.contains(&segment.fingerprints)) {
                 for fingerprint in &segment.fingerprints {
@@ -329,7 +380,7 @@ impl Model {
     fn meetings(&self, clashing: &HashSet<String>) -> HashMap<String, HashSet<String>> {
         let shared = self.shared_runs();
         let mut met: HashMap<String, HashSet<String>> = HashMap::new();
-        for layout in self.layouts.values() {
+        for layout in self.survey.layouts.values() {
             let present: HashSet<&String> = layout
                 .iter()
                 .filter(|segment| shared.contains(&segment.fingerprints))
@@ -353,7 +404,7 @@ impl Model {
         taken: &HashSet<String>,
     ) -> IndexMap<String, String> {
         let mut order: Vec<String> =
-            self.libraries.values().flat_map(|library| library.fingerprints.iter().cloned()).collect();
+            self.shared.libraries.values().flat_map(|library| library.fingerprints.iter().cloned()).collect();
         let seen: HashSet<&String> = order.iter().collect();
         let mut rest: Vec<String> = class_names.keys().filter(|print| !seen.contains(print)).cloned().collect();
         rest.sort();
@@ -391,7 +442,7 @@ impl Model {
     }
 
     fn library_slots(&self, library: &Library) -> HashSet<String> {
-        let shapes: Vec<Node> = library.fingerprints.iter().map(|print| self.shapes[print].clone()).collect();
+        let shapes: Vec<Node> = library.fingerprints.iter().map(|print| self.shared.shapes[print].clone()).collect();
         names::global_uses(&shapes)
     }
 
@@ -408,16 +459,16 @@ impl Model {
     }
 
     pub fn entry(&self, fingerprint: &str) -> Option<&Node> {
-        self.entries.entries.get(fingerprint)
+        self.shared.entries.entries.get(fingerprint)
     }
 
     fn lookup(&self) -> names::Lookup<'_> {
-        self.entries.with_loose(&IndexMap::new())
+        self.shared.entries.with_loose(&IndexMap::new())
     }
 
     /// The names the SDK's headers take, for every table.
     pub fn reserved_names(&self) -> &HashSet<String> {
-        &self.reserved
+        &self.shared.reserved
     }
 }
 
@@ -461,10 +512,10 @@ fn conflicting(
 }
 
 fn with_globals(mut model: Model) -> Model {
-    let mut taken = model.reserved.clone();
-    taken.extend(model.class_names.values().cloned());
-    taken.extend(model.own_names.values().cloned());
-    let libraries: Vec<Library> = model.libraries.values().cloned().collect();
+    let mut taken = model.shared.reserved.clone();
+    taken.extend(model.shared.class_names.values().cloned());
+    taken.extend(model.shared.own_names.values().cloned());
+    let libraries: Vec<Library> = model.shared.libraries.values().cloned().collect();
     let slots: HashMap<String, HashSet<String>> =
         libraries.iter().map(|library| (library.path.clone(), model.library_slots(library))).collect();
     let mut chosen: HashMap<String, IndexMap<String, String>> = HashMap::new();
@@ -506,16 +557,20 @@ fn with_globals(mut model: Model) -> Model {
             }
         }
     }
-    for library in model.libraries.values_mut() {
+    for library in model.shared.libraries.values_mut() {
         library.globals = chosen[&library.path].clone();
     }
     model
 }
 
 fn with_names(mut model: Model) -> Model {
-    let entries = names::with_positions(&names::merged(&model.defs.names), &model.script_prints, &model.exact_to_loose);
-    let entries = names::Known::new(entries).with_loose(&model.exact_to_loose).entries();
-    let mut class_names = model.class_names.clone();
+    let entries = names::with_positions(
+        &names::merged(&model.source.defs.names),
+        &model.survey.script_prints,
+        &model.survey.exact_to_loose,
+    );
+    let entries = names::Known::new(entries).with_loose(&model.survey.exact_to_loose).entries();
+    let mut class_names = model.shared.class_names.clone();
     for (fingerprint, entry) in &entries {
         if class_names.contains_key(fingerprint) {
             if let Some(name) = entry.get("name") {
@@ -523,8 +578,8 @@ fn with_names(mut model: Model) -> Model {
             }
         }
     }
-    let taken = model.reserved.clone();
-    let originals = model.class_names.clone();
+    let taken = model.shared.reserved.clone();
+    let originals = model.shared.class_names.clone();
     for (fingerprint, name) in class_names.iter_mut() {
         if taken.contains(name) {
             *name = originals[fingerprint].clone();
@@ -535,7 +590,7 @@ fn with_names(mut model: Model) -> Model {
     for fingerprint in model.clashes(&class_names) {
         class_names.insert(fingerprint.clone(), originals[&fingerprint].clone());
     }
-    model.own_names = entries
+    model.shared.own_names = entries
         .iter()
         .filter(|(fingerprint, entry)| {
             !class_names.contains_key(*fingerprint)
@@ -543,8 +598,8 @@ fn with_names(mut model: Model) -> Model {
         })
         .map(|(fingerprint, entry)| (fingerprint.clone(), entry["name"].plain_text()))
         .collect();
-    model.class_names = class_names;
-    model.entries = names::Known::new(entries);
+    model.shared.class_names = class_names;
+    model.shared.entries = names::Known::new(entries);
     model
 }
 
@@ -574,6 +629,153 @@ fn sibling_maps(
     found
 }
 
+/// What surveying every script finds, before the libraries are built from it.
+#[derive(Default)]
+struct Found {
+    files: Vec<FileEntry>,
+    shapes: IndexMap<String, Node>,
+    kind_params: IndexMap<String, IndexMap<String, BTreeSet<usize>>>,
+    script_files: HashMap<String, Vec<String>>,
+    exact_to_loose: IndexMap<String, String>,
+    script_strings: IndexMap<String, Vec<String>>,
+    script_prints: IndexMap<String, Vec<Option<String>>>,
+    slot_loads: slots::Survey,
+    asset_strings: BTreeSet<(String, String)>,
+    /// What every script's calls pass for each unused pointer parameter, by callee fingerprint.
+    pointer_types: HashMap<(String, usize), BTreeSet<String>>,
+}
+
+impl Found {
+    /// Surveys one script: its functions' fingerprints and shapes, its slot loads and asset
+    /// strings, what its calls pass, and (with its header context) the messages it loads and the
+    /// parameters that carry kinds.
+    fn script(&mut self, path: &str, program: &Node, context: Option<&Context>) -> Result<()> {
+        // a function's fingerprint by its name in the script
+        let prints = names::fingerprints(program);
+        let (entry, shapes) = survey(path, program, &prints)?;
+        slots::survey(&mut self.slot_loads, path, program);
+        assets::survey(&mut self.asset_strings, program, context);
+        self.files.push(entry);
+        self.exact_to_loose.extend(names::loose_map(program));
+        let exact = &program["fingerprints"];
+        self.script_prints.insert(
+            path.to_string(),
+            program
+                .list("functions")
+                .iter()
+                .map(|function| exact[function.text("name")].as_str().map(str::to_string))
+                .collect(),
+        );
+        if program.get("asm").is_none() {
+            let passed = decompile::pointer_evidence(program.list("functions"), program.list("globals"));
+            for ((callee, position), types) in passed {
+                if let Some(Some(print)) = prints.get(&callee) {
+                    self.pointer_types.entry((print.clone(), position)).or_default().extend(types);
+                }
+            }
+            let bodies: Node = program
+                .list("functions")
+                .iter()
+                .map(|function| function.get("body").cloned().unwrap_or(Node::List(vec![])))
+                .collect();
+            self.script_strings.insert(path.to_string(), notes::strings_in(&bodies));
+            if let Some(context) = context {
+                self.kinds_and_messages(path, program, context, &prints);
+            }
+        }
+        self.add_shapes(shapes);
+        Ok(())
+    }
+
+    /// The message files a script loads, and the parameters its functions pass kinds of value in,
+    /// by the functions' fingerprints.
+    fn kinds_and_messages(
+        &mut self,
+        path: &str,
+        program: &Node,
+        context: &Context,
+        prints: &IndexMap<String, Option<String>>,
+    ) {
+        self.script_files.insert(path.to_string(), messages::loaded_files(program.list("functions"), context));
+        let mut by_kind: Vec<(String, messages::ParamsByFunction)> =
+            messages::kind_params(program.list("functions"), context).into_iter().collect();
+        by_kind.sort_by(|a, b| a.0.cmp(&b.0));
+        for (kind, by_function) in by_kind {
+            let known = self.kind_params.entry(kind).or_default();
+            for (name, positions) in by_function {
+                if let Some(Some(print)) = prints.get(&name) {
+                    known.entry(print.clone()).or_default().extend(positions);
+                }
+            }
+        }
+    }
+
+    /// A script's function shapes: the first script's, but a void return a later one returns a
+    /// value from takes that one's.
+    fn add_shapes(&mut self, shapes: IndexMap<String, Node>) {
+        for (fingerprint, shape) in shapes {
+            match self.shapes.get(&fingerprint) {
+                None => {
+                    self.shapes.insert(fingerprint, shape);
+                }
+                Some(known) => {
+                    if known.get("returns") == Some(&Node::from("void"))
+                        && shape.get("returns") != Some(&Node::from("void"))
+                    {
+                        let updated = known.clone().with("returns", shape["returns"].clone());
+                        self.shapes.insert(fingerprint, updated);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A shared function's unused pointer parameters take what all its callers pass, so the one
+    /// library file agrees with every script that includes it.
+    fn type_unused_pointers(&mut self) {
+        for (print, shape) in self.shapes.iter_mut() {
+            for position in decompile::unused_pointer_params(shape) {
+                let passed = self.pointer_types.get(&(print.clone(), position));
+                if let Some(element) = passed.and_then(decompile::passed_type) {
+                    shape["params"][position]["type"] = Node::from(element);
+                }
+            }
+        }
+    }
+}
+
+/// Every native table's header context, with the definition set's sound sets.
+fn header_contexts(
+    tables: &BTreeMap<String, Table>,
+    defs: &Definitions,
+    headers: &IndexMap<String, String>,
+) -> Result<HashMap<String, Option<Context>>> {
+    let mut contexts = HashMap::new();
+    for table in tables.keys() {
+        let found = sdk::header_context(table, headers, tables, &defs.include, &|text| parse::parse(text))?;
+        contexts.insert(table.clone(), sdk::with_sound_sets(found, defs));
+    }
+    Ok(contexts)
+}
+
+/// Every script decompiled, in the order given.
+fn decompiled(
+    root: &Path,
+    paths: &[String],
+    tables: &BTreeMap<String, Table>,
+    defs: &Definitions,
+) -> Result<Vec<(String, Node)>> {
+    use rayon::prelude::*;
+    paths
+        .par_iter()
+        .map(|path| -> Result<(String, Node)> {
+            let table = natives::table_for(path, &defs.tables);
+            let data = std::fs::read(root.join(path))?;
+            Ok((path.clone(), decompile::decompile(&stb::read(&data), table, tables)))
+        })
+        .collect()
+}
+
 /// The model of a disc's scripts: their libraries and names. headers include disc.h.
 pub fn model_for(
     root: &Path,
@@ -582,108 +784,18 @@ pub fn model_for(
     defs: &Definitions,
     headers: &IndexMap<String, String>,
 ) -> Result<Model> {
-    let mut contexts = HashMap::new();
-    for table in tables.keys() {
-        let found = sdk::header_context(table, headers, tables, &defs.include, &|text| parse::parse(text))?;
-        contexts.insert(table.clone(), sdk::with_sound_sets(found, defs));
-    }
-    use rayon::prelude::*;
-    let programs: Vec<(String, Node)> = paths
-        .par_iter()
-        .map(|path| -> Result<(String, Node)> {
-            let table = natives::table_for(path, &defs.tables);
-            let data = std::fs::read(root.join(path))?;
-            Ok((path.clone(), decompile::decompile(&stb::read(&data), table, tables)))
-        })
-        .collect::<Result<_>>()?;
-    let mut files = Vec::new();
-    let mut shapes: IndexMap<String, Node> = IndexMap::new();
-    let mut kind_params: IndexMap<String, IndexMap<String, BTreeSet<usize>>> = IndexMap::new();
-    let mut script_files = HashMap::new();
-    let mut exact_to_loose = IndexMap::new();
-    let mut script_strings = IndexMap::new();
-    let mut script_prints = IndexMap::new();
-    let mut slot_loads = slots::Survey::new();
-    let mut asset_strings = BTreeSet::new();
-    // what every script's calls pass for each unused pointer parameter, by callee fingerprint
-    let mut pointer_types: HashMap<(String, usize), BTreeSet<String>> = HashMap::new();
+    let mut contexts = header_contexts(tables, defs, headers)?;
+    let programs = decompiled(root, paths, tables, defs)?;
+    let mut found = Found::default();
     for (path, program) in &programs {
         let table = natives::table_for(path, &defs.tables);
-        let context = contexts.get(table).and_then(Option::as_ref);
-        let (entry, found) = survey(path, program)?;
-        slots::survey(&mut slot_loads, path, program);
-        assets::survey(&mut asset_strings, program, context);
-        files.push(entry);
-        exact_to_loose.extend(names::loose_map(program));
-        let exact = &program["fingerprints"];
-        script_prints.insert(
-            path.clone(),
-            program
-                .list("functions")
-                .iter()
-                .map(|function| exact[function.text("name")].as_str().map(str::to_string))
-                .collect(),
-        );
-        if program.get("asm").is_none() {
-            let prints = names::fingerprints(program);
-            let passed = decompile::pointer_evidence(program.list("functions"), program.list("globals"));
-            for ((callee, position), types) in passed {
-                if let Some(Some(print)) = prints.get(&callee) {
-                    pointer_types.entry((print.clone(), position)).or_default().extend(types);
-                }
-            }
-            let bodies: Node = program
-                .list("functions")
-                .iter()
-                .map(|function| function.get("body").cloned().unwrap_or(Node::List(vec![])))
-                .collect();
-            script_strings.insert(path.clone(), notes::strings_in(&bodies));
-        }
-        if let Some(context) = context.filter(|_| program.get("asm").is_none()) {
-            let fingerprints = names::fingerprints(program);
-            script_files.insert(path.clone(), messages::loaded_files(program.list("functions"), context));
-            let mut by_kind: Vec<(String, messages::ParamsByFunction)> =
-                messages::kind_params(program.list("functions"), context).into_iter().collect();
-            by_kind.sort_by(|a, b| a.0.cmp(&b.0));
-            for (kind, by_function) in by_kind {
-                let known = kind_params.entry(kind).or_default();
-                for (name, positions) in by_function {
-                    if let Some(Some(print)) = fingerprints.get(&name) {
-                        known.entry(print.clone()).or_default().extend(positions);
-                    }
-                }
-            }
-        }
-        for (fingerprint, shape) in found {
-            match shapes.get(&fingerprint) {
-                None => {
-                    shapes.insert(fingerprint, shape);
-                }
-                Some(known) => {
-                    if known.get("returns") == Some(&Node::from("void"))
-                        && shape.get("returns") != Some(&Node::from("void"))
-                    {
-                        let updated = known.clone().with("returns", shape["returns"].clone());
-                        shapes.insert(fingerprint, updated);
-                    }
-                }
-            }
-        }
+        found.script(path, program, contexts.get(table).and_then(Option::as_ref))?;
     }
-    // a shared function's unused pointer parameters take what all its callers pass, so the one
-    // library file agrees with every script that includes it
-    for (print, shape) in shapes.iter_mut() {
-        for position in decompile::unused_pointer_params(shape) {
-            let passed = pointer_types.get(&(print.clone(), position));
-            if let Some(element) = passed.and_then(decompile::passed_type) {
-                shape["params"][position]["type"] = Node::from(element);
-            }
-        }
-    }
-    let (layouts, libraries, class_names) = build(&files, &defs.libraries);
+    found.type_unused_pointers();
+    let (layouts, libraries, class_names) = build(&found.files, &defs.libraries);
     let taken: HashSet<String> =
         contexts.values().flatten().flat_map(|context| context.constants.keys().cloned()).collect();
-    let asset_names = assets::names(&asset_strings, &defs.strings, &taken);
+    let asset_names = assets::names(&found.asset_strings, &defs.strings, &taken);
     for context in contexts.values_mut().flatten() {
         if !asset_names.is_empty() {
             context.asset_names = asset_names.clone();
@@ -691,50 +803,46 @@ pub fn model_for(
     }
     let disc_names = disc::tables(root, defs);
     let empty = NameTable::new();
-    let folder_slots = slots::names(&slot_loads, disc_names.get("chara_pack").unwrap_or(&empty));
+    let folder_slots = slots::names(&found.slot_loads, disc_names.get("chara_pack").unwrap_or(&empty));
     let villager_tables = crate::villagers::Tables::read(root);
-    let villagers = slots::villagers(&slot_loads, &folder_slots, villager_tables.as_ref(), &disc_names, paths);
+    let villagers = slots::villagers(&found.slot_loads, &folder_slots, villager_tables.as_ref(), &disc_names, paths);
     let language_code = disc::language_code(defs);
     let triggers = if root.join("map").is_dir() { maps::folder_triggers(root)? } else { BTreeMap::new() };
     let reserved = reserved_of(&contexts);
     let model = Model {
-        layouts,
-        libraries,
-        class_names,
-        shapes,
-        defs: defs.clone(),
-        tables: tables.clone(),
-        asset_names,
-        contexts,
-        root: root.to_path_buf(),
-        kind_params,
-        script_files,
-        language_code,
-        disc_names,
-        folder_slots,
-        villagers,
-        exact_to_loose,
-        script_prints,
-        siblings: sibling_maps(&script_strings, language_code),
-        triggers,
-        entries: names::Known::new(names::Entries::new()),
-        own_names: IndexMap::new(),
-        programs: programs.into_iter().collect(),
-        message_cache: Mutex::new(HashMap::new()),
-        sound_uses: Mutex::new(HashMap::new()),
-        reserved,
+        source: Source { root: root.to_path_buf(), defs: defs.clone(), tables: tables.clone() },
+        survey: Surveyed {
+            programs: programs.into_iter().collect(),
+            layouts,
+            script_prints: found.script_prints,
+            exact_to_loose: found.exact_to_loose,
+            script_files: found.script_files,
+            kind_params: found.kind_params,
+            siblings: sibling_maps(&found.script_strings, language_code),
+            triggers,
+        },
+        shared: Shared {
+            libraries,
+            class_names,
+            shapes: found.shapes,
+            entries: names::Known::new(names::Entries::new()),
+            own_names: IndexMap::new(),
+            reserved,
+        },
+        naming: Naming { contexts, asset_names, language_code, disc_names, folder_slots, villagers },
+        caches: Caches::default(),
     };
     Ok(with_globals(with_names(model)))
 }
 
 impl Model {
     fn script_messages(&self, path: &str) -> IndexMap<i64, String> {
-        let Some(code) = self.language_code else {
+        let Some(code) = self.naming.language_code else {
             return IndexMap::new();
         };
-        let files = self.script_files.get(path).cloned().unwrap_or_default();
-        let mut cache = self.message_cache.lock().unwrap();
-        messages::texts_for(&files, &self.root, code, &mut cache)
+        let files = self.survey.script_files.get(path).cloned().unwrap_or_default();
+        let mut cache = self.caches.messages.lock().unwrap();
+        messages::texts_for(&files, &self.source.root, code, &mut cache)
     }
 
     fn library_messages(&self, library: &Library) -> IndexMap<i64, String> {
@@ -755,7 +863,7 @@ impl Model {
         let mut agreed: IndexMap<String, String> = IndexMap::new();
         let mut clashing = HashSet::new();
         for path in &library.user_paths {
-            if let Some(pairs) = self.siblings.get(path) {
+            if let Some(pairs) = self.survey.siblings.get(path) {
                 for (text, english) in pairs {
                     let known = agreed.entry(text.clone()).or_insert_with(|| english.clone());
                     if known != english {
@@ -772,7 +880,8 @@ impl Model {
         &self,
         names_of: impl Fn(&str) -> Option<String>,
     ) -> HashMap<String, messages::ParamsByFunction> {
-        self.kind_params
+        self.survey
+            .kind_params
             .iter()
             .map(|(kind, positions)| {
                 let by_name =
@@ -785,20 +894,20 @@ impl Model {
     /// A library's source text.
     pub fn library_text(&self, library: &Library) -> Result<String> {
         let class_names: HashMap<String, String> =
-            self.class_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
+            self.shared.class_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
         let globals: HashMap<String, String> =
             library.globals.iter().map(|(slot, name)| (slot.clone(), name.clone())).collect();
         let mut functions = Vec::new();
         for fingerprint in &library.fingerprints {
-            let shape = &self.shapes[fingerprint];
+            let shape = &self.shared.shapes[fingerprint];
             let body = names::renamed_variables(&names::mapped(&shape["body"], &class_names)?, &globals);
             let mut function = shape.clone().with("name", class_names[fingerprint].clone()).with("body", body);
             if let Some(entry) = self.entry(fingerprint) {
-                function = names::with_variables(function, entry, &self.reserved);
+                function = names::with_variables(function, entry, &self.shared.reserved);
             }
             functions.push(function);
         }
-        let found = self.contexts.get(&library.table).and_then(Option::as_ref);
+        let found = self.naming.contexts.get(&library.table).and_then(Option::as_ref);
         let header = found.map(|_| sdk::header_name(&library.table));
         let params = self.named_kind_params(|print| class_names.get(print).cloned());
         if let Some(found) = found {
@@ -807,7 +916,7 @@ impl Model {
                 found,
                 &params,
                 &self.library_messages(library),
-                &self.disc_names,
+                &self.naming.disc_names,
             );
         }
         functions = notes::annotate_siblings(functions, &self.library_siblings(library));
@@ -815,29 +924,29 @@ impl Model {
         let numberings: HashSet<Option<String>> = library
             .user_paths
             .iter()
-            .map(|path| definitions::script_entry(&self.defs, path).and_then(sdk::numbering_of))
+            .map(|path| definitions::script_entry(&self.source.defs, path).and_then(sdk::numbering_of))
             .collect();
         let mut found = found.cloned();
         if numberings.len() == 1 {
             found = sdk::numbered(found, numberings.into_iter().next().unwrap().as_deref());
         }
         // sound banks the scripts that include the library pass it, when they agree
-        let uses = self.sound_uses.lock().unwrap().get(&library.path).cloned().unwrap_or_default();
+        let uses = self.caches.sound_uses.lock().unwrap().get(&library.path).cloned().unwrap_or_default();
         let mut sounds = sdk::Sounds { seed: Some(sdk::library_sounds(&uses)), ..sdk::Sounds::default() };
         // a library only the scripts of one map include names that map's villager slots
         let maps: BTreeSet<Option<&String>> =
-            library.user_paths.iter().map(|path| self.villagers.maps.get(path)).collect();
+            library.user_paths.iter().map(|path| self.naming.villagers.maps.get(path)).collect();
         let map = match maps.into_iter().collect::<Vec<_>>()[..] {
             [Some(map)] => Some(map.as_str()),
             _ => None,
         };
-        let found = slots::on_map(found, map, &self.villagers);
+        let found = slots::on_map(found, map, &self.naming.villagers);
         // and one that only the scripts of one folder include, that folder's slot names
         let folders: BTreeSet<String> = library.user_paths.iter().map(|path| slots::folder(path)).collect();
         let found = match (folders.len(), library.user_paths.first()) {
             (1, Some(user)) => {
-                let found = slots::in_folder(found, user, &self.folder_slots);
-                slots::with_loaded(found, &slots::folder(user), &self.villagers)
+                let found = slots::in_folder(found, user, &self.naming.folder_slots);
+                slots::with_loaded(found, &slots::folder(user), &self.naming.villagers)
             }
             _ => found,
         };
@@ -845,20 +954,20 @@ impl Model {
             Some(found) => sdk::present_functions(&functions, found, &params, &[], &mut sounds),
             None => functions,
         };
-        let presented = match (map.and_then(|map| self.villagers.notes.get(map)), &found) {
+        let presented = match (map.and_then(|map| self.naming.villagers.notes.get(map)), &found) {
             (Some(notes), Some(found)) => {
                 with_villager_notes(&presented, found, notes).as_array().cloned().unwrap_or_default()
             }
             _ => presented,
         };
-        let presented = notes::annotate_functions(presented, &self.defs.strings);
+        let presented = notes::annotate_functions(presented, &self.source.defs.strings);
         source::library_text(&library.table, &presented, header.as_deref(), &library.doc)
     }
 
     /// Every library's source text, by path.
     pub fn library_texts(&self) -> Result<IndexMap<String, String>> {
         use rayon::prelude::*;
-        let libraries: Vec<&Library> = self.libraries.values().collect();
+        let libraries: Vec<&Library> = self.shared.libraries.values().collect();
         let texts: Vec<(String, String)> = libraries
             .par_iter()
             .map(|library| Ok((library.path.clone(), self.library_text(library)?)))
@@ -872,7 +981,7 @@ impl Model {
         global_names: &HashMap<String, String>,
         passed: &Passed,
     ) {
-        let mut uses = self.sound_uses.lock().unwrap();
+        let mut uses = self.caches.sound_uses.lock().unwrap();
         for (library, functions) in hidden_by_library {
             let own: HashSet<&str> = functions.iter().map(|function| function.text("name")).collect();
             let used: HashSet<String> = names::global_uses(functions)
@@ -910,26 +1019,31 @@ impl Model {
             return Ok(program.clone());
         }
         let natives_name = program.text("natives").to_string();
-        let context = slots::in_folder(self.contexts.get(&natives_name).cloned().flatten(), path, &self.folder_slots);
-        let map = self.villagers.maps.get(path).map(String::as_str);
-        let context = slots::on_map(context, map, &self.villagers);
-        let context = slots::with_loaded(context, &slots::folder(path), &self.villagers);
+        let context = slots::in_folder(
+            self.naming.contexts.get(&natives_name).cloned().flatten(),
+            path,
+            &self.naming.folder_slots,
+        );
+        let map = self.naming.villagers.maps.get(path).map(String::as_str);
+        let context = slots::on_map(context, map, &self.naming.villagers);
+        let context = slots::with_loaded(context, &slots::folder(path), &self.naming.villagers);
         let program_names = context.as_ref().map(|context| context.program_names.clone()).unwrap_or_default();
         let found = names::fingerprints(program);
         let mut known: HashMap<String, String> =
-            self.own_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
-        known.extend(self.class_names.iter().map(|(print, name)| (print.clone(), name.clone())));
-        let mapping = names::assign(program, &found, &known, &self.reserved, &program_names);
+            self.shared.own_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
+        known.extend(self.shared.class_names.iter().map(|(print, name)| (print.clone(), name.clone())));
+        let mapping = names::assign(program, &found, &known, &self.shared.reserved, &program_names);
         let order: Vec<Option<String>> = program
             .list("functions")
             .iter()
             .map(|function| found.get(function.text("name")).cloned().flatten())
             .collect();
         let lookup = self.lookup();
-        let renamed = names::described(names::rename(program.clone(), &mapping)?, &order, &lookup, &self.reserved);
+        let renamed =
+            names::described(names::rename(program.clone(), &mapping)?, &order, &lookup, &self.shared.reserved);
         // the parameters that carry kinds, under the names the script gives the functions
         let mut params: HashMap<String, messages::ParamsByFunction> = HashMap::new();
-        for (kind, positions) in &self.kind_params {
+        for (kind, positions) in &self.survey.kind_params {
             let mut by_name = messages::ParamsByFunction::new();
             for (name, print) in &found {
                 if let Some(found_positions) = print.as_ref().and_then(|print| positions.get(print)) {
@@ -945,22 +1059,22 @@ impl Model {
                 context,
                 &params,
                 &self.script_messages(path),
-                &self.disc_names,
+                &self.naming.disc_names,
             );
         }
-        functions = notes::annotate_siblings(functions, self.siblings.get(path).unwrap_or(&HashMap::new()));
+        functions = notes::annotate_siblings(functions, self.survey.siblings.get(path).unwrap_or(&HashMap::new()));
         let renamed = renamed.with("functions", functions.clone());
         let mut included: HashMap<usize, (&Library, usize)> = HashMap::new();
         let mut forced: HashMap<String, String> = HashMap::new();
         let original_functions = program.list("functions");
-        for segment in self.layouts.get(path).into_iter().flatten() {
-            let Some(library) = self.libraries.get(&(natives_name.clone(), segment.fingerprints.clone())) else {
+        for segment in self.survey.layouts.get(path).into_iter().flatten() {
+            let Some(library) = self.shared.libraries.get(&(natives_name.clone(), segment.fingerprints.clone())) else {
                 continue;
             };
             let span = segment.start..segment.start + segment.fingerprints.len();
             let all_named = span.clone().all(|position| {
                 let name = original_functions[position].text("name");
-                found[name].as_ref().is_some_and(|print| self.class_names.get(print) == mapping.get(name))
+                found[name].as_ref().is_some_and(|print| self.shared.class_names.get(print) == mapping.get(name))
             });
             if all_named {
                 included.insert(segment.start, (library, span.len()));
@@ -989,7 +1103,7 @@ impl Model {
             position += count;
         }
         let split = renamed.with("functions", shown).with("padding_of", Node::Map(padding_of));
-        let entry = definitions::script_entry(&self.defs, path).cloned().unwrap_or_default();
+        let entry = definitions::script_entry(&self.source.defs, path).cloned().unwrap_or_default();
         let protected = names::global_uses(&hidden);
         let scripted = names::with_script(split.clone(), &entry, &protected, &forced);
         // the included code under the global names the script gives it, for the sound pass
@@ -1019,7 +1133,9 @@ impl Model {
         let mut sounds = sdk::Sounds { want_out: true, keys, ..sdk::Sounds::default() };
         let numbered = sdk::numbered(context, numbering.as_deref());
         let mut presented = sdk::present(scripted, numbered.as_ref(), &params, &shown_hidden, &mut sounds);
-        if let (Some(notes), Some(found)) = (map.and_then(|map| self.villagers.notes.get(map)), numbered.as_ref()) {
+        if let (Some(notes), Some(found)) =
+            (map.and_then(|map| self.naming.villagers.notes.get(map)), numbered.as_ref())
+        {
             presented =
                 presented.clone().with("functions", with_villager_notes(presented.list("functions"), found, notes));
         }
@@ -1027,7 +1143,7 @@ impl Model {
             self.record_sound_uses(&hidden_by_library, &global_names, passed);
         }
         let folder = slots::folder(path);
-        if let Some(triggers) = self.triggers.get(&folder).filter(|triggers| !triggers.is_empty()) {
+        if let Some(triggers) = self.survey.triggers.get(&folder).filter(|triggers| !triggers.is_empty()) {
             let programs: Vec<Node> = presented
                 .list("programs")
                 .iter()
@@ -1039,7 +1155,7 @@ impl Model {
                 .collect();
             presented = presented.with("programs", programs);
         }
-        Ok(notes::annotate(presented, &self.defs.strings))
+        Ok(notes::annotate(presented, &self.source.defs.strings))
     }
 }
 

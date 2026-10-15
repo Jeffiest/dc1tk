@@ -111,7 +111,7 @@ fn check_source(
     headers: &indexmap::IndexMap<String, String>,
     tables: &BTreeMap<String, Table>,
 ) -> Value {
-    let program = &model.programs[path];
+    let program = &model.survey.programs[path];
     let result = (|| -> dc2tk_script::Result<(String, dc2tk_script::node::Node, Vec<u8>)> {
         let text = source::text(&model.script_program(program, path)?)?;
         let options = parse::ParseOptions { headers: Some(headers), libraries: Some(texts), ..Default::default() };
@@ -195,8 +195,8 @@ pub fn verify(
     if let Some(text) = headers.get(disc::HEADER).cloned() {
         // the names a disc decompile adds to disc.h, which the presented scripts use
         let named = assets::with_header(
-            slots::with_header(Some(text), &model.folder_slots, &model.villagers),
-            &model.asset_names,
+            slots::with_header(Some(text), &model.naming.folder_slots, &model.naming.villagers),
+            &model.naming.asset_names,
         );
         headers.insert(disc::HEADER.to_string(), named.unwrap_or_default());
     }

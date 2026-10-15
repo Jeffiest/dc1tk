@@ -161,28 +161,28 @@ pub fn todo(
 ) -> Result<(Vec<Unnamed>, usize)> {
     let model = library::model_for(root, paths, tables, defs, headers)?;
     let known_entries = names::Known::new(names::merged(&defs.names));
-    let entries = known_entries.with_loose(&model.exact_to_loose);
+    let entries = known_entries.with_loose(&model.survey.exact_to_loose);
     let mut known: HashMap<String, String> =
-        model.own_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
-    known.extend(model.class_names.iter().map(|(print, name)| (print.clone(), name.clone())));
+        model.shared.own_names.iter().map(|(print, name)| (print.clone(), name.clone())).collect();
+    known.extend(model.shared.class_names.iter().map(|(print, name)| (print.clone(), name.clone())));
     let nobody = HashMap::new();
     let mut calls: HashMap<String, usize> = HashMap::new();
     let mut seen: IndexMap<String, (String, String)> = IndexMap::new();
     for path in paths {
         let table = natives::table_for(path, &defs.tables);
-        let program = &model.programs[path];
+        let program = &model.survey.programs[path];
         if program.get("asm").is_some() {
             continue;
         }
         let found = names::fingerprints(program);
-        let context = model.contexts.get(table).and_then(Option::as_ref);
+        let context = model.naming.contexts.get(table).and_then(Option::as_ref);
         let program_names = context.map_or(&nobody, |context| &context.program_names);
         let mapping = names::assign(program, &found, &known, model.reserved_names(), program_names);
         for function in program["functions"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
             let body = function.get("body").cloned().unwrap_or(Node::List(vec![]));
             for callee in names::callees(&body) {
                 if let Some(Some(exact)) = found.get(&callee) {
-                    *calls.entry(model.exact_to_loose[exact].clone()).or_default() += 1;
+                    *calls.entry(model.survey.exact_to_loose[exact].clone()).or_default() += 1;
                 }
             }
         }
@@ -191,7 +191,7 @@ pub fn todo(
                 continue;
             };
             if !entries.get(exact).is_some_and(|entry| entry.get("name").is_some()) {
-                let loose = model.exact_to_loose[exact].clone();
+                let loose = model.survey.exact_to_loose[exact].clone();
                 seen.entry(loose).or_insert_with(|| (path.clone(), mapping[name].clone()));
             }
         }
