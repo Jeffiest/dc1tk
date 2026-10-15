@@ -592,25 +592,8 @@ fn with_textures(mut pack: Vec<u8>, given: &[(String, Vec<u8>)], exported: &[(St
 /// A pack of the members, in order: each in its 0x50-byte slot, padded to 16 bytes, and an empty
 /// slot at the end.
 pub fn write_pack(members: &[(String, Vec<u8>)]) -> Result<Vec<u8>> {
-    let mut out = Vec::new();
-    for (name, data) in members {
-        let Some(raw) = dc2tk_disc::text::encode(name).filter(|raw| !raw.is_empty() && raw.len() < archive::PACK_NAME)
-        else {
-            bail!("{name} cannot be a member's name (1 to {} bytes of Shift-JIS)", archive::PACK_NAME - 1);
-        };
-        let pad = archive::padding(data.len());
-        let mut slot = vec![0u8; archive::PACK_SLOT];
-        slot[..raw.len()].copy_from_slice(&raw);
-        let size = i32::try_from(data.len()).map_err(|_| Error::invalid(format!("{name} is too big for a pack")))?;
-        slot[64..68].copy_from_slice(&(archive::PACK_SLOT as i32).to_le_bytes());
-        slot[68..72].copy_from_slice(&size.to_le_bytes());
-        slot[72..76].copy_from_slice(&((archive::PACK_SLOT + data.len() + pad) as i32).to_le_bytes());
-        out.extend(slot);
-        out.extend(data);
-        out.extend(std::iter::repeat_n(0, pad));
-    }
-    out.extend([0u8; archive::PACK_SLOT]);
-    Ok(out)
+    let members: Vec<(&str, &[u8])> = members.iter().map(|(name, data)| (name.as_str(), data.as_slice())).collect();
+    Ok(archive::write_pack(&members)?)
 }
 
 /// The statement tag a line of a cfg starts with (MODEL in `MODEL "a.mds";`).

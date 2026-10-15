@@ -49,11 +49,10 @@ pub fn replaced_member(data: &[u8], names: &[String], new: &[u8]) -> Result<Vec<
     let inner = replaced_member(member.data(data), rest, new)?;
     let entry = member.offset - archive::PACK_SLOT;
     let old_end = member.offset + member.size + archive::padding(member.size);
+    // the member's own slot, its name and tail kept
     let mut header = data[entry..member.offset].to_vec();
     let size = inner.len();
-    header[archive::PACK_NAME + 4..archive::PACK_NAME + 8].copy_from_slice(&(size as i32).to_le_bytes());
-    let next = archive::PACK_SLOT + size + archive::padding(size);
-    header[archive::PACK_NAME + 8..archive::PACK_NAME + 12].copy_from_slice(&(next as i32).to_le_bytes());
+    archive::resize_slot(&mut header, size)?;
     let mut out = Vec::with_capacity(data.len() - member.size + size);
     out.extend_from_slice(&data[..entry]);
     out.extend(header);
@@ -73,21 +72,8 @@ pub fn added_member(data: &[u8], names: &[String], name: &str, new: &[u8]) -> Re
     if member_named(&members, name, true).is_some() {
         return Err(Error::invalid(format!("the pack already has a member {name}")));
     }
-    let raw =
-        crate::text::encode(name).filter(|raw| !raw.is_empty() && raw.len() < archive::PACK_NAME).ok_or_else(|| {
-            Error::invalid(format!(
-                "{name} cannot be a member's name (1 to {} bytes of Shift-JIS)",
-                archive::PACK_NAME - 1
-            ))
-        })?;
-    let size = i32::try_from(new.len()).map_err(|_| Error::invalid(format!("{name} is too big for a pack")))?;
+    let slot = archive::write_slot(name, new.len())?;
     let pad = archive::padding(new.len());
-    let mut slot = vec![0u8; archive::PACK_SLOT];
-    slot[..raw.len()].copy_from_slice(&raw);
-    slot[archive::PACK_NAME..archive::PACK_NAME + 4].copy_from_slice(&(archive::PACK_SLOT as i32).to_le_bytes());
-    slot[archive::PACK_NAME + 4..archive::PACK_NAME + 8].copy_from_slice(&size.to_le_bytes());
-    slot[archive::PACK_NAME + 8..archive::PACK_NAME + 12]
-        .copy_from_slice(&((archive::PACK_SLOT + new.len() + pad) as i32).to_le_bytes());
     // the members, then the new one, then the empty slot that ends a pack
     let end = members.last().map_or(0, |member| member.offset + member.size + archive::padding(member.size));
     let mut grown = inner[..end].to_vec();

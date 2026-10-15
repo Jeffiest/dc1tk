@@ -4,9 +4,23 @@
 use crate::{iso, text, Error, Result};
 
 pub const INDEX_RECORD: usize = 12;
+/// What a new file takes in the index besides its path's bytes: its record, and the NUL that ends
+/// its name.
+pub const INDEX_COST_PER_FILE: usize = INDEX_RECORD + 1;
+
+// A pack chains its members, each in a slot of PACK_SLOT bytes: the name (cp932, ended by a NUL)
+// in the first PACK_NAME, then three i32s: where the member's data starts from the slot (always
+// PACK_SLOT, right after it), its size, and where the next slot starts (PACK_SLOT plus the size
+// padded to PACK_ALIGN); then 4 bytes the game does not read. A slot whose name starts with NUL
+// ends the pack.
 pub const PACK_NAME: usize = 64;
 pub const PACK_SLOT: usize = 0x50;
 pub const PACK_ALIGN: usize = 16;
+const SLOT_OFFSET: usize = PACK_NAME;
+const SLOT_SIZE: usize = PACK_NAME + 4;
+const SLOT_NEXT: usize = PACK_NAME + 8;
+/// Where a slot's last bytes, the ones the game does not read, start.
+pub const SLOT_TAIL: usize = PACK_NAME + 12;
 
 /// The engine reads DATA.HD4 into a buffer of this size (dataread.cpp, header_buff).
 pub const INDEX_LIMIT: usize = 0x50000;
@@ -165,20 +179,8 @@ pub fn pack_name(raw: &[u8]) -> Option<String> {
     Some(name)
 }
 
-/// The members of a pack, or None when the data is not one.
-/// A pack's members with their bytes, or None when the data is not a pack.
-pub fn parse_pack_with_data(data: &[u8]) -> Option<Vec<(String, &[u8])>> {
-    Some(
-        parse_pack(data)?
-            .into_iter()
-            .map(|member| {
-                let bytes = member.data(data);
-                (member.name, bytes)
-            })
-            .collect(),
-    )
-}
-
+/// The members of a pack, in order, with where each one's bytes are; or None when the data is not
+/// a pack (a slot that does not hold together, or no end slot right at the end).
 pub fn parse_pack(data: &[u8]) -> Option<Vec<Member>> {
     let mut members = Vec::new();
     let mut offset = 0usize;
@@ -190,9 +192,9 @@ pub fn parse_pack(data: &[u8]) -> Option<Vec<Member>> {
             return None;
         }
         let name = pack_name(&data[offset..offset + PACK_NAME])?;
-        let data_offset = i32_at(data, offset + PACK_NAME)? as i64;
-        let size = i32_at(data, offset + PACK_NAME + 4)? as i64;
-        let next_offset = i32_at(data, offset + PACK_NAME + 8)? as i64;
+        let data_offset = i32_at(data, offset + SLOT_OFFSET)? as i64;
+        let size = i32_at(data, offset + SLOT_SIZE)? as i64;
+        let next_offset = i32_at(data, offset + SLOT_NEXT)? as i64;
         let start = offset as i64 + data_offset;
         if data_offset != PACK_SLOT as i64 || size < 0 || start + size > data.len() as i64 {
             return None;
@@ -206,25 +208,130 @@ pub fn parse_pack(data: &[u8]) -> Option<Vec<Member>> {
     None
 }
 
+/// A pack's members with their bytes, or None when the data is not a pack.
+pub fn parse_pack_with_data(data: &[u8]) -> Option<Vec<(String, &[u8])>> {
+    Some(
+        parse_pack(data)?
+            .into_iter()
+            .map(|member| {
+                let bytes = member.data(data);
+                (member.name, bytes)
+            })
+            .collect(),
+    )
+}
+
+/// Sets a slot's numbers for a member of size bytes: its data right after the slot, its size, and
+/// the next slot after the data padded to PACK_ALIGN. The name and the tail stay.
+pub fn resize_slot(slot: &mut [u8], size: usize) -> Result<()> {
+    let next = i32::try_from(PACK_SLOT + size + padding(size))
+        .map_err(|_| Error::invalid(format!("a pack member of {size} bytes is more than a pack can hold")))?;
+    slot[SLOT_OFFSET..SLOT_OFFSET + 4].copy_from_slice(&(PACK_SLOT as i32).to_le_bytes());
+    slot[SLOT_SIZE..SLOT_SIZE + 4].copy_from_slice(&(size as i32).to_le_bytes());
+    slot[SLOT_NEXT..SLOT_NEXT + 4].copy_from_slice(&next.to_le_bytes());
+    Ok(())
+}
+
+/// A new member's name in cp932, as its slot holds it before the NUL.
+fn member_name(name: &str) -> Result<Vec<u8>> {
+    text::encode(name).filter(|raw| !raw.is_empty() && raw.len() < PACK_NAME).ok_or_else(|| {
+        Error::invalid(format!("{name} cannot be a member's name (1 to {} bytes of Shift-JIS)", PACK_NAME - 1))
+    })
+}
+
+/// The slot of a new member called name, of size bytes; its tail is zeros.
+pub fn write_slot(name: &str, size: usize) -> Result<[u8; PACK_SLOT]> {
+    let raw = member_name(name)?;
+    let mut slot = [0u8; PACK_SLOT];
+    slot[..raw.len()].copy_from_slice(&raw);
+    resize_slot(&mut slot, size).map_err(|_| Error::invalid(format!("{name} is too big for a pack")))?;
+    Ok(slot)
+}
+
+/// A pack of new members, in order, ended by an empty slot.
+pub fn write_pack(members: &[(&str, &[u8])]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    for (name, data) in members {
+        out.extend(write_slot(name, data.len())?);
+        out.extend_from_slice(data);
+        out.extend(std::iter::repeat_n(0, padding(data.len())));
+    }
+    out.extend([0u8; PACK_SLOT]);
+    Ok(out)
+}
+
+/// A member of a Pack: its bytes, and what its slot holds besides its numbers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PackMember {
+    pub name: String,
+    /// The slot's name field as it was: the name, a NUL, and whatever follows (some of the game's
+    /// packs have leftover bytes there, which Pack::write keeps).
+    pub raw_name: [u8; PACK_NAME],
+    /// The slot's last bytes, which the game does not read (Pack::write keeps them).
+    pub slot_tail: [u8; PACK_SLOT - SLOT_TAIL],
+    pub data: Vec<u8>,
+}
+
+impl PackMember {
+    /// A new member: the name in cp932, zeros after it and in the tail.
+    pub fn new(name: &str, data: Vec<u8>) -> Result<PackMember> {
+        let raw = member_name(name)?;
+        let mut raw_name = [0u8; PACK_NAME];
+        raw_name[..raw.len()].copy_from_slice(&raw);
+        Ok(PackMember { name: name.to_string(), raw_name, slot_tail: [0; PACK_SLOT - SLOT_TAIL], data })
+    }
+}
+
+/// A pack read whole, to change and write back byte for byte: its members in order, each with its
+/// slot's leftover bytes, and the slot that ends it as it was (its first byte is 0; the rest, which
+/// some of the game's packs fill, is kept).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pack {
+    pub members: Vec<PackMember>,
+    pub terminator: [u8; PACK_SLOT],
+}
+
+impl Pack {
+    /// The pack the data holds, or None when it is not one (as parse_pack decides).
+    pub fn read(data: &[u8]) -> Option<Pack> {
+        let members = parse_pack(data)?
+            .into_iter()
+            .map(|member| {
+                let slot = &data[member.offset - PACK_SLOT..member.offset];
+                PackMember {
+                    raw_name: slot[..PACK_NAME].try_into().unwrap(),
+                    slot_tail: slot[SLOT_TAIL..].try_into().unwrap(),
+                    data: member.data(data).to_vec(),
+                    name: member.name,
+                }
+            })
+            .collect();
+        Some(Pack { members, terminator: data[data.len() - PACK_SLOT..].try_into().unwrap() })
+    }
+
+    /// The pack's bytes: each member's slot, then its data padded to PACK_ALIGN with zeros, then
+    /// the end slot.
+    pub fn write(&self) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        for member in &self.members {
+            let mut slot = [0u8; PACK_SLOT];
+            slot[..PACK_NAME].copy_from_slice(&member.raw_name);
+            slot[SLOT_TAIL..].copy_from_slice(&member.slot_tail);
+            resize_slot(&mut slot, member.data.len())
+                .map_err(|_| Error::invalid(format!("{} is too big for a pack", member.name)))?;
+            out.extend(slot);
+            out.extend(&member.data);
+            out.extend(std::iter::repeat_n(0, padding(member.data.len())));
+        }
+        out.extend(self.terminator);
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn pack(members: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut out = Vec::new();
-        for (name, data) in members {
-            let mut slot = vec![0u8; PACK_SLOT];
-            slot[..name.len()].copy_from_slice(name.as_bytes());
-            slot[64..68].copy_from_slice(&(PACK_SLOT as i32).to_le_bytes());
-            slot[68..72].copy_from_slice(&(data.len() as i32).to_le_bytes());
-            slot[72..76].copy_from_slice(&((PACK_SLOT + data.len() + padding(data.len())) as i32).to_le_bytes());
-            out.extend(slot);
-            out.extend(*data);
-            out.extend(vec![0u8; padding(data.len())]);
-        }
-        out.extend(vec![0u8; PACK_SLOT]);
-        out
-    }
+    use crate::samples::pack;
 
     #[test]
     fn parses_a_pack() {
@@ -241,6 +348,42 @@ mod tests {
         assert!(parse_pack(b"plain text, no pack here, long enough to fill a slot of eighty bytes or more........")
             .is_none());
         assert!(parse_pack(&[0u8; PACK_SLOT]).is_none());
+    }
+
+    #[test]
+    fn a_slot_holds_name_offset_size_and_next() {
+        let slot = write_slot("info.cfg", 21).unwrap();
+        assert_eq!(&slot[..9], b"info.cfg\0");
+        let numbers: Vec<i32> = slot[64..76].chunks(4).map(|b| i32::from_le_bytes(b.try_into().unwrap())).collect();
+        assert_eq!(numbers, [0x50, 21, 0x50 + 32]);
+        assert_eq!(&slot[76..], [0; 4]);
+        assert!(write_slot("", 1).is_err());
+        assert!(write_slot(&"x".repeat(64), 1).is_err());
+        assert!(write_slot("big", i32::MAX as usize).is_err());
+    }
+
+    #[test]
+    fn a_pack_read_whole_writes_back_its_leftover_bytes() {
+        let mut data = pack(&[("a.hd", b"hello"), ("b.bd", &[1u8; 32])]);
+        // bytes after a name's NUL, in a slot's tail and in the end slot
+        data[10] = 0x55;
+        data[78] = 0x66;
+        let end = data.len() - PACK_SLOT;
+        data[end + 40] = 0x77;
+        let pack = Pack::read(&data).unwrap();
+        assert_eq!(pack.members.iter().map(|member| member.name.as_str()).collect::<Vec<_>>(), ["a.hd", "b.bd"]);
+        assert_eq!(pack.members[0].raw_name[10], 0x55);
+        assert_eq!(pack.members[0].slot_tail, [0, 0, 0x66, 0]);
+        assert_eq!(pack.write().unwrap(), data);
+        let mut grown = pack.clone();
+        grown.members[1].data.push(2);
+        grown.members.push(PackMember::new("c.vol", b"v".to_vec()).unwrap());
+        let written = grown.write().unwrap();
+        let members = parse_pack_with_data(&written).unwrap();
+        assert_eq!(members[1], ("b.bd".to_string(), [[1u8; 32].as_slice(), &[2]].concat().as_slice()));
+        assert_eq!(members[2], ("c.vol".to_string(), b"v".as_slice()));
+        assert_eq!(written[written.len() - PACK_SLOT + 40], 0x77);
+        assert_eq!(Pack::read(b"not a pack"), None);
     }
 
     #[test]
