@@ -89,7 +89,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
             }
             println!("{} scripts with globals or docs learned", result.scripts);
             for (path, error) in &result.failures {
-                println!("skipped {}: {}", files::python_path(&path.to_string_lossy()), error);
+                println!("skipped {}: {}", files::shown_path(&path.to_string_lossy()), error);
             }
             Ok(if result.failures.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
         }
@@ -109,14 +109,14 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
             let headers = sdk::header_texts(&defs, &common.sdk_dir())?;
             let renamed = constants::rename(set, old, new, &headers, folders)?;
             for file in &renamed.set_files {
-                println!("renamed in {}", files::python_path(&file.to_string_lossy()));
+                println!("renamed in {}", files::shown_path(&file.to_string_lossy()));
             }
             for (folder, changed) in &renamed.folders {
                 println!(
                     "{} file{} renamed in {}",
                     changed.len(),
                     if changed.len() == 1 { "" } else { "s" },
-                    files::python_path(&folder.to_string_lossy())
+                    files::shown_path(&folder.to_string_lossy())
                 );
             }
             Ok(ExitCode::SUCCESS)
@@ -127,7 +127,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
                     "{} file{} given new names in {}",
                     changed.len(),
                     if changed.len() == 1 { "" } else { "s" },
-                    files::python_path(&folder.to_string_lossy())
+                    files::shown_path(&folder.to_string_lossy())
                 );
             }
             Ok(ExitCode::SUCCESS)
@@ -137,7 +137,7 @@ pub fn run(command: &DefsCommand) -> Result<ExitCode> {
             let paths = files::find_scripts(extracted)?;
             let count = coverage::write_disc(extracted, &paths, into)?;
             let written = into.join(definitions::DISC);
-            println!("{} script hashes written to {}", count, files::python_path(&written.to_string_lossy()));
+            println!("{} script hashes written to {}", count, files::shown_path(&written.to_string_lossy()));
             Ok(ExitCode::SUCCESS)
         }
         DefsCommand::Todo { extracted, limit, common } => {

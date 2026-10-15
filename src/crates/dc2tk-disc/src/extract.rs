@@ -31,7 +31,7 @@ pub struct Manifest {
     pub boot: Option<String>,
 }
 
-/// Every file and pack member in the order the Python lists them, with its bytes.
+/// Every file and pack member with its bytes, depth first: a file, then its pack's members.
 fn walk<'a>(path: String, data: &'a [u8], depth: usize, out: &mut Vec<(String, &'a [u8], bool)>) {
     out.push((path.clone(), data, depth > 0));
     if depth >= MAX_PACK_DEPTH {
@@ -44,27 +44,6 @@ fn walk<'a>(path: String, data: &'a [u8], depth: usize, out: &mut Vec<(String, &
     }
 }
 
-/// Python's str.splitlines over ASCII text.
-fn lines(text: &str) -> Vec<&str> {
-    let breaks = ['\n', '\r', '\x0b', '\x0c', '\x1c', '\x1d', '\x1e'];
-    let mut out = Vec::new();
-    let mut rest = text;
-    while !rest.is_empty() {
-        match rest.find(|c| breaks.contains(&c)) {
-            Some(at) => {
-                out.push(&rest[..at]);
-                let skip = if rest[at..].starts_with("\r\n") { 2 } else { 1 };
-                rest = &rest[at + skip..];
-            }
-            None => {
-                out.push(rest);
-                break;
-            }
-        }
-    }
-    out
-}
-
 /// The boot executable SYSTEM.CNF names (SCES_511.90).
 pub fn boot_name(image: &[u8]) -> Result<Option<String>> {
     let Some(record) = iso::find(image, "SYSTEM.CNF")? else {
@@ -72,7 +51,7 @@ pub fn boot_name(image: &[u8]) -> Result<Option<String>> {
     };
     let text: String =
         iso::read_file(image, &record).iter().map(|&b| if b < 0x80 { b as char } else { '\u{FFFD}' }).collect();
-    for line in lines(&text) {
+    for line in text.lines() {
         if line.replace(' ', "").starts_with("BOOT2=") {
             let last = line.rsplit('\\').next().unwrap_or("");
             return Ok(Some(last.split(';').next().unwrap_or("").trim().to_string()));
@@ -160,21 +139,10 @@ pub fn extract(image: &[u8], out_dir: &Path) -> Result<Manifest> {
     // The manifest marks a finished extraction (setup reuses a folder that has one), so it is written
     // whole or not at all.
     let partial = out_dir.join("manifest.json.partial");
-    fs::write(&partial, python_json(&manifest)?).with_path("write", &partial)?;
+    fs::write(&partial, crate::textfile::json_text(&manifest)).with_path("write", &partial)?;
     let done = out_dir.join("manifest.json");
     fs::rename(&partial, &done).with_path("write", &done)?;
     Ok(manifest)
-}
-
-/// JSON as the Python tools write it: json.dumps(indent=1, ensure_ascii=False), with the line
-/// endings Path.write_text gives on this system.
-pub fn python_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    let mut out = Vec::new();
-    let formatter = serde_json::ser::PrettyFormatter::with_indent(b" ");
-    let mut serializer = serde_json::Serializer::with_formatter(&mut out, formatter);
-    value.serialize(&mut serializer).map_err(|error| crate::Error::invalid(error.to_string()))?;
-    let text = String::from_utf8(out).expect("serde_json writes UTF-8");
-    Ok(dc2tk_py::native_lines(&text).into_owned().into_bytes())
 }
 
 #[cfg(test)]
@@ -188,8 +156,6 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
         folder
     }
-
-    // tests/test_extract.py
 
     #[test]
     fn extracts_archive_and_packs() {
@@ -230,25 +196,22 @@ mod tests {
     }
 
     #[test]
-    fn splits_lines_as_python() {
-        assert_eq!(
-            lines("BOOT2 = cdrom0:\\SCES_511.90;1\r\nVER = 1.00\r\n"),
-            vec!["BOOT2 = cdrom0:\\SCES_511.90;1", "VER = 1.00"]
-        );
-        assert_eq!(lines("a\n\nb"), vec!["a", "", "b"]);
+    fn boot2_is_found_on_any_line_whatever_its_spacing() {
+        let cnf = b"VER = 1.00\r\nBOOT2=cdrom0:\\SCES_511.90;1\nVMODE = PAL\r\n";
+        let image = samples::iso_image(&[("SYSTEM.CNF", cnf)]);
+        assert_eq!(boot_name(&image).unwrap().as_deref(), Some("SCES_511.90"));
     }
 
     #[test]
-    fn json_matches_python_indent() {
+    fn the_manifest_is_pretty_json_with_text_as_it_is() {
         let manifest = Manifest {
             files: vec![FileItem { path: "a/モ.cfg".into(), size: 3, packed: false }],
             scripts: vec![],
             boot: None,
         };
-        let text = String::from_utf8(python_json(&manifest).unwrap()).unwrap().replace("\r\n", "\n");
         assert_eq!(
-            text,
-            "{\n \"files\": [\n  {\n   \"path\": \"a/モ.cfg\",\n   \"size\": 3,\n   \"packed\": false\n  }\n ],\n \"scripts\": [],\n \"boot\": null\n}"
+            crate::textfile::json_text(&manifest),
+            "{\n  \"files\": [\n    {\n      \"path\": \"a/モ.cfg\",\n      \"size\": 3,\n      \"packed\": false\n    }\n  ],\n  \"scripts\": [],\n  \"boot\": null\n}\n"
         );
     }
 }

@@ -967,7 +967,7 @@ pub fn compile_file(path: &std::path::Path, tools: &Toolchain, options: &Options
     let text = match options.text {
         Some(text) => text,
         None => {
-            owned = dc2tk_py::read_text(path)?;
+            owned = dc2tk_disc::textfile::read_text(path)?;
             &owned
         }
     };

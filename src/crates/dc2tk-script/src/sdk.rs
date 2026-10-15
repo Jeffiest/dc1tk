@@ -58,7 +58,7 @@ pub fn files_under(base: &Path, extension: &str) -> Vec<String> {
 
 /// Path.read_text(): UTF-8 with \r\n and \r read as \n.
 pub fn read_text(path: &Path) -> Result<String> {
-    Ok(dc2tk_py::read_text(path)?)
+    Ok(dc2tk_disc::textfile::read_text(path)?)
 }
 
 /// Every header under a folder, by path from it.

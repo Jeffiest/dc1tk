@@ -520,7 +520,7 @@ fn build_compiles_patched_scripts_and_override_starts_a_patch() {
         .unwrap()
         .added
         .is_empty());
-    dc2tk_py::write_text(&result.path, &text.replace("    wait;\n", "    wait;\n    wait;\n")).unwrap();
+    dc2tk_disc::textfile::write_text(&result.path, &text.replace("    wait;\n", "    wait;\n    wait;\n")).unwrap();
     let modules = [module];
     let plan = plan_of(&modules, &root).unwrap();
     let found = build::changes(&root, &iso_path, &tools.toolchain(), &IndexMap::new(), false, Some(&plan)).unwrap();

@@ -349,7 +349,7 @@ fn run_extract(iso: &Path, out: &str) -> Result<ExitCode> {
     let manifest = extract::extract(image.bytes(), Path::new(out))?;
     let packed = manifest.files.iter().filter(|item| item.packed).count();
     println!("{} files written to {} ({} from packs)", manifest.files.len(), out, packed);
-    println!("{} scripts listed in {}", manifest.scripts.len(), files::python_path(&format!("{out}/manifest.json")));
+    println!("{} scripts listed in {}", manifest.scripts.len(), files::shown_path(&format!("{out}/manifest.json")));
     Ok(ExitCode::SUCCESS)
 }
 
@@ -609,7 +609,7 @@ fn run_index_dump(tree: &Path, names: &[String], common: &Common) -> Result<Exit
         "constants": consts,
         "calls": calls,
     });
-    println!("{}", dc2tk_py::json::dumps(&dump, &dc2tk_py::json::Options::compact()));
+    println!("{dump}");
     Ok(ExitCode::SUCCESS)
 }
 
@@ -741,8 +741,7 @@ fn run(command: &Command) -> Result<ExitCode> {
             let report = verify::verify(extracted, &common.tables()?, defs, headers)?;
             println!("{}", verify::format_report(&report, *limit));
             if let Some(json) = json {
-                let options = dc2tk_py::json::Options { ensure_ascii: false, ..dc2tk_py::json::Options::indented(1) };
-                dc2tk_py::write_text(json, &dc2tk_py::json::dumps(&report, &options))?;
+                dc2tk_disc::textfile::write_text(json, &dc2tk_disc::textfile::json_text(&report))?;
             }
             Ok(if report["summary"]["ok"] == true { ExitCode::SUCCESS } else { ExitCode::from(1) })
         }

@@ -87,7 +87,7 @@ pub fn compile(
     tools: &Toolchain,
     constants: &IndexMap<String, i64>,
 ) -> Result<Vec<u8>> {
-    let text = dc2tk_py::read_text(&script.source)?;
+    let text = dc2tk_disc::textfile::read_text(&script.source)?;
     let plain = disc_path(&script.map, Some(language)).replace(".stb", crate::source::EXTENSION);
     let mut headers = tools.headers.clone();
     // the tree's own headers (disc.h), as a script of the tree at the map's place has them

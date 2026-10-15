@@ -338,8 +338,8 @@ pub fn generate(root: &Path, out_dir: &Path) -> Result<Vec<Generated>> {
     let mut tables = Vec::new();
     for spec in &SPECS {
         let table = build_with(&patterns, root, spec)?;
-        let text = dc2tk_py::json::dumps(&table, &dc2tk_py::json::Options::indented(1)) + "\n";
-        dc2tk_py::write_text(&out_dir.join(format!("{}.json", spec.table)), &text)?;
+        let text = dc2tk_disc::textfile::json_text(&table);
+        dc2tk_disc::textfile::write_text(&out_dir.join(format!("{}.json", spec.table)), &text)?;
         tables.push(table);
     }
     Ok(tables)
@@ -404,8 +404,8 @@ static RS_EXTFUNC_INFO ext_func_info[3] = {
         let root = std::env::temp_dir().join(format!("dc2tk-script-natives-{}", std::process::id()));
         fs::create_dir_all(root.join("src")).unwrap();
         fs::create_dir_all(root.join("include")).unwrap();
-        dc2tk_py::write_text(&root.join("src/test.cpp"), SOURCE).unwrap();
-        dc2tk_py::write_text(&root.join("include/test.hpp"), HEADER).unwrap();
+        dc2tk_disc::textfile::write_text(&root.join("src/test.cpp"), SOURCE).unwrap();
+        dc2tk_disc::textfile::write_text(&root.join("include/test.hpp"), HEADER).unwrap();
         let table = build_table(&root, &SPEC).unwrap();
         fs::remove_dir_all(&root).unwrap();
         assert_eq!(

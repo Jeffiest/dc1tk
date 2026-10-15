@@ -10,7 +10,6 @@ description = "Dark Chronicle's disc: the ISO 9660 image, DATA.HD4/DATA.DAT and 
 test-support = []
 
 [dependencies]
-dc2tk-py.workspace = true
 encoding_rs.workspace = true
 memmap2.workspace = true
 rayon.workspace = true

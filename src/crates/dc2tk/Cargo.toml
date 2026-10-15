@@ -13,7 +13,6 @@ path = "src/main.rs"
 dc2tk-assets.workspace = true
 dc2tk-disc.workspace = true
 dc2tk-script.workspace = true
-dc2tk-py.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 indexmap.workspace = true

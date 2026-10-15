@@ -150,7 +150,7 @@ pub fn record(image: &[u8], out_dir: &Path) -> Result<Layout> {
     let structure_path = out_dir.join(STRUCTURE);
     fs::write(&structure_path, structure).with_path("write", &structure_path)?;
     let layout_path = out_dir.join(LAYOUT);
-    fs::write(&layout_path, crate::extract::python_json(&layout)?).with_path("write", &layout_path)?;
+    fs::write(&layout_path, crate::textfile::json_text(&layout)).with_path("write", &layout_path)?;
     Ok(layout)
 }
 

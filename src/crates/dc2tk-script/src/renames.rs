@@ -38,7 +38,7 @@ pub fn read_lock(mod_dir: &Path) -> Result<Recorded> {
     if !path.is_file() {
         return Ok(found);
     }
-    let value: Value = serde_json::from_str(&dc2tk_py::read_text(&path)?)
+    let value: Value = serde_json::from_str(&dc2tk_disc::textfile::read_text(&path)?)
         .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?;
     for (patch, functions) in value.as_object().into_iter().flatten() {
         for (name, prints) in functions.as_object().into_iter().flatten() {
@@ -66,8 +66,8 @@ pub fn write_lock(mod_dir: &Path, recorded: &Recorded) -> Result<()> {
         }
         body.insert(patch.clone(), Value::Object(entries));
     }
-    let text = dc2tk_py::json::dumps(&Value::Object(body), &dc2tk_py::json::Options::indented(1)) + "\n";
-    dc2tk_py::write_text(&mod_dir.join(LOCK), &text)?;
+    let text = dc2tk_disc::textfile::json_text(&Value::Object(body));
+    dc2tk_disc::textfile::write_text(&mod_dir.join(LOCK), &text)?;
     Ok(())
 }
 
@@ -82,7 +82,7 @@ pub fn script_prints(
     let path = tree.join(script);
     let text = match overlay.get(script) {
         Some(text) => text.clone(),
-        None => dc2tk_py::read_text(&path)?,
+        None => dc2tk_disc::textfile::read_text(&path)?,
     };
     let program = parse::parse(&text)?;
     let mut headers = tools.headers.clone();
@@ -282,7 +282,7 @@ pub fn rename(mod_dir: &Path, followed: &[Followed]) -> Result<Vec<PathBuf>> {
             out = word.replace_all(&out, news[0]).into_owned();
         }
         if out != text {
-            dc2tk_py::write_text(&path, &out)?;
+            dc2tk_disc::textfile::write_text(&path, &out)?;
             changed.push(path);
         }
     }

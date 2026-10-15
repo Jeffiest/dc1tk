@@ -35,7 +35,7 @@ pub fn compiled(
     let text = match text {
         Some(text) => text,
         None => {
-            owned = dc2tk_py::read_text(source_path)?;
+            owned = dc2tk_disc::textfile::read_text(source_path)?;
             &owned
         }
     };

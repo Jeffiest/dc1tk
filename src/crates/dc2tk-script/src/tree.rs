@@ -46,7 +46,7 @@ pub fn tracked(tree: &Path) -> Vec<String> {
         };
         for entry in listing.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') || name == "__pycache__" {
+            if name.starts_with('.') {
                 continue;
             }
             let path = entry.path();
@@ -67,7 +67,7 @@ pub fn read_record(tree: &Path) -> Result<Option<serde_json::Value>> {
     if !path.is_file() {
         return Ok(None);
     }
-    let value = serde_json::from_str(&dc2tk_py::read_text(&path)?)
+    let value = serde_json::from_str(&dc2tk_disc::textfile::read_text(&path)?)
         .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?;
     Ok(Some(value))
 }
@@ -131,8 +131,8 @@ pub fn record(tree: &Path, paths: &[String], headers: Option<&str>, removed: &[S
             }
         }
     }
-    let text = dc2tk_py::json::dumps(&serde_json::Value::Object(entry), &dc2tk_py::json::Options::indented(1)) + "\n";
-    dc2tk_py::write_text(&tree.join(ORIGINALS), &text)?;
+    let text = dc2tk_disc::textfile::json_text(&serde_json::Value::Object(entry));
+    dc2tk_disc::textfile::write_text(&tree.join(ORIGINALS), &text)?;
     Ok(())
 }
 
@@ -276,7 +276,7 @@ pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Resul
     };
     let mut missing = Vec::new();
     for script in scripts {
-        if !dc2tk_py::read_text(&tree.join(script))?.split('\n').any(includes_library) {
+        if !dc2tk_disc::textfile::read_text(&tree.join(script))?.split('\n').any(includes_library) {
             missing.push(script.as_str());
         }
     }
@@ -287,17 +287,17 @@ pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Resul
             missing.join("\n  ")
         )));
     }
-    let text = dc2tk_py::read_text(&tree.join(library))?;
+    let text = dc2tk_disc::textfile::read_text(&tree.join(library))?;
     let header = format!(
         "// Copy of {} for {}, made by dc2tk fork. Other scripts still include the original.\n\n",
         library,
         scripts.join(", ")
     );
     fs::create_dir_all(tree.join(copy).parent().unwrap())?;
-    dc2tk_py::write_text(&tree.join(copy), &(header + &text))?;
+    dc2tk_disc::textfile::write_text(&tree.join(copy), &(header + &text))?;
     for script in scripts {
         let path = tree.join(script);
-        let lines: Vec<String> = dc2tk_py::read_text(&path)?
+        let lines: Vec<String> = dc2tk_disc::textfile::read_text(&path)?
             .split('\n')
             .map(|line| {
                 if includes_library(line) {
@@ -307,7 +307,7 @@ pub fn fork(tree: &Path, library: &str, copy: &str, scripts: &[String]) -> Resul
                 }
             })
             .collect();
-        dc2tk_py::write_text(&path, &lines.join("\n"))?;
+        dc2tk_disc::textfile::write_text(&path, &lines.join("\n"))?;
     }
     Ok(crate::index::includers(&crate::index::outlines(tree)?).get(library).cloned().unwrap_or_default())
 }

@@ -1045,7 +1045,7 @@ pub fn english_letters(
             let fail = |error: String| {
                 Error::invalid(format!("{} (mod {}) at {}: {error}", edit.key, edit.module, edit.place.display()))
             };
-            let written = dc2tk_py::read_text(source)?;
+            let written = dc2tk_disc::textfile::read_text(source)?;
             let original = index
                 .get(&reference.path.to_lowercase())
                 .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
@@ -1132,7 +1132,7 @@ pub fn apply_with(
             }
             3 => {
                 let Change::Text(source, reference) = &first.change else { unreachable!() };
-                let written = dc2tk_py::read_text(source)?;
+                let written = dc2tk_disc::textfile::read_text(source)?;
                 let original = index
                     .get(&reference.path.to_lowercase())
                     .and_then(|entry| rebuild::read_member(disc.read(image.bytes(), entry), &reference.members))
@@ -1356,7 +1356,7 @@ pub fn add_music(iso_path: &Path, lines: &[Line], files: &Files) -> Result<(File
 pub fn add_lines(mod_dir: &Path, new: &[(String, Value)]) -> Result<()> {
     let path = mod_dir.join(mods::INDEX);
     let mut body: serde_json::Map<String, Value> = if path.is_file() {
-        match serde_json::from_str(&dc2tk_py::read_text(&path)?) {
+        match serde_json::from_str(&dc2tk_disc::textfile::read_text(&path)?) {
             Ok(Value::Object(body)) => body,
             _ => return Err(Error::invalid(format!("{} is not a JSON object", path.display()))),
         }
@@ -1376,8 +1376,8 @@ pub fn add_lines(mod_dir: &Path, new: &[(String, Value)]) -> Result<()> {
     }
     body.insert(REPLACE.to_string(), Value::Object(listed));
     fs::create_dir_all(mod_dir)?;
-    let text = dc2tk_py::json::dumps(&Value::Object(body), &dc2tk_py::json::Options::indented(1).unicode()) + "\n";
-    dc2tk_py::write_text(&path, &text)?;
+    let text = dc2tk_disc::textfile::json_text(&Value::Object(body));
+    dc2tk_disc::textfile::write_text(&path, &text)?;
     Ok(())
 }
 

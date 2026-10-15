@@ -325,7 +325,7 @@ pub fn slim(
             scripts.insert(tree_path.clone());
         }
         let copy = mods::contents(&mod_dir, tree)?.get(&tree_path).cloned().unwrap_or_default();
-        let original = dc2tk_py::read_text(&joined(tree, &tree_path))?;
+        let original = dc2tk_disc::textfile::read_text(&joined(tree, &tree_path))?;
         let plain = pathnames::unnamed(tree, &tree_path)?;
         let kind = if library { "library" } else { "script" };
         let draft = match draft(name, &original, &copy, kind, &plain) {
@@ -346,7 +346,7 @@ pub fn slim(
         let changes = !draft.overrides.is_empty() || !draft.added.is_empty();
         let patch = changes.then(|| patch_path(&mod_dir, &tree_path));
         if let Some(patch) = &patch {
-            dc2tk_py::write_text(patch, &draft.text)?;
+            dc2tk_disc::textfile::write_text(patch, &draft.text)?;
         }
         let place = joined(&mod_dir.join(mods::FILES), &file);
         let held = fs::read(&place)?;

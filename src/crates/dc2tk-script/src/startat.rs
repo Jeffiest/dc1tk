@@ -290,7 +290,7 @@ pub fn warp_overrides(
         if new_game_script(&pathnames::unnamed(tree, &relative)?) {
             let text = match texts.get(&relative).filter(|text| !text.is_empty()) {
                 Some(text) => text.clone(),
-                None => dc2tk_py::read_text(&tree.join(&relative))?,
+                None => dc2tk_disc::textfile::read_text(&tree.join(&relative))?,
             };
             let Some(text) = patched_with(&text, target, warp) else {
                 return Err(Error::invalid(format!(

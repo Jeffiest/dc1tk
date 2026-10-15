@@ -27,7 +27,7 @@ fn compare(original: &[u8], rebuilt: &[u8]) -> Option<String> {
 }
 
 fn error(detail: impl std::fmt::Display) -> Value {
-    json!({"status": "error", "detail": format!("ValueError({:?})", detail.to_string())})
+    json!({"status": "error", "detail": detail.to_string()})
 }
 
 fn fail(detail: String) -> Value {
@@ -84,7 +84,7 @@ fn check_assembly(
                 let fallbacks = text
                     .split('\n')
                     .filter(|line| {
-                        let line = dc2tk_py::strip(line);
+                        let line = line.trim();
                         line.starts_with(".op ") || line.starts_with(".bytes ")
                     })
                     .count();
@@ -167,8 +167,7 @@ fn summarize(results: &[Value]) -> Value {
         }
     }
     let ok = STAGES.iter().all(|stage| counts[*stage]["fail"] == 0 && counts[*stage]["error"] == 0);
-    let coverage =
-        if covered.is_empty() { 0.0 } else { dc2tk_py::sum_floats(covered.iter().copied()) / covered.len() as f64 };
+    let coverage = if covered.is_empty() { 0.0 } else { covered.iter().sum::<f64>() / covered.len() as f64 };
     json!({
         "scripts": results.len(),
         "stages": counts,
@@ -263,8 +262,8 @@ pub fn format_report(report: &Value, limit: usize) -> String {
     }
     lines.push(String::new());
     lines.push(format!(
-        "format coverage: {}% of bytes parsed into known structures",
-        dc2tk_py::format_f(summary["coverage"].as_f64().unwrap_or(0.0) * 100.0, 1)
+        "format coverage: {:.1}% of bytes parsed into known structures",
+        summary["coverage"].as_f64().unwrap_or(0.0) * 100.0
     ));
     lines.push(format!("assembly fallbacks: {} raw .op or .bytes lines", summary["fallbacks"]));
     lines.push(format!(

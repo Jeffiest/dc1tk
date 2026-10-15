@@ -1277,7 +1277,7 @@ pub fn read_includes(
             for folder in folders {
                 let candidate = folder.join(&path);
                 if candidate.is_file() {
-                    found = Some(dc2tk_py::read_text(&candidate)?);
+                    found = Some(dc2tk_disc::textfile::read_text(&candidate)?);
                     break;
                 }
             }

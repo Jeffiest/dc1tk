@@ -34,7 +34,7 @@ fn kind_of(declared: &Node) -> String {
 /// A tree script's program with its libraries included, as build sees it before patches.
 pub fn script_program(tree: &Path, script: &str, tools: &Toolchain) -> Result<Node> {
     let path = tree.join(script);
-    let program = parse::parse(&dc2tk_py::read_text(&path)?)?;
+    let program = parse::parse(&dc2tk_disc::textfile::read_text(&path)?)?;
     let mut headers = tools.headers.clone();
     headers.extend(definitions::source_headers(&path)?);
     let includes = library::read_includes(&program, &path, None, tools.sdk_dir, &[])?;
@@ -130,7 +130,7 @@ pub fn header(patch_text: &str, patch_name: &str, tree: &Path, scripts: &Scripts
         else {
             continue;
         };
-        let text = dc2tk_py::read_text(&tree.join(model))?;
+        let text = dc2tk_disc::textfile::read_text(&tree.join(model))?;
         declared.add(&script_program(tree, model, tools)?, &text);
         read.push(format!("{model} (#pragma target {} {})", target.kind, target.values.join(" ")));
     }
@@ -196,19 +196,19 @@ pub fn write(
             let header_path = mod_dir.join(FOLDER).join(relative).with_extension("h");
             let name = relative.to_string_lossy().replace('\\', "/");
             std::fs::create_dir_all(header_path.parent().unwrap())?;
-            dc2tk_py::write_text(&header_path, &header(&text, &name, tree, &scripts, tools)?)?;
+            dc2tk_disc::textfile::write_text(&header_path, &header(&text, &name, tree, &scripts, tools)?)?;
             arguments.extend(["-include".to_string(), posix(&header_path)]);
             written.push(header_path);
         }
         arguments.push(posix(&path));
         commands.push(serde_json::json!({"directory": posix(mod_dir), "file": posix(&path), "arguments": arguments}));
     }
-    let text = dc2tk_py::json::dumps(&Value::Array(commands), &dc2tk_py::json::Options::indented(1)) + "\n";
-    dc2tk_py::write_text(&mod_dir.join(COMMANDS), &text)?;
+    let text = dc2tk_disc::textfile::json_text(&Value::Array(commands));
+    dc2tk_disc::textfile::write_text(&mod_dir.join(COMMANDS), &text)?;
     // the compile_flags.txt mod override wrote before: clang's tools other than clangd would take it
     // over compile_commands.json
     let flags = mod_dir.join(source::EDITOR_FLAGS);
-    if flags.is_file() && dc2tk_py::read_text(&flags)?.starts_with("-xc\n") {
+    if flags.is_file() && dc2tk_disc::textfile::read_text(&flags)?.starts_with("-xc\n") {
         std::fs::remove_file(&flags)?;
     }
     Ok(written)

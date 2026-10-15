@@ -205,7 +205,6 @@ dependencies = [
  "clap",
  "dc2tk-assets",
  "dc2tk-disc",
- "dc2tk-py",
  "dc2tk-script",
  "indexmap",
  "mimalloc",
@@ -231,7 +230,6 @@ dependencies = [
 name = "dc2tk-disc"
 version = "0.1.0"
 dependencies = [
- "dc2tk-py",
  "encoding_rs",
  "memmap2",
  "rayon",

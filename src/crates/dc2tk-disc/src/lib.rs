@@ -13,6 +13,7 @@ pub mod rebuild;
 #[cfg(any(test, feature = "test-support"))]
 pub mod samples;
 pub mod text;
+pub mod textfile;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

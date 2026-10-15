@@ -1,6 +1,5 @@
-//! Small discs, file indexes, packs and a script built in memory, for tests: the port of the
-//! Python tests' build.py. Built for this crate's tests, and for other crates' with the
-//! test-support feature (which they enable in their dev-dependencies).
+//! Small discs, file indexes, packs and a script built in memory, for tests: this crate's, and other
+//! crates' with the test-support feature (which they enable in their dev-dependencies).
 
 use crate::{archive, iso, text};
 
@@ -168,8 +167,6 @@ pub fn sample_disc() -> Vec<u8> {
 mod tests {
     use super::*;
 
-    // tests/test_iso.py
-
     fn small_disc() -> Vec<u8> {
         iso_image(&[("DATA.HD4", b"index"), ("DATA.DAT", &[b'x'; 5000])])
     }
@@ -197,8 +194,6 @@ mod tests {
     fn rejects_non_iso() {
         assert!(iso::root_record(&[0u8; 40000]).is_err());
     }
-
-    // tests/test_archive.py
 
     #[test]
     fn parses_index_with_backslash_paths() {

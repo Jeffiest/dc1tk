@@ -79,12 +79,12 @@ impl Tools {
 pub fn write(root: &Path, relative: &str, text: &str) -> PathBuf {
     let path = root.join(relative);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    dc2tk_py::write_text(&path, text).unwrap();
+    dc2tk_disc::textfile::write_text(&path, text).unwrap();
     path
 }
 
 pub fn read(path: &Path) -> String {
-    dc2tk_py::read_text(path).unwrap()
+    dc2tk_disc::textfile::read_text(path).unwrap()
 }
 
 /// tests.test_index.tree: the files written under folder/tree.

@@ -131,7 +131,7 @@ pub fn monster_scripts(tree: &Path) -> Result<HashMap<String, String>> {
     let path = tree.join("include").join("disc.h");
     let mut found = HashMap::new();
     if path.is_file() {
-        for capture in line.captures_iter(&dc2tk_py::read_text(&path)?) {
+        for capture in line.captures_iter(&dc2tk_disc::textfile::read_text(&path)?) {
             found.insert(capture[1].to_string(), capture[3].to_string());
             found.entry(capture[2].to_string()).or_insert_with(|| capture[3].to_string());
         }
@@ -1261,7 +1261,7 @@ pub fn function_texts(tree: &Path, script: &str, wanted: &[String]) -> Result<In
             continue;
         }
         seen.insert(path.clone());
-        let text = dc2tk_py::read_text(&tree.join(&path))?;
+        let text = dc2tk_disc::textfile::read_text(&tree.join(&path))?;
         for name in wanted {
             if !found.contains_key(name) {
                 if let Some(piece) = function_text(&text, name) {

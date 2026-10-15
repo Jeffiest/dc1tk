@@ -219,9 +219,8 @@ pub fn write_disc(root: &Path, paths: &[String], directory: &Path) -> Result<usi
     found.sort();
     let scripts: serde_json::Map<String, serde_json::Value> =
         found.iter().map(|(path, hash)| (path.clone(), serde_json::Value::from(hash.as_str()))).collect();
-    let text =
-        dc2tk_py::json::dumps(&serde_json::json!({"scripts": scripts}), &dc2tk_py::json::Options::indented(1)) + "\n";
-    dc2tk_py::write_text(&directory.join(definitions::DISC), &text)?;
+    let text = dc2tk_disc::textfile::json_text(&serde_json::json!({"scripts": scripts}));
+    dc2tk_disc::textfile::write_text(&directory.join(definitions::DISC), &text)?;
     Ok(found.len())
 }
 

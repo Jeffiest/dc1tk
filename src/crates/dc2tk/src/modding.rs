@@ -354,7 +354,7 @@ fn missing_loads(
     let mut out = Vec::new();
     for (module, shown, text, scripts) in texts {
         let originals: Vec<String> =
-            scripts.iter().filter_map(|script| dc2tk_py::read_text(&tree_dir.join(script)).ok()).collect();
+            scripts.iter().filter_map(|script| dc2tk_disc::textfile::read_text(&tree_dir.join(script)).ok()).collect();
         for (load, problem) in loads::check(&loads::loads(&text, consts), &known, &members) {
             let literal = format!("\"{}\"", load.name);
             if originals.iter().any(|original| original.contains(&literal)) {
@@ -993,7 +993,7 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
             let mod_dir = mods::folder(mods_dir, name)?;
             let found = migrate::migrate(&mod_dir, iso, &asset_tree::index_of(iso, defs)?)?;
             for (key, value) in &found.lines {
-                println!("{key}: {}", dc2tk_py::json::dumps(value, &dc2tk_py::json::Options::plain().unicode()));
+                println!("{key}: {value}");
             }
             for note in &found.notes {
                 println!("note: {note}");

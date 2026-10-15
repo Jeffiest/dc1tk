@@ -69,7 +69,7 @@ pub fn folder(mods_dir: &Path, name: &str) -> Result<PathBuf> {
 pub fn entries(mod_dir: &Path) -> Result<Value> {
     let path = mod_dir.join(INDEX);
     let mut found = if path.is_file() {
-        serde_json::from_str(&dc2tk_py::read_text(&path)?)
+        serde_json::from_str(&dc2tk_disc::textfile::read_text(&path)?)
             .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?
     } else {
         Value::Object(Default::default())
@@ -219,7 +219,7 @@ pub fn sources(mod_dir: &Path) -> Result<Vec<(PathBuf, String)>> {
             && !hidden
         {
             let path = joined(mod_dir, &relative);
-            let text = dc2tk_py::read_text(&path)?;
+            let text = dc2tk_disc::textfile::read_text(&path)?;
             found.push((path, text));
         }
     }
@@ -290,7 +290,7 @@ pub fn override_functions(
         .unwrap_or(&chosen[0])
         .clone();
     let mut found = patches::function_texts(tree_dir, &model, functions)?;
-    let model_text = dc2tk_py::read_text(&tree_dir.join(&model))?;
+    let model_text = dc2tk_disc::textfile::read_text(&tree_dir.join(&model))?;
     let included: Vec<String> = Regex::new(r"(?m)^#include\s*<([^>]+)>")
         .unwrap()
         .captures_iter(&model_text)
@@ -339,7 +339,7 @@ pub fn override_functions(
     let path = mod_dir.join(format!("{safe}{}", source::EXTENSION));
     fs::create_dir_all(path.parent().unwrap())?;
     let mut text = if path.is_file() {
-        dc2tk_py::read_text(&path)?
+        dc2tk_disc::textfile::read_text(&path)?
     } else {
         patches::patch_header(&name_of(mod_dir), kind, value, &model_text)
     };
@@ -359,7 +359,7 @@ pub fn override_functions(
         };
         text = format!("{}\n\n{}\n", text.trim_end_matches('\n'), piece.trim_end_matches('\n'));
     }
-    dc2tk_py::write_text(&path, &text)?;
+    dc2tk_disc::textfile::write_text(&path, &text)?;
     Ok(Overridden { path, added, scripts: chosen })
 }
 
@@ -458,8 +458,8 @@ pub fn write_entries(mod_dir: &Path, found: &Value) -> Result<()> {
                 of the tree's; dc2tk mod apply copies them into a tree.";
     let mut body = found.clone();
     body["note"] = note.into();
-    let text = dc2tk_py::json::dumps(&sorted_keys(&body), &dc2tk_py::json::Options::indented(1)) + "\n";
-    dc2tk_py::write_text(&mod_dir.join(INDEX), &text)?;
+    let text = dc2tk_disc::textfile::json_text(&sorted_keys(&body));
+    dc2tk_disc::textfile::write_text(&mod_dir.join(INDEX), &text)?;
     Ok(())
 }
 
@@ -483,7 +483,7 @@ pub fn mod_files(mod_dir: &Path) -> Vec<String> {
 pub fn write_editor_flags(mod_dir: &Path, tree_dir: &Path, sdk_dir: &Path, definition_sets: &[PathBuf]) -> Result<()> {
     let root = mod_dir.join(FILES);
     fs::create_dir_all(&root)?;
-    dc2tk_py::write_text(
+    dc2tk_disc::textfile::write_text(
         &root.join(source::EDITOR_FLAGS),
         &source::editor_flags(sdk_dir, definition_sets, Some(tree_dir)),
     )?;
@@ -510,7 +510,7 @@ pub fn add(tree_dir: &Path, mod_dir: &Path, paths: &[String], overwrite: bool) -
             "unnamed": pathnames::unnamed(tree_dir, path)?,
         });
         if path.ends_with(source::EXTENSION) {
-            for capture in index::include_pattern().captures_iter(&dc2tk_py::read_text(&target)?) {
+            for capture in index::include_pattern().captures_iter(&dc2tk_disc::textfile::read_text(&target)?) {
                 found["includes"][&capture[1]] = pathnames::unnamed(tree_dir, &capture[1])?.into();
             }
         }
@@ -582,7 +582,7 @@ pub fn contents(mod_dir: &Path, tree_dir: &Path) -> Result<IndexMap<String, Stri
     }
     let mut result = IndexMap::new();
     for (path, target) in targets(mod_dir, tree_dir)? {
-        let text = dc2tk_py::read_text(&joined(&mod_dir.join(FILES), &path))?;
+        let text = dc2tk_disc::textfile::read_text(&joined(&mod_dir.join(FILES), &path))?;
         let text = if path.ends_with(source::EXTENSION) { with_includes(&text, &includes, tree_dir)? } else { text };
         result.insert(target, text);
     }
@@ -664,7 +664,7 @@ pub fn overlay(
                 if additions::matches(addition, &plain) {
                     let base = match texts.get(path) {
                         Some(text) => text.clone(),
-                        None => dc2tk_py::read_text(&joined(tree_dir, path))?,
+                        None => dc2tk_disc::textfile::read_text(&joined(tree_dir, path))?,
                     };
                     let text = additions::applied(&base, addition, &name_of(mod_dir), consts, &place)?;
                     texts.insert(path.clone(), text);
@@ -696,7 +696,7 @@ pub fn apply(
         tree::status(tree_dir)?.map(|found| found.edited.into_iter().chain(found.added).collect()).unwrap_or_default();
     let mut conflicts = Vec::new();
     for (path, text) in &texts {
-        if edited.contains(path) && dc2tk_py::read_text(&joined(tree_dir, path))? != *text {
+        if edited.contains(path) && dc2tk_disc::textfile::read_text(&joined(tree_dir, path))? != *text {
             conflicts.push(path.clone());
         }
     }
@@ -711,7 +711,7 @@ pub fn apply(
     for (path, text) in &texts {
         let target = joined(tree_dir, path);
         fs::create_dir_all(target.parent().unwrap())?;
-        dc2tk_py::write_text(&target, text)?;
+        dc2tk_disc::textfile::write_text(&target, text)?;
     }
     let mut warnings = Vec::new();
     for mod_dir in mod_dirs {
@@ -891,7 +891,7 @@ pub fn run_tests(
     let standing_in = tree_dir.join(TESTS);
     let mut headers = tools.headers.clone();
     headers.extend(crate::definitions::source_headers(&standing_in)?);
-    let text = dc2tk_py::read_text(&path)?;
+    let text = dc2tk_disc::textfile::read_text(&path)?;
     let extra = [mod_dir.to_path_buf(), mods_dir.clone()];
     let libraries = crate::library::include_texts(&text, &standing_in, Some(&texts), tools.sdk_dir, &extra)?;
     let defines = std::collections::HashMap::new();

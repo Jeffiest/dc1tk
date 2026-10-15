@@ -118,7 +118,7 @@ pub fn script_entries(
     rules: &[(String, String)],
     sdk_dir: &Path,
 ) -> Result<ScriptEntries> {
-    let program = parse::parse(&dc2tk_py::read_text(path)?)?;
+    let program = parse::parse(&dc2tk_disc::textfile::read_text(path)?)?;
     if program.get("asm").is_some() {
         return Ok(ScriptEntries {
             table: None,
@@ -354,14 +354,14 @@ fn disc_path(path: &Path, source: &Path) -> Result<String> {
 }
 
 fn read_json(path: &Path) -> Result<Node> {
-    let value: serde_json::Value = serde_json::from_str(&dc2tk_py::read_text(path)?)
+    let value: serde_json::Value = serde_json::from_str(&dc2tk_disc::textfile::read_text(path)?)
         .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?;
     Ok(Node::from(value))
 }
 
 fn write_json(path: &Path, value: &Node) -> Result<()> {
-    let text = dc2tk_py::json::dumps(value, &dc2tk_py::json::Options::indented(1).unicode()) + "\n";
-    Ok(dc2tk_py::write_text(path, &text)?)
+    let text = dc2tk_disc::textfile::json_text(value);
+    Ok(dc2tk_disc::textfile::write_text(path, &text)?)
 }
 
 fn write_script(target: &Path, path: &str, entry: &Node) -> Result<()> {

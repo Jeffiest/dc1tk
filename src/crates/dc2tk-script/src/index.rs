@@ -533,7 +533,7 @@ pub fn code(path: &Path) -> Result<Arc<String>> {
     if let Some(found) = cache.lock().unwrap().get(&key) {
         return Ok(found.clone());
     }
-    let text = Arc::new(without_comments(&dc2tk_py::read_text(path)?));
+    let text = Arc::new(without_comments(&dc2tk_disc::textfile::read_text(path)?));
     cache.lock().unwrap().insert(key, text.clone());
     Ok(text)
 }

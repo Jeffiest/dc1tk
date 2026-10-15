@@ -503,14 +503,9 @@ pub struct Summary {
 /// Writes a file of the tree, by its path in the tree ("/" between parts).
 pub type Write<'w> = dyn Fn(&str, &[u8]) -> Result<()> + Sync + 'w;
 
-/// The manifest's JSON text: one-space indents, as extract writes its manifest, and \n line ends.
+/// The manifest's JSON text, as the tools write every JSON file (dc2tk_disc::textfile::json_text).
 pub fn manifest_text(manifest: &Value) -> Vec<u8> {
-    let mut out = Vec::new();
-    let formatter = serde_json::ser::PrettyFormatter::with_indent(b" ");
-    let mut serializer = serde_json::Serializer::with_formatter(&mut out, formatter);
-    serde::Serialize::serialize(manifest, &mut serializer).expect("a JSON value serializes");
-    out.push(b'\n');
-    out
+    dc2tk_disc::textfile::json_text(manifest).into_bytes()
 }
 
 /// The disc's texture files, character packs and banks grouped into distinct contents and named:

@@ -139,7 +139,7 @@ pub type Lock = BTreeMap<String, IndexMap<String, i64>>;
 
 pub fn read_lock(path: Option<&Path>) -> Result<Lock> {
     let value: serde_json::Value = match path.filter(|path| path.is_file()) {
-        Some(path) => serde_json::from_str(&dc2tk_py::read_text(path)?)
+        Some(path) => serde_json::from_str(&dc2tk_disc::textfile::read_text(path)?)
             .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?,
         None => serde_json::Value::Null,
     };
@@ -168,8 +168,8 @@ pub fn write_lock(path: &Path, lock: &Lock) -> Result<()> {
         }
     }
     body.insert("note".into(), note.into());
-    let text = dc2tk_py::json::dumps(&serde_json::Value::Object(body), &dc2tk_py::json::Options::indented(1)) + "\n";
-    dc2tk_py::write_text(path, &text)?;
+    let text = dc2tk_disc::textfile::json_text(&serde_json::Value::Object(body));
+    dc2tk_disc::textfile::write_text(path, &text)?;
     Ok(())
 }
 

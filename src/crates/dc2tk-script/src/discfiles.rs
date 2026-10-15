@@ -67,7 +67,7 @@ impl Converter {
             ".png" => dc2tk_assets::textures::build(source, original),
             ".wav" => dc2tk_assets::sounds::build(source, original),
             ".mid" => dc2tk_assets::music::build_bank(source, original),
-            ".txt" => dc2tk_py::read_text(source)
+            ".txt" => dc2tk_disc::textfile::read_text(source)
                 .map_err(dc2tk_assets::Error::from)
                 .and_then(|written| text::build(&written, original, original, path, fonts))
                 .and_then(|built| {

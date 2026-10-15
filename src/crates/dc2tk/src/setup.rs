@@ -42,12 +42,12 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
         let image = Image::open(&args.iso)?;
         if !extracted.join("manifest.json").is_file() {
             let manifest = extract::extract(image.bytes(), extracted)?;
-            println!("{} files extracted to {}", manifest.files.len(), files::python_path(&args.extracted));
+            println!("{} files extracted to {}", manifest.files.len(), files::shown_path(&args.extracted));
         } else {
             extract::extract_boot(image.bytes(), extracted)?;
             if !extracted.join(dc2tk_disc::layout::LAYOUT).is_file() {
                 dc2tk_disc::layout::record(image.bytes(), extracted)?;
-                println!("the disc's other files and layout written to {}", files::python_path(&args.extracted));
+                println!("the disc's other files and layout written to {}", files::shown_path(&args.extracted));
             }
         }
     }
@@ -83,7 +83,7 @@ pub fn run_natives(args: &NativesArgs) -> Result<ExitCode> {
         other => other?,
     };
     for table in &tables {
-        let path = files::python_path(&format!("{out}/{}.json", table.table));
+        let path = files::shown_path(&format!("{out}/{}.json", table.table));
         println!("{:<8} {:>4} natives  {}", table.table, table.natives.len(), path);
     }
     Ok(ExitCode::SUCCESS)
@@ -135,7 +135,7 @@ mod tests {
         let folder = scratch("edits");
         let out = decompiled(&folder, false).unwrap();
         decompiled(&folder, false).unwrap();
-        dc2tk_py::write_text(&out.join("map/t01.c"), "// mine\n").unwrap();
+        dc2tk_disc::textfile::write_text(&out.join("map/t01.c"), "// mine\n").unwrap();
         let error = decompiled(&folder, false).expect_err("decompile should refuse to overwrite an edit");
         assert!(error.to_string().contains("map/t01.c"));
         assert_eq!(files::read_text(&out.join("map/t01.c")).unwrap(), "// mine\n");

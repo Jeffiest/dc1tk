@@ -1,4 +1,4 @@
-//! Where the tools' data is, and reading and writing text as the Python tools do.
+//! Where the tools' data is, reading and writing text, and paths as messages show them.
 
 use std::fs;
 use std::io::Write;
@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-/// The repository folder: $DC2TK_ROOT (or $C2_ROOT, its name before the rename), or the nearest
-/// folder above the executable that has definitions/ (dc2tk runs from build/release).
+/// The repository folder: $DC2TK_ROOT, or the nearest folder above the executable that has
+/// definitions/ (dc2tk runs from build/release).
 pub fn root() -> PathBuf {
-    if let Some(root) = std::env::var_os("DC2TK_ROOT").or_else(|| std::env::var_os("C2_ROOT")) {
+    if let Some(root) = std::env::var_os("DC2TK_ROOT") {
         return PathBuf::from(root);
     }
     if let Ok(exe) = std::env::current_exe() {
@@ -32,8 +32,9 @@ pub fn default_defs() -> PathBuf {
     root().join("definitions").join("pal")
 }
 
-/// A path as Python's pathlib prints it on this system.
-pub fn python_path(path: &str) -> String {
+/// A path as messages show it. On Windows that is with \ throughout, so a path the tools joined
+/// with "/" reads as one path, and without empty or "." parts; elsewhere it is as it is.
+pub fn shown_path(path: &str) -> String {
     if !cfg!(windows) {
         return path.to_string();
     }
@@ -47,14 +48,13 @@ pub fn python_path(path: &str) -> String {
     }
 }
 
-/// Path.read_text() (dc2tk_py::read_text), naming the file when it cannot be read.
+/// A text file (dc2tk_disc::textfile::read_text), naming the file when it cannot be read.
 pub fn read_text(path: &Path) -> Result<String> {
-    dc2tk_py::read_text(path).with_context(|| format!("cannot read {}", path.display()))
+    dc2tk_disc::textfile::read_text(path).with_context(|| format!("cannot read {}", path.display()))
 }
 
-/// Path.write_text(), or standard output when there is no path.
+/// Writes text to a file, or to standard output when there is no path.
 pub fn write_output(path: Option<&Path>, text: &str) -> Result<()> {
-    let text = dc2tk_py::native_lines(text);
     match path {
         Some(path) => fs::write(path, text.as_bytes()).with_context(|| format!("cannot write {}", path.display())),
         None => {
@@ -106,6 +106,6 @@ pub fn rename_hint<'a>(sets: &[PathBuf], errors: impl IntoIterator<Item = &'a st
     Some(format!(
         "note: renamed since the tree was made: {}; dc2tk defs migrate {} gives it the new names",
         names.join(", "),
-        python_path(&tree.to_string_lossy())
+        shown_path(&tree.to_string_lossy())
     ))
 }

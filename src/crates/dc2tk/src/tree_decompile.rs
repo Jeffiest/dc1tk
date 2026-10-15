@@ -44,7 +44,7 @@ fn write(out: &Path, relative: &str, text: &str) -> Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    dc2tk_py::write_text(&target, text)?;
+    dc2tk_disc::textfile::write_text(&target, text)?;
     Ok(())
 }
 
@@ -161,7 +161,7 @@ pub fn run(
         "{} scripts and {} library files written to {}",
         paths.len(),
         library_paths.len(),
-        files::python_path(&out.to_string_lossy())
+        files::shown_path(&out.to_string_lossy())
     );
     Ok(())
 }

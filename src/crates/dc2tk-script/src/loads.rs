@@ -368,7 +368,7 @@ void other(void)
         let mut problems = Vec::new();
         let mut total = 0;
         for relative in index::source_files(&tree) {
-            let text = dc2tk_py::read_text(&tree.join(&relative)).unwrap();
+            let text = dc2tk_disc::textfile::read_text(&tree.join(&relative)).unwrap();
             let found = loads(&text, &IndexMap::new());
             total += found.len();
             for (load, problem) in check(&found, &known, &members) {

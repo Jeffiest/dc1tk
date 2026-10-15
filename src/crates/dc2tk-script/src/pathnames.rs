@@ -146,7 +146,7 @@ fn read_paths(path: &Path) -> Result<IndexMap<String, String>> {
     if !path.is_file() {
         return Ok(IndexMap::new());
     }
-    let value: serde_json::Value = serde_json::from_str(&dc2tk_py::read_text(path)?)
+    let value: serde_json::Value = serde_json::from_str(&dc2tk_disc::textfile::read_text(path)?)
         .map_err(|error| Error::invalid(format!("{}: {error}", path.display())))?;
     Ok(value["paths"]
         .as_object()
@@ -166,7 +166,7 @@ pub fn record(tree: &Path, renamed: &IndexMap<String, String>) -> Result<()> {
     let note =
         "The path each renamed file would have without readable names; for a script, its disc path. Do not edit.";
     let value = serde_json::json!({"note": note, "paths": known});
-    dc2tk_py::write_text(&path, &(dc2tk_py::json::dumps(&value, &dc2tk_py::json::Options::indented(1)) + "\n"))?;
+    dc2tk_disc::textfile::write_text(&path, &(dc2tk_disc::textfile::json_text(&value)))?;
     Ok(())
 }
 
