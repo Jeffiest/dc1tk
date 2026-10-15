@@ -5,7 +5,12 @@ edition.workspace = true
 license.workspace = true
 description = "Dark Chronicle's disc: the ISO 9660 image, DATA.HD4/DATA.DAT and the game's packs"
 
+[features]
+# samples: small discs, indexes and packs built in memory, for other crates' tests
+test-support = []
+
 [dependencies]
+dc2tk-py.workspace = true
 encoding_rs.workspace = true
 memmap2.workspace = true
 rayon.workspace = true

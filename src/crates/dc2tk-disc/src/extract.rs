@@ -173,11 +173,8 @@ pub fn python_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let formatter = serde_json::ser::PrettyFormatter::with_indent(b" ");
     let mut serializer = serde_json::Serializer::with_formatter(&mut out, formatter);
     value.serialize(&mut serializer).map_err(|error| crate::Error::invalid(error.to_string()))?;
-    if cfg!(windows) {
-        let text = String::from_utf8(out).expect("serde_json writes UTF-8");
-        return Ok(text.replace('\n', "\r\n").into_bytes());
-    }
-    Ok(out)
+    let text = String::from_utf8(out).expect("serde_json writes UTF-8");
+    Ok(dc2tk_py::native_lines(&text).into_owned().into_bytes())
 }
 
 #[cfg(test)]

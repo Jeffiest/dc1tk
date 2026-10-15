@@ -20,3 +20,6 @@ indexmap.workspace = true
 mimalloc.workspace = true
 rayon.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+dc2tk-disc = { workspace = true, features = ["test-support"] }

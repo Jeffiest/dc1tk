@@ -1,10 +1,10 @@
 //! Small discs, file indexes, packs and a script built in memory, for tests: the port of the
-//! Python tests' build.py.
+//! Python tests' build.py. Built for this crate's tests, and for other crates' with the
+//! test-support feature (which they enable in their dev-dependencies).
 
-use crate::archive::PACK_SLOT;
-use crate::text;
+use crate::{archive, iso, text};
 
-pub const SECTOR: usize = 2048;
+const SECTOR: usize = iso::SECTOR as usize;
 pub const ROOT_SECTOR: usize = 18;
 
 fn both32(value: u32) -> Vec<u8> {
@@ -95,21 +95,9 @@ pub fn archive_files(files: &[(&str, &[u8])]) -> (Vec<u8>, Vec<u8>) {
     (table, dat)
 }
 
-/// A pack of the members, ended by an empty slot.
+/// A pack of the members, ended by an empty slot (archive::write_pack).
 pub fn pack(members: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut out = Vec::new();
-    for (name, data) in members {
-        let body = pad(data, 16);
-        let mut header = cp932(name);
-        header.resize(64, 0);
-        for value in [PACK_SLOT, data.len(), PACK_SLOT + body.len()] {
-            header.extend((value as i32).to_le_bytes());
-        }
-        out.extend(pad(&header, 16));
-        out.extend(body);
-    }
-    out.extend(vec![0u8; PACK_SLOT]);
-    out
+    archive::write_pack(members).expect("the sample members' names fit a slot")
 }
 
 fn ints(values: &[i32]) -> Vec<u8> {
@@ -179,7 +167,6 @@ pub fn sample_disc() -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{archive, iso};
 
     // tests/test_iso.py
 
@@ -237,7 +224,7 @@ mod tests {
         let data = pack(&[("a.bin", b"1234")]);
         let members = archive::parse_pack(&data).unwrap();
         assert_eq!(members.iter().map(|member| member.name.as_str()).collect::<Vec<_>>(), ["a.bin"]);
-        assert!(archive::parse_pack(&data[..data.len() - PACK_SLOT]).is_none());
+        assert!(archive::parse_pack(&data[..data.len() - archive::PACK_SLOT]).is_none());
         assert!(archive::parse_pack(&[data.as_slice(), &[0u8; 16]].concat()).is_none());
     }
 

@@ -10,7 +10,7 @@ pub mod extract;
 pub mod iso;
 pub mod layout;
 pub mod rebuild;
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-support"))]
 pub mod samples;
 pub mod text;
 

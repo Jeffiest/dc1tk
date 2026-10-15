@@ -231,6 +231,7 @@ dependencies = [
 name = "dc2tk-disc"
 version = "0.1.0"
 dependencies = [
+ "dc2tk-py",
  "encoding_rs",
  "memmap2",
  "rayon",
