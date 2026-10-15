@@ -284,6 +284,61 @@ pub fn read(data: &[u8]) -> CharInfo {
     CharInfo::new(&parse(data))
 }
 
+// Editing an info.cfg's text by its lines, keeping everything an edit does not touch: the edits
+// the builds make (KEYs added after the last, statements taken out, a new pack's lines) are written
+// in the file's own line endings and indents.
+
+/// The line ending a cfg's text writes new lines with: "\r\n" when any line ends so, else "\n".
+pub fn newline(text: &[u8]) -> &'static str {
+    if text.windows(2).any(|pair| pair == b"\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    }
+}
+
+/// The tag a line of a cfg starts with (MODEL in `MODEL "a.mds";`).
+pub fn line_tag(line: &str) -> &str {
+    let line = line.trim_start();
+    let end = line.find(|c: char| c.is_whitespace() || c == ';' || c == '"' || c == ',').unwrap_or(line.len());
+    &line[..end]
+}
+
+/// The bytes of a statement's line: from the line's start (when nothing but spaces comes before
+/// it) to the line's end, its newline included (when nothing but spaces comes after it); else the
+/// statement alone. Removing them takes the statement out, with its line when it had one alone.
+pub fn statement_line(text: &[u8], statement: &Statement) -> std::ops::Range<usize> {
+    let line_start = text[..statement.start].iter().rposition(|&b| b == b'\n').map_or(0, |p| p + 1);
+    let line_end = text[statement.end..].iter().position(|&b| b == b'\n').map_or(text.len(), |p| statement.end + p + 1);
+    let blank = |bytes: &[u8]| bytes.iter().all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'));
+    if blank(&text[line_start..statement.start]) && blank(&text[statement.end..line_end]) {
+        line_start..line_end
+    } else {
+        statement.start..statement.end
+    }
+}
+
+/// The edit (where, what to insert) adding lines after a statement's line, each indented as that
+/// line is (a tab when something else comes before the statement) and ended as the file ends its
+/// lines; a file whose last line has no ending gets one first.
+pub fn lines_after(text: &[u8], statement: &Statement, lines: &[Vec<u8>]) -> (std::ops::Range<usize>, Vec<u8>) {
+    let newline = newline(text).as_bytes();
+    let line_start = text[..statement.start].iter().rposition(|&b| b == b'\n').map_or(0, |p| p + 1);
+    let indent = &text[line_start..statement.start];
+    let indent: &[u8] = if indent.iter().all(|b| *b == b' ' || *b == b'\t') { indent } else { b"\t" };
+    let at = text[statement.end..].iter().position(|&b| b == b'\n').map_or(text.len(), |p| statement.end + p + 1);
+    let mut out = Vec::new();
+    if at == text.len() && !text.ends_with(b"\n") {
+        out.extend(newline);
+    }
+    for line in lines {
+        out.extend(indent);
+        out.extend(line);
+        out.extend(newline);
+    }
+    (at..at, out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,5 +355,23 @@ mod tests {
         let motion = info.motion0().unwrap();
         assert_eq!(motion.keys.len(), 1);
         assert!(matches!(motion.keys[0].step, Arg::Float(x) if x == 1.0));
+    }
+
+    #[test]
+    fn lines_are_added_and_taken_out_as_the_file_writes_them() {
+        let text = b"KEY_START;\r\n  KEY \"a\", 0, 9, 1.0;\r\nKEY_END; KEY \"b\", 1, 2, 1.0;";
+        let found = statements(text);
+        assert_eq!((newline(text), newline(b"A;\nB;")), ("\r\n", "\n"));
+        // after a KEY alone on its line: indented as it, CRLF
+        let (at, added) = lines_after(text, &found[1], &[b"KEY \"c\";".to_vec()]);
+        assert_eq!((at.start, added.as_slice()), (35, &b"  KEY \"c\";\r\n"[..]));
+        // after one sharing its line with another statement, at the end of a file with no last
+        // line ending: a tab, and the ending first
+        let (at, added) = lines_after(text, &found[3], &[b"X;".to_vec()]);
+        assert_eq!((at.start, added.as_slice()), (text.len(), &b"\r\n\tX;\r\n"[..]));
+        // a statement alone on its line goes with the line; one sharing it goes alone
+        assert_eq!(&text[statement_line(text, &found[1])], b"  KEY \"a\", 0, 9, 1.0;\r\n");
+        assert_eq!(&text[statement_line(text, &found[3])], b"KEY \"b\", 1, 2, 1.0;");
+        assert_eq!(line_tag("\tMODEL \"c.mds\";"), "MODEL");
     }
 }

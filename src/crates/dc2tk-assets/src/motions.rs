@@ -885,7 +885,7 @@ pub fn build(
         let names_gone =
             statement.args.first().and_then(|(value, _)| value.as_str()).is_some_and(|n| gone_names.contains(n));
         if matches!(statement.tag.as_str(), "SE" | "SELP" | "SEQ") && names_gone {
-            edits.push((statement_line(info, statement), Vec::new()));
+            edits.push((info_cfg::statement_line(info, statement), Vec::new()));
             // a sequence left with no step goes too
             if statement.tag == "SEQ" {
                 let open = statements[..at].iter().rposition(|s| s.tag == "SEQ_START");
@@ -897,15 +897,15 @@ pub fn build(
                             && !s.args.first().and_then(|(v, _)| v.as_str()).is_some_and(|n| gone_names.contains(n))
                     });
                     if !left && steps.iter().rfind(|s| s.tag == "SEQ").is_some_and(|s| s.start == statement.start) {
-                        edits.push((statement_line(info, &statements[open]), Vec::new()));
-                        edits.push((statement_line(info, &statements[close]), Vec::new()));
+                        edits.push((info_cfg::statement_line(info, &statements[open]), Vec::new()));
+                        edits.push((info_cfg::statement_line(info, &statements[close]), Vec::new()));
                     }
                 }
             }
         }
     }
     for (_, statement) in &removed {
-        edits.push((statement_line(info, statement), Vec::new()));
+        edits.push((info_cfg::statement_line(info, statement), Vec::new()));
     }
     edits.sort_by(|a, b| b.0.start.cmp(&a.0.start).then(b.0.end.cmp(&a.0.end)));
     edits.dedup_by(|a, b| a.0 == b.0 && a.1.is_empty() && b.1.is_empty());
@@ -914,20 +914,6 @@ pub fn build(
         info_out.splice(range, text);
     }
     Ok(Some(Rebuilt { mots, info: info_out, changed, removed: removed.into_iter().map(|(name, _)| name).collect() }))
-}
-
-/// The bytes of a statement's line: from the line's start (when nothing but spaces comes before
-/// it) to the line's end, its newline included (when nothing but spaces comes after it); else the
-/// statement alone.
-fn statement_line(info: &[u8], statement: &Statement) -> std::ops::Range<usize> {
-    let line_start = info[..statement.start].iter().rposition(|&b| b == b'\n').map_or(0, |p| p + 1);
-    let line_end = info[statement.end..].iter().position(|&b| b == b'\n').map_or(info.len(), |p| statement.end + p + 1);
-    let blank = |bytes: &[u8]| bytes.iter().all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'));
-    if blank(&info[line_start..statement.start]) && blank(&info[statement.end..line_end]) {
-        line_start..line_end
-    } else {
-        statement.start..statement.end
-    }
 }
 
 /// A given animation and what it stands for in its set: the KEY it is the export's of (and that
@@ -960,307 +946,362 @@ struct SetBuilt {
     removed: Vec<(String, Statement)>,
 }
 
-fn build_set(c: &Context, set: &LoadedSet, given: &[Given], gone: &[usize]) -> Result<Option<SetBuilt>> {
-    let (before, after, model) = (c.before, c.after, c.model);
-    let keys = &set.info.keys;
-    let shared = |k: usize, frame: i64| {
-        keys.iter()
+/// An animation of a set that differs from the export (or that the export does not have), and how
+/// it is written.
+struct Change<'a> {
+    animation: &'a Animation,
+    name: String,
+    key: Option<usize>,
+    frames: i64,
+    retimed: bool,
+    channels: BTreeSet<Channel>,
+    in_place: bool,
+    /// The KEY whose frames give the channels the glTF has nothing of.
+    source: Option<usize>,
+    /// The KEY a new animation is a copy of.
+    copied: Option<usize>,
+}
+
+/// The key lists of a set being rebuilt, and the list standing for each channel.
+struct Tracks {
+    tracks: Vec<Track>,
+    track_of: HashMap<Channel, usize>,
+    /// The last frame any list keys or any KEY plays.
+    last: i64,
+}
+
+/// One set's rebuild (build_set): what it reads, and the questions its phases ask of it.
+struct SetPlan<'p, 'm> {
+    c: &'p Context<'p, 'm>,
+    set: &'p LoadedSet,
+    given: &'p [Given<'p>],
+    gone: &'p [usize],
+    keys: &'p [Key],
+    /// The channels a list of the set drives.
+    listed: BTreeSet<Channel>,
+}
+
+impl SetPlan<'_, '_> {
+    /// Whether a KEY other than k plays a frame.
+    fn shared(&self, k: usize, frame: i64) -> bool {
+        self.keys
+            .iter()
             .enumerate()
             .any(|(other, key)| other != k && key.range.is_some_and(|(s, e)| s <= frame && frame <= e))
-    };
-    // Translations under shrunk ancestors are compared as far as they move the frame in the model.
-    let slack_at = |e: Option<&Animation>, g: &Animation, channel: Channel, t: f64| {
+    }
+
+    /// How far a translation may move and be the same: translations under shrunk ancestors are
+    /// compared as far as they move the frame in the model.
+    fn slack_at(&self, e: Option<&Animation>, g: &Animation, channel: Channel, t: f64) -> f64 {
         if channel.1 != TRANSLATION {
             return 1.0;
         }
-        let given = ancestor_scale(after, g, model, channel.0, t);
-        slack(e.map_or(given, |e| ancestor_scale(before, e, model, channel.0, t)), given)
-    };
-    // A channel no list drives holds a rest: the frame's own (the export's node), or the given
-    // node's, since Blender rests a bone at its bind pose (from the inverse bind matrices) and
-    // writes that for every bone an action leaves alone; a vertex, material or visibility channel
-    // its mesh's.
-    let at_rest = |e: Option<&Animation>, g: &Animation, channel: Channel, t: f64| {
-        let Some(value) = after.value(g, channel, t) else {
+        let model = self.c.model;
+        let given = ancestor_scale(self.c.after, g, model, channel.0, t);
+        slack(e.map_or(given, |e| ancestor_scale(self.c.before, e, model, channel.0, t)), given)
+    }
+
+    /// Whether a channel no list drives holds its rest at time t: the frame's own (the export's
+    /// node), or the given node's, since Blender rests a bone at its bind pose (from the inverse
+    /// bind matrices) and writes that for every bone an action leaves alone; a vertex, material or
+    /// visibility channel its mesh's.
+    fn at_rest(&self, e: Option<&Animation>, g: &Animation, channel: Channel, t: f64) -> bool {
+        let Some(value) = self.c.after.value(g, channel, t) else {
             return true;
         };
-        let slack = slack_at(e, g, channel, t);
+        let slack = self.slack_at(e, g, channel, t);
         if !is_trs(channel.1) {
-            let rests = [channel_rest(model, channel), channel_rest(c.after_model, channel)];
+            let rests = [channel_rest(self.c.model, channel), channel_rest(self.c.after_model, channel)];
             return rests.into_iter().flatten().any(|rest| close_within(channel.1, &rest, &value, slack));
         }
         let kind = channel.1 as usize;
-        let rests = [before.rest.get(channel.0), after.rest.get(channel.0)];
+        let rests = [self.c.before.rest.get(channel.0), self.c.after.rest.get(channel.0)];
         rests.into_iter().flatten().flatten().any(|rest| close_within(channel.1, &rest[kind], &value, slack))
-    };
-    // Whether an animation leaves a channel as the export has it at time t.
-    let same_at = |e: &Animation, g: &Animation, channel: Channel, t: f64| {
+    }
+
+    /// Whether an animation leaves a channel as the export has it at time t.
+    fn same_at(&self, e: &Animation, g: &Animation, channel: Channel, t: f64) -> bool {
         if is_trs(channel.1) && !e.curves.contains_key(&channel) {
-            return at_rest(Some(e), g, channel, t);
+            return self.at_rest(Some(e), g, channel, t);
         }
-        let old = before.value(e, channel, t).or_else(|| channel_rest(model, channel));
-        match (old, after.value(g, channel, t)) {
-            (Some(x), Some(y)) => close_within(channel.1, &x, &y, slack_at(Some(e), g, channel, t)),
+        let old = self.c.before.value(e, channel, t).or_else(|| channel_rest(self.c.model, channel));
+        match (old, self.c.after.value(g, channel, t)) {
+            (Some(x), Some(y)) => close_within(channel.1, &x, &y, self.slack_at(Some(e), g, channel, t)),
             _ => true,
         }
-    };
-    // the lists of the set by the channel they stand for
-    let lists = &set.lists;
-    let mut tracks: Vec<Track> =
-        lists.iter().cloned().map(|original| Track { original, keys: None, new: false }).collect();
-    let mut track_of: HashMap<Channel, usize> = HashMap::new();
-    for (at, track) in tracks.iter().enumerate() {
-        if let Some(channel) = channel_of(&track.original, model) {
-            track_of.insert(channel, at);
-        }
     }
-    // a channel this set's motions write: not the vertex channels of a rebuilt mesh, which are
-    // made again whole
-    let wanted = |channel: &Channel| !(channel.1 == VERTEX && c.rebuilt.contains(&channel.0));
-    // Whether an animation drives a channel: one a list drives, or one it moves off the rest.
-    let listed: BTreeSet<Channel> = track_of.keys().copied().collect();
-    let moves = |g: &Animation, channel: Channel| {
-        listed.contains(&channel) || (0..=g.frames()).any(|r| !at_rest(None, g, channel, r as f64 / FPS))
-    };
 
-    // which animations changed, and how
-    struct Change<'a> {
-        animation: &'a Animation,
-        name: String,
-        key: Option<usize>,
-        frames: i64,
-        retimed: bool,
-        channels: BTreeSet<Channel>,
-        in_place: bool,
-        /// The KEY whose frames give the channels the glTF has nothing of.
-        source: Option<usize>,
-        /// The KEY a new animation is a copy of.
-        copied: Option<usize>,
+    /// A channel this set's motions write: not the vertex channels of a rebuilt mesh, which are
+    /// made again whole.
+    fn wanted(&self, channel: &Channel) -> bool {
+        !(channel.1 == VERTEX && self.c.rebuilt.contains(&channel.0))
     }
-    let mut changes: Vec<Change> = Vec::new();
-    for given in given {
-        let g = given.animation;
-        match (given.key, given.exported) {
-            (Some(k), Some(i)) => {
-                let e = &before.animations[i];
-                let Some((s, end)) = keys[k].range else {
-                    continue;
-                };
-                let (old, new) = (end - s, g.frames());
-                let mut channels = BTreeSet::new();
-                for &channel in e.curves.keys().chain(g.curves.keys()).filter(|ch| wanted(ch)) {
-                    if (0..=old).any(|r| !same_at(e, g, channel, r as f64 / FPS)) {
-                        channels.insert(channel);
+
+    /// Whether an animation drives a channel: one a list drives, or one it moves off the rest.
+    fn moves(&self, g: &Animation, channel: Channel) -> bool {
+        self.listed.contains(&channel) || (0..=g.frames()).any(|r| !self.at_rest(None, g, channel, r as f64 / FPS))
+    }
+
+    /// Which given animations changed, and how.
+    fn changes(&self) -> Vec<Change<'_>> {
+        let mut changes = Vec::new();
+        for given in self.given {
+            let g = given.animation;
+            match (given.key, given.exported) {
+                (Some(k), Some(i)) => {
+                    let e = &self.c.before.animations[i];
+                    let Some((s, end)) = self.keys[k].range else {
+                        continue;
+                    };
+                    let (old, new) = (end - s, g.frames());
+                    let mut channels = BTreeSet::new();
+                    for &channel in e.curves.keys().chain(g.curves.keys()).filter(|ch| self.wanted(ch)) {
+                        if (0..=old).any(|r| !self.same_at(e, g, channel, r as f64 / FPS)) {
+                            channels.insert(channel);
+                        }
                     }
+                    if new <= old && channels.is_empty() {
+                        continue;
+                    }
+                    let retimed = new != old;
+                    if retimed {
+                        channels.extend(g.curves.keys().copied().filter(|ch| self.wanted(ch) && self.moves(g, *ch)));
+                    }
+                    // in place unless a frame another KEY uses would change
+                    let in_place = !retimed
+                        && (s..=end)
+                            .filter(|&f| self.shared(k, f))
+                            .all(|f| channels.iter().all(|&channel| self.same_at(e, g, channel, (f - s) as f64 / FPS)));
+                    changes.push(Change {
+                        animation: g,
+                        name: g.name.clone(),
+                        key: Some(k),
+                        frames: new,
+                        retimed,
+                        channels,
+                        in_place,
+                        source: Some(k),
+                        copied: None,
+                    });
                 }
-                if new <= old && channels.is_empty() {
-                    continue;
+                _ => {
+                    if g.curves.is_empty() {
+                        continue; // animates nothing of the model
+                    }
+                    let copied = given.copied.map(|(k, _)| k);
+                    changes.push(Change {
+                        animation: g,
+                        name: given.name.clone(),
+                        key: None,
+                        frames: g.frames(),
+                        retimed: true,
+                        channels: g.curves.keys().copied().filter(|ch| self.wanted(ch) && self.moves(g, *ch)).collect(),
+                        in_place: false,
+                        source: copied.or((!self.keys.is_empty()).then_some(0)),
+                        copied,
+                    });
                 }
-                let retimed = new != old;
-                if retimed {
-                    channels.extend(g.curves.keys().copied().filter(|ch| wanted(ch) && moves(g, *ch)));
-                }
-                // in place unless a frame another KEY uses would change
-                let in_place = !retimed
-                    && (s..=end)
-                        .filter(|&f| shared(k, f))
-                        .all(|f| channels.iter().all(|&channel| same_at(e, g, channel, (f - s) as f64 / FPS)));
-                changes.push(Change {
-                    animation: g,
-                    name: g.name.clone(),
-                    key: Some(k),
-                    frames: new,
-                    retimed,
-                    channels,
-                    in_place,
-                    source: Some(k),
-                    copied: None,
-                });
-            }
-            _ => {
-                if g.curves.is_empty() {
-                    continue; // animates nothing of the model
-                }
-                let copied = given.copied.map(|(k, _)| k);
-                changes.push(Change {
-                    animation: g,
-                    name: given.name.clone(),
-                    key: None,
-                    frames: g.frames(),
-                    retimed: true,
-                    channels: g.curves.keys().copied().filter(|ch| wanted(ch) && moves(g, *ch)).collect(),
-                    in_place: false,
-                    source: copied.or((!keys.is_empty()).then_some(0)),
-                    copied,
-                });
             }
         }
+        changes
     }
-    // a rebuilt mesh with vertex lists, or vertex shapes now: its lists are made again
-    let remade: BTreeSet<usize> = c
-        .rebuilt
-        .iter()
-        .copied()
-        .filter(|&frame| {
-            lists.iter().any(|l| l.frame as i64 == frame as i64 && l.kind == VERTEX && !l.keys.is_empty())
-                || given.iter().any(|g| g.animation.curves.keys().any(|ch| ch.0 == frame && ch.1 == VERTEX))
-        })
-        .collect();
-    if changes.is_empty() && gone.is_empty() && remade.is_empty() {
-        return Ok(None);
+
+    /// The frames of rebuilt meshes with vertex lists, or vertex shapes now: their lists are made
+    /// again.
+    fn remade(&self) -> BTreeSet<usize> {
+        let lists = &self.set.lists;
+        self.c
+            .rebuilt
+            .iter()
+            .copied()
+            .filter(|&frame| {
+                lists.iter().any(|l| l.frame as i64 == frame as i64 && l.kind == VERTEX && !l.keys.is_empty())
+                    || self.given.iter().any(|g| g.animation.curves.keys().any(|ch| ch.0 == frame && ch.1 == VERTEX))
+            })
+            .collect()
     }
-    if lists.is_empty() {
-        bail!("the pack's motion has no key lists to add the animations to");
-    }
-    // the export's rest, as the engine holds a channel no list drives
-    let rest_key = |channel: Channel| -> Vec4 {
+
+    /// The export's rest, as the engine holds a channel no list drives.
+    fn rest_key(&self, channel: Channel) -> Vec4 {
         if !is_trs(channel.1) {
-            return channel_rest(model, channel).unwrap_or([0.0; 4]);
+            return channel_rest(self.c.model, channel).unwrap_or([0.0; 4]);
         }
-        let rest = before.rest.get(channel.0).copied().flatten().unwrap_or([
+        let rest = self.c.before.rest.get(channel.0).copied().flatten().unwrap_or([
             [0.0, 0.0, 0.0, 1.0],
             [1.0, 1.0, 1.0, 0.0],
             [0.0; 4],
         ]);
         engine_key(channel.1, &rest[channel.1 as usize])
-    };
-    let last = tracks
-        .iter()
-        .filter_map(|t| t.original.keys.last().map(|k| k.0))
-        .chain(keys.iter().filter_map(|k| k.range.map(|r| r.1)))
-        .max()
-        .unwrap_or(0);
-    // the frames each frame's vertex lists share
-    let group_frames = |frame: usize| -> BTreeSet<i64> {
-        lists
-            .iter()
-            .filter(|l| l.frame as i64 == frame as i64 && l.kind == VERTEX)
-            .flat_map(|l| l.keys.iter().map(|k| k.0))
-            .collect()
-    };
-    // lists for the channels the animations change that no list drives: the rest everywhere else
-    for change in &changes {
-        for &channel in &change.channels {
-            if channel.0 < model.nodes.len() && !track_of.contains_key(&channel) {
-                let rest = rest_key(channel);
-                let frames = if channel.1 == VERTEX { group_frames(channel.0) } else { BTreeSet::new() };
-                let keys = if frames.is_empty() {
-                    vec![(0, rest), (last.max(1), rest)]
-                } else {
-                    frames.iter().map(|&f| (f, rest)).collect()
-                };
-                let original = KeyList::new(channel.0 as i32, channel.2, channel.1, keys);
-                track_of.insert(channel, tracks.len());
-                tracks.push(Track { original, keys: None, new: true });
-            }
-        }
     }
-    let tracked: HashMap<usize, Channel> = track_of.iter().map(|(&channel, &at)| (at, channel)).collect();
 
-    let mut written: Vec<(usize, Written)> = Vec::new();
-    let mut base = last + 1;
-    for (number, change) in changes.iter().enumerate() {
-        let g = change.animation;
-        let given_key =
-            |channel: Channel, r: i64| after.value(g, channel, r as f64 / FPS).map(|v| engine_key(channel.1, &v));
-        if change.in_place {
-            let k = change.key.unwrap_or_default();
-            let (s, e) = keys[k].range.unwrap_or_default();
+    /// The set's lists to write into: its own, and for the channels the animations change that
+    /// no list drives, new lists holding the rest everywhere else.
+    fn tracks(&self, changes: &[Change]) -> Tracks {
+        let (model, lists) = (self.c.model, &self.set.lists);
+        let mut tracks: Vec<Track> =
+            lists.iter().cloned().map(|original| Track { original, keys: None, new: false }).collect();
+        let mut track_of: HashMap<Channel, usize> = HashMap::new();
+        for (at, track) in tracks.iter().enumerate() {
+            if let Some(channel) = channel_of(&track.original, model) {
+                track_of.insert(channel, at);
+            }
+        }
+        let last = tracks
+            .iter()
+            .filter_map(|t| t.original.keys.last().map(|k| k.0))
+            .chain(self.keys.iter().filter_map(|k| k.range.map(|r| r.1)))
+            .max()
+            .unwrap_or(0);
+        // the frames each frame's vertex lists share
+        let group_frames = |frame: usize| -> BTreeSet<i64> {
+            lists
+                .iter()
+                .filter(|l| l.frame as i64 == frame as i64 && l.kind == VERTEX)
+                .flat_map(|l| l.keys.iter().map(|k| k.0))
+                .collect()
+        };
+        for change in changes {
             for &channel in &change.channels {
-                let Some(&at) = track_of.get(&channel) else {
-                    continue;
-                };
-                let track = &mut tracks[at];
-                let original = track.original.clone();
-                let first = if track.new { 0 } else { original.keys[0].0 };
-                for f in s..=e {
-                    if shared(k, f) {
-                        // another KEY's frame keeps its value
-                        if !track.keys().contains_key(&f) {
-                            track.set(f, list_value(&original, f));
-                        }
-                    } else if let Some(value) = given_key(channel, f - s) {
-                        track.set(f, value);
-                    }
-                }
-                // the frames just outside keep their values
-                for f in [s - 1, e + 1] {
-                    if (first..=last).contains(&f) && !track.keys().contains_key(&f) {
-                        let value = if track.new { rest_key(channel) } else { list_value(&original, f) };
-                        track.keys().insert(f, value);
-                    }
+                if channel.0 < model.nodes.len() && !track_of.contains_key(&channel) {
+                    let rest = self.rest_key(channel);
+                    let frames = if channel.1 == VERTEX { group_frames(channel.0) } else { BTreeSet::new() };
+                    let keys = if frames.is_empty() {
+                        vec![(0, rest), (last.max(1), rest)]
+                    } else {
+                        frames.iter().map(|&f| (f, rest)).collect()
+                    };
+                    let original = KeyList::new(channel.0 as i32, channel.2, channel.1, keys);
+                    track_of.insert(channel, tracks.len());
+                    tracks.push(Track { original, keys: None, new: true });
                 }
             }
-            written.push((number, Written::InPlace));
-            continue;
         }
-        let (b, len) = (base, change.frames.max(0));
-        let source = change.source.and_then(|k| keys[k].range);
-        for (at, track) in tracks.iter_mut().enumerate() {
-            if track.original.keys.is_empty() {
+        Tracks { tracks, track_of, last }
+    }
+
+    /// Each change's frames written: over its own frames (in place), or at the end of the
+    /// timeline, one after another. Returns where each went.
+    fn place(&self, changes: &[Change], tracks: &mut Tracks) -> Vec<(usize, Written)> {
+        let after = self.c.after;
+        let last = tracks.last;
+        let tracked: HashMap<usize, Channel> = tracks.track_of.iter().map(|(&channel, &at)| (at, channel)).collect();
+        let mut written: Vec<(usize, Written)> = Vec::new();
+        let mut base = last + 1;
+        for (number, change) in changes.iter().enumerate() {
+            let g = change.animation;
+            let given_key =
+                |channel: Channel, r: i64| after.value(g, channel, r as f64 / FPS).map(|v| engine_key(channel.1, &v));
+            if change.in_place {
+                let k = change.key.unwrap_or_default();
+                let (s, e) = self.keys[k].range.unwrap_or_default();
+                for &channel in &change.channels {
+                    let Some(&at) = tracks.track_of.get(&channel) else {
+                        continue;
+                    };
+                    let track = &mut tracks.tracks[at];
+                    let original = track.original.clone();
+                    let first = if track.new { 0 } else { original.keys[0].0 };
+                    for f in s..=e {
+                        if self.shared(k, f) {
+                            // another KEY's frame keeps its value
+                            if !track.keys().contains_key(&f) {
+                                track.set(f, list_value(&original, f));
+                            }
+                        } else if let Some(value) = given_key(channel, f - s) {
+                            track.set(f, value);
+                        }
+                    }
+                    // the frames just outside keep their values
+                    for f in [s - 1, e + 1] {
+                        if (first..=last).contains(&f) && !track.keys().contains_key(&f) {
+                            let value = if track.new { self.rest_key(channel) } else { list_value(&original, f) };
+                            track.keys().insert(f, value);
+                        }
+                    }
+                }
+                written.push((number, Written::InPlace));
                 continue;
             }
-            let original = track.original.clone();
-            // the frames up to the last any KEY uses keep the value they held
-            let held = original.keys[original.keys.len() - 1];
-            if held.0 < last && !track.keys().contains_key(&last) {
-                track.keys().insert(last, held.1);
-            }
-            let stretched = |r: i64| match source {
-                Some((s, e)) => list_value(&original, s + scaled(r, len, e - s)),
-                None => list_value(&original, 0),
-            };
-            for r in 0..=len {
-                let value = match tracked.get(&at) {
-                    Some(&channel) => {
-                        let animated = (change.retimed && !track.new) || change.channels.contains(&channel);
-                        match (animated, source) {
-                            (false, Some((s, _))) if !track.new => list_value(&original, s + r),
-                            (false, _) => rest_key(channel),
-                            (true, _) => given_key(channel, r).unwrap_or_else(|| match source {
-                                Some(_) if !track.new => stretched(r),
-                                _ => rest_key(channel),
-                            }),
-                        }
-                    }
-                    // lists of no channel: from the source motion's frames
-                    None => stretched(r),
+            let (b, len) = (base, change.frames.max(0));
+            let source = change.source.and_then(|k| self.keys[k].range);
+            for (at, track) in tracks.tracks.iter_mut().enumerate() {
+                if track.original.keys.is_empty() {
+                    continue;
+                }
+                let original = track.original.clone();
+                // the frames up to the last any KEY uses keep the value they held
+                let held = original.keys[original.keys.len() - 1];
+                if held.0 < last && !track.keys().contains_key(&last) {
+                    track.keys().insert(last, held.1);
+                }
+                let stretched = |r: i64| match source {
+                    Some((s, e)) => list_value(&original, s + scaled(r, len, e - s)),
+                    None => list_value(&original, 0),
                 };
-                track.set(b + r, value);
+                for r in 0..=len {
+                    let value = match tracked.get(&at) {
+                        Some(&channel) => {
+                            let animated = (change.retimed && !track.new) || change.channels.contains(&channel);
+                            match (animated, source) {
+                                (false, Some((s, _))) if !track.new => list_value(&original, s + r),
+                                (false, _) => self.rest_key(channel),
+                                (true, _) => given_key(channel, r).unwrap_or_else(|| match source {
+                                    Some(_) if !track.new => stretched(r),
+                                    _ => self.rest_key(channel),
+                                }),
+                            }
+                        }
+                        // lists of no channel: from the source motion's frames
+                        None => stretched(r),
+                    };
+                    track.set(b + r, value);
+                }
             }
+            written.push((number, Written::Moved(b, b + len)));
+            base = b + len + 1;
         }
-        written.push((number, Written::Moved(b, b + len)));
-        base = b + len + 1;
+        written
     }
 
-    // the KEYs taken out, and the frames of theirs no other KEY plays
-    let mut ranges: Vec<Option<(i64, i64)>> = keys.iter().map(|key| key.range).collect();
-    for (number, how) in &written {
-        if let (Some(k), Written::Moved(s, e)) = (changes[*number].key, how) {
-            ranges[k] = Some((*s, *e));
+    /// Every KEY's frames once the changes are written: a moved KEY's new ones.
+    fn ranges(&self, changes: &[Change], written: &[(usize, Written)]) -> Vec<Option<(i64, i64)>> {
+        let mut ranges: Vec<Option<(i64, i64)>> = self.keys.iter().map(|key| key.range).collect();
+        for (number, how) in written {
+            if let (Some(k), Written::Moved(s, e)) = (changes[*number].key, how) {
+                ranges[k] = Some((*s, *e));
+            }
         }
+        ranges
     }
-    let new_ranges: Vec<(i64, i64)> = written
-        .iter()
-        .filter(|(number, _)| changes[*number].key.is_none())
-        .filter_map(|(_, how)| match how {
-            Written::Moved(s, e) => Some((*s, *e)),
-            Written::InPlace => None,
-        })
-        .collect();
-    let kept = |frame: i64| {
-        keys.iter().enumerate().any(|(k, key)| {
-            !gone.contains(&k) && [key.range, ranges[k]].iter().flatten().any(|&(s, e)| s <= frame && frame <= e)
-        }) || new_ranges.iter().any(|&(s, e)| s <= frame && frame <= e)
-    };
-    let mut dropped: BTreeSet<i64> = BTreeSet::new();
-    for &k in gone {
-        if let Some((s, e)) = keys[k].range {
-            dropped.extend((s..=e).filter(|&f| !kept(f)));
+
+    /// The frames of the KEYs taken out that no other KEY plays, taken out of every list; the
+    /// frames around each run taken out keep their values.
+    fn drop_gone(&self, changes: &[Change], written: &[(usize, Written)], tracks: &mut Tracks) {
+        let ranges = self.ranges(changes, written);
+        let new_ranges: Vec<(i64, i64)> = written
+            .iter()
+            .filter(|(number, _)| changes[*number].key.is_none())
+            .filter_map(|(_, how)| match how {
+                Written::Moved(s, e) => Some((*s, *e)),
+                Written::InPlace => None,
+            })
+            .collect();
+        let kept = |frame: i64| {
+            self.keys.iter().enumerate().any(|(k, key)| {
+                !self.gone.contains(&k)
+                    && [key.range, ranges[k]].iter().flatten().any(|&(s, e)| s <= frame && frame <= e)
+            }) || new_ranges.iter().any(|&(s, e)| s <= frame && frame <= e)
+        };
+        let mut dropped: BTreeSet<i64> = BTreeSet::new();
+        for &k in self.gone {
+            if let Some((s, e)) = self.keys[k].range {
+                dropped.extend((s..=e).filter(|&f| !kept(f)));
+            }
         }
-    }
-    if !dropped.is_empty() {
-        for track in tracks.iter_mut() {
+        if dropped.is_empty() {
+            return;
+        }
+        for track in tracks.tracks.iter_mut() {
             let original = track.original.clone();
             let present: BTreeMap<i64, Vec4> = track.keys().clone();
             let left: Vec<i64> = present.keys().copied().filter(|f| !dropped.contains(f)).collect();
@@ -1295,164 +1336,194 @@ fn build_set(c: &Context, set: &LoadedSet, given: &[Given], gone: &[usize]) -> R
         }
     }
 
-    // a rebuilt mesh's vertex lists made again: a list for each vertex its shapes move, keyed at
-    // every frame a KEY plays, with the values of that KEY's animation (its place where none)
-    let mut remade_lists: BTreeMap<usize, Vec<KeyList>> = BTreeMap::new();
-    for &frame in &remade {
-        let Some(t) = c.after_model.nodes.get(frame).and_then(|n| n.mdt.as_ref()) else {
-            continue;
-        };
-        // (start, end, the given animation playing there) of every KEY the set keeps
-        let mut plays: Vec<(i64, i64, Option<&Animation>)> = Vec::new();
-        for (k, range) in ranges.iter().enumerate() {
-            if gone.contains(&k) {
+    /// A rebuilt mesh's vertex lists made again: a list for each vertex its shapes move, keyed at
+    /// every frame a KEY plays, with the values of that KEY's animation (its place where none).
+    fn remade_lists(
+        &self,
+        remade: &BTreeSet<usize>,
+        changes: &[Change],
+        written: &[(usize, Written)],
+    ) -> BTreeMap<usize, Vec<KeyList>> {
+        let ranges = self.ranges(changes, written);
+        let mut remade_lists: BTreeMap<usize, Vec<KeyList>> = BTreeMap::new();
+        for &frame in remade {
+            let Some(t) = self.c.after_model.nodes.get(frame).and_then(|n| n.mdt.as_ref()) else {
                 continue;
+            };
+            // (start, end, the given animation playing there) of every KEY the set keeps
+            let mut plays: Vec<(i64, i64, Option<&Animation>)> = Vec::new();
+            for (k, range) in ranges.iter().enumerate() {
+                if self.gone.contains(&k) {
+                    continue;
+                }
+                let animation = self.given.iter().find(|g| g.key == Some(k)).map(|g| g.animation);
+                if let Some((s, e)) = *range {
+                    plays.push((s, e, animation));
+                }
             }
-            let animation = given.iter().find(|g| g.key == Some(k)).map(|g| g.animation);
-            if let Some((s, e)) = *range {
-                plays.push((s, e, animation));
+            for (number, how) in written {
+                if let (None, Written::Moved(s, e)) = (changes[*number].key, how) {
+                    plays.push((*s, *e, Some(changes[*number].animation)));
+                }
             }
-        }
-        for (number, how) in &written {
-            if let (None, Written::Moved(s, e)) = (changes[*number].key, how) {
-                plays.push((*s, *e, Some(changes[*number].animation)));
-            }
-        }
-        let frames: BTreeSet<i64> = plays.iter().flat_map(|&(s, e, _)| s..=e).collect();
-        let moved: BTreeSet<usize> = given
-            .iter()
-            .flat_map(|g| g.animation.curves.keys())
-            .filter(|ch| ch.0 == frame && ch.1 == VERTEX)
-            .filter_map(|ch| usize::try_from(ch.2 - 1).ok())
-            .filter(|&v| v < t.vertices.len())
-            .collect();
-        let mut made = Vec::new();
-        for v in moved {
-            let channel = (frame, VERTEX, v as i32 + 1);
-            let rest = channel_rest(c.after_model, channel).unwrap_or([0.0, 0.0, 0.0, 1.0]);
-            let keys = frames
+            let frames: BTreeSet<i64> = plays.iter().flat_map(|&(s, e, _)| s..=e).collect();
+            let moved: BTreeSet<usize> = self
+                .given
                 .iter()
-                .map(|&f| {
-                    let value = plays
-                        .iter()
-                        .find(|&&(s, e, _)| s <= f && f <= e)
-                        .and_then(|&(s, _, animation)| {
-                            animation.and_then(|a| after.value(a, channel, (f - s) as f64 / FPS))
-                        })
-                        .unwrap_or(rest);
-                    (f, engine_key(VERTEX, &value))
+                .flat_map(|g| g.animation.curves.keys())
+                .filter(|ch| ch.0 == frame && ch.1 == VERTEX)
+                .filter_map(|ch| usize::try_from(ch.2 - 1).ok())
+                .filter(|&v| v < t.vertices.len())
+                .collect();
+            let mut made = Vec::new();
+            for v in moved {
+                let channel = (frame, VERTEX, v as i32 + 1);
+                let rest = channel_rest(self.c.after_model, channel).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+                let keys = frames
+                    .iter()
+                    .map(|&f| {
+                        let value = plays
+                            .iter()
+                            .find(|&&(s, e, _)| s <= f && f <= e)
+                            .and_then(|&(s, _, animation)| {
+                                animation.and_then(|a| self.c.after.value(a, channel, (f - s) as f64 / FPS))
+                            })
+                            .unwrap_or(rest);
+                        (f, engine_key(VERTEX, &value))
+                    })
+                    .collect();
+                made.push(KeyList::new(frame as i32, v as i32 + 1, VERTEX, keys));
+            }
+            remade_lists.insert(frame, made);
+        }
+        remade_lists
+    }
+
+    /// The .mot, or None when it is the original's: lists in their places, new ones among their
+    /// frame's, every frame's vertex lists keyed at the same frames.
+    fn mot(&self, tracks: Tracks, remade_lists: BTreeMap<usize, Vec<KeyList>>) -> Result<Option<Vec<u8>>> {
+        let mut out: Vec<KeyList> = Vec::new();
+        let mut added: Vec<KeyList> = Vec::new();
+        for track in tracks.tracks {
+            let mut list = track.original;
+            if let Some(keys) = track.keys {
+                let pads: BTreeMap<i64, Vec<u8>> = list
+                    .key_pad
+                    .take()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|(k, pad)| list.keys.get(k).map(|key| (key.0, pad)))
+                    .collect();
+                list.keys = keys.into_iter().collect();
+                let kept: BTreeMap<usize, Vec<u8>> = list
+                    .keys
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(k, key)| pads.get(&key.0).map(|pad| (k, pad.clone())))
+                    .collect();
+                list.key_pad = (!kept.is_empty()).then_some(kept);
+            }
+            if track.new {
+                added.push(list);
+            } else {
+                out.push(list);
+            }
+        }
+        for (frame, made) in remade_lists {
+            let at = out.iter().position(|l| l.frame as i64 == frame as i64 && l.kind == VERTEX);
+            out.retain(|l| !(l.frame as i64 == frame as i64 && l.kind == VERTEX));
+            added.retain(|l| !(l.frame as i64 == frame as i64 && l.kind == VERTEX));
+            let at = at.unwrap_or_else(|| out.iter().position(|l| l.frame > frame as i32).unwrap_or(out.len()));
+            let at = at.min(out.len());
+            out.splice(at..at, made);
+        }
+        for list in added {
+            out.insert(insertion_point(&out, &list), list);
+        }
+        share_vertex_frames(&mut out);
+        let mot = mot::build(&out)?;
+        Ok((mot != mot::build(&self.set.lists)?).then_some(mot))
+    }
+
+    /// The info.cfg's edits: moved KEYs' frames, and a KEY line for each new motion after the
+    /// set's last KEY, indented as it is and in the file's line endings.
+    fn info_edits(
+        &self,
+        changes: &[Change],
+        written: &[(usize, Written)],
+    ) -> Result<Vec<(std::ops::Range<usize>, Vec<u8>)>> {
+        let (info, keys) = (self.c.info, self.keys);
+        let mut edits: Vec<(std::ops::Range<usize>, Vec<u8>)> = Vec::new();
+        let mut lines: Vec<(String, Vec<u8>)> = Vec::new();
+        for (number, how) in written {
+            let change = &changes[*number];
+            let Written::Moved(s, e) = how else {
+                continue;
+            };
+            match change.key {
+                Some(k) => {
+                    let args = &keys[k].statement.args;
+                    edits.push((args[1].1.clone(), s.to_string().into_bytes()));
+                    edits.push((args[2].1.clone(), e.to_string().into_bytes()));
+                }
+                None => {
+                    let name = &change.name;
+                    match dc2tk_disc::text::encode(name) {
+                        Some(bytes) if !bytes.is_empty() && bytes.len() <= KEY_NAME => {}
+                        _ => bail!("motion {name}: a KEY name is 1 to {KEY_NAME} bytes of Shift-JIS"),
+                    }
+                    let step =
+                        match change.animation.extras.as_ref().and_then(|x| x.get("step")).and_then(Value::as_f64) {
+                            Some(step) => step_text(step).into_bytes(),
+                            None => match change.copied {
+                                Some(k) => info[keys[k].statement.args[3].1.clone()].to_vec(),
+                                None => b"1.00".to_vec(),
+                            },
+                        };
+                    lines.push((format!("KEY \"{}\", {s}, {e}, ", name.replace('"', "\\\"")), step));
+                }
+            }
+        }
+        if !lines.is_empty() {
+            let Some(last_key) = keys.last() else {
+                bail!("the info.cfg has no KEY line to add the new motions after");
+            };
+            let text: Vec<Vec<u8>> = lines
+                .into_iter()
+                .map(|(line, step)| {
+                    let mut text = dc2tk_disc::text::encode(&line).unwrap_or_default();
+                    text.extend(step);
+                    text.push(b';');
+                    text
                 })
                 .collect();
-            made.push(KeyList::new(frame as i32, v as i32 + 1, VERTEX, keys));
+            edits.push(info_cfg::lines_after(info, &last_key.statement, &text));
         }
-        remade_lists.insert(frame, made);
+        Ok(edits)
     }
+}
 
-    // the .mot: lists in their places, new ones among their frame's, every frame's vertex lists
-    // keyed at the same frames
-    let mut out: Vec<KeyList> = Vec::new();
-    let mut added: Vec<KeyList> = Vec::new();
-    for track in tracks {
-        let mut list = track.original;
-        if let Some(keys) = track.keys {
-            let pads: BTreeMap<i64, Vec<u8>> = list
-                .key_pad
-                .take()
-                .into_iter()
-                .flatten()
-                .filter_map(|(k, pad)| list.keys.get(k).map(|key| (key.0, pad)))
-                .collect();
-            list.keys = keys.into_iter().collect();
-            let kept: BTreeMap<usize, Vec<u8>> = list
-                .keys
-                .iter()
-                .enumerate()
-                .filter_map(|(k, key)| pads.get(&key.0).map(|pad| (k, pad.clone())))
-                .collect();
-            list.key_pad = (!kept.is_empty()).then_some(kept);
-        }
-        if track.new {
-            added.push(list);
-        } else {
-            out.push(list);
-        }
+fn build_set(c: &Context, set: &LoadedSet, given: &[Given], gone: &[usize]) -> Result<Option<SetBuilt>> {
+    let listed: BTreeSet<Channel> = set.lists.iter().filter_map(|list| channel_of(list, c.model)).collect();
+    let plan = SetPlan { c, set, given, gone, keys: &set.info.keys, listed };
+    let changes = plan.changes();
+    let remade = plan.remade();
+    if changes.is_empty() && gone.is_empty() && remade.is_empty() {
+        return Ok(None);
     }
-    for (frame, made) in remade_lists {
-        let at = out.iter().position(|l| l.frame as i64 == frame as i64 && l.kind == VERTEX);
-        out.retain(|l| !(l.frame as i64 == frame as i64 && l.kind == VERTEX));
-        added.retain(|l| !(l.frame as i64 == frame as i64 && l.kind == VERTEX));
-        let at = at.unwrap_or_else(|| out.iter().position(|l| l.frame > frame as i32).unwrap_or(out.len()));
-        let at = at.min(out.len());
-        out.splice(at..at, made);
+    if set.lists.is_empty() {
+        bail!("the pack's motion has no key lists to add the animations to");
     }
-    for list in added {
-        out.insert(insertion_point(&out, &list), list);
-    }
-    share_vertex_frames(&mut out);
-    let mot = mot::build(&out)?;
-    let mot = (mot != mot::build(lists)?).then_some(mot);
-
-    // the info.cfg: moved KEYs' frames, new KEYs after the set's last
-    let info = c.info;
-    let mut edits: Vec<(std::ops::Range<usize>, Vec<u8>)> = Vec::new();
-    let mut lines: Vec<(String, Vec<u8>)> = Vec::new();
-    for (number, how) in &written {
-        let change = &changes[*number];
-        let Written::Moved(s, e) = how else {
-            continue;
-        };
-        match change.key {
-            Some(k) => {
-                let args = &keys[k].statement.args;
-                edits.push((args[1].1.clone(), s.to_string().into_bytes()));
-                edits.push((args[2].1.clone(), e.to_string().into_bytes()));
-            }
-            None => {
-                let name = &change.name;
-                match dc2tk_disc::text::encode(name) {
-                    Some(bytes) if !bytes.is_empty() && bytes.len() <= KEY_NAME => {}
-                    _ => bail!("motion {name}: a KEY name is 1 to {KEY_NAME} bytes of Shift-JIS"),
-                }
-                let step = match change.animation.extras.as_ref().and_then(|x| x.get("step")).and_then(Value::as_f64) {
-                    Some(step) => step_text(step).into_bytes(),
-                    None => match change.copied {
-                        Some(k) => info[keys[k].statement.args[3].1.clone()].to_vec(),
-                        None => b"1.00".to_vec(),
-                    },
-                };
-                lines.push((format!("KEY \"{}\", {s}, {e}, ", name.replace('"', "\\\"")), step));
-            }
-        }
-    }
-    if !lines.is_empty() {
-        let Some(last_key) = keys.last() else {
-            bail!("the info.cfg has no KEY line to add the new motions after");
-        };
-        let newline: &[u8] = if info.windows(2).any(|w| w == b"\r\n") { b"\r\n" } else { b"\n" };
-        let line_start = info[..last_key.statement.start].iter().rposition(|&b| b == b'\n').map_or(0, |p| p + 1);
-        let indent = &info[line_start..last_key.statement.start];
-        let indent: &[u8] = if indent.iter().all(|b| *b == b' ' || *b == b'\t') { indent } else { b"\t" };
-        let at = info[last_key.statement.end..]
-            .iter()
-            .position(|&b| b == b'\n')
-            .map_or(info.len(), |p| last_key.statement.end + p + 1);
-        let mut text = Vec::new();
-        if at == info.len() && !info.ends_with(b"\n") {
-            text.extend(newline);
-        }
-        for (line, step) in &lines {
-            text.extend(indent);
-            text.extend(dc2tk_disc::text::encode(line).unwrap_or_default());
-            text.extend(step);
-            text.extend(b";");
-            text.extend(newline);
-        }
-        edits.push((at..at, text));
-    }
+    let mut tracks = plan.tracks(&changes);
+    let written = plan.place(&changes, &mut tracks);
+    plan.drop_gone(&changes, &written, &mut tracks);
+    let remade_lists = plan.remade_lists(&remade, &changes, &written);
+    let mot = plan.mot(tracks, remade_lists)?;
+    let edits = plan.info_edits(&changes, &written)?;
     let removed: Vec<(String, Statement)> = gone
         .iter()
         .map(|&k| {
-            let statement = keys[k].statement.clone();
+            let statement = plan.keys[k].statement.clone();
             let name = statement.args[0].0.as_str().unwrap_or_default().to_string();
             (name, statement)
         })

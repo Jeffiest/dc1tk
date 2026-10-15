@@ -593,13 +593,6 @@ pub fn write_pack(members: &[(String, Vec<u8>)]) -> Result<Vec<u8>> {
     Ok(archive::write_pack(&members)?)
 }
 
-/// The statement tag a line of a cfg starts with (MODEL in `MODEL "a.mds";`).
-fn cfg_tag(line: &str) -> &str {
-    let line = line.trim_start();
-    let end = line.find(|c: char| c.is_whitespace() || c == ';' || c == '"' || c == ',').unwrap_or(line.len());
-    &line[..end]
-}
-
 /// What a new pack's info.cfg says of its model (new_info_cfg).
 pub struct NewCfg<'a> {
     /// The pack's name: its members are <stem>.mds, <stem>.img and so on.
@@ -637,7 +630,7 @@ const MODEL_BLOCKS: [(&str, &str); 6] = [
 pub fn new_info_cfg(template: &[u8], cfg: &NewCfg) -> Result<Vec<u8>> {
     let stem = cfg.stem;
     let text = dc2tk_disc::text::decode_lossy(template);
-    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let newline = info_cfg::newline(text.as_bytes());
     let img = format!("IMG 0, \"{stem}.img\";");
     let quoted = |names: &[String]| names.iter().map(|name| format!("\"{name}\"")).collect::<Vec<_>>().join(", ");
     let motion = cfg.keys.map(|keys| {
@@ -661,7 +654,7 @@ pub fn new_info_cfg(template: &[u8], cfg: &NewCfg) -> Result<Vec<u8>> {
     let (mut img_written, mut model_written, mut motion_written) = (false, false, false);
     let mut inside: Option<&str> = None;
     for line in text.split_inclusive('\n') {
-        let tag = cfg_tag(line);
+        let tag = info_cfg::line_tag(line);
         let ending = if line.ends_with("\r\n") {
             "\r\n"
         } else if line.ends_with('\n') {
