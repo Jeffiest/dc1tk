@@ -43,7 +43,13 @@ pub fn compiled(
     headers.extend(definitions::source_headers(source_path)?);
     let libraries = library::include_texts(text, source_path, overlay, tools.sdk_dir, &[])?;
     let defines = std::collections::HashMap::new();
-    let program = parse::parse_source_with(text, parse::UNNAMED_FILE, &defines, &headers, &libraries)?;
+    let options = parse::ParseOptions {
+        defines: Some(&defines),
+        headers: Some(&headers),
+        libraries: Some(&libraries),
+        ..Default::default()
+    };
+    let program = parse::parse_with(text, &options)?;
     let includes = library::read_includes(&program, source_path, overlay, tools.sdk_dir, &[])?;
     let mut program = library::expand(program, &includes, &headers)?;
     if let Some(patched) = patched {

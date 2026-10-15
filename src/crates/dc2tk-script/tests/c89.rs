@@ -64,7 +64,9 @@ fn source(name: &str) -> String {
 
 /// The program compiled (to bytes, so it assembles) and run: test()'s result.
 fn run(name: &str, text: &str) -> dc2tk_script::Result<Value> {
-    let program = parse::parse_source(&format!("{HEAD}{text}{TRAILER}"), &format!("{name}.c"), sdk_texts())?;
+    let file = format!("{name}.c");
+    let options = parse::ParseOptions { file: &file, headers: Some(sdk_texts()), ..Default::default() };
+    let program = parse::parse_with(&format!("{HEAD}{text}{TRAILER}"), &options)?;
     let program = library::expand(program, &common::no_texts(), sdk_texts())?;
     compile::compile_program(&program, tables())?;
     let table = vm::table_of(&program, tables())?;

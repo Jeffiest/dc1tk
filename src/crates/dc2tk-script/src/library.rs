@@ -1108,7 +1108,9 @@ impl Expansion<'_> {
             return Err(Error::invalid(format!("cannot find included file {path}")));
         };
         self.included.insert(path.to_string());
-        let included = parse::parse_source_with(text, path, &HashMap::new(), self.headers, self.texts)?;
+        let options =
+            parse::ParseOptions { file: path, headers: Some(self.headers), libraries: Some(self.texts), defines: None };
+        let included = parse::parse_with(text, &options)?;
         self.add_structs(&included, path)?;
         self.library_docs.insert(path.to_string(), included.get("doc").cloned().unwrap_or(Node::from("")));
         self.declarations.add_from(&included["declarations"]);
@@ -1211,7 +1213,8 @@ pub fn expand(program: Node, texts: &IndexMap<String, String>, headers: &IndexMa
 }
 
 /// The texts of a source's library includes and those they include, found from its #include
-/// "..." lines before it is parsed, for parse::parse_source_with: what C's #include gives the file.
+/// "..." lines before it is parsed, for parse::ParseOptions::libraries: what C's #include gives the
+/// file.
 pub fn include_texts(
     text: &str,
     source_path: &Path,

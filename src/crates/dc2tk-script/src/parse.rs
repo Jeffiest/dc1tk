@@ -555,7 +555,7 @@ fn number_at(text: &[char], position: usize) -> Option<(String, String, usize)> 
 /// The refusal of double, the one part of C89 this implementation leaves out.
 const NO_DOUBLE: &str = "double is not supported: the VM has 32-bit floats only; use float";
 
-/// The files #include reads as text (parse_source): the SDK's and definitions' headers, and the
+/// The files #include reads as text (ParseOptions::headers and libraries): the SDK's and definitions' headers, and the
 /// libraries #include "..." names, each by its path.
 #[derive(Clone, Copy)]
 pub struct Files<'a> {
@@ -587,9 +587,13 @@ fn included_key(path: &str, system: bool) -> String {
 /// How deep headers may include headers.
 const INCLUDE_DEPTH: usize = 32;
 
+/// The macros in force, as a cache key: each by its name, sorted, with its parameters, its body
+/// and whether it stays a constant.
+type MacrosKey = Vec<(String, Option<Vec<String>>, String, bool)>;
+
 thread_local! {
     /// The macros a header leaves defined, by its path, its text and the macros before it.
-    static HEADER_MACROS: RefCell<HashMap<u64, Macros>> = RefCell::new(HashMap::new());
+    static HEADER_MACROS: RefCell<HashMap<(String, String, MacrosKey), Macros>> = RefCell::new(HashMap::new());
 }
 
 /// The macros after #include <path>: the header read as text, as C reads it, from the macros
@@ -604,17 +608,16 @@ fn header_macros(path: &str, headers: Files, macros: Macros, depth: usize) -> Re
     if depth > INCLUDE_DEPTH {
         return Err(Error::invalid(format!("#include {path}: files include each other too deeply")));
     }
-    let key = {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        (path, text).hash(&mut hasher);
-        let mut defined: Vec<_> = macros.table.iter().collect();
-        defined.sort_by(|a, b| a.0.cmp(b.0));
-        for (name, definition) in defined {
-            (name, &definition.params, &definition.body, macros.constants.contains(name)).hash(&mut hasher);
-        }
-        hasher.finish()
-    };
+    let mut defined: MacrosKey = macros
+        .table
+        .iter()
+        .map(|(name, definition)| {
+            let constant = macros.constants.contains(name);
+            (name.clone(), definition.params.clone(), definition.body.clone(), constant)
+        })
+        .collect();
+    defined.sort_by(|a, b| a.0.cmp(&b.0));
+    let key = (path.to_string(), text.clone(), defined);
     if let Some(found) = HEADER_MACROS.with(|cache| cache.borrow().get(&key).cloned()) {
         return Ok(found);
     }
@@ -997,7 +1000,7 @@ struct State {
     /// a file read twice (as an include and as a library, under two names) gives the same tags.
     file_key: String,
     /// The typedefs of the headers and libraries included so far, read when they are given
-    /// (parse_source): what a type's size and slots need. They are not type words here, as a
+    /// (ParseOptions::headers): what a type's size and slots need. They are not type words here, as a
     /// script's names may be the same (sdk::resolve reads the headers' kinds for the rest).
     header_kinds: HashMap<String, String>,
 }
@@ -4470,43 +4473,39 @@ fn file_doc(text: &str) -> String {
 /// The name __FILE__ gives a file parsed without one.
 pub const UNNAMED_FILE: &str = "<script>";
 
-/// parse.parse(text): the program a script's source holds.
+/// How a file is parsed (parse_with); the defaults are parse's.
+#[derive(Clone, Copy)]
+pub struct ParseOptions<'a> {
+    /// The name __FILE__ gives until a #line names another (UNNAMED_FILE).
+    pub file: &'a str,
+    /// #defines in force before the first line (a mod patch's LANGUAGE); none.
+    pub defines: Option<&'a HashMap<String, String>>,
+    /// The headers #include <...> reads as text, by path, as a compiler reads them: their macros
+    /// reach the file's #if, and their typedefs, structs and constants its declarations. None
+    /// reads no file an #include names.
+    pub headers: Option<&'a IndexMap<String, String>>,
+    /// The libraries #include "..." reads (library::include_texts), whose macros, typedefs and
+    /// structs reach the file as C includes them. They are read with the headers.
+    pub libraries: Option<&'a IndexMap<String, String>>,
+}
+
+impl Default for ParseOptions<'_> {
+    fn default() -> Self {
+        ParseOptions { file: UNNAMED_FILE, defines: None, headers: None, libraries: None }
+    }
+}
+
+/// The program a script's source holds, read alone.
 pub fn parse(text: &str) -> Result<Node> {
-    parse_with(text, &HashMap::new())
+    parse_with(text, &ParseOptions::default())
 }
 
-/// parse.parse(text, defines): with #defines in force before the first line (a mod patch's
-/// LANGUAGE).
-pub fn parse_with(text: &str, defines: &HashMap<String, String>) -> Result<Node> {
-    parse_program(text, defines, UNNAMED_FILE, None)
-}
-
-/// The program a file's source holds, with its name for __FILE__.
-pub fn parse_file(text: &str, file: &str) -> Result<Node> {
-    parse_program(text, &HashMap::new(), file, None)
-}
-
-/// A source file as a compiler reads it: its #include <...> headers (from those given) read as text
-/// for their macros, so a header's #defines reach the file's #if as C has it.
-pub fn parse_source(text: &str, file: &str, headers: &IndexMap<String, String>) -> Result<Node> {
-    parse_program(text, &HashMap::new(), file, Some(Files { headers, libraries: None }))
-}
-
-/// parse_source with #defines in force before the first line (a mod patch's LANGUAGE), and the
-/// libraries #include "..." reads (library::include_texts), whose macros, typedefs and structs
-/// reach the file as C includes them.
-pub fn parse_source_with(
-    text: &str,
-    file: &str,
-    defines: &HashMap<String, String>,
-    headers: &IndexMap<String, String>,
-    libraries: &IndexMap<String, String>,
-) -> Result<Node> {
-    parse_program(text, defines, file, Some(Files { headers, libraries: Some(libraries) }))
-}
-
-fn parse_program(text: &str, defines: &HashMap<String, String>, file: &str, headers: Headers) -> Result<Node> {
-    Ok(parse_state(text, defines, file, headers)?.0)
+/// The program a source file holds, with its name, #defines and included files.
+pub fn parse_with(text: &str, options: &ParseOptions) -> Result<Node> {
+    let none = HashMap::new();
+    let defines = options.defines.unwrap_or(&none);
+    let headers = options.headers.map(|headers| Files { headers, libraries: options.libraries });
+    Ok(parse_state(text, defines, options.file, headers)?.0)
 }
 
 /// What an included file declares that the file including it needs while it is parsed: typedefs
@@ -4523,7 +4522,7 @@ struct Included {
 
 thread_local! {
     /// What a header or library (and what it includes) declares, by its key and text.
-    static INCLUDED: RefCell<HashMap<u64, Included>> = RefCell::new(HashMap::new());
+    static INCLUDED: RefCell<HashMap<(String, String), Included>> = RefCell::new(HashMap::new());
 }
 
 /// A file's own part of its unnamed structs' tags: 8 hexadecimal digits of a hash of its text that
@@ -4542,12 +4541,7 @@ fn included(path: &str, headers: Files) -> Result<Included> {
     let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {
         return Ok(Included::default());
     };
-    let key = {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        (path, text).hash(&mut hasher);
-        hasher.finish()
-    };
+    let key = (path.to_string(), text.clone());
     if let Some(found) = INCLUDED.with(|cache| cache.borrow().get(&key).cloned()) {
         return Ok(found);
     }
@@ -4778,7 +4772,7 @@ mod tests {
         let text = "#if LANGUAGE == LANGUAGE_FRENCH\nint fr;\n#elif LANGUAGE\nint other;\n#else\nint none;\n#endif\n";
         let defines: HashMap<String, String> =
             [("LANGUAGE", "2"), ("LANGUAGE_FRENCH", "2")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        let program = parse_with(text, &defines).unwrap();
+        let program = parse_with(text, &ParseOptions { defines: Some(&defines), ..ParseOptions::default() }).unwrap();
         assert_eq!(program["globals"].to_string(), r#"[{"name":"fr","type":"int"}]"#);
         // C's precedence: 3 & (1 == 1), (!2) == 1; / truncates
         for (condition, value) in [("3 & 1 == 1", true), ("!2 == 1", false), ("-7 / 2 == -3", true), ("1 && 0", false)]
@@ -4786,6 +4780,43 @@ mod tests {
             let globals = dump(&format!("#if {condition}\nint yes;\n#endif\n"));
             assert_eq!(globals.contains("\"yes\""), value, "{condition}");
         }
+    }
+
+    #[test]
+    fn a_headers_macros_are_cached_by_its_whole_text() {
+        // the cache is keyed by the header's path and text (and the macros before it), compared
+        // whole: another text under the same path is read again
+        let text = "#include <h.h>
+#if FLAG
+int yes;
+#endif
+";
+        let globals = |header: &str| {
+            let headers: IndexMap<String, String> = [("h.h".to_string(), header.to_string())].into();
+            let program = parse_with(text, &ParseOptions { headers: Some(&headers), ..ParseOptions::default() });
+            program.unwrap()["globals"].to_string()
+        };
+        assert_eq!(
+            globals(
+                "#define FLAG 1
+"
+            ),
+            r#"[{"name":"yes","type":"int"}]"#
+        );
+        assert_eq!(
+            globals(
+                "#define FLAG 0
+"
+            ),
+            "[]"
+        );
+        assert_eq!(
+            globals(
+                "#define FLAG 1
+"
+            ),
+            r#"[{"name":"yes","type":"int"}]"#
+        );
     }
 
     #[test]

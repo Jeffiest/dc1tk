@@ -198,7 +198,8 @@ const SHAPES: &str = "struct point {\n    int x;\n    int y;\n};\n\nstruct point
 fn program_with_headers(root: &Path, plan: &Plan, script: &str) -> Result<Node> {
     let headers = sdk::load_texts(&sdk_dir())?;
     let path = root.join(script);
-    let program = parse::parse_source(&read(&path), "script.c", &headers)?;
+    let options = parse::ParseOptions { file: "script.c", headers: Some(&headers), ..Default::default() };
+    let program = parse::parse_with(&read(&path), &options)?;
     let includes = library::read_includes(&program, &path, None, &sdk_dir(), &[])?;
     let program = library::expand(program, &includes, &headers)?;
     let found = plan.for_script(script).unwrap_or_default();
@@ -369,7 +370,8 @@ fn copies_from_several_languages_keep_each_ones_lines() {
     );
     // the merged text reads back as each language's own
     let body = |text: &str, defines: &HashMap<String, String>| -> Vec<Node> {
-        let program = parse::parse_with(text, defines).unwrap();
+        let program =
+            parse::parse_with(text, &parse::ParseOptions { defines: Some(defines), ..Default::default() }).unwrap();
         program["functions"][0]["body"]
             .as_array()
             .unwrap()

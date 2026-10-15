@@ -99,7 +99,13 @@ pub fn compile(
     let shown = script.source.to_string_lossy();
     let fail = |error: Error| Error::invalid(format!("{shown}: {error}"));
     let libraries = library::include_texts(&text, &script.source, None, tools.sdk_dir, extra).map_err(fail)?;
-    let program = parse::parse_source_with(&text, &shown, &defines, &headers, &libraries).map_err(fail)?;
+    let options = parse::ParseOptions {
+        file: &shown,
+        defines: Some(&defines),
+        headers: Some(&headers),
+        libraries: Some(&libraries),
+    };
+    let program = parse::parse_with(&text, &options).map_err(fail)?;
     if program.get("asm").is_some() {
         return Err(Error::invalid(format!("{shown}: a new map's script is C, not assembly")));
     }

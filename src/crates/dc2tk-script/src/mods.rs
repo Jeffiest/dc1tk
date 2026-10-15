@@ -895,8 +895,15 @@ pub fn run_tests(
     let extra = [mod_dir.to_path_buf(), mods_dir.clone()];
     let libraries = crate::library::include_texts(&text, &standing_in, Some(&texts), tools.sdk_dir, &extra)?;
     let defines = std::collections::HashMap::new();
-    let mut program =
-        crate::parse::parse_source_with(&text, crate::parse::UNNAMED_FILE, &defines, &headers, &libraries)?;
+    let mut program = crate::parse::parse_with(
+        &text,
+        &crate::parse::ParseOptions {
+            defines: Some(&defines),
+            headers: Some(&headers),
+            libraries: Some(&libraries),
+            ..Default::default()
+        },
+    )?;
     if !crate::source::truthy(&program["main"]) {
         let first = program["functions"]
             .as_array()

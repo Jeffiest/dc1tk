@@ -15,7 +15,8 @@ fn run(text: &str) -> dc2tk_script::Result<Value> {
 }
 
 fn run_with(head: &str, text: &str) -> dc2tk_script::Result<Value> {
-    let program = parse::parse_source(&format!("{head}{text}{TRAILER}"), "test.c", sdk_texts())?;
+    let options = parse::ParseOptions { file: "test.c", headers: Some(sdk_texts()), ..Default::default() };
+    let program = parse::parse_with(&format!("{head}{text}{TRAILER}"), &options)?;
     let program = library::expand(program, &common::no_texts(), sdk_texts())?;
     compile::compile_program(&program, tables())?;
     let table = dc2tk_script::vm::table_of(&program, tables())?;
@@ -146,12 +147,9 @@ fn pointers_refuse_what_the_vm_cannot_do() {
 fn global_arrays_index_through_their_address() {
     // an element at a constant index is the global slot itself; at another, through the array's
     // address in a hidden local
-    let program = parse::parse_source(
-        "int table[4];\n\nint f(int i)\n{\n    return table[2] + table[i];\n}\n\n#pragma natives event\nPROGRAM(100, f);\nMAIN(f);\n",
-        "test.c",
-        sdk_texts(),
-    )
-    .unwrap();
+    let text = "int table[4];\n\nint f(int i)\n{\n    return table[2] + table[i];\n}\n\n#pragma natives event\nPROGRAM(100, f);\nMAIN(f);\n";
+    let options = parse::ParseOptions { file: "test.c", headers: Some(sdk_texts()), ..Default::default() };
+    let program = parse::parse_with(text, &options).unwrap();
     let resolved =
         dc2tk_script::sdk::resolve(&library::expand(program, &common::no_texts(), sdk_texts()).unwrap(), tables())
             .unwrap();

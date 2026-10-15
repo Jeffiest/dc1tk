@@ -379,7 +379,13 @@ pub fn prepared(
     let file = patch.path.to_string_lossy();
     let extra = [tree.to_path_buf()];
     let libraries = library::include_texts(&patch.text, &patch.path, overlay, sdk_dir, &extra)?;
-    let parsed = parse::parse_source_with(&patch.text, &file, &defines, headers, &libraries)?;
+    let options = parse::ParseOptions {
+        file: &file,
+        defines: Some(&defines),
+        headers: Some(headers),
+        libraries: Some(&libraries),
+    };
+    let parsed = parse::parse_with(&patch.text, &options)?;
     if parsed.get("asm").is_some() {
         return Err(Error::invalid("a patch cannot be assembly"));
     }
@@ -391,7 +397,13 @@ pub fn prepared(
     let mut own_globals: Vec<Node> =
         parsed.list("globals").iter().map(|declared| declared.clone().with("source", Node::Null)).collect();
     for (path, text) in &texts {
-        if let Ok(library_program) = parse::parse_source_with(text, path, &defines, headers, &libraries) {
+        let options = parse::ParseOptions {
+            file: path,
+            defines: Some(&defines),
+            headers: Some(headers),
+            libraries: Some(&libraries),
+        };
+        if let Ok(library_program) = parse::parse_with(text, &options) {
             own_globals
                 .extend(library_program.list("globals").iter().map(|declared| declared.clone().with("source", path)));
         }

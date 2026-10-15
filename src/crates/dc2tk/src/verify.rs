@@ -114,7 +114,8 @@ fn check_source(
     let program = &model.programs[path];
     let result = (|| -> dc2tk_script::Result<(String, dc2tk_script::node::Node, Vec<u8>)> {
         let text = source::text(&model.script_program(program, path)?)?;
-        let parsed = parse::parse_source_with(&text, parse::UNNAMED_FILE, &Default::default(), headers, texts)?;
+        let options = parse::ParseOptions { headers: Some(headers), libraries: Some(texts), ..Default::default() };
+        let parsed = parse::parse_with(&text, &options)?;
         let rebuilt = compile::compile_program(&library::expand(parsed.clone(), texts, headers)?, tables)?;
         Ok((text, parsed, rebuilt))
     })();
