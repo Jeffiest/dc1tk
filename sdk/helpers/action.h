@@ -1,8 +1,8 @@
 // c2s SDK helpers for action scripts. Each helper stands for the native calls in its body; the
 // compiler expands it in place, so a helper call produces the same bytecode as writing the calls
 // out, and the decompiler folds every run it matches. Included by action.h.
-#ifndef C2S_HELPERS_ACTION_H
-#define C2S_HELPERS_ACTION_H
+#ifndef DC2TK_HELPERS_ACTION_H
+#define DC2TK_HELPERS_ACTION_H
 
 // Stores the next combo step, clears the attack press history and sets menace level 0 for 3
 // frames, as each hit of a combo does when it starts.

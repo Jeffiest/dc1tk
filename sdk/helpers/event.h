@@ -1,8 +1,8 @@
 // c2s SDK helpers for event scripts. Each helper stands for the native calls in its body; the
 // compiler expands it in place, so a helper call produces the same bytecode as writing the calls
 // out, and the decompiler folds every run it matches. Included by event.h.
-#ifndef C2S_HELPERS_EVENT_H
-#define C2S_HELPERS_EVENT_H
+#ifndef DC2TK_HELPERS_EVENT_H
+#define DC2TK_HELPERS_EVENT_H
 
 // The value kind of a scene character slot, as event.h declares it.
 typedef int chara_slot;

@@ -1,7 +1,7 @@
 // c2s.h: lets a C compiler or IDE read c2s scripts. The c2s compiler does not
 // read this file; it gives C tools a meaning for c2s's few extensions.
-#ifndef C2S_H
-#define C2S_H
+#ifndef DC2TK_C2S_H
+#define DC2TK_C2S_H
 
 typedef const char *string;
 typedef union { int i; float f; const char *s; int *ip; float *fp; } any __attribute__((__transparent_union__));

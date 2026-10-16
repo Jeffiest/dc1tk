@@ -13,8 +13,8 @@ use dc2tk_script::stb::{self, Region};
 use dc2tk_script::{compile, decompile, library, names, parse, source};
 use indexmap::IndexMap;
 
-const EVENT_HEADER: &str = r"#ifndef C2S_EVENT_H
-#define C2S_EVENT_H
+const EVENT_HEADER: &str = r"#ifndef DC2TK_EVENT_H
+#define DC2TK_EVENT_H
 #include <c2s.h>
 #pragma natives event
 

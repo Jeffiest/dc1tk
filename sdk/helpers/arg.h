@@ -1,8 +1,8 @@
 // c2s SDK helpers for arg scripts. Each helper stands for the native calls in its body; the
 // compiler expands it in place, so a helper call produces the same bytecode as writing the calls
 // out, and the decompiler folds every run it matches. Included by arg.h.
-#ifndef C2S_HELPERS_ARG_H
-#define C2S_HELPERS_ARG_H
+#ifndef DC2TK_HELPERS_ARG_H
+#define DC2TK_HELPERS_ARG_H
 
 // Adds the two records that place an actor: its position (actor, x, y, z), then its yaw as (actor,
 // 0.0, yaw, 0.0).

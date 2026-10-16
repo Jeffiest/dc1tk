@@ -1,8 +1,8 @@
 // c2s SDK helpers for effect scripts. Each helper stands for the native calls in its body; the
 // compiler expands it in place, so a helper call produces the same bytecode as writing the calls
 // out, and the decompiler folds every run it matches. Included by effect.h.
-#ifndef C2S_HELPERS_EFFECT_H
-#define C2S_HELPERS_EFFECT_H
+#ifndef DC2TK_HELPERS_EFFECT_H
+#define DC2TK_HELPERS_EFFECT_H
 
 // Starts a child effect and sets its first and second work vectors, which it reads with
 // get_work_vector1 and get_work_vector2.

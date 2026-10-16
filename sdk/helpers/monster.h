@@ -1,8 +1,8 @@
 // c2s SDK helpers for monster scripts. Each helper stands for the native calls in its body; the
 // compiler expands it in place, so a helper call produces the same bytecode as writing the calls
 // out, and the decompiler folds every run it matches. Included by monster.h.
-#ifndef C2S_HELPERS_MONSTER_H
-#define C2S_HELPERS_MONSTER_H
+#ifndef DC2TK_HELPERS_MONSTER_H
+#define DC2TK_HELPERS_MONSTER_H
 
 // Clears mask flag bits 1 and 2, so the monster can guard hits and dodge attacks again.
 static inline void allow_guard_and_dodge(void)

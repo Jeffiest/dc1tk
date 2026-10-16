@@ -13,8 +13,8 @@
 // NATIVE(B, N) means the game's scripts call the native as B + N. A call can
 // pick another form with an AT(B) or DIRECT prefix.
 
-#ifndef C2S_MONSTER_H
-#define C2S_MONSTER_H
+#ifndef DC2TK_MONSTER_H
+#define DC2TK_MONSTER_H
 
 #include <c2s.h>
 #pragma natives monster

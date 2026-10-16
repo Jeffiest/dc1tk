@@ -3,8 +3,8 @@
 // bits, wrapped to their width when stored. A string's characters are Shift-JIS, which takes at
 // most two bytes for one.
 
-#ifndef C2S_LIMITS_H
-#define C2S_LIMITS_H
+#ifndef DC2TK_LIMITS_H
+#define DC2TK_LIMITS_H
 
 #define CHAR_BIT 8
 #define SCHAR_MIN (-128)

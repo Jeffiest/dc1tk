@@ -4,8 +4,8 @@
 // argument after ... is passed as it is: char and short as int, float as float (there is no
 // double); va_arg(ap, char) and va_arg(ap, short) read the int and convert it back.
 
-#ifndef C2S_STDARG_H
-#define C2S_STDARG_H
+#ifndef DC2TK_STDARG_H
+#define DC2TK_STDARG_H
 
 #define va_list __va_list
 #define va_start(ap, last) __va_start(ap, last)

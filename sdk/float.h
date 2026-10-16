@@ -5,8 +5,8 @@
 // up to FLT_MAX. double and long double are not supported (see docs/c-standard.md), so the DBL_
 // and LDBL_ names are left out, and #ifdef DBL_MAX tells code so.
 
-#ifndef C2S_FLOAT_H
-#define C2S_FLOAT_H
+#ifndef DC2TK_FLOAT_H
+#define DC2TK_FLOAT_H
 
 #define FLT_RADIX 2
 #define FLT_ROUNDS 0
