@@ -23,8 +23,9 @@ use crate::options::{Common, ModsDir, Tools};
 pub struct BuildArgs {
     /// The source tree, as setup or decompile wrote it.
     source: PathBuf,
-    /// The retail disc image the source came from.
-    iso: PathBuf,
+    /// The retail disc the source came from: its image, or an extracted disc (packed into the new
+    /// image, as `pack` writes it, before the build's changes).
+    disc: PathBuf,
     /// Disc image to write.
     #[arg(short, long)]
     output: PathBuf,
@@ -91,7 +92,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     let found = compile(args, &tools, &mut planned)?;
     let made = game_files(args, &tools, &planned, &found)?;
     let over_budget = memory_check(args, &made.data.files)?;
-    let written = rebuild::write_disc(&args.iso, &args.output, &made.data.files)?;
+    let written = rebuild::write_disc(&args.disc, &args.output, &made.data.files)?;
     if let Some(executable) = &made.data.executable {
         // the executable tables (monsters, spectrumising, ...): the boot executable patched in
         // place, its size kept
@@ -132,7 +133,7 @@ fn plan(args: &BuildArgs, tools: &Tools) -> Result<Planned> {
     if !disc_clashes.is_empty() {
         bail!(discfiles::clash_text(&disc_clashes));
     }
-    let (resolved, templates) = resolved(&mod_dirs, &args.iso, &args.common.def_sets())?;
+    let (resolved, templates) = resolved(&mod_dirs, &args.disc, &args.common.def_sets())?;
     let id_clashes = replace::clashes(&resolved, &disc_files);
     if !id_clashes.is_empty() {
         bail!("the chosen mods cannot be built together:\n  {}", id_clashes.join("\n  "));
@@ -145,7 +146,7 @@ fn plan(args: &BuildArgs, tools: &Tools) -> Result<Planned> {
     let lines = replace::all_lines(&mod_dirs)?;
     let new_maps = maptable::new_maps(&lines)?;
     if !new_maps.is_empty() {
-        let numbers = maptable::disc_numbers_with(&args.iso, language, &new_maps)?;
+        let numbers = maptable::disc_numbers_with(&args.disc, language, &new_maps)?;
         plan.with_constants(&patches::for_every_mod(&mapscript::map_constants(&new_maps, &numbers), &mod_dirs));
     }
     Ok(Planned { mod_dirs, overrides, disc_files, resolved, templates, consts, plan, lines, new_maps, language })
@@ -199,7 +200,7 @@ fn start_at(args: &BuildArgs, planned: &Planned) -> Result<Option<startat::Start
         return Ok(None);
     };
     // the chosen mods' new maps are numbered after the disc's
-    let map_numbers = || maptable::disc_numbers_with(&args.iso, planned.language, &planned.new_maps);
+    let map_numbers = || maptable::disc_numbers_with(&args.disc, planned.language, &planned.new_maps);
     let start = startat::resolve(
         &args.source,
         &planned.consts,
@@ -247,7 +248,7 @@ fn compile(args: &BuildArgs, tools: &Tools, planned: &mut Planned) -> Result<bui
         println!("note: {note}");
     }
     let found =
-        build::changes(&args.source, &args.iso, &toolchain, &planned.overrides, args.full, Some(&planned.plan))?;
+        build::changes(&args.source, &args.disc, &toolchain, &planned.overrides, args.full, Some(&planned.plan))?;
     match &found.all_because {
         Some(why) => println!("compiled all {} scripts: {}", found.compiled, why),
         None => println!("compiled {} scripts; the rest are unchanged since decompiling", found.compiled),
@@ -268,9 +269,9 @@ fn compile(args: &BuildArgs, tools: &Tools, planned: &mut Planned) -> Result<bui
 /// mods' own files, the assets their id lines replace, new music, maps and their scripts, and the
 /// data tables.
 fn game_files(args: &BuildArgs, tools: &Tools, planned: &Planned, found: &build::Changes) -> Result<GameFiles> {
-    let (mod_dirs, iso) = (&planned.mod_dirs, &args.iso);
+    let (mod_dirs, disc) = (&planned.mod_dirs, &args.disc);
     let tops: HashSet<String> = found.scripts.iter().map(|change| change.top.clone()).collect();
-    let (files, replaced) = discfiles::replaced(iso, &planned.disc_files, &found.files, &tops, &planned.templates)?;
+    let (files, replaced) = discfiles::replaced(disc, &planned.disc_files, &found.files, &tops, &planned.templates)?;
     for item in &replaced {
         let Some(old) = item.old else {
             let new = if item.new_file { ", a new file" } else { "" };
@@ -284,9 +285,9 @@ fn game_files(args: &BuildArgs, tools: &Tools, planned: &Planned, found: &build:
     }
     // the letters the English font gains, for every changed English text: the text: lines' and
     // the items' names and descriptions
-    let item_letters = datatables::english_item_letters(iso, mod_dirs)?;
-    let english = replace::english_letters(iso, &planned.resolved, item_letters)?;
-    let (files, changed) = replace::apply_with(iso, &planned.resolved, &files, &english)?;
+    let item_letters = datatables::english_item_letters(disc, mod_dirs)?;
+    let english = replace::english_letters(disc, &planned.resolved, item_letters)?;
+    let (files, changed) = replace::apply_with(disc, &planned.resolved, &files, &english)?;
     for item in &changed {
         println!(
             "replaced: {} ({}; mod {}, {} bytes, was {})",
@@ -303,7 +304,7 @@ fn game_files(args: &BuildArgs, tools: &Tools, planned: &Planned, found: &build:
             println!("{warning}");
         }
     }
-    let (files, new_music) = replace::add_music(iso, &planned.lines, &files)?;
+    let (files, new_music) = replace::add_music(disc, &planned.lines, &files)?;
     for item in &new_music {
         println!(
             "added: {} ({}; mod {}, {} bytes, a new file)",
@@ -317,7 +318,7 @@ fn game_files(args: &BuildArgs, tools: &Tools, planned: &Planned, found: &build:
         }
     }
     let (files, map_changes) = maps(args, tools, planned, &files)?;
-    let data = datatables::apply_data(iso, mod_dirs, &files, &english.slots)?;
+    let data = datatables::apply_data(disc, mod_dirs, &files, &english.slots)?;
     for change in &data.changes {
         for line in datatables::described(change) {
             println!("  {line}");
@@ -334,7 +335,7 @@ fn maps(args: &BuildArgs, tools: &Tools, planned: &Planned, files: &Files) -> Re
     let program_of = |line: &replace::Line, value: &serde_json::Value| {
         mapscript::program_number(value, &line.module, &planned.plan.numbers, &planned.consts)
     };
-    let maps = mapedit::apply_maps(&args.iso, &planned.mod_dirs, files, &program_of)?;
+    let maps = mapedit::apply_maps(&args.disc, &planned.mod_dirs, files, &program_of)?;
     for line in &maps.said {
         println!("{line}");
     }
@@ -374,7 +375,7 @@ fn maps(args: &BuildArgs, tools: &Tools, planned: &Planned, files: &Files) -> Re
 /// (dc2tk_script::memory, docs/assets/memory.md); true when a budget that is certain is exceeded.
 /// The image is mapped only here, so writing the new image can still clone the original.
 fn memory_check(args: &BuildArgs, files: &Files) -> Result<bool> {
-    let original = dc2tk_disc::DiscSource::open(&args.iso)?;
+    let original = dc2tk_disc::DiscSource::open(&args.disc)?;
     let modded = memory::Overlay::new(&original, files);
     let changed: Vec<String> = files.keys().cloned().collect();
     let findings = memory::check(&original, &modded, &changed);

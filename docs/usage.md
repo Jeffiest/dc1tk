@@ -54,10 +54,11 @@ dc2tk defs disc extracted/disc <definition set>     record which disc a set is f
 dc2tk natives <ChronicleTwo checkout>
 ```
 
-A command that reads the disc (`assets`, `map-export`, `diff`, `mod make`,
-`mod asset`, `mod migrate`, `mod check --disc`) takes the disc image or
-`extracted/disc` alike. `build` and `setup` need the image: `build` writes a
-copy of it, and `setup` extracts it.
+A command that reads the disc (`setup`, `build`, `assets`, `map-export`, `diff`,
+`mod make`, `mod asset`, `mod migrate`, `mod check --disc`) takes the disc image
+or `extracted/disc` alike. Given the folder, `build` first packs it into the new
+image (as `dc2tk pack` does) and `setup` decompiles it where it is. `extract`
+alone needs the image.
 
 The tests run with `cargo test --release` in the repository folder. The tests that read the
 game's own files are marked ignored; with `DC2TK_CORPUS` set to an extracted disc

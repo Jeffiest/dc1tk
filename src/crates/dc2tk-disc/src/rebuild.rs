@@ -161,29 +161,34 @@ fn sector_count(count: u64) -> Result<u32> {
         .map_err(|_| Error::invalid(format!("the image would be {count} sectors, more than ISO 9660 can hold")))
 }
 
-/// A copy of the image with files of DATA.DAT replaced, by path as the index spells it, and new
-/// files added. A file that fits its sectors stays where it is; one that grows moves into the DMMY
-/// filler, then past the end of the volume. New files get index records, and an index that
-/// outgrows its sectors moves too. The output must be another file than the input.
+/// A copy of the disc (`source_path`: its image, or an extracted disc, packed) with files of
+/// DATA.DAT replaced, by path as the index spells it, and new files added. A file that fits its
+/// sectors stays where it is; one that grows moves into the DMMY filler, then past the end of the
+/// volume. New files get index records, and an index that outgrows its sectors moves too. The
+/// output must be another file than the input.
 ///
 /// The copy comes first, before the source is mapped: Windows clones a file's blocks for a copy
 /// (seconds for 4.7 GB) but not while the file is mapped (half a minute), so callers should not
 /// hold the source mapped either.
-pub fn write_disc(iso_path: &Path, out_path: &Path, files: &BTreeMap<String, Vec<u8>>) -> Result<Written> {
-    let mut out = write_copy(iso_path, out_path)?;
-    let source = crate::Image::open(iso_path)?;
-    let image = source.bytes();
-    let index_record = iso::find(image, "DATA.HD4")?.ok_or_else(|| Error::Missing("DATA.HD4".into()))?;
-    let data_record = iso::find(image, "DATA.DAT")?.ok_or_else(|| Error::Missing("DATA.DAT".into()))?;
-    let filler = iso::find(image, FILLER)?;
-    let mut index_data = iso::read_file(image, &index_record).to_vec();
+pub fn write_disc(source_path: &Path, out_path: &Path, files: &BTreeMap<String, Vec<u8>>) -> Result<Written> {
+    let mut out = write_copy(source_path, out_path)?;
+    // what the rest needs of the image it starts from, read before anything is written: a packed
+    // disc's image is the output itself, which cannot grow while it is mapped
+    let (index_record, data_record, filler, mut index_data, mut pvd, image_len) = {
+        let source = crate::Image::open(if source_path.is_dir() { out_path } else { source_path })?;
+        let image = source.bytes();
+        let index_record = iso::find(image, "DATA.HD4")?.ok_or_else(|| Error::Missing("DATA.HD4".into()))?;
+        let data_record = iso::find(image, "DATA.DAT")?.ok_or_else(|| Error::Missing("DATA.DAT".into()))?;
+        let index_data = iso::read_file(image, &index_record).to_vec();
+        let pvd = iso::read_at(image, iso::PVD_SECTOR * iso::SECTOR, iso::SECTOR).to_vec();
+        (index_record, data_record, iso::find(image, FILLER)?, index_data, pvd, image.len() as u64)
+    };
     let entries = archive::parse_index(&index_data)?;
     let mut position = HashMap::new();
     for (number, entry) in entries.iter().enumerate() {
         position.insert(entry.path.as_str(), number);
     }
-    let mut pvd = iso::read_at(image, iso::PVD_SECTOR * iso::SECTOR, iso::SECTOR).to_vec();
-    let volume = (u32_at(&pvd, VOLUME_SIZE) as u64).max(sectors(image.len() as u64));
+    let volume = (u32_at(&pvd, VOLUME_SIZE) as u64).max(sectors(image_len));
     let mut space = match &filler {
         None => Space { next: volume, limit: None, volume },
         Some(filler) => Space {
@@ -266,15 +271,20 @@ fn refuse_output_over_input(iso_path: &Path, out_path: &Path) -> Result<()> {
     }
 }
 
-/// The output image, a copy of the input to change in place.
-fn write_copy(iso_path: &Path, out_path: &Path) -> Result<File> {
-    // first, so an image that is not there is named as such, not as a copy that failed
-    fs::metadata(iso_path).with_path("read", iso_path)?;
-    refuse_output_over_input(iso_path, out_path)?;
-    if let Some(parent) = out_path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
-        fs::create_dir_all(parent).with_path("create", parent)?;
+/// The output image, a copy of the input to change in place: the image copied, or the extracted
+/// disc packed (layout::pack, the image it came from).
+fn write_copy(source_path: &Path, out_path: &Path) -> Result<File> {
+    // first, so a disc that is not there is named as such, not as a copy that failed
+    fs::metadata(source_path).with_path("read", source_path)?;
+    refuse_output_over_input(source_path, out_path)?;
+    if source_path.is_dir() {
+        crate::layout::pack(source_path, out_path)?;
+    } else {
+        if let Some(parent) = out_path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+            fs::create_dir_all(parent).with_path("create", parent)?;
+        }
+        fs::copy(source_path, out_path).with_path("copy the image to", out_path)?;
     }
-    fs::copy(iso_path, out_path).with_path("copy the image to", out_path)?;
     OpenOptions::new().read(true).write(true).open(out_path).with_path("write", out_path)
 }
 
@@ -337,6 +347,24 @@ mod tests {
         }
         // the source is untouched
         assert_eq!(fs::read(&iso).unwrap(), samples::sample_disc());
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn an_extracted_disc_is_written_as_its_image_would_be() {
+        let folder = scratch("extracted");
+        let iso = folder.join("disc.iso");
+        fs::write(&iso, samples::sample_disc()).unwrap();
+        crate::extract::extract(&samples::sample_disc(), &folder.join("disc")).unwrap();
+        let mut files = BTreeMap::new();
+        files.insert("readme.txt".to_string(), b"HELLO".to_vec());
+        files.insert("map/t01.stb".to_string(), vec![7u8; 5000]);
+        files.insert("new/file.bin".to_string(), b"new".to_vec());
+        let (from_image, from_folder) = (folder.join("image.iso"), folder.join("out").join("folder.iso"));
+        let written = write_disc(&iso, &from_image, &files).unwrap();
+        let packed = write_disc(&folder.join("disc"), &from_folder, &files).unwrap();
+        assert_eq!((packed.grown, packed.index_free), (written.grown, written.index_free));
+        assert_eq!(fs::read(&from_folder).unwrap(), fs::read(&from_image).unwrap());
         fs::remove_dir_all(&folder).unwrap();
     }
 

@@ -1,5 +1,5 @@
-//! dc2tk setup ISO: extract the retail disc (or reuse an extraction), decompile every script and
-//! write the asset tree, all under extracted/;
+//! dc2tk setup DISC: extract the retail disc (or reuse an extraction, or take one given instead of
+//! the image), decompile every script and write the asset tree, all under extracted/;
 //! and dc2tk natives CHRONICLETWO: the native tables from a ChronicleTwo checkout.
 
 use std::path::{Path, PathBuf};
@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use anyhow::{bail, Result};
 use clap::Args;
 
-use dc2tk_disc::{extract, Image};
+use dc2tk_disc::{extract, DiscSource, Image};
 use dc2tk_script::{decompiler, natives};
 
 use crate::files;
@@ -16,12 +16,13 @@ use crate::options::Common;
 
 #[derive(Args)]
 pub struct SetupArgs {
-    /// The retail disc image.
-    iso: PathBuf,
+    /// The retail disc: its image, or an extracted disc, which is used where it is (and
+    /// --extracted is not).
+    disc: PathBuf,
     /// Directory for the decompiled source tree.
     #[arg(default_value = "extracted/scripts")]
     output: PathBuf,
-    /// Where to extract the disc (reused when already there).
+    /// Where to extract the disc image (reused when already there).
     #[arg(long, default_value = "extracted/disc")]
     extracted: PathBuf,
     /// Where to write the asset tree (replaced when already there).
@@ -38,9 +39,27 @@ pub struct SetupArgs {
 }
 
 pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
-    let extracted = &args.extracted;
+    let extracted = if args.disc.is_dir() {
+        // an extracted disc, checked for its manifest
+        DiscSource::open(&args.disc)?;
+        &args.disc
+    } else {
+        extract_image(&args.disc, &args.extracted)?;
+        &args.extracted
+    };
+    let common = &args.common;
+    decompile_tree(extracted, Some(&args.output), args.force, common)?;
+    if !args.no_assets {
+        return crate::asset_tree::run_assets(&args.disc, &args.assets, true, &common.def_sets());
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The disc image extracted into `extracted`, or the extraction already there brought up to date
+/// (the boot executable, and the disc's layout an older extraction lacks).
+fn extract_image(iso: &Path, extracted: &Path) -> Result<()> {
     {
-        let image = Image::open(&args.iso)?;
+        let image = Image::open(iso)?;
         if extracted.join(extract::MANIFEST).is_file() {
             extract::extract_boot(image.bytes(), extracted)?;
             if !extracted.join(dc2tk_disc::layout::LAYOUT).is_file() {
@@ -52,12 +71,7 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
             println!("{} files extracted to {}", manifest.files.len(), files::shown_path(extracted));
         }
     }
-    let common = &args.common;
-    decompile_tree(extracted, Some(&args.output), args.force, common)?;
-    if !args.no_assets {
-        return crate::asset_tree::run_assets(&args.iso, &args.assets, true, &common.def_sets());
-    }
-    Ok(ExitCode::SUCCESS)
+    Ok(())
 }
 
 /// Decompiles an extracted disc, or a folder of one, into a source tree, saying what it wrote.
@@ -171,7 +185,7 @@ mod tests {
         std::fs::write(&iso, dc2tk_disc::samples::sample_disc()).unwrap();
         let extracted = folder.join("extracted");
         let args = SetupArgs {
-            iso,
+            disc: iso,
             output: folder.join("source"),
             extracted: extracted.clone(),
             assets: folder.join("assets"),
@@ -186,6 +200,30 @@ mod tests {
         std::fs::remove_file(extracted.join("readme.txt")).unwrap();
         run_setup(&args).unwrap();
         assert!(!extracted.join("readme.txt").exists());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn setup_takes_an_extracted_disc_where_it_is() {
+        let folder = scratch("setup-extracted");
+        let disc = folder.join("disc");
+        extract::extract(&dc2tk_disc::samples::sample_disc(), &disc).unwrap();
+        let args = SetupArgs {
+            disc: disc.clone(),
+            output: folder.join("source"),
+            extracted: folder.join("unused"),
+            assets: folder.join("assets"),
+            no_assets: true,
+            force: false,
+            common: no_definitions(),
+        };
+        run_setup(&args).unwrap();
+        assert!(folder.join("source/map/t01.c").is_file());
+        assert!(!folder.join("unused").exists());
+        // a folder that is no extracted disc says so
+        let args = SetupArgs { disc: folder.join("source"), ..args };
+        let error = run_setup(&args).unwrap_err().to_string();
+        assert!(error.contains("is not an extracted disc"), "{error}");
         std::fs::remove_dir_all(&folder).unwrap();
     }
 
