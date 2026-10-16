@@ -173,6 +173,184 @@ def anime_coords(context):
     return lines, selected
 
 
+def _game_matrix(pos, rot, scale):
+    """A game transform T·Rz·Ry·Rx·S (radians) as a Blender matrix."""
+    from mathutils import Euler, Matrix
+
+    axes = Matrix(((1.0, 0.0, 0.0, 0.0), (0.0, 0.0, -1.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)))
+    game = Matrix.Translation(pos) @ Euler(rot, "XYZ").to_matrix().to_4x4() @ Matrix.Diagonal(list(scale) + [1.0])
+    return axes @ game @ axes.inverted()
+
+
+def _numbers(values, size, default=0.0):
+    values = c2data.to_py(values)
+    if not isinstance(values, list):
+        values = []
+    out = []
+    for value in values[:size]:
+        try:
+            out.append(float(value))
+        except (TypeError, ValueError):
+            out.append(default)
+    return out + [default] * (size - len(out))
+
+
+def _box(matrix, low, high):
+    corners = [matrix @ _vector(schema.game_to_blender((x, y, z))) for x in (low[0], high[0]) for y in (low[1], high[1]) for z in (low[2], high[2])]
+    lines = []
+    for a, b in EDGES:
+        lines += [corners[a][:], corners[b][:]]
+    return lines
+
+
+def camera_coords(context):
+    """The fixed cameras' boxes (FIX_CAMERA_RECT, in their own transform) and lines from each
+    camera to its other positions (FIX_CAMERA_POS2)."""
+    from mathutils import Matrix
+
+    lines, selected = [], []
+    for root in c2data.scene_map_roots(context.scene):
+        cameras = c2data.to_py(c2data.lookup(root, ("map", "cameras")))
+        if not isinstance(cameras, list):
+            continue
+        chosen = {c2data.lookup(obj, ("index",)) for obj in context.selected_objects if c2data.role(obj) == "camera"}
+        base = root.matrix_world
+        for index, camera in enumerate(cameras):
+            if not isinstance(camera, dict):
+                continue
+            out = selected if index in chosen else lines
+            at = base @ _vector(schema.game_to_blender(_numbers(camera.get("pos"), 3)))
+            for other in camera.get("pos2") or []:
+                if isinstance(other, dict):
+                    to = base @ _vector(schema.game_to_blender(_numbers(other.get("pos"), 3)))
+                    out += [at[:], to[:]]
+            for rect in camera.get("rects") or []:
+                if not isinstance(rect, dict):
+                    continue
+                matrix = base @ _game_matrix(
+                    _numbers(rect.get("pos"), 3), _numbers(rect.get("rot"), 3), _numbers(rect.get("scale"), 3, 1.0)
+                ) if rect.get("pos") is not None else base @ Matrix.Identity(4)
+                out += _box(matrix, _numbers(rect.get("min"), 3), _numbers(rect.get("max"), 3))
+    return lines, selected
+
+
+def cell_coords(context):
+    """Each template's dungeon cell (320 x 320 about its origin) on the ground, with its closed
+    sides (MOVE_FLAG -X, -Z, +X, +Z) drawn as walls."""
+    half = schema.DUNGEON_CELL / 2.0
+    lines, walls = [], []
+    for obj in context.visible_objects:
+        if c2data.role(obj) != "placement" or not c2data.is_preview(obj):
+            continue
+        world = obj.matrix_world
+        corner = lambda x, z, y=0.0: (world @ _vector(schema.game_to_blender((x, y, z))))[:]
+        sides = (((-half, -half), (-half, half)), ((-half, -half), (half, -half)), ((half, -half), (half, half)), ((-half, half), (half, half)))
+        flags = _numbers(c2data.lookup(obj, ("move_flag",)), 4)
+        for side, ((x0, z0), (x1, z1)) in enumerate(sides):
+            lines += [corner(x0, z0), corner(x1, z1)]
+            if flags[side]:
+                for height in (40.0, 80.0):
+                    walls += [corner(x0, z0, height), corner(x1, z1, height)]
+                walls += [corner(x0, z0), corner(x0, z0, 80.0), corner(x1, z1), corner(x1, z1, 80.0)]
+    return lines, walls
+
+
+def spot_coords(context):
+    """Where the map's scripts place the player (Read Map Scripts): a cross on the ground and an
+    arrow the way the player faces."""
+    import math
+
+    from . import scripts
+
+    lines, selected = [], []
+    for root in c2data.scene_map_roots(context.scene):
+        report = scripts.info(root) or {}
+        base = root.matrix_world
+        for spot in report.get("player_positions") or []:
+            try:
+                x, y, z = float(spot["x"]), float(spot["y"]), float(spot["z"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            yaw = spot.get("yaw")
+            at = lambda dx, dz, dy=0.0: (base @ _vector(schema.game_to_blender((x + dx, y + dy, z + dz))))[:]
+            lines += [at(-8, 0), at(8, 0), at(0, -8), at(0, 8), at(0, 0), at(0, 0, 40)]
+            if isinstance(yaw, (int, float)):
+                dx, dz = 25.0 * math.sin(yaw), 25.0 * math.cos(yaw)
+                lines += [at(0, 0, 20), at(dx, dz, 20)]
+    return lines, selected
+
+
+def cfg_coords(context):
+    """What the map's .cfg adds (exported into the root's cfg): water surfaces, occlusion planes,
+    the areas drawn without their parts, extra trigger points and where villagers stand."""
+    import math
+
+    lines, selected = [], []
+    for root in c2data.scene_map_roots(context.scene):
+        cfg = c2data.to_py(c2data.lookup(root, ("cfg",)))
+        if not isinstance(cfg, dict):
+            continue
+        base = root.matrix_world
+        at = lambda point: (base @ _vector(schema.game_to_blender(point)))[:]
+        for water in cfg.get("water") or []:
+            low, high = _numbers(water.get("corner0"), 3), _numbers(water.get("corner1"), 3)
+            pos = _numbers(water.get("pos"), 3)
+            corners = [(x + pos[0], low[1] + pos[1], z + pos[2]) for x, z in ((low[0], low[2]), (high[0], low[2]), (high[0], high[2]), (low[0], high[2]))]
+            for a, b in zip(corners, corners[1:] + corners[:1]):
+                lines += [at(a), at(b)]
+            lines += [at(corners[0]), at(corners[2]), at(corners[1]), at(corners[3])]
+        for plane in cfg.get("occlusion") or []:
+            corners = [_numbers(corner, 3) for corner in plane[:4]] if isinstance(plane, list) else []
+            for a, b in zip(corners, corners[1:] + corners[:1]):
+                lines += [at(a), at(b)]
+        for area in cfg.get("draw_off") or []:
+            for key in ("camera", "hidden"):
+                pair = area.get(key) if isinstance(area, dict) else None
+                if isinstance(pair, list) and len(pair) == 2:
+                    lines += _box(base, _numbers(pair[0], 3), _numbers(pair[1], 3))
+        for event in cfg.get("events") or []:
+            pos = _numbers(event.get("pos"), 9)
+            matrix = base @ _game_matrix(pos[0:3], pos[3:6], [1.0, 1.0, 1.0])
+            half = [abs(s) or 1.0 for s in pos[6:9]]
+            lines += _box(matrix, [-h for h in half], half)
+        for villager in cfg.get("villagers") or []:
+            x, y, z = _numbers(villager.get("pos"), 3)
+            yaw = float(villager.get("yaw") or 0.0)
+            lines += [at((x - 6, y, z)), at((x + 6, y, z)), at((x, y, z - 6)), at((x, y, z + 6)), at((x, y, z)), at((x, y + 30, z))]
+            lines += [at((x, y + 15, z)), at((x + 20 * math.sin(yaw), y + 15, z + 20 * math.cos(yaw)))]
+    return lines, selected
+
+
+def walkable_tris(context):
+    """The shown floor collision's triangles by what the player does on them: stand (the
+    triangle faces up at least as much as the engine's slope limit), meet a wall, or swim (areas
+    1 and 7)."""
+    floor, wall, water = [], [], []
+    for root in c2data.scene_map_roots(context.scene):
+        for obj in c2data.collision_meshes(root):
+            if c2data.lookup(c2data.piece_of(obj), ("kind",)) != "collision" or not obj.visible_get():
+                continue
+            mesh = obj.data
+            world = obj.matrix_world
+            turn = world.to_3x3()
+            names = [slot.material.name if slot.material else "" for slot in obj.material_slots]
+            for polygon in mesh.polygons:
+                if len(polygon.vertices) < 3:
+                    continue
+                normal = (turn @ polygon.normal).normalized()
+                attrs = schema.parse_col(names[polygon.material_index]) if polygon.material_index < len(names) else None
+                if attrs is not None and attrs[2] in schema.WATER_AREAS:
+                    out = water
+                elif normal.z >= schema.WALL_NORMAL_Y:
+                    out = floor
+                else:
+                    out = wall
+                corners = [world @ mesh.vertices[index].co for index in polygon.vertices]
+                for i in range(1, len(corners) - 1):
+                    out += [corners[0][:], corners[i][:], corners[i + 1][:]]
+    return [(floor, (0.2, 0.9, 0.3, 0.35)), (wall, (0.95, 0.25, 0.2, 0.4)), (water, (0.2, 0.45, 1.0, 0.4))]
+
+
 def invalidate(*_args):
     global _batches
     _batches = None
@@ -184,7 +362,15 @@ def _scene_changed(_scene, _depsgraph=None):
 
 
 SELECTED = (1.0, 0.7, 0.2, 1.0)
-LAYERS = (("show_boxes", box_coords, (0.3, 0.9, 0.9, 1.0)), ("show_anime", anime_coords, (0.85, 0.45, 0.95, 1.0)))
+LAYERS = (
+    ("show_boxes", box_coords, (0.3, 0.9, 0.9, 1.0)),
+    ("show_anime", anime_coords, (0.85, 0.45, 0.95, 1.0)),
+    ("show_camera_boxes", camera_coords, (0.95, 0.85, 0.3, 1.0)),
+    ("show_spots", spot_coords, (1.0, 0.4, 0.7, 1.0)),
+    ("show_cfg", cfg_coords, (0.45, 0.75, 1.0, 1.0)),
+)
+# cells and walls are drawn as plain lines and as walls of the closed sides
+CELL_COLOURS = ((0.6, 0.6, 0.6, 1.0), (1.0, 0.35, 0.2, 1.0))
 
 
 def _make_batches(context, shader):
@@ -195,7 +381,15 @@ def _make_batches(context, shader):
         lines, selected = coords_of(context)
         for coords, tint in ((lines, colour), (selected, SELECTED)):
             if coords:
-                batches.append((batch_for_shader(shader, "LINES", {"pos": coords}), tint, setting))
+                batches.append((batch_for_shader(shader, "LINES", {"pos": coords}), tint, setting, False))
+    if context.window_manager.dc2tk_maps.show_cells:
+        for coords, tint in zip(cell_coords(context), CELL_COLOURS):
+            if coords:
+                batches.append((batch_for_shader(shader, "LINES", {"pos": coords}), tint, "show_cells", False))
+    if context.window_manager.dc2tk_maps.show_walkable:
+        for coords, tint in walkable_tris(context):
+            if coords:
+                batches.append((batch_for_shader(shader, "TRIS", {"pos": coords}), tint, "show_walkable", True))
     return batches
 
 
@@ -205,7 +399,8 @@ def draw():
     wm = getattr(context, "window_manager", None)
     if wm is None or not hasattr(wm, "dc2tk_maps"):
         return
-    shown = {setting for setting, _coords_of, _colour in LAYERS if getattr(wm.dc2tk_maps, setting)}
+    names = [setting for setting, _coords_of, _colour in LAYERS] + ["show_cells", "show_walkable"]
+    shown = {setting for setting in names if getattr(wm.dc2tk_maps, setting)}
     if not shown:
         return
     shader = _shader()
@@ -219,10 +414,19 @@ def draw():
 
     gpu.state.line_width_set(1.5)
     shader.bind()
-    for batch, colour, setting in _batches:
-        if setting in shown:
-            shader.uniform_float("color", colour)
-            batch.draw(shader)
+    for batch, colour, setting, filled in _batches:
+        if setting not in shown:
+            continue
+        if filled:
+            gpu.state.blend_set("ALPHA")
+            gpu.state.depth_test_set("LESS_EQUAL")
+            gpu.state.depth_mask_set(False)
+        shader.uniform_float("color", colour)
+        batch.draw(shader)
+        if filled:
+            gpu.state.blend_set("NONE")
+            gpu.state.depth_test_set("NONE")
+            gpu.state.depth_mask_set(True)
     gpu.state.line_width_set(1.0)
 
 

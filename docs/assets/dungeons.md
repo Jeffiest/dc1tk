@@ -383,7 +383,11 @@ model, `-a` floor and wall collision, `-c` camera collision) and points
 ([the add-on](../../blender-plugin/README.md)), and the export into a mod
 writes them into the template: moving, adding and deleting pieces and
 points, editing the meshes, painting collision (area 5 where things spawn,
-section 4), new models. A preview itself places nothing, and moving it
+section 4), new models, and the cell's closed sides (`MOVE_FLAG`, the
+preview's `move_flag`, which the add-on draws around each part and toggles
+side by side). The add-on also lays a layout's room out from the parts
+(Preview Dungeon Layout, from `extracted/data/layouts.json`): copies beside
+the map, never exported. A preview itself places nothing, and moving it
 changes nothing. Keep a part within its 320 × 320 cell around its origin
 (400 in d05, d06), its open sides where its `link` says: the generator joins
 parts edge to edge and never looks at their meshes. An unedited export

@@ -183,7 +183,7 @@ def create_model_piece(context, placement, name, kind, letter, order):
 
 def parent_model_meshes(meshes, piece):
     for obj in meshes:
-        obj[c2data.KEY] = {"role": "mds"}
+        c2data.make_new_node(obj)
         world = obj.matrix_world.copy()
         obj.parent = piece
         obj.matrix_parent_inverse = Matrix.Identity(4)
@@ -195,6 +195,7 @@ def create_collision_meshes(context, root, piece, meshes, kind, letter, colour_m
     collection = import_map.collision_collections(context, root)[kind]
     for obj in meshes:
         copy = obj.copy()
+        c2data.make_new_node(copy)
         copy.data = obj.data.copy()
         copy.data.materials.clear()
         copy.data.materials.append(material)

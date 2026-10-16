@@ -4,6 +4,7 @@ from . import c2data, schema
 
 ERROR = "ERROR"
 WARNING = "WARNING"
+NOTE = "INFO"
 
 
 results = []
@@ -25,7 +26,7 @@ def check(root):
     _len_check(found, root, "Map name", name)
 
     placements = []
-    for obj in c2data.descendants(root):
+    for obj in c2data.map_objects(root):
         if c2data.is_stringified(obj):
             found.append((WARNING, obj.name, "extras.c2 is kept as text (Blender could not store it); not editable"))
             continue
@@ -83,8 +84,67 @@ def check(root):
     for obj in c2data.collision_meshes(root):
         check_collision(found, obj)
     check_pictures(found, root)
+    check_templates(found, placements)
+    check_script_names(found, root)
     found.extend(left_out(root))
     return found
+
+
+def check_templates(found, placements):
+    """Templates whose placements differ: the build splits them, which is right when meant."""
+    seen = set()
+    for obj in placements:
+        template = c2data.template_name(obj)
+        if c2data.is_preview(obj) or template in seen:
+            continue
+        seen.add(template)
+        groups = c2data.instance_groups(obj)
+        if len(groups) > 1:
+            found.append((
+                NOTE, groups[1][0].name,
+                "Template %s: its %d placements differ, so %d get templates of their own (Apply to All to keep one)"
+                % (template, sum(len(g) for g in groups), sum(len(g) for g in groups[1:])),
+            ))
+
+
+def check_script_names(found, root):
+    """Names the map's scripts reach that the scene no longer has (renamed or deleted)."""
+    from . import scripts
+
+    report = scripts.info(root)
+    if not report:
+        return
+    places = {c2data.exact_name(obj, "placement"): obj for obj in c2data.placements(root)}
+    slots = {c2data.lookup(obj, ("slot",)) for obj in places.values()}
+    own_points = {c2data.exact_name(obj, "point") for obj in c2data.points(root) if c2data.placement_of(obj) is None}
+    reported = set()
+    for use in report.get("names") or []:
+        what, part, name = use.get("what"), use.get("part"), use.get("name")
+        where = "%s:%s" % (str(use.get("path", "?")).rsplit("/", 1)[-1], use.get("line", "?"))
+        problem = None
+        if isinstance(part, int):
+            if what == "placement" and part not in slots:
+                problem = "placement slot %d" % part
+        elif isinstance(part, str) and part and part not in places and what in ("placement", "piece", "point"):
+            problem = "placement %s" % part
+        elif what == "point" and part == "" and name not in own_points:
+            problem = "the map's point %s" % name
+        elif what == "point" and isinstance(part, str) and part in places and name:
+            names = {c2data.exact_name(o, "point") for o in places[part].children if c2data.role(o) == "point"}
+            if name not in names:
+                problem = "point %s of %s" % (name, part)
+        elif what == "piece" and isinstance(part, str) and part in places and name:
+            names = {c2data.exact_name(o, "piece") for o in places[part].children if c2data.role(o) == "piece"}
+            if name not in names:
+                problem = "piece %s of %s" % (name, part)
+        if problem and problem not in reported:
+            reported.add(problem)
+            found.append((WARNING, root.name, "Scripts name %s, which the scene no longer has (%s)" % (problem, where)))
+
+
+# collections of what the add-on shows beside a map and never exports: the player for scale, a
+# dungeon layout's preview, a library's templates
+DISPLAY_PREFIX = "c2 "
 
 
 def left_out(root):
@@ -95,6 +155,8 @@ def left_out(root):
     if twins:
         found.append((WARNING, twins[0].name, "The scene holds map %s %d times; only %s is exported" % (name, len(twins) + 1, root.name)))
     for obj in scene.objects:
+        if any(collection.name.startswith(DISPLAY_PREFIX) for collection in obj.users_collection):
+            continue
         if obj.type == "MESH" and c2data.map_root(obj) is None:
             found.append(
                 (WARNING, obj.name, "Not part of any map, so not exported: select it and press New Model from Selection")
@@ -197,6 +259,18 @@ def check_collision(found, obj):
                 found.append((ERROR, obj.name, "Material \"%s\": the mask is 0-255" % material.name))
     if not mesh.polygons:
         found.append((WARNING, obj.name, "A collision mesh with no faces"))
+    # the engine boxes each node and queries the triangles of every node a box overlaps, up to
+    # the caller's buffer (128 triangles for monsters and objects): keep new nodes compact
+    if "mds_index" not in (c2data.get(obj) or {}) and len(mesh.polygons) > NEW_NODE_TRIANGLES:
+        found.append((
+            WARNING, obj.name,
+            "A new collision node of %d triangles: split it (Split Collision) so queries near it stay under %d"
+            % (len(mesh.polygons), schema.QUERY_TRIANGLES),
+        ))
+
+
+# 99% of the disc's floor collision nodes hold fewer than about 400 triangles
+NEW_NODE_TRIANGLES = 512
 
 
 class DC2TK_OT_validate(bpy.types.Operator):

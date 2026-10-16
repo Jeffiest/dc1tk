@@ -41,11 +41,39 @@ pub struct TextureEdit {
     pub new: bool,
 }
 
+/// The materials the map's meshes use: every mesh under the map's root but those of nodes of role
+/// `display` (its sky), which the scene only shows.
+fn map_materials(doc: &Value, root: usize) -> Result<HashSet<usize>> {
+    let mut found = HashSet::new();
+    let mut seen = HashSet::new();
+    let mut pending = vec![root];
+    while let Some(at) = pending.pop() {
+        let node = &doc["nodes"][at];
+        if !seen.insert(at) || c2_of(node)["role"] == "display" {
+            continue;
+        }
+        if let Some(mesh) = node["mesh"].as_u64() {
+            for primitive in doc["meshes"][mesh as usize]["primitives"].as_array().into_iter().flatten() {
+                if let Some(material) = primitive["material"].as_u64() {
+                    found.insert(material as usize);
+                }
+            }
+        }
+        let children = from_gltf::list_of(node, "children")?;
+        pending.extend(children.iter().filter_map(Value::as_u64).map(|child| child as usize));
+    }
+    Ok(found)
+}
+
 /// The pictures the scene's materials show: (picture name, the image's file), the name as the
-/// model import takes it (the material's extras.texture, the image's name, its file's stem).
-fn scene_pictures(doc: &Value) -> Result<Vec<(String, String)>> {
+/// model import takes it (the material's extras.texture, the image's name, its file's stem); only
+/// the materials in `used`.
+fn scene_pictures(doc: &Value, used: &HashSet<usize>) -> Result<Vec<(String, String)>> {
     let mut out: Vec<(String, String)> = Vec::new();
-    for material in from_gltf::list_of(doc, "materials")? {
+    for (at, material) in from_gltf::list_of(doc, "materials")?.iter().enumerate() {
+        if !used.contains(&at) {
+            continue;
+        }
         let Some(texture) = material["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64() else {
             continue;
         };
@@ -65,6 +93,51 @@ fn scene_pictures(doc: &Value) -> Result<Vec<(String, String)>> {
         }
     }
     Ok(out)
+}
+
+/// What the rebuilt map did with the scene's placements that is worth saying: the templates it
+/// made for placements that differ from the others of theirs, and what became of the placements
+/// deleted from the scene and those added.
+fn placement_notes(
+    original: &mapfile::MapFile,
+    edit: &map_edit::SceneEdit,
+    rebuilt: &mapfile::MapFile,
+    slots: map_edit::Slots,
+) -> Vec<String> {
+    let mut notes = Vec::new();
+    let known: HashSet<&str> = original.templates.iter().map(|template| template.name.as_str()).collect();
+    let mut seen = HashSet::new();
+    for template in &rebuilt.templates {
+        if known.contains(template.name.as_str()) || !seen.insert(template.name.as_str()) {
+            continue;
+        }
+        let users: Vec<&str> = rebuilt
+            .placements
+            .iter()
+            .filter(|placement| placement.template == template.name)
+            .map(|placement| placement.name.as_str())
+            .collect();
+        if !users.is_empty() {
+            notes.push(format!("template {} is new, placed by {}", template.name, users.join(", ")));
+        }
+    }
+    let kept = edit.placements.iter().filter(|placement| placement.slot.is_some()).count();
+    let deleted = original.placements.len().saturating_sub(kept);
+    if deleted > 0 {
+        notes.push(match slots {
+            map_edit::Slots::Keep => {
+                format!(
+                    "{deleted} placements deleted from the scene are kept hidden in their slots (scripts number them)"
+                )
+            }
+            map_edit::Slots::Compact => format!("{deleted} placements deleted from the scene are left out"),
+        });
+    }
+    let added = edit.placements.iter().filter(|placement| placement.slot.is_none() && !placement.preview).count();
+    if added > 0 {
+        notes.push(format!("{added} new placements, from slot {}", rebuilt.placements.len() - added));
+    }
+    notes
 }
 
 /// A model made in the scene (pieces naming a model no pack has, with meshes under them).
@@ -376,6 +449,7 @@ pub fn import_map(
     original: &[u8],
     packs: &[ModelPack],
     textures: &TextureSearch,
+    slots: map_edit::Slots,
 ) -> Result<Imported> {
     let doc: Value = serde_json::from_slice(gltf).context("the scene's glTF")?;
     let original_map = mapfile::parse(original)?;
@@ -403,10 +477,11 @@ pub fn import_map(
 
     let mut out = Imported::default();
     let edit = map_scene::read_scene(&tree, &original_map)?;
-    let rebuilt = map_edit::rebuild(&original_map, &edit)?;
+    let rebuilt = map_edit::rebuild_with(&original_map, &edit, slots)?;
     let text = mapfile::write(&rebuilt)?;
     if text != original {
         out.map = Some(text);
+        out.notes.extend(placement_notes(&original_map, &edit, &rebuilt, slots));
     }
 
     // each model's first piece (lowest glTF node index): its node subtree is the model as edited
@@ -452,7 +527,8 @@ pub fn import_map(
             out.models.push((model, rebuilt));
         }
     }
-    for (name, uri) in scene_pictures(&doc)? {
+    let used = map_materials(&doc, root_index)?;
+    for (name, uri) in scene_pictures(&doc, &used)? {
         let png = read_cached(&uri).with_context(|| format!("picture {name}"))?.to_vec();
         match textures.find(&name) {
             // the first of the name is a render target, which the export showed as its stand-in
@@ -545,7 +621,7 @@ mod tests {
         assert_eq!(error, "glTF node 0's child 5 is not one of the glTF's 1 nodes");
         let bad = json!({"materials": {"name": "x"}});
         assert_eq!(
-            scene_pictures(&bad).unwrap_err().to_string(),
+            scene_pictures(&bad, &HashSet::new()).unwrap_err().to_string(),
             "the glTF has an object where it needs a list of \"materials\""
         );
     }
@@ -588,10 +664,23 @@ mod tests {
                 .map(|entry| (entry.file_name().to_string_lossy().into_owned(), std::fs::read(entry.path()).unwrap()))
                 .collect();
             let search = TextureSearch::new(&images).unwrap();
-            let (files, _) = export_map(stem, &map, &packs, &search).unwrap();
+            // with the sky and the .cfg the scene shows, which change nothing either
+            let sky_dir = root.join("map/def.sky.d");
+            let sky = std::fs::read_dir(&sky_dir)
+                .unwrap()
+                .flatten()
+                .map(|entry| (entry.file_name().to_string_lossy().into_owned(), std::fs::read(entry.path()).unwrap()))
+                .collect();
+            let cfg = std::fs::read(folder.join(format!("{stem}.cfg"))).ok();
+            let display = crate::map_export::Display { sky, cfg };
+            let (files, _) = export_map(stem, &map, &packs, &search, &display).unwrap();
+            let gltf_doc: Value = serde_json::from_slice(&files[&format!("{stem}.gltf")]).unwrap();
+            let display_nodes =
+                gltf_doc["nodes"].as_array().unwrap().iter().filter(|node| c2_of(node)["role"] == "display").count();
+            assert!(display_nodes > 0, "{name}: the sky is in the scene");
             let gltf = files[&format!("{stem}.gltf")].clone();
             let read = |path: &str| files.get(path).cloned().ok_or_else(|| Error::invalid(format!("no {path}")));
-            let imported = import_map(&gltf, &read, &map_bytes, &packs, &search).unwrap();
+            let imported = import_map(&gltf, &read, &map_bytes, &packs, &search, map_edit::Slots::Keep).unwrap();
             assert!(imported.map.is_none(), "{name}: the .map changed");
             let changed: Vec<&String> = imported.models.iter().map(|(model, _)| model).collect();
             assert!(changed.is_empty(), "{name}: models rebuilt: {changed:?}");

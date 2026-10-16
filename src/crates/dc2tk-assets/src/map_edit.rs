@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::mapfile::{FixCamera, MapFile, Piece, Placement, Point, Settings, Template};
+use crate::mapfile::{FixCamera, MapFile, Num, Piece, Placement, Point, Settings, Template};
 use crate::{Error, Result};
 
 /// The longest name the engine keeps (31 characters and a terminator).
@@ -36,6 +36,18 @@ pub struct PlacementEdit {
     /// are the template's, but it places nothing.
     #[serde(default)]
     pub preview: bool,
+    /// A preview's template's closed sides (`MOVE_FLAG`), when the scene gives them.
+    #[serde(default)]
+    pub move_flag: Option<[Num; 4]>,
+}
+
+/// What becomes of the slots of placements deleted from the scene.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slots {
+    /// Kept, hidden (`show 0`): the disc's scripts address placements by slot.
+    Keep,
+    /// Left out, the later ones moving up: a new map, which no script numbers yet.
+    Compact,
 }
 
 /// A map as the scene has it.
@@ -73,6 +85,7 @@ pub fn scene_of(map: &MapFile) -> SceneEdit {
                 pieces: template.map(|template| template.pieces.clone()).unwrap_or_default(),
                 points: template.and_then(|template| template.points.clone()),
                 preview: false,
+                move_flag: None,
             }
         })
         .collect();
@@ -137,6 +150,7 @@ struct Rebuild<'a> {
     out: MapFile,
     placed: Vec<String>,
     taken: HashSet<String>,
+    slots: Slots,
 }
 
 impl Rebuild<'_> {
@@ -188,7 +202,13 @@ impl Rebuild<'_> {
         let keeper = unchanged.unwrap_or(0);
         for (number, group) in groups.iter().enumerate() {
             let (pieces, points) = contents(group[0]);
-            let template = Template { pieces: pieces.clone(), points: points.clone(), ..base.clone() };
+            let mut template = Template { pieces: pieces.clone(), points: points.clone(), ..base.clone() };
+            // a template library's preview gives its template's closed sides
+            if let Some(flag) =
+                group.iter().find_map(|&at| scene.placements[at].move_flag.filter(|_| scene.placements[at].preview))
+            {
+                template.move_flag = Some(flag);
+            }
             if number == keeper {
                 match original_at {
                     Some(index) => self.out.templates[index] = template,
@@ -229,9 +249,18 @@ impl Rebuild<'_> {
                 _ => appended.push(placement),
             }
         }
-        for (slot, kept) in seen.iter().enumerate() {
-            if !kept {
-                self.out.placements[slot].show = 0.into();
+        match self.slots {
+            Slots::Keep => {
+                for (slot, kept) in seen.iter().enumerate() {
+                    if !kept {
+                        self.out.placements[slot].show = 0.into();
+                    }
+                }
+            }
+            Slots::Compact => {
+                let placed = std::mem::take(&mut self.out.placements);
+                self.out.placements =
+                    placed.into_iter().zip(&seen).filter(|(_, kept)| **kept).map(|(p, _)| p).collect();
             }
         }
         self.out.placements.extend(appended);
@@ -263,6 +292,11 @@ fn check_placements(out: &MapFile, original: &MapFile) -> Result<()> {
 /// placements' copies, placements kept in their slots, the map's own points, settings and cameras
 /// from the scene.
 pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
+    rebuild_with(original, scene, Slots::Keep)
+}
+
+/// `rebuild`, with what becomes of deleted placements' slots.
+pub fn rebuild_with(original: &MapFile, scene: &SceneEdit, slots: Slots) -> Result<MapFile> {
     check_names(scene)?;
     let mut out = original.clone();
     out.settings = scene.settings.clone();
@@ -270,7 +304,7 @@ pub fn rebuild(original: &MapFile, scene: &SceneEdit) -> Result<MapFile> {
     out.points = scene.points.clone();
     let taken = original.templates.iter().map(|template| template.name.to_lowercase()).collect();
     let placed = scene.placements.iter().map(|edit| edit.placement.template.clone()).collect();
-    let mut rebuild = Rebuild { original, scene, out, placed, taken };
+    let mut rebuild = Rebuild { original, scene, out, placed, taken, slots };
     let first = template_index(original);
     for (name, list) in placements_by_template(scene) {
         rebuild.fold(&name, &list, first.get(name.as_str()).copied())?;
@@ -368,6 +402,28 @@ mod tests {
         let out = rebuild(&map, &scene).unwrap();
         let shown: Vec<(&str, i32)> = out.placements.iter().map(|p| (p.name.as_str(), p.show.int())).collect();
         assert_eq!(shown, [("door_a", 0), ("door_b", 1), ("door_c", 1)]);
+        // a new map's deleted placements are left out
+        let out = rebuild_with(&map, &scene, Slots::Compact).unwrap();
+        let shown: Vec<(&str, i32)> = out.placements.iter().map(|p| (p.name.as_str(), p.show.int())).collect();
+        assert_eq!(shown, [("door_b", 1), ("door_c", 1)]);
+    }
+
+    #[test]
+    fn a_previews_closed_sides_go_into_its_template() {
+        let mut map = sample();
+        map.placements.clear();
+        let mut scene = scene_of(&map);
+        scene.placements.push(PlacementEdit {
+            slot: None,
+            placement: Placement { name: "door".into(), ..sample().placements[0].clone() },
+            pieces: map.templates[0].pieces.clone(),
+            points: None,
+            preview: true,
+            move_flag: Some([1.into(), 0.into(), 1.into(), 0.into()]),
+        });
+        let out = rebuild(&map, &scene).unwrap();
+        assert!(out.placements.is_empty());
+        assert_eq!(out.templates[0].move_flag, Some([1.into(), 0.into(), 1.into(), 0.into()]));
     }
 
     /// Every map of an extracted disc (DC2TK_CORPUS) rebuilds from its own scene unchanged.

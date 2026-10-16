@@ -18,6 +18,7 @@ dc2tk decompile <script.stb | extracted dir> [-o out]
 dc2tk compile <script.c> [-o script.stb]
 dc2tk build extracted/scripts dc2.iso -o modded.iso   new disc image with your changes
 dc2tk build extracted/scripts dc2.iso -o test.iso --start-at s51:story_50
+dc2tk build extracted/scripts dc2.iso --dry-run --mod castle   what a build would change, no image
 dc2tk changes extracted/scripts                     what you edited since decompiling
 dc2tk diff dc2.iso                                  everything changed in extracted/ since extracting
 dc2tk mod make dc2.iso mymod                        a mod of those changes, ready to build
@@ -35,6 +36,7 @@ dc2tk mod migrate dc2.iso castle                    turn a mod's disc/ folder in
 dc2tk play modded.iso                               boot an image in PCSX2 (or build ... --play)
 dc2tk maps extracted/scripts                        every map: town or dungeon-style, playable or not
 dc2tk map extracted/scripts s17                     one map: programs, free numbers, trigger points, positions
+dc2tk map extracted/scripts s17 --json              the same for tools: programs, player spots, names scripts use
 dc2tk map-export s17                                a map as a glTF scene for Blender (extracted/maps/s17)
 dc2tk xref extracted/scripts event 510 --map s51    what defines, starts and requests an event
 dc2tk xref extracted/scripts map s51                how the game enters a map
@@ -259,6 +261,14 @@ edited.
 `--play` boots the new image in PCSX2 (`play IMAGE` does the same for any
 image; `--pcsx2 PATH` or `$PCSX2` when it is not installed in the usual
 place).
+
+`--dry-run` (in place of `-o`) does everything but write the image: it says
+what each step would change (the scripts compiled, the files replaced and
+added, what a map: line makes of its scene: templates split, placements
+added and deleted, models rebuilt and added, pictures repainted and added)
+and runs the memory check, in seconds and without the 4.7 GB an image takes.
+It exits 1 where a certain budget is exceeded, as `build` does. The Blender
+add-on's Preview Changes runs it.
 
 To build one script without a disc,
 `dc2tk compile extracted/scripts/<path>.c -o <path>.stb`.

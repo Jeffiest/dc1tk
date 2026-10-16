@@ -2,7 +2,7 @@ import json
 
 import bpy
 
-from . import c2data, edit, import_map, prefs, props, runner, schema, validate
+from . import c2data, edit, import_map, outliner, prefs, props, runner, schema, scripts, validate
 
 CATEGORY = "Dark Chronicle"
 ROLE_LABELS = {
@@ -104,6 +104,14 @@ def draw_point(layout, obj, settings):
             row.prop(settings, prop_name)
             row.menu(edit.DC2TK_MT_event_kinds.bl_idname, text="", icon="DOWNARROW_HLT")
             continue
+        if kind == "event" and field["key"] == "program":
+            row = box.row(align=True)
+            row.prop(settings, prop_name)
+            row.menu("DC2TK_MT_programs", text="", icon="DOWNARROW_HLT")
+            given = point_program_name(obj)
+            if given:
+                box.label(text="mod.json gives it %s (build numbers it)" % given, icon="TEXT")
+            continue
         if field["size"] > 1:
             draw_vector(box, settings, prop_name, field)
         else:
@@ -122,6 +130,17 @@ def draw_point(layout, obj, settings):
             light.prop(obj.data, "cutoff_distance")
     elif kind == "plight":
         box.label(text="Not a Blender light: re-import or add it again", icon="ERROR")
+
+
+def point_program_name(obj):
+    """The program the mod's mod.json gives an event point by name, if any."""
+    from . import export_mod
+
+    mod_dir = prefs.absolute(prefs.get().mod_dir) if isinstance(prefs.get(), bpy.types.AddonPreferences) else ""
+    if not mod_dir:
+        return None
+    root = c2data.map_root(obj)
+    return export_mod.programs_of(mod_dir.rstrip("\\/"), c2data.map_name(root)).get(c2data.exact_name(obj, "point"))
 
 
 def draw_anime(box, obj, settings):
@@ -184,10 +203,68 @@ def draw_placement(layout, obj, settings):
     if c2data.lookup(obj, ("preview",)):
         layout.label(text="Template %s, shown once: edits change it" % c2data.lookup(obj, ("template",)))
         layout.label(text="It places nothing; moving it changes nothing")
+        box = layout.box()
+        box.label(text="Closed sides of its dungeon cell (MOVE_FLAG)", icon="MOD_BUILD")
+        row = box.row(align=True)
+        flags = c2data.to_py(c2data.lookup(obj, ("move_flag",)))
+        flags = list(flags) if isinstance(flags, list) else [0, 0, 0, 0]
+        for side, label in enumerate(("-X", "-Z", "+X", "+Z")):
+            op = row.operator(
+                edit.DC2TK_OT_set_value.bl_idname, text=label, depress=bool(flags[side] if side < len(flags) else 0)
+            )
+            changed = list(flags) + [0] * (4 - len(flags))
+            changed[side] = 0 if changed[side] else 1
+            op.object_name, op.path, op.json_value = obj.name, json.dumps(["move_flag"]), json.dumps(changed)
         return
     slot = c2data.lookup(obj, ("slot",))
     layout.label(text="Slot %s" % slot if slot is not None else "New: appended after the map's placements")
     layout.operator(edit.DC2TK_OT_duplicate_placement.bl_idname, icon="DUPLICATE")
+
+
+_instances = {"key": None, "groups": []}
+
+
+def draw_instances(layout, obj):
+    """How the build will treat the template of obj's placement: changed for all its placements,
+    or split into copies when they differ."""
+    placement = c2data.placement_of(obj)
+    if placement is None or c2data.is_preview(placement):
+        return
+    # comparing every placement of the template is worth doing once a change, not every redraw
+    key = (placement.name, outliner.generation["count"])
+    if _instances.get("key") != key:
+        _instances["key"], _instances["groups"] = key, [[o.name for o in group] for group in c2data.instance_groups(placement)]
+    groups = [[bpy.data.objects[name] for name in group if name in bpy.data.objects] for group in _instances["groups"]]
+    count = sum(len(group) for group in groups)
+    box = layout.box()
+    template = c2data.template_name(placement)
+    if count == 1:
+        box.label(text="Template %s: this placement only" % template, icon="OUTLINER_OB_EMPTY")
+        return
+    if len(groups) == 1:
+        box.label(text="Template %s: %d placements, alike" % (template, count), icon="LINKED")
+        box.label(text="Edits here change the template only if made to all")
+    else:
+        box.label(text="Template %s: %d placements differ" % (template, count), icon="ERROR")
+        box.label(text="The build gives %d of them templates of their own" % (count - len(groups[0])))
+        box.label(text="This one is alike with %d" % (len(groups[0]) - 1))
+    row = box.row(align=True)
+    row.operator("dc2tk.apply_to_instances", text="Apply to All", icon="LINKED")
+    row.operator("dc2tk.make_unique", text="Make Unique", icon="UNLINKED")
+    row.operator("dc2tk.select_instances", text="", icon="RESTRICT_SELECT_OFF")
+
+
+def draw_references(layout, obj):
+    found = scripts.references(obj)
+    if not found:
+        return
+    box = layout.box()
+    box.label(text="Named by %d script calls: keep its name" % len(found), icon="TEXT")
+    col = box.column(align=True)
+    for use in found[:6]:
+        col.label(text="%s:%s  %s" % (use.get("path", "?").rsplit("/", 1)[-1], use.get("line", "?"), use.get("call", "")))
+    if len(found) > 6:
+        col.label(text="... %d more" % (len(found) - 6))
 
 
 def draw_piece(layout, obj, settings):
@@ -250,15 +327,128 @@ class DC2TK_PT_main(bpy.types.Panel):
         row.prop(settings, "collision_colour", text="")
         row.operator(edit.DC2TK_OT_recolour_collision.bl_idname, text="", icon="COLOR")
         row = box.row(align=True)
+        row.prop(settings, "show_walkable", icon="MOD_PHYSICS")
+        row.prop(settings, "show_fog", icon="MOD_FLUIDSIM")
+        row = box.row(align=True)
         row.prop(settings, "show_boxes")
         row.prop(settings, "show_anime")
+        row = box.row(align=True)
+        row.prop(settings, "show_camera_boxes")
+        row.prop(settings, "show_spots")
+        if c2data.lookup(root, ("cfg",)) is not None:
+            box.prop(settings, "show_cfg")
+        if any(c2data.is_preview(obj) for obj in c2data.placements(root)):
+            box.prop(settings, "show_cells", text="Dungeon cells and closed sides")
         row = box.row(align=True)
         row.prop(settings, "by_hour", text="", icon="TIME")
         sub = row.row(align=True)
         sub.enabled = settings.by_hour
         sub.prop(settings, "hour")
+        row = box.row(align=True)
+        row.operator("dc2tk.play_animations", icon="PAUSE" if animation_playing() else "PLAY")
+        row.operator("dc2tk.read_scripts", icon="TEXT")
         counts = box.column(align=True)
         counts.label(text="%d placements, %d points" % (len(c2data.placements(root)), len(c2data.points(root))))
+
+
+def animation_playing():
+    from . import animate
+
+    return animate.playing()
+
+
+class DC2TK_PT_outliner(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+    bl_label = "Map Outliner"
+    bl_idname = "DC2TK_PT_outliner"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return c2data.current_map_root(context) is not None
+
+    def draw(self, context):
+        outliner.draw(self.layout, context)
+
+
+class DC2TK_PT_tools(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+    bl_label = "Lay Out"
+    bl_idname = "DC2TK_PT_tools"
+
+    @classmethod
+    def poll(cls, context):
+        return c2data.current_map_root(context) is not None
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.operator("dc2tk.drop_to_ground", icon="TRIA_DOWN_BAR")
+        row = col.row(align=True)
+        row.operator("dc2tk.game_snapping", text="Town snap").preset = "TOWN"
+        row.operator("dc2tk.game_snapping", text="Cell snap").preset = "CELL"
+        row.operator("dc2tk.game_snapping", text="", icon="SNAP_OFF").preset = "FREE"
+        col = layout.column(align=True)
+        col.operator_menu_enum("dc2tk.copy_coordinates", "form", text="Copy Game Coordinates", icon="COPYDOWN")
+        col.operator("dc2tk.player_reference", icon="ARMATURE_DATA")
+        settings = context.window_manager.dc2tk_maps
+        box = layout.box()
+        box.label(text="Templates of any map", icon="ASSET_MANAGER")
+        row = box.row(align=True)
+        row.prop_search(settings, "library_map", settings, "maps", text="", icon="WORLD")
+        row.operator("dc2tk.load_library", text="", icon="FILE_REFRESH")
+        box.prop_search(settings, "library_template", settings, "library_templates", text="", icon="OUTLINER_OB_EMPTY")
+        box.operator("dc2tk.add_template", text="Place at Cursor", icon="ADD")
+        col = layout.column(align=True)
+        col.operator("dc2tk.add_door_to_map", icon="EXPORT")
+        col.operator("dc2tk.new_map", icon="FILE_NEW")
+        col = layout.column(align=True)
+        col.operator("dc2tk.collision_from_mesh", icon="MOD_PHYSICS")
+        col.operator("dc2tk.split_collision", icon="MOD_EXPLODE")
+        col.operator("dc2tk.layout_preview", icon="VIEW_ORTHO")
+
+
+class DC2TK_PT_lighting(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+    bl_label = "Lighting"
+    bl_idname = "DC2TK_PT_lighting"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return c2data.current_map_root(context) is not None
+
+    def draw(self, context):
+        from . import lighting
+
+        if c2data.current_map_root(context) is None:
+            self.layout.label(text="No map in the scene")
+            return
+        lighting.draw(self.layout, context)
+
+
+class DC2TK_PT_budgets(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+    bl_label = "Budgets"
+    bl_idname = "DC2TK_PT_budgets"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return c2data.current_map_root(context) is not None
+
+    def draw(self, context):
+        from . import budgets
+
+        budgets.draw(self.layout, context, c2data.current_map_root(context))
 
 
 class DC2TK_PT_selected(bpy.types.Panel):
@@ -287,19 +477,34 @@ class DC2TK_PT_selected(bpy.types.Panel):
             return
         role = data.get("role")
         layout.label(text="%s: %s" % (ROLE_LABELS.get(role, role), obj.name), icon=ROLE_ICONS.get(role, "QUESTION"))
+        alike = [o for o in context.selected_objects if o is not obj and c2data.role(o) == role]
+        if alike and role in ("placement", "piece", "point"):
+            layout.prop(settings, "edit_selected", text="Edit all %d selected" % (len(alike) + 1), icon="RESTRICT_SELECT_OFF")
+        if role in ("placement", "piece", "point"):
+            draw_references(layout, obj)
         if role == "placement":
             draw_placement(layout, obj, settings)
+            draw_instances(layout, obj)
         elif role == "piece":
             draw_piece(layout, obj, settings)
+            draw_instances(layout, obj)
         elif role == "point":
             draw_point(layout, obj, settings)
+            draw_instances(layout, obj)
         elif role == "mds":
             layout.label(text="mds_index %s" % data.get("mds_index", "(new)"))
             if c2data.is_collision_mesh(obj):
                 layout.label(text="Collision mesh: see Add > Collision", icon="MOD_PHYSICS")
+                layout.operator("dc2tk.split_collision", icon="MOD_EXPLODE")
+            elif obj.type == "MESH":
+                from . import views
+
+                views.draw_flags(layout, obj)
+                layout.operator("dc2tk.collision_from_mesh", icon="MOD_PHYSICS")
         elif role == "map":
-            layout.label(text="Settings: the Map Settings panel")
+            layout.label(text="Settings: the Map Settings and Lighting panels")
         elif role == "camera":
+            layout.operator("dc2tk.view_camera", icon="CAMERA_DATA")
             draw_tree(layout, obj, [], data)
         layout.prop(settings, "show_raw")
         if settings.show_raw and role != "camera":
@@ -403,6 +608,15 @@ class DC2TK_PT_export(bpy.types.Panel):
             box.prop(settings, "mod_dir", text="")
         box.operator("dc2tk.export_mod", icon="EXPORT")
         box = layout.box()
+        box.label(text="Try it", icon="PLAY")
+        row = box.row(align=True)
+        row.operator("dc2tk.preview_changes", icon="VIEWZOOM")
+        row.operator("dc2tk.test_here", icon="PLAY")
+        box.prop(context.window_manager.dc2tk_maps, "test_play")
+        from . import testing
+
+        testing.draw_preview(box)
+        box = layout.box()
         box.label(text="Build", icon="DISC")
         if has_prefs:
             col = box.column(align=True)
@@ -421,7 +635,10 @@ class DC2TK_PT_export(bpy.types.Panel):
             box.operator("dc2tk.show_output", icon="TEXT")
 
 
-classes = (DC2TK_PT_main, DC2TK_PT_selected, DC2TK_PT_add, DC2TK_PT_map_settings, DC2TK_PT_export)
+classes = (
+    DC2TK_PT_main, DC2TK_PT_outliner, DC2TK_PT_selected, DC2TK_PT_tools, DC2TK_PT_add, DC2TK_PT_lighting,
+    DC2TK_PT_map_settings, DC2TK_PT_budgets, DC2TK_PT_export,
+)
 
 
 def register():

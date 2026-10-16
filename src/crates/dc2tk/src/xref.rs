@@ -63,6 +63,10 @@ pub struct MapArgs {
     /// The disc image or extracted disc, for names and .map files.
     #[arg(long, alias = "extracted", default_value = "extracted/disc")]
     disc: PathBuf,
+    /// Write the map's programs, the numbers free for a mod, where its scripts place the player
+    /// and the placements, pieces and points they name, as JSON (for the Blender add-on).
+    #[arg(long)]
+    json: bool,
     #[command(flatten)]
     common: Common,
 }
@@ -111,5 +115,9 @@ pub fn run_map(args: &MapArgs) -> Result<ExitCode> {
     let disc = disc_at(&args.disc)?;
     let found = maps::catalog(&args.source, disc.as_ref(), &defs, &consts)?;
     let programs = index::enum_values(headers.values(), "program");
+    if args.json {
+        let report = maps::detail_json(&args.name, &found, &args.source, &programs, &consts)?;
+        return print(&serde_json::to_string_pretty(&report)?);
+    }
     print(&maps::detail(&args.name, &found, &args.source, disc.as_ref(), &programs)?)
 }

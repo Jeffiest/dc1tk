@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{json, Map, Value};
 
+use crate::map_display;
 use crate::map_import::TEXTURE_FIELDS;
 use crate::map_scene::{self, SceneNode};
 use crate::mapfile::MapFile;
@@ -276,6 +277,12 @@ impl Scene {
 
     /// Copies a merged model's node tree under the scene, returning the copies of its roots.
     fn instance(&mut self, model: &Merged) -> Vec<usize> {
+        self.instance_as(model, "mds")
+    }
+
+    /// `instance`, the copies' nodes of a role: `mds` for a piece's model, `display` for what the
+    /// scene only shows.
+    fn instance_as(&mut self, model: &Merged, role: &str) -> Vec<usize> {
         let base = self.len("nodes");
         for node in &model.nodes {
             let mut node = node.clone();
@@ -288,7 +295,8 @@ impl Scene {
                 }
             }
             let index = node["extras"]["mds_index"].clone();
-            node["extras"]["c2"] = json!({"role": "mds", "mds_index": index});
+            node["extras"]["c2"] =
+                if role == "mds" { json!({"role": "mds", "mds_index": index}) } else { json!({"role": role}) };
             self.list("nodes").push(node);
         }
         model.roots.iter().map(|root| root + base).collect()
@@ -333,14 +341,77 @@ fn point_light(node: &SceneNode) -> Option<Value> {
     Some(json!({"type": "point", "name": node.name, "color": color, "intensity": 1.0, "range": power}))
 }
 
+/// What a scene shows besides the map's own: its sky pack's members and its `.cfg`
+/// (map_display), for the eye only.
+#[derive(Clone, Debug, Default)]
+pub struct Display {
+    pub sky: Vec<(String, Vec<u8>)>,
+    pub cfg: Option<Vec<u8>>,
+}
+
+/// A node of role `display` (or a group of them): what the import leaves alone.
+fn display_node(scene: &mut Scene, name: &str, c2: Value, children: Vec<usize>, scale: [f64; 3]) -> usize {
+    let mut out = json!({"name": name, "extras": {"c2": c2}, "scale": scale});
+    if !children.is_empty() {
+        out["children"] = json!(children);
+    }
+    let index = scene.len("nodes");
+    scene.list("nodes").push(out);
+    index
+}
+
+/// The sky's models by time band, each with its band's pictures, under a `sky` node: every band
+/// in its own node (the add-on shows the one the hour uses), each model once as drawn and once
+/// mirrored below the horizon, as CMapSky::DrawSky draws it about the camera.
+fn add_sky(scene: &mut Scene, members: &[(String, Vec<u8>)], report: &mut Report) -> Result<Option<usize>> {
+    let member =
+        |name: &str| members.iter().find(|(member, _)| member.eq_ignore_ascii_case(name)).map(|(_, data)| data);
+    let Some(info) = member("info.cfg") else {
+        return Ok(None);
+    };
+    let (bands, _background) = map_display::sky_bands(info);
+    let mut band_nodes = Vec::new();
+    for (band, entry) in bands.iter().enumerate() {
+        let pictures: Vec<(String, Vec<u8>)> =
+            entry.img.iter().filter_map(|img| member(img).map(|data| (img.clone(), data.clone()))).collect();
+        let search = TextureSearch::new(&pictures)?;
+        let mut children = Vec::new();
+        for (what, found) in [("background sky", &entry.skyb), ("sky", &entry.sky)] {
+            let Some((model, spin)) = found else { continue };
+            let Some(data) = member(model) else { continue };
+            let stem = format!("sky{band}_{}", model.rsplit_once('.').map_or(model.as_str(), |(stem, _)| stem));
+            let (files, _found) =
+                models::export_map_model(data, &stem, &Options::map(Some(&search))).context(model.clone())?;
+            let merged = scene.merge(&stem, &files)?;
+            report.models += 1;
+            for (mirror, scale) in [("", [1.0, 1.0, 1.0]), (" below", [1.0, -1.0, 1.0])] {
+                let roots = scene.instance_as(&merged, "display");
+                let c2 = json!({"role": "display", "what": what, "model": model, "spin": spin});
+                let name = format!("{what}:{}{mirror}", map_display::BANDS[band]);
+                children.push(display_node(scene, &name, c2, roots, scale));
+            }
+        }
+        if !children.is_empty() {
+            let c2 = json!({"role": "display", "what": "sky band", "band": band, "name": map_display::BANDS[band]});
+            band_nodes.push(display_node(scene, &format!("band:{}", map_display::BANDS[band]), c2, children, [1.0; 3]));
+        }
+    }
+    if band_nodes.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(display_node(scene, "sky", json!({"role": "display", "what": "sky"}), band_nodes, [1.0; 3])))
+}
+
 /// The map as a glTF scene: `<name>.gltf`, `models/*.bin`, `textures/*.png`, by relative path.
 /// `packs` are the map's model packs (and its add map's), `textures` the texture files to look
-/// pictures up in (the map's own first).
+/// pictures up in (the map's own first), `display` what the scene only shows (its sky, its
+/// `.cfg`).
 pub fn export_map(
     name: &str,
     map: &MapFile,
     packs: &[ModelPack],
     textures: &TextureSearch,
+    display: &Display,
 ) -> Result<(BTreeMap<String, Vec<u8>>, Report)> {
     fn collect(node: &SceneNode, used: &mut Vec<String>) {
         if let Some(model) = &node.model {
@@ -353,7 +424,10 @@ pub fn export_map(
 
     let kind_of =
         |model: &str| find_model(packs, model).map_or("model".to_string(), |(kind, _)| kind.name().to_string());
-    let tree = map_scene::build_scene(map, name, &kind_of)?;
+    let mut tree = map_scene::build_scene(map, name, &kind_of)?;
+    if let Some(cfg) = &display.cfg {
+        tree.extras["c2"]["cfg"] = map_display::cfg_json(cfg);
+    }
     let mut report = Report::default();
     let mut scene = Scene { json: Map::new(), files: BTreeMap::new(), images: HashMap::new() };
     scene.json.insert("asset".into(), json!({"version": "2.0", "generator": "DC2-Toolkit dc2tk map-export"}));
@@ -385,6 +459,11 @@ pub fn export_map(
     }
     let mut lights = Vec::new();
     let root = scene.add_node(&tree, &merged, &mut lights);
+    if let Some(sky) = add_sky(&mut scene, &display.sky, &mut report)? {
+        if let Some(children) = scene.list("nodes")[root]["children"].as_array_mut() {
+            children.push(json!(sky));
+        }
+    }
     report.nodes = scene.len("nodes");
     if !lights.is_empty() {
         scene.json.insert("extensions".into(), json!({"KHR_lights_punctual": {"lights": lights}}));

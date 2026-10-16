@@ -44,9 +44,11 @@ def is_stringified(obj):
 def put(obj, data):
     obj[KEY] = data
 
-    from . import overlay
+    from . import outliner, overlay
 
+    # a property's change is no depsgraph update: what is worked out from the map is out of date
     overlay.invalidate()
+    outliner.invalidate()
 
 
 def rename(obj, name):
@@ -167,6 +169,38 @@ def descendants(obj):
         current = stack.pop()
         found.append(current)
         stack.extend(current.children)
+    return found
+
+
+def make_new_node(obj):
+    """Makes a copied model node a new one: no mds_index, in its extras.c2 or beside it (Blender
+    keeps the glTF node's extras.mds_index as a property of its own), so the build gives it a
+    frame of its own instead of the one it was copied from."""
+    put(obj, {"role": "mds"})
+    if "mds_index" in obj:
+        del obj["mds_index"]
+
+
+def map_objects(root):
+    """The map's own objects: every one under its root but what the scene only shows (role
+    display: its sky), which is never exported."""
+    found = []
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        if role(current) == "display":
+            continue
+        found.append(current)
+        stack.extend(current.children)
+    return found
+
+
+def display_objects(root):
+    """What the scene only shows of the map (its sky): every display node and what is below."""
+    found = []
+    for obj in descendants(root):
+        if role(obj) == "display" and (obj.parent is None or role(obj.parent) != "display"):
+            found.extend(descendants(obj))
     return found
 
 
@@ -296,6 +330,76 @@ def placements_by_name(root):
             continue
         found.setdefault(exact_name(obj, "placement"), obj)
     return found
+
+
+def world_matrix(obj):
+    """obj's world matrix from its parents' own, so right for objects the depsgraph has not
+    evaluated (those in hidden collections)."""
+    matrix = obj.matrix_basis.copy()
+    while obj.parent is not None:
+        matrix = obj.matrix_parent_inverse @ matrix
+        obj = obj.parent
+        matrix = obj.matrix_basis @ matrix
+    return matrix
+
+
+def is_preview(placement):
+    return bool(lookup(placement, ("preview",)))
+
+
+def template_name(placement):
+    return str(lookup(placement, ("template",), ""))
+
+
+def instances(placement):
+    """Every placement of the map placing the same template as `placement` (itself first); a
+    template library's preview is its template's only one."""
+    if placement is None:
+        return []
+    if is_preview(placement):
+        return [placement]
+    root = map_root(placement)
+    wanted = template_name(placement)
+    others = [
+        obj for obj in placements(root)
+        if obj is not placement and not is_preview(obj) and template_name(obj) == wanted
+    ] if root is not None else []
+    return [placement] + others
+
+
+def contents(placement):
+    """A placement's own copy of its template, as the build compares placements: its pieces and
+    points in order, each with its transform in the placement and its values."""
+    found = []
+    for child in placement.children:
+        if role(child) not in ("piece", "point"):
+            continue
+        data = get(child) or {}
+        local = [round(value, 3) for row in (child.matrix_parent_inverse @ child.matrix_basis) for value in row]
+        found.append((role(child), exact_name(child, role(child)), local, repr(sorted(data.items()))))
+    found.sort(key=lambda item: (item[0], item[1]))
+    return found
+
+
+def instance_groups(placement):
+    """The placements of `placement`'s template grouped by their contents, `placement`'s group
+    first: one group means the build changes the template, more means each other group gets a
+    template of its own."""
+    groups = []
+    for obj in instances(placement):
+        key = contents(obj)
+        for group in groups:
+            if group[0] == key:
+                group[1].append(obj)
+                break
+        else:
+            groups.append((key, [obj]))
+    return [objects for _key, objects in groups]
+
+
+def template_names(root):
+    """Every template name the map's placements give."""
+    return {template_name(obj) for obj in placements(root)} if root is not None else set()
 
 
 def model_nodes(piece):

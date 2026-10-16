@@ -54,6 +54,25 @@ fn map_names(disc: &DiscSource) -> BTreeSet<String> {
     names
 }
 
+/// What the scene shows besides the map: the sky the engine loads for it (the map's own .sky, else
+/// map/def.sky, as GetLoadMapInfo names them, when SKY_INFO turns the sky on) and its .cfg.
+fn display_of(disc: &DiscSource, files: &mapedit::MapFiles, map: &mapfile::MapFile) -> Result<map_export::Display> {
+    let mut display = map_export::Display::default();
+    if map.settings.sky_info.sky.int() != 0 {
+        let sky = files
+            .sky
+            .clone()
+            .or_else(|| disc.paths().iter().find(|path| path.eq_ignore_ascii_case("map/def.sky")).cloned());
+        if let Some(path) = sky {
+            display.sky = members(&disc.read(&path)?);
+        }
+    }
+    if let Some(cfg) = &files.cfg {
+        display.cfg = Some(disc.read(cfg)?.into_owned());
+    }
+    Ok(display)
+}
+
 /// Exports one map; returns the report line.
 fn export_one(disc: &DiscSource, name: &str, out: &Path) -> Result<String> {
     let files = mapedit::map_files(disc.paths(), name)?;
@@ -65,7 +84,8 @@ fn export_one(disc: &DiscSource, name: &str, out: &Path) -> Result<String> {
         }
     }
     let search = mapedit::texture_search(disc, &files)?;
-    let (written, report) = map_export::export_map(&files.name, &map, &packs, &search)?;
+    let display = display_of(disc, &files, &map)?;
+    let (written, report) = map_export::export_map(&files.name, &map, &packs, &search, &display)?;
     if out.exists() {
         fs::remove_dir_all(out).with_context(|| format!("cannot replace {}", out.display()))?;
     }

@@ -99,10 +99,19 @@ def enable_addon():
 
 
 def write_fake_dc2tk(folder, source_dir):
+    import test_tools
+
+    report = os.path.join(folder, "map_report.json")
+    with open(report, "w", encoding="utf-8") as handle:
+        json.dump(test_tools.REPORT, handle)
     path = os.path.join(folder, "fake_dc2tk.bat")
     with open(path, "w", newline="\r\n") as handle:
         handle.write(
             "@echo off\n"
+            'if "%~1"=="map" (\n'
+            '  type "' + report + '"\n'
+            "  exit /b 0\n"
+            ")\n"
             'if "%~1"=="map-export" if "%~2"=="--list" (\n'
             "  echo t01\tTest Town\n"
             "  echo t02\t\n"
@@ -630,6 +639,9 @@ def main():
     import test_regressions
 
     test_regressions.run(context, root, work)
+    import test_tools
+
+    test_tools.run(context, root, work, check)
     check_unload(context, source_path)
     return work
 

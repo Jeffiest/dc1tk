@@ -18,6 +18,34 @@ def _active():
     return getattr(bpy.context, "active_object", None)
 
 
+def _targets(same_kind=False):
+    """What a field's edit changes: the active object, and with "All selected" on every selected
+    object of its role (and, for a point's data, of its kind), as Alt does for Blender's own
+    fields."""
+    active = _active()
+    if active is None:
+        return []
+    found = [active]
+    wm = getattr(bpy.context, "window_manager", None)
+    if wm is None or not getattr(wm.dc2tk_maps, "edit_selected", False):
+        return found
+    role = c2data.role(active)
+    kind = c2data.lookup(active, ("kind",)) if role == "point" else None
+    for obj in getattr(bpy.context, "selected_objects", []):
+        if obj is active or c2data.role(obj) != role or c2data.is_stringified(obj):
+            continue
+        if same_kind and c2data.lookup(obj, ("kind",)) != kind:
+            continue
+        found.append(obj)
+    return found
+
+
+def _each(change, *args):
+    # a point's data fields belong to its kind; its hours, flags and kind to every point
+    for obj in _targets(same_kind=change is set_point_value):
+        change(obj, *args)
+
+
 def _int(value, default=0):
     try:
         return int(value)
@@ -160,7 +188,7 @@ def get_collision_type(self):
 
 
 def set_active_collision_type(self, value):
-    set_collision_type(_active(), value)
+    _each(set_collision_type, value)
 
 
 def get_kind(self):
@@ -169,7 +197,7 @@ def get_kind(self):
 
 
 def set_kind(self, value):
-    set_point_kind(_active(), value)
+    _each(set_point_kind, value)
 
 
 def get_template(self):
@@ -177,7 +205,7 @@ def get_template(self):
 
 
 def set_template(self, value):
-    set_value(_active(), ("template",), value)
+    _each(set_value, ("template",), value)
 
 
 def get_group(self):
@@ -185,7 +213,7 @@ def get_group(self):
 
 
 def set_group(self, value):
-    set_value(_active(), ("group",), value)
+    _each(set_value, ("group",), value)
 
 
 def get_model(self):
@@ -193,7 +221,7 @@ def get_model(self):
 
 
 def set_model(self, value):
-    set_value(_active(), ("model",), value)
+    _each(set_value, ("model",), value)
 
 
 def get_show(self):
@@ -201,7 +229,7 @@ def get_show(self):
 
 
 def set_show(self, value):
-    set_flag(_active(), "show", value)
+    _each(set_flag, "show", value)
 
 
 def get_enable(self):
@@ -209,7 +237,7 @@ def get_enable(self):
 
 
 def set_enable(self, value):
-    set_flag(_active(), "enable", value)
+    _each(set_flag, "enable", value)
 
 
 def get_piece_hours(self):
@@ -217,7 +245,7 @@ def get_piece_hours(self):
 
 
 def set_piece_hours(self, value):
-    set_pair(_active(), "time", 0, value)
+    _each(set_pair, "time", 0, value)
 
 
 def get_point_flags(self):
@@ -225,7 +253,7 @@ def get_point_flags(self):
 
 
 def set_point_flags(self, value):
-    set_pair(_active(), "flag", 0, value)
+    _each(set_pair, "flag", 0, value)
 
 
 def get_point_hours(self):
@@ -233,7 +261,7 @@ def get_point_hours(self):
 
 
 def set_point_hours(self, value):
-    set_pair(_active(), "flag", 2, value)
+    _each(set_pair, "flag", 2, value)
 
 
 def get_far_distance(self):
@@ -241,7 +269,7 @@ def get_far_distance(self):
 
 
 def set_far_distance(self, value):
-    set_far_clip(_active(), 0, value)
+    _each(set_far_clip, 0, value)
 
 
 def get_far_fade(self):
@@ -249,7 +277,7 @@ def get_far_fade(self):
 
 
 def set_far_fade(self, value):
-    set_far_clip(_active(), 1, value)
+    _each(set_far_clip, 1, value)
 
 
 def get_invent_id(self):
@@ -257,7 +285,7 @@ def get_invent_id(self):
 
 
 def set_invent_id(self, value):
-    set_point_value(_active(), "invent", "id", value)
+    _each(set_point_value, "invent", "id", value)
 
 
 def get_invent_min(self):
@@ -265,7 +293,7 @@ def get_invent_min(self):
 
 
 def set_invent_min(self, value):
-    set_point_value(_active(), "invent", "min", value)
+    _each(set_point_value, "invent", "min", value)
 
 
 def get_invent_max(self):
@@ -273,7 +301,7 @@ def get_invent_max(self):
 
 
 def set_invent_max(self, value):
-    set_point_value(_active(), "invent", "max", value)
+    _each(set_point_value, "invent", "max", value)
 
 
 def get_invent_unknown_int(self):
@@ -281,7 +309,7 @@ def get_invent_unknown_int(self):
 
 
 def set_invent_unknown_int(self, value):
-    set_point_value(_active(), "invent", "unknown_int", value)
+    _each(set_point_value, "invent", "unknown_int", value)
 
 
 def get_invent_unknown_float(self):
@@ -289,7 +317,7 @@ def get_invent_unknown_float(self):
 
 
 def set_invent_unknown_float(self, value):
-    set_point_value(_active(), "invent", "unknown_float", value)
+    _each(set_point_value, "invent", "unknown_float", value)
 
 
 def get_invent_angle(self):
@@ -297,7 +325,7 @@ def get_invent_angle(self):
 
 
 def set_invent_angle(self, value):
-    set_point_value(_active(), "invent", "angle", value)
+    _each(set_point_value, "invent", "angle", value)
 
 
 def get_event_kind(self):
@@ -305,7 +333,7 @@ def get_event_kind(self):
 
 
 def set_event_kind(self, value):
-    set_point_value(_active(), "event", "kind", value)
+    _each(set_point_value, "event", "kind", value)
 
 
 def get_event_event_no(self):
@@ -313,7 +341,7 @@ def get_event_event_no(self):
 
 
 def set_event_event_no(self, value):
-    set_point_value(_active(), "event", "event_no", value)
+    _each(set_point_value, "event", "event_no", value)
 
 
 def get_event_program(self):
@@ -321,7 +349,7 @@ def get_event_program(self):
 
 
 def set_event_program(self, value):
-    set_point_value(_active(), "event", "program", value)
+    _each(set_point_value, "event", "program", value)
 
 
 def get_event_args(self):
@@ -329,7 +357,7 @@ def get_event_args(self):
 
 
 def set_event_args(self, value):
-    set_point_value(_active(), "event", "args", value)
+    _each(set_point_value, "event", "args", value)
 
 
 def get_event_target(self):
@@ -337,7 +365,7 @@ def get_event_target(self):
 
 
 def set_event_target(self, value):
-    set_point_value(_active(), "event", "target", value)
+    _each(set_point_value, "event", "target", value)
 
 
 def get_event_flags(self):
@@ -345,7 +373,7 @@ def get_event_flags(self):
 
 
 def set_event_flags(self, value):
-    set_point_value(_active(), "event", "flags", value)
+    _each(set_point_value, "event", "flags", value)
 
 
 def get_flare_color(self):
@@ -353,7 +381,7 @@ def get_flare_color(self):
 
 
 def set_flare_color(self, value):
-    set_point_value(_active(), "flare", "color", value)
+    _each(set_point_value, "flare", "color", value)
 
 
 def get_flare_draw(self):
@@ -361,7 +389,7 @@ def get_flare_draw(self):
 
 
 def set_flare_draw(self, value):
-    set_point_value(_active(), "flare", "draw", value)
+    _each(set_point_value, "flare", "draw", value)
 
 
 def get_flare_extra(self):
@@ -369,7 +397,7 @@ def get_flare_extra(self):
 
 
 def set_flare_extra(self, value):
-    set_point_value(_active(), "flare", "extra", value)
+    _each(set_point_value, "flare", "extra", value)
 
 
 def get_fire_color(self):
@@ -377,7 +405,7 @@ def get_fire_color(self):
 
 
 def set_fire_color(self, value):
-    set_point_value(_active(), "fire", "color", value)
+    _each(set_point_value, "fire", "color", value)
 
 
 def get_fire_draw(self):
@@ -385,7 +413,7 @@ def get_fire_draw(self):
 
 
 def set_fire_draw(self, value):
-    set_point_value(_active(), "fire", "draw", value)
+    _each(set_point_value, "fire", "draw", value)
 
 
 def get_fire_extra(self):
@@ -393,7 +421,7 @@ def get_fire_extra(self):
 
 
 def set_fire_extra(self, value):
-    set_point_value(_active(), "fire", "extra", value)
+    _each(set_point_value, "fire", "extra", value)
 
 
 def get_plight_power(self):
@@ -401,7 +429,7 @@ def get_plight_power(self):
 
 
 def set_plight_power(self, value):
-    set_point_value(_active(), "plight", "power", value)
+    _each(set_point_value, "plight", "power", value)
 
 
 def get_plight_color(self):
@@ -409,7 +437,7 @@ def get_plight_color(self):
 
 
 def set_plight_color(self, value):
-    set_point_value(_active(), "plight", "color", value)
+    _each(set_point_value, "plight", "color", value)
 
 
 def get_plight_mode(self):
@@ -417,7 +445,7 @@ def get_plight_mode(self):
 
 
 def set_plight_mode(self, value):
-    set_point_value(_active(), "plight", "mode", value)
+    _each(set_point_value, "plight", "mode", value)
 
 
 def get_plight_args(self):
@@ -425,7 +453,7 @@ def get_plight_args(self):
 
 
 def set_plight_args(self, value):
-    set_point_value(_active(), "plight", "args", value)
+    _each(set_point_value, "plight", "args", value)
 
 
 def get_plight_flicker(self):
@@ -433,7 +461,7 @@ def get_plight_flicker(self):
 
 
 def set_plight_flicker(self, value):
-    set_point_value(_active(), "plight", "flicker", value)
+    _each(set_point_value, "plight", "flicker", value)
 
 
 def get_plight_depth(self):
@@ -441,7 +469,7 @@ def get_plight_depth(self):
 
 
 def set_plight_depth(self, value):
-    set_point_value(_active(), "plight", "depth", value)
+    _each(set_point_value, "plight", "depth", value)
 
 
 def get_plight_period(self):
@@ -449,7 +477,7 @@ def get_plight_period(self):
 
 
 def set_plight_period(self, value):
-    set_point_value(_active(), "plight", "period", value)
+    _each(set_point_value, "plight", "period", value)
 
 
 def get_effect_effect(self):
@@ -457,7 +485,7 @@ def get_effect_effect(self):
 
 
 def set_effect_effect(self, value):
-    set_point_value(_active(), "effect", "effect", value)
+    _each(set_point_value, "effect", "effect", value)
 
 
 def get_sound_number(self):
@@ -465,7 +493,7 @@ def get_sound_number(self):
 
 
 def set_sound_number(self, value):
-    set_point_value(_active(), "sound", "number", value)
+    _each(set_point_value, "sound", "number", value)
 
 
 def get_sound_near(self):
@@ -473,7 +501,7 @@ def get_sound_near(self):
 
 
 def set_sound_near(self, value):
-    set_point_value(_active(), "sound", "near", value)
+    _each(set_point_value, "sound", "near", value)
 
 
 def get_sound_far(self):
@@ -481,7 +509,7 @@ def get_sound_far(self):
 
 
 def set_sound_far(self, value):
-    set_point_value(_active(), "sound", "far", value)
+    _each(set_point_value, "sound", "far", value)
 
 
 def get_sound_unknown_int(self):
@@ -489,7 +517,7 @@ def get_sound_unknown_int(self):
 
 
 def set_sound_unknown_int(self, value):
-    set_point_value(_active(), "sound", "unknown_int", value)
+    _each(set_point_value, "sound", "unknown_int", value)
 
 
 def get_sound_shape(self):
@@ -497,7 +525,7 @@ def get_sound_shape(self):
 
 
 def set_sound_shape(self, value):
-    set_point_value(_active(), "sound", "shape", value)
+    _each(set_point_value, "sound", "shape", value)
 
 
 def get_sound_start(self):
@@ -505,7 +533,7 @@ def get_sound_start(self):
 
 
 def set_sound_start(self, value):
-    set_point_value(_active(), "sound", "start", value)
+    _each(set_point_value, "sound", "start", value)
 
 
 def get_sound_end(self):
@@ -513,7 +541,7 @@ def get_sound_end(self):
 
 
 def set_sound_end(self, value):
-    set_point_value(_active(), "sound", "end", value)
+    _each(set_point_value, "sound", "end", value)
 
 
 def get_anime_placement(self):
@@ -521,7 +549,7 @@ def get_anime_placement(self):
 
 
 def set_anime_placement(self, value):
-    set_point_value(_active(), "anime", "placement", value)
+    _each(set_point_value, "anime", "placement", value)
 
 
 def get_anime_piece(self):
@@ -529,7 +557,7 @@ def get_anime_piece(self):
 
 
 def set_anime_piece(self, value):
-    set_point_value(_active(), "anime", "piece", value)
+    _each(set_point_value, "anime", "piece", value)
 
 
 def get_anime_frame(self):
@@ -537,7 +565,7 @@ def get_anime_frame(self):
 
 
 def set_anime_frame(self, value):
-    set_point_value(_active(), "anime", "frame", value)
+    _each(set_point_value, "anime", "frame", value)
 
 
 def get_anime_drives(self):
@@ -545,7 +573,7 @@ def get_anime_drives(self):
 
 
 def set_anime_drives(self, value):
-    set_point_value(_active(), "anime", "drives", value)
+    _each(set_point_value, "anime", "drives", value)
 
 
 def get_anime_mode(self):
@@ -553,7 +581,7 @@ def get_anime_mode(self):
 
 
 def set_anime_mode(self, value):
-    set_point_value(_active(), "anime", "mode", value)
+    _each(set_point_value, "anime", "mode", value)
 
 
 def get_anime_start(self):
@@ -561,7 +589,7 @@ def get_anime_start(self):
 
 
 def set_anime_start(self, value):
-    set_point_value(_active(), "anime", "start", value)
+    _each(set_point_value, "anime", "start", value)
 
 
 def get_anime_step(self):
@@ -569,7 +597,7 @@ def get_anime_step(self):
 
 
 def set_anime_step(self, value):
-    set_point_value(_active(), "anime", "step", value)
+    _each(set_point_value, "anime", "step", value)
 
 
 def get_anime_end(self):
@@ -577,7 +605,7 @@ def get_anime_end(self):
 
 
 def set_anime_end(self, value):
-    set_point_value(_active(), "anime", "end", value)
+    _each(set_point_value, "anime", "end", value)
 
 
 def get_anime_uniform(self):
@@ -585,7 +613,7 @@ def get_anime_uniform(self):
 
 
 def set_anime_uniform(self, value):
-    set_point_value(_active(), "anime", "uniform", value)
+    _each(set_point_value, "anime", "uniform", value)
 
 
 def get_anime_relative(self):
@@ -593,7 +621,7 @@ def get_anime_relative(self):
 
 
 def set_anime_relative(self, value):
-    set_point_value(_active(), "anime", "relative", value)
+    _each(set_point_value, "anime", "relative", value)
 
 
 def data_prop_name(kind, field):
@@ -602,6 +630,32 @@ def data_prop_name(kind, field):
 
 def _show_hour(self, context):
     look.show_hour(context, self.hour, self.by_hour)
+    look.update_time_of_day(context)
+
+
+def _outline_filters():
+    from . import outliner
+
+    return outliner.FILTERS
+
+
+def _select_listed(self, context):
+    from . import outliner
+
+    outliner.select_listed(self, context)
+
+
+def _redraw_overlay(self, context):
+    from . import overlay
+
+    overlay.invalidate()
+    for area in context.screen.areas if context.screen else []:
+        if area.type == "VIEW_3D":
+            area.tag_redraw()
+
+
+def _show_fog(self, context):
+    look.update_time_of_day(context)
 
 
 class Dc2tkMapEntry(bpy.types.PropertyGroup):
@@ -658,6 +712,59 @@ class Dc2tkSettings(bpy.types.PropertyGroup):
         update=_show_hour,
     )
 
+    edit_selected: BoolProperty(
+        name="All selected",
+        description="A field's edit changes every selected object of the active one's role (and a point's kind), "
+        "not only the active one",
+        default=False,
+    )
+    outline_filter: EnumProperty(name="Show", items=[f for f in _outline_filters()], default="PLACEMENTS")
+    outline_kind: EnumProperty(
+        name="Kind",
+        items=[("ALL", "Every kind", "")] + [(kind, schema.KIND_LABELS[kind], "") for kind in schema.POINT_KINDS],
+        default="ALL",
+    )
+    outline_search: StringProperty(name="Find", description="Part of a name, template, kind or model", options={"TEXTEDIT_UPDATE"})
+    outline_index: IntProperty(name="Listed", default=-1, update=_select_listed)
+    outline_referenced: BoolProperty(
+        name="Named by scripts", description="Only what the map's scripts name (read with Read Map Scripts)", default=False
+    )
+    outline_counts: BoolProperty(name="Instances", description="Show how many placements each template has", default=False)
+    show_walkable: BoolProperty(
+        name="Walkable",
+        description="Tint shown floor collision: green where the player can stand, red for walls (the engine's "
+        "slope limit), blue for water",
+        default=False,
+        update=_redraw_overlay,
+    )
+    show_cells: BoolProperty(
+        name="Cells",
+        description="Draw a dungeon part's 320 x 320 cell and its closed sides (MOVE_FLAG) around each template",
+        default=True,
+        update=_redraw_overlay,
+    )
+    show_spots: BoolProperty(
+        name="Script spots",
+        description="Mark where the map's scripts place the player (Read Map Scripts first)",
+        default=True,
+        update=_redraw_overlay,
+    )
+    show_cfg: BoolProperty(
+        name="Water, culling",
+        description="Draw what the map's .cfg adds: water surfaces, occlusion planes, areas drawn without their "
+        "parts, extra trigger points and where villagers stand",
+        default=True,
+        update=_redraw_overlay,
+    )
+    show_camera_boxes: BoolProperty(
+        name="Camera boxes", description="Draw the fixed cameras' FIX_CAMERA_RECT boxes", default=True, update=_redraw_overlay
+    )
+    show_fog: BoolProperty(
+        name="Fog", description="Draw the light set's fog in Material Preview and Rendered", default=True, update=_show_fog
+    )
+    test_play: BoolProperty(
+        name="Boot in PCSX2", description="Boot the test image in PCSX2 once it is built (build --play)", default=False
+    )
     place_name: StringProperty(name="Name", description="The game's name (31 bytes at most)", get=get_node_name, set=set_node_name)
     place_template: StringProperty(name="Template", description="PARTS_NAME: the template this placement copies", get=get_template, set=set_template)
     place_show: BoolProperty(name="Shown", description="MAP_PARTS show flag", get=get_show, set=set_show)
@@ -811,6 +918,22 @@ class Dc2tkSettings(bpy.types.PropertyGroup):
         name="Relative (in the piece's own space)", get=get_anime_relative, set=set_anime_relative,
     )
 
+
+def _more_settings():
+    """The settings other modules define (lighting) and the template library's."""
+    from . import lighting
+
+    found = dict(lighting.lighting_properties())
+    found.update(lighting.light_props())
+    found["library_map"] = StringProperty(
+        name="From map", description="The map to take a template from: pick it from the list, or type its name",
+    )
+    found["library_templates"] = CollectionProperty(type=Dc2tkMapEntry)
+    found["library_template"] = StringProperty(name="Template", description="The template to place")
+    return found
+
+
+Dc2tkSettings.__annotations__.update(_more_settings())
 
 classes = (Dc2tkMapEntry, Dc2tkSettings)
 

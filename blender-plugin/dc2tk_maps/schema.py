@@ -9,7 +9,7 @@ PREFIX = {
     "camera": "camera:",
 }
 GROUP_NAMES = ("placements", "points", "cameras")
-ROLES = ("map", "placement", "piece", "mds", "point", "group", "camera")
+ROLES = ("map", "placement", "piece", "mds", "point", "group", "camera", "display")
 
 POINT_KINDS = ("pos", "invent", "event", "flare", "plight", "fire", "effect", "sound", "anime")
 PIECE_KINDS = ("model", "collision", "camera", "chara")
@@ -399,6 +399,30 @@ def collision_colour(attrs, mode):
 
 def game_to_blender(v):
     return (v[0], -v[2], v[1])
+
+
+def blender_to_game(v):
+    return (v[0], v[2], -v[1])
+
+
+# The player's size where the engine moves it (MoveCheck, gameutil.cpp:1599): walls are kept 15
+# units away (CheckWidth), the floor is looked for 20 units below the feet (GetFootPoly), and a
+# triangle whose normal's up part is below 0.5 is a wall.
+PLAYER_RADIUS = 15.0
+FOOT_PROBE = 20.0
+WALL_NORMAL_Y = 0.5
+# A dungeon grid cell (CAutoMapGen::Build places cell x, y at x*320, 0, y*320).
+DUNGEON_CELL = 320.0
+# Collision queries take the triangles of every node whose box overlaps, up to the caller's
+# buffer: 128 for monsters and objects, 512 for the camera (docs/assets/maps.md section 4.3).
+QUERY_TRIANGLES = 128
+CAMERA_QUERY_TRIANGLES = 512
+# Models a map's model pack holds at most (CMdsList::LoadPCPFile).
+PACK_MODELS = 0x1FF
+# A new map's name: lower-case letters, digits and _, from a letter, 12 at most.
+NEW_MAP_RE = re.compile(r"^[a-z][a-z0-9_]{0,11}$")
+# A mod's new programs (NEW_PROGRAM) are numbered from 9000 to 9999.
+MOD_PROGRAMS = (9000, 10000)
 
 
 MAP_LABELS = {

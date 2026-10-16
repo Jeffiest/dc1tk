@@ -457,6 +457,7 @@ fn template_previews(map: &MapFile, kind_of: &dyn Fn(&str) -> String) -> Vec<Sce
             extras: json!({"c2": {
                 "role": "placement", "name": template.name, "template": template.name, "preview": true,
                 "show": 1, "group": "", "far_clip": Value::Null,
+                "move_flag": template.move_flag.as_ref().map_or(Value::Null, nums_json),
             }}),
             children,
             model: None,
@@ -687,6 +688,10 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
     }
 
     let mut placements = Vec::new();
+    // a template the map does not have yet, as its first placement in the scene has it: the
+    // others are read against it, so the float noise a tool adds to each copy of a new template
+    // (Blender keeps world matrices in 32 bits) does not make them differ
+    let mut firsts: HashMap<String, (Vec<Piece>, Option<Vec<Point>>)> = HashMap::new();
     for node in group("placements").map(|group| group.children.as_slice()).unwrap_or(&[]) {
         if node.role() != "placement" {
             continue;
@@ -722,12 +727,14 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
             rot,
             scale,
         };
-        let old_pieces = template.map(|t| t.pieces.as_slice()).unwrap_or(&[]);
+        let first = if template.is_none() { firsts.get(&placement.template) } else { None };
+        let old_pieces = template.map(|t| t.pieces.as_slice()).or(first.map(|f| f.0.as_slice())).unwrap_or(&[]);
         let pieces = ordered(&node.children, "piece")
             .into_iter()
             .map(|piece| read_piece(piece, original_of(old_pieces, piece, |p: &Piece| p.name.as_str())))
             .collect::<Result<Vec<_>>>()?;
-        let old_points = template.and_then(|t| t.points.as_deref()).unwrap_or(&[]);
+        let old_points =
+            template.and_then(|t| t.points.as_deref()).or(first.and_then(|f| f.1.as_deref())).unwrap_or(&[]);
         let point_nodes = ordered(&node.children, "point");
         let points = if point_nodes.is_empty() && template.is_none_or(|t| t.points.is_none()) {
             None
@@ -739,7 +746,17 @@ pub fn read_scene(root: &SceneNode, original: &MapFile) -> Result<SceneEdit> {
                     .collect::<Result<Vec<_>>>()?,
             )
         };
-        placements.push(PlacementEdit { slot, placement, pieces, points, preview });
+        // a preview's template's closed sides, which a dungeon's generator reads
+        let move_flag = match &c2["move_flag"] {
+            Value::Array(_) if preview => {
+                Some(nums_from(&c2["move_flag"], template.and_then(|t| t.move_flag.as_ref()), &what)?)
+            }
+            _ => None,
+        };
+        if template.is_none() && !firsts.contains_key(&placement.template) {
+            firsts.insert(placement.template.clone(), (pieces.clone(), points.clone()));
+        }
+        placements.push(PlacementEdit { slot, placement, pieces, points, preview, move_flag });
     }
 
     let old_points = original.points.as_deref().unwrap_or(&[]);
@@ -922,6 +939,45 @@ mod tests {
         assert!(out.placements.is_empty());
         assert_eq!(out.templates[1].pieces[0].pos[1], Num::Int(-20));
         assert_eq!((out.templates.len(), &out.templates[3]), (4, &map.templates[3]));
+    }
+
+    /// Copies of a placement of a template the map lacks (one made in the scene, or taken from
+    /// another map) each carry a little float noise of their own: they stay one template.
+    #[test]
+    fn copies_of_a_new_template_stay_one_template_despite_float_noise() {
+        let map = MapFile::default();
+        let mut scene = build_scene(&map, "t09", &kind_of).unwrap();
+        let piece = |x: f64| SceneNode {
+            name: "piece:tree-m".into(),
+            trs: Some(map_transform::Trs {
+                translation: [x, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0; 3],
+            }),
+            extras: json!({"c2": {"role": "piece", "name": "tree-m", "model": "tree-m.mds", "kind": "model", "show": 1,
+                                   "time": [0, 0], "col_type": 0, "materials": [], "order": 0}}),
+            children: vec![],
+            model: None,
+        };
+        let placement = |name: &str, x: f64, noise: f64| SceneNode {
+            name: format!("place:{name}"),
+            trs: Some(map_transform::Trs {
+                translation: [x, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0; 3],
+            }),
+            extras: json!({"c2": {"role": "placement", "name": name, "template": "tree", "show": 1, "group": ""}}),
+            children: vec![piece(12.5 + noise)],
+            model: None,
+        };
+        scene.children[0].children =
+            vec![placement("tree", 0.0, 0.0), placement("tree_2", 100.0, 3e-6), placement("tree_3", 200.0, -2e-6)];
+        let edit = read_scene(&scene, &map).unwrap();
+        let pieces: Vec<&Vec<Piece>> = edit.placements.iter().map(|placement| &placement.pieces).collect();
+        assert!(pieces.iter().all(|found| *found == pieces[0]), "{pieces:?}");
+        let out = map_edit::rebuild(&map, &edit).unwrap();
+        assert_eq!(out.templates.len(), 1);
+        assert!(out.placements.iter().all(|placement| placement.template == "tree"));
     }
 
     #[test]

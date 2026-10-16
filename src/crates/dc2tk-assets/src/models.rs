@@ -5,7 +5,7 @@
 //! differ from the export into the pack's texture files; parts left as exported change nothing.
 //! new_pack makes a pack of its own from a glTF alone, in a template pack's layout.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 use dc2tk_disc::files;
@@ -525,6 +525,20 @@ pub fn build_map_model(given: &Gltf, original: &[u8], options: &to_gltf::Options
     let mut exported = Folder::new();
     to_gltf::export_model(&model, &mut exported, "model", options)?;
     let before = load_from_folder(&exported, "model.gltf")?;
+    // two meshes standing for one frame would leave the frame only the last one's triangles: a
+    // copy that kept its original's mds_index, or a duplicate of its name
+    let mut claimed: HashMap<usize, String> = HashMap::new();
+    for (gi, id) in from_gltf::mesh_ids(&given.json, &model)? {
+        let from_gltf::MeshId::Frame(frame) = id else { continue };
+        let name = given.json["nodes"][gi]["name"].as_str().unwrap_or("").to_string();
+        if let Some(first) = claimed.insert(frame, name.clone()) {
+            bail!(
+                "meshes {first} and {name} both stand for frame {} (by mds_index or name); give a new mesh a name \
+                 of its own and no mds_index",
+                model.nodes[frame].name
+            );
+        }
+    }
     // by geometry: a map's glTF goes through Blender, which rewrites unedited meshes another way
     let meshes = from_gltf::changed_geometry(&before, given, &model)?;
     let import = from_gltf::ImportOptions { meshes: Some(&meshes), collision: options.collision, ..Default::default() };
@@ -2029,5 +2043,28 @@ mod tests {
             assert_eq!(mesh.prims.iter().map(|p| p.verts.len()).sum::<usize>(), 6);
         }
         assert_eq!(built.nodes[0], original.nodes[0]);
+    }
+
+    /// A mesh copied in Blender keeps its original's extras.mds_index: two meshes standing for one
+    /// frame would leave it the last one's triangles alone, so the build refuses them.
+    #[test]
+    fn two_meshes_for_one_frame_are_refused_not_merged() {
+        let piece = collision_piece();
+        let options = to_gltf::Options::collision();
+        let (files, _) = export_map_model(&piece, "piece", &options).unwrap();
+        let mut gltf = load_from_folder(&folder_of(&files), "piece.gltf").unwrap();
+        let nodes = gltf.json["nodes"].as_array_mut().unwrap();
+        let at = nodes.iter().position(|node| node.get("mesh").is_some()).unwrap();
+        let mut copy = nodes[at].clone();
+        copy["name"] = "floor_2".into();
+        nodes.push(copy);
+        let added = nodes.len() - 1;
+        gltf.json["scenes"][0]["nodes"].as_array_mut().unwrap().push(added.into());
+        let error = build_map_model(&gltf, &piece, &options).unwrap_err().to_string();
+        assert!(error.contains("both stand for frame"), "{error}");
+        // without the index it is a new frame of its own
+        gltf.json["nodes"][added]["extras"].as_object_mut().unwrap().remove("mds_index");
+        let built = mds::parse(&build_map_model(&gltf, &piece, &options).unwrap()).unwrap();
+        assert!(built.nodes.iter().any(|node| node.name == "floor_2" && node.mdt.is_some()));
     }
 }

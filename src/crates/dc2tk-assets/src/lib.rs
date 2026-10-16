@@ -22,6 +22,7 @@ pub mod soundbank;
 // models, motions and maps as glTF
 pub mod from_gltf;
 pub(crate) mod gltf;
+pub mod map_display;
 pub mod map_edit;
 pub mod map_export;
 pub mod map_import;

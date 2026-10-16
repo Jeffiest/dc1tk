@@ -2,7 +2,7 @@
 //! with every game file the mods change put in, step by step, saying what each step did.
 
 use std::collections::{BTreeMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Result};
@@ -27,8 +27,12 @@ pub struct BuildArgs {
     /// image, as `pack` writes it, before the build's changes).
     disc: PathBuf,
     /// Disc image to write.
-    #[arg(short, long)]
-    output: PathBuf,
+    #[arg(short, long, required_unless_present = "dry_run")]
+    output: Option<PathBuf>,
+    /// Do everything but write the image: say what would change, and check the game's memory
+    /// budgets, without the time and disc space an image takes.
+    #[arg(long, conflicts_with_all = ["output", "play"])]
+    dry_run: bool,
     /// Test image only: a new game goes straight to this map and program, as in s51:story_50, to
     /// a program of one of the map's scripts, as in s06/s06b:500, or to a map at map_start, as in
     /// m05.
@@ -93,22 +97,26 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
     let found = compile(args, &tools, &mut planned)?;
     let made = game_files(args, &tools, &planned, &found)?;
     let over_budget = memory_check(args, &made.data.files)?;
-    let written = rebuild::write_disc(&args.disc, &args.output, &made.data.files)?;
+    let data_files: usize = made.data.changes.iter().map(|change| change.files.len()).sum();
+    let counts = format!(
+        "{} scripts changed, {} game files replaced or added, {} disc files rewritten",
+        found.scripts.len(),
+        made.replaced.len() + made.changed.len() + made.new_music.len() + made.map_changes.len() + data_files,
+        made.data.files.len()
+    );
+    let Some(output) = &args.output else {
+        println!("dry run: {counts}; no image written");
+        return Ok(if over_budget { ExitCode::from(1) } else { ExitCode::SUCCESS });
+    };
+    let written = rebuild::write_disc(&args.disc, output, &made.data.files)?;
     if let Some(executable) = &made.data.executable {
         // the executable tables (monsters, spectrumising, ...): the boot executable patched in
         // place, its size kept
-        rebuild::overwrite_iso_file(&args.output, dc2tk_assets::elf::EXECUTABLE, executable)?;
+        rebuild::overwrite_iso_file(output, dc2tk_assets::elf::EXECUTABLE, executable)?;
     }
     print_written(&written);
-    let wrong = read_back(args, &found, &made)?;
-    let data_files: usize = made.data.changes.iter().map(|change| change.files.len()).sum();
-    println!(
-        "{} scripts changed, {} game files replaced or added, {} disc files rewritten, written to {}",
-        found.scripts.len(),
-        made.replaced.len() + made.changed.len() + made.new_music.len() + made.map_changes.len() + data_files,
-        made.data.files.len(),
-        shown(&args.output)
-    );
+    let wrong = read_back(output, &found, &made)?;
+    println!("{counts}, written to {}", shown(output));
     if !wrong.is_empty() {
         return Ok(ExitCode::from(1));
     }
@@ -117,7 +125,7 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         return Ok(ExitCode::from(1));
     }
     if args.play {
-        println!("started PCSX2: {}", launch(&args.output, args.pcsx2.as_deref(), true)?.display());
+        println!("started PCSX2: {}", launch(output, args.pcsx2.as_deref(), true)?.display());
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -416,8 +424,7 @@ fn print_written(written: &rebuild::Written) {
 }
 
 /// The files that read back from the written image other than as the build wrote them.
-fn read_back(args: &BuildArgs, found: &build::Changes, made: &GameFiles) -> Result<Vec<String>> {
-    let output = &args.output;
+fn read_back(output: &Path, found: &build::Changes, made: &GameFiles) -> Result<Vec<String>> {
     let mut wrong = build::check(output, &found.scripts)?;
     wrong.extend(discfiles::check(output, &made.replaced)?);
     wrong.extend(replace::check(output, &made.changed)?);

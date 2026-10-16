@@ -257,8 +257,10 @@ new map's number as `MAP_M05X`. See [maps](assets/maps.md) section 9 and the
 [new-map-door example](examples/new-map-door/README.md).
 
 A map line takes `"file"` (the scene) and `"programs"`, and under `add` also
-`"like"`, `"script"` and `"title"` (the new map's own title in the map table,
-printable ASCII without quotes; the like map's otherwise). Any other option,
+`"like"`, `"script"`, `"title"` (the new map's own title in the map table,
+printable ASCII without quotes; the like map's otherwise) and `"compact"`
+(`true`: the placements deleted from the scene are left out of the new map
+instead of kept hidden in their slots, which only the disc's scripts need). Any other option,
 `"only"` among them, is refused: a map line changes the one map it names. A
 new map's name is lower-case letters, digits and `_`, starting with a
 letter, at most 12 long, since its files are named after it in the engine's

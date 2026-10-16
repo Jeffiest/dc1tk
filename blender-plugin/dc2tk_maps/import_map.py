@@ -259,11 +259,12 @@ def postprocess(context, gltf_path, new_objects, log=None):
 
         materials = {slot.material for obj in c2data.descendants(root) if obj.type == "MESH" for slot in obj.material_slots}
         look.apply_all([material for material in materials if material is not None])
-        look.map_world(context, root)
         if hasattr(context.window_manager, "dc2tk_maps"):
             settings = context.window_manager.dc2tk_maps
+            look.map_world(context, root, look.lighting_at(root, settings.hour if settings.by_hour else None))
             look.show_hour(context, settings.hour, settings.by_hour, [root])
         else:
+            look.map_world(context, root)
             look.show_hour(context, 12, True, [root])
 
         for obj in c2data.points(root):
@@ -417,6 +418,11 @@ def unload_maps(context):
         return []
     if context.mode != "OBJECT" and context.active_object is not None:
         bpy.ops.object.mode_set(mode="OBJECT")
+    from . import animate, library
+
+    # what was played goes back, and a dungeon layout laid out of the map goes with it
+    animate.stop()
+    library.clear_layout()
     names = [root.name for root in roots]
     objects = {obj for root in roots for obj in c2data.descendants(root)}
     # the map's collection (when the scene was imported as one) and its collision collections,

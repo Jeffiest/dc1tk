@@ -154,6 +154,9 @@ pub enum LineKind {
         /// Event points given programs: (point, program), the program a number, a program's name
         /// or a NEW_PROGRAM name of the mod (docs/assets/maps.md section 9).
         programs: Vec<(String, Value)>,
+        /// A new map's placements deleted from its scene are left out, not kept hidden in their
+        /// slots (`"compact": true`): no script numbers a new map's placements yet.
+        compact: bool,
     },
     /// A table of game data (data:items).
     Data,
@@ -166,7 +169,7 @@ impl LineKind {
             return Some(LineKind::File { like: None });
         }
         if key.starts_with(MAP) {
-            return Some(LineKind::Map { like: None, title: None, script: None, programs: Vec::new() });
+            return Some(LineKind::Map { like: None, title: None, script: None, programs: Vec::new(), compact: false });
         }
         if key.get(..DATA.len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case(DATA)) {
             return Some(LineKind::Data);
@@ -459,6 +462,9 @@ fn take_option(
             let given = given.ok_or_else(|| fail(&"\"script\" is a C file of the mod: the new map's event script"))?;
             let path = paths::inside_mod(mod_dir, given).filter(|path| path.is_file());
             *script = Some(path.ok_or_else(|| fail(&format!("{given} is not a file in the mod's folder")))?);
+        }
+        (LineKind::Map { compact, .. }, "compact") if add => {
+            *compact = value.as_bool().ok_or_else(|| fail(&"\"compact\" is true or false"))?;
         }
         (LineKind::Map { programs, .. }, "programs") => {
             let listed = value

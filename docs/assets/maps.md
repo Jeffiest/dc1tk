@@ -57,6 +57,12 @@ this repository). Map meshes are the MDS format of
   and a door into it from an existing map with a way back (section 9.2, the
   example `new-map-door`) build; not yet tried in the game.
 
+- What a scene only shows (section 8): the sky by time band and what the
+  `.cfg` adds (water, occlusion planes, hidden areas, extra trigger points,
+  villagers). s17 and m05 exported with them import unchanged, and m01 too
+  through the add-on in Blender 5.2. Animated character pieces (`.chr`) are
+  still shown without their models.
+
 **Not yet:** how the VU program
 combines vertex colour with lighting is untraced; `invent`'s int and float
 and `sound`'s int are unnamed.
@@ -561,7 +567,10 @@ and gives what to write; `dc2tk build` does so for each `"map:NAME":
   changed when every placement of it agrees, and a placement that differs
   gets a template of its own (`NAME_2`); deleted placements are kept hidden
   (`show 0`, as scripts address them by slot) and new ones appended. The
-  file is replaced only when its bytes differ.
+  file is replaced only when its bytes differ, and `build` says what it made
+  of the placements: each new template and the placements that place it, how
+  many were deleted and how many added (`note: map:m01 (mod x): template
+  house_2 is new, placed by house02`).
 - **Meshes:** each model is taken from the first piece placing it and
   rebuilt with `models::build_map_model` when its meshes differ from an
   export **by value** (`from_gltf::changed_geometry`): matrices within 1e-3,
@@ -573,7 +582,11 @@ and gives what to write; `dc2tk build` does so for each `"map:NAME":
   gives every primitive of a mesh what any of them has (UVs of 0, white
   colours); none of that counts as a change, and a rebuilt mesh takes each
   corner's missing alpha from the nearest vertex of the mesh it replaces,
-  keeping the fades. Positions (vertices, and mesh, placement and piece
+  keeping the fades. Two meshes of one model standing for one frame (a copy
+  that kept its original's `extras.mds_index`, or a second mesh of its name)
+  are refused rather than built: the frame would keep the last one's
+  triangles alone. A mesh without an index and with a name of its own is a
+  new frame of the model, under its root. Positions (vertices, and mesh, placement and piece
   translations) compare within 0.005 and 2e-6 of their value, absolutely, so
   a move far from the origin is still seen: Blender keeps world matrices in
   32 bits, which moves things thousands of units out by a few thousandths.
@@ -631,6 +644,7 @@ names are prefixed so a tree is readable without the add-on:
 | a trigger point | `point:NAME` | `{"role": "point", "kind": "pos" ... "anime", "enable", "flag", "data": {...}}`; transform FUNC_POS; under its placement when the template carries it, under `points` when it is the map's own |
 | group nodes | `placements`, `points`, `cameras` | `{"role": "group"}` |
 | a fixed camera | `camera:INDEX` | `{"role": "camera", "index"}`, an empty at its `FIX_CAMERA_POS`; its other positions and boxes are in the root's `map` tree |
+| what the scene only shows | `sky`, `band:day`, `sky:day`, `background sky:day below` | `{"role": "display", "what": "sky" or "sky band" or "background sky", "band", "model", "spin"}`: the sky the engine draws about the camera (the map's `.sky`, else `map/def.sky`, when `SKY_INFO` turns it on), each time band's sky and background sky models, once as drawn and once mirrored below the horizon, as `CMapSky::DrawSky` draws them; the import leaves every node of this role, and its materials' pictures, alone |
 
 **Templates.** glTF has no instancing of node trees, so every placement holds
 its own copy of its template's pieces and points; meshes are shared, so editing
@@ -646,13 +660,24 @@ numbers.
 dungeon floor libraries, the add maps, `g00`) shows each template once (the
 first of a name) as a placement node with `"preview": true` and no slot,
 laid out on the ground in rows by family (the name before its digits), 480
-units apart (`map_scene::template_previews`). Its pieces and points are
+units apart (`map_scene::template_previews`), with the template's closed
+sides (`MOVE_FLAG`) as `move_flag` `[-X, -Z, +X, +Z]`, which the import
+writes back into the template. Its pieces and points are
 edited as any placement's and fold into the template on import; the preview
 places nothing, so moving it changes nothing, and the add-on offers no
 Duplicate for it. A floor's parts are placed at run time ([dungeons](dungeons.md)
 section 6). d01f01 (244 templates, 296 models) goes through the add-on in
 Blender 5.1 and back unchanged, and a piece raised in one preview changes
 that template alone.
+
+The root's `extras.c2.cfg` is what the map's `.cfg` adds, for the eye
+(`map_display::cfg_json`, from `CMap::LoadCfgFile`): `water` surfaces
+(`WATER_VERTEX`'s grid between two corners, put at `WATER_POS`), `occlusion`
+planes (four corners), `draw_off` areas (`DRAW_OFF_RECT`: the parts in the
+second box are not drawn while the camera is in the first), `events` (its
+`FUNC_DATA "event"` points: name, event number, how they go off, `FUNC_POS`)
+and `villagers` (`NPC_PLACE` and `NPC_POS x, y, z, yaw`). The `.cfg` itself
+is not rebuilt from the scene; a new map copies its like map's.
 
 **Collision.** Pieces of kind `collision` (floor and wall, `-a`) and `camera`
 (`-c`) hold triangles whose material names give their attributes
@@ -772,7 +797,11 @@ under `add` with the map it was made from:
 The name is lower-case letters, digits and `_`, from a letter, at most 12
 long (the engine's file names are 32 bytes), and no map of the disc's. `build`
 imports the scene against the like map's files as a `map:` line under
-`replace` would, and writes under the new name in its own folder
+`replace` would (with `"compact": true` on the line it leaves out the
+placements deleted from the scene rather than hiding them in their slots,
+`map_edit::Slots::Compact`, since no script numbers a new map's placements
+yet; without it they keep their slots, as on a map of the disc), and writes
+under the new name in its own folder
 (`map/m/m05/m05x.map`, `.mpk`, `.ipk`; the `.cfg`, `.efp` and `.sky` copied):
 the rebuilt `.map`, the model pack with the models that changed and the new
 ones, the texture pack with the changed and new pictures (a picture another

@@ -71,7 +71,9 @@ description.
   as a glTF folder, and a new pack from a glTF), `motions`, `gltf`
   (accessor types), `math` (column-major `Mat4`, quaternions); maps:
   `mapfile` (the `.map` file as a typed tree), `map_scene`, `map_export`,
-  `map_import`, `map_edit`, `map_transform`;
+  `map_import`, `map_edit`, `map_transform`, `map_display` (what a scene only
+  shows: the sky by time band, the `.cfg`'s water, occlusion planes, hidden
+  areas, extra trigger points and villagers);
 - textures and sounds for mods: `textures`, `quantise` (median cut),
   `sounds` (WAVs), `music` (MIDI), `soundfont`;
 - data tables and text: `cfg_text` (a cfg script kept whole, so one

@@ -8,8 +8,15 @@ into a disc image. The scene's conventions (node names, `extras.c2`,
 collision material names) are in [the map formats](../docs/assets/maps.md),
 section 8; the add-on follows them and never renames what carries data.
 
-Blender 4.2 or newer (tested with 4.2.23 and 5.1.2); written to run on 3.6 too. Plain
+Blender 4.2 or newer (tested with 4.2.23, 5.1.2 and 5.2.2); written to run on 3.6 too. Plain
 Python, nothing to install besides the add-on.
+
+Besides the sidebar it is in Blender's own menus: Add (Shift+A) > Dark
+Chronicle adds every kind of point, a door to another map, a template of any
+map, a placement copy, a new model and a player to measure by; right-clicking
+an object gives Drop to Ground, Copy Game Coordinates and the template
+tools; Shift+Alt+D opens a pie of the common ones (door, light, spawn, chest,
+drop to ground, duplicate, validate, test here).
 
 ## Install
 
@@ -101,6 +108,21 @@ keeps the node tree, then:
   Shown. Untick the clock for every piece.
   Hidden collision is left out of renders too.
 
+**What the scene shows besides the map.** The export carries the sky the
+engine draws about the camera (the map's `.sky`, else `map/def.sky`): its
+day, evening, night and morning skies, of which the add-on shows the one the
+hour uses, never selectable and never exported. And what the map's `.cfg`
+adds, drawn in the view (Water, culling in the Map panel): water surfaces,
+occlusion planes, the areas whose parts are not drawn from some camera
+spots, extra trigger points, and where villagers stand and face. Neither is
+edited from the scene.
+
+**Find your way.** The Map Outliner lists the map's placements, points
+(of one kind, or all), pieces or fixed cameras, found by part of a name,
+template, kind or model; a dimmed row is hidden or disabled, a page icon
+marks what the map's scripts name. Picking a row selects it, Frame Selected
+shows it.
+
 **Edit.** Select something; the Selected panel shows what it is and its
 fields, which write straight into `extras.c2`:
 
@@ -119,6 +141,19 @@ fields, which write straight into `extras.c2`:
 - "All values" lists every value of `extras.c2`, each with an edit button,
   for anything without a field of its own (cameras, piece materials).
 
+With several objects of one role selected, "Edit all N selected" makes a
+field's edit change all of them, as Alt does for Blender's own fields (a
+point's data fields only those of its kind).
+
+A placement's box (and a piece's or point's in it) says what the build will
+do with its template: change it, when every placement of it is alike, or
+give the placements that differ templates of their own. Apply to All gives
+every placement of the template this one's pieces and points, Make Unique
+gives this one a template of its own on purpose, and the arrow selects them
+all. When the map's scripts name the object (Read Map Scripts), the box
+lists the calls, file and line: renaming or deleting it breaks them, and
+Validate says so.
+
 Name fields update both the Blender object name and `extras.c2.name`, which
 the build uses. Duplicated placements receive a new game name too. Names
 are unique within their game scope; Blender may add a suffix to their display names.
@@ -132,6 +167,46 @@ too: a mesh is shared by every piece that places the same model, as in the
 game. Building rebuilds only the models whose meshes you changed (Blender's
 own rewriting of untouched meshes is allowed for), and a rebuilt mesh keeps
 the vertex alpha fades Blender leaves out.
+
+**Lay out.** Drop to Ground moves the selected placements, points and objects
+down onto the map's floor collision (or its drawn meshes), as the player
+would stand there, optionally turned to the slope. Town snap sets the grid
+to 10 units and turns to 15 degrees (the Georama step), Cell snap to dungeon
+cells (320) and quarter turns. Copy Game Coordinates puts where the active
+object or the 3D cursor is on the clipboard in game axes (y up), as `x, y,
+z`, `place_chara(CHARA_PLAYER, x, y, z, yaw);`, `set_camera_pos(...)`,
+`set_camera_target(...)` or `#define NAME_X ...` lines, the yaw as the game
+turns things. Player for Scale stands Max (the asset tree's
+`models/chara/c01_base`, else a cylinder of the player's radius, 15) at the
+cursor, outside the map.
+
+**Lighting.** The Lighting panel edits the map's light sets in place:
+background colours, ambient, fog (on, near, far, colour) and each
+directional light's colour and direction, and how the game picks them: by
+the clock (and blending), at a fixed hour, the number of sets by the hour,
+the active set. Show "The game at the hour" lights the scene as
+`CMap::GetLightInfo` does at the Map panel's hour: the band's set, blended
+into the next over the hour before it, the first light following the sun.
+"One light set" shows the chosen set alone; turning one of its suns ("c2
+light ...") in the view sets that light's direction. Fog shows in Material
+Preview and Rendered (Fog in the Map panel), linear from near to far, over
+every material but those whose name flags turn it off (`f0`).
+
+**Animations.** Play Animations runs the map's anime points as the engine
+steps them, 25 a second: position, rotation and scale of placements, pieces
+and model nodes, in every mode (the clock's hands and "by the hour" read the
+Map panel's hour; "look at the player" holds). Colour and alpha are not
+shown. Pressing it again stops them and puts everything back, as does
+exporting, saving or undoing: a played frame is never written.
+
+**Handles and views.** An invent point shows its box as a cage to drag and
+scale, a sound point arrows for its near and far distances. A fixed camera's
+Look Through shows the map from it at the engine's 52 degrees, aimed at its
+first box; the cameras' boxes and other positions are drawn (Camera boxes),
+as are the spots where the map's scripts stand the player (Script spots).
+A new mesh's Draw Flags set how the game draws it (blend, alpha test, unlit,
+no depth write, fog), written into its node name after `--` as the engine
+reads it; the disc's own nodes keep theirs.
 
 **Textures.** Paint on a map picture (Texture Paint, or edit the PNG in
 `textures/` and reload it), or give a material another of the map's
@@ -149,10 +224,29 @@ placement (copied with its template) or, with nothing in a placement active,
 the map's own `points`. A door is made as the disc's are (action button, the
 screen fading out); its program, the map script's program it runs once open,
 is a number or given by name in `mod.json` (`"programs"`, as for a door into
-a new map: [maps](../docs/assets/maps.md) section 9). Names are made unique within their parent and kept
+a new map: [maps](../docs/assets/maps.md) section 9). An event point's
+program has a menu of the map script's programs (Read Map Scripts) and "By
+name in mod.json", which writes the point's line in `"programs"` for build to
+number. Names are made unique within their parent and kept
 to 31 bytes. Duplicate Placement copies a placement with its pieces and
 points (meshes shared) under a new name (`house01_2`); with no slot it is
 appended after the map's placements.
+
+Door to Another Map adds a door at the cursor that goes to a map of the list
+(or a new map of the mod): the door point (its target the map), a program in
+the mod's patch of this map's script (`doors_MAP.c`, appended to:
+`jump_to_map(-1, "TARGET", map_start); wait;`, or another program of the
+target to arrive at), and the map line's `"programs"` giving the door that
+program. The way back is a door in the other map, made the same way.
+
+**Templates of any map.** In the Lay Out panel pick a map, List Templates
+(it is exported with `dc2tk map-export` first when it has not been), pick a
+template and Place at Cursor: a new placement of a template of its own
+(`SOURCE_TEMPLATE`), its pieces and points as the other map has them. A map
+reaches only its own packs, so its models become new models of this map
+(`SOURCE_MODEL-m.mds` and the rest) and its pictures new pictures
+(`SOURCE_PICTURE`, those narrower than 16 scaled up, as most maps' formats
+need), which the build adds to the map's model and texture packs.
 
 **New models.** Model something (any meshes, with any of the map's pictures
 or new images), select it and press New Model from Selection: it becomes a
@@ -165,7 +259,15 @@ adds the models to the map's model pack with their `info.cfg` entries.
 **Collision.** Show collision, select a collision mesh, go into Edit Mode,
 select faces, set ground, foot sound, area and mask in the Add panel's
 Collision box, and press "Set selected faces": the faces get the material
-`col_groundG_footF_areaA_maskM`, made when missing.
+`col_groundG_footF_areaA_maskM`, made when missing. Walkable (Map panel)
+tints the shown floor collision green where the player stands, red where the
+engine takes a triangle for a wall (its normal less than half up) and blue
+for water. Collision from Mesh gives the selected drawn meshes' placement
+a collision piece of a new model made from them, triangulated and its flat
+areas merged (and camera collision too when asked), replacing the one it
+made before. Split Collision cuts the active collision mesh into a node per
+square (320 by default), each piece placing the model getting the new nodes,
+since every query looks through all the triangles of each node it touches.
 
 **Delete.** Delete a placement with its pieces and points as usual: since
 scripts address placements by slot, the build keeps its slot and hides it
@@ -177,7 +279,11 @@ once, in rows by family (`way`, `room`, `door`, ...), as a placement marked
 "Template ..., shown once": edit its pieces, collision and points and the
 export changes the template; the placement itself places nothing, so moving
 it changes nothing (see [dungeons](../docs/assets/dungeons.md), where
-area 5 floors are where chests and monsters may stand).
+area 5 floors are where chests and monsters may stand). Each part's 320 x
+320 cell is drawn about its origin, its closed sides (`MOVE_FLAG`) as walls,
+which the part's box toggles side by side (-X, -Z, +X, +Z). Preview Dungeon
+Layout lays a room of `extracted/data/layouts.json` out from the parts, cell
+by cell, as copies beside the map (never exported); room -1 clears it.
 
 **Check.** Validate Map lists errors and warnings (select an entry's object
 with its button; the whole list is in the text "dc2tk validation"): names over
@@ -186,7 +292,38 @@ with its button; the whole list is in the text "dc2tk validation"): names over
 are not triangles or whose material is not a `col_` name, more than 8
 `TIME_LIGHT_NUM`, nodes without `extras.c2`, animations naming a placement,
 piece or model node the scene lacks, picture names over 31 Latin-1
-characters, and new pictures whose sides are not powers of two up to 1024.
+characters, and new pictures whose sides are not powers of two up to 1024;
+it notes templates whose placements differ (the build splits them), names
+the map's scripts reach that the scene no longer has, and new collision
+nodes of more than 512 triangles. The Budgets panel shows the placements
+the built map will have (deleted ones keep their slots) against its limit,
+the new models and pictures, the triangles drawn and collided with, and the
+last preview's memory figures, which are the engine's own sums.
+
+**Try it.** Read Map Scripts runs `dc2tk map SOURCE NAME --json` and keeps
+what the map's scripts know of it in the .blend: their programs, the spots
+where they place the player, and the placements, pieces and points they
+name (those of other maps that shared scripts name are left out). Preview
+Changes exports the map into the mod and runs `dc2tk build --dry-run`: what
+the build would make of it (templates split, placements added and deleted,
+models rebuilt and added, pictures repainted and added, the memory the map
+uses) in a few seconds, without an image. Test Here exports and builds a
+test image beside the output one (`NAME-test.iso`) whose New Game starts on
+the map with the player at the 3D cursor, facing its way: a mod `test-here`
+in the mods folder, rewritten each time, patches the map's script with a
+program that places the player, and `--start-at MAP:TEST_HERE` goes there (a
+new map of the mod, or one without a script, starts at its `map_start`).
+"Boot in PCSX2" adds `--play`.
+
+**A map of your own.** New Map from This One makes the map in the scene a
+new map of the mod: a name (lower-case letters, digits and `_`, 12 at most)
+and a title, its `add` line in `mod.json` (`"like"` the map it was), a
+script of its own whose `map_start` stands the player at the 3D cursor, and
+optionally New Game starting there; "Start empty" removes every placement
+and point (light sets, fog and cameras stay) and lays a ground with
+collision and a start point. Its line has `"compact": true`, so the
+placements deleted from it are left out rather than kept hidden in their
+slots (no script numbers a new map's placements).
 
 **Export.** Choose the mod folder (`mods/NAME`) and press Export Map to Mod.
 After a validation without errors, the map under its `map:` root, and
@@ -239,6 +376,16 @@ back after the export, `mod.json` updated; then runs `dc2tk build` through the
 stand-in. `make_test_map.py OUT_DIR` also runs on its
 own with any Python 3.
 
+`test_tools.py` checks the tools on the same map: editing several objects
+at once, the outliner, dropping onto the ground, game coordinates, a
+template's placements, lighting by the hour and the light set editor (a
+turned sun included), animation steps and putting back, the scripts' names
+and spots, budgets, handles, dungeon cells, walkability, the test loop (Read
+Map Scripts, Preview Changes and Test Here through the stand-in, which
+answers `map --json`), the door wizard and programs, the template library,
+collision from a mesh and split collision, draw flags, a player for scale, a
+dungeon layout, and a new map from the scene.
+
 The fixture includes `extras.c2.name` and the current `map.settings` nesting.
 `test_regressions.py` also checks name edits and duplication in exported glTF,
 validation against game names, CP932 byte limits, JSON list editing, current
@@ -266,6 +413,17 @@ piece creation, mesh parenting, and collision copying have separate functions.
 and restores them in `finally`. `look.py` switches material shaders for export
 and restores them afterward. `runner.py` stores process state in dictionaries;
 its reader thread collects output without calling Blender's API.
+
+`tools.py` lays a map out (ground, snapping, coordinates, a template's
+placements, the player for scale); `outliner.py`, `menus.py` and
+`budgets.py` are the list, Blender's menus and the Budgets panel;
+`lighting.py` edits light sets and keeps turned suns in step; `animate.py`
+steps anime points; `scripts.py` keeps the scripts' report in a text block;
+`testing.py` is the loop to the game (preview, test image); `wizards.py`
+makes doors, programs and new maps; `library.py` takes templates from other
+maps and lays dungeon layouts out; `collision.py`, `views.py` and
+`gizmos.py` are the collision tools, cameras and draw flags, and the
+handles; `overlay.py` draws everything the scene has no object for.
 
 Enable the add-on through Blender before calling its operators or preferences
 from a script. The tests use the same registration path as the application.

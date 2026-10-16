@@ -459,10 +459,220 @@ pub fn detail(
     Ok(lines.join("\n"))
 }
 
+/// What one call names: (placement, piece or point, the argument giving the placement, the
+/// argument giving the name).
+type Naming = (&'static str, Option<usize>, Option<usize>);
+
+/// What a script call names of a map: (the native, what it names). A placement is given by its
+/// name or its slot (MAP_PARTS order); "" for a point is the map's own points; a piece or a point
+/// without a part (get_parts_point_pos) is looked for in every placement.
+const NAMING: [(&str, &[Naming]); 13] = [
+    ("set_func_point_enabled", &[("point", Some(0), Some(1))]),
+    ("bind_handle_map_part", &[("placement", Some(1), None), ("piece", Some(1), Some(2))]),
+    ("bind_handle_func_point", &[("point", Some(1), Some(2))]),
+    ("set_map_part_motion", &[("placement", Some(0), None), ("piece", Some(0), Some(1))]),
+    ("set_func_point_pos", &[("point", Some(0), Some(1))]),
+    ("get_func_point_pos", &[("point", Some(0), Some(1))]),
+    ("get_func_point_rot", &[("point", Some(0), Some(1))]),
+    ("show_map_part", &[("placement", Some(0), None), ("piece", Some(0), Some(1))]),
+    ("link_map_part", &[("placement", Some(0), None)]),
+    ("ride_map_piece", &[("placement", Some(0), None), ("piece", Some(0), Some(1))]),
+    ("get_parts_pos", &[("placement", Some(0), None)]),
+    ("compare_part_name", &[("placement", Some(1), None)]),
+    ("get_parts_point_pos", &[("point", None, Some(4))]),
+];
+
+/// A placement, piece or point of the map that one of its scripts names, which must keep its
+/// name (or slot) for the call to find it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NameUse {
+    pub what: &'static str,
+    /// The placement: its name, its slot, or None when the call looks in every placement (or the
+    /// argument is not a constant).
+    pub part: Option<Folded>,
+    pub name: Option<String>,
+    pub call: index::Call,
+}
+
+/// Whether a call sits in one of `scripts` or in a library one of them includes.
+fn in_scripts(call: &index::Call, scripts: &[String], users: &Users) -> bool {
+    scripts.contains(&call.path)
+        || users.get(&call.path).is_some_and(|including| including.iter().any(|path| scripts.contains(path)))
+}
+
+/// Every name the map's scripts (and the libraries they include) give a placement, piece or
+/// point of a map.
+pub fn name_uses(tree: &Path, entry: &MapInfo, users: &Users, consts: &IndexMap<String, i64>) -> Result<Vec<NameUse>> {
+    let natives: BTreeSet<String> = NAMING.iter().map(|(name, _)| name.to_string()).collect();
+    let mut found = Vec::new();
+    for call in index::calls(tree, &natives)? {
+        if !in_scripts(&call, &entry.scripts, users) {
+            continue;
+        }
+        let Some((_, named)) = NAMING.iter().find(|(name, _)| *name == call.name) else { continue };
+        for (what, part_at, name_at) in named.iter() {
+            let part = part_at.and_then(|at| call.args.get(at)).and_then(|arg| index::value(arg, consts));
+            let name = match name_at {
+                Some(at) => match call.args.get(*at).and_then(|arg| index::value(arg, consts)) {
+                    Some(Folded::Text(text)) => Some(text),
+                    // an optional piece left out, or a name made at run time
+                    _ => continue,
+                },
+                None => None,
+            };
+            // a piece of "" is the whole placement, which the placement entry covers
+            if *what == "piece" && name.as_deref() == Some("") {
+                continue;
+            }
+            found.push(NameUse { what, part, name, call: call.clone() });
+        }
+    }
+    Ok(found)
+}
+
+/// A position a script stands the player at (place_chara(0, x, y, z, yaw)), when its numbers are
+/// written out: (x, y, z, yaw, the call).
+pub fn player_positions(tree: &Path, entry: &MapInfo, users: &Users) -> Result<Vec<([f64; 4], index::Call)>> {
+    let number = |text: &str| text.trim().parse::<f64>().ok();
+    let mut found = Vec::new();
+    let mut seen = HashSet::new();
+    for call in index::calls(tree, &BTreeSet::from(["place_chara".to_string()]))? {
+        if !in_scripts(&call, &entry.scripts, users) || call.args.len() < 5 {
+            continue;
+        }
+        if !matches!(call.args[0].trim(), "0" | "CHARA_PLAYER") {
+            continue;
+        }
+        let values: Option<Vec<f64>> = call.args[1..5].iter().map(|arg| number(arg)).collect();
+        let Some(values) = values else { continue };
+        let key: Vec<u64> = values.iter().map(|value| value.to_bits()).collect();
+        if seen.insert(key) {
+            found.push(([values[0], values[1], values[2], values[3]], call));
+        }
+    }
+    Ok(found)
+}
+
+fn folded_json(value: &Option<Folded>) -> serde_json::Value {
+    match value {
+        Some(Folded::Text(text)) => serde_json::Value::from(text.as_str()),
+        Some(Folded::Int(number)) => i64::try_from(*number).map_or(serde_json::Value::Null, serde_json::Value::from),
+        None => serde_json::Value::Null,
+    }
+}
+
+/// One map as JSON, for tools (the Blender add-on): its programs and the numbers free for a
+/// mod, where its scripts place the player, and every placement, piece and point they name.
+pub fn detail_json(
+    code: &str,
+    found: &Catalog,
+    tree: &Path,
+    programs: &BTreeSet<i64>,
+    consts: &IndexMap<String, i64>,
+) -> Result<serde_json::Value> {
+    use serde_json::json;
+
+    let Some(entry) = found.maps.get(code) else {
+        return Ok(json!({"map": code, "found": false}));
+    };
+    let listed: Vec<serde_json::Value> = entry
+        .programs
+        .iter()
+        .filter_map(|(number, written)| {
+            let number = i64::try_from(*number).ok()?;
+            Some(json!({"number": number, "names": written.iter().collect::<Vec<_>>()}))
+        })
+        .collect();
+    let free: Vec<i128> = MOD_PROGRAMS
+        .filter(|number| {
+            !entry.programs.contains_key(number)
+                && !i64::try_from(*number).is_ok_and(|number| programs.contains(&number))
+        })
+        .take(20)
+        .collect();
+    let at = |call: &index::Call| json!({"path": call.path, "line": call.line, "function": call.function, "call": call.text});
+    let positions: Vec<serde_json::Value> = player_positions(tree, entry, &found.users)?
+        .into_iter()
+        .map(|([x, y, z, yaw], call)| {
+            let mut spot = at(&call);
+            spot["x"] = x.into();
+            spot["y"] = y.into();
+            spot["z"] = z.into();
+            spot["yaw"] = yaw.into();
+            spot
+        })
+        .collect();
+    let names: Vec<serde_json::Value> = name_uses(tree, entry, &found.users, consts)?
+        .into_iter()
+        .map(|used| {
+            let mut out = at(&used.call);
+            out["what"] = used.what.into();
+            out["part"] = folded_json(&used.part);
+            out["name"] = used.name.map_or(serde_json::Value::Null, serde_json::Value::from);
+            out
+        })
+        .collect();
+    Ok(json!({
+        "map": code,
+        "found": true,
+        "name": entry.name,
+        "uses": entry.kinds,
+        "playable": entry.playable,
+        "scripts": entry.scripts,
+        "programs": listed,
+        "free_programs": free,
+        "player_positions": positions,
+        "names": names,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::xref::tests::tree;
+
+    #[test]
+    fn the_json_names_what_scripts_reach_and_where_they_stand_the_player() {
+        let script = "PROGRAM(map_start, start);\n#include \"lib/map/s/s96/doors.c\"\n\
+                      void start(void)\n{\n    place_chara(0, 68.04, 41.85, -1180.5, 3.14);\n    \
+                      place_chara(CHARA_PLAYER, 1.0, 2.0, 3.0, 0.0);\n    place_chara(2, 9.0, 9.0, 9.0, 0.0);\n    \
+                      set_func_point_enabled(\"\", \"talk\", 0);\n    bind_handle_map_part(3, \"well01\", \"well-m\", \"rope\");\n    \
+                      bind_handle_map_part(4, 12);\n}\n";
+        let library = "void open(void)\n{\n    set_func_point_enabled(\"door01\", \"door\", 1);\n    \
+                       get_parts_point_pos(0.0, 0.0, 0.0, 50.0, \"kaifuku\", &a, &x, &y, &z);\n}\n";
+        let warp = "void warp(void)\n{\n    jump_to_map(0, \"s96\", map_start);\n}\n";
+        let root = tree(
+            "maps-json",
+            &[("map/s/s96/s96_1.c", script), ("lib/map/s/s96/doors.c", library), ("map/d/d01/d01_1.c", warp)],
+        );
+        let consts = IndexMap::from([("map_start".to_string(), 100), ("CHARA_PLAYER".to_string(), 0)]);
+        let found = catalog(&root, None, &Definitions::empty(), &consts).unwrap();
+        let report = detail_json("s96", &found, &root, &BTreeSet::from([9000]), &consts).unwrap();
+        assert_eq!(report["programs"][0]["number"], 100);
+        assert_eq!(report["free_programs"][0], 9001);
+        let spots = report["player_positions"].as_array().unwrap();
+        assert_eq!(spots.len(), 2, "{spots:?}");
+        assert_eq!((spots[0]["x"].as_f64(), spots[0]["z"].as_f64()), (Some(68.04), Some(-1180.5)));
+        let mut names: Vec<String> = report["names"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|used| format!("{} {} {}", used["what"], used["part"], used["name"]))
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "\"piece\" \"well01\" \"well-m\"",
+                "\"placement\" \"well01\" null",
+                "\"placement\" 12 null",
+                "\"point\" \"\" \"talk\"",
+                "\"point\" \"door01\" \"door\"",
+                "\"point\" null \"kaifuku\"",
+            ]
+        );
+        assert_eq!(detail_json("x00", &found, &root, &BTreeSet::new(), &consts).unwrap()["found"], false);
+    }
 
     /// A template with a point placed twice (once turned a quarter about Y and moved), a template
     /// nothing places, and the map's own point.

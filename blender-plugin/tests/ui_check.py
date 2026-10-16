@@ -81,6 +81,16 @@ class FakeLayout:
         if allowed is None or prop not in allowed:
             self.problems.append("operator_menu_enum %s.%s" % (idname, prop))
 
+    def template_list(self, list_type, list_id, data, propname, active_data, active_propname, **kwargs):
+        if not hasattr(bpy.types, list_type):
+            self.problems.append("no UI list %s" % list_type)
+        if propname not in data.bl_rna.properties:
+            self.problems.append("%s has no collection %s" % (type(data).__name__, propname))
+        self.prop(active_data, active_propname)
+
+    def progress(self, **kwargs):
+        pass
+
     def menu(self, idname, **kwargs):
         self._icon(kwargs)
         if not hasattr(bpy.types, idname):

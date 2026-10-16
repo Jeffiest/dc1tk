@@ -503,6 +503,9 @@ fn lines_are_checked_as_mod_json_is_read() {
     case(json!({"replace": {"texture:x": {"file": "a.png", "volume": 3}}}), "unknown option \"volume\"");
     // each kind of line takes its own options only
     case(json!({"replace": {"map:s17": {"file": "a.png", "only": "map/s/s17"}}}), "unknown option \"only\"");
+    // only a new map may leave its deleted placements out, the disc's maps keep their slots
+    case(json!({"replace": {"map:s17": {"file": "a.png", "compact": true}}}), "unknown option \"compact\"");
+    case(json!({"add": {"map:s17x": {"file": "a.png", "like": "s17", "compact": 1}}}), "\"compact\" is true or false");
     case(json!({"replace": {"data:items": {"file": "a.png", "like": "x"}}}), "unknown option \"like\"");
     case(json!({"replace": {"sound:x": {"file": "a.wav", "bank": "SP_004"}}}), "unknown option \"bank\"");
     case(json!({"replace": {"sound:x": {"file": "a.wav", "volume": 300}}}), "0 to 127");

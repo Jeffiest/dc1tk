@@ -189,7 +189,7 @@ def adds_file(data, value):
     return None
 
 
-def update_mod_json(mod_dir, name):
+def read_mod_json(mod_dir):
     path = os.path.join(mod_dir, "mod.json")
     data = OrderedDict()
     if os.path.isfile(path):
@@ -199,6 +199,29 @@ def update_mod_json(mod_dir, name):
             data = json.loads(text, object_pairs_hook=OrderedDict)
         if not isinstance(data, dict):
             raise ValueError("%s is not a JSON object" % path)
+    return path, data
+
+
+def write_mod_json(path, data):
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+
+
+def map_line(data, name):
+    """The mod's line for map name: (the section, its key, its value), from "add" when a line
+    there names the map's scene, else "replace"; the value None when there is none yet."""
+    key = adds_file(data, mod_json_value(name))
+    if key is not None:
+        return "add", key, data["add"][key]
+    replace = data.get("replace")
+    if isinstance(replace, dict) and mod_json_key(name) in replace:
+        return "replace", mod_json_key(name), replace[mod_json_key(name)]
+    return "replace", mod_json_key(name), None
+
+
+def update_mod_json(mod_dir, name):
+    path, data = read_mod_json(mod_dir)
     if adds_file(data, mod_json_value(name)) is not None:
         return path
     replace = data.get("replace")
@@ -207,21 +230,66 @@ def update_mod_json(mod_dir, name):
         data["replace"] = replace
     if not isinstance(replace, dict):
         raise ValueError("\"replace\" in %s is not an object" % path)
-    replace[mod_json_key(name)] = mod_json_value(name)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
+    line = replace.get(mod_json_key(name))
+    if isinstance(line, dict):
+        # a line with more than the scene ("programs"): its scene is the export, the rest kept
+        line["file"] = mod_json_value(name)
+    else:
+        replace[mod_json_key(name)] = mod_json_value(name)
+    write_mod_json(path, data)
     return path
 
 
+def set_programs(mod_dir, name, programs):
+    """Gives event points of map name programs by name or number, in the map's line's
+    "programs" (made an object when it is only the scene's path)."""
+    path, data = read_mod_json(mod_dir)
+    section, key, line = map_line(data, name)
+    if not isinstance(data.get(section), dict):
+        data[section] = OrderedDict()
+    if not isinstance(line, dict):
+        line = OrderedDict([("file", line if isinstance(line, str) else mod_json_value(name))])
+    given = line.get("programs")
+    if not isinstance(given, dict):
+        given = OrderedDict()
+    for point, program in programs.items():
+        if program in (None, ""):
+            given.pop(point, None)
+        else:
+            given[point] = program
+    if given:
+        line["programs"] = given
+    else:
+        line.pop("programs", None)
+    data[section][key] = line
+    write_mod_json(path, data)
+    return path
+
+
+def programs_of(mod_dir, name):
+    """The programs the mod's line for map name gives its event points."""
+    try:
+        _path, data = read_mod_json(mod_dir)
+    except (OSError, ValueError):
+        return {}
+    _section, _key, line = map_line(data, name)
+    given = line.get("programs") if isinstance(line, dict) else None
+    return dict(given) if isinstance(given, dict) else {}
+
+
 def export_map(context, root, mod_dir):
+    from . import animate
+
+    # what the animations moved goes back first: a played frame is never written
+    animate.stop()
     name = c2data.map_name(root)
     folder = os.path.join(mod_dir, "maps", name)
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, name + ".gltf")
     if context.mode != "OBJECT" and context.active_object is not None:
         bpy.ops.object.mode_set(mode="OBJECT")
-    objects = c2data.descendants(root)
+    # what the scene only shows (the sky) stays out of the mod
+    objects = c2data.map_objects(root)
     state = export_state(context)
     try:
         select_export_objects(context, objects, state)

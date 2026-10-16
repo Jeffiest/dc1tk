@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use dc2tk_assets::map_export::ModelPack;
 use dc2tk_assets::to_gltf::TextureSearch;
-use dc2tk_assets::{info_cfg, map_import, textures};
+use dc2tk_assets::{info_cfg, map_edit, map_import, textures};
 use dc2tk_disc::{archive, rebuild, DiscSource};
 
 use crate::discfiles::{current, Files};
@@ -235,7 +235,11 @@ fn apply_map(
         }
         gltf = with_programs(&gltf, &given)?;
     }
-    let mut imported = map_import::import_map(&gltf, &read, &original, &packs, &search)?;
+    // a new map that asks for it leaves its deleted placements out ("compact": no script numbers
+    // a new map's placements yet); every other map keeps their slots, hidden
+    let compact = matches!(line.kind, LineKind::Map { compact: true, .. });
+    let slots = if line.add && compact { map_edit::Slots::Compact } else { map_edit::Slots::Keep };
+    let mut imported = map_import::import_map(&gltf, &read, &original, &packs, &search, slots)?;
     for note in &imported.notes {
         built.said.push(format!("note: {} (mod {}): {note}", line.key, line.module));
     }
