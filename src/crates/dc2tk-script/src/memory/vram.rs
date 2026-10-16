@@ -95,10 +95,8 @@ const NAME: usize = 0x20;
 pub(super) fn texture(img: &[u8], at: usize, swizzled: bool, no_image: bool) -> Option<Texture> {
     let mips = *img.get(at + TIM2_MIPMAPS)? as usize;
     let bpp = im3::Format::from_type(*img.get(at + TIM2_IMAGE_TYPE)?)?.bpp() as i64;
-    let u16_at =
-        |field: usize| img.get(at + field..at + field + 2).map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]));
-    let width = u16_at(TIM2_WIDTH)? as i64;
-    let height = u16_at(TIM2_HEIGHT)? as i64;
+    let width = u16_at(img, at + TIM2_WIDTH).ok()? as i64;
+    let height = u16_at(img, at + TIM2_HEIGHT).ok()? as i64;
     let mut images = [false; 4];
     if !no_image {
         for level in images.iter_mut().take(mips.max(1)) {

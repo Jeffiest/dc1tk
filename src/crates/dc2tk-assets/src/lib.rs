@@ -10,7 +10,7 @@
 //! - The asset tree: every asset of a disc once, with a manifest of the places it has each.
 
 // binary formats read and written byte for byte
-pub(crate) mod bytes;
+pub mod bytes;
 pub mod font;
 pub mod im3;
 pub mod mds;

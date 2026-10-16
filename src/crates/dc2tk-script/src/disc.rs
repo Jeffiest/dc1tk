@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use dc2tk_assets::elf;
 use indexmap::IndexMap;
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
@@ -27,25 +28,6 @@ fn text_at(record: &[u8], span: (usize, usize)) -> String {
     dc2tk_disc::text::decode_lossy(&field[..end])
 }
 
-fn u32_at(data: &[u8], offset: usize) -> Option<u32> {
-    data.get(offset..offset + 4).map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
-}
-
-/// Where a virtual address of an ELF is in its file.
-pub fn file_offset(elf: &[u8], address: u64) -> Option<usize> {
-    let table = u32_at(elf, 28)? as usize;
-    let count = u16::from_le_bytes(elf.get(44..46)?.try_into().unwrap()) as usize;
-    for number in 0..count {
-        let at = table + 32 * number;
-        let (kind, offset, virtual_address, size) =
-            (u32_at(elf, at)?, u32_at(elf, at + 4)?, u32_at(elf, at + 8)?, u32_at(elf, at + 16)?);
-        if kind == 1 && virtual_address as u64 <= address && address < virtual_address as u64 + size as u64 {
-            return Some((offset as u64 + address - virtual_address as u64) as usize);
-        }
-    }
-    None
-}
-
 pub struct MonsterRow {
     pub name: String,
     pub model: String,
@@ -58,7 +40,7 @@ pub fn monster_table(elf: &[u8], layout: &Node) -> IndexMap<i64, MonsterRow> {
     let (Some(address), Some(size)) = (layout["address"].as_i64(), layout["record_size"].as_i64()) else {
         return rows;
     };
-    let Some(mut position) = file_offset(elf, address as u64) else {
+    let Some(mut position) = u32::try_from(address).ok().and_then(|address| elf::file_offset(elf, address)) else {
         return rows;
     };
     let size = size as usize;

@@ -35,15 +35,15 @@ pub(super) fn objects(mds: &[u8]) -> Option<Vec<Object>> {
     if mds.get(..4)? != b"MDS\0" {
         return None;
     }
-    let count = u32_at(mds, 8)? as usize;
-    let mut at = u32_at(mds, 12)? as usize;
+    let count = u32_at(mds, 8).ok()? as usize;
+    let mut at = u32_at(mds, 12).ok()? as usize;
     let mut out = Vec::with_capacity(count);
     for _ in 0..count {
-        let size = u32_at(mds, at + 4)? as usize;
+        let size = u32_at(mds, at + 4).ok()? as usize;
         let raw = mds.get(at + 8..at + 40)?;
         let name = raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())].to_vec();
-        let mdt = i32_at(mds, at + 40)?;
-        let parent = i32_at(mds, at + 44)?;
+        let mdt = i32_at(mds, at + 40).ok()?;
+        let parent = i32_at(mds, at + 44).ok()?;
         let mesh = if mdt > 0 { Some(mesh(mds, mdt as usize)?) } else { None };
         out.push(Object { name, parent, mesh });
         at += size.max(0x70);
@@ -52,15 +52,15 @@ pub(super) fn objects(mds: &[u8]) -> Option<Vec<Object>> {
 }
 
 pub(super) fn mesh(mds: &[u8], at: usize) -> Option<Mesh> {
-    let field = |offset: usize| i32_at(mds, at + offset).map(|value| value.max(0) as u64);
+    let field = |offset: usize| i32_at(mds, at + offset).ok().map(|value| value.max(0) as u64);
     let faces = at + field(40)? as usize;
-    let prim_count = u32_at(mds, faces + 8)?;
+    let prim_count = u32_at(mds, faces + 8).ok()?;
     let mut prims = Vec::new();
     let mut cursor = faces + 0x10;
     for _ in 0..prim_count {
-        let kind = u32_at(mds, cursor)? & 0xFFFF;
-        let count = u32_at(mds, cursor + 4)? & 0xFFFF;
-        let material = u32_at(mds, cursor + 8)?;
+        let kind = u32_at(mds, cursor).ok()? & 0xFFFF;
+        let count = u32_at(mds, cursor + 4).ok()? & 0xFFFF;
+        let material = u32_at(mds, cursor + 8).ok()?;
         prims.push(Prim { kind, count, material });
         cursor += 12 + 4 * (count as u64 * stride(kind)) as usize;
     }
@@ -162,7 +162,7 @@ fn key_lists(data: &[u8]) -> Vec<(u32, u32, u64)> {
     let mut out = Vec::new();
     let mut at = 0;
     while let (Some(frame), Some(target), Some(keys), Some(more)) =
-        (u32_at(data, at), u32_at(data, at + 4), u32_at(data, at + 16), u32_at(data, at + 20))
+        (u32_at(data, at).ok(), u32_at(data, at + 4).ok(), u32_at(data, at + 16).ok(), u32_at(data, at + 20).ok())
     {
         out.push((frame, target, keys as u64));
         at += 0x20 * (1 + keys as usize);

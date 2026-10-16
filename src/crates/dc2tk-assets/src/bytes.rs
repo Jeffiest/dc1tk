@@ -12,50 +12,50 @@ fn past_end(data: &[u8], at: usize, n: usize, what: &str) -> Error {
 }
 
 /// data[at..at + n], or an error saying where the data ends.
-pub(crate) fn bytes_at(data: &[u8], at: usize, n: usize) -> Result<&[u8]> {
+pub fn bytes_at(data: &[u8], at: usize, n: usize) -> Result<&[u8]> {
     at.checked_add(n).and_then(|end| data.get(at..end)).ok_or_else(|| past_end(data, at, n, "the data"))
 }
 
 /// The N bytes at `at`.
-pub(crate) fn array_at<const N: usize>(data: &[u8], at: usize) -> Result<[u8; N]> {
+pub fn array_at<const N: usize>(data: &[u8], at: usize) -> Result<[u8; N]> {
     Ok(bytes_at(data, at, N)?.try_into().expect("bytes_at gives N bytes"))
 }
 
-pub(crate) fn u16_at(data: &[u8], at: usize) -> Result<u16> {
+pub fn u16_at(data: &[u8], at: usize) -> Result<u16> {
     array_at(data, at).map(u16::from_le_bytes)
 }
 
-pub(crate) fn u32_at(data: &[u8], at: usize) -> Result<u32> {
+pub fn u32_at(data: &[u8], at: usize) -> Result<u32> {
     array_at(data, at).map(u32::from_le_bytes)
 }
 
-pub(crate) fn i32_at(data: &[u8], at: usize) -> Result<i32> {
+pub fn i32_at(data: &[u8], at: usize) -> Result<i32> {
     array_at(data, at).map(i32::from_le_bytes)
 }
 
-pub(crate) fn u64_at(data: &[u8], at: usize) -> Result<u64> {
+pub fn u64_at(data: &[u8], at: usize) -> Result<u64> {
     array_at(data, at).map(u64::from_le_bytes)
 }
 
 /// N float32s in a row, as doubles (numeric::f32_value).
-pub(crate) fn f32s_at<const N: usize>(data: &[u8], at: usize) -> Result<[f64; N]> {
+pub fn f32s_at<const N: usize>(data: &[u8], at: usize) -> Result<[f64; N]> {
     let raw = bytes_at(data, at, 4 * N)?;
     Ok(std::array::from_fn(|i| numeric::f32_value(u32::from_le_bytes(raw[4 * i..4 * i + 4].try_into().unwrap()))))
 }
 
 /// A big-endian u16 (MIDI files).
-pub(crate) fn be16_at(data: &[u8], at: usize) -> Result<u16> {
+pub fn be16_at(data: &[u8], at: usize) -> Result<u16> {
     array_at(data, at).map(u16::from_be_bytes)
 }
 
 /// A big-endian u32 (MIDI files).
-pub(crate) fn be32_at(data: &[u8], at: usize) -> Result<u32> {
+pub fn be32_at(data: &[u8], at: usize) -> Result<u32> {
     array_at(data, at).map(u32::from_be_bytes)
 }
 
 /// data[start..end] with both ends clamped to the data: an end past it (or before start) makes the
 /// slice shorter or empty. For the parts of a file a reader keeps as they are, however short.
-pub(crate) fn clamped(data: &[u8], start: usize, end: usize) -> &[u8] {
+pub fn clamped(data: &[u8], start: usize, end: usize) -> &[u8] {
     let start = start.min(data.len());
     &data[start..end.clamp(start, data.len())]
 }

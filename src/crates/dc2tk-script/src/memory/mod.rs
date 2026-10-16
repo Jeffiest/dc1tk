@@ -13,6 +13,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
+use dc2tk_assets::bytes::{i32_at, u16_at, u32_at};
 use dc2tk_assets::im3;
 use dc2tk_assets::info_cfg::{self, Arg};
 use dc2tk_assets::mds::{self as mdsfile, F_COLOUR, PRIM_STRIP};
@@ -99,12 +100,4 @@ fn members(pack: &[u8]) -> Vec<(String, &[u8])> {
 
 fn round_up(value: u64, to: u64) -> u64 {
     value.div_ceil(to) * to
-}
-
-fn u32_at(data: &[u8], at: usize) -> Option<u32> {
-    data.get(at..at + 4).map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
-}
-
-fn i32_at(data: &[u8], at: usize) -> Option<i32> {
-    u32_at(data, at).map(|value| value as i32)
 }
