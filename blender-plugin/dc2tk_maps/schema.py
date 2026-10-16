@@ -1,9 +1,6 @@
-"""The conventions of the map glTF scene (docs/assets/maps.md, section 8) and the fields of
-every role and point kind, with labels and defaults. No bpy here, so the tests can use it too."""
-
 import re
 
-# Name prefixes by role (section 8, "Nodes").
+
 PREFIX = {
     "map": "map:",
     "placement": "place:",
@@ -18,13 +15,13 @@ POINT_KINDS = ("pos", "invent", "event", "flare", "plight", "fire", "effect", "s
 PIECE_KINDS = ("model", "collision", "camera", "chara")
 COLLISION_KINDS = ("collision", "camera")
 
-NAME_LIMIT = 31  # bytes, cp932: placement, template, piece and point names
-TARGET_LIMIT = 15  # FUNC_EVENT_DATA's target
+NAME_LIMIT = 31
+TARGET_LIMIT = 15
 PLACEMENT_LIMIT = 320
 PLACEMENT_LIMIT_DUNGEON = 400
 TIME_LIGHT_NUM_LIMIT = 8
 
-# The kinds of event point (FUNC_EVENT_DATA's first field) the disc uses.
+
 EVENT_KINDS = (
     ("door", "Door"),
     ("event", "Event"),
@@ -36,8 +33,7 @@ EVENT_KINDS = (
     ("lddr_t", "Ladder (top)"),
 )
 
-# An event point whose FUNC_POS scale is near 1 gets a default size (mapload.cpp:1437): doors
-# 15, ladders 25, chests 20. The size is taken as the half-extent of the box.
+
 EVENT_DEFAULT_SIZE = {
     "door": 15.0,
     "close_door": 15.0,
@@ -48,34 +44,6 @@ EVENT_DEFAULT_SIZE = {
 }
 
 
-class Field:
-    """A field of a point's `data`: its key when `data` is a dict, or its position (and size)
-    when `data` is the raw argument list of the FUNC_<KIND>_DATA line.
-
-    `choices` are (value, identifier, label, description) of an int the panel shows as a menu
-    (a value not among them shows as the first); `old` is where scenes exported before the field
-    had its name kept it: a key, or (key, index) of an element of a list."""
-
-    def __init__(self, key, label, kind, size=1, pos=0, labels=None, default=None, optional=False, choices=None, old=None):
-        self.key = key
-        self.label = label
-        self.kind = kind  # "int", "float", "str" or "flag" (an int 0 or 1)
-        self.size = size
-        self.pos = pos
-        self.labels = labels  # one per element of a vector
-        self.optional = optional
-        self.choices = choices
-        self.old = old
-        if default is None:
-            zero = {"int": 0, "flag": 0, "float": 0.0, "str": ""}[kind]
-            default = zero if size == 1 else [zero] * size
-        self.default = default
-
-
-F = Field
-
-# FUNC_ANIME_DATA (docs/assets/maps.md section 5.1): what a point changes every frame and how.
-# Values the engine does not know act as 0 in both.
 ANIME_DRIVES = (
     (0, "NOTHING", "Nothing", "Changes nothing"),
     (1, "POSITION", "Position", "Position in the parent's space, game units"),
@@ -99,92 +67,192 @@ ANIME_MODES = (
 )
 _XYZ = ("X", "Y", "Z")
 _FIRE = [
-    F("color", "Colour", "int", 3, 0, ("R", "G", "B"), [128, 90, 38]),
-    F("draw", "Draw", "int", 1, 3),
-    F("extra", "Extra", "int", 2, 4, optional=True),
+    {
+        "key": "color",
+        "label": "Colour",
+        "kind": "int",
+        "size": 3,
+        "pos": 0,
+        "labels": ("R", "G", "B"),
+        "default": [128, 90, 38],
+    },
+    {"key": "draw", "label": "Draw", "kind": "int", "pos": 3},
+    {"key": "extra", "label": "Extra", "kind": "int", "size": 2, "pos": 4, "optional": True},
 ]
 
-# The data line of each kind (section 5), with the names the add-on gives its fields.
+
 DATA_FIELDS = {
     "pos": [],
     "invent": [
-        F("id", "Invent id", "int", 1, 0),
-        F("min", "Box min", "float", 3, 1, ("X", "Y", "Z"), [-10.0, -10.0, -10.0]),
-        F("max", "Box max", "float", 3, 4, ("X", "Y", "Z"), [10.0, 10.0, 10.0]),
-        F("unknown_int", "Int", "int", 1, 7),
-        F("unknown_float", "Float", "float", 1, 8),
-        F("angle", "Angle (degrees)", "float", 1, 9),
+        {"key": "id", "label": "Invent id", "kind": "int", "pos": 0},
+        {
+            "key": "min",
+            "label": "Box min",
+            "kind": "float",
+            "size": 3,
+            "pos": 1,
+            "labels": ("X", "Y", "Z"),
+            "default": [-10.0, -10.0, -10.0],
+        },
+        {
+            "key": "max",
+            "label": "Box max",
+            "kind": "float",
+            "size": 3,
+            "pos": 4,
+            "labels": ("X", "Y", "Z"),
+            "default": [10.0, 10.0, 10.0],
+        },
+        {"key": "unknown_int", "label": "Int", "kind": "int", "pos": 7},
+        {"key": "unknown_float", "label": "Float", "kind": "float", "pos": 8},
+        {"key": "angle", "label": "Angle (degrees)", "kind": "float", "pos": 9},
     ],
     "event": [
-        F("kind", "Event kind", "str", 1, 0, default="event"),
-        F("event_no", "Event number", "int", 1, 1),
-        F("program", "Program", "int", 1, 2),
-        F("args", "Arguments", "int", 3, 3, ("Arg 1", "Arg 2", "Call program")),
-        F("target", "Target", "str", 1, 6),
-        F("flags", "Flags", "int", 3, 7, ("Action button", "Use item", "0x100")),
+        {"key": "kind", "label": "Event kind", "kind": "str", "pos": 0, "default": "event"},
+        {"key": "event_no", "label": "Event number", "kind": "int", "pos": 1},
+        {"key": "program", "label": "Program", "kind": "int", "pos": 2},
+        {
+            "key": "args",
+            "label": "Arguments",
+            "kind": "int",
+            "size": 3,
+            "pos": 3,
+            "labels": ("Arg 1", "Arg 2", "Call program"),
+        },
+        {"key": "target", "label": "Target", "kind": "str", "pos": 6},
+        {
+            "key": "flags",
+            "label": "Flags",
+            "kind": "int",
+            "size": 3,
+            "pos": 7,
+            "labels": ("Action button", "Use item", "0x100"),
+        },
     ],
     "flare": _FIRE,
     "fire": _FIRE,
     "plight": [
-        F("power", "Power", "float", 1, 0, default=100.0),
-        F("color", "Colour (0-511)", "int", 3, 1, ("R", "G", "B"), [255, 255, 255]),
-        F("mode", "Mode", "int", 1, 4),
-        F("args", "Arguments", "int", 4, 5),
-        F("flicker", "Flicker type", "int", 1, 9),
-        F("depth", "Flicker depth", "float", 1, 10),
-        F("period", "Flicker period", "float", 1, 11),
+        {"key": "power", "label": "Power", "kind": "float", "pos": 0, "default": 100.0},
+        {
+            "key": "color",
+            "label": "Colour (0-511)",
+            "kind": "int",
+            "size": 3,
+            "pos": 1,
+            "labels": ("R", "G", "B"),
+            "default": [255, 255, 255],
+        },
+        {"key": "mode", "label": "Mode", "kind": "int", "pos": 4},
+        {"key": "args", "label": "Arguments", "kind": "int", "size": 4, "pos": 5},
+        {"key": "flicker", "label": "Flicker type", "kind": "int", "pos": 9},
+        {"key": "depth", "label": "Flicker depth", "kind": "float", "pos": 10},
+        {"key": "period", "label": "Flicker period", "kind": "float", "pos": 11},
     ],
-    "effect": [F("effect", "Effect name", "str", 1, 0)],
+    "effect": [{"key": "effect", "label": "Effect name", "kind": "str", "pos": 0}],
     "sound": [
-        F("number", "Sound number", "int", 1, 0),
-        F("near", "Near", "float", 1, 1, default=50.0),
-        F("far", "Far", "float", 1, 2, default=200.0),
-        F("unknown_int", "Int", "int", 1, 3),
-        F("shape", "Shape", "int", 1, 4),
-        F("start", "Start", "float", 3, 5, ("X", "Y", "Z")),
-        F("end", "End", "float", 3, 8, ("X", "Y", "Z")),
+        {"key": "number", "label": "Sound number", "kind": "int", "pos": 0},
+        {"key": "near", "label": "Near", "kind": "float", "pos": 1, "default": 50.0},
+        {"key": "far", "label": "Far", "kind": "float", "pos": 2, "default": 200.0},
+        {"key": "unknown_int", "label": "Int", "kind": "int", "pos": 3},
+        {"key": "shape", "label": "Shape", "kind": "int", "pos": 4},
+        {"key": "start", "label": "Start", "kind": "float", "size": 3, "pos": 5, "labels": ("X", "Y", "Z")},
+        {"key": "end", "label": "End", "kind": "float", "size": 3, "pos": 8, "labels": ("X", "Y", "Z")},
     ],
     "anime": [
-        F("placement", "Placement", "str", 1, 0),
-        F("piece", "Piece", "str", 1, 1),
-        F("frame", "Model node", "str", 1, 2),
-        F("drives", "Drives", "int", 1, 3, default=2, choices=ANIME_DRIVES, old="kind"),
-        F("mode", "Mode", "int", 1, 4, default=1, choices=ANIME_MODES, old="unknown_int"),
-        F("start", "Start", "float", 3, 5, _XYZ, old="v0"),
-        F("step", "Step (per frame)", "float", 3, 8, _XYZ, [0.0, 1.0, 0.0], old="v1"),
-        F("end", "End", "float", 3, 11, _XYZ, old="v2"),
-        F("uniform", "Uniform (Y and Z follow X)", "flag", 1, 14, optional=True, old=("extra", 0)),
-        F("relative", "Relative (in the piece's own space)", "flag", 1, 15, optional=True, old=("extra", 1)),
+        {"key": "placement", "label": "Placement", "kind": "str", "pos": 0},
+        {"key": "piece", "label": "Piece", "kind": "str", "pos": 1},
+        {"key": "frame", "label": "Model node", "kind": "str", "pos": 2},
+        {
+            "key": "drives",
+            "label": "Drives",
+            "kind": "int",
+            "pos": 3,
+            "default": 2,
+            "choices": ANIME_DRIVES,
+            "old": "kind",
+        },
+        {
+            "key": "mode",
+            "label": "Mode",
+            "kind": "int",
+            "pos": 4,
+            "default": 1,
+            "choices": ANIME_MODES,
+            "old": "unknown_int",
+        },
+        {"key": "start", "label": "Start", "kind": "float", "size": 3, "pos": 5, "labels": _XYZ, "old": "v0"},
+        {
+            "key": "step",
+            "label": "Step (per frame)",
+            "kind": "float",
+            "size": 3,
+            "pos": 8,
+            "labels": _XYZ,
+            "default": [0.0, 1.0, 0.0],
+            "old": "v1",
+        },
+        {"key": "end", "label": "End", "kind": "float", "size": 3, "pos": 11, "labels": _XYZ, "old": "v2"},
+        {
+            "key": "uniform",
+            "label": "Uniform (Y and Z follow X)",
+            "kind": "flag",
+            "pos": 14,
+            "optional": True,
+            "old": ("extra", 0),
+        },
+        {
+            "key": "relative",
+            "label": "Relative (in the piece's own space)",
+            "kind": "flag",
+            "pos": 15,
+            "optional": True,
+            "old": ("extra", 1),
+        },
     ],
 }
 
 
+for fields in DATA_FIELDS.values():
+    for field in fields:
+        field.setdefault("size", 1)
+        field.setdefault("labels", None)
+        field.setdefault("optional", False)
+        field.setdefault("choices", None)
+        field.setdefault("old", None)
+        if "default" not in field:
+            zero = {"int": 0, "flag": 0, "float": 0.0, "str": ""}[field["kind"]]
+            field["default"] = zero if field["size"] == 1 else [zero] * field["size"]
+
+
+def data_field(kind, key):
+    for field in DATA_FIELDS[kind]:
+        if field["key"] == key:
+            return field
+    raise KeyError(key)
+
+
 def upgrade_data(kind, data):
-    """A point's `data` dict with the names of fields that scenes exported before they had them
-    used (anime's kind, unknown_int, v0, v1, v2 and extra) turned into today's."""
-    fields = [field for field in DATA_FIELDS.get(kind, []) if field.old is not None]
+    fields = [field for field in DATA_FIELDS.get(kind, []) if field["old"] is not None]
     if not isinstance(data, dict) or not fields:
         return data
     data = dict(data)
     olds = set()
     for field in fields:
-        key, index = (field.old, None) if isinstance(field.old, str) else field.old
+        key, index = (field["old"], None) if isinstance(field["old"], str) else field["old"]
         olds.add(key)
-        if field.key in data or key not in data:
+        if field["key"] in data or key not in data:
             continue
         value = data[key]
         if index is not None:
             value = value[index] if isinstance(value, (list, tuple)) and index < len(value) else None
         if value is not None:
-            data[field.key] = value
+            data[field["key"]] = value
     for key in olds:
         data.pop(key, None)
     return data
 
 
 def anime_vectors(drives, mode):
-    """{key: (label, element labels)} of the vectors an anime point's mode reads (section 5.1);
-    the ones it leaves out do nothing."""
     unit = {1: "units", 2: "degrees", 4: "0-255"}.get(drives)
     elements = ("R", "G", "B") if drives == 4 else ("Alpha", "-", "-") if drives == 5 else _XYZ
 
@@ -226,9 +294,9 @@ KIND_LABELS = {
 def default_data(kind, overrides=None):
     data = {}
     for field in DATA_FIELDS.get(kind, []):
-        if field.optional:
+        if field["optional"]:
             continue
-        data[field.key] = list(field.default) if isinstance(field.default, list) else field.default
+        data[field["key"]] = list(field["default"]) if isinstance(field["default"], list) else field["default"]
     data.update(overrides or {})
     return data
 
@@ -243,11 +311,10 @@ def new_point(kind, data=None, enable=1, hours=(0, 0)):
     }
 
 
-# Presets for the "add point" operator: (id, label, kind, data overrides, node scale, base name).
 POINT_PRESETS = (
     ("SPAWN", "Position (spawn)", "pos", {}, 1.0, "point"),
-    # as every door of the disc: the action button opens it, and 0x100 fades the screen out before
-    # its program runs or the target map loads (editevent.cpp)
+
+
     ("DOOR", "Door", "event", {"kind": "door", "flags": [1, 0, 1]}, 1.0, "door"),
     ("CHEST", "Treasure chest", "event", {"kind": "t_box", "flags": [1, 0, 0]}, 1.0, "t_box"),
     ("EVENT", "Event trigger", "event", {"kind": "event", "flags": [0, 0, 0]}, 30.0, "event"),
@@ -257,24 +324,22 @@ POINT_PRESETS = (
     ("EFFECT", "Effect", "effect", {}, 1.0, "effect"),
     ("FIRE", "Fire", "fire", {}, 1.0, "fire"),
     ("FLARE", "Lens flare", "flare", {}, 1.0, "flare"),
-    # turns about Y, a degree a frame; the add operator fills in what the active object is
+
     ("ANIME", "Piece animation", "anime", {"uniform": 0, "relative": 0}, 1.0, "anime"),
 )
 
-# Collision materials carry their attributes in the name (section 4.3 and 8).
+
 COL_RE = re.compile(r"^col_ground(\d+)_foot(\d+)_area(\d+)_mask(\d+)$")
 WATER_AREAS = (1, 7)
 SUFFIX_RE = re.compile(r"^(.*)\.(\d{3,})$")
 
 
 def strip_suffix(name):
-    """A name without the `.001` Blender adds to keep object, mesh and material names unique."""
     found = SUFFIX_RE.match(name)
     return found.group(1) if found else name
 
 
 def parse_col(name):
-    """(ground, foot, area, mask) of a collision material name, or None."""
     found = COL_RE.match(strip_suffix(name))
     return tuple(int(part) for part in found.groups()) if found else None
 
@@ -284,7 +349,6 @@ def col_name(ground, foot, area, mask):
 
 
 def game_name(name, role=None):
-    """The game's name of a node: no role prefix, no Blender suffix."""
     name = strip_suffix(name)
     prefix = PREFIX.get(role) if role else None
     if prefix is None:
@@ -304,8 +368,13 @@ def name_bytes(text):
         return len(text.encode("utf-8"))
 
 
+def truncate_name(name, limit=NAME_LIMIT):
+    while name_bytes(name) > limit:
+        name = name[:-1]
+    return name
+
+
 def golden_colour(number, saturation=0.65, value=0.9, alpha=1.0):
-    """A distinct colour for a small integer (hue steps by the golden ratio)."""
     import colorsys
 
     hue = (number * 0.618033988749895) % 1.0
@@ -329,12 +398,9 @@ def collision_colour(attrs, mode):
 
 
 def game_to_blender(v):
-    """A game-space (Y up) local vector in Blender's Z-up frame, as the glTF importer converts."""
     return (v[0], -v[2], v[1])
 
 
-# Friendly labels for keys of the map tree (`extras.c2.map`): the add-on draws whatever the
-# exporter writes and labels the keys it knows.
 MAP_LABELS = {
     "images": "Texture files (IMG)",
     "img": "Texture files (IMG)",

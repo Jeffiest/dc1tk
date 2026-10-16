@@ -1,5 +1,3 @@
-"""Add-on preferences: where dc2tk is, and the paths the import, export and build use."""
-
 import os
 import sys
 
@@ -75,28 +73,9 @@ class Dc2tkPreferences(bpy.types.AddonPreferences):
         layout.prop(self, "output_iso")
 
 
-class _Defaults:
-    """Stands in for the preferences when the add-on is not enabled through Blender (tests)."""
-
-    repo_dir = ""
-    dc2tk_path = ""
-    export_args = "map-export {name} -o {out}"
-    maps_dir = ""
-    mod_dir = ""
-    source_dir = ""
-    iso_path = ""
-    output_iso = ""
-
-
-_fallback = _Defaults()
-
-
 def get(context=None):
     context = context or bpy.context
-    addon = context.preferences.addons.get(PACKAGE)
-    if addon is not None and addon.preferences is not None:
-        return addon.preferences
-    return _fallback
+    return context.preferences.addons[PACKAGE].preferences
 
 
 def absolute(path):
@@ -104,7 +83,6 @@ def absolute(path):
 
 
 def _own_repo():
-    """The repository around the add-on when it is linked from blender-plugin/dc2tk_maps."""
     here = os.path.dirname(os.path.realpath(__file__))
     root = os.path.dirname(os.path.dirname(here))
     if os.path.isfile(os.path.join(root, "dc2tk.bat")) and os.path.isfile(os.path.join(root, "Cargo.toml")):
@@ -117,7 +95,6 @@ def repo(prefs):
 
 
 def dc2tk_command(prefs):
-    """The command that runs dc2tk, as a list, or None."""
     if prefs.dc2tk_path:
         path = absolute(prefs.dc2tk_path)
         return [path] if os.path.exists(path) else None

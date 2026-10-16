@@ -1,6 +1,3 @@
-"""Dark Chronicle maps: import a map exported by `dc2tk map-export`, edit its placements, trigger
-points and collision, check it, and export it into a mod (docs/assets/maps.md, section 8)."""
-
 bl_info = {
     "name": "Dark Chronicle Maps (dc2tk)",
     "author": "DC2-Toolkit",
@@ -14,12 +11,12 @@ bl_info = {
 if "bpy" in locals():
     import importlib
 
-    for _module in (schema, c2data, look, prefs, props, runner, import_map, edit, validate, export_mod, overlay, ui):  # noqa: F821
+    for _module in (schema, c2data, look, prefs, props, runner, import_map, edit, validate, export_mod, overlay, ui):
         importlib.reload(_module)
 
-import bpy  # noqa: E402
+import bpy
 
-from . import schema, c2data, look, prefs, props, runner, import_map, edit, validate, export_mod, overlay, ui  # noqa: E402
+from . import schema, c2data, look, prefs, props, runner, import_map, edit, validate, export_mod, overlay, ui
 
 _modules = (prefs, props, import_map, edit, validate, export_mod, overlay, ui)
 

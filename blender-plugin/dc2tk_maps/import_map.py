@@ -1,7 +1,3 @@
-"""Importing a map's glTF scene: running `dc2tk map-export`, Blender's glTF importer with the
-options the scene needs, then making it workable (collision hidden and coloured, point boxes,
-point lights)."""
-
 import glob
 import json
 import os
@@ -14,7 +10,6 @@ from . import c2data, look, prefs, runner, schema
 
 
 def operator_kwargs(operator, wanted):
-    """Only the options this Blender's glTF operator has (they change between versions)."""
     names = {prop.identifier for prop in operator.get_rna_type().properties}
     return {key: value for key, value in wanted.items() if key in names}
 
@@ -32,8 +27,6 @@ def read_gltf(path):
 
 
 def match_nodes(gltf, roots):
-    """{glTF node index: Blender object}, walking both trees: children are paired by name
-    (without Blender's .001 suffixes), in order."""
     nodes = gltf.get("nodes", [])
     scene = gltf.get("scenes", [{}])[gltf.get("scene", 0)] if gltf.get("scenes") else {}
     found = {}
@@ -78,7 +71,6 @@ def find_layer_collection(layer, collection):
 
 
 def collision_collections(context, root, create=True):
-    """{"collision": collection, "camera": collection} beside the map's own collection."""
     home = root.users_collection[0] if root.users_collection else context.scene.collection
     name = c2data.map_name(root)
     found = {}
@@ -98,7 +90,7 @@ def set_collision_visible(context, root, kind, visible):
     layer = find_layer_collection(context.view_layer.layer_collection, collection)
     if layer is not None:
         layer.hide_viewport = not visible
-    # renders (F12) show what the viewport does, so hidden collision does not cover the map
+
     collection.hide_render = not visible
     return True
 
@@ -122,7 +114,6 @@ def move_to(obj, collection):
 
 
 def colour_collision(root, mode):
-    """Viewport colours for the collision materials (their names are never changed)."""
     done = set()
     for obj in c2data.collision_meshes(root):
         camera = c2data.lookup(c2data.piece_of(obj), ("kind",)) == "camera"
@@ -133,7 +124,7 @@ def colour_collision(root, mode):
             done.add(material.name)
             attrs = schema.parse_col(material.name)
             if attrs is None:
-                material.diffuse_color = (1.0, 0.0, 1.0, 1.0)  # not a collision material: stands out
+                material.diffuse_color = (1.0, 0.0, 1.0, 1.0)
             elif camera:
                 material.diffuse_color = (0.55, 0.35, 0.85, 0.6)
             else:
@@ -143,7 +134,6 @@ def colour_collision(root, mode):
 
 
 def point_display(obj):
-    """Empty display for a point: a box of its size for events and invent boxes."""
     if obj.type != "EMPTY":
         return
     kind = c2data.lookup(obj, ("kind",))
@@ -188,9 +178,6 @@ def light_values(obj):
 
 
 def light_correction():
-    """Blender's glTF importer turns a light node by +90 degrees about X (Blender lights shine
-    down their -Z, glTF's down -Z of a Y-up node) and its exporter turns it back, so a light
-    made here gets the same turn to export the node's own rotation."""
     import math
 
     from mathutils import Matrix
@@ -199,8 +186,6 @@ def light_correction():
 
 
 def ensure_light(obj):
-    """A point light as a Blender point light: an empty is replaced by a light object with the
-    same name, transform, parent, children and extras."""
     if obj.type == "LIGHT":
         return obj
     if obj.type != "EMPTY":
@@ -229,7 +214,6 @@ def ensure_light(obj):
 
 
 def postprocess(context, gltf_path, new_objects, log=None):
-    """Make an imported map workable. Returns the map roots and a list of warnings."""
     warnings = []
     roots = [obj for obj in new_objects if obj.parent is None and c2data.role(obj) == "map"]
     if not roots:
@@ -244,7 +228,7 @@ def postprocess(context, gltf_path, new_objects, log=None):
         gltf = None
         warnings.append("Could not read %s: %s" % (gltf_path, error))
     matched = match_nodes(gltf, [obj for obj in new_objects if obj.parent is None]) if gltf else {}
-    # By name: point lights are replaced by objects of the same name below.
+
     matched = {index: obj.name for index, obj in matched.items()}
 
     for obj in new_objects:
@@ -288,8 +272,6 @@ def postprocess(context, gltf_path, new_objects, log=None):
             else:
                 point_display(obj)
 
-    # KHR_lights_punctual range: Blender's importer leaves it out, its exporter writes a light's
-    # custom distance.
     if gltf:
         lights = gltf.get("extensions", {}).get("KHR_lights_punctual", {}).get("lights", [])
         for index, name in matched.items():
@@ -309,7 +291,7 @@ def postprocess(context, gltf_path, new_objects, log=None):
                     if space.type == "VIEW_3D":
                         space.clip_start = 1.0
                         space.clip_end = max(space.clip_end, 100000.0)
-                        # the map as the game draws and lights it, in view
+
                         shading = space.shading
                         if shading.type in ("SOLID", "WIREFRAME"):
                             shading.type = "MATERIAL"
@@ -318,7 +300,7 @@ def postprocess(context, gltf_path, new_objects, log=None):
                 region = next((region for region in area.regions if region.type == "WINDOW"), None)
                 if region is not None and roots:
                     frame_map(context, area, region, roots)
-    # the importer leaves the whole map selected
+
     for obj in context.selected_objects:
         obj.select_set(False)
     if roots:
@@ -327,9 +309,6 @@ def postprocess(context, gltf_path, new_objects, log=None):
 
 
 def frame_map(context, area, region, roots):
-    """Point the view down at where the map is played: the middle of its trigger points (spawns,
-    doors, talk points), or of its placements' meshes, leaving out the far tenth on each side
-    (the ground planes and backdrops some maps have far out)."""
     import math
 
     from mathutils import Euler, Vector
@@ -359,7 +338,6 @@ def frame_map(context, area, region, roots):
 
 
 def import_gltf(context, path):
-    """Blender's glTF import with the options a map needs, then the post-processing."""
     before = set(bpy.data.objects)
     if context.mode != "OBJECT" and context.active_object is not None:
         bpy.ops.object.mode_set(mode="OBJECT")
@@ -431,7 +409,7 @@ class DC2TK_OT_import_gltf(bpy.types.Operator, ImportHelper):
         return report_result(self, roots, warnings)
 
 
-class DC2TK_OT_import_map(runner.DC2TK_OT_run_job):
+class DC2TK_OT_import_map(bpy.types.Operator):
     """Export a map with dc2tk map-export, then import it"""
 
     bl_idname = "dc2tk.import_map"
@@ -451,6 +429,12 @@ class DC2TK_OT_import_map(runner.DC2TK_OT_run_job):
         base = prefs.maps_dir(prefs.get(context))
         return os.path.join(base, self.map_name) if base else ""
 
+    def execute(self, context):
+        return runner.execute(self, context)
+
+    def modal(self, context, event):
+        return runner.modal(self, context, event)
+
     def command(self, context):
         if not self.map_name:
             self.map_name = context.window_manager.dc2tk_maps.import_name
@@ -469,13 +453,13 @@ class DC2TK_OT_import_map(runner.DC2TK_OT_run_job):
             self.report({"ERROR"}, "No folder to export to: set the repository or the exported maps folder")
             return None
         os.makedirs(folder, exist_ok=True)
-        # Split the template first, so a folder with spaces stays one argument.
+
         args = [part.format(name=name, out=folder) for part in settings.export_args.split()]
         return ("dc2tk map-export", dc2tk + args, prefs.working_dir(settings))
 
     def finish(self, context, job):
-        if job.returncode != 0:
-            self.report({"ERROR"}, "dc2tk map-export failed (exit %s); see the text \"%s\"" % (job.returncode, runner.TEXT_NAME))
+        if job["returncode"] != 0:
+            self.report({"ERROR"}, "dc2tk map-export failed (exit %s); see the text \"%s\"" % (job["returncode"], runner.TEXT_NAME))
             return {"CANCELLED"}
         path = find_export(self.folder(context), self.map_name)
         if path is None:
@@ -491,7 +475,7 @@ class DC2TK_OT_import_map(runner.DC2TK_OT_run_job):
     def invoke(self, context, event):
         if not self.map_name and not context.window_manager.dc2tk_maps.import_name:
             return context.window_manager.invoke_props_dialog(self)
-        return super().invoke(context, event)
+        return runner.invoke(self, context)
 
 
 def menu_import(self, context):

@@ -1,6 +1,3 @@
-"""Reading and writing `obj["c2"]`, the node's `extras.c2` as Blender's glTF importer stores it
-(an IDProperty group), and finding the map's nodes by role."""
-
 import ast
 
 import bpy
@@ -11,7 +8,6 @@ KEY = "c2"
 
 
 def to_py(value):
-    """A plain Python copy of an IDProperty value (groups to dicts, arrays to lists)."""
     if hasattr(value, "to_dict") and hasattr(value, "keys"):
         return {key: to_py(value[key]) for key in value.keys()}
     if hasattr(value, "to_list"):
@@ -22,8 +18,6 @@ def to_py(value):
 
 
 def recovered(text):
-    """The dict Blender's importer turned into text when it could not store it (it falls back to
-    str() of the whole value, for example on a list mixing strings and numbers)."""
     try:
         value = ast.literal_eval(text)
     except (ValueError, SyntaxError):
@@ -32,7 +26,6 @@ def recovered(text):
 
 
 def get(obj):
-    """The node's `extras.c2` as a plain dict, or None."""
     if obj is None:
         return None
     value = obj.get(KEY)
@@ -50,10 +43,26 @@ def is_stringified(obj):
 
 def put(obj, data):
     obj[KEY] = data
-    # what the viewport draws from the data (invent boxes) is worked out again
+
     from . import overlay
 
     overlay.invalidate()
+
+
+def rename(obj, name):
+    if obj is None or not name:
+        return
+    prefix = schema.PREFIX[role(obj)]
+    assign(obj, ("name",), name)
+    obj.name = prefix + name
+
+
+def map_settings(root):
+    tree = to_py(lookup(root, ("map",)))
+    if not isinstance(tree, dict):
+        return {}
+    settings = tree.get("settings")
+    return settings if isinstance(settings, dict) else tree
 
 
 def role(obj):
@@ -69,7 +78,6 @@ def role(obj):
 
 
 def lookup(obj, path, default=None):
-    """The value at `path` (keys and indices) inside obj["c2"], without copying the tree."""
     current = obj.get(KEY) if obj is not None else None
     if isinstance(current, str):
         current = recovered(current)
@@ -96,8 +104,6 @@ def _assign(container, step, value):
 
 
 def assign(obj, path, value):
-    """Set the value at `path` in obj["c2"], creating dicts and lists on the way, and store the
-    whole tree back (IDProperty lists of strings are copies, so they cannot be set in place)."""
     data = get(obj) or {}
     current = data
     for index, step in enumerate(path[:-1]):
@@ -128,11 +134,7 @@ def remove(obj, path):
     put(obj, data)
 
 
-# The map's structure.
-
-
 def map_root(obj):
-    """The `map:` root above an object (or the object itself)."""
     while obj is not None:
         if role(obj) == "map" or (obj.name.startswith(schema.PREFIX["map"]) and obj.parent is None):
             return obj
@@ -208,7 +210,6 @@ def collision_pieces(root, kinds=schema.COLLISION_KINDS):
 
 
 def collision_meshes(root):
-    """Mesh objects under collision and camera-collision pieces."""
     found = []
     for piece in collision_pieces(root):
         for obj in descendants(piece):
@@ -222,80 +223,69 @@ def is_collision_mesh(obj):
     return obj.type == "MESH" and piece is not None and lookup(piece, ("kind",)) in schema.COLLISION_KINDS
 
 
-# Point data, as a dict of named fields or as the raw argument list.
-
-
 def data_field(obj, field):
     data = lookup(obj, ("data",))
     if data is None:
-        return field.default
+        return field["default"]
     if hasattr(data, "keys"):
-        value = data.get(field.key)
-        if value is None and field.old is not None:
-            key, index = (field.old, None) if isinstance(field.old, str) else field.old
+        value = data.get(field["key"])
+        if value is None and field["old"] is not None:
+            key, index = (field["old"], None) if isinstance(field["old"], str) else field["old"]
             value = data.get(key)
             if value is not None and index is not None:
                 value = list(to_py(value))
                 value = value[index] if index < len(value) else None
         if value is None:
-            return field.default
-        if field.size > 1:
+            return field["default"]
+        if field["size"] > 1:
             value = list(to_py(value))
-            value += list(field.default)[len(value):]
-            return value[: field.size]
+            value += list(field["default"])[len(value):]
+            return value[: field["size"]]
         return value
     data = to_py(data)
-    if field.size > 1:
-        value = list(data[field.pos: field.pos + field.size])
-        value += list(field.default)[len(value):]
+    if field["size"] > 1:
+        value = list(data[field["pos"]: field["pos"] + field["size"]])
+        value += list(field["default"])[len(value):]
         return value
-    return data[field.pos] if field.pos < len(data) else field.default
+    return data[field["pos"]] if field["pos"] < len(data) else field["default"]
 
 
 def set_data_field(obj, field, value):
     data = lookup(obj, ("data",))
     if data is not None and not hasattr(data, "keys"):
         data = to_py(data)
-        if field.size > 1:
-            for index in range(field.size):
-                while len(data) <= field.pos + index:
+        if field["size"] > 1:
+            for index in range(field["size"]):
+                while len(data) <= field["pos"] + index:
                     data.append(0)
-                data[field.pos + index] = value[index]
+                data[field["pos"] + index] = value[index]
         else:
-            while len(data) <= field.pos:
+            while len(data) <= field["pos"]:
                 data.append(0)
-            data[field.pos] = value
+            data[field["pos"]] = value
         assign(obj, ("data",), data)
         return
-    value = list(value) if field.size > 1 else value
-    if data is not None and field.old is not None:
-        # a field still under its old name: every field of the point takes its new name
+    value = list(value) if field["size"] > 1 else value
+    if data is not None and field["old"] is not None:
         data = to_py(data)
         upgraded = schema.upgrade_data(lookup(obj, ("kind",)), data)
         if upgraded != data:
-            upgraded[field.key] = value
+            upgraded[field["key"]] = value
             assign(obj, ("data",), upgraded)
             return
-    assign(obj, ("data", field.key), value)
-
-
-# What an anime point moves (docs/assets/maps.md section 5.1).
+    assign(obj, ("data", field["key"]), value)
 
 
 def exact_name(obj, role=None):
-    """The game's name of a node: extras.c2.name, else its name without prefix and suffix."""
     name = lookup(obj, ("name",))
     return name if isinstance(name, str) else schema.game_name(obj.name, role)
 
 
 def frame_base(name):
-    """A model node's name as the engine compares it (`StrCmp`, mg_frame.cpp:948): up to `--`."""
     return name.split("--", 1)[0]
 
 
 def placements_by_name(root):
-    """{name: placement} of a map, from its `placements` group when it has one (Blender finds an
-    object's children by going through every object, so walking the whole tree is slow)."""
     found = {}
     if root is None:
         return found
@@ -309,7 +299,6 @@ def placements_by_name(root):
 
 
 def model_nodes(piece):
-    """{name up to `--`: the first model node of that name (lowest mds_index)} under a piece."""
     found = {}
     below = piece.children_recursive if hasattr(piece, "children_recursive") else descendants(piece)[1:]
     nodes = [node for node in below if role(node) == "mds"]
@@ -320,13 +309,7 @@ def model_nodes(piece):
 
 
 def anime_target(obj, by_name=None, nodes_of=None):
-    """(object, problem): the placement, piece or model node an anime point moves, as
-    `CObjAnime::AssignFuncAnime` finds it: a template's point its own placement, a map's own
-    point the placement it names; then the piece by name and the first model node (lowest
-    mds_index) whose name matches up to `--`. The object is None when something is missing.
-    `by_name` (placements_by_name) and `nodes_of` (a dict filled with model_nodes by piece)
-    save work over many points."""
-    fields = {field.key: field for field in schema.DATA_FIELDS["anime"]}
+    fields = {field["key"]: field for field in schema.DATA_FIELDS["anime"]}
     placement = placement_of(obj)
     if placement is None:
         name = data_field(obj, fields["placement"])
