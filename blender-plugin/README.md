@@ -24,6 +24,9 @@ Either way, then set the repository folder in the add-on's preferences
 (Edit, Preferences, Add-ons, "Dark Chronicle Maps (dc2tk)"). When the add-on is
 linked from this repository, the repository is found by itself.
 
+- **Install a release:** download `dc2tk_maps-VERSION.zip` from the repository's GitHub
+  releases, then Edit, Preferences, Add-ons, Install from Disk (Blender 4.2+). Set the
+  repository folder to the unzipped dc2tk release, or to a checkout.
 - **Link it (follows the repository):** link `blender-plugin/dc2tk_maps` into
   Blender's add-ons folder and enable it.
   - Windows (Blender 4.2+: the extensions folder):
@@ -41,7 +44,7 @@ Preferences:
 | setting | default |
 |---|---|
 | dc2tk repository | the repository around the add-on, when linked |
-| dc2tk executable | `build/release/dc2tk.exe` (`dc2tk` elsewhere), else `dc2tk.bat` / `./dc2tk` in the repository |
+| dc2tk executable | `build/release/dc2tk.exe` (`dc2tk` elsewhere), else `dc2tk.exe` (a release), `dc2tk.bat` or `./dc2tk` in the repository |
 | map export arguments | `map-export {name} -o {out}` |
 | exported maps | `extracted/maps` in the repository |
 | mod folder, source tree, retail disc, output disc image | for Export and Build; the source tree defaults to `extracted/scripts`; the retail disc is the ISO or an untouched extracted disc folder |

@@ -34,7 +34,9 @@ unedited script compiles back to exactly the bytes on the disc.
 
 ### 1. What you need
 
-- A Rust toolchain ([rustup](https://rustup.rs)), to build the tool once.
+- `dc2tk` itself: a [release](https://github.com/fakegenie/ChronicleTwo-Script/releases)
+  for Windows, macOS or Linux, or a Rust toolchain ([rustup](https://rustup.rs)) to
+  build it once.
 - Your own Dark Chronicle disc image, saved here as `dc2.iso`. It must be the
   PAL release (`SCES_511.90`); the NTSC and Japanese discs are not supported
   yet.
@@ -43,7 +45,10 @@ unedited script compiles back to exactly the bytes on the disc.
 - Optional: an editor that uses clangd (VS Code with the clangd extension,
   Neovim, Emacs, Zed), which then completes and documents every engine call.
 
-The tool is one program, `dc2tk`. Build it:
+The tool is one program, `dc2tk`. A release is a zip of a folder holding the
+program and the `sdk/`, `definitions/` and `src/natives/` it reads: unzip it
+and run `dc2tk` in that folder (`./dc2tk` on macOS and Linux) in place of the
+scripts below. To build it from this repository instead:
 
 ```
 cargo build --release

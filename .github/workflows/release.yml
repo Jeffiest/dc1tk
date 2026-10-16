@@ -1,0 +1,133 @@
+# A release for every tag v*: dc2tk for Windows, macOS and Linux, and the Blender add-on.
+#
+# Each dc2tk zip holds a folder with the executable and the data it reads beside it (sdk/,
+# definitions/, src/natives/: dc2tk looks for them in the nearest folder above itself that has
+# definitions/). The add-on's zip is a Blender extension: blender_manifest.toml at its root, so
+# Blender's Install from Disk takes it as it is.
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dc2tk:
+    name: dc2tk (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # one exe with the C runtime linked in (.cargo/config.toml sets +crt-static)
+          - platform: windows-x64
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc
+          # musl: one static binary that runs on any x86-64 Linux
+          - platform: linux-x64
+            os: ubuntu-latest
+            targets: x86_64-unknown-linux-musl
+          # one universal binary for Apple silicon and Intel Macs
+          - platform: macos-universal
+            os: macos-latest
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+    steps:
+      # the files packed keep the repository's LF line endings on Windows too
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          for target in ${{ matrix.targets }}; do rustup target add "$target"; done
+
+      - name: Install musl
+        if: matrix.platform == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        shell: bash
+        run: |
+          for target in ${{ matrix.targets }}; do
+            cargo build --release --locked --target "$target" -p dc2tk
+          done
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          folder="dc2tk-$GITHUB_REF_NAME-${{ matrix.platform }}"
+          mkdir -p "$folder/src"
+          case "${{ matrix.platform }}" in
+            windows-x64) cp build/x86_64-pc-windows-msvc/release/dc2tk.exe "$folder/" ;;
+            linux-x64) cp build/x86_64-unknown-linux-musl/release/dc2tk "$folder/" ;;
+            macos-universal)
+              lipo -create -output "$folder/dc2tk" \
+                build/aarch64-apple-darwin/release/dc2tk build/x86_64-apple-darwin/release/dc2tk ;;
+          esac
+          cp -R sdk definitions "$folder/"
+          cp -R src/natives "$folder/src/"
+          cp README.md "$folder/"
+          if [ "${{ runner.os }}" = Windows ]; then
+            7z a -tzip "$folder.zip" "$folder" > /dev/null
+          else
+            chmod +x "$folder/dc2tk"
+            zip -qr "$folder.zip" "$folder"
+          fi
+          # the packed exe finds its data: api-docs reads the SDK from the folder dc2tk is in
+          "$folder/dc2tk" api-docs --out "$RUNNER_TEMP/api" > /dev/null
+          cmp "$RUNNER_TEMP/api/event.md" docs/coding/api/event.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dc2tk-${{ matrix.platform }}
+          path: dc2tk-*.zip
+          if-no-files-found: error
+
+  blender-plugin:
+    name: Blender add-on
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' blender-plugin/dc2tk_maps/blender_manifest.toml)
+          cd blender-plugin/dc2tk_maps
+          zip -qr "$GITHUB_WORKSPACE/dc2tk_maps-$version.zip" . -x '*__pycache__*'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blender-plugin
+          path: dc2tk_maps-*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [dc2tk, blender-plugin]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" assets/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --generate-notes

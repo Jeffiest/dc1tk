@@ -144,6 +144,19 @@ Commits go straight to `main`. A subject is a sentence saying what is now true (
 writes its image over the one it reads"); the body says why, and names any deliberate change in
 what the tools write.
 
+## Releases
+
+A tag `v*` pushed to GitHub runs `.github/workflows/release.yml`, which makes a release with four
+zips: `dc2tk` for Windows (x64, the C runtime linked in), Linux (x64, static with musl) and macOS
+(a universal binary for Apple silicon and Intel), each in a folder with the `sdk/`,
+`definitions/` and `src/natives/` it reads, and the Blender add-on as an extension zip named
+after the version in its `blender_manifest.toml`. Each build checks that the packed program
+finds its data (`dc2tk api-docs` from the folder gives the committed pages).
+
+```
+git tag v1.0.0 && git push origin v1.0.0
+```
+
 ## Environment variables
 
 | Variable | Read by | Meaning |

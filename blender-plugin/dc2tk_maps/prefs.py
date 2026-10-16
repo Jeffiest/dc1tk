@@ -18,7 +18,7 @@ class Dc2tkPreferences(bpy.types.AddonPreferences):
     )
     dc2tk_path: StringProperty(
         name="dc2tk executable",
-        description="dc2tk itself; empty to use build/release/dc2tk(.exe), dc2tk.bat or ./dc2tk in the repository",
+        description="dc2tk itself; empty to use build/release/dc2tk(.exe), dc2tk(.exe), dc2tk.bat or ./dc2tk in the repository",
         subtype="FILE_PATH",
         default="",
     )
@@ -103,7 +103,10 @@ def dc2tk_command(prefs):
         return None
     windows = sys.platform.startswith("win")
     candidates = [os.path.join(root, "build", "release", "dc2tk.exe" if windows else "dc2tk")]
-    candidates.append(os.path.join(root, "dc2tk.bat" if windows else "dc2tk"))
+    # a release's folder has the executable at its top; a checkout has the scripts that build it
+    candidates.append(os.path.join(root, "dc2tk.exe" if windows else "dc2tk"))
+    if windows:
+        candidates.append(os.path.join(root, "dc2tk.bat"))
     for candidate in candidates:
         if os.path.isfile(candidate):
             return [candidate]
