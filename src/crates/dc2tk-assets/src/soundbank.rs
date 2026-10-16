@@ -1604,12 +1604,16 @@ impl Bank {
 
     /// Gives an entry a new sound (see Mode).
     pub fn replace_entry(&mut self, index: usize, sound: &Sound, mode: Mode, volume: Option<i64>) -> Result<()> {
-        let entry = self.entries()?.swap_remove(index);
+        let mut entries = self.entries()?;
+        if index >= entries.len() {
+            bail!("the bank has no entry {index} ({} entries)", entries.len());
+        }
+        let entry = entries.swap_remove(index);
         let voices = self.voices(&entry)?;
         match mode {
             Mode::InPlace => {
                 if voices.is_empty() {
-                    bail!("entry {index} plays no VAG; use mode='detach'");
+                    bail!("entry {index} plays no VAG, so it cannot be replaced in place; detach it instead");
                 }
                 let vags: BTreeSet<usize> = voices.iter().map(|v| v.vag).collect();
                 for vag in vags {

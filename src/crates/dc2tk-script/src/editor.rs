@@ -6,8 +6,9 @@
 //! its PROGRAM table as a comment. COMMANDS, the mod's compile_commands.json, gives each of the
 //! mod's sources the flags of the tree's compile_flags.txt, -include of the SDK's c2s.h (for a
 //! header of NEW_FLAG lines) and the mods folder as an include folder, where
-//! `#include "base/names.h"` finds a mod it requires, and each patch -include of its header. Only editors read these files: the patch's text is unchanged, and the folder, hidden, is
-//! not one of the mod's sources.
+//! `#include "base/names.h"` finds a mod it requires, and each patch -include of its header. Only
+//! editors read these files: the patch's text is unchanged, and the folder, hidden, is not one of
+//! the mod's sources.
 
 use std::path::{Path, PathBuf};
 

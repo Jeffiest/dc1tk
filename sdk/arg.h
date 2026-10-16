@@ -3,8 +3,8 @@
 // Natives are engine functions, declared extern with their number in
 // NATIVE(...). A native with one result returns it (count = get_counter(3););
 // natives with several results take pointers (get_actor_pos(0, &x, &y, &z);).
-// A native's result can only be assigned to a variable: natives push nothing
-// on the VM stack, so they cannot appear inside a larger expression.
+// Natives push nothing on the VM stack: a native in an expression is called
+// first, into a hidden local, and the expression reads that.
 // OPTIONAL(...) lists arguments a call may leave out. Natives never wait; scripts
 // wait with `wait;`, which yields one frame (60 per second). While the player
 // skips a cutscene the engine does not run natives until the script reaches

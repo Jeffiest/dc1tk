@@ -12,7 +12,7 @@
 //! floor (`AUTOMAP_GEN_FIXED_FLOOR`, `AUTOMAP_GEN_PRESET_FLOOR`) fills a grid of 900 cells, so w ×
 //! h is at most 900.
 //!
-//! The JSON: `{"layouts": [{"layout": "d01f01", "grid_size": [320, 320], "rooms": [{"room": 0,
+//! The JSON: `{"layouts": [{"layout": "d01f01", "grid_size": [320.0, 320.0], "rooms": [{"room": 0,
 //! "id": 0, "rate": 100, "fixed": 0, "cells": ["room08 room00 room09", ...]}]}]}`, a room's rows
 //! from the first, each a string of cells: the part's template name, `.` for none, `#N` for a part
 //! with no name, and `:attr` after it when the attribute is not 0 (`way01:1`, `.:3`). A mod gives

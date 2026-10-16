@@ -25,8 +25,9 @@
 //! }
 //! ```
 //!
-//! `"data:items": "data/items.json"` (also data:shops, data:monsters, data:inventions, ...) edits a table of game data
-//! as JSON (docs/assets/data.md); dc2tk's data_cmd builds those, merging several mods' tables.
+//! `"data:items": "data/items.json"` (also data:shops, data:monsters, data:inventions, ...) edits a
+//! table of game data as JSON (docs/assets/data.md); datatables.rs builds those, merging several
+//! mods' tables.
 //!
 //! A replacement reaches every place the disc has the asset (ids::Index lists them); "only" keeps
 //! the places under the given disc paths. A model is a glTF file with its buffer beside it (its
@@ -513,7 +514,7 @@ fn check_map_line(line: &Line) -> Result<()> {
         }
     }
     if !(line.file.is_file() && suffix_is(&line.file, ".gltf")) {
-        return Err(line.fail(format!("{} is not a .gltf file (dc2tk map export writes one)", line.shown)));
+        return Err(line.fail(format!("{} is not a .gltf file (dc2tk map-export writes one)", line.shown)));
     }
     Ok(())
 }

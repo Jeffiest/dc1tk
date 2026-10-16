@@ -52,7 +52,7 @@ pub struct Row {
     pub title: Vec<u8>,
     /// The add map's path under map/cmn/ ("trn/train"), empty when the map has none.
     pub add: String,
-    /// The map's type (7 and 8 load in the dungeon loop, 4 and 6 are interiors); 0 when the row
+    /// The map's type (7 and 8 load in the dungeon loop, 2, 4 and 6 are interiors); 0 when the row
     /// gives none.
     pub kind: i64,
     /// The bytes of MapNameBuff the row's strings take: each one that is not empty, with its NUL.

@@ -1,7 +1,8 @@
 //! Numbers a mod asks for by name instead of choosing them: NEW_FLAG(name) for a save flag,
 //! NEW_COUNTER(name) for a 16-bit save counter, NEW_PROGRAM(name) for a map program number and
-//! NEW_MONSTER_VAR(name) for a monster variable every monster on a floor shares. build gives each name a number that nothing on the disc, in the
-//! engine or in the chosen mods' own code uses, so mods built together never share one.
+//! NEW_MONSTER_VAR(name) for a monster variable every monster on a floor shares. build gives each
+//! name a number that nothing on the disc, in the engine or in the chosen mods' own code uses, so
+//! mods built together never share one.
 //!
 //! The numbers are kept in LOCK in the mods folder, so a name keeps its number from build to
 //! build: a flag or a counter is saved with the game, and a save made with one set of mods must mean the same

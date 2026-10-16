@@ -1,5 +1,6 @@
 //! dc2tk defs: learn a definition set from edited source, report how much of a disc it names, list
-//! what it leaves unnamed, rename a constant of its headers, bring trees made before a rename up to date, and record which disc it is for.
+//! what it leaves unnamed, rename a constant of its headers, bring trees made before a rename up
+//! to date, and record which disc it is for.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

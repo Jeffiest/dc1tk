@@ -1,5 +1,5 @@
 //! A whole map as one glTF scene (docs/assets/maps.md section 8): the scene tree of map_scene with
-//! each piece's model under it. A model is exported once (map_models::export_map_model) and its
+//! each piece's model under it. A model is exported once (models::export_map_model) and its
 //! nodes copied under every piece that places it, the copies sharing its meshes, so editing a mesh
 //! in Blender edits every piece that places it, as in the game. Each model keeps its own buffer
 //! (`models/<stem>.bin`); textures are shared (`textures/<picture>.png`).

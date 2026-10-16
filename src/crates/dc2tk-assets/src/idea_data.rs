@@ -1,7 +1,7 @@
 //! Ideas (docs/assets/data.md, section 5): the names and notebook order of the photo subjects
 //! below 1000, `PIC_NAME id, "name", sort;` in the seven copies of `neta2.lst`, the `ideas` of
-//! `data:inventions` (merged into the invention table by `dc2tk data`, as spectrumising is into the
-//! item table).
+//! `data:inventions` (merged into the invention table by `dc2tk_script::datatables`, as
+//! spectrumising is into the item table).
 //!
 //! LoadFilePictureName (inventmn.cpp) reads `menu/<LanguageCode>/neta2.lst` (LoadFileMenu; the
 //! file in `menu/` itself, a copy of the Japanese, is kept in step) into a 0x5000-byte stack

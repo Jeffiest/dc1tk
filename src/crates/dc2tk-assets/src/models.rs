@@ -203,8 +203,9 @@ fn words(stem: &str) -> Vec<String> {
 /// `monica` or `c02`, else the model pack beside it sharing the longest word of its name
 /// (`e352_guiltoni.chr` for `vs_e352_guiltoni.chr`): the first whose model has every frame its key
 /// lists and info.cfg name, else the first with every frame its key lists name (a motion pack's
-/// attach points may name another model's frames, as `taxi_ride_c01`'s the taxi's). Max's and Monica's packs (town and dungeon) share their
-/// skeletons, so the town one serves the dungeon's motions too.
+/// attach points may name another model's frames, as `taxi_ride_c01`'s the taxi's). Max's and
+/// Monica's packs (town and dungeon) share their skeletons, so the town one serves the dungeon's
+/// motions too.
 pub fn skeleton_for(path: &str, data: &[u8], disc: &DiscFiles) -> Result<(String, Vec<u8>)> {
     let found = members(data)?;
     let cfg = found.iter().find(|(name, _)| name.eq_ignore_ascii_case("info.cfg")).map(|(_, data)| data.clone());

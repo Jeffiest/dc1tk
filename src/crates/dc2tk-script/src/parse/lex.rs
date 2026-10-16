@@ -372,7 +372,7 @@ pub(super) fn directive_at(text: &[char], position: usize) -> Option<(String, St
     Some((word, rest))
 }
 /// A number at a digit, as NUMBER matches it: (0x hex | decimal [. decimal] [e [+-] decimal])
-/// then [fFuUlL]*, the decimals in any script. The word, the suffix and the end.
+/// then [fFuUlL]*, in ASCII digits. The word, the suffix and the end.
 pub(super) fn number_at(text: &[char], position: usize) -> Option<(String, String, usize)> {
     let at = |i: usize| text.get(i).copied().unwrap_or('\0');
     let decimal = |i: usize| at(i).is_ascii_digit();

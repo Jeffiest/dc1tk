@@ -16,7 +16,8 @@
 //! - sounds/*.wav: key, equals, error, clear, open and close (mono, 16-bit, 24000 Hz).
 //!
 //! The mod's calculator.c places the cursor and digits by the same layout (KEYS, CELL_X and so on
-//! below), as constants of its own. Every file is read back with dc2tk-assets' own readers and checked before the program ends.
+//! below), as constants of its own. Every file is read back with dc2tk-assets' own readers and
+//! checked before the program ends.
 
 use std::collections::HashMap;
 use std::f64::consts::TAU;

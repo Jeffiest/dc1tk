@@ -29,9 +29,10 @@ pub struct BuildArgs {
     /// Disc image to write.
     #[arg(short, long)]
     output: PathBuf,
-    /// Test image only: a new game goes straight to this map and program, as in s51:story_50, or
-    /// to a map at map_start, as in m05.
-    #[arg(long, value_name = "MAP[:PROGRAM]")]
+    /// Test image only: a new game goes straight to this map and program, as in s51:story_50, to
+    /// a program of one of the map's scripts, as in s06/s06b:500, or to a map at map_start, as in
+    /// m05.
+    #[arg(long, value_name = "MAP[/SCRIPT][:PROGRAM]")]
     start_at: Option<String>,
     /// Layer this mod over the tree; repeat for several, which may not change the same file. The
     /// mods each requires are layered in too, and "requires" and "after" set the order.

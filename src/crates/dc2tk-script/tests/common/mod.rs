@@ -48,7 +48,7 @@ pub fn no_texts() -> IndexMap<String, String> {
     IndexMap::new()
 }
 
-/// The text of an error, as str(error).
+/// The text of an error, as Display shows it.
 pub fn message<T: std::fmt::Debug>(result: dc2tk_script::Result<T>) -> String {
     match result {
         Ok(value) => panic!("expected an error, got {value:?}"),
@@ -56,7 +56,7 @@ pub fn message<T: std::fmt::Debug>(result: dc2tk_script::Result<T>) -> String {
     }
 }
 
-/// A folder removed when dropped (tempfile.TemporaryDirectory).
+/// A temporary folder, removed when dropped.
 pub struct TempDir(PathBuf);
 
 impl TempDir {
