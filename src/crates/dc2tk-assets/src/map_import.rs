@@ -15,7 +15,7 @@ use crate::map_scene::{self, SceneNode};
 use crate::map_transform::Trs;
 use crate::mapfile;
 use crate::to_gltf::TextureSearch;
-use crate::{bail, map_edit, models, Context, Error, Result};
+use crate::{bail, json, map_edit, models, Context, Error, Result};
 
 /// What an import changes.
 #[derive(Debug, Default)]
@@ -43,9 +43,9 @@ pub struct TextureEdit {
 
 /// The pictures the scene's materials show: (picture name, the image's file), the name as the
 /// model import takes it (the material's extras.texture, the image's name, its file's stem).
-fn scene_pictures(doc: &Value) -> Vec<(String, String)> {
+fn scene_pictures(doc: &Value) -> Result<Vec<(String, String)>> {
     let mut out: Vec<(String, String)> = Vec::new();
-    for material in doc["materials"].as_array().into_iter().flatten() {
+    for material in from_gltf::list_of(doc, "materials")? {
         let Some(texture) = material["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64() else {
             continue;
         };
@@ -64,7 +64,7 @@ fn scene_pictures(doc: &Value) -> Vec<(String, String)> {
             out.push((name, uri.replace("%20", " ")));
         }
     }
-    out
+    Ok(out)
 }
 
 /// A model made in the scene (pieces naming a model no pack has, with meshes under them).
@@ -153,8 +153,11 @@ fn tree_of(
     let role = extras["c2"]["role"].as_str().unwrap_or("").to_string();
     let mut children = Vec::new();
     let mut models = Vec::new();
-    for child in node["children"].as_array().into_iter().flatten() {
-        let child = child.as_u64().unwrap_or(u64::MAX) as usize;
+    let node_count = from_gltf::list_of(doc, "nodes")?.len();
+    for child in from_gltf::list_of(node, "children")? {
+        let Some(child) = child.as_u64().map(|child| child as usize).filter(|&child| child < node_count) else {
+            bail!("glTF node {index}'s child {child} is not one of the glTF's {node_count} nodes");
+        };
         let child_role = doc["nodes"][child]["extras"]["c2"]["role"].as_str().unwrap_or("");
         if role == "piece" && (child_role == "mds" || child_role.is_empty()) {
             models.push(child);
@@ -254,7 +257,7 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Result<Value> {
             continue;
         }
         let node = &nodes[node_taken.order[before]];
-        pending.extend(node["children"].as_array().into_iter().flatten().rev().cloned());
+        pending.extend(from_gltf::list_of(node, "children")?.iter().rev().cloned());
     }
     let mut mesh_taken = Taken::default();
     for &at in &node_taken.order {
@@ -262,8 +265,8 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Result<Value> {
     }
     let (mut accessor_taken, mut material_taken) = (Taken::default(), Taken::default());
     for &mesh in &mesh_taken.order {
-        for primitive in meshes[mesh]["primitives"].as_array().into_iter().flatten() {
-            for value in primitive["attributes"].as_object().into_iter().flatten().map(|(_, value)| value) {
+        for primitive in from_gltf::list_of(&meshes[mesh], "primitives")? {
+            for value in json::object(from_gltf::item(primitive, "attributes")?, "a primitive's attributes")?.values() {
                 accessor_taken.add(value, accessors, "a primitive's attribute accessor", "accessors")?;
             }
             accessor_taken.add(&primitive["indices"], accessors, "a primitive's index accessor", "accessors")?;
@@ -389,9 +392,8 @@ pub fn import_map(
             root_index = Some(at);
             break;
         }
-        pending.extend(
-            node["children"].as_array().into_iter().flatten().filter_map(Value::as_u64).map(|child| child as usize),
-        );
+        pending
+            .extend(from_gltf::list_of(node, "children")?.iter().filter_map(Value::as_u64).map(|child| child as usize));
     }
     let Some(root_index) = root_index else {
         return Err(Error::invalid("the scene has no map root (a node whose extras.c2.role is \"map\")"));
@@ -450,7 +452,7 @@ pub fn import_map(
             out.models.push((model, rebuilt));
         }
     }
-    for (name, uri) in scene_pictures(&doc) {
+    for (name, uri) in scene_pictures(&doc)? {
         let png = read_cached(&uri).with_context(|| format!("picture {name}"))?.to_vec();
         match textures.find(&name) {
             // the first of the name is a render target, which the export showed as its stand-in
@@ -518,6 +520,34 @@ mod tests {
             *bad.pointer_mut(pointer).unwrap() = json!(value);
             assert_eq!(subtree(&bad, &[1]).unwrap_err().to_string(), error);
         }
+    }
+
+    #[test]
+    fn a_scene_of_the_wrong_json_shape_is_an_error_not_read_as_nothing() {
+        let doc = json!({
+            "nodes": [{"name": "map", "children": [1], "mesh": 0}, {"name": "piece"}],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+            "accessors": [{}],
+        });
+        assert!(subtree(&doc, &[0]).is_ok());
+        for (pointer, value, error) in [
+            ("/nodes/1", json!({"children": 2}), "the glTF has the number 2 where it needs a list of \"children\""),
+            ("/meshes/0/primitives", json!({}), "the glTF has an object where it needs a list of \"primitives\""),
+            ("/meshes/0/primitives/0/attributes", json!([0]), "a primitive's attributes is an object, not a list"),
+        ] {
+            let mut bad = doc.clone();
+            *bad.pointer_mut(pointer).unwrap() = value;
+            assert_eq!(subtree(&bad, &[0]).unwrap_err().to_string(), error);
+        }
+        // a scene node's child past the glTF's nodes, which the tree read took as nothing
+        let bad = json!({"nodes": [{"name": "map", "children": [5]}]});
+        let error = tree_of(&bad, 0, &mut HashMap::new(), &mut HashSet::new()).err().unwrap().to_string();
+        assert_eq!(error, "glTF node 0's child 5 is not one of the glTF's 1 nodes");
+        let bad = json!({"materials": {"name": "x"}});
+        assert_eq!(
+            scene_pictures(&bad).unwrap_err().to_string(),
+            "the glTF has an object where it needs a list of \"materials\""
+        );
     }
 
     /// Every fixed map of an extracted disc (DC2TK_CORPUS) exported and imported unedited changes

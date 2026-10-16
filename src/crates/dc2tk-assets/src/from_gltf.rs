@@ -43,6 +43,17 @@ pub fn item<'a>(value: &'a Value, key: &str) -> Result<&'a Value> {
     value.get(key).ok_or_else(|| missing(key))
 }
 
+/// value[key] where a glTF may leave it out and should otherwise give a list: its items (none
+/// when absent or null), or an error naming the key, so a hand edit of the wrong shape is not
+/// read as nothing.
+pub fn list_of<'a>(value: &'a Value, key: &str) -> Result<&'a [Value]> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(&[]),
+        Some(Value::Array(items)) => Ok(items),
+        Some(other) => bail!("the glTF has {} where it needs a list of \"{key}\"", crate::json::shape(other)),
+    }
+}
+
 /// list[at], at a JSON int; an index the list does not have is an error.
 pub fn index<'a>(list: &'a Value, at: &Value) -> Result<&'a Value> {
     let Some(items) = list.as_array() else {
