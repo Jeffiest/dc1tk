@@ -162,10 +162,10 @@ Monster and action scripts on the PAL disc include several files compiled agains
 
 | Table | Scheme | Definition Tag | Affected Scripts | Mapping Table in JSON | Mapped Calls / IDs |
 |---|---|---|---|---|---|
-| `monster` | Group `60` shifted to `70` (`+10`) | (automatic) | `b07a_atora_yellow`, `e08a`, `e09a`, and their exclusive helper libraries | `old_groups` in `src/natives/monster.json` | 197 calls |
-| `monster` | Groups `110`, `140`, `160` shifted to `120`, `150`, `180` | `"numbering": "old"` | `b07a_atora_yellow`, `e08a`, `e09a`, and their exclusive helper libraries | `old_table_groups` in `src/natives/monster.json` | Verified against newer monster scripts |
-| `monster` | Raw integer native numbers (no `ADD`) | `"numbering": "raw"` | `b02a2`–`b02a7` (byte-identical) and `e236a` | `old_direct` in `src/natives/monster.json` | 41 raw numbers (for example, `52`–`61` map to `77`–`86`) |
-| `action` | Older action table | `"numbering": "raw"` | `c01win` (an old build of Max's script) and `f204a` | `old_direct` in `src/natives/action.json` | 27 native numbers |
+| `monster` | Group `60` shifted to `70` (`+10`) | (automatic) | `b07a_atora_yellow`, `e08a`, `e09a`, and their exclusive helper libraries | `old_groups` in `definitions/natives/monster.json` | 197 calls |
+| `monster` | Groups `110`, `140`, `160` shifted to `120`, `150`, `180` | `"numbering": "old"` | `b07a_atora_yellow`, `e08a`, `e09a`, and their exclusive helper libraries | `old_table_groups` in `definitions/natives/monster.json` | Verified against newer monster scripts |
+| `monster` | Raw integer native numbers (no `ADD`) | `"numbering": "raw"` | `b02a2`–`b02a7` (byte-identical) and `e236a` | `old_direct` in `definitions/natives/monster.json` | 41 raw numbers (for example, `52`–`61` map to `77`–`86`) |
+| `action` | Older action table | `"numbering": "raw"` | `c01win` (an old build of Max's script) and `f204a` | `old_direct` in `definitions/natives/action.json` | 27 native numbers |
 
 ### Shifted monster group bases (`"numbering": "old"`)
 

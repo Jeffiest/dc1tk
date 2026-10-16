@@ -20,7 +20,7 @@ pub fn root() -> PathBuf {
 /// The native tables, as natives.load() reads them.
 pub fn tables() -> &'static BTreeMap<String, Table> {
     static TABLES: OnceLock<BTreeMap<String, Table>> = OnceLock::new();
-    TABLES.get_or_init(|| natives::load(&root().join("src").join("natives")).unwrap())
+    TABLES.get_or_init(|| natives::load(&root().join("definitions").join("natives")).unwrap())
 }
 
 /// The SDK folder of the repository.

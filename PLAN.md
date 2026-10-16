@@ -457,7 +457,7 @@ shared set by design (see [definitions/README.md](definitions/README.md)).
 - Old native tables. Seven monster scripts (`b02a2` to `b02a7`, `e236a`)
   and two action scripts (`c01win`, `f204a`) were built for older native
   tables. Lining their calls up with current twins pins down 41 monster and
-  27 action numbers (`old_direct` in `src/natives/`), which also says
+  27 action numbers (`old_direct` in `definitions/natives/`), which also says
   what most of their unregistered `_EXT_n` calls were meant to be. Still
   unknown: monster old 161 and 162 (only in the b02a2 to b02a7 init), and
   what the current-numbered `_EXT_20(1)` and `_EXT_20(5)` in `b02a1` did

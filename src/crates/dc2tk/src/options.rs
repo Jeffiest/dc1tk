@@ -19,7 +19,7 @@ use crate::files;
 /// Where the native tables are.
 #[derive(Args, Clone, Default)]
 pub struct NativesArg {
-    /// Directory of native table JSON files; src/natives when omitted.
+    /// Directory of native table JSON files; definitions/natives when omitted.
     #[arg(long, value_name = "DIR")]
     pub natives: Option<PathBuf>,
 }

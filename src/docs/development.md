@@ -149,7 +149,7 @@ what the tools write.
 A tag `v*` pushed to GitHub runs `.github/workflows/release.yml`, which makes a release with four
 zips: `dc2tk` for Windows (x64, the C runtime linked in), Linux (x64, static with musl) and macOS
 (a universal binary for Apple silicon and Intel), each in a folder with the `sdk/`,
-`definitions/` and `src/natives/` it reads, and the Blender add-on as an extension zip,
+`definitions/` (with `definitions/natives/`) it reads, and the Blender add-on as an extension zip,
 `dc2tk-v1.0.0-blender.zip` for the tag `v1.0.0`. Each build checks that the packed program
 finds its data (`dc2tk api-docs` from the folder gives the committed pages).
 
@@ -176,7 +176,7 @@ mkdocs serve
 
 | Variable | Read by | Meaning |
 |---|---|---|
-| `DC2TK_ROOT` | dc2tk | The repository folder (for `sdk/`, `definitions/`, `src/natives/`) when the binary is not inside it |
+| `DC2TK_ROOT` | dc2tk | The repository folder (for `sdk/` and `definitions/`) when the binary is not inside it |
 | `PCSX2` | `play`, `--play` | PCSX2's executable, when not given by `--pcsx2` or found on `PATH` |
 | `SOURCE_DATE_EPOCH` | the C preprocessor | The time `__DATE__` and `__TIME__` give, so builds repeat |
 | `DC2TK_CORPUS` | corpus tests | An extracted retail disc (`extracted/disc`) |

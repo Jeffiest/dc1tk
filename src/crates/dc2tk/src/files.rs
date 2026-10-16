@@ -24,7 +24,7 @@ pub fn root() -> PathBuf {
 
 /// The native tables' folder dc2tk uses by default.
 pub fn natives_dir() -> PathBuf {
-    root().join("src").join("natives")
+    root().join("definitions").join("natives")
 }
 
 /// The shipped definition set.

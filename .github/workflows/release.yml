@@ -1,7 +1,7 @@
 # A release for every tag v*: dc2tk for Windows, macOS and Linux, and the Blender add-on.
 #
 # Each dc2tk zip holds a folder with the executable and the data it reads beside it (sdk/,
-# definitions/, src/natives/: dc2tk looks for them in the nearest folder above itself that has
+# definitions/ with its native tables: dc2tk looks for them in the nearest folder above itself that has
 # definitions/). The add-on's zip is a Blender extension: blender_manifest.toml at its root, so
 # Blender's Install from Disk takes it as it is.
 #
@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           folder="dc2tk-$GITHUB_REF_NAME-${{ matrix.platform }}"
-          mkdir -p "$folder/src"
+          mkdir -p "$folder"
           case "${{ matrix.platform }}" in
             windows-x64) cp build/x86_64-pc-windows-msvc/release/dc2tk.exe "$folder/" ;;
             linux-x64) cp build/x86_64-unknown-linux-musl/release/dc2tk "$folder/" ;;
@@ -76,7 +76,6 @@ jobs:
                 build/aarch64-apple-darwin/release/dc2tk build/x86_64-apple-darwin/release/dc2tk ;;
           esac
           cp -R sdk definitions "$folder/"
-          cp -R src/natives "$folder/src/"
           cp README.md "$folder/"
           if [ "${{ runner.os }}" = Windows ]; then
             7z a -tzip "$folder.zip" "$folder" > /dev/null

@@ -131,7 +131,7 @@ pub fn decompile_tree(extracted: &Path, output: Option<&Path>, force: bool, comm
 pub struct NativesArgs {
     /// A ChronicleTwo checkout.
     chronicletwo: PathBuf,
-    /// Directory for the table JSON files; src/natives when omitted.
+    /// Directory for the table JSON files; definitions/natives when omitted.
     #[arg(long)]
     out: Option<PathBuf>,
 }

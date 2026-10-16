@@ -470,6 +470,6 @@ Each crate uses only the ones above it in the table; how they are laid out
 inside is in [internals](internals.md). The binary is thin on purpose:
 decompiling a whole disc, building a mod's maps and data tables and the
 memory check are library functions, so the tests reach them as `build`
-does. The definitions (`definitions/`), native tables (`src/natives/*.json`) and
+does. The definitions (`definitions/`), native tables (`definitions/natives/*.json`) and
 SDK headers are data files. Most work is per file (decompile 1,398 scripts,
 convert 5,217 texture files), so it runs across all cores (rayon).

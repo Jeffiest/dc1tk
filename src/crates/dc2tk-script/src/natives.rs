@@ -30,7 +30,8 @@ pub struct Table {
 }
 
 /// How scripts built for an older native table call it, worked out by hand from those scripts
-/// rather than from the decompilation (monster and action have them; see docs/coding/sdk.md).
+/// rather than from the decompilation (monster and action have them; see docs/internals/scripts.md,
+/// "Older native numberings").
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct OldTable {
     /// Groups of an older native table, by base: the base of the same group in this one.
@@ -132,7 +133,7 @@ const ACCESSORS: [(&str, &str); 7] = [
     ("SetStackVector", "out_vector"),
 ];
 
-/// A generated table, as src/natives/<table>.json holds it.
+/// A generated table, as definitions/natives/<table>.json holds it.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Generated {
     pub table: String,
@@ -434,7 +435,7 @@ static RS_EXTFUNC_INFO ext_func_info[3] = {
 
     #[test]
     fn generated_tables_write_back_as_they_are() {
-        let folder = repository().join("src").join("natives");
+        let folder = repository().join("definitions").join("natives");
         for name in TABLES {
             let text = fs::read_to_string(folder.join(format!("{name}.json"))).unwrap().replace("\r\n", "\n");
             let table: Table = serde_json::from_str(&text).unwrap();
@@ -496,7 +497,7 @@ static RS_EXTFUNC_INFO ext_func_info[3] = {
 
     #[test]
     fn generated_tables_are_present() {
-        let tables = load(&repository().join("src").join("natives")).unwrap();
+        let tables = load(&repository().join("definitions").join("natives")).unwrap();
         let counts: Vec<(&str, usize)> =
             TABLES.iter().map(|name| (*name, tables.get(*name).map_or(0, |table| table.natives.len()))).collect();
         assert_eq!(counts, [("event", 696), ("monster", 173), ("action", 82), ("effect", 128), ("arg", 2)]);

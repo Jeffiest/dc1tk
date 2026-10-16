@@ -17,9 +17,12 @@ Knowledge splits in two, and only the second kind lives in a definition set.
 
 - **Engine knowledge** is true of every script the engine runs: the
   instruction set, the native tables and what each native does, engine
-  enums such as motion flags, generic helpers. It lives in `src/` (native
-  tables, compiled into the tools) and `sdk/` (the C headers scripts
-  include). A mod author writing new code uses the SDK and nothing else.
+  enums such as motion flags, generic helpers. It lives in
+  `definitions/natives/` (the native tables, generated from the engine's
+  decompilation by `dc2tk natives`) and `sdk/` (the C headers scripts
+  include). It sits beside the definition sets but is not one: `--defs`
+  never layers it, and `--natives` names another folder of tables. A mod
+  author writing new code uses the SDK and nothing else.
 - **Content knowledge** is true of particular scripts: that this function
   is the baker's dialogue, that flag 520 means the bridge is repaired, which
   file holds a scene's dialogue. It lives in a definition set.
@@ -78,6 +81,10 @@ each other.
 ## Layout
 
 ```
+definitions/natives/    the engine's native tables, one JSON file a table
+                        (event, monster, action, effect, arg): each native's
+                        number, engine name and stack accessors, and how
+                        older scripts number them (`old_*`)
 definitions/pal/
   definitions.json      manifest
   names/                functions: names, parameters, locals, docs

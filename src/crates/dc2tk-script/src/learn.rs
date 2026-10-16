@@ -580,7 +580,7 @@ void on_init(void)
 ";
 
     fn tables() -> BTreeMap<String, Table> {
-        natives::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/natives")).unwrap()
+        natives::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../definitions/natives")).unwrap()
     }
 
     fn typed_headers() -> IndexMap<String, String> {

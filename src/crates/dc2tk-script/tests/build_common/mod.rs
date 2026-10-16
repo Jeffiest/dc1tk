@@ -48,7 +48,7 @@ pub fn sdk_dir() -> PathBuf {
 
 /// The native tables dc2tk uses by default.
 pub fn tables() -> BTreeMap<String, Table> {
-    natives::load(&repo().join("src").join("natives")).unwrap()
+    natives::load(&repo().join("definitions").join("natives")).unwrap()
 }
 
 /// What the tests compile with: empty definitions (so no table rules), the headers

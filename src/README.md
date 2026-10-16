@@ -23,7 +23,7 @@ On Windows the exe is one file that needs nothing installed: `.cargo/config.toml
 runtime in statically (`+crt-static`), so it imports only Windows' own DLLs and runs without the
 Visual C++ Redistributable.
 
-`dc2tk` finds `sdk/`, `definitions/` and `src/natives/` in the nearest folder
+`dc2tk` finds `sdk/` and `definitions/` (with the native tables in `definitions/natives/`) in the nearest folder
 above the executable that has `definitions/`, or in the folder `$DC2TK_ROOT`
 names.
 

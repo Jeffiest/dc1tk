@@ -109,7 +109,7 @@ description.
   VM: `node` (`Node`), `stb` (the opcodes, addressing modes and comparisons
   of [the script format](../../docs/internals/scripts.md), defined once as
   `stb::Op`, `stb::Mode` and `stb::Compare` for every part of the tools),
-  `asm`, `fingerprint`, `natives` (the tables in `src/natives/*.json`, and
+  `asm`, `fingerprint`, `natives` (the tables in `definitions/natives/*.json`, and
   `table_for`, which picks a script's table by its path), `stack` (stack
   effects, walked back from an `EXT` to find the native number; the natives
   stage folds a group base plus offset before looking the number up), `vm`.
@@ -139,7 +139,7 @@ description.
 - `paths`: paths as the tools write them, and walking folders.
 
 The native tables: `dc2tk natives <chronicletwo>` reads each table of the
-decomp and its enum and writes `src/natives/<table>.json` (checked in) as
+decomp and its enum and writes `definitions/natives/<table>.json` (checked in) as
 `{no, name, accessors}` rows. `accessors` lists the stack calls in the
 native's body in source order (`int`, `float`, `string`, `vector`, `any`,
 `out`, `out_vector`). It is a hint for argument types, not a signature:
