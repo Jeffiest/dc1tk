@@ -217,7 +217,7 @@ pub(super) fn model(
                 }
             }
         }
-        let bones = bones.get(&(index as u32)).map_or(0, |list| list.len().min(SKINNED_BONES) as u64);
+        let bones = bones.get(&(index as u32)).map_or(0, |list| list.len().min(SKIN_BONES) as u64);
         faces(stack, mesh, visual, bones);
     }
     Some(())

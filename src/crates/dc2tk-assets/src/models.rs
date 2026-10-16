@@ -769,10 +769,11 @@ fn gltf_file(source: &Path) -> Result<std::path::PathBuf> {
     }
 }
 
-/// Most bones a skinned mesh's vertices may be weighted to, and most vertices it may have: one
-/// more and CreateVertexWeight drops its skinning, or _MODEL's 6,400-quadword work buffer
-/// overflows (32 bytes a vertex, plus 2 quadwords).
+/// Most bones a skinned mesh's vertices may be weighted to: mgCVisualMotionMDT::bone[0x20], and
+/// CreateVertexWeight drops the weights past it.
 pub const SKIN_BONES: usize = 32;
+/// Most vertices a skinned mesh may have: _MODEL builds a mesh's vertex weights (32 bytes each,
+/// plus 2 quadwords) in a 6,400-quadword work buffer (character.cpp:1588, CreateVertexWeight).
 pub const SKIN_VERTICES: usize = 3198;
 /// Most VERTEX_ANIME names _VERTEX_ANIME keeps.
 pub const SKINNED_MESHES: usize = 24;

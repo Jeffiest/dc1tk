@@ -17,6 +17,7 @@ use dc2tk_assets::bytes::{i32_at, u16_at, u32_at};
 use dc2tk_assets::im3;
 use dc2tk_assets::info_cfg::{self, Arg};
 use dc2tk_assets::mds::{self as mdsfile, F_COLOUR, PRIM_STRIP};
+use dc2tk_assets::models::{SKIN_BONES, SKIN_VERTICES};
 use dc2tk_disc::{archive, text, DiscSource};
 
 /// Bytes in a quadword: mgCMemory sizes and allocations count quadwords.
@@ -44,12 +45,6 @@ pub const DUNGEON_PLACEMENTS: usize = 400;
 /// mgCMemory::Alloc refuses to reach the end, so a script may have this many bytes.
 pub const SCRIPT_BUFFER: u64 = 20000;
 pub const SCRIPT_FILE: u64 = (SCRIPT_BUFFER - 1 - 0x40 - 0x180) * QW;
-/// Vertices of one skinned mesh: _MODEL builds a mesh's vertex weights (32 bytes each, plus
-/// 2 quadwords) in a 6400-quadword work buffer (character.cpp:1588, CreateVertexWeight).
-pub const SKINNED_VERTICES: u64 = 3198;
-/// Bones one skinned mesh may be weighted to (mgCVisualMotionMDT::bone[0x20], CreateVertexWeight
-/// drops the weights past it).
-pub const SKINNED_BONES: usize = 32;
 
 /// The memory stacks Max's and Monica's packs build into: mem_table (charasetup.cpp:462, data
 /// 0x351D50, quadwords), row 0 in dungeons and row 2 in town (GetCharaMemAllocPtr; SetupMainUnit

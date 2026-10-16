@@ -144,7 +144,7 @@ pub fn skinned_limits(pack: &[u8]) -> Vec<(String, u64, usize)> {
                 continue;
             }
             let used = bones.get(&(index as u32)).map_or(0, Vec::len);
-            if mesh.vertices > SKINNED_VERTICES || used > SKINNED_BONES {
+            if mesh.vertices > SKIN_VERTICES as u64 || used > SKIN_BONES {
                 out.push((text::decode_lossy(&object.name), mesh.vertices, used));
             }
         }

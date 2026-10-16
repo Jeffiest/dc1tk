@@ -334,10 +334,12 @@ fn check_chara(original: &dyn Disc, modded: &dyn Disc, path: &str) -> Vec<Findin
         if old_limits.iter().any(|(name, _, _)| *name == frame) {
             continue;
         }
-        let what = if vertices > SKINNED_VERTICES {
-            format!("{vertices} vertices, more than the {SKINNED_VERTICES} the skinning work buffer holds (_MODEL)")
+        let what = if vertices > SKIN_VERTICES as u64 {
+            format!("{vertices} vertices, more than the {SKIN_VERTICES} the skinning work buffer holds (_MODEL)")
         } else {
-            format!("{bones} bones, more than the {SKINNED_BONES} a skinned mesh may use (CreateVertexWeight drops the rest)")
+            format!(
+                "{bones} bones, more than the {SKIN_BONES} a skinned mesh may use (CreateVertexWeight drops the rest)"
+            )
         };
         out.push(finding(Level::Error, format!("{path}: skinned mesh {frame} has {what}")));
     }
