@@ -1031,6 +1031,39 @@ fn port_summaries(functions: &[&Node], found: &Context) -> (HashMap<String, Port
     (outs, loaded)
 }
 
+/// The functions that can change the event port's bank: those that load on the port or leave the
+/// map (touches_port), and their callers.
+fn port_changers<'a>(functions: &[&'a Node]) -> HashSet<&'a str> {
+    let mut related: HashSet<&str> = functions
+        .iter()
+        .filter(|function| touches_port(&function["body"]))
+        .map(|function| function.text("name"))
+        .collect();
+    if related.is_empty() {
+        return related;
+    }
+    let calls: Vec<Vec<String>> = functions
+        .iter()
+        .map(|function| {
+            let mut called = Vec::new();
+            called_functions(&function["body"], &mut called);
+            called
+        })
+        .collect();
+    let mut grown = true;
+    while grown {
+        grown = false;
+        for (function, called) in functions.iter().zip(&calls) {
+            let name = function.text("name");
+            if !related.contains(name) && called.iter().any(|callee| related.contains(callee.as_str())) {
+                related.insert(name);
+                grown = true;
+            }
+        }
+    }
+    related
+}
+
 /// What the sound pass learns across a program's functions: the bank a global always holds, the
 /// bank every call passes for a parameter, the bank a helper writes through a pointer parameter,
 /// and the event port's bank where each function starts and what it leaves there.
@@ -1056,35 +1089,7 @@ pub fn program_sounds(
         .map(|function| function.text("name").to_string())
         .filter(|name| !called.contains(name))
         .collect();
-    // only functions that load on the port or leave the map, and their callers, change the port
-    let mut related: HashSet<&str> = functions
-        .iter()
-        .filter(|function| touches_port(&function["body"]))
-        .map(|function| function.text("name"))
-        .collect();
-    let calls: Vec<Vec<String>> = if related.is_empty() {
-        Vec::new()
-    } else {
-        functions
-            .iter()
-            .map(|function| {
-                let mut called = Vec::new();
-                called_functions(&function["body"], &mut called);
-                called
-            })
-            .collect()
-    };
-    let mut grown = !related.is_empty();
-    while grown {
-        grown = false;
-        for (function, called) in functions.iter().zip(&calls) {
-            let name = function.text("name");
-            if !related.contains(name) && called.iter().any(|callee| related.contains(callee.as_str())) {
-                related.insert(name);
-                grown = true;
-            }
-        }
-    }
+    let related = port_changers(&functions);
     let callees_first: Vec<&Node> =
         ordered.iter().rev().copied().filter(|function| related.contains(function.text("name"))).collect();
     let (port_out, loaded) = port_summaries(&callees_first, found);

@@ -728,6 +728,37 @@ pub fn apply(
     Ok((applied, warnings))
 }
 
+/// A line of `mod list` for one of a mod's additions (mod.json's `additions`): where it adds
+/// (a map's scripts, or the scripts it names) and what (programs, includes, wraps).
+fn addition_line(addition: &Value) -> String {
+    let where_ = match addition["map"].as_str().filter(|map| !map.is_empty()) {
+        Some(map) => map.to_string(),
+        None => addition["scripts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(", "),
+    };
+    let keys = |key: &str| -> Vec<String> {
+        addition[key].as_object().map(|map| map.keys().cloned().collect()).unwrap_or_default()
+    };
+    let mut parts: Vec<String> = keys("programs").into_iter().map(|program| format!("program {program}")).collect();
+    parts.extend(
+        addition["includes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|path| format!("include {path}")),
+    );
+    parts.extend(keys("wrap").into_iter().map(|program| format!("wrap {program}")));
+    format!("    adds to {}: {}", where_, parts.join(", "))
+}
+
+/// `mod list`'s report: every mod in `mods_dir` with what it holds, adds and asks for, then the
+/// mods that cannot be built together.
 pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>) -> Result<String> {
     let mut mods: Vec<PathBuf> = if mods_dir.is_dir() {
         files::read_dir(mods_dir)?
@@ -790,33 +821,7 @@ pub fn listing(mods_dir: &Path, tree_dir: &Path, consts: &IndexMap<String, i64>)
         lines.extend(paths.iter().map(|path| format!("    {path}")));
         lines.extend(discfiles::mod_files(mod_dir)?.keys().map(|path| format!("    replaces {path}")));
         lines.extend(crate::replace::described(mod_dir)?.into_iter().map(|line| format!("    {line}")));
-        for addition in found["additions"].as_array().into_iter().flatten() {
-            let where_ = match addition["map"].as_str().filter(|map| !map.is_empty()) {
-                Some(map) => map.to_string(),
-                None => addition["scripts"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            };
-            let keys = |key: &str| -> Vec<String> {
-                addition[key].as_object().map(|map| map.keys().cloned().collect()).unwrap_or_default()
-            };
-            let mut parts: Vec<String> =
-                keys("programs").into_iter().map(|program| format!("program {program}")).collect();
-            parts.extend(
-                addition["includes"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .map(|path| format!("include {path}")),
-            );
-            parts.extend(keys("wrap").into_iter().map(|program| format!("wrap {program}")));
-            lines.push(format!("    adds to {}: {}", where_, parts.join(", ")));
-        }
+        lines.extend(found["additions"].as_array().into_iter().flatten().map(addition_line));
         if let Some(start_at) = found["start_at"].as_str().filter(|start_at| !start_at.is_empty()) {
             lines.push(format!("    starts at {start_at}"));
         }

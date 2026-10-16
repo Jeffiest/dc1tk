@@ -278,27 +278,36 @@ fn apply_map(
         }
     }
     if line.add {
-        // the like map's other files, copied as they are
-        let theirs = [
-            Some(&found.map),
-            found.mpk.as_ref(),
-            found.ipk.as_ref(),
-            found.cfg.as_ref(),
-            found.efp.as_ref(),
-            found.sky.as_ref(),
-        ];
-        let mut copies = Vec::new();
-        for path in theirs.into_iter().flatten() {
-            let target = place(path);
-            if !built.files.contains_key(&target) {
-                copies.push((path.clone(), target, current(&built.files, disc, path)?));
-            }
+        copy_like_map(disc, line, &found, built)?;
+    }
+    Ok(())
+}
+
+/// A new map's copies of the files of the map it is like (`found`) that its edit did not build,
+/// as they are.
+fn copy_like_map(disc: &DiscSource, line: &Line, found: &MapFiles, built: &mut MapsBuilt) -> Result<()> {
+    let name = line.map_name();
+    let theirs = [
+        Some(&found.map),
+        found.mpk.as_ref(),
+        found.ipk.as_ref(),
+        found.cfg.as_ref(),
+        found.efp.as_ref(),
+        found.sky.as_ref(),
+    ];
+    let mut copies = Vec::new();
+    for path in theirs.into_iter().flatten() {
+        let target = new_map_path(path, found, &name);
+        if !built.files.contains_key(&target) {
+            copies.push((path.clone(), target, current(&built.files, disc, path)?));
         }
-        for (path, target, data) in copies {
-            built.changes.push(change(target.clone(), 0, data.len()));
-            built.said.push(said(&format!("{target}, a copy of {path}")));
-            built.files.insert(target, data);
-        }
+    }
+    for (path, target, data) in copies {
+        let change =
+            MapChange { module: line.module.clone(), map: name.clone(), path: target.clone(), old: 0, new: data.len() };
+        built.changes.push(change);
+        built.said.push(format!("  {} (map {name}): {target}, a copy of {path}", line.module));
+        built.files.insert(target, data);
     }
     Ok(())
 }
