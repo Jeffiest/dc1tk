@@ -622,6 +622,26 @@ const MODEL_BLOCKS: [(&str, &str); 6] = [
     ("LOD_MODEL_START", "LOD_MODEL_END"),
 ];
 
+/// Lines of a template's info.cfg about the template's own model and motions, dropped from a new
+/// pack's wherever they stand (MODEL_BLOCKS drops the blocks around them).
+const MODEL_LINES: [&str; 15] = [
+    "SHADOW_MOTION",
+    "VERTEX_ANIME",
+    "SHADOW_VERTEX_ANIME",
+    "SHAPE_ANIME",
+    "SHADOW_MODEL",
+    "LOD_MODEL",
+    "KEY_START",
+    "KEY",
+    "KEY_END",
+    "MOTION_END",
+    "SEQ",
+    "SE",
+    "SELP",
+    "CLOTH",
+    "EFFECT",
+];
+
 /// A template's info.cfg for a new pack: NAME, MODEL and the texture file name the new pack's
 /// members (<stem>.mds, <stem>.img, which IMG 0 loads; no IMG line without pictures), what
 /// belonged to the template's model alone dropped (motion sets and their sequences, sound cues,
@@ -635,15 +655,7 @@ pub fn new_info_cfg(template: &[u8], cfg: &NewCfg) -> Result<Vec<u8>> {
     let newline = info_cfg::newline(text.as_bytes());
     let img = format!("IMG 0, \"{stem}.img\";");
     let quoted = |names: &[String]| names.iter().map(|name| format!("\"{name}\"")).collect::<Vec<_>>().join(", ");
-    let motion = cfg.keys.map(|keys| {
-        let mut block =
-            format!("MOTION 0, \"{stem}.mot\", \"{stem}.bbp\", \"{stem}.wgt\";{newline}KEY_START;{newline}");
-        for (name, start, end, step) in keys {
-            block.push_str(&format!("\t{}{newline}", motions::key_line(name, *start, *end, *step)));
-        }
-        block.push_str(&format!("KEY_END;{newline}MOTION_END;{newline}"));
-        block
-    });
+    let motion = cfg.keys.map(|keys| motion_block(stem, keys, newline));
     // whether every frame a line names (its text arguments; "" is the whole model) is the model's
     let names_known = |line: &str| {
         let args = dc2tk_disc::text::encode(line).map(|raw| info_cfg::parse(&raw)).unwrap_or_default();
@@ -679,21 +691,7 @@ pub fn new_info_cfg(template: &[u8], cfg: &NewCfg) -> Result<Vec<u8>> {
             continue;
         }
         match tag {
-            "SHADOW_MOTION"
-            | "VERTEX_ANIME"
-            | "SHADOW_VERTEX_ANIME"
-            | "SHAPE_ANIME"
-            | "SHADOW_MODEL"
-            | "LOD_MODEL"
-            | "KEY_START"
-            | "KEY"
-            | "KEY_END"
-            | "MOTION_END"
-            | "SEQ"
-            | "SE"
-            | "SELP"
-            | "CLOTH"
-            | "EFFECT" => {}
+            _ if MODEL_LINES.contains(&tag) => {}
             "OUTLINE" | "OBJECT_NAME" | "OBJECT_NAME2" if !names_known(line) => {}
             "NAME" => out.push_str(&format!("NAME \"{stem}\";{ending}")),
             "IMG" => {
@@ -736,6 +734,17 @@ pub fn new_info_cfg(template: &[u8], cfg: &NewCfg) -> Result<Vec<u8>> {
         })
         .collect();
     dc2tk_disc::text::encode(&out).ok_or_else(|| Error::invalid("the template's cfg is not Shift-JIS text"))
+}
+
+/// A new pack's motion set 0 for its info.cfg: MOTION 0 loading <stem>.mot, <stem>.bbp and
+/// <stem>.wgt, with `keys` (name, start, end, step).
+fn motion_block(stem: &str, keys: &[(String, i64, i64, f64)], newline: &str) -> String {
+    let mut block = format!("MOTION 0, \"{stem}.mot\", \"{stem}.bbp\", \"{stem}.wgt\";{newline}KEY_START;{newline}");
+    for (name, start, end, step) in keys {
+        block.push_str(&format!("\t{}{newline}", motions::key_line(name, *start, *end, *step)));
+    }
+    block.push_str(&format!("KEY_END;{newline}MOTION_END;{newline}"));
+    block
 }
 
 /// The glTF a mod gives for a new model: a .gltf (its buffers and images beside it), a .glb, or a
@@ -1363,46 +1372,50 @@ mod tests {
             }
             *count += 1;
         }
-        // post-order from the scene's roots
-        let children = |node: &Value| -> Vec<usize> {
-            node.get("children")
-                .and_then(Value::as_array)
-                .map_or(Vec::new(), |list| list.iter().filter_map(|c| c.as_i64()).map(|c| c as usize).collect())
-        };
-        let roots: Vec<usize> = json.get("scenes").and_then(Value::as_array).unwrap()[0]
-            .get("nodes")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|n| n.as_i64().unwrap() as usize)
-            .collect();
-        let mut order = Vec::new();
-        fn visit(at: usize, nodes: &[Value], children: &dyn Fn(&Value) -> Vec<usize>, order: &mut Vec<usize>) {
-            for c in children(&nodes[at]) {
-                visit(c, nodes, children, order);
-            }
-            order.push(at);
-        }
-        for root in roots {
-            visit(root, &nodes, &children, &mut order);
-        }
+        let order = post_order(&json, &nodes);
         let mut new_of = vec![0i64; nodes.len()];
         for (new, &old) in order.iter().enumerate() {
             new_of[old] = new as i64;
         }
+        json["nodes"] = Value::Array(order.iter().map(|&old| nodes[old].clone()).collect());
+        renumber_nodes(&mut json, &new_of);
+        Gltf { json, buffers: gltf.buffers.clone() }
+    }
+
+    /// The glTF's nodes (`nodes`) in post-order from its first scene's roots.
+    fn post_order(json: &serde_json::Value, nodes: &[serde_json::Value]) -> Vec<usize> {
+        use serde_json::Value;
+        fn visit(at: usize, nodes: &[Value], order: &mut Vec<usize>) {
+            let children = nodes[at].get("children").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+            for c in children.iter().filter_map(Value::as_i64) {
+                visit(c as usize, nodes, order);
+            }
+            order.push(at);
+        }
+        let roots = json.get("scenes").and_then(Value::as_array).unwrap()[0].get("nodes").unwrap().as_array().unwrap();
+        let mut order = Vec::new();
+        for root in roots {
+            visit(root.as_i64().unwrap() as usize, nodes, &mut order);
+        }
+        order
+    }
+
+    /// Every node reference in a glTF (children, scenes, skins and animation channels) changed
+    /// from old node `n` to `new_of[n]`.
+    fn renumber_nodes(json: &mut serde_json::Value, new_of: &[i64]) {
+        use serde_json::Value;
         let renumber = |value: &mut Value| {
             if let Some(old) = value.as_i64() {
                 *value = Value::from(new_of[old as usize]);
             }
         };
-        let mut reordered: Vec<Value> = order.iter().map(|&old| nodes[old].clone()).collect();
-        for node in &mut reordered {
-            if let Some(Value::Array(list)) = node.get_mut("children") {
-                list.iter_mut().for_each(renumber);
+        if let Some(Value::Array(nodes)) = json.get_mut("nodes") {
+            for node in nodes {
+                if let Some(Value::Array(list)) = node.get_mut("children") {
+                    list.iter_mut().for_each(renumber);
+                }
             }
         }
-        json["nodes"] = Value::Array(reordered);
         if let Some(Value::Array(scenes)) = json.get_mut("scenes") {
             for scene in scenes {
                 if let Some(Value::Array(list)) = scene.get_mut("nodes") {
@@ -1431,7 +1444,6 @@ mod tests {
                 }
             }
         }
-        Gltf { json, buffers: gltf.buffers.clone() }
     }
 
     /// Changes each value of an attribute of the meshes of the nodes named `name` in place.
@@ -1581,6 +1593,40 @@ mod tests {
         ])
     }
 
+    /// For corpus_characters_compare_by_value, after frame `frame`'s mesh alone was rebuilt (its
+    /// `vertices` now `count`): the other meshes' weights (`old` and `new`, .wgt files) are as they
+    /// were, and the mesh's vertices' skins, rounded to a tenth of a percent, are the original's.
+    fn weights_kept(
+        old: &[u8],
+        new: &[u8],
+        frame: usize,
+        vertices: usize,
+        count: usize,
+    ) -> std::result::Result<(), String> {
+        let (old, new) = (crate::mot::parse(old).unwrap(), crate::mot::parse(new).unwrap());
+        let others = |lists: &[crate::mot::KeyList]| -> Vec<crate::mot::KeyList> {
+            lists.iter().filter(|l| l.frame != frame as i32 && !l.keys.is_empty()).cloned().collect()
+        };
+        if others(&old) != others(&new) {
+            return Err("other meshes' weights changed".to_string());
+        }
+        let skins = |lists: &[crate::mot::KeyList], count: usize| -> BTreeSet<Vec<(i64, i64)>> {
+            to_gltf::vertex_weights(lists, frame, count)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|mut skin| {
+                    skin.sort_by_key(|(bone, _)| *bone);
+                    skin.into_iter().map(|(bone, w)| (bone, (w * 1000.0).round() as i64)).collect()
+                })
+                .collect()
+        };
+        let (before, after) = (skins(&old, vertices), skins(&new, count));
+        if !after.is_subset(&before) {
+            return Err(format!("its weights changed: {after:?} not in {before:?}"));
+        }
+        Ok(())
+    }
+
     /// Every character pack of an extracted disc (DC2TK_CORPUS) whose model exports: its export as
     /// Blender gives it back (blender_like) changes no mesh; one mesh moved changes that mesh
     /// alone, and rebuilt it leaves every other frame and weight as they were and keeps its own
@@ -1653,30 +1699,9 @@ mod tests {
                 }
             }
             if let Some(weights) = weights {
-                let (old, new) = (crate::mot::parse(weights).unwrap(), crate::mot::parse(&built.wgt).unwrap());
-                let others = |lists: &[crate::mot::KeyList]| -> Vec<crate::mot::KeyList> {
-                    lists.iter().filter(|l| l.frame != frame as i32 && !l.keys.is_empty()).cloned().collect()
-                };
-                if others(&old) != others(&new) {
-                    return Err(fail(format!("{node_name} moved, other meshes' weights changed")));
-                }
-                // its vertices' skins, rounded to a tenth of a percent: those rebuilt are the original's
-                let vertices = model.nodes[frame].mdt.as_ref().map_or(0, |t| t.vertices.len());
-                let skins = |lists: &[crate::mot::KeyList], count: usize| -> BTreeSet<Vec<(i64, i64)>> {
-                    to_gltf::vertex_weights(lists, frame, count)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|mut skin| {
-                            skin.sort_by_key(|(bone, _)| *bone);
-                            skin.into_iter().map(|(bone, w)| (bone, (w * 1000.0).round() as i64)).collect()
-                        })
-                        .collect()
-                };
-                let count = rebuilt.nodes[frame].mdt.as_ref().map_or(0, |t| t.vertices.len());
-                let (before, after) = (skins(&old, vertices), skins(&new, count));
-                if !after.is_subset(&before) {
-                    return Err(fail(format!("{node_name} moved, its weights changed: {after:?} not in {before:?}")));
-                }
+                let vertices = |model: &Mds| model.nodes[frame].mdt.as_ref().map_or(0, |t| t.vertices.len());
+                weights_kept(weights, &built.wgt, frame, vertices(&model), vertices(&rebuilt))
+                    .map_err(|e| fail(format!("{node_name} moved, {e}")))?;
             }
             Ok(true)
         };

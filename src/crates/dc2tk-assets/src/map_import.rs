@@ -227,7 +227,7 @@ impl Taken {
 }
 
 /// Where a material references its textures (each a texture info, `{"index": n}`).
-const TEXTURE_FIELDS: [&str; 5] = [
+pub(crate) const TEXTURE_FIELDS: [&str; 5] = [
     "/pbrMetallicRoughness/baseColorTexture/index",
     "/pbrMetallicRoughness/metallicRoughnessTexture/index",
     "/normalTexture/index",
@@ -294,41 +294,12 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Result<Value> {
         buffer_taken.add(&views[view]["buffer"], buffers, "a buffer view's buffer", "buffers")?;
     }
 
-    let mut out_nodes = node_taken.items(nodes, &[("/mesh", &mesh_taken)]);
-    for node in &mut out_nodes {
-        if let Some(object) = node.as_object_mut() {
-            object.remove("skin");
-            object.remove("camera");
-            // the scene's own tag, which the model's export does not have
-            if let Some(extras) = object.get_mut("extras").and_then(Value::as_object_mut) {
-                extras.remove("c2");
-            }
-            // every child was taken (or refused), so each has its new number
-            if let Some(children) = object.get_mut("children").and_then(Value::as_array_mut) {
-                children.retain(|child| child.as_u64().is_some());
-                children.iter_mut().for_each(|child| node_taken.renumber(child, ""));
-            }
-        }
-    }
-    let mut out_meshes = mesh_taken.items(meshes, &[]);
-    for mesh in &mut out_meshes {
-        for primitive in mesh.get_mut("primitives").and_then(Value::as_array_mut).into_iter().flatten() {
-            if let Some(attributes) = primitive.get_mut("attributes").and_then(Value::as_object_mut) {
-                attributes.values_mut().for_each(|value| accessor_taken.renumber(value, ""));
-            }
-            if let Some(object) = primitive.as_object_mut() {
-                object.remove("targets");
-            }
-            accessor_taken.renumber(primitive, "/indices");
-            material_taken.renumber(primitive, "/material");
-        }
-    }
     let texture_fields: Vec<(&str, &Taken)> = TEXTURE_FIELDS.iter().map(|&pointer| (pointer, &texture_taken)).collect();
     let mut out = Map::new();
     out.insert("asset".into(), doc["asset"].clone());
     for (key, value) in [
-        ("nodes", out_nodes),
-        ("meshes", out_meshes),
+        ("nodes", subtree_nodes(nodes, &node_taken, &mesh_taken)),
+        ("meshes", subtree_meshes(meshes, &mesh_taken, &accessor_taken, &material_taken)),
         ("accessors", accessor_taken.items(accessors, &[("/bufferView", &view_taken)])),
         ("materials", material_taken.items(materials, &texture_fields)),
         ("textures", texture_taken.items(textures, &[("/source", &image_taken), ("/sampler", &sampler_taken)])),
@@ -351,6 +322,47 @@ pub fn subtree(doc: &Value, roots: &[usize]) -> Result<Value> {
     out.insert("scenes".into(), json!([{"nodes": root_list}]));
     out.insert("scene".into(), json!(0));
     Ok(Value::Object(out))
+}
+
+/// The nodes a subtree takes, renumbered, without what a model's own export has no use for: skins,
+/// cameras and the scene's tags.
+fn subtree_nodes(nodes: &[Value], node_taken: &Taken, mesh_taken: &Taken) -> Vec<Value> {
+    let mut out_nodes = node_taken.items(nodes, &[("/mesh", mesh_taken)]);
+    for node in &mut out_nodes {
+        if let Some(object) = node.as_object_mut() {
+            object.remove("skin");
+            object.remove("camera");
+            // the scene's own tag, which the model's export does not have
+            if let Some(extras) = object.get_mut("extras").and_then(Value::as_object_mut) {
+                extras.remove("c2");
+            }
+            // every child was taken (or refused), so each has its new number
+            if let Some(children) = object.get_mut("children").and_then(Value::as_array_mut) {
+                children.retain(|child| child.as_u64().is_some());
+                children.iter_mut().for_each(|child| node_taken.renumber(child, ""));
+            }
+        }
+    }
+    out_nodes
+}
+
+/// The meshes a subtree takes, their primitives' accessors and materials renumbered and their
+/// morph targets left out.
+fn subtree_meshes(meshes: &[Value], mesh_taken: &Taken, accessor_taken: &Taken, material_taken: &Taken) -> Vec<Value> {
+    let mut out_meshes = mesh_taken.items(meshes, &[]);
+    for mesh in &mut out_meshes {
+        for primitive in mesh.get_mut("primitives").and_then(Value::as_array_mut).into_iter().flatten() {
+            if let Some(attributes) = primitive.get_mut("attributes").and_then(Value::as_object_mut) {
+                attributes.values_mut().for_each(|value| accessor_taken.renumber(value, ""));
+            }
+            if let Some(object) = primitive.as_object_mut() {
+                object.remove("targets");
+            }
+            accessor_taken.renumber(primitive, "/indices");
+            material_taken.renumber(primitive, "/material");
+        }
+    }
+    out_meshes
 }
 
 /// The scene's map and models against the originals. `read` gives a file of the scene's folder

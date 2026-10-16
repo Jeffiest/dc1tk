@@ -912,6 +912,18 @@ fn skin_tail(joints: &[Num], weights: &[Num], joint_frames: &[i64]) -> Vec<f64> 
     by_frame.into_iter().flat_map(|(frame, w)| [frame as f64, w]).collect()
 }
 
+/// Where a character's mesh puts its corners (geometry with `in_frames`). Each is None for a mesh
+/// it does not apply to, and all are None for a mesh outside a character.
+#[derive(Default)]
+struct Placement {
+    /// a rigid mesh: the matrix into its frame's space (rigid_to_local)
+    to_local: Option<Mat4>,
+    /// a skinned mesh: the frame each of its skin's joints stands for (joint_frames)
+    joint_frames: Option<Vec<i64>>,
+    /// a skinned mesh, given binds: its joints' matrices, to pose its corners by (skin_matrices)
+    reskin: Option<Vec<Mat4>>,
+}
+
 /// `binds`: for a character's skinned meshes, the bind matrix of each frame to bring the glTF's
 /// positions into (skin_matrices), as import_gltf does.
 fn geometry(
@@ -938,34 +950,19 @@ fn geometry(
     for (gi, id) in mesh_ids(&gltf.json, model)? {
         let node = &nodes[gi];
         // characters: where the corners go, and the frame each joint stands for
-        let mut to_local = None;
-        let mut joint_frames: Option<Vec<i64>> = None;
-        let mut reskin: Option<Vec<Mat4>> = None;
+        let mut place = Placement::default();
         if in_frames {
             match node.get("skin") {
                 Some(skin) => {
                     if let Some(binds) = binds {
-                        reskin = Some(skin_matrices(gltf, skin, &resolved, binds)?);
+                        place.reskin = Some(skin_matrices(gltf, skin, &resolved, binds)?);
                     }
-                    let skin = index(item(&gltf.json, "skins")?, skin)?;
-                    let joints = item(skin, "joints")?
-                        .as_array()
-                        .ok_or_else(|| Error::invalid("a skin's joints are not a list"))?;
-                    let mut frames = Vec::with_capacity(joints.len());
-                    for joint in joints {
-                        let at = joint.as_i64().and_then(|j| usize::try_from(j).ok());
-                        let frame = at.and_then(|j| resolved.get(j).copied().flatten());
-                        frames.push(match (frame, at) {
-                            (Some(frame), _) => frame as i64,
-                            (None, at) => (model.nodes.len() + at.unwrap_or(nodes.len())) as i64,
-                        });
-                    }
-                    joint_frames = Some(frames);
+                    place.joint_frames = Some(joint_frames(&gltf.json, skin, &resolved, model, nodes.len())?);
                 }
                 None => {
                     let fallback = floats(&world_of(gi as i64, nodes_value, &parent, &mut world, 0)?);
                     let found = rigid_to_local(gi, &resolved, nodes_value, &parent, &mut world, &template_world)?;
-                    to_local = Some(found.unwrap_or(fallback));
+                    place.to_local = Some(found.unwrap_or(fallback));
                 }
             }
         }
@@ -977,82 +974,114 @@ fn geometry(
         let mut groups: BTreeMap<String, Vec<[Vec<f64>; 3]>> = BTreeMap::new();
         for primitive in primitives {
             let material = material_key(gltf, primitive, in_frames)?;
-            let attributes = item(primitive, "attributes")?;
-            let read = |key: &str| -> Result<Option<Values>> {
-                match attributes.get(key) {
-                    Some(at) if !matches!(at, Value::Null) => Ok(Some(accessor(gltf, at)?)),
-                    _ => Ok(None),
-                }
-            };
-            let Some(positions) = read("POSITION")? else {
-                continue;
-            };
-            let (uvs, colors) = (read("TEXCOORD_0")?, read("COLOR_0")?);
-            let skin = match &joint_frames {
-                Some(frames) => match (read("JOINTS_0")?, read("WEIGHTS_0")?) {
-                    (Some(joints), Some(weights)) => Some((frames, joints, weights)),
-                    _ => None,
-                },
-                None => None,
-            };
-            let joint_weights = match &reskin {
-                Some(_) => match (read("JOINTS_0")?, read("WEIGHTS_0")?) {
-                    (Some(joints), Some(weights)) => Some((joints, weights)),
-                    _ => None,
-                },
-                None => None,
-            };
-            let corner = |at: i64| -> Result<Vec<f64>> {
-                let mut values = vec![f64::NAN; CORNER];
-                for (slot, value) in positions.at(at)?.iter().take(3).enumerate() {
-                    values[slot] = value.f();
-                }
-                if let (Some(matrices), Some((joints, weights))) = (&reskin, &joint_weights) {
-                    let m = blend(matrices, joints.at(at)?, weights.at(at)?);
-                    let moved = xform_point(&m, &values[..3]);
-                    values[..3].copy_from_slice(&moved);
-                }
-                if let Some(to_local) = &to_local {
-                    let moved = xform_point(to_local, &values[..3]);
-                    values[..3].copy_from_slice(&moved);
-                }
-                if let Some(uvs) = &uvs {
-                    for (slot, value) in uvs.at(at)?.iter().take(2).enumerate() {
-                        values[UV + slot] = value.f();
-                    }
-                }
-                if let Some(colors) = &colors {
-                    for (slot, value) in colors.at(at)?.iter().take(4).enumerate() {
-                        values[COLOUR + slot] = value.f();
-                    }
-                }
-                if let Some((frames, joints, weights)) = &skin {
-                    values.extend(skin_tail(joints.at(at)?, weights.at(at)?, frames));
-                }
-                Ok(values)
-            };
-            let order: Vec<i64> = match primitive.get("indices") {
-                Some(at) if !matches!(at, Value::Null) => {
-                    let values = accessor(gltf, at)?;
-                    (0..values.len()).map(|i| values.at(i as i64).map(|v| v[0].f() as i64)).collect::<Result<_>>()?
-                }
-                _ => (0..positions.len() as i64).collect(),
-            };
-            let triangles = groups.entry(material).or_default();
-            for triangle in order.chunks(3).filter(|chunk| chunk.len() == 3) {
-                let corners = [corner(triangle[0])?, corner(triangle[1])?, corner(triangle[2])?];
-                let same = |a: &Vec<f64>, b: &Vec<f64>| a.iter().zip(b).take(3).all(|(x, y)| (x - y).abs() < 1e-9);
-                if same(&corners[0], &corners[1]) || same(&corners[1], &corners[2]) || same(&corners[0], &corners[2]) {
-                    continue;
-                }
-                triangles.push(corners);
-            }
+            let triangles = primitive_triangles(gltf, primitive, &place)?;
+            groups.entry(material).or_default().extend(triangles);
         }
         // a material with degenerate triangles alone (placeholders) is one a tool may drop
         groups.retain(|_, triangles| !triangles.is_empty());
         out.insert(id, Geometry { matrix, groups });
     }
     Ok(out)
+}
+
+/// The frame each joint of glTF skin `skin` stands for (`resolved`, frames_of); a joint no frame
+/// stands for is numbered past the model's frames (and one that is not a node index past them
+/// all, at `node_count`).
+fn joint_frames(
+    json: &Value,
+    skin: &Value,
+    resolved: &[Option<usize>],
+    model: &Mds,
+    node_count: usize,
+) -> Result<Vec<i64>> {
+    let skin = index(item(json, "skins")?, skin)?;
+    let joints = item(skin, "joints")?.as_array().ok_or_else(|| Error::invalid("a skin's joints are not a list"))?;
+    let frame_of = |joint: &Value| {
+        let at = joint.as_i64().and_then(|j| usize::try_from(j).ok());
+        let frame = at.and_then(|j| resolved.get(j).copied().flatten());
+        match (frame, at) {
+            (Some(frame), _) => frame as i64,
+            (None, at) => (model.nodes.len() + at.unwrap_or(node_count)) as i64,
+        }
+    };
+    Ok(joints.iter().map(frame_of).collect())
+}
+
+/// A primitive's triangles as Geometry holds them, its corners placed by `place`; degenerate
+/// triangles (two corners in the same place) are left out, and a primitive without positions has
+/// none.
+fn primitive_triangles(gltf: &Gltf, primitive: &Value, place: &Placement) -> Result<Vec<[Vec<f64>; 3]>> {
+    let attributes = item(primitive, "attributes")?;
+    let read = |key: &str| -> Result<Option<Values>> {
+        match attributes.get(key) {
+            Some(at) if !matches!(at, Value::Null) => Ok(Some(accessor(gltf, at)?)),
+            _ => Ok(None),
+        }
+    };
+    let Some(positions) = read("POSITION")? else {
+        return Ok(Vec::new());
+    };
+    let (uvs, colors) = (read("TEXCOORD_0")?, read("COLOR_0")?);
+    let skin = match &place.joint_frames {
+        Some(frames) => match (read("JOINTS_0")?, read("WEIGHTS_0")?) {
+            (Some(joints), Some(weights)) => Some((frames, joints, weights)),
+            _ => None,
+        },
+        None => None,
+    };
+    let joint_weights = match &place.reskin {
+        Some(_) => match (read("JOINTS_0")?, read("WEIGHTS_0")?) {
+            (Some(joints), Some(weights)) => Some((joints, weights)),
+            _ => None,
+        },
+        None => None,
+    };
+    let corner = |at: i64| -> Result<Vec<f64>> {
+        let mut values = vec![f64::NAN; CORNER];
+        for (slot, value) in positions.at(at)?.iter().take(3).enumerate() {
+            values[slot] = value.f();
+        }
+        if let (Some(matrices), Some((joints, weights))) = (&place.reskin, &joint_weights) {
+            let m = blend(matrices, joints.at(at)?, weights.at(at)?);
+            let moved = xform_point(&m, &values[..3]);
+            values[..3].copy_from_slice(&moved);
+        }
+        if let Some(to_local) = &place.to_local {
+            let moved = xform_point(to_local, &values[..3]);
+            values[..3].copy_from_slice(&moved);
+        }
+        if let Some(uvs) = &uvs {
+            for (slot, value) in uvs.at(at)?.iter().take(2).enumerate() {
+                values[UV + slot] = value.f();
+            }
+        }
+        if let Some(colors) = &colors {
+            for (slot, value) in colors.at(at)?.iter().take(4).enumerate() {
+                values[COLOUR + slot] = value.f();
+            }
+        }
+        if let Some((frames, joints, weights)) = &skin {
+            values.extend(skin_tail(joints.at(at)?, weights.at(at)?, frames));
+        }
+        Ok(values)
+    };
+    let order: Vec<i64> = match primitive.get("indices") {
+        Some(at) if !matches!(at, Value::Null) => {
+            let values = accessor(gltf, at)?;
+            (0..values.len()).map(|i| values.at(i as i64).map(|v| v[0].f() as i64)).collect::<Result<_>>()?
+        }
+        _ => (0..positions.len() as i64).collect(),
+    };
+    let mut triangles = Vec::new();
+    for triangle in order.chunks(3).filter(|chunk| chunk.len() == 3) {
+        let corners = [corner(triangle[0])?, corner(triangle[1])?, corner(triangle[2])?];
+        let same = |a: &Vec<f64>, b: &Vec<f64>| a.iter().zip(b).take(3).all(|(x, y)| (x - y).abs() < 1e-9);
+        if same(&corners[0], &corners[1]) || same(&corners[1], &corners[2]) || same(&corners[0], &corners[2]) {
+            continue;
+        }
+        triangles.push(corners);
+    }
+    Ok(triangles)
 }
 
 /// A mesh node's matrix as geometry reads it, in plain floats: as given, or made from its
@@ -1205,8 +1234,7 @@ pub struct MorphMesh {
 }
 
 /// The morph targets of each frame's mesh in a glTF (by the frame its mesh node stands for), its
-/// vertices matched to those of the frame's mesh in `model` by position (within 0.005 and 2e-6 of
-/// the value, as same_geometry compares them; every vertex of the mesh at that place), in the
+/// vertices matched to those of the frame's mesh in `model` by position (VertexCells), in the
 /// space the import brings them into: a rigid mesh's frame's, a skinned mesh's own (`binds`, the
 /// bind matrices of the pack's frames, as bind_matrices gives them for its export).
 pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Mat4>) -> Result<BTreeMap<usize, MorphMesh>> {
@@ -1247,86 +1275,117 @@ pub fn morph_meshes(gltf: &Gltf, model: &Mds, binds: &HashMap<usize, Mat4>) -> R
                 (found.unwrap_or(IDENT), None)
             }
         };
-        // the mesh's vertices by place, in cells of 0.01
-        let cell = |p: &[f64]| -> (i64, i64, i64) {
-            ((p[0] / 0.01).floor() as i64, (p[1] / 0.01).floor() as i64, (p[2] / 0.01).floor() as i64)
-        };
-        let mut cells: HashMap<(i64, i64, i64), Vec<usize>> = HashMap::new();
-        for (v, vertex) in t.vertices.iter().enumerate() {
-            cells.entry(cell(&vertex[..3])).or_default().push(v);
-        }
-        let near = |p: &[f64; 3]| -> Vec<usize> {
-            let (cx, cy, cz) = cell(p);
-            let mut found = Vec::new();
-            for dx in -1..=1 {
-                for dy in -1..=1 {
-                    for dz in -1..=1 {
-                        for &v in cells.get(&(cx + dx, cy + dy, cz + dz)).into_iter().flatten() {
-                            let q = &t.vertices[v];
-                            if (0..3).all(|i| (p[i] - q[i]).abs() <= 5e-3 + 2e-6 * p[i].abs().max(q[i].abs())) {
-                                found.push(v);
-                            }
-                        }
-                    }
-                }
-            }
-            found
-        };
-        let mut vertices: BTreeMap<usize, ([f64; 3], Vec<[f64; 3]>)> = BTreeMap::new();
+        let cells = VertexCells::new(&t.vertices);
+        let mut vertices = BTreeMap::new();
         for primitive in primitives {
-            let attributes = item(primitive, "attributes")?;
-            let Some(positions) = attributes.get("POSITION") else {
-                continue;
-            };
-            let positions = accessor(gltf, positions)?;
-            let mut targets = Vec::with_capacity(count);
-            for k in 0..count {
-                let target = primitive.get("targets").and_then(Value::as_array).and_then(|list| list.get(k));
-                targets.push(match target.and_then(|target| target.get("POSITION")) {
-                    Some(at) => Some(accessor(gltf, at)?),
-                    None => None,
-                });
-            }
-            let skin = match &reskin {
-                Some(_) => match (attributes.get("JOINTS_0"), attributes.get("WEIGHTS_0")) {
-                    (Some(j), Some(w)) => Some((accessor(gltf, j)?, accessor(gltf, w)?)),
-                    _ => None,
-                },
-                None => None,
-            };
-            for j in 0..positions.len() {
-                let point: Vec<f64> = positions.at(j as i64)?.iter().take(3).map(|v| v.f()).collect();
-                if point.len() < 3 {
-                    bail!("a vertex position has fewer than 3 numbers");
-                }
-                let m = match (&reskin, &skin) {
-                    (Some(matrices), Some((joints, weights))) => {
-                        mat_mul(&to_local, &blend(matrices, joints.at(j as i64)?, weights.at(j as i64)?))
-                    }
-                    _ => to_local,
-                };
-                let base = xform_point(&m, &point);
-                let found = near(&base);
-                if found.is_empty() {
-                    continue;
-                }
-                let mut moved = Vec::with_capacity(count);
-                for target in &targets {
-                    let delta: Vec<f64> = match target {
-                        Some(values) => values.at(j as i64)?.iter().take(3).map(|v| v.f()).collect(),
-                        None => vec![0.0; 3],
-                    };
-                    let shifted: Vec<f64> = (0..3).map(|i| point[i] + delta.get(i).copied().unwrap_or(0.0)).collect();
-                    moved.push(xform_point(&m, &shifted));
-                }
-                for v in found {
-                    vertices.entry(v).or_insert_with(|| (base, moved.clone()));
-                }
-            }
+            morph_vertices(gltf, primitive, count, &to_local, reskin.as_deref(), &cells, &mut vertices)?;
         }
         out.insert(frame, MorphMesh { node: gi, names, vertices });
     }
     Ok(out)
+}
+
+/// A frame mesh's vertices by place, in cells of 0.01, to find those a glTF vertex stands for.
+struct VertexCells<'a> {
+    vertices: &'a [[f64; 4]],
+    cells: HashMap<(i64, i64, i64), Vec<usize>>,
+}
+
+impl<'a> VertexCells<'a> {
+    fn cell(p: &[f64]) -> (i64, i64, i64) {
+        ((p[0] / 0.01).floor() as i64, (p[1] / 0.01).floor() as i64, (p[2] / 0.01).floor() as i64)
+    }
+
+    fn new(vertices: &'a [[f64; 4]]) -> Self {
+        let mut cells: HashMap<(i64, i64, i64), Vec<usize>> = HashMap::new();
+        for (v, vertex) in vertices.iter().enumerate() {
+            cells.entry(Self::cell(&vertex[..3])).or_default().push(v);
+        }
+        VertexCells { vertices, cells }
+    }
+
+    /// Every vertex at `p`: within 0.005 and 2e-6 of the value, as same_geometry compares them.
+    fn near(&self, p: &[f64; 3]) -> Vec<usize> {
+        let (cx, cy, cz) = Self::cell(p);
+        let mut found = Vec::new();
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    for &v in self.cells.get(&(cx + dx, cy + dy, cz + dz)).into_iter().flatten() {
+                        let q = &self.vertices[v];
+                        if (0..3).all(|i| (p[i] - q[i]).abs() <= 5e-3 + 2e-6 * p[i].abs().max(q[i].abs())) {
+                            found.push(v);
+                        }
+                    }
+                }
+            }
+        }
+        found
+    }
+}
+
+/// Adds to `vertices` a glTF primitive's vertices as morph_meshes gives them (the first glTF
+/// vertex at a frame-mesh vertex wins): its position and its `count` targets' at weight 1, moved
+/// by `to_local` and, for a skinned mesh, first by its joints' matrices (`reskin`).
+fn morph_vertices(
+    gltf: &Gltf,
+    primitive: &Value,
+    count: usize,
+    to_local: &Mat4,
+    reskin: Option<&[Mat4]>,
+    cells: &VertexCells,
+    vertices: &mut BTreeMap<usize, ([f64; 3], Vec<[f64; 3]>)>,
+) -> Result<()> {
+    let attributes = item(primitive, "attributes")?;
+    let Some(positions) = attributes.get("POSITION") else {
+        return Ok(());
+    };
+    let positions = accessor(gltf, positions)?;
+    let mut targets = Vec::with_capacity(count);
+    for k in 0..count {
+        let target = primitive.get("targets").and_then(Value::as_array).and_then(|list| list.get(k));
+        targets.push(match target.and_then(|target| target.get("POSITION")) {
+            Some(at) => Some(accessor(gltf, at)?),
+            None => None,
+        });
+    }
+    let skin = match reskin {
+        Some(_) => match (attributes.get("JOINTS_0"), attributes.get("WEIGHTS_0")) {
+            (Some(j), Some(w)) => Some((accessor(gltf, j)?, accessor(gltf, w)?)),
+            _ => None,
+        },
+        None => None,
+    };
+    for j in 0..positions.len() {
+        let point: Vec<f64> = positions.at(j as i64)?.iter().take(3).map(|v| v.f()).collect();
+        if point.len() < 3 {
+            bail!("a vertex position has fewer than 3 numbers");
+        }
+        let m = match (reskin, &skin) {
+            (Some(matrices), Some((joints, weights))) => {
+                mat_mul(to_local, &blend(matrices, joints.at(j as i64)?, weights.at(j as i64)?))
+            }
+            _ => *to_local,
+        };
+        let base = xform_point(&m, &point);
+        let found = cells.near(&base);
+        if found.is_empty() {
+            continue;
+        }
+        let mut moved = Vec::with_capacity(count);
+        for target in &targets {
+            let delta: Vec<f64> = match target {
+                Some(values) => values.at(j as i64)?.iter().take(3).map(|v| v.f()).collect(),
+                None => vec![0.0; 3],
+            };
+            let shifted: Vec<f64> = (0..3).map(|i| point[i] + delta.get(i).copied().unwrap_or(0.0)).collect();
+            moved.push(xform_point(&m, &shifted));
+        }
+        for v in found {
+            vertices.entry(v).or_insert_with(|| (base, moved.clone()));
+        }
+    }
+    Ok(())
 }
 
 /// The picture a glTF material shows, as material_from_gltf names it from its base colour image

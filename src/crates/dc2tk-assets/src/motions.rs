@@ -2335,6 +2335,35 @@ mod tests {
         assert!(!close_within(ROTATION, &engine_turn(0, 0.0), &engine_turn(0, 1.0), 1e4));
     }
 
+    /// A glTF's nodes as Blender names them: no extras, a name given again numbered ".001" on.
+    fn blender_names(gltf: &mut Gltf) {
+        let Some(Value::Array(nodes)) = gltf.json.get_mut("nodes") else {
+            return;
+        };
+        let mut seen: HashMap<String, usize> = HashMap::new();
+        for node in nodes {
+            if let Value::Object(items) = node {
+                items.retain(|key, _| key != "extras");
+            }
+            if let Some(name) = node.get("name").and_then(Value::as_str).map(str::to_string) {
+                let count = seen.entry(name.clone()).or_default();
+                if *count > 0 {
+                    node["name"] = Value::String(format!("{name}.{count:03}"));
+                }
+                *count += 1;
+            }
+        }
+    }
+
+    /// A pack with the members a motion build rebuilt (its .mot files and info.cfg) put in.
+    fn with_rebuilt(pack: &[u8], out: &Rebuilt) -> Vec<u8> {
+        let mut built = pack.to_vec();
+        for (member, mot) in &out.mots {
+            built = rebuild::replaced_member(&built, std::slice::from_ref(member), mot).unwrap();
+        }
+        rebuild::replaced_member(&built, &["info.cfg".to_string()], &out.info).unwrap()
+    }
+
     /// Every character pack of an extracted disc (DC2TK_CORPUS) with a motion: its unedited export
     /// changes no motion, one bone of its first motion turned 30 degrees comes back from a fresh
     /// export of the rebuilt pack as given, every other motion as it was, and that motion's
@@ -2376,23 +2405,9 @@ mod tests {
             if let Some(out) = run(&before)? {
                 return Err(fail(format!("unedited, changed {:?} removed {:?}", out.changed, out.removed)));
             }
-            // nor as Blender names it: no extras, a name given again numbered ".001" on
+            // nor as Blender names it
             let mut bare = gltf_of(&files);
-            if let Some(Value::Array(nodes)) = bare.json.get_mut("nodes") {
-                let mut seen: HashMap<String, usize> = HashMap::new();
-                for node in nodes {
-                    if let Value::Object(items) = node {
-                        items.retain(|key, _| key != "extras");
-                    }
-                    if let Some(name) = node.get("name").and_then(Value::as_str).map(str::to_string) {
-                        let count = seen.entry(name.clone()).or_default();
-                        if *count > 0 {
-                            node["name"] = Value::String(format!("{name}.{count:03}"));
-                        }
-                        *count += 1;
-                    }
-                }
-            }
+            blender_names(&mut bare);
             if let Some(out) = run(&bare)? {
                 return Err(fail(format!(
                     "unedited without extras, changed {:?} removed {:?}",
@@ -2418,12 +2433,7 @@ mod tests {
             if out.changed != [name.clone()] || !out.removed.is_empty() {
                 return Err(fail(format!("{name} turned, changed {:?} removed {:?}", out.changed, out.removed)));
             }
-            let mut built = pack.to_vec();
-            for (member, mot) in &out.mots {
-                built = rebuild::replaced_member(&built, std::slice::from_ref(member), mot).unwrap();
-            }
-            built = rebuild::replaced_member(&built, &["info.cfg".to_string()], &out.info).unwrap();
-            let again = gltf_of(&models::export(&built).map_err(|e| fail(e.to_string()))?);
+            let again = gltf_of(&models::export(&with_rebuilt(&pack, &out)).map_err(|e| fail(e.to_string()))?);
             std::panic::catch_unwind(|| assert_motions(&again, &given, &model))
                 .map_err(|e| fail(e.downcast_ref::<String>().cloned().unwrap_or_default()))?;
             let in_place = out.info == info;
@@ -2451,12 +2461,7 @@ mod tests {
             if !out.changed.is_empty() || out.removed.len() != 1 {
                 return Err(fail(format!("{name} deleted, changed {:?} removed {:?}", out.changed, out.removed)));
             }
-            let mut built = pack.to_vec();
-            for (member, mot) in &out.mots {
-                built = rebuild::replaced_member(&built, std::slice::from_ref(member), mot).unwrap();
-            }
-            built = rebuild::replaced_member(&built, &["info.cfg".to_string()], &out.info).unwrap();
-            let again = gltf_of(&models::export(&built).map_err(|e| fail(e.to_string()))?);
+            let again = gltf_of(&models::export(&with_rebuilt(&pack, &out)).map_err(|e| fail(e.to_string()))?);
             if count(&again) + 1 != count(&before) {
                 return Err(fail(format!("{name} deleted, {} animations of {}", count(&again), count(&before))));
             }

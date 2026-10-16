@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{json, Map, Value};
 
+use crate::map_import::TEXTURE_FIELDS;
 use crate::map_scene::{self, SceneNode};
 use crate::mapfile::MapFile;
 use crate::to_gltf::{Options, TextureSearch};
@@ -134,6 +135,15 @@ pub struct Report {
     pub missing_textures: Vec<String>,
 }
 
+/// Moves a glTF material's texture references (TEXTURE_FIELDS) on by `by`.
+fn shift_textures(material: &mut Value, by: usize) {
+    for pointer in TEXTURE_FIELDS {
+        if let Some(index) = material.pointer_mut(pointer) {
+            *index = json!(index.as_u64().unwrap_or(0) as usize + by);
+        }
+    }
+}
+
 /// One model's glTF, merged into the scene: where its nodes, meshes and the rest went.
 struct Merged {
     nodes: Vec<Value>,
@@ -194,24 +204,7 @@ impl Scene {
             }
             self.list("accessors").push(accessor);
         }
-        // images: shared by file name across models
-        let mut image_map = Vec::new();
-        for image in list("images") {
-            let uri = image["uri"].as_str().unwrap_or_default().to_string();
-            let index = match self.images.get(&uri) {
-                Some(&index) => index,
-                None => {
-                    if let Some((_, data)) = files.iter().find(|(path, _)| *path == uri) {
-                        self.files.insert(uri.clone(), data.clone());
-                    }
-                    let index = self.len("images");
-                    self.list("images").push(image.clone());
-                    self.images.insert(uri, index);
-                    index
-                }
-            };
-            image_map.push(index);
-        }
+        let image_map = self.merge_images(list("images"), files);
         for sampler in list("samplers") {
             self.list("samplers").push(sampler);
         }
@@ -225,23 +218,7 @@ impl Scene {
             self.list("textures").push(texture);
         }
         for mut material in list("materials") {
-            let texture_infos = [
-                ("pbrMetallicRoughness", "baseColorTexture"),
-                ("pbrMetallicRoughness", "metallicRoughnessTexture"),
-                ("", "normalTexture"),
-                ("", "occlusionTexture"),
-                ("", "emissiveTexture"),
-            ];
-            for (parent, key) in texture_infos {
-                let info = if parent.is_empty() {
-                    material.get_mut(key)
-                } else {
-                    material.get_mut(parent).and_then(|p| p.get_mut(key))
-                };
-                if let Some(index) = info.and_then(|info| info.get_mut("index")) {
-                    *index = json!(index.as_u64().unwrap_or(0) as usize + texture_base);
-                }
-            }
+            shift_textures(&mut material, texture_base);
             self.list("materials").push(material);
         }
         for mut mesh in list("meshes") {
@@ -272,6 +249,29 @@ impl Scene {
             .map(|nodes| nodes.iter().filter_map(Value::as_u64).map(|node| node as usize).collect())
             .unwrap_or_default();
         Ok(Merged { nodes: list("nodes"), roots, mesh_base })
+    }
+
+    /// Adds a model's images, shared by file name across models (copying a file the scene does
+    /// not have yet); returns the scene's number for each.
+    fn merge_images(&mut self, images: Vec<Value>, files: &[(String, Vec<u8>)]) -> Vec<usize> {
+        let mut image_map = Vec::new();
+        for image in images {
+            let uri = image["uri"].as_str().unwrap_or_default().to_string();
+            let index = match self.images.get(&uri) {
+                Some(&index) => index,
+                None => {
+                    if let Some((_, data)) = files.iter().find(|(path, _)| *path == uri) {
+                        self.files.insert(uri.clone(), data.clone());
+                    }
+                    let index = self.len("images");
+                    self.list("images").push(image);
+                    self.images.insert(uri, index);
+                    index
+                }
+            };
+            image_map.push(index);
+        }
+        image_map
     }
 
     /// Copies a merged model's node tree under the scene, returning the copies of its roots.

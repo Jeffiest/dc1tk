@@ -915,34 +915,47 @@ pub fn write(images: &[Image], like: Option<&[u8]>) -> Result<Vec<u8>> {
         let Some(&at) = out_pos.get(&(e.offset as usize)) else {
             continue;
         };
-        let image = by_index.get(&e.index);
-        if let Some(image) = image {
-            assign(&mut prefix, e.pos, e.pos + 0x20, &name_field(image)?);
-        }
-        if kind == Kind::Im3 {
-            put(&mut prefix, e.pos + 0x24, &(at as i32).to_le_bytes())?;
-            if let Some(image) = image {
-                put(&mut prefix, e.pos + 0x28, &(image.swizzled as i32).to_le_bytes())?;
-                put(&mut prefix, e.pos + 0x2C, &image.block.to_le_bytes())?;
-                let Some(clamp) = image.clamp else {
-                    bail!("{} has no clamp setting, which an IM3 entry needs", image.name);
-                };
-                put(&mut prefix, e.pos + 0x38, &clamp.to_le_bytes())?;
-                let d = delta_of.get(&(e.offset as usize)).copied().unwrap_or(0);
-                if d != 0 {
-                    let size = e.size.unwrap_or(0) as i64 + d;
-                    put(&mut prefix, e.pos + 0x34, &checked_i32(size)?.to_le_bytes())?;
-                }
-            }
-        } else {
-            put(&mut prefix, e.pos + 0x20, &(at as i32).to_le_bytes())?;
-        }
+        let delta = delta_of.get(&(e.offset as usize)).copied().unwrap_or(0);
+        rewrite_entry(&mut prefix, kind, e, at, by_index.get(&e.index).copied(), delta)?;
     }
     let mut out = prefix;
     for o in &offsets {
         out.extend_from_slice(&new_segments[o]);
     }
     Ok(out)
+}
+
+/// Rewrites entry `e`'s fields in the archive's header (`prefix`) for write: its picture's offset
+/// (now `at`) and, when it holds a picture of `image`'s, that picture's name and (IM3) settings,
+/// and its size grown by `delta` when the picture changed length.
+fn rewrite_entry(
+    prefix: &mut Vec<u8>,
+    kind: Kind,
+    e: &Entry,
+    at: usize,
+    image: Option<&Image>,
+    delta: i64,
+) -> Result<()> {
+    if let Some(image) = image {
+        assign(prefix, e.pos, e.pos + 0x20, &name_field(image)?);
+    }
+    if kind != Kind::Im3 {
+        return put(prefix, e.pos + 0x20, &(at as i32).to_le_bytes());
+    }
+    put(prefix, e.pos + 0x24, &(at as i32).to_le_bytes())?;
+    if let Some(image) = image {
+        put(prefix, e.pos + 0x28, &(image.swizzled as i32).to_le_bytes())?;
+        put(prefix, e.pos + 0x2C, &image.block.to_le_bytes())?;
+        let Some(clamp) = image.clamp else {
+            bail!("{} has no clamp setting, which an IM3 entry needs", image.name);
+        };
+        put(prefix, e.pos + 0x38, &clamp.to_le_bytes())?;
+        if delta != 0 {
+            let size = e.size.unwrap_or(0) as i64 + delta;
+            put(prefix, e.pos + 0x34, &checked_i32(size)?.to_le_bytes())?;
+        }
+    }
+    Ok(())
 }
 
 fn checked_i32(value: i64) -> Result<i32> {

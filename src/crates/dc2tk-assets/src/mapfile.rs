@@ -1127,7 +1127,7 @@ fn point(head: &Stmt, stmts: &mut Stmts) -> Result<Point> {
     let (mut name, mut flag, mut data, mut pos) = (None, None, None, None);
     loop {
         let stmt = inside(stmts, "FUNC_DATA_END")?;
-        let value = match stmt.keyword.as_str() {
+        match stmt.keyword.as_str() {
             "FUNC_DATA_END" => {
                 end(&stmt)?;
                 break;
@@ -1135,89 +1135,11 @@ fn point(head: &Stmt, stmts: &mut Stmts) -> Result<Point> {
             "FUNC_NAME" => {
                 stmt.counts(&[1])?;
                 once(&mut name, &stmt, stmt.string(0)?)?;
-                continue;
             }
-            "FUNC_FLAG" => {
-                once(&mut flag, &stmt, stmt.exactly()?)?;
-                continue;
-            }
-            "FUNC_POS" => {
-                once(&mut pos, &stmt, stmt.exactly::<9>()?)?;
-                continue;
-            }
-            "FUNC_INVENT_DATA" => {
-                stmt.counts(&[10])?;
-                PointData::Invent(InventData {
-                    id: stmt.num(0)?,
-                    min: stmt.nums(1)?,
-                    max: stmt.nums(4)?,
-                    int_param: stmt.num(7)?,
-                    float_param: stmt.num(8)?,
-                    angle: stmt.num(9)?,
-                })
-            }
-            "FUNC_EVENT_DATA" => {
-                stmt.counts(&[10])?;
-                PointData::Event(EventData {
-                    kind: stmt.string(0)?,
-                    event_no: stmt.num(1)?,
-                    program: stmt.num(2)?,
-                    args: stmt.nums(3)?,
-                    target: stmt.string(6)?,
-                    action_button: stmt.num(7)?,
-                    use_item: stmt.num(8)?,
-                    flag_100: stmt.num(9)?,
-                })
-            }
-            "FUNC_FIRE_DATA" => {
-                stmt.counts(&[4, 6])?;
-                PointData::Fire(FireData { color: stmt.nums(0)?, draw: stmt.num(3)?, extra: stmt.optional(4)? })
-            }
-            "FUNC_PLIGHT_DATA" => {
-                stmt.counts(&[12])?;
-                PointData::Plight(PlightData {
-                    power: stmt.num(0)?,
-                    color: stmt.nums(1)?,
-                    mode: stmt.num(4)?,
-                    ints: stmt.nums(5)?,
-                    flicker_type: stmt.num(9)?,
-                    flicker_depth: stmt.num(10)?,
-                    flicker_period: stmt.num(11)?,
-                })
-            }
-            "FUNC_EFFECT_NAME" => {
-                stmt.counts(&[1])?;
-                PointData::Effect(stmt.string(0)?)
-            }
-            "FUNC_SOUND_DATA" => {
-                stmt.counts(&[11])?;
-                PointData::Sound(SoundData {
-                    number: stmt.num(0)?,
-                    near: stmt.num(1)?,
-                    far: stmt.num(2)?,
-                    int_param: stmt.num(3)?,
-                    shape: stmt.num(4)?,
-                    start: stmt.nums(5)?,
-                    end: stmt.nums(8)?,
-                })
-            }
-            "FUNC_ANIME_DATA" => {
-                stmt.counts(&[14, 16])?;
-                PointData::Anime(AnimeData {
-                    placement: stmt.string(0)?,
-                    piece: stmt.string(1)?,
-                    frame: stmt.string(2)?,
-                    drives: stmt.num(3)?,
-                    mode: stmt.num(4)?,
-                    start: stmt.nums(5)?,
-                    step: stmt.nums(8)?,
-                    end: stmt.nums(11)?,
-                    flags: stmt.optional(14)?,
-                })
-            }
-            _ => return Err(stmt.error("not expected in FUNC_DATA")),
-        };
-        once(&mut data, &stmt, value)?;
+            "FUNC_FLAG" => once(&mut flag, &stmt, stmt.exactly()?)?,
+            "FUNC_POS" => once(&mut pos, &stmt, stmt.exactly::<9>()?)?,
+            _ => once(&mut data, &stmt, point_data(&stmt)?)?,
+        }
     }
     let block = format!("FUNC_DATA {kind_name:?}");
     let place: [Num; 9] = required(pos, "FUNC_POS", &block)?;
@@ -1230,6 +1152,83 @@ fn point(head: &Stmt, stmts: &mut Stmts) -> Result<Point> {
         scale: [place[6], place[7], place[8]],
         kind,
         enable,
+    })
+}
+
+/// The data a FUNC_DATA block's data statement gives its point.
+fn point_data(stmt: &Stmt) -> Result<PointData> {
+    Ok(match stmt.keyword.as_str() {
+        "FUNC_INVENT_DATA" => {
+            stmt.counts(&[10])?;
+            PointData::Invent(InventData {
+                id: stmt.num(0)?,
+                min: stmt.nums(1)?,
+                max: stmt.nums(4)?,
+                int_param: stmt.num(7)?,
+                float_param: stmt.num(8)?,
+                angle: stmt.num(9)?,
+            })
+        }
+        "FUNC_EVENT_DATA" => {
+            stmt.counts(&[10])?;
+            PointData::Event(EventData {
+                kind: stmt.string(0)?,
+                event_no: stmt.num(1)?,
+                program: stmt.num(2)?,
+                args: stmt.nums(3)?,
+                target: stmt.string(6)?,
+                action_button: stmt.num(7)?,
+                use_item: stmt.num(8)?,
+                flag_100: stmt.num(9)?,
+            })
+        }
+        "FUNC_FIRE_DATA" => {
+            stmt.counts(&[4, 6])?;
+            PointData::Fire(FireData { color: stmt.nums(0)?, draw: stmt.num(3)?, extra: stmt.optional(4)? })
+        }
+        "FUNC_PLIGHT_DATA" => {
+            stmt.counts(&[12])?;
+            PointData::Plight(PlightData {
+                power: stmt.num(0)?,
+                color: stmt.nums(1)?,
+                mode: stmt.num(4)?,
+                ints: stmt.nums(5)?,
+                flicker_type: stmt.num(9)?,
+                flicker_depth: stmt.num(10)?,
+                flicker_period: stmt.num(11)?,
+            })
+        }
+        "FUNC_EFFECT_NAME" => {
+            stmt.counts(&[1])?;
+            PointData::Effect(stmt.string(0)?)
+        }
+        "FUNC_SOUND_DATA" => {
+            stmt.counts(&[11])?;
+            PointData::Sound(SoundData {
+                number: stmt.num(0)?,
+                near: stmt.num(1)?,
+                far: stmt.num(2)?,
+                int_param: stmt.num(3)?,
+                shape: stmt.num(4)?,
+                start: stmt.nums(5)?,
+                end: stmt.nums(8)?,
+            })
+        }
+        "FUNC_ANIME_DATA" => {
+            stmt.counts(&[14, 16])?;
+            PointData::Anime(AnimeData {
+                placement: stmt.string(0)?,
+                piece: stmt.string(1)?,
+                frame: stmt.string(2)?,
+                drives: stmt.num(3)?,
+                mode: stmt.num(4)?,
+                start: stmt.nums(5)?,
+                step: stmt.nums(8)?,
+                end: stmt.nums(11)?,
+                flags: stmt.optional(14)?,
+            })
+        }
+        _ => return Err(stmt.error("not expected in FUNC_DATA")),
     })
 }
 
