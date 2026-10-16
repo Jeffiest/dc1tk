@@ -11,6 +11,7 @@ use std::sync::LazyLock;
 use indexmap::IndexMap;
 use regex::Regex;
 
+use crate::disc::DiscFiles;
 use crate::node::Node;
 use crate::sdk::Context;
 
@@ -283,20 +284,19 @@ fn quoted(text: &str) -> String {
 }
 
 /// The names the disc's tables give items, maps, characters and character packs.
-pub fn disc_names(root: &Path, code: i64) -> IndexMap<String, NameTable> {
+pub fn disc_names(disc: &(impl DiscFiles + ?Sized), code: i64) -> IndexMap<String, NameTable> {
     let mut found: IndexMap<String, NameTable> =
         ["item_id", "map_id", "npc_id", "chara_pack"].iter().map(|kind| (kind.to_string(), NameTable::new())).collect();
-    let read = |path: &Path| fs::read(path).ok().map(|data| expanded(&decoded(&data, code)));
-    if let Some(text) = read(&root.join(format!("menu/cfg7/comdatmes{code}.cfg"))) {
+    if let Some(data) = disc.data_file(&format!("menu/cfg7/comdatmes{code}.cfg")) {
         static MES_SYS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"MES_SYS\s+(\d+)\s*,\s*"([^"]*)""#).unwrap());
+        let text = expanded(&decoded(&data, code));
         for capture in MES_SYS.captures_iter(&text) {
             if let Ok(number) = capture[1].parse::<i64>() {
                 found["item_id"].entry(NameKey::Int(number)).or_insert_with(|| capture[2].to_string());
             }
         }
     }
-    let table = |path: String| fs::read(root.join(path)).ok();
-    if let Some(cfg) = table(crate::startat::map_table_path(Some(code))) {
+    if let Some(cfg) = disc.data_file(&crate::startat::map_table_path(Some(code))) {
         for row in crate::maptable::rows(&cfg).into_iter().filter(|row| !row.code.is_empty()) {
             let name = expanded(&decoded(&row.title, code));
             let names = &mut found["map_id"];
@@ -304,7 +304,7 @@ pub fn disc_names(root: &Path, code: i64) -> IndexMap<String, NameTable> {
             names.entry(NameKey::Text(row.code)).or_insert(name);
         }
     }
-    if let Some(cfg) = table(format!("npc{code}.cfg")) {
+    if let Some(cfg) = disc.data_file(&format!("npc{code}.cfg")) {
         for npc in crate::villagers::npc_info(&cfg) {
             let (name, pack) = (expanded(&decoded(&npc.name, code)), NameKey::Text(npc.pack));
             if let Some(number) = npc.number {
@@ -588,7 +588,7 @@ MAP_NAME \"\",\"\",\"\",0,0;\nMAP_NAME \"m05\",\"Park\",\"\";\n";
         fs::write(root.join("map/map1.cfg"), maps).unwrap();
         let npcs = b"NPC_INFO 1,\"Cedric\",\"p01_03a\",2;\nNPC_INFO 2,\"Donny\",\"p01_04a\",1;\nNPC_INFO 3,\"Donny's twin\",\"p01_04a\",1;\n";
         fs::write(root.join("npc1.cfg"), npcs).unwrap();
-        let found = disc_names(&root, 1);
+        let found = disc_names(root.as_path(), 1);
         let text = |table: &str, key: NameKey| found[table].get(&key).cloned();
         assert_eq!(text("item_id", NameKey::Int(6)), Some("Cheese".into()));
         // a map by its row number (the commented row is no row) and by its code

@@ -1,12 +1,13 @@
 //! xref, maps and map: what starts an event, what enters a map, where a monster is used, and the
 //! catalog of the game's maps.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Result};
 use clap::{Args, ValueEnum};
 
+use dc2tk_disc::DiscSource;
 use dc2tk_script::index::{self, Folded};
 use dc2tk_script::{maps, xref};
 
@@ -35,9 +36,9 @@ pub struct XrefArgs {
     /// For event: only this map's programs and entries.
     #[arg(long)]
     map: Option<String>,
-    /// The extracted disc, for monster models and AI scripts.
-    #[arg(long, default_value = "extracted/disc")]
-    extracted: PathBuf,
+    /// The disc image or extracted disc, for monster models and AI scripts.
+    #[arg(long, alias = "extracted", default_value = "extracted/disc")]
+    disc: PathBuf,
     #[command(flatten)]
     common: Common,
 }
@@ -46,9 +47,9 @@ pub struct XrefArgs {
 pub struct MapsArgs {
     /// A decompiled source tree.
     source: PathBuf,
-    /// The extracted disc, for map names.
-    #[arg(long, default_value = "extracted/disc")]
-    extracted: PathBuf,
+    /// The disc image or extracted disc, for map names.
+    #[arg(long, alias = "extracted", default_value = "extracted/disc")]
+    disc: PathBuf,
     #[command(flatten)]
     common: Common,
 }
@@ -59,11 +60,20 @@ pub struct MapArgs {
     source: PathBuf,
     /// The map's code, as in s17.
     name: String,
-    /// The extracted disc, for names and .map files.
-    #[arg(long, default_value = "extracted/disc")]
-    extracted: PathBuf,
+    /// The disc image or extracted disc, for names and .map files.
+    #[arg(long, alias = "extracted", default_value = "extracted/disc")]
+    disc: PathBuf,
     #[command(flatten)]
     common: Common,
+}
+
+/// The disc names and .map files come from; None, with a note, when there is nothing at path.
+fn disc_at(path: &Path) -> Result<Option<DiscSource>> {
+    if !path.exists() {
+        eprintln!("note: no disc at {}, so no names from it", path.display());
+        return Ok(None);
+    }
+    Ok(Some(DiscSource::open(path)?))
 }
 
 fn print(text: &str) -> Result<ExitCode> {
@@ -77,7 +87,7 @@ pub fn run_xref(args: &XrefArgs) -> Result<ExitCode> {
     if let Kind::Map = args.kind {
         return print(&xref::map_report(&args.source, &consts, &args.what)?);
     }
-    let rows = xref::monster_rows(&args.extracted, &defs);
+    let rows = xref::monster_rows(disc_at(&args.disc)?.as_ref(), &defs);
     if let Kind::Monster = args.kind {
         return print(&xref::monster_report(&args.source, &consts, &rows, &args.what)?);
     }
@@ -90,7 +100,7 @@ pub fn run_xref(args: &XrefArgs) -> Result<ExitCode> {
 pub fn run_maps(args: &MapsArgs) -> Result<ExitCode> {
     let defs = args.common.definitions()?;
     let consts = index::constants(index::tree_headers(&args.source, &defs, &args.common.sdk_dir())?.values());
-    let found = maps::catalog(&args.source, &args.extracted, &defs, &consts)?;
+    let found = maps::catalog(&args.source, disc_at(&args.disc)?.as_ref(), &defs, &consts)?;
     print(&maps::summary(&found))
 }
 
@@ -98,7 +108,8 @@ pub fn run_map(args: &MapArgs) -> Result<ExitCode> {
     let defs = args.common.definitions()?;
     let headers = index::tree_headers(&args.source, &defs, &args.common.sdk_dir())?;
     let consts = index::constants(headers.values());
-    let found = maps::catalog(&args.source, &args.extracted, &defs, &consts)?;
+    let disc = disc_at(&args.disc)?;
+    let found = maps::catalog(&args.source, disc.as_ref(), &defs, &consts)?;
     let programs = index::enum_values(headers.values(), "program");
-    print(&maps::detail(&args.name, &found, &args.source, &args.extracted, &programs)?)
+    print(&maps::detail(&args.name, &found, &args.source, disc.as_ref(), &programs)?)
 }

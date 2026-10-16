@@ -57,12 +57,12 @@ dc2tk natives <ChronicleTwo checkout>
 ```
 
 A command that reads the disc (`setup`, `build`, `assets`, `map-export`, `diff`,
-`mod make`, `mod asset`, `mod migrate`, `mod check --disc`) takes the disc image
-or `extracted/disc` alike. Given the folder, `build` first packs it into the new
-image (as `dc2tk pack` does) and `setup` decompiles it where it is. `extract`
-needs the image, as do `play` and `pack --check`; `verify`, a whole-disc
-`decompile`, `defs check`, `defs todo`, `defs disc` and the `--extracted` of
-`xref`, `maps` and `map` need the extracted folder.
+`mod make`, `mod asset`, `mod migrate`, `mod check --disc`, and the `--disc` of
+`xref`, `maps` and `map`) takes the disc image or `extracted/disc` alike. Given
+the folder, `build` first packs it into the new image (as `dc2tk pack` does) and
+`setup` decompiles it where it is. `extract` needs the image, as do `play` and
+`pack --check`; `verify`, a whole-disc `decompile`, `defs check`, `defs todo`
+and `defs disc` need the extracted folder.
 
 The tests run with `cargo test --release` in the repository folder. The tests that read the
 game's own files are marked ignored; with `DC2TK_CORPUS` set to the absolute path of an
@@ -115,7 +115,9 @@ Options of single commands:
 - `diff` and `mod make` read the extracted folder from `--extracted DIR`
   (default `extracted`, the folder holding `disc/`, `scripts/` and
   `assets/`); `xref`, `maps` and `map` read map names, monster models and
-  `.map` files from `--extracted DIR` (default `extracted/disc`).
+  `.map` files from `--disc` (default `extracted/disc`, or the image; the old
+  name `--extracted` still works). Without a disc there they say so and go on
+  without the names.
 - `flags SOURCE` prints a summary; `--used` lists every used flag with its
   name and users, `--flag N` every use of one. `--counters` (and
   `--counter N`) does the same for the save counters.

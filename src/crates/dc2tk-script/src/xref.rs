@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use dc2tk_disc::DiscSource;
 use indexmap::IndexMap;
 
 use crate::definitions::Definitions;
@@ -158,11 +159,10 @@ pub fn map_entries(tree: &Path, consts: &IndexMap<String, i64>) -> Result<Vec<En
     Ok(entries)
 }
 
-/// The executable's monster table, read from the extracted disc (empty without it).
-pub fn monster_rows(extracted: &Path, defs: &Definitions) -> Rows {
+/// The executable's monster table, read from the disc (empty without one).
+pub fn monster_rows(disc: Option<&DiscSource>, defs: &Definitions) -> Rows {
     let layout = defs.executable.get("monster_table").filter(|layout| layout.is_set());
-    let elf = if extracted.is_dir() { disc::executable(extracted, defs) } else { None };
-    match (elf, layout) {
+    match (disc.and_then(|disc| disc::executable(disc, defs)), layout) {
         (Some(elf), Some(layout)) => disc::monster_table(&elf, layout),
         _ => Rows::new(),
     }

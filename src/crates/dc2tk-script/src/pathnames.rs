@@ -57,9 +57,7 @@ pub fn lookups(root: &Path, defs: &Definitions) -> Lookups {
         }
     }
     let layout = defs.executable.get("monster_table").filter(|layout| layout.is_set());
-    let elf =
-        defs.executable.get("name").and_then(|name| name.as_str()).and_then(|name| std::fs::read(root.join(name)).ok());
-    let rows = match (elf, layout) {
+    let rows = match (disc::executable(root, defs), layout) {
         (Some(elf), Some(layout)) => disc::monster_table(&elf, layout),
         _ => IndexMap::new(),
     };

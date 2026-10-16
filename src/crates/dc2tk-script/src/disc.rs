@@ -2,12 +2,14 @@
 //! executable's monster table, items and characters from the language's tables), as enums the
 //! decompiled source uses. Generated, never committed, since the names are the game's own text.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
 use dc2tk_assets::elf;
+use dc2tk_disc::DiscSource;
 use indexmap::IndexMap;
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
@@ -26,6 +28,36 @@ fn text_at(record: &[u8], span: (usize, usize)) -> String {
     let field = &record[span.0..span.1];
     let end = field.iter().position(|&b| b == 0).unwrap_or(field.len());
     dc2tk_disc::text::decode_lossy(&field[..end])
+}
+
+/// A disc the names are read from: an extracted disc's folder (or a folder laid out like one, as
+/// decompile reads), or a disc image or extracted disc opened as a `DiscSource`.
+pub trait DiscFiles {
+    /// A DATA.DAT file by its path; None when the disc lacks it or it does not read.
+    fn data_file(&self, path: &str) -> Option<Vec<u8>>;
+    /// A file of the disc's own directory tree (the executable), which extract writes at the
+    /// folder's top; None when the disc lacks it.
+    fn root_file(&self, name: &str) -> Option<Vec<u8>>;
+}
+
+impl DiscFiles for Path {
+    fn data_file(&self, path: &str) -> Option<Vec<u8>> {
+        fs::read(self.join(path)).ok()
+    }
+
+    fn root_file(&self, name: &str) -> Option<Vec<u8>> {
+        fs::read(self.join(name)).ok()
+    }
+}
+
+impl DiscFiles for DiscSource {
+    fn data_file(&self, path: &str) -> Option<Vec<u8>> {
+        self.read(path).ok().map(Cow::into_owned)
+    }
+
+    fn root_file(&self, name: &str) -> Option<Vec<u8>> {
+        self.disc_file(name).ok().map(Cow::into_owned)
+    }
 }
 
 pub struct MonsterRow {
@@ -61,10 +93,9 @@ pub fn monster_table(elf: &[u8], layout: &Node) -> IndexMap<i64, MonsterRow> {
     rows
 }
 
-/// The game executable named by the definitions, read from the extracted disc.
-pub fn executable(root: &Path, defs: &Definitions) -> Option<Vec<u8>> {
-    let name = defs.executable.get("name").and_then(Node::as_str)?;
-    fs::read(root.join(name)).ok()
+/// The game executable named by the definitions, read from the disc.
+pub fn executable(disc: &(impl DiscFiles + ?Sized), defs: &Definitions) -> Option<Vec<u8>> {
+    disc.root_file(defs.executable.get("name").and_then(Node::as_str)?)
 }
 
 /// The language's number for disc files (0 Japanese, 1 English, ...), from the definitions.
@@ -79,7 +110,7 @@ pub fn monster_note(row: &MonsterRow) -> String {
 }
 
 /// The name tables: the language's (items, maps, characters, packs) and the monster kinds.
-pub fn tables(root: &Path, defs: &Definitions) -> IndexMap<String, NameTable> {
+pub fn tables(root: &(impl DiscFiles + ?Sized), defs: &Definitions) -> IndexMap<String, NameTable> {
     let mut found = match language_code(defs) {
         Some(code) => messages::disc_names(root, code),
         None => IndexMap::new(),

@@ -5,17 +5,18 @@
 //! also say what starts each program, which the decompiler notes on PROGRAM lines.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use dc2tk_assets::mapfile::{self, MapFile, Num, Placement, PointData};
-use dc2tk_disc::files;
+use dc2tk_disc::{files, DiscSource};
 use indexmap::IndexMap;
 
 use crate::definitions::Definitions;
+use crate::disc::DiscFiles;
 use crate::index::{self, Folded, Outline};
 use crate::messages::NameKey;
 use crate::xref::{self, Entry, Users};
-use crate::{additions, disc, messages, pathnames, Result};
+use crate::{additions, disc, mapedit, messages, pathnames, Result};
 
 pub const TOWN_CALLS: [&str; 4] = ["jump_to_map", "go_to_interior", "go_to_outside", "enter_interior"];
 pub const MOD_PROGRAMS: std::ops::Range<i128> = 9000..10000;
@@ -215,12 +216,12 @@ pub fn folder_triggers(extracted: &Path) -> Result<BTreeMap<String, IndexMap<i64
     Ok(found)
 }
 
-/// The maps' names in the definitions' language, by code (s17), from the extracted disc.
-pub fn map_names(extracted: &Path, defs: &Definitions) -> IndexMap<String, String> {
+/// The maps' names in the definitions' language, by code (s17), from the disc.
+pub fn map_names(disc: &(impl DiscFiles + ?Sized), defs: &Definitions) -> IndexMap<String, String> {
     let Some(code) = disc::language_code(defs) else {
         return IndexMap::new();
     };
-    let mut found = messages::disc_names(extracted, code);
+    let mut found = messages::disc_names(disc, code);
     let names = found.swap_remove("map_id").unwrap_or_default();
     names
         .into_iter()
@@ -231,56 +232,29 @@ pub fn map_names(extracted: &Path, defs: &Definitions) -> IndexMap<String, Strin
         .collect()
 }
 
-/// Path(root).rglob("*.map") on Windows, in its order: the matches in each folder in the order the
-/// folder lists them, the folders taken from a stack.
-fn map_paths(root: &Path) -> Vec<PathBuf> {
-    fn listed(folder: &Path) -> Vec<std::fs::DirEntry> {
-        std::fs::read_dir(folder).map(|entries| entries.filter_map(|entry| entry.ok()).collect()).unwrap_or_default()
-    }
-    fn matching(folder: &Path, found: &mut Vec<PathBuf>) {
-        for entry in listed(folder) {
-            if entry.file_name().to_string_lossy().to_lowercase().ends_with(".map") {
-                found.push(entry.path());
-            }
+/// The trigger points of a map's .map file, which the engine finds by the map's code
+/// (`mapedit::map_files`), after a heading that names the file.
+fn disc_points(disc: Option<&DiscSource>, code: &str, lines: &mut Vec<String>) -> Vec<Point> {
+    let found = disc.map(|disc| (disc, mapedit::map_files(disc.paths(), code)));
+    let path = match &found {
+        Some((_, Ok(files))) => Some(files.map.as_str()),
+        _ => None,
+    };
+    let file_name = path.map(|path| path.rsplit('/').next().unwrap_or(path));
+    lines.extend([String::new(), format!("trigger points ({}):", file_name.unwrap_or("no .map file found"))]);
+    let (disc, files) = match found {
+        None => return Vec::new(),
+        Some((_, Err(error))) => {
+            lines.push(format!("  ({error})"));
+            return Vec::new();
         }
-    }
-    let mut found = Vec::new();
-    if !root.is_dir() {
-        return found;
-    }
-    matching(root, &mut found);
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(folder) = stack.pop() {
-        for entry in listed(&folder) {
-            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-                let path = entry.path();
-                matching(&path, &mut found);
-                stack.push(path);
-            }
-        }
-    }
-    found
-}
-
-/// Each .map file under the extracted disc by its name without the extension (the last found of
-/// a name wins).
-pub fn map_files(extracted: &Path) -> HashMap<String, PathBuf> {
-    let mut found = HashMap::new();
-    for path in map_paths(extracted) {
-        if path.is_file() {
-            found.insert(path_stem(&path), path);
-        }
-    }
-    found
-}
-
-/// Path.stem.
-fn path_stem(path: &Path) -> String {
-    let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-    match name.rfind('.') {
-        Some(at) if at > 0 && at < name.len() - 1 => name[..at].to_string(),
-        _ => name,
-    }
+        Some((disc, Ok(files))) => (disc, files),
+    };
+    let read = || -> Result<Vec<Point>> { Ok(map_points(&mapfile::parse(&disc.read(&files.map)?)?)) };
+    read().unwrap_or_else(|error| {
+        lines.push(format!("  (the .map file could not be read: {error})"));
+        Vec::new()
+    })
 }
 
 /// The programs the scripts define: {number: the names it is written as}.
@@ -317,9 +291,14 @@ pub struct Catalog {
     pub users: Users,
 }
 
-/// Everything the catalog says about each map.
-pub fn catalog(tree: &Path, extracted: &Path, defs: &Definitions, consts: &IndexMap<String, i64>) -> Result<Catalog> {
-    let names = map_names(extracted, defs);
+/// Everything the catalog says about each map; the disc, when there is one, names them.
+pub fn catalog(
+    tree: &Path,
+    disc: Option<&DiscSource>,
+    defs: &Definitions,
+    consts: &IndexMap<String, i64>,
+) -> Result<Catalog> {
+    let names = disc.map(|disc| map_names(disc, defs)).unwrap_or_default();
     let outline = index::outlines(tree)?;
     let mut plain = Vec::new();
     for path in outline.keys().filter(|path| !index::is_library(path)) {
@@ -386,7 +365,14 @@ pub fn summary(found: &Catalog) -> String {
     lines.join("\n")
 }
 
-pub fn detail(code: &str, found: &Catalog, tree: &Path, extracted: &Path, programs: &BTreeSet<i64>) -> Result<String> {
+/// One map in full; the disc, when there is one, gives its .map file's trigger points.
+pub fn detail(
+    code: &str,
+    found: &Catalog,
+    tree: &Path,
+    disc: Option<&DiscSource>,
+    programs: &BTreeSet<i64>,
+) -> Result<String> {
     let Some(entry) = found.maps.get(code) else {
         return Ok(format!("no map {code}"));
     };
@@ -416,18 +402,7 @@ pub fn detail(code: &str, found: &Catalog, tree: &Path, extracted: &Path, progra
         .map(|number| number.to_string())
         .collect();
     lines.push(format!("  free for a mod: {} ...", free.join(", ")));
-    let path = map_files(extracted).remove(code);
-    let file_name = path.as_ref().and_then(|path| path.file_name()).map(|name| name.to_string_lossy().into_owned());
-    lines
-        .extend([String::new(), format!("trigger points ({}):", file_name.as_deref().unwrap_or("no .map file found"))]);
-    let points = match path.as_deref().map(trigger_points) {
-        Some(Ok(points)) => points,
-        Some(Err(error)) => {
-            lines.push(format!("  (the .map file could not be read: {error})"));
-            Vec::new()
-        }
-        None => Vec::new(),
-    };
+    let points = disc_points(disc, code, &mut lines);
     for point in &points {
         let place = match &point.position {
             Some(position) if !position.is_empty() => {
@@ -605,13 +580,30 @@ FUNC_POINT_END;
                 ("map/d/d01/d01_1.c", warp),
             ],
         );
-        let no_disc = root.parent().unwrap().join("no-disc");
         let consts = IndexMap::from([("map_start".to_string(), 100), ("player_dead".to_string(), 1200)]);
-        let found = catalog(&root, &no_disc, &Definitions::empty(), &consts).unwrap();
+        let found = catalog(&root, None, &Definitions::empty(), &consts).unwrap();
         assert!(found.maps["s98"].kinds == ["dungeon-style"] && found.maps["s98"].playable);
         assert!(found.maps["s97"].kinds == ["town"] && !found.maps["s97"].playable);
-        let text = detail("s98", &found, &root, &no_disc, &BTreeSet::from([9002])).unwrap();
+        let text = detail("s98", &found, &root, None, &BTreeSet::from([9002])).unwrap();
         assert!(text.contains("free for a mod: 9001, 9003") && text.contains("starts program 9000"));
+        assert!(text.contains("trigger points (no .map file found):"), "{text}");
+    }
+
+    #[test]
+    fn a_disc_image_gives_a_maps_trigger_points() {
+        use dc2tk_disc::samples;
+        let warp = "void warp(void)\n{\n    load_dungeon_map(\"s99\");\n}\n";
+        let root = tree("maps-image", &[("map/s/s99/s99_1.c", "PROGRAM(520, step);\n"), ("map/d/d01/d01_1.c", warp)]);
+        let (index, dat) = samples::archive_files(&[("\\map\\s\\s99\\s99.map", MAP_FILE.as_bytes())]);
+        let image = root.parent().unwrap().join("disc.iso");
+        std::fs::write(&image, samples::iso_image(&[("DATA.HD4", &index), ("DATA.DAT", &dat)])).unwrap();
+        let disc = DiscSource::open(&image).unwrap();
+        let found = catalog(&root, Some(&disc), &Definitions::empty(), &IndexMap::new()).unwrap();
+        let text = detail("s99", &found, &root, Some(&disc), &BTreeSet::new()).unwrap();
+        assert!(text.contains("trigger points (s99.map):"), "{text}");
+        assert!(text.contains("starts program 520"), "{text}");
+        let text = detail("s99", &found, &root, None, &BTreeSet::new()).unwrap();
+        assert!(text.contains("trigger points (no .map file found):"), "{text}");
     }
 
     #[test]
