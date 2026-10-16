@@ -4,32 +4,30 @@ This guide shows how to display a new caption every five seconds during an activ
 
 This pattern combines four engine rules explained in [How scripts run](../../internals/running.md):
 
-1. [A map event that never executes `wait;` completes within a single frame without freezing the player](../../internals/running.md#an-event-that-never-waits-costs-nothing).
-2. [Message window `0` remains visible on screen in dungeon mode after the event ends](../../internals/running.md#message-window-0-stays-on-screen).
-3. [Monster AI scripts run every frame during combat and can trigger map programs with `run_event_script`](../../internals/running.md#monsters-can-start-map-events).
+1. [A map event that never executes `wait;` finishes in one frame without freezing the player](../../internals/running.md#an-event-that-never-waits-costs-nothing).
+2. [Message window `0` stays on screen in dungeon mode after the event returns](../../internals/running.md#message-window-0-stays-on-screen).
+3. [Monster AI scripts run every frame during combat and can start map programs with `run_event_script`](../../internals/running.md#monsters-can-start-map-events).
 4. [Map and monster scripts share save flags and the floor timer](../../internals/running.md#shared-state).
 
-For background on mod patches, `#pragma every_frame`, and `NEW_FLAG`, see [mods.md](../../guide/mods.md).
-
-> **Tip**
-> **Ready-to-use `modkit` helpers**
-> `sdk/modkit/` provides built-in functions for this exact pattern: `modkit_caption` and `modkit_text_show` in `"modkit/text.c"` for the map script, and `modkit_tick` in `"modkit/tick.c"` for the monster script (see [modkit](../language.md#modkit-helper-libraries)). The example below writes out the underlying native calls directly to show how the mechanism works.
+> **Tip: `modkit` helpers**
+> `sdk/modkit/` includes ready-made helpers for this pattern: `modkit_caption` in `"modkit/text.c"` for the map script and `modkit_tick` in `"modkit/tick.c"` for the monster script (see [`modkit`](../language.md#modkit)). The example below calls the underlying natives directly to show how each step works.
 
 ## 1. Declare shared IDs in a header
 
-Create a shared header file (`captions.h`) in your mod directory so both the map patch and the monster patch use the same allocated flag and program numbers:
+Create `mods/captions/captions.h` so the map patch and monster patch share the same allocated flag and program numbers:
 
 ```c
-// captions.h
-NEW_FLAG(CAPTIONS_ON);          // Active while the battle is running
-NEW_PROGRAM(SHOW_NEXT_CAPTION); // Map program triggered by the monster timer
+// mods/captions/captions.h
+NEW_FLAG(CAPTIONS_ON);          // Set while the battle is active
+NEW_PROGRAM(SHOW_NEXT_CAPTION); // Map program started by the monster timer
 ```
 
 ## 2. Write the map patch
 
-Create the map patch targeting `s51` (`#pragma target map s51` applies the patch to all five language files of `s51`):
+Create `mods/captions/s51.c` targeting map `s51`:
 
 ```c
+// mods/captions/s51.c
 #pragma target map s51
 #include <event.h>
 #include "captions.h"
@@ -38,7 +36,7 @@ int caption;
 
 PROGRAM(SHOW_NEXT_CAPTION, show_next_caption);
 
-// Displays the next caption in message window 0 and returns immediately without waiting.
+// Updates message window 0 and returns without executing wait;.
 void show_next_caption(void)
 {
     caption = caption + 1;
@@ -61,9 +59,8 @@ void show_next_caption(void)
     }
 }
 
-// Enables the caption timer and shows the first caption as soon as the battle starts.
 #pragma override
-void start_castle_battle(void)
+void start_monica_gear_battle(void)
 {
     original();
     set_flag(CAPTIONS_ON, 1);
@@ -71,32 +68,32 @@ void start_castle_battle(void)
     caption = 0;
     show_next_caption();
 }
-```
 
-Also `#pragma override` the battle-end function and the `player_dead` handler to clear `CAPTIONS_ON` (`set_flag(CAPTIONS_ON, 0);`) and close window `0` (`close_message(0);`).
+#pragma override
+void start_georama_with_starter_items(void)
+{
+    set_flag(CAPTIONS_ON, 0);
+    close_message(0);
+    original();
+}
+```
 
 ## 3. Write the monster patch
 
-Because map event scripts do not run in the background during active combat, the monsters in the battle act as the timer. Create a monster patch with `#pragma every_frame` so `tick_captions` runs once per frame regardless of which `wait;` loop the monster AI is currently in:
+Because map scripts do not run in the background during active combat, the monsters in the fight drive the timer. Create `mods/captions/soldier.c` targeting `MONSTER_GRIFFON_SOLDIER_523` (`523`) with `#pragma every_frame` so `tick_captions` runs once per frame before every `wait;`:
 
 ```c
-#pragma target monster golem
+// mods/captions/soldier.c
+#pragma target monster 523
 #include <monster.h>
 #include "captions.h"
 
-// When CAPTIONS_ON is set, triggers SHOW_NEXT_CAPTION every 125 frames (5 seconds at 25 FPS).
-// Because the floor timer is shared across all monsters on the floor, only the first monster
-// to observe timer >= 125 resets the timer and starts the map event.
+// Triggers SHOW_NEXT_CAPTION every 125 frames (5 seconds at 25 FPS on PAL).
 #pragma every_frame
 void tick_captions(void)
 {
-    int fight;
-    int timer;
-
-    fight = get_dungeon_flag(CAPTIONS_ON);
-    if (fight) {
-        timer = get_floor_timer();
-        if (timer >= 125) {
+    if (get_dungeon_flag(CAPTIONS_ON)) {
+        if (get_floor_timer() >= 125) {
             reset_floor_timer();
             run_event_script(SHOW_NEXT_CAPTION);
         }
@@ -104,4 +101,23 @@ void tick_captions(void)
 }
 ```
 
-Checking `get_dungeon_flag(CAPTIONS_ON)` ensures that Golems on other floors do not trigger `SHOW_NEXT_CAPTION`.
+Because `get_floor_timer()` is shared across all monsters on the floor, only the first monster to observe `get_floor_timer() >= 125` resets the timer and starts `SHOW_NEXT_CAPTION`.
+
+## 4. Add `mod.json` and test in-game
+
+Create `mods/captions/mod.json` with `"start_at": "s51:story_50"`:
+
+```json
+{
+  "title": "Battle Captions",
+  "version": "1.0.0",
+  "start_at": "s51:story_50"
+}
+```
+
+Validate and build:
+
+```sh
+dc2tk mod check extracted/scripts captions
+dc2tk build extracted/scripts dc2.iso -o test.iso --mod captions --play
+```

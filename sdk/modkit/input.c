@@ -1,6 +1,6 @@
-// modkit input: buttons and waiting, for event (map) scripts. Include with
-// #include "modkit/input.c". Button masks are the PAD_ constants of <event.h>; frames are 50 a
-// second on a PAL console.
+// modkit input: button polling and waiting helpers for event (map) scripts.
+// Include with `#include "modkit/input.c"`. Button masks use the `PAD_`
+// constants from `<event.h>`.
 
 #include <event.h>
 
@@ -12,14 +12,13 @@ void modkit_wait(int frames)
     }
 }
 
-// Returns the buttons of mask pressed this frame, 0 when none.
+// Returns the buttons in `mask` pressed this frame, or 0 if none were pressed.
 int modkit_pressed(int mask)
 {
     return get_pad_pressed() & mask;
 }
 
-// Waits until a button of mask is pressed and returns the buttons pressed. A button already held
-// down when this starts has to be pressed again.
+// Waits until a button in `mask` is newly pressed and returns the pressed button mask.
 int modkit_wait_for_button(int mask)
 {
     int pressed;

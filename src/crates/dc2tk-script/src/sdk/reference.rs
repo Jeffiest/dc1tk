@@ -451,8 +451,8 @@ impl TablePage {
         };
         let _ = writeln!(
             out,
-            "The declarations are in `sdk/{table}.h`{helpers}; [the SDK](../sdk.md) explains how they are \
-             written, and [the API](README.md) lists the other headers. {GENERATED}\n"
+            "Declared in `sdk/{table}.h`{helpers}. See [C Language, SDK, and Patches](../language.md) for SDK syntax \
+             and [API Reference](README.md) for all headers. {GENERATED}\n"
         );
         let sections = [
             ("Natives", self.natives().len()),
@@ -502,8 +502,7 @@ impl TablePage {
             return;
         }
         out.push_str(
-            "## Helpers\n\nA helper stands for the native calls in its body: the compiler expands it in place, and \
-             the decompiler folds every run it matches.\n\n| Helper | What it does |\n| --- | --- |\n",
+            "## Helpers\n\nInline helper functions that wrap common sequences of native calls.\n\n| Helper | What it does |\n| --- | --- |\n",
         );
         for item in &functions {
             if let ItemKind::Function { name, .. } = &item.kind {
@@ -529,8 +528,8 @@ impl TablePage {
             return;
         }
         out.push_str(
-            "## Programs\n\nThe program numbers the engine starts (`enum program`): a script lists the ones it \
-             answers with `PROGRAM(name, function);`.\n\n| Program | Number | When it runs |\n| --- | --- | --- |\n",
+            "## Programs\n\nProgram entry-point numbers started by the engine (`enum program`). Register an entry \
+             point in a script with `PROGRAM(name, function);`.\n\n| Program | Number | When it runs |\n| --- | --- | --- |\n",
         );
         for member in programs {
             let _ = writeln!(out, "| `{}` | {} | {} |", member.name, member.value, cell(&member.doc));
@@ -596,8 +595,7 @@ impl TablePage {
             return;
         }
         out.push_str(
-            "## Value kinds\n\nWhat a parameter's value means. A kind reads as its type; the decompiler uses it \
-             to name or comment the values (see [the SDK](../language.md#value-kinds)).\n\n| Kind | Type | What it \
+            "## Value kinds\n\nTypedef aliases that indicate what a parameter value represents (see [Value kinds](../language.md#value-kinds)).\n\n| Kind | Type | What it \
              is |\n| --- | --- | --- |\n",
         );
         for item in kinds {
@@ -617,12 +615,11 @@ fn kind_name(kind: &ItemKind) -> Option<String> {
 }
 
 fn index_page(rows: &[Row], functions: usize) -> String {
-    let mut out = String::from("# The API\n\n");
+    let mut out = String::from("# API Reference\n\n");
     out.push_str(
-        "Every native, helper, program, constant and value kind the SDK declares, a page a header, and the \
-         functions of the modkit libraries. A script includes the header of its kind of script, which declares the \
-         natives the engine gives that kind; [the SDK](../language.md) explains how the headers are written, and \
-         [the overview](../README.md) what each kind of script does. ",
+        "This section lists all built-in engine natives, inline helpers, `PROGRAM` entry points, constants, and \
+         `modkit` functions declared in the `dc2tk` SDK. Each script includes the header for its script category \
+         (see [How Scripts Work](../README.md) and [C Language, SDK, and Patches](../language.md)). ",
     );
     let _ = writeln!(out, "{GENERATED}\n");
     out.push_str(
@@ -637,8 +634,7 @@ fn index_page(rows: &[Row], functions: usize) -> String {
     }
     let _ = writeln!(
         out,
-        "\n[modkit](modkit.md): libraries for mods, which any script includes with a quoted include ({functions} \
-         functions)."
+        "\n- **[`modkit`](modkit.md)**: Helper libraries for mods (`#include \"modkit/....c\"`, {functions} functions)."
     );
     out
 }
@@ -646,9 +642,8 @@ fn index_page(rows: &[Row], functions: usize) -> String {
 fn modkit_page(libraries: &[(String, Header)]) -> String {
     let mut out = String::from("# modkit\n\n");
     out.push_str(
-        "`sdk/modkit/` holds libraries for mods, written for this project rather than taken from the game. A script \
-         includes one with a quoted include (`#include \"modkit/text.c\"`), which is looked for in the script's \
-         folders and then in `sdk/`. ",
+        "`sdk/modkit/` contains helper libraries for mods. Include a library with a quoted `#include` \
+         (for example, `#include \"modkit/text.c\"`). ",
     );
     let _ = writeln!(out, "{GENERATED}\n");
     for (name, _) in libraries {

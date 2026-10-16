@@ -1,51 +1,161 @@
 # Add a new enemy to a fight
 
-The engine's monster table has a fixed number of rows, and `dc2tk build` only compiles `.stb` script files that exist on the disc. While a mod cannot append a brand-new monster kind ID, you can place any existing monster kind into a fight or repurpose an event-only monster kind. For background on how scripted fights work, see [Story fights and boss arenas](../systems.md#story-fights-and-boss-arenas). For other guides, see [Scripting tutorials](README.md).
+This guide shows how to spawn extra or replacement monsters in a scripted battle using a `#pragma target map` patch and `mod.json`. For background on how scripted battles work, see [Story fights and boss arenas](../systems.md#story-fights-and-boss-arenas).
 
 ## Approaches for adding or replacing enemies
 
-| Goal | Implementation method |
+| Goal | Method |
 | --- | --- |
-| Spawn a different existing monster in a scripted fight | Load and place the existing monster kind ID in the fight's map script. |
-| Create a custom enemy with unique AI behavior | Use an event-only monster kind (ID `500` or above, which has its own `b*` AI script) and modify its AI script and `data:monsters` stats so standard enemies elsewhere remain unchanged. |
-| Spawn extra enemies on a random dungeon floor | Call `load_monster_data(kind, 0)` and `place_monster(kind, ...)` inside the dungeon's `floor_start` handler after the standard floor spawn calls. |
+| Add an extra monster to a fight | Call `load_monster_data(kind, 0)` and `place_monster(kind, x, y, z, rx, ry, rz)` after `original()`. |
+| Replace the monsters in a scripted fight | Override `start_castle_battle` / `start_monica_gear_battle` (or wrap `load_monster_data` and `place_monster` with `#pragma override <native>`). |
+| Create a custom enemy with unique AI | Repurpose an event-only monster kind (ID `500`+, which has its own `b*` AI script) and edit its AI script and `data:monsters` entry. |
 
-## Procedure: Replace the castle prologue soldiers with Golems
+## 1. Inspect the original battle setup (Before)
 
-1. **Locate all functions that set up the fight**: Run `dc2tk xref` on monster kind `523` (the prologue Griffon Soldier):
+Run `dc2tk xref` on monster kind `523` (`MONSTER_GRIFFON_SOLDIER_523`, the castle prologue soldier):
 
-   ```bash
-   dc2tk xref extracted/scripts monster 523
-   ```
+```sh
+dc2tk xref extracted/scripts monster 523
+```
 
-   The output shows that monster `523` is spawned in two functions:
-   - `start_castle_battle` (program `500` in `map/s/s51_raybrandt_castle/s51_1.c` through `_5.c`, reached from dungeon `d01`).
-   - `start_monica_gear_battle` (program `story_50` in `lib/map/s/s51_raybrandt_castle/monica_gear_battle.c`).
+Map `s51` (`extracted/scripts/map/s/s51_raybrandt_castle/s51_1.c` and its included library `lib/map/s/s51_raybrandt_castle/monica_gear_battle.c`) spawns four Griffon Soldiers in `start_castle_battle` (program `500`) and `start_monica_gear_battle` (program `story_50`):
 
-   Copy the five `s51` scripts and the `monica_gear_battle.c` library into a new mod so you can update both entry paths.
-2. **Load and spawn the new monster kind**: Replace the `load_monster_data` and `place_monster` calls with `MONSTER_GOLEM`. Passing `1` as the second argument to `load_monster_data` clears previously loaded monster data:
+```c
+// extracted/scripts/map/s/s51_raybrandt_castle/s51_1.c
+PROGRAM(500, start_castle_battle);
+PROGRAM(510, start_georama_with_starter_items);
+PROGRAM(player_dead, trigger_silent_game_over);
+PROGRAM(debug_test, on_debug_test);
+PROGRAM(story_50, start_monica_gear_battle);
+MAIN(do_nothing);
 
-   ```c
-   load_monster_data(MONSTER_GOLEM, 1);
-   place_monster(MONSTER_GOLEM, -382.5, -0.2, 120.2, 0.0, 1.61, 0.0);   // Position (x, y, z) and rotation (rx, ry, rz)
-   place_monster(MONSTER_GOLEM, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
-   ...
-   ```
+// extracted/scripts/lib/map/s/s51_raybrandt_castle/monica_gear_battle.c
+void start_monica_gear_battle(void)
+{
+    add_item(ITEM_ROYAL_SWORD);
+    add_item(ITEM_PRINCESS_ORB);
+    add_item(ITEM_PRINCESS_BOOTS);
+    add_item(ITEM_PRINCESS_DRESS);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_ROYAL_SWORD);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_ORB);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_BOOTS);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_DRESS);
+    change_player_chara(USER_CHARA_MONICA);
+    play_event_50();
+    set_dungeon_pause(DNG_PAUSE_BATTLE_MUSIC, 1);
+    load_monster_data(MONSTER_GRIFFON_SOLDIER_523, 1);
+    place_monster(MONSTER_GRIFFON_SOLDIER_523, -382.5, -0.2, 120.2, 0.0, 1.61, 0.0);
+    place_monster(MONSTER_GRIFFON_SOLDIER_523, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
+    place_monster(MONSTER_GRIFFON_SOLDIER_523, -452.5, -0.2, 287.0, 0.0, 1.98, 0.0);
+    place_monster(MONSTER_GRIFFON_SOLDIER_523, -324.2, -0.2, 260.5, 0.0, 2.34, 0.0);
+    wait;
+    fade_in(20);
+    finish_event();
+}
+```
 
-   To spawn multiple monster kinds in the same fight, pass `1` to the first `load_monster_data` call and `0` to subsequent `load_monster_data` calls. Note that `place_monster` works only on maps loaded in dungeon mode.
-3. **Configure the battle completion trigger**: In the original fight, the Griffon Soldier's AI (`b254a_griffon_soldier.c`) increments a kill counter on death and calls `run_event_script(510)` when the fourth soldier dies. Because `e33a_golem.c` does not call `run_event_script(510)`, the battle would never end after defeating the Golems.
+## 2. Write the `#pragma override` patch (After)
 
-   To fix this, register a `monsters_cleared` (`1500`) program in the `s51` map scripts so the engine automatically starts the post-fight function when all monsters on the floor are defeated:
+Generate a patch for map `s51`:
 
-   ```c
-   PROGRAM(monsters_cleared, start_georama_with_starter_items);   // Add alongside PROGRAM(510, ...)
-   ```
+```sh
+dc2tk mod override extracted/scripts castle --map s51 start_monica_gear_battle
+```
 
-   Alternatively, you can edit `e33a_golem.c` to count deaths and call `run_event_script(510)` when a fight-specific save flag is set.
-4. **Build and test the fight directly**: Use `--start-at s51:story_50` to jump directly into `start_monica_gear_battle` (which also equips Monica's starting weapons):
+### Option A: Spawn an extra monster alongside the existing enemies
 
-   ```bash
-   dc2tk build extracted/scripts dc2.iso -o test.iso --mod castle --start-at s51:story_50 --play
-   ```
+Pass `0` as the second argument to `load_monster_data` so the engine keeps the already-loaded Griffon Soldiers in memory, then call `place_monster` with the new monster's position `(x, y, z)` and rotation `(rx, ry, rz)`:
 
-To customize the AI of the Golems in this fight without changing Golems on random dungeon floors, combine this guide with [Change enemy behavior](enemy-behaviour.md): set a save flag when starting the castle fight and check `get_dungeon_flag` inside `e33a_golem.c`.
+```c
+// mods/castle/s51.c
+#pragma target map s51
+#include <event.h>
+#include <pal.h>
+#include <disc.h>
+
+#pragma override
+void start_monica_gear_battle(void)
+{
+    add_item(ITEM_ROYAL_SWORD);
+    add_item(ITEM_PRINCESS_ORB);
+    add_item(ITEM_PRINCESS_BOOTS);
+    add_item(ITEM_PRINCESS_DRESS);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_ROYAL_SWORD);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_ORB);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_BOOTS);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_DRESS);
+    change_player_chara(USER_CHARA_MONICA);
+    play_event_50();
+    set_dungeon_pause(DNG_PAUSE_BATTLE_MUSIC, 1);
+    load_monster_data(MONSTER_GRIFFON_SOLDIER_523, 1);
+    place_monster(MONSTER_GRIFFON_SOLDIER_523, -382.5, -0.2, 120.2, 0.0, 1.61, 0.0);
+    place_monster(MONSTER_GRIFFON_SOLDIER_523, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
+    place_monster(MONSTER_GRIFFON_SOLDIER_523, -452.5, -0.2, 287.0, 0.0, 1.98, 0.0);
+    place_monster(MONSTER_GRIFFON_SOLDIER_523, -324.2, -0.2, 260.5, 0.0, 2.34, 0.0);
+    load_monster_data(MONSTER_SEWER_RAT, 0);
+    place_monster(MONSTER_SEWER_RAT, -360.0, -0.2, 180.0, 0.0, 1.61, 0.0);
+    wait;
+    fade_in(20);
+    finish_event();
+}
+```
+
+### Option B: Replace all soldiers with Golems and wire the victory trigger
+
+In the retail fight, `b254a_griffon_soldier.c` counts deaths in shared monster variable `127` and calls `run_event_script(510)` when the fourth soldier dies. Because `e33a_golem.c` does not call `run_event_script(510)`, register `PROGRAM(monsters_cleared, start_georama_with_starter_items);` (`1500`) in the patch so the engine runs the post-fight event automatically when all monsters on the floor die:
+
+```c
+// mods/castle/s51.c
+#pragma target map s51
+#include <event.h>
+#include <pal.h>
+#include <disc.h>
+
+// Run program 510's handler automatically when the last monster on the floor dies.
+PROGRAM(monsters_cleared, start_georama_with_starter_items);
+
+#pragma override
+void start_monica_gear_battle(void)
+{
+    add_item(ITEM_ROYAL_SWORD);
+    add_item(ITEM_PRINCESS_ORB);
+    add_item(ITEM_PRINCESS_BOOTS);
+    add_item(ITEM_PRINCESS_DRESS);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_ROYAL_SWORD);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_ORB);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_BOOTS);
+    equip_chara_item(USER_CHARA_MONICA, ITEM_PRINCESS_DRESS);
+    change_player_chara(USER_CHARA_MONICA);
+    play_event_50();
+    set_dungeon_pause(DNG_PAUSE_BATTLE_MUSIC, 1);
+    load_monster_data(MONSTER_GOLEM, 1);
+    place_monster(MONSTER_GOLEM, -382.5, -0.2, 120.2, 0.0, 1.61, 0.0);
+    place_monster(MONSTER_GOLEM, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
+    place_monster(MONSTER_GOLEM, -452.5, -0.2, 287.0, 0.0, 1.98, 0.0);
+    place_monster(MONSTER_GOLEM, -324.2, -0.2, 260.5, 0.0, 2.34, 0.0);
+    wait;
+    fade_in(20);
+    finish_event();
+}
+```
+
+> **Tip:** You can also swap a monster across every function in `s51` (`start_castle_battle` and `start_monica_gear_battle`) at once by overriding the `load_monster_data` and `place_monster` natives with `#pragma override load_monster_data` and `#pragma override place_monster` (see [Creating Mods](../../guide/mods.md#patches)).
+
+## 3. Add `mod.json` and test in-game
+
+Create `mods/castle/mod.json` with `"start_at": "s51:story_50"` to jump directly into `start_monica_gear_battle` when selecting **New Game**:
+
+```json
+{
+  "title": "Castle Battle",
+  "version": "1.0.0",
+  "start_at": "s51:story_50"
+}
+```
+
+Validate and build:
+
+```sh
+dc2tk mod check extracted/scripts castle
+dc2tk build extracted/scripts dc2.iso -o test.iso --mod castle --play
+```

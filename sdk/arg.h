@@ -1,17 +1,8 @@
 // dc2tk SDK. Natives for event argument files loaded with load_arg.
 //
-// Natives are engine functions, declared extern with their number in
-// NATIVE(...). A native with one result returns it (count = get_counter(3););
-// natives with several results take pointers (get_actor_pos(0, &x, &y, &z);).
-// Natives push nothing on the VM stack: a native in an expression is called
-// first, into a hidden local, and the expression reads that.
-// OPTIONAL(...) lists arguments a call may leave out. Natives never wait; scripts
-// wait with `wait;`, which yields one frame (25 a second on PAL). While the player
-// skips a cutscene the engine does not run natives until the script reaches
-// `skip_end;`.
-//
-// NATIVE(B, N) means the game's scripts call the native as B + N. A call can
-// pick another form with an AT(B) or DIRECT prefix.
+// Natives are built-in engine functions declared with NATIVE(...). Argument
+// files run once when `load_arg` loads them and build the scene's integer and
+// float argument lists.
 
 #ifndef DC2TK_ARG_H
 #define DC2TK_ARG_H

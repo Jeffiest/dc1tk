@@ -1,17 +1,10 @@
 // dc2tk SDK. Natives for effect scripts (dungeon/eff_script, dungeon/articles, dungeon/sphida).
 //
-// Natives are engine functions, declared extern with their number in
-// NATIVE(...). A native with one result returns it (count = get_counter(3););
-// natives with several results take pointers (get_actor_pos(0, &x, &y, &z);).
-// Natives push nothing on the VM stack: a native in an expression is called
-// first, into a hidden local, and the expression reads that.
-// OPTIONAL(...) lists arguments a call may leave out. Natives never wait; scripts
-// wait with `wait;`, which yields one frame (25 a second on PAL). While the player
-// skips a cutscene the engine does not run natives until the script reaches
-// `skip_end;`.
-//
-// NATIVE(B, N) means the game's scripts call the native as B + N. A call can
-// pick another form with an AT(B) or DIRECT prefix.
+// Natives are built-in engine functions declared with NATIVE(...). A native
+// with one result returns a value. A native with multiple results writes to
+// pointer arguments. `OPTIONAL(...)` marks arguments that a call can omit.
+// Natives return immediately and do not yield frames; use `wait;` to pause a
+// script for one frame (25 FPS on PAL).
 
 #ifndef DC2TK_EFFECT_H
 #define DC2TK_EFFECT_H

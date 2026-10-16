@@ -23,6 +23,9 @@ hooks:
 
 theme:
   name: material
+  custom_dir: docs/.theme
+  icon:
+    logo: material/build-circle
   features:
     - navigation.tabs
     - navigation.sections
