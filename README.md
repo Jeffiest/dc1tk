@@ -68,8 +68,10 @@ dc2tk setup dc2.iso
 
 This takes a minute or two. Everything taken from the disc goes under
 `extracted/`: the disc's files in `extracted/disc/`, every script as C in
-`extracted/scripts/`, and the textures, models and sounds in
-`extracted/assets/`. The scripts are one file per script, with code that
+`extracted/scripts/`, the textures, models, sounds, music and text in
+`extracted/assets/`, every map as a glTF scene for Blender in
+`extracted/maps/`, and every game data table (items, shops, monsters and
+the rest) as JSON in `extracted/data/`. The scripts are one file per script, with code that
 several scripts share in `lib/`. Folders and files keep the game's own
 codes, with a readable name added: `map/s/s51_raybrandt_castle/` is
 Raybrandt Castle, `dungeon/monster/e33a_golem.c` is the Golem's AI. Open

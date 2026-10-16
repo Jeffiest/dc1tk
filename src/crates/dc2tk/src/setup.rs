@@ -1,5 +1,6 @@
 //! dc2tk setup DISC: extract the retail disc (or reuse an extraction, or take one given instead of
-//! the image), decompile every script and write the asset tree, all under extracted/;
+//! the image), decompile every script, write the asset tree, every map as a glTF scene and every
+//! data table as JSON, all under extracted/;
 //! and dc2tk natives CHRONICLETWO: the native tables from a ChronicleTwo checkout.
 
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use dc2tk_disc::{extract, DiscSource, Image};
-use dc2tk_script::{decompiler, natives};
+use dc2tk_script::{datatables, decompiler, natives};
 
 use crate::files;
 use crate::options::Common;
@@ -31,6 +32,20 @@ pub struct SetupArgs {
     /// Leave the asset tree out.
     #[arg(long)]
     no_assets: bool,
+    /// Where to write every map as a glTF scene, a folder each (a map's folder replaced when
+    /// already there).
+    #[arg(long, default_value = crate::map_cmd::MAPS)]
+    maps: PathBuf,
+    /// Leave the maps out.
+    #[arg(long)]
+    no_maps: bool,
+    /// Where to write every data table as JSON, the files `mod asset data:...` copies into a mod
+    /// (replaced when already there).
+    #[arg(long, default_value = "extracted/data")]
+    data: PathBuf,
+    /// Leave the data tables out.
+    #[arg(long)]
+    no_data: bool,
     /// Overwrite files edited since the last decompile.
     #[arg(long)]
     force: bool,
@@ -49,10 +64,22 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
     };
     let common = &args.common;
     decompile_tree(extracted, Some(&args.output), args.force, common)?;
+    let mut code = ExitCode::SUCCESS;
     if !args.no_assets {
-        return crate::asset_tree::run_assets(&args.disc, &args.assets, true, &common.def_sets());
+        code = crate::asset_tree::run_assets(&args.disc, &args.assets, true, &common.def_sets())?;
     }
-    Ok(ExitCode::SUCCESS)
+    if !args.no_maps || !args.no_data {
+        let disc = DiscSource::open(extracted)?;
+        if !args.no_maps {
+            let maps = crate::map_cmd::export_all(&disc, &args.maps)?;
+            println!("{} maps written to {} as glTF scenes", maps.len(), files::shown_path(&args.maps));
+        }
+        if !args.no_data {
+            let tables = datatables::export_all(&disc, &args.data)?;
+            println!("{tables} data tables written to {} as JSON", files::shown_path(&args.data));
+        }
+    }
+    Ok(code)
 }
 
 /// The disc image extracted into `extracted`, or the extraction already there brought up to date
@@ -190,6 +217,10 @@ mod tests {
             extracted: extracted.clone(),
             assets: folder.join("assets"),
             no_assets: true,
+            maps: folder.join("maps"),
+            no_maps: true,
+            data: folder.join("data"),
+            no_data: true,
             force: false,
             common: no_definitions(),
         };
@@ -214,6 +245,10 @@ mod tests {
             extracted: folder.join("unused"),
             assets: folder.join("assets"),
             no_assets: true,
+            maps: folder.join("maps"),
+            no_maps: true,
+            data: folder.join("data"),
+            no_data: true,
             force: false,
             common: no_definitions(),
         };

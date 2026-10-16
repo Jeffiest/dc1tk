@@ -11,7 +11,7 @@ layout (`disc.json`, `disc-structure.bin`), so `dc2tk pack` writes the image bac
 from it byte for byte.
 
 ```
-dc2tk setup dc2.iso                                 extract the disc, decompile it all, write the assets
+dc2tk setup dc2.iso                                 extract everything: disc, scripts, assets, maps, data
 dc2tk extract dc2.iso extracted/disc                write every file on the disc, and its layout
 dc2tk pack -o copy.iso --check dc2.iso              write the image back from extracted/disc
 dc2tk decompile <script.stb | extracted dir> [-o out]
@@ -96,8 +96,12 @@ Options of single commands:
   extracts an image into `--extracted DIR` (default `extracted/disc`; an
   extraction already there is reused) and writes the asset tree into
   `--assets DIR` (default `extracted/assets`, replaced when there;
-  `--no-assets` leaves it out). `--force` overwrites files edited since the
-  last decompile.
+  `--no-assets` leaves it out), every map as `map-export --all` writes them
+  into `--maps DIR` (default `extracted/maps`, each map's folder replaced;
+  `--no-maps`), and every data table as the JSON `mod asset data:...` copies
+  into a mod into `--data DIR` (default `extracted/data`, `TABLE.json`
+  each; `--no-data`). Edits belong in mods, not in these folders. `--force`
+  overwrites files edited since the last decompile.
 - `pack [EXTRACTED] -o IMAGE` packs `extracted/disc` when no folder is given;
   `--check IMAGE` compares the image written with another byte for byte, and
   fails naming the first byte (and sector) that differs.
@@ -206,8 +210,9 @@ stack; every retail script is within it.
 
 ## Modding workflow
 
-1. `dc2tk setup dc2.iso` extracts the disc and decompiles every script into
-   `extracted/scripts/`.
+1. `dc2tk setup dc2.iso` extracts the disc, decompiles every script into
+   `extracted/scripts/`, and writes the assets, the maps and the data tables
+   beside it (`extracted/assets/`, `maps/`, `data/`).
 2. Edit scripts in `extracted/scripts/`, and shared code in
    `extracted/scripts/lib/` (an edit to a library changes every script that
    includes it; `fork` gives some scripts their own copy). The [modding guide](modding.md) covers how scripts run

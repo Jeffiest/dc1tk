@@ -153,10 +153,12 @@ their causes; any error exits with 1.
    editors, and the tree's records (`tree`, `pathnames`).
 3. **The asset tree.** `tree::build` writes every texture, model, sound,
    text and music asset once into `extracted/assets/`, with its manifest
-   (`dc2tk assets`, `setup`). Maps are not in it: `dc2tk map-export`
-   writes one as a glTF scene (or every map, `--all`, into
-   `extracted/maps/`), and `mod asset ... data:items` a data table into a
-   mod.
+   (`dc2tk assets`, `setup`). Maps and data tables are beside it, not in
+   it: `map_cmd::export_all` writes every map as a glTF scene into
+   `extracted/maps/` (`setup`, or `dc2tk map-export --all`; one map,
+   `map-export NAME`), and `datatables::export_all` every data table as
+   JSON into `extracted/data/` (`setup`; `mod asset ... data:items` copies
+   one into a mod).
 4. **Mods** are folders over the tree: patches, whole files, and
    `mod.json`'s lines by asset id, path, map and table.
 5. **Build** (`dc2tk/src/modding/build.rs`, each step a library call):

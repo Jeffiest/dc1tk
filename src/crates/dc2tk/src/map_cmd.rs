@@ -14,6 +14,9 @@ use dc2tk_disc::DiscSource;
 use dc2tk_script::mapedit::{self, members};
 use dc2tk_script::paths;
 
+/// Where map-export and setup write the maps, a folder each.
+pub const MAPS: &str = "extracted/maps";
+
 #[derive(Args)]
 pub struct MapExportArgs {
     /// The map's name (s17), or --all for every map with placements.
@@ -82,34 +85,43 @@ fn export_one(disc: &DiscSource, name: &str, out: &Path) -> Result<String> {
     Ok(line)
 }
 
+/// Exports every map that places its templates into `root`/NAME, each folder replaced; returns
+/// each map's report line.
+pub fn export_all(disc: &DiscSource, root: &Path) -> Result<Vec<String>> {
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    for path in disc.paths() {
+        let lower = path.to_lowercase();
+        if lower.starts_with("map/") && lower.ends_with(".map") {
+            names.insert(lower.rsplit('/').next().unwrap_or(&lower).trim_end_matches(".map").to_string());
+        }
+    }
+    let mut lines = Vec::new();
+    for name in &names {
+        let files = mapedit::map_files(disc.paths(), name)?;
+        let map = mapfile::parse(&disc.read(&files.map)?).with_context(|| files.map.clone())?;
+        if map.placements.is_empty() {
+            continue;
+        }
+        lines.push(export_one(disc, name, &root.join(name))?);
+    }
+    Ok(lines)
+}
+
 pub fn run_map_export(args: &MapExportArgs) -> Result<ExitCode> {
     let disc = DiscSource::open(&args.disc)?;
     if args.all {
-        let root = args.output.clone().unwrap_or_else(|| PathBuf::from("extracted/maps"));
-        let mut names: BTreeSet<String> = BTreeSet::new();
-        for path in disc.paths() {
-            let lower = path.to_lowercase();
-            if lower.starts_with("map/") && lower.ends_with(".map") {
-                names.insert(lower.rsplit('/').next().unwrap_or(&lower).trim_end_matches(".map").to_string());
-            }
+        let root = args.output.clone().unwrap_or_else(|| PathBuf::from(MAPS));
+        let lines = export_all(&disc, &root)?;
+        for line in &lines {
+            println!("{line}");
         }
-        let mut done = 0;
-        for name in &names {
-            let files = mapedit::map_files(disc.paths(), name)?;
-            let map = mapfile::parse(&disc.read(&files.map)?).with_context(|| files.map.clone())?;
-            if map.placements.is_empty() {
-                continue;
-            }
-            println!("{}", export_one(&disc, name, &root.join(name))?);
-            done += 1;
-        }
-        println!("{done} maps exported to {}", root.display());
+        println!("{} maps exported to {}", lines.len(), root.display());
         return Ok(ExitCode::SUCCESS);
     }
     let Some(name) = &args.name else {
         bail!("name a map (dc2tk map-export s17), or --all");
     };
-    let out = args.output.clone().unwrap_or_else(|| PathBuf::from("extracted/maps").join(name));
+    let out = args.output.clone().unwrap_or_else(|| PathBuf::from(MAPS).join(name));
     println!("{}", export_one(&disc, name, &out)?);
     Ok(ExitCode::SUCCESS)
 }

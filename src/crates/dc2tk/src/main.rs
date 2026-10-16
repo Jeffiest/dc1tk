@@ -41,7 +41,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Extract the retail disc and decompile every script with the definitions.
+    /// Extract the retail disc, decompile every script with the definitions, and write the asset
+    /// tree, every map as a glTF scene and every data table as JSON.
     Setup(setup::SetupArgs),
     /// Generate native function tables from a ChronicleTwo checkout.
     Natives(setup::NativesArgs),

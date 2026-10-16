@@ -258,9 +258,24 @@ impl Table {
 
 /// The table as the JSON text `mod asset` writes.
 pub fn export(iso_path: &Path, table: &str) -> Result<String> {
-    let disc = DiscSource::open(iso_path)?;
+    export_from(&DiscSource::open(iso_path)?, table)
+}
+
+/// The table of an opened disc as the JSON text `mod asset` writes.
+pub fn export_from(disc: &DiscSource, table: &str) -> Result<String> {
     let loaded = load(table, &disc.disc_file(elf::EXECUTABLE)?, &|path| Ok(disc.read(path)?.into_owned()))?;
     Ok(json::json_text(&loaded.to_json()))
+}
+
+/// Writes every data table of the disc into `folder` as `<table>.json` (what `setup` writes into
+/// extracted/data, the same JSON `mod asset` copies into a mod); returns how many.
+pub fn export_all(disc: &DiscSource, folder: &Path) -> Result<usize> {
+    files::create_dir_all(folder)?;
+    for table in replace::DATA_TABLES {
+        let text = export_from(disc, table).with_context(|| format!("data:{table}"))?;
+        files::write(folder.join(format!("{table}.json")), text)?;
+    }
+    Ok(replace::DATA_TABLES.len())
 }
 
 /// Writes each data: key's table into the mod (data/<table>.json) and adds its line to mod.json;
