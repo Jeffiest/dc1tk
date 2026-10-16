@@ -1,8 +1,8 @@
 # Memory budgets: the code
 
 Where the memory check `build` runs is implemented, and how its figures for the disc are kept
-true. The budgets themselves are in [memory budgets](../../../docs/game/memory.md); what `build`
-reports is in [staying within memory](../../../docs/modding/memory.md).
+true. The budgets themselves are in [memory budgets](../../../docs/internals/memory.md); what `build`
+reports is in [staying within memory](../../../docs/guide/memory.md).
 
 ## Modules
 
@@ -27,4 +27,4 @@ re-measure them there when the estimate or the map list changes.
 Not built into the check: the monster and event banks' combinations with each sound set
 (measured by following the scripts), the EE tables of event and monster banks, the Ridepod's and
 the monster form's stacks, the shared pool's free space, and the menu and dungeon message files
-(see [staying within memory](../../../docs/modding/memory.md#what-build-checks)).
+(see [staying within memory](../../../docs/guide/memory.md#what-build-checks)).

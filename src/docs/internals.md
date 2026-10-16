@@ -37,7 +37,7 @@ description.
   and its members under `X.d/`. `manifest.json` (`extract::Manifest`, not to
   be confused with the asset tree's) lists them and is written last, so it
   marks a finished extraction. A file is unpacked only when it matches every
-  rule of a pack ([the disc](../../docs/game/disc.md#pack-files): each entry's
+  rule of a pack ([the disc](../../docs/internals/disc.md#pack-files): each entry's
   data at 0x50, `next` rounded up to 16, an empty last entry): a looser check
   unpacked 587 scripts by mistake, because a script's header and program
   table can read as one pack entry named `SB2`. `layout` keeps the disc's other files and
@@ -107,7 +107,7 @@ description.
 
 - The program tree, `.stb` and its assembly, the native tables, the test
   VM: `node` (`Node`), `stb` (the opcodes, addressing modes and comparisons
-  of [the script format](../../docs/game/scripts.md), defined once as
+  of [the script format](../../docs/internals/scripts.md), defined once as
   `stb::Op`, `stb::Mode` and `stb::Compare` for every part of the tools),
   `asm`, `fingerprint`, `natives` (the tables in `src/natives/*.json`, and
   `table_for`, which picks a script's table by its path), `stack` (stack
@@ -119,7 +119,7 @@ description.
   VM's scalars), `lower` and `composite` (standard C lowered to what the VM
   has), `sdk/` (`headers` loads the SDK, `resolve` compiles through it,
   `present` decompiles through it, `reference` writes the API pages of
-  `docs/coding/api/` for `dc2tk api-docs`), `compile`, `source` (the C
+  `docs/scripting/api/` for `dc2tk api-docs`), `compile`, `source` (the C
   writer).
 - Decompiling a disc: `decompile`, `decompiler`, `definitions`, `names`,
   `library`, `messages`, `notes`, `disc` (`disc.h`), `assets` (the asset
@@ -147,7 +147,7 @@ bodies index the stack in loops and branches. The decompiler does not need
 it, because the bytecode already shows `&x` (`LOAD_ADDR`) and each
 constant's type. `monster.json` and `action.json` also hold `old_groups`,
 `old_table_groups` and `old_direct` ([older native
-numberings](../../docs/game/scripts.md#older-native-numberings)), which were
+numberings](../../docs/internals/scripts.md#older-native-numberings)), which were
 worked out from the scripts rather than the decomp. The command cannot
 regenerate them, so it keeps what the table file it replaces holds of them.
 
@@ -341,7 +341,7 @@ table chosen (`#pragma natives`, else by the script's path), and
 then helpers expanded and natives and constants resolved), writes it as
 assembly (`compile::to_asm`) and assembles it. The forms the decompiler
 writes pass through the lowering unchanged, so retail scripts keep their
-bytes; only new code takes the other paths ([the C standard](../../docs/coding/c-standard.md)).
+bytes; only new code takes the other paths ([the C standard](../../docs/scripting/c-standard.md)).
 
 String blocks hold the function's strings in push order, padded to 16 bytes
 with whatever the compiler's string buffer held there from earlier blocks
@@ -423,7 +423,7 @@ checks (`memory/`, `READ_BUFFER`, the measured `RETAIL_*` maps) are in
 - The C89 suite: a program in `tests/c89/` for each feature of the
   language, compiled in strict mode and run in the test VM, its second line
   saying what it shows (`// expect:`, `// rejects:`, `// differs:`,
-  `// planned:`, `// limit:`); [the C standard](../../docs/coding/c-standard.md) lists them.
+  `// planned:`, `// limit:`); [the C standard](../../docs/scripting/c-standard.md) lists them.
 - `tests/nesting.rs`: the whole compile at `parse::NESTING`, on a thread
   with a 1 MB stack. `dc2tk-assets`' `malformed.rs`: a small file of each
   binary format cut at every length and with bytes changed at every place,

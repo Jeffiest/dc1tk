@@ -1,8 +1,8 @@
 # Game data tables: the code
 
 Which modules read and write the game's data tables, the choices they make, how they are tested
-and what is not done yet. The tables' layouts are in [game data](../../../docs/game/data.md);
-how a mod edits them is in [editing game data](../../../docs/modding/data.md).
+and what is not done yet. The tables' layouts are in [game data](../../../docs/internals/data.md);
+how a mod edits them is in [editing game data](../../../docs/guide/data.md).
 
 ## Modules
 
@@ -28,7 +28,7 @@ In `dc2tk-assets`:
 | `data:georama` (with rivers and water) | `georama_data.rs` |
 | `data:medals`, `data:floors` | `dungeon_data.rs` |
 | `data:fishing` | `fishing_data.rs` |
-| `data:layouts`, `data:parts` | `dungeon_layout.rs` ([dungeons](../../../docs/game/dungeons.md)) |
+| `data:layouts`, `data:parts` | `dungeon_layout.rs` ([dungeons](../../../docs/internals/dungeons.md)) |
 | `data:chests` | `chest_data.rs` |
 | `data:requests`, `data:townspeople` | `town_data.rs` |
 
@@ -58,7 +58,7 @@ the spaces, line breaks and comments around every argument) and written back byt
 edit replaces only the arguments it changes, and a new statement or copied record takes the
 file's own line break (`Script::newline`: `\r\n` in every cfg script of the disc, and for a file
 of one line). It reads each argument as the engine's `GetArg` does
-([game data](../../../docs/game/data.md#how-the-engine-reads-a-cfg-script)). A character's or
+([game data](../../../docs/internals/data.md#how-the-engine-reads-a-cfg-script)). A character's or
 pack's `info.cfg` is read by the same rules (`info_cfg.rs`, through `cfg_text::number`; a float
 keeps its text's own value there, not the f32 the engine makes of it). Binary scripts (`BIN`
 first) and comments inside a statement are refused: the engine blanks a comment even inside

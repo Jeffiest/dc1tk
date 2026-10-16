@@ -1,8 +1,8 @@
 # Textures: the code
 
 How dc2tk reads and writes the game's texture archives. The format itself is
-[the texture format](../../../docs/game/textures.md) (section numbers below are that page's), and
-how mods use it is [editing textures](../../../docs/modding/textures.md).
+[the texture format](../../../docs/internals/textures.md) (section numbers below are that page's), and
+how mods use it is [editing textures](../../../docs/guide/textures.md).
 
 `im3.rs` (in `src/crates/dc2tk-assets/src/`) implements the format, with `png.rs` (the PNG
 codec) and `quantise.rs` (the palettes of PNGs of more colours), and `textures.rs` turns it into
@@ -72,7 +72,7 @@ median-cut palette is `quantise.rs` (`quantise(rgba, n)`).
 ## `textures.rs`: the PNG folders mods use
 
 How the folders are named and what they accept is in
-[editing textures](../../../docs/modding/textures.md); these are the functions behind it.
+[editing textures](../../../docs/guide/textures.md); these are the functions behind it.
 
 * `export(data)` gives a PNG per picture with pixels, named after the picture.
 * `build(folder, original)` / `build_from(pngs, original)` put the PNGs a
@@ -85,7 +85,7 @@ How the folders are named and what they accept is in
   picture in the format of a template picture (`template_picture`: an
   entry, or the first with pixels). `with_new_pictures(pngs, original)` adds pictures at the end of an
   existing file in the format of its first picture with pixels, keeping its
-  `#texanime` scripts (a map's new pictures, [editing maps](../../../docs/modding/maps.md)).
+  `#texanime` scripts (a map's new pictures, [editing maps](../../../docs/guide/maps.md)).
   `MAX_SIDE` is 1024.
 * `same_pixels(a, b)` compares two PNGs by size and RGBA, however they are
   encoded (what a map's import uses to tell an edited picture).
@@ -99,7 +99,7 @@ Across all 5,217 `.img` files (15,228 pictures, 15,000 with pixels):
 | `write(&read(data)?, Some(data)) == data` | **5,217 / 5,217** files |
 | indexed/true-colour PNG export → `from_png(png, &like)` → write == data | **5,217 / 5,217** files (15,000 / 15,000 pictures identical; 228 `no_image` have no pixels to export) |
 | paletted pictures exported as plain RGBA PNG → colour-matched back → write == data | **5,217 / 5,217** files |
-| TIM2 header regenerated from the picture (rules of [§4](../../../docs/game/textures.md#4-tim2-picture)) == original | 15,000 / 15,000 |
+| TIM2 header regenerated from the picture (rules of [§4](../../../docs/internals/textures.md#4-tim2-picture)) == original | 15,000 / 15,000 |
 | functional, 40 files: fresh archive reads back; RGBA edit (invert) → quantise → write → read; half-size resize keeps other pictures | 40/40, 40/40 (max error ≤ 8), 40/40 |
 
 The whole check takes about 100 s on 16 processes.

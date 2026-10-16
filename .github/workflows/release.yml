@@ -86,7 +86,7 @@ jobs:
           fi
           # the packed exe finds its data: api-docs reads the SDK from the folder dc2tk is in
           "$folder/dc2tk" api-docs --out "$RUNNER_TEMP/api" > /dev/null
-          cmp "$RUNNER_TEMP/api/event.md" docs/coding/api/event.md
+          cmp "$RUNNER_TEMP/api/event.md" docs/scripting/api/event.md
 
       - uses: actions/upload-artifact@v4
         with:

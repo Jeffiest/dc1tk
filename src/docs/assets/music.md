@@ -1,7 +1,7 @@
 # Music: the code
 
-The code behind [music in a mod](../../../docs/modding/music.md); the format it reads is in
-[music and ambient loops](../../../docs/game/music.md).
+The code behind [music in a mod](../../../docs/guide/music.md); the format it reads is in
+[music and ambient loops](../../../docs/internals/music.md).
 
 ## Modules
 
@@ -41,7 +41,7 @@ The corpus checks are `dc2tk-assets`' tests `corpus_sequences_round_trip` (`sequ
 | Check | Result |
 |---|---|
 | `.sq` read -> write byte-exact | 447 / 447 (527,181 events) |
-| export to MIDI -> build back byte-exact, programs named are in the bank | 447 / 447; the 4 sequences that name programs their banks lack ([programs](../../../docs/game/music.md#programs)) |
+| export to MIDI -> build back byte-exact, programs named are in the bank | 447 / 447; the 4 sequences that name programs their banks lack ([programs](../../../docs/internals/music.md#programs)) |
 | a bank's SoundFont: chunks add up, every zone's sample and loop in range | 175 banks with sequences (146,708,074 bytes) |
 | asset tree: music ids at every place, tree and index agree, MIDI builds back | `BG_193` alone and in a pack, `SR_138`'s 8 |
 | a new music bank made like each disc bank, of its own tune: one entry, the same sequence, no more samples | 73 / 73 |
@@ -62,10 +62,10 @@ given but for the track's name. Not yet heard in the game.
 ## Open problems
 
 The engine's own unknowns (the driver, the voices) are in
-[music and ambient loops](../../../docs/game/music.md#what-is-not-known).
+[music and ambient loops](../../../docs/internals/music.md#what-is-not-known).
 
 1. **New instruments** come from WAVs
-   ([new instruments](../../../docs/modding/music.md#new-instruments)), one sample a key range; velocity layers, an envelope other than a bank program's, and
+   ([new instruments](../../../docs/guide/music.md#new-instruments)), one sample a key range; velocity layers, an envelope other than a bank program's, and
    importing a SoundFont's instruments are not done. Whether the IOP's synthesizer reads the new
    programs as the disc's is from the format, not yet heard in the game (`text-music-test.iso`).
 2. **The SoundFont is approximate** (above); nothing was compared with the game's output.

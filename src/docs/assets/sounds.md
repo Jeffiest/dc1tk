@@ -1,8 +1,8 @@
 # Sound banks: the code
 
 How dc2tk reads, changes and writes the game's sound banks. The format is
-[the sound bank format](../../../docs/game/sounds.md) (section numbers below are that page's), and
-how mods use it is [editing sounds](../../../docs/modding/sounds.md).
+[the sound bank format](../../../docs/internals/sounds.md) (section numbers below are that page's), and
+how mods use it is [editing sounds](../../../docs/guide/sounds.md).
 
 `soundbank.rs` (in `src/crates/dc2tk-assets/src/`) implements all of it, and `sounds.rs` turns it
 into the WAV folders mods use. Mods reach it through `sounds.rs` (the WAV folders) and `replace`
@@ -66,7 +66,7 @@ let n = bank.add_entry(&sb::read_wav(&fs::read("new.wav")?)?, "MY_SOUND", "MOD",
 fs::write("SY_000.snd", bank.build()?)?;
 ```
 
-- WAV input is what [editing sounds](../../../docs/modding/sounds.md#what-a-wav-may-be) lists;
+- WAV input is what [editing sounds](../../../docs/guide/sounds.md#what-a-wav-may-be) lists;
   the resampling rate is `replace_vag`'s `rate`.
 - New chains copy the replaced entry's first voice, as the modding page describes.
 - New program numbers avoid every number a KeyOn row or a `.mid` names,
@@ -84,7 +84,7 @@ fs::write("SY_000.snd", bank.build()?)?;
 ## `sounds.rs`: the WAV folders mods use
 
 A mod's WAV folder is `sounds::build_entries`, following the rules on
-[editing sounds](../../../docs/modding/sounds.md#how-build-changes-a-bank): a KeyOn entry whose
+[editing sounds](../../../docs/guide/sounds.md#how-build-changes-a-bank): a KeyOn entry whose
 samples no other entry plays is overwritten with `Mode::InPlace`, any other gets samples of its
 own with `Mode::Detach`, and the samples it played before are cut by `free_unused`. The
 constants a mod's named WAVs give (`SE_SP_004_BEEP = 5`) come from `replace::wav_constants`.
@@ -128,7 +128,7 @@ against the mono mix. Replacing one entry and adding one grew the `.bd` by
 
 ## Open problems
 
-1. **`.sq` sequences are decoded** (see [music](../../../docs/game/music.md)): `voices()`
+1. **`.sq` sequences are decoded** (see [music](../../../docs/internals/music.md)): `voices()`
    resolves a sequence entry's notes to the samples they play,
    `free_program` avoids the programs sequences name, and `free_unused` cuts
    a VAG only when no entry plays it, a sequence's notes included (a member

@@ -36,8 +36,8 @@ PAL disc takes 12-16 s (16 cores) and gives 750 MB in 15,646 files; the same
 disc always gives the same tree, byte for byte, whether read from the image
 or from `extracted/disc/`. Maps are not in the tree: `dc2tk map-export`
 writes a map as a glTF scene of its placed pieces (`extracted/maps/<map>/`,
-or every map with `--all`; [editing maps](../../docs/modding/maps.md)), and
-the data tables are copied into a mod by `mod asset` ([data](../../docs/modding/data.md)).
+or every map with `--all`; [editing maps](../../docs/guide/maps.md)), and
+the data tables are copied into a mod by `mod asset` ([data](../../docs/guide/data.md)).
 
 ### What is an asset
 
@@ -110,7 +110,7 @@ number (`text:en/allmenu`, `text:fr/system` for `meswin/system_2.mes`): one
 id for every version of a file of that name and language, unlike the other
 kinds, since a mod's text changes messages and each place keeps the rest
 of its own version. Copies in the old language folders take `@` and their
-folder (`text:en/system@meswin-usa`). See [message files](../../docs/modding/text.md).
+folder (`text:en/system@meswin-usa`). See [message files](../../docs/guide/text.md).
 
 ### The manifest
 
@@ -187,13 +187,13 @@ the index of ids and `assets-check` read back.
   bank's other version that are the first version's sounds: their WAV
   is in that version's folder only.
 - Text: UTF-8, a message after each `@id` line, one file per name and
-  language whatever versions the disc has (see [message files](../../docs/modding/text.md)).
+  language whatever versions the disc has (see [message files](../../docs/guide/text.md)).
 - Music: a standard MIDI file per distinct sequence, and beside it a
   SoundFont of its bank's programs to hear it with, which is never read
-  back ([music](../../docs/modding/music.md)).
+  back ([music](../../docs/guide/music.md)).
 - Maps: not in the tree (above). The `.map` file is text placing `.mds`
   pieces (position, rotation, scale), so a map is a glTF scene of placed
-  meshes; a mod's `map:` line builds an edited scene back ([editing maps](../../docs/modding/maps.md)).
+  meshes; a mod's `map:` line builds an edited scene back ([editing maps](../../docs/guide/maps.md)).
 
 Every exported file builds back to the disc's own bytes when unedited, at
 every place the manifest lists: the hidden `dc2tk assets-check SOURCE ASSETS`
@@ -259,7 +259,7 @@ in `dc2tk-assets`' `ids`).
   folder of WAVs named by entry number (`004.wav`, or `004_NAME.wav` as the
   tree names them), for entries the bank has; new entries are `add`'s. A
   music asset: a MIDI file (`.mid`), built into the sequence with the
-  disc's as the template ([the MIDI file](../../docs/modding/music.md#the-midi-file)).
+  disc's as the template ([the MIDI file](../../docs/guide/music.md#the-midi-file)).
 - **Every place.** A replacement reaches every place the disc has the id,
   each built with that place's own file as the template. `only` keeps the
   places under the disc paths it lists: a place itself
@@ -292,7 +292,7 @@ in `dc2tk-assets`' `ids`).
   A `music:BG_NNN` line under `add` (`{"file": "x.mid", "like": "BG_193"}`)
   makes a new music file `snd2/bgm/BG_NNN.snd`, the like bank playing the
   MIDI file, for `load_bgm(NNN)`; the number is the mod's choice, one the
-  disc lacks ([music](../../docs/modding/music.md#a-music-file-of-a-mods-own)).
+  disc lacks ([music](../../docs/guide/music.md#a-music-file-of-a-mods-own)).
 - **New files from common formats.** A `file:` line with `like` makes its
   game file whole, from PNGs or a glTF, with the disc's file `like` names
   as the template, so a mod can have a picture file or model pack of its
@@ -349,14 +349,14 @@ in `dc2tk-assets`' `ids`).
     file gives back its pictures, and its meshes and pictures.
 - **Other kinds.** A `text:` id takes a text file as the tree writes it,
   and changes at every place the messages whose text differs from the
-  exported one ([message files](../../docs/modding/text.md)); a `music:` id a MIDI file
+  exported one ([message files](../../docs/guide/text.md)); a `music:` id a MIDI file
   (above). `"map:s17": "maps/s17/s17.gltf"` builds an edited map scene
   back into the map's files, and under `add` makes a new map from a map's
   scene (`"like": "m05"`, with `"script"` for an event script of its own;
-  [editing maps](../../docs/modding/maps.md)). `"data:items":
+  [editing maps](../../docs/guide/maps.md)). `"data:items":
   "data/items.json"` (and `data:shops`, `data:monsters` and the other
   tables `mod asset` lists) edits a table of game data as JSON, merged with
-  other mods' tables ([data](../../docs/modding/data.md)).
+  other mods' tables ([data](../../docs/guide/data.md)).
 - **Scripts** stay as they were: `.c` patches with `#pragma target`,
   anywhere in the folder; `additions` and `start_at` keep their meaning,
   and the `files`/`includes` index of whole-file mods is kept as is.

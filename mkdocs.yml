@@ -15,8 +15,8 @@ strict: true
 
 # the examples' sources, models and sounds are linked on GitHub, not copied into the site
 exclude_docs: |
-  coding/examples/**/*.*
-  !coding/examples/**/README.md
+  scripting/examples/**/*.*
+  !scripting/examples/**/README.md
 
 hooks:
   - tools/mkdocs_hooks.py
@@ -68,55 +68,56 @@ validation:
 
 nav:
   - Home: README.md
-  - The game:
-      - game/README.md
-      - game/disc.md
-      - game/scripts.md
-      - game/running.md
-      - game/maps.md
-      - game/dungeons.md
-      - game/models.md
-      - game/textures.md
-      - game/sounds.md
-      - game/music.md
-      - game/text.md
-      - game/data.md
-      - game/memory.md
-  - Modding:
-      - modding/README.md
-      - modding/mods.md
-      - modding/scripts.md
-      - modding/textures.md
-      - modding/sounds.md
-      - modding/music.md
-      - modding/text.md
-      - modding/models.md
-      - modding/maps.md
-      - modding/dungeons.md
-      - modding/data.md
-      - modding/memory.md
-      - modding/commands.md
-  - Coding:
-      - coding/README.md
-      - coding/language.md
-      - coding/c-standard.md
-      - coding/sdk.md
-      - coding/editor.md
-      - Tutorials:
-          - coding/tutorials/README.md
-          - coding/tutorials/npc-line.md
-          - coding/tutorials/enemy-behaviour.md
-          - coding/tutorials/new-enemy.md
-          - coding/tutorials/cutscene.md
-          - coding/tutorials/tune-player.md
-          - coding/tutorials/captions.md
-      - API:
-          - coding/api/README.md
-          - coding/api/event.md
-          - coding/api/monster.md
-          - coding/api/action.md
-          - coding/api/effect.md
-          - coding/api/arg.md
-          - coding/api/modkit.md
-      - Examples:
-          - coding/examples/spinning-cult/README.md
+  - Guide:
+      - guide/README.md
+      - CLI Reference: guide/commands.md
+      - Creating Mods: guide/mods.md
+      - Editing Assets:
+          - Game Data (JSON): guide/data.md
+          - Textures (PNG): guide/textures.md
+          - Text and Menus: guide/text.md
+          - Sound Effects (WAV): guide/sounds.md
+          - Music (MIDI): guide/music.md
+          - 3D Models (glTF): guide/models.md
+          - Maps and Blender: guide/maps.md
+          - Dungeons: guide/dungeons.md
+          - Editing Scripts: guide/scripts.md
+      - Memory Limits: guide/memory.md
+  - Scripting:
+      - scripting/README.md
+      - Script Language: scripting/language.md
+      - C89 Standard Support: scripting/c-standard.md
+      - SDK and Modkit: scripting/sdk.md
+      - Editor Setup: scripting/editor.md
+      - Example Guides:
+          - scripting/tutorials/README.md
+          - Change What an NPC Says: scripting/tutorials/npc-line.md
+          - Change Enemy Behavior: scripting/tutorials/enemy-behaviour.md
+          - Add a New Enemy: scripting/tutorials/new-enemy.md
+          - Add a Cutscene: scripting/tutorials/cutscene.md
+          - Tune Player Combat: scripting/tutorials/tune-player.md
+          - Live Combat Captions: scripting/tutorials/captions.md
+      - Example Mods:
+          - The Spinning Cult: scripting/examples/spinning-cult/README.md
+      - API Reference:
+          - scripting/api/README.md
+          - event.h (Maps & Cutscenes): scripting/api/event.md
+          - monster.h (Monster AI): scripting/api/monster.md
+          - action.h (Player Actions): scripting/api/action.md
+          - effect.h (Effects): scripting/api/effect.md
+          - arg.h (Event Arguments): scripting/api/arg.md
+          - modkit (Mod Libraries): scripting/api/modkit.md
+  - DC2 Internals:
+      - internals/README.md
+      - Disc Layout and Archives: internals/disc.md
+      - Script Bytecode (.stb) and VM: internals/scripts.md
+      - Script Execution and Runtime: internals/running.md
+      - Maps (.map, .pcp, .mpk): internals/maps.md
+      - Dungeon Floors: internals/dungeons.md
+      - 3D Models and Motions (.mds, .mot): internals/models.md
+      - Textures (.img, TIM2): internals/textures.md
+      - Sound Banks (.snd): internals/sounds.md
+      - Music Sequences (.sq): internals/music.md
+      - Message Text (.mes): internals/text.md
+      - Game Data Tables: internals/data.md
+      - Memory Layout: internals/memory.md

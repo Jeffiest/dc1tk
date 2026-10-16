@@ -2,9 +2,9 @@
 
 What dc2tk implements for the random dungeon floors, how it was checked, and
 what is not done. How a floor is built is in [the game's
-dungeons](../../../docs/game/dungeons.md) (section numbers below are that
+dungeons](../../../docs/internals/dungeons.md) (section numbers below are that
 page's); editing the layouts, parts and chests is in [editing
-dungeons](../../../docs/modding/dungeons.md). A floor's map goes through the
+dungeons](../../../docs/guide/dungeons.md). A floor's map goes through the
 map code of [maps](maps.md).
 
 ## Status

@@ -3,9 +3,9 @@
 How dc2tk reads, writes, exports and rebuilds maps: the modules, what is
 settled and how it was checked, and how the glTF scene's exporter and
 importer were planned and built. The formats are in [the game's
-maps](../../../docs/game/maps.md) (section numbers below are that page's);
+maps](../../../docs/internals/maps.md) (section numbers below are that page's);
 editing a map and the scene's conventions as a person editing one sees them
-are in [editing maps](../../../docs/modding/maps.md). Map meshes go through
+are in [editing maps](../../../docs/guide/maps.md). Map meshes go through
 the MDS code of [models](models.md). Random floors are in
 [dungeons](dungeons.md). The Blender add-on's own code is described in
 [its README](../../../blender-plugin/README.md).
@@ -66,7 +66,7 @@ the MDS code of [models](models.md). Random floors are in
   without their models.
 
 What is not yet known of the formats is on [the game's
-maps](../../../docs/game/maps.md).
+maps](../../../docs/internals/maps.md).
 
 ## Notes on the formats for the code
 
@@ -103,7 +103,7 @@ maps](../../../docs/game/maps.md).
 - New textures go into an `.img` inside the `.ipk`, keeping its `#texanime`.
 - Limits: 320 placements (400 dungeons; the largest map has 245), names up to
   31 characters, `TIME_LIGHT_NUM` 8 or less. Memory: see
-  [memory](../../../docs/game/memory.md) (read buffer, loading-screen limit,
+  [memory](../../../docs/internals/memory.md) (read buffer, loading-screen limit,
   placements, texture blocks); `build` checks them.
 
 ### One map model to glTF and back (written)
@@ -156,7 +156,7 @@ an edited scene and the map's files as the disc (or an earlier mod) has them,
 and gives what to write; `dc2tk build` does so for each `"map:NAME":
 "maps/NAME/NAME.gltf"` line of a chosen mod (`dc2tk_script::mapedit::apply_maps`).
 What it writes, as a mod's author sees it, is in [editing
-maps](../../../docs/modding/maps.md); how:
+maps](../../../docs/guide/maps.md); how:
 
 - **The `.map`:** the scene tree is read back (`map_scene::read_scene`) and
   the map rebuilt (`map_edit::rebuild`).

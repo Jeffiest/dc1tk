@@ -155,14 +155,14 @@ pub struct ApiDocsArgs {
     /// The SDK's folder; sdk when omitted.
     #[arg(long)]
     sdk: Option<PathBuf>,
-    /// Directory for the pages; docs/coding/api when omitted.
+    /// Directory for the pages; docs/scripting/api when omitted.
     #[arg(long)]
     out: Option<PathBuf>,
 }
 
 pub fn run_api_docs(args: &ApiDocsArgs) -> Result<ExitCode> {
     let sdk_dir = args.sdk.clone().unwrap_or_else(|| files::root().join("sdk"));
-    let out = args.out.clone().unwrap_or_else(|| files::root().join("docs").join("coding").join("api"));
+    let out = args.out.clone().unwrap_or_else(|| files::root().join("docs").join("scripting").join("api"));
     for name in sdk::reference::write_pages(&sdk_dir, &out)? {
         println!("{}", files::shown_path(out.join(name)));
     }

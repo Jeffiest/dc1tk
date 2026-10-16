@@ -4,9 +4,9 @@ How dc2tk reads, writes and converts character models: the modules, the glTF exp
 (`to_gltf.rs`), the import back (`from_gltf.rs`), motions (`motions.rs`) and new packs
 (`models::new_pack`), with the status of each, how they were verified and the evidence log. The
 formats themselves (MDS, .wgt, .bbp, .mot, info.cfg, .clo) are in
-[the game's character models](../../../docs/game/models.md), sections 1 to 5; section numbers 1
+[the game's character models](../../../docs/internals/models.md), sections 1 to 5; section numbers 1
 to 5 below refer to that page. How a mod uses all this is in
-[editing character models](../../../docs/modding/models.md), which also holds section 7.2, what
+[editing character models](../../../docs/guide/models.md), which also holds section 7.2, what
 any importer has to respect.
 
 The code, in `src/crates/dc2tk-assets/src/`:
@@ -64,7 +64,7 @@ converters need nothing of .clo (5): it is not needed for mesh import.
   given in all of them, and a deleted action takes its KEY out.
 
 **Not settled / open** (the open questions about the formats themselves are on
-[the game's page](../../../docs/game/models.md#open-questions)):
+[the game's page](../../../docs/internals/models.md#open-questions)):
 - Texture pixels are decoded by `im3.rs`; the exports carry the pack's own pictures.
 - Motion types 12 (vertex), 40/41 (material alpha and colour) and 50/51 (visibility) go to glTF
   as morph targets and carriers Blender keeps (6), not as `KHR_animation_pointer` and
@@ -146,7 +146,7 @@ for byte, on all 1,950 packs). The options, all off by default:
 
 - `full_names`: glTF nodes and meshes are named by the frames' whole names, `--` flags included
   (`grid54--f2appz0n1t-5_1`), since map meshes are told apart by them
-  ([maps](../../../docs/game/maps.md) 4.1); meshes also get `extras.mds_index`. Nodes always
+  ([maps](../../../docs/internals/maps.md) 4.1); meshes also get `extras.mds_index`. Nodes always
   carry `extras.mds_index` and `extras.mds_name`.
 - `textures`: a `to_gltf::TextureSearch`, the pictures of a list of `.img` files searched by
   picture name (case-sensitive, the first file holding a name wins). Each material's picture is
@@ -163,7 +163,7 @@ for byte, on all 1,950 packs). The options, all off by default:
   `KHR_materials_unlit`; otherwise BLEND when diffuse alpha is below 1, as before. The material's
   `extras.frame_flags` keep the flag text (`mds_flags`, `inherited_flags`) and what it decodes to
   (`blend`, `alpha_ref`, `lit`, `z_write`, `fog`). Materials are kept apart per flag set.
-- `collision`: for `-a`/`-c` files ([maps](../../../docs/game/maps.md) 4.3). Each material is
+- `collision`: for `-a`/`-c` files ([maps](../../../docs/internals/maps.md) 4.3). Each material is
   named for the per-triangle attributes its diffuse colour encodes
   (`col_ground0_foot2_area6_mask12`, `to_gltf::CollisionAttributes`), coloured by them (water
   areas 1 and 7 blue), untextured, with the attributes and the raw MDT fields in `extras`.
@@ -289,7 +289,7 @@ change no member.
 
 ### 7.2 What any importer has to respect
 
-In [editing character models](../../../docs/modding/models.md#what-any-importer-has-to-respect).
+In [editing character models](../../../docs/guide/models.md#what-any-importer-has-to-respect).
 
 ### 7.3 Motions from glTF (`motions.rs`)
 
@@ -445,7 +445,7 @@ its own export has the glTF's meshes, skin weights and motions within the 7.1 an
 tolerances, and building the glTF given over it changes nothing (checked on a two-bone test glTF,
 with and without a fading and hiding action, on a seven-bone character made in Blender, whose
 pack, built into a disc image and copied back out, plays its action in Blender as made, and on
-[Brother Gill](../../../docs/coding/examples/spinning-cult/README.md),
+[Brother Gill](../../../docs/scripting/examples/spinning-cult/README.md),
 eighteen bones, a skinned and a rigid mesh and six actions, one of them fading both meshes out
 and hiding them, which come back through the pack's export and Blender's importer as made).
 

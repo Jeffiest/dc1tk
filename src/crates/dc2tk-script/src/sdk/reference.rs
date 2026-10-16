@@ -1,4 +1,4 @@
-//! The SDK's reference pages (docs/coding/api/, written by `dc2tk api-docs`): every native,
+//! The SDK's reference pages (docs/scripting/api/, written by `dc2tk api-docs`): every native,
 //! helper, program, constant and value kind a table's header and its helpers declare, with their
 //! doc comments, and the functions of the modkit libraries, as Markdown. The headers are read as
 //! the text people write them in, line by line: a run of `//` lines documents the declaration
@@ -716,9 +716,9 @@ mod tests {
     fn the_api_pages_are_the_ones_the_headers_give() {
         let repository = repository();
         for (name, text) in pages(&repository.join("sdk")).unwrap() {
-            let path = repository.join("docs/coding/api").join(&name);
+            let path = repository.join("docs/scripting/api").join(&name);
             let written = read_text(&path).unwrap_or_default();
-            assert!(written == text, "docs/coding/api/{name} is out of date with sdk/: run dc2tk api-docs");
+            assert!(written == text, "docs/scripting/api/{name} is out of date with sdk/: run dc2tk api-docs");
         }
     }
 }

@@ -46,7 +46,7 @@ enum Command {
     Setup(setup::SetupArgs),
     /// Generate native function tables from a ChronicleTwo checkout.
     Natives(setup::NativesArgs),
-    /// Write the API reference (docs/coding/api) from the SDK's headers.
+    /// Write the API reference (docs/scripting/api) from the SDK's headers.
     ApiDocs(setup::ApiDocsArgs),
     /// Write every file of the disc: DATA.DAT's files and the packs' members, the disc's other files
     /// and its layout.

@@ -1,7 +1,7 @@
 # Message text: the code
 
-The code behind [text in a mod](../../../docs/modding/text.md); the format it reads is in
-[message files](../../../docs/game/text.md).
+The code behind [text in a mod](../../../docs/guide/text.md); the format it reads is in
+[message files](../../../docs/internals/text.md).
 
 ## Modules
 
