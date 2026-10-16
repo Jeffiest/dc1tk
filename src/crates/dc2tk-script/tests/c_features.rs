@@ -215,6 +215,18 @@ fn every_header_a_script_includes_is_read() {
 }
 
 #[test]
+fn a_comment_after_an_include_is_a_space() {
+    let text = "int f(void)\n{\n    return PAD_CROSS;\n}\n";
+    for head in [
+        "#include <event.h> // natives\n\nPROGRAM(100, f);\nMAIN(f);\n\n",
+        "#include <event.h> /* natives */\n\nPROGRAM(100, f);\nMAIN(f);\n\n",
+        "#include <event.h> /* the natives,\n                     the constants */\nPROGRAM(100, f);\nMAIN(f);\n\n",
+    ] {
+        assert_eq!(built(text, head).unwrap(), built(text, EVENT).unwrap(), "{head}");
+    }
+}
+
+#[test]
 fn libraries_include_libraries_once_and_shared_ones_come_from_the_sdk() {
     let folder = TempDir::new();
     let root = folder.path();

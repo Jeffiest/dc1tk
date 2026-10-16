@@ -607,6 +607,33 @@ int yes;
     }
 
     #[test]
+    fn a_comment_after_a_directive_is_a_space() {
+        // C reads comments before directives: one after #include or #pragma is not part of what
+        // the directive takes, and a /* comment may run on over lines
+        let headers: IndexMap<String, String> = [("h.h".to_string(), "#define FLAG 1\n".to_string())].into();
+        let parsed = |text: &str| {
+            parse_with(text, &ParseOptions { headers: Some(&headers), ..ParseOptions::default() }).unwrap().to_string()
+        };
+        let body = "#pragma std c89\n#define N 2\n#ifdef N\n#pragma override\nint f() { return FLAG + N; }\n#endif\n";
+        let plain = parsed(&format!("#include <h.h>\n\n{body}"));
+        for text in [
+            "#include <h.h> // FLAG\n\n#pragma std c89 // strict\n#define N 2 // two\n#ifdef N // c\n\
+             #pragma override   // Replace f\nint f() { return FLAG + N; }\n#endif // N\n",
+            "#include <h.h> /* FLAG */\n\n#pragma std /* c */ c89\n#define N /* c */ 2\n#ifdef N /* c */\n\
+             #pragma override /* Replace f */\nint f() { return FLAG + N; }\n#endif\n",
+            &format!("#include <h.h> /* FLAG,\n   over two lines */\n{body}"),
+            &format!("#include <h.h> // FLAG, and a backslash \\\n   splices this line to the comment\n{body}"),
+        ] {
+            assert_eq!(parsed(text), plain, "{text:?}");
+        }
+        let program =
+            parse("#pragma target map s51 // the castle\n#pragma override place // why\nvoid f() {}\n").unwrap();
+        assert_eq!(program["targets"].to_string(), r#"[{"kind":"map","values":["s51"]}]"#);
+        assert_eq!(program["functions"][0]["override_of"], "place");
+        assert_eq!(error("#include <h.h> /* open\nint a;\n"), "line 1: unterminated comment");
+    }
+
+    #[test]
     fn errors_name_the_line_and_what_is_wrong() {
         let cases = [
             ("void f() { x = 1 }", "line 1: expected ';', found '}'"),

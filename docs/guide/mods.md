@@ -121,8 +121,6 @@ void start_castle_battle(void)
 }
 ```
 
-Put comments on their own line: a comment after `#pragma override` or `#include` on the same line is an error.
-
 | Directive / Macro | Purpose |
 | --- | --- |
 | `#pragma target <kind> <name>` | Select scripts to patch (`map s51`, `monster golem`, `script mainchr/c01.c`, or `library lib/...`). `map` picks every script in the map's folder, including its interiors and sub-scripts, and an override must find its function in each; use `script` with a `?` or `*` pattern to pick fewer. A `.c` file without `#pragma target` is a shared header/library. |

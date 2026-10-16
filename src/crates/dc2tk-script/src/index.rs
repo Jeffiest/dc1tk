@@ -73,23 +73,36 @@ fn is_quote(bytes: &[u8], position: usize) -> bool {
     bytes[position] == b'"' && (position == 0 || bytes[position - 1] != b'\\')
 }
 
+/// Text without its // comments, and with each /* comment a space and the line breaks in it, so
+/// its lines keep their numbers. A string, which ends at the end of its line, is kept whole.
 pub fn without_comments(text: &str) -> String {
-    let lines: Vec<&str> = text
-        .split('\n')
-        .map(|line| {
-            let bytes = line.as_bytes();
-            let mut quoted = false;
-            for position in 0..bytes.len() {
-                if is_quote(bytes, position) {
-                    quoted = !quoted;
-                } else if !quoted && bytes[position..].starts_with(b"//") {
-                    return &line[..position];
-                }
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let (mut quoted, mut kept, mut position) = (false, 0, 0);
+    while position < bytes.len() {
+        let comment = !quoted && bytes[position] == b'/';
+        if comment && bytes[position..].starts_with(b"//") {
+            out.push_str(&text[kept..position]);
+            position = text[position..].find('\n').map_or(text.len(), |end| position + end);
+            kept = position;
+        } else if comment && bytes[position..].starts_with(b"/*") {
+            out.push_str(&text[kept..position]);
+            let end = text[position + 2..].find("*/").map_or(text.len(), |end| position + end + 4);
+            out.push(' ');
+            out.extend(text[position..end].chars().filter(|&c| c == '\n'));
+            position = end;
+            kept = position;
+        } else {
+            if bytes[position] == b'\n' {
+                quoted = false;
+            } else if is_quote(bytes, position) {
+                quoted = !quoted;
             }
-            line
-        })
-        .collect();
-    lines.join("\n")
+            position += 1;
+        }
+    }
+    out.push_str(&text[kept..]);
+    out
 }
 
 /// Whether the end of this text (the start of a line up to a position) is inside a string literal.
@@ -535,6 +548,21 @@ pub fn includers(outline: &IndexMap<String, Outline>) -> BTreeMap<String, Vec<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comments_go_and_lines_keep_their_numbers() {
+        let cases = [
+            ("a; // b\r\nc;", "a; \nc;"),
+            ("s = \"// kept\"; // gone\n", "s = \"// kept\"; \n"),
+            ("#pragma override /* b */\nvoid f(", "#pragma override  \nvoid f("),
+            ("a /* b\nc */ d\n", "a  \n d\n"),
+            ("s = \"/* kept */\";", "s = \"/* kept */\";"),
+            ("a /* open\nb", "a  \n"),
+        ];
+        for (text, want) in cases {
+            assert_eq!(without_comments(text), want, "{text:?}");
+        }
+    }
 
     #[test]
     fn constant_expressions_fold_as_c_folds_them() {

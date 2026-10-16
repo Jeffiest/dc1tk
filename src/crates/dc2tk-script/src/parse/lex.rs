@@ -25,11 +25,6 @@ pub(super) fn count_lines(chars: &[char], from: usize, to: usize) -> usize {
     chars[from.min(to)..to].iter().filter(|&&c| c == '\n').count()
 }
 
-/// The text before a // comment.
-pub(super) fn before_comment(text: &str) -> &str {
-    text.split("//").next().unwrap_or("")
-}
-
 /// The first word and the rest (its trailing whitespace kept).
 pub(super) fn split_first_word(text: &str) -> Vec<&str> {
     let rest = text.trim_start();
@@ -77,7 +72,7 @@ pub(super) fn conditional_directive(
 ) -> Result<()> {
     let compiling = conditions.last().is_none_or(|block| block.on);
     if matches!(word, "if" | "ifdef" | "ifndef") {
-        let name = before_comment(rest).trim();
+        let name = rest.trim();
         let chosen = if word == "if" {
             compiling && condition_value(rest, macros, line)?
         } else {
@@ -329,21 +324,52 @@ pub(super) fn joined(lines: &[&str]) -> String {
     text
 }
 
-/// The end of a directive's line, read on past a backslash that ends a line (C's line splicing),
-/// and how many lines it joins.
+/// The end of a directive's line, read on past a backslash that ends a line (C's line splicing)
+/// and past the lines a /* comment on it spans, and how many lines it joins. A /* comment that
+/// is not closed runs it to the end of the text.
 pub(super) fn directive_end(text: &[char], position: usize) -> (usize, usize) {
+    // whether the line ending at a newline ends with a backslash
+    let spliced = |end: usize| {
+        text[position..end].iter().rposition(|c| *c != '\r').is_some_and(|last| text[position + last] == '\\')
+    };
     let mut at = position;
     let mut joined = 0;
-    loop {
-        let end = line_end(text, at);
-        let before = text[at..end].iter().rposition(|c| *c != '\r').map(|offset| at + offset);
-        if end < text.len() && before.is_some_and(|last| text[last] == '\\') {
-            joined += 1;
-            at = end + 1;
-        } else {
-            return (end, joined);
+    while at < text.len() {
+        match text[at] {
+            '\n' if spliced(at) => {
+                joined += 1;
+                at += 1;
+            }
+            '\n' => return (at, joined),
+            quote @ ('"' | '\'') => {
+                // a literal, which a comment does not start in; a newline ends one not closed
+                at += 1;
+                while at < text.len() && text[at] != quote && text[at] != '\n' {
+                    at += if text[at] == '\\' && !matches!(text.get(at + 1), Some('\n' | '\r')) { 2 } else { 1 };
+                }
+                if at < text.len() && text[at] == quote {
+                    at += 1;
+                }
+            }
+            '/' if starts_with(text, at, "//") => {
+                // a // comment, on to the end of the line it splices to
+                at = line_end(text, at);
+                while at < text.len() && spliced(at) {
+                    joined += 1;
+                    at = line_end(text, at + 1);
+                }
+            }
+            '/' if starts_with(text, at, "/*") => match find(text, at + 2, "*/") {
+                Some(close) => {
+                    joined += count_lines(text, at, close);
+                    at = close + 2;
+                }
+                None => return (text.len(), joined + count_lines(text, at, text.len())),
+            },
+            _ => at += 1,
         }
     }
+    (text.len(), joined)
 }
 
 /// #[ \t]*NAME[ \t]*REST at a #: the directive's name and the rest of its line, its spliced lines
@@ -563,6 +589,14 @@ impl Lexer<'_, '_> {
                 continue;
             }
             let directive = if c == '#' { directive_at(&self.text, self.position) } else { None };
+            // a directive's comments are a space each, as C reads comments before directives
+            let directive = match directive {
+                Some((word, rest)) => match cpp::without_closed_comments(&rest) {
+                    Some(rest) => Some((word, rest)),
+                    None => return lex_fail(self.line, "unterminated comment"),
+                },
+                None => None,
+            };
             if let Some((word, rest)) = &directive {
                 if CONDITIONALS.contains(&word.as_str()) {
                     conditional_directive(word, rest, &mut self.conditions, self.macros, self.line)?;
@@ -613,7 +647,7 @@ impl Lexer<'_, '_> {
         let (end, joined) = directive_end(&self.text, self.position);
         let mut next_line = line + joined;
         match word {
-            "undef" => self.macros.undefine(before_comment(rest).trim()),
+            "undef" => self.macros.undefine(rest.trim()),
             "define" => self.define(rest)?,
             "include" => self.include(rest)?,
             "pragma" => {

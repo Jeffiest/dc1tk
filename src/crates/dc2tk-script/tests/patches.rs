@@ -100,6 +100,23 @@ fn an_override_replaces_a_library_function_in_the_patched_scripts_only() {
 }
 
 #[test]
+fn comments_after_a_patchs_pragmas_are_not_their_words() {
+    for (target, override_) in [("// the valley", "   // Replace greet"), (" /* the valley */", " /* Replace greet */")]
+    {
+        let patch = format!(
+            "#pragma target map s17{target}\n\n#pragma override{override_}\n\
+             void greet(void)\n{{\n    print(\"hi there\");\n}}\n"
+        );
+        let folder = TempDir::new("patches-commented");
+        let (root, dirs) = setup(folder.path(), &[("hello", &[("s17.c", &patch)])]);
+        let plan = plan_of(&dirs, &root).unwrap();
+        assert_eq!(patches::overridden(&patch), strings(&["greet"]), "{patch:?}");
+        let program = program_of(&root, &plan, "map/s/s17_valley/s17_2.c").unwrap();
+        assert_eq!(run(&program, "start"), strings(&["hi there"]), "{patch:?}");
+    }
+}
+
+#[test]
 fn original_runs_the_replaced_function_and_mods_chain() {
     let first =
         "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    print(\"first\");\n    original();\n}\n";

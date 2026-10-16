@@ -174,6 +174,18 @@ pub fn trigraphs(text: &[char]) -> Vec<char> {
 
 /// Text with its comments replaced by a space each, string and character literals kept whole.
 pub fn without_comments(text: &str) -> String {
+    stripped(text).0
+}
+
+/// Text with its comments replaced by a space each, as without_comments, or None when a /*
+/// comment in it is not closed.
+pub fn without_closed_comments(text: &str) -> Option<String> {
+    let (text, closed) = stripped(text);
+    closed.then_some(text)
+}
+
+/// Text with its comments replaced by a space each, and whether its last /* comment was closed.
+fn stripped(text: &str) -> (String, bool) {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let mut at = 0;
@@ -189,7 +201,10 @@ pub fn without_comments(text: &str) -> String {
                 end += 1;
             }
             out.push(' ');
-            at = (end + 2).min(chars.len());
+            if end >= chars.len() {
+                return (out, false);
+            }
+            at = end + 2;
         } else if c == '/' && chars.get(at + 1) == Some(&'/') {
             break;
         } else {
@@ -197,7 +212,7 @@ pub fn without_comments(text: &str) -> String {
             at += 1;
         }
     }
-    out
+    (out, true)
 }
 
 /// What follows #define: the macro's name and the macro.
