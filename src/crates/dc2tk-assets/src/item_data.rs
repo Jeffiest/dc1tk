@@ -1464,6 +1464,7 @@ mod tests {
     #[test]
     #[ignore = "needs DC2TK_CORPUS"]
     fn corpus_items_are_added_up_to_the_engine_limits() {
+        use Family::{Attachment, Clothing, Fish, Item, Weapon};
         let corpus = dc2tk_disc::samples::corpus();
         let folder = std::path::Path::new(&corpus).join(FOLDER);
         let files: Vec<Vec<u8>> =
@@ -1482,7 +1483,6 @@ mod tests {
                 .as_i64()
                 .unwrap()
         };
-        use Family::{Attachment, Clothing, Fish, Item, Weapon};
         let likes = [like(Weapon), like(Weapon), like(Weapon), like(Weapon), like(Item), like(Item)]
             .into_iter()
             .chain([like(Attachment), like(Attachment), like(Fish)])

@@ -188,11 +188,11 @@ fn arithmetic(op: Op, left: &Value, right: &Value) -> std::result::Result<Value,
 }
 
 fn compare(compare: Compare, left: &Value, right: &Value) -> std::result::Result<bool, String> {
+    use std::cmp::Ordering::*;
     let ordering = match (left, right) {
         (Value::Text(a), Value::Text(b)) => a.partial_cmp(b),
         _ => left.number()?.partial_cmp(&right.number()?),
     };
-    use std::cmp::Ordering::*;
     Ok(match compare {
         Compare::Eq => ordering == Some(Equal),
         Compare::Ne => ordering != Some(Equal),

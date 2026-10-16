@@ -847,10 +847,6 @@ mod tests {
     /// What Blender does to a scene: suffixes repeated names, reverses children, writes ints in
     /// mixed lists as floats.
     fn blenderish(node: &mut SceneNode, depth: usize) {
-        if depth > 0 {
-            node.name = format!("{}.001", node.name);
-        }
-        node.children.reverse();
         fn floats(value: &mut Value) {
             match value {
                 Value::Array(items) if items.iter().any(Value::is_f64) => {
@@ -865,6 +861,11 @@ mod tests {
                 _ => {}
             }
         }
+
+        if depth > 0 {
+            node.name = format!("{}.001", node.name);
+        }
+        node.children.reverse();
         floats(&mut node.extras);
         for child in &mut node.children {
             blenderish(child, depth + 1);

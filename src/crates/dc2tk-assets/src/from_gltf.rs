@@ -488,12 +488,6 @@ impl Alphas {
 }
 
 fn build_mdt(prims: &[Primitive], materials: Vec<Material>) -> (Mdt, Vec<Skin>) {
-    let mut t = Mdt::default();
-    let mut vertex_of: HashMap<(Vec<KeyFloat>, Skin), usize> = HashMap::new();
-    let mut normal_of: HashMap<Vec<KeyFloat>, usize> = HashMap::new();
-    let mut uv_of: HashMap<Vec<KeyFloat>, usize> = HashMap::new();
-    let mut colour_of: HashMap<Vec<KeyFloat>, usize> = HashMap::new();
-    let mut skins = Vec::new();
     fn number(map: &mut HashMap<Vec<KeyFloat>, usize>, list: &mut Vec<[f64; 4]>, value: [f64; 4]) -> i32 {
         let next = list.len();
         let at = *map.entry(key_of(&value)).or_insert(next);
@@ -502,6 +496,13 @@ fn build_mdt(prims: &[Primitive], materials: Vec<Material>) -> (Mdt, Vec<Skin>) 
         }
         at as i32
     }
+
+    let mut t = Mdt::default();
+    let mut vertex_of: HashMap<(Vec<KeyFloat>, Skin), usize> = HashMap::new();
+    let mut normal_of: HashMap<Vec<KeyFloat>, usize> = HashMap::new();
+    let mut uv_of: HashMap<Vec<KeyFloat>, usize> = HashMap::new();
+    let mut colour_of: HashMap<Vec<KeyFloat>, usize> = HashMap::new();
+    let mut skins = Vec::new();
     for p in prims {
         let first = &p.corners[0];
         let (hn, hu, hc) = (first.normal.is_some(), first.uv.is_some(), first.colour.is_some());

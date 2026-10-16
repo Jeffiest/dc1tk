@@ -342,6 +342,15 @@ pub fn export_map(
     packs: &[ModelPack],
     textures: &TextureSearch,
 ) -> Result<(BTreeMap<String, Vec<u8>>, Report)> {
+    fn collect(node: &SceneNode, used: &mut Vec<String>) {
+        if let Some(model) = &node.model {
+            if !used.iter().any(|known| known.eq_ignore_ascii_case(model)) {
+                used.push(model.clone());
+            }
+        }
+        node.children.iter().for_each(|child| collect(child, used));
+    }
+
     let kind_of =
         |model: &str| find_model(packs, model).map_or("model".to_string(), |(kind, _)| kind.name().to_string());
     let tree = map_scene::build_scene(map, name, &kind_of)?;
@@ -351,14 +360,6 @@ pub fn export_map(
 
     // every model a piece places, once
     let mut used: Vec<String> = Vec::new();
-    fn collect(node: &SceneNode, used: &mut Vec<String>) {
-        if let Some(model) = &node.model {
-            if !used.iter().any(|known| known.eq_ignore_ascii_case(model)) {
-                used.push(model.clone());
-            }
-        }
-        node.children.iter().for_each(|child| collect(child, used));
-    }
     collect(&tree, &mut used);
     let mut merged: HashMap<String, Merged> = HashMap::new();
     for model in &used {

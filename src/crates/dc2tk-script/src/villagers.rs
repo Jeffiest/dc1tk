@@ -89,6 +89,12 @@ fn without_comment(line: &str) -> &str {
 impl Tables {
     /// The tables of an extracted disc, or None when it lacks them.
     pub fn read(root: &Path) -> Option<Tables> {
+        static PROGRESS_LINE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#"^PROGRESS\s+(\d+)\s*,\s*(\d+)\s*,\s*"(.*?)""#).unwrap());
+        static PLACE_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(NOON|NIGHT)_PLACE\s+(\d+)").unwrap());
+        static NPC_PLACE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"(?m)^NPC_PLACE\s+(\d+)\s*,\s*(-?\d+)").unwrap());
+
         let schedule = read_text(root, "npc_place4.cfg")?;
         let places_text = read_text(root, "place.cfg")?;
         let models_data = files::read(root.join("npc.cfg")).ok()?;
@@ -98,9 +104,6 @@ impl Tables {
         let mut schedules: BTreeMap<i64, Vec<Point>> = BTreeMap::new();
         let mut villager = None;
         let mut alternative = 0;
-        static PROGRESS_LINE: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r#"^PROGRESS\s+(\d+)\s*,\s*(\d+)\s*,\s*"(.*?)""#).unwrap());
-        static PLACE_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(NOON|NIGHT)_PLACE\s+(\d+)").unwrap());
         for line in schedule.lines().map(without_comment) {
             let fields: Vec<&str> = line.splitn(2, char::is_whitespace).collect();
             match fields[0] {
@@ -135,8 +138,6 @@ impl Tables {
                 }
             }
         }
-        static NPC_PLACE: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"(?m)^NPC_PLACE\s+(\d+)\s*,\s*(-?\d+)").unwrap());
         let places = NPC_PLACE
             .captures_iter(&places_text)
             .filter_map(|found| Some((found[1].parse().ok()?, found[2].parse().ok()?)))
@@ -221,8 +222,8 @@ impl Tables {
     /// The map a script runs on, by its file name: i01h01_1.stb is i01h01; a variant that is not a
     /// map of its own runs on the map it extends (i01h01b on i01h01).
     pub fn map_of(&self, path: &str) -> Option<String> {
-        let name = path.rsplit('/').next()?.split('.').next()?;
         static PART: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"_\d$").unwrap());
+        let name = path.rsplit('/').next()?.split('.').next()?;
         let stem = PART.replace(name, "").to_string();
         let codes: BTreeSet<&str> = self.maps.values().map(|(code, _)| code.as_str()).collect();
         if codes.contains(stem.as_str()) {

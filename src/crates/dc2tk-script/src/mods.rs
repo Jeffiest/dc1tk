@@ -112,6 +112,36 @@ pub struct Chosen {
 /// given, each just after those it must follow. A requirement missing from the mods folder, or a
 /// cycle, is an error naming the mods.
 pub fn chosen(mods_dir: &Path, names: &[String]) -> Result<Chosen> {
+    // each mod in the order given, just after the mods it must follow, placed the same way
+    fn place<'a>(
+        name: &'a String,
+        before: &HashMap<&'a String, Vec<&'a String>>,
+        placed: &mut Vec<&'a String>,
+        walk: &mut Vec<&'a String>,
+    ) -> Result<()> {
+        if placed.contains(&name) {
+            return Ok(());
+        }
+        if let Some(start) = walk.iter().position(|other| *other == name) {
+            let cycle: Vec<String> = walk[start..]
+                .iter()
+                .enumerate()
+                .map(|(at, other)| format!("{other} after {}", walk[start..].get(at + 1).unwrap_or(&name)))
+                .collect();
+            return Err(Error::invalid(format!(
+                "the mods' \"requires\" and \"after\" go round in a cycle ({}); change one of their mod.json",
+                cycle.join(", ")
+            )));
+        }
+        walk.push(name);
+        for other in &before[name] {
+            place(other, before, placed, walk)?;
+        }
+        walk.pop();
+        placed.push(name);
+        Ok(())
+    }
+
     let mut order: Vec<String> = Vec::new();
     let mut added = Vec::new();
     let mut needs: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
@@ -145,35 +175,6 @@ pub fn chosen(mods_dir: &Path, names: &[String]) -> Result<Chosen> {
             (name, order.iter().filter(|other| requires.contains(other) || after.contains(other)).collect())
         })
         .collect();
-    // each mod in the order given, just after the mods it must follow, placed the same way
-    fn place<'a>(
-        name: &'a String,
-        before: &HashMap<&'a String, Vec<&'a String>>,
-        placed: &mut Vec<&'a String>,
-        walk: &mut Vec<&'a String>,
-    ) -> Result<()> {
-        if placed.contains(&name) {
-            return Ok(());
-        }
-        if let Some(start) = walk.iter().position(|other| *other == name) {
-            let cycle: Vec<String> = walk[start..]
-                .iter()
-                .enumerate()
-                .map(|(at, other)| format!("{other} after {}", walk[start..].get(at + 1).unwrap_or(&name)))
-                .collect();
-            return Err(Error::invalid(format!(
-                "the mods' \"requires\" and \"after\" go round in a cycle ({}); change one of their mod.json",
-                cycle.join(", ")
-            )));
-        }
-        walk.push(name);
-        for other in &before[name] {
-            place(other, before, placed, walk)?;
-        }
-        walk.pop();
-        placed.push(name);
-        Ok(())
-    }
     let mut placed = Vec::new();
     for name in &order {
         place(name, &before, &mut placed, &mut Vec::new())?;
@@ -279,6 +280,7 @@ pub fn override_functions(
     functions: &[String],
     headers: &IndexMap<String, String>,
 ) -> Result<Overridden> {
+    static SYSTEM_INCLUDE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#include\s*<([^>]+)>").unwrap());
     let scripts = Scripts::new(tree_dir)?;
     let chosen: Vec<String> = scripts.picked(&Target { kind, values: vec![value.into()] })?.into_iter().collect();
     if chosen.is_empty() {
@@ -291,7 +293,6 @@ pub fn override_functions(
         .clone();
     let mut found = patches::function_texts(tree_dir, &model, functions)?;
     let model_text = dc2tk_disc::textfile::read_text(&tree_dir.join(&model))?;
-    static SYSTEM_INCLUDE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#include\s*<([^>]+)>").unwrap());
     let included: Vec<String> =
         SYSTEM_INCLUDE.captures_iter(&model_text).map(|capture| capture[1].to_string()).collect();
     let wrappers: IndexMap<String, String> = functions

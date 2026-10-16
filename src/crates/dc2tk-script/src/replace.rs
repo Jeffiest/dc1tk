@@ -1295,6 +1295,7 @@ pub fn apply_with(
     files: &Files,
     english: &EnglishLetters,
 ) -> Result<(Files, Vec<Changed>)> {
+    static BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let disc = DiscSource::open(iso_path)?;
     let mut files = files.clone();
     let mut fonts = discfiles::disc_fonts(&disc);
@@ -1306,7 +1307,6 @@ pub fn apply_with(
         let key = (edit.change.stage(), edit.place.members.len(), edit.place.display().to_lowercase());
         groups.entry(key).or_default().push(edit);
     }
-    static BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let build = BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let temp = std::env::temp_dir().join(format!("dc2tk-build-model-{}-{build}", std::process::id()));
     let mut applying = Applying { disc: &disc, fonts, temp, models: Vec::new(), warnings: Vec::new() };

@@ -156,11 +156,11 @@ fn fold(c: char) -> char {
 
 /// Hiragana for katakana, the plain kana for a voiced, half-voiced or small one.
 fn plain_kana(c: char) -> char {
-    let c = if ('ァ'..='ヶ').contains(&c) { char::from_u32(c as u32 - 0x60).unwrap_or(c) } else { c };
     const VOICED: [(&str, &str); 2] = [
         ("がぎぐげござじずぜぞだぢづでどばびぶべぼ", "かきくけこさしすせそたちつてとはひふへほ"),
         ("ぱぴぷぺぽぁぃぅぇぉっゃゅょゎゔ", "はひふへほあいうえおつやゆよわう"),
     ];
+    let c = if ('ァ'..='ヶ').contains(&c) { char::from_u32(c as u32 - 0x60).unwrap_or(c) } else { c };
     for (from, to) in VOICED {
         if let Some(at) = from.chars().position(|known| known == c) {
             return to.chars().nth(at).unwrap_or(c);

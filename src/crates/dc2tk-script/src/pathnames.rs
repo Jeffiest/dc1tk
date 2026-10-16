@@ -31,8 +31,8 @@ const MAX_NAME: usize = 40;
 
 /// A name as a path part: lower-case words joined with "_", accents folded away.
 pub fn slug(name: &str) -> String {
-    let plain: String = name.nfkd().filter(char::is_ascii).collect::<String>().replace('\'', "");
     static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new("[A-Za-z0-9]+").unwrap());
+    let plain: String = name.nfkd().filter(char::is_ascii).collect::<String>().replace('\'', "");
     let words: Vec<String> = WORD.find_iter(&plain).map(|word| word.as_str().to_lowercase()).collect();
     let joined = words.join("_");
     joined[..joined.len().min(MAX_NAME)].trim_end_matches('_').to_string()

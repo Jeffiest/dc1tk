@@ -82,6 +82,7 @@ fn global_line<'a>(text: &'a str, name: &str) -> Option<&'a str> {
 /// The patch for a copy (copy) of the tree's file (original), targeting kind value, or why there
 /// can be none.
 fn draft(module: &str, original: &str, copy: &str, kind: TargetKind, value: &str) -> Result<Draft> {
+    static SYSTEM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#include\s*<").unwrap());
     let tree = parse::parse(original)?;
     let mine = parse::parse(copy).map_err(|error| Error::invalid(format!("it does not parse: {error}")))?;
     check_patchable(&tree, &mine)?;
@@ -99,7 +100,6 @@ fn draft(module: &str, original: &str, copy: &str, kind: TargetKind, value: &str
         format!("#pragma target {kind} {value}"),
         String::new(),
     ];
-    static SYSTEM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#include\s*<").unwrap());
     lines.extend(
         copy.split('\n')
             .map(|line| line.trim_end_matches('\r'))

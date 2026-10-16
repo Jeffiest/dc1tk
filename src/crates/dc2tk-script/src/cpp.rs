@@ -950,6 +950,7 @@ pub fn translation_time() -> (String, String) {
 
 /// A time in seconds since 1970 as __DATE__ and __TIME__ write it.
 fn date_and_time(seconds: i64) -> (String, String) {
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let (days, rest) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
     // the civil date of a day count (Howard Hinnant's days_from_civil, inverted)
     let z = days + 719_468;
@@ -961,7 +962,6 @@ fn date_and_time(seconds: i64) -> (String, String) {
     let day = day_of_year - (153 * shifted + 2) / 5 + 1;
     let month = if shifted < 10 { shifted + 3 } else { shifted - 9 };
     let year = year_of_era + era * 400 + i64::from(month <= 2);
-    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let date = format!("{} {:>2} {}", MONTHS[(month - 1) as usize], day, year);
     let time = format!("{:02}:{:02}:{:02}", rest / 3600, rest / 60 % 60, rest % 60);
     (date, time)
