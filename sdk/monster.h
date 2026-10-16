@@ -1,4 +1,4 @@
-// c2s SDK. Natives for monster AI scripts (dungeon/monster). They act on the monster running the script.
+// dc2tk SDK. Natives for monster AI scripts (dungeon/monster). They act on the monster running the script.
 //
 // Natives are engine functions, declared extern with their number in
 // NATIVE(...). A native with one result returns it (count = get_counter(3););
@@ -16,7 +16,7 @@
 #ifndef DC2TK_MONSTER_H
 #define DC2TK_MONSTER_H
 
-#include <c2s.h>
+#include <dc2tk.h>
 #pragma natives monster
 
 enum program {

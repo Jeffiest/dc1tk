@@ -972,5 +972,5 @@ find them alone. By hand:
 clang -m32 -fsyntax-only -x c -std=c2x -I sdk -I definitions/pal/include -I extracted/scripts -I extracted/scripts/include -Wno-unknown-pragmas extracted/scripts/<path>.c
 ```
 
-`sdk/c2s.h` gives C tools a meaning for c2s's few extensions. What clang
+`sdk/dc2tk.h` gives C tools a meaning for the scripts' few extensions. What clang
 still reports are argument mismatches that exist in the retail scripts.

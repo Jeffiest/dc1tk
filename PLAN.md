@@ -13,12 +13,12 @@ Each milestone had a gate that had to pass on every script on the PAL disc.
 3. **Natives.** All 1,407,551 native calls resolve to a number; all but 227
    name a native the engine registers.
 4. **Assembly.** Disassemble and assemble round-trip every script.
-5. **Decompile.** All 144,202 functions structure into c2s; none needs
-   `goto` or falls back to assembly.
+5. **Decompile.** All 144,202 functions structure into the scripts' language
+   (then called c2s); none needs `goto` or falls back to assembly.
 6. **Compile.** Every script decompiles, prints, parses and compiles back to
    the same bytes, through shared libraries, the SDK and every definition.
 
-Since then: c2s became C (return types, pointers, casts, `extern` natives);
+Since then: that language became C (return types, pointers, casts, `extern` natives);
 the SDK documents every native, with 98 inline helpers and about 1,000
 named constants; shared code moves into libraries; the definitions layer
 holds names, docs and translations; `defs learn` turns edited source into
@@ -115,8 +115,9 @@ See [the design](docs/design.md). In order:
    - Done: the Python removed; `dc2tk` is the only tool.
    - Done: the project renamed from ChronicleTwo-Script (the tool `c2`, the
      add-on `c2_maps`) to DC2-Toolkit (`dc2tk`, `dc2tk_maps`). Formats keep
-     their names: map scenes' `extras.c2`, the script language c2s (`sdk/c2s.h`,
-     whose include guards are `DC2TK_*` now, as every SDK header's).
+     their names (map scenes' `extras.c2`); the SDK's prelude `sdk/c2s.h`
+     became `sdk/dc2tk.h`, its `c2s_` names `dc2tk_`, with no alias for the
+     old ones.
    - Done: a review of the whole code, every built image still retail's
      byte for byte. The last of the Python's rules went (its float text,
      JSON layout, whitespace and `int()` rules, difflib): text files are

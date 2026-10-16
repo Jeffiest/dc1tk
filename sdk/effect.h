@@ -1,4 +1,4 @@
-// c2s SDK. Natives for effect scripts (dungeon/eff_script, dungeon/articles, dungeon/sphida).
+// dc2tk SDK. Natives for effect scripts (dungeon/eff_script, dungeon/articles, dungeon/sphida).
 //
 // Natives are engine functions, declared extern with their number in
 // NATIVE(...). A native with one result returns it (count = get_counter(3););
@@ -16,7 +16,7 @@
 #ifndef DC2TK_EFFECT_H
 #define DC2TK_EFFECT_H
 
-#include <c2s.h>
+#include <dc2tk.h>
 #pragma natives effect
 
 enum program {

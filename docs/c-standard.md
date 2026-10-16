@@ -40,7 +40,7 @@ types together.
 `double` and `long double` are refused: "double is not supported: the VM has 32-bit floats
 only; use float". C89 asks a double for 10 significant digits, which the VM's 32-bit floats
 cannot give, and software doubles would make every floating operation a call. A plain
-constant such as `1.5` is a float, as it always was in c2s; `1.5L` and the word `double`
+constant such as `1.5` is a float, as it always was in the scripts; `1.5L` and the word `double`
 anywhere in code are errors, naming the line. `<float.h>` describes `float` only.
 
 ### Pointers are not numbers
@@ -82,7 +82,7 @@ C89 leaves these to the implementation and asks it to say what it does.
   script is loaded, before the first function the engine starts runs any of its own code (see
   below).
 - **Preprocessor.** `#include <...>` reads the SDK's headers (`sdk/`), `#include "..."` the
-  script's folder, the folders above it, then the SDK. Pragmas are c2s's own (see
+  script's folder, the folders above it, then the SDK. Pragmas are dc2tk's own (see
   [the language](language.md)); others are ignored, as C says. `__DATE__` and `__TIME__` are
   UTC, from `SOURCE_DATE_EPOCH` when it is set. `__STDC__` is 1; `__STDC_VERSION__` is not
   defined (it came with C95).
@@ -329,7 +329,7 @@ Done (see `src/crates/dc2tk-script/src/lower.rs`, `parse/` and `cpp.rs`):
   128 first and back after), on assignment, steps, compound assignment, arguments and returns.
 - **unsigned int** keeps its bits in an int. `+ - * & | ^ << ==` are the same; `<` and its kin
   compare both sides plus `-2^31`; `/`, `%` and `>>` are calls of a small runtime written in
-  c2s and added to a script that uses them; conversions to and from `float` too.
+  script C and added to a script that uses them; conversions to and from `float` too.
 - **Block scope**: each local has one slot for the function; a name that hides another gets a
   slot of its own under another name.
 

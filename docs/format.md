@@ -139,7 +139,7 @@ it within the function (see [the decompiler](internals.md#decompiler)). Addressi
 - `ITOF`/`FTOI` exist and slots are tagged float by the addressing mode: the
   language had declared `int` and `float` variables. Mixed arithmetic without
   any conversion is common and only 3,318 conversions appear on the disc, so
-  c2s writes them as explicit casts, `(int)x` and `(float)x`.
+  The decompiler writes them as explicit casts, `(int)x` and `(float)x`.
 - Named functions with arguments, locals, `CALL` and a value-returning `RET`.
 - `LOAD_ADDR` and pointer-indexed modes: `&x`, arrays, and array parameters.
 - `EXT` pushes no result. At the VM level every native is a statement and
@@ -197,7 +197,7 @@ source, the SDK header a script includes names its table:
 Monster scripts often compute the native number as a group base plus an
 offset (`push 70; push 15; add` for `_GET_TARGET_ANGLE`), and 12,903 functions
 do it. The base differs between call sites for the same native (`_SET_MOS` is
-`180 + 2` 8,630 times and `170 + 12` four times), so c2s keeps it: the SDK declares each native with the base its calls
+`180 + 2` 8,630 times and `170 + 12` four times), so the decompiled C keeps it: the SDK declares each native with the base its calls
 mostly use (`NATIVE(70, 15)`), and `AT(n)` marks a call with another one
 (`AT(60) get_pos(&target_angle);`). The natives stage folds the addition before
 looking the number up.

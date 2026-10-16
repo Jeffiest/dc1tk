@@ -1,4 +1,4 @@
-// c2s SDK. Natives for event argument files loaded with load_arg.
+// dc2tk SDK. Natives for event argument files loaded with load_arg.
 //
 // Natives are engine functions, declared extern with their number in
 // NATIVE(...). A native with one result returns it (count = get_counter(3););
@@ -16,7 +16,7 @@
 #ifndef DC2TK_ARG_H
 #define DC2TK_ARG_H
 
-#include <c2s.h>
+#include <dc2tk.h>
 #pragma natives arg
 
 enum program {

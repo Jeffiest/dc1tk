@@ -1,6 +1,6 @@
-# The c2s language
+# The script language
 
-c2s is written as C. A script includes its SDK header and reads like a C
+The scripts are written in C. A script includes its SDK header and reads like a C
 file; a C compiler or IDE can parse it with the SDK's prelude (below), and
 `dc2tk compile` turns it into the exact bytecode.
 

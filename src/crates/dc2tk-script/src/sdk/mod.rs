@@ -18,7 +18,7 @@ use crate::{assets, names, paths, Error, Result};
 pub use crate::soundpass::{library_sounds, Passed, Seed, Sounds};
 
 /// The prelude every script includes; it declares no natives.
-pub const PRELUDE: &str = "c2s.h";
+pub const PRELUDE: &str = "dc2tk.h";
 pub const KEYWORDS: [&str; 28] = [
     "if", "else", "while", "return", "break", "continue", "wait", "end", "skip_end", "print", "sin", "cos", "int",
     "float", "void", "string", "any", "extern", "static", "inline", "enum", "program", "NATIVE", "OPTIONAL", "PROGRAM",

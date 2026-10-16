@@ -1,4 +1,4 @@
-// c2s SDK helpers for event scripts. Each helper stands for the native calls in its body; the
+// dc2tk SDK helpers for event scripts. Each helper stands for the native calls in its body; the
 // compiler expands it in place, so a helper call produces the same bytecode as writing the calls
 // out, and the decompiler folds every run it matches. Included by event.h.
 #ifndef DC2TK_HELPERS_EVENT_H

@@ -237,7 +237,7 @@ read from the disc.
 
 ### Content headers
 
-`include/*.h` are ordinary c2s headers, typically of constants: story
+`include/*.h` are ordinary script headers, typically of constants: story
 flags, items, characters, maps, sounds. They are included by every
 decompiled script and used when compiling, so `set_flag(FLAG_BRIDGE_REPAIRED,
 1)` round-trips. Engine constants (motion flags, pad buttons) belong in the

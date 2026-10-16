@@ -2,11 +2,11 @@
 
 `sdk/<table>.h` (`event`, `monster`, `action`, `effect`, `arg`) is the
 scripting SDK, `sdk/helpers/<table>.h` holds its inline helpers (each table
-header includes its own), and `sdk/c2s.h` is the C prelude. A script includes its table's
+header includes its own), and `sdk/dc2tk.h` is the C prelude. A script includes its table's
 header instead of naming a native table. `sdk/limits.h`, `sdk/float.h`, `sdk/stddef.h` and
 `sdk/stdarg.h` are C89's freestanding headers for the VM's types (see
 [the standard](c-standard.md)). Every header has an include guard,
-`DC2TK_<NAME>_H` (`DC2TK_HELPERS_<NAME>_H` under `helpers/`, `DC2TK_C2S_H`
+`DC2TK_<NAME>_H` (`DC2TK_HELPERS_<NAME>_H` under `helpers/`, `DC2TK_H`
 for the prelude), which only keeps it from being read twice.
 
 ```c
@@ -54,7 +54,7 @@ static inline void start_turning_to_target(float *angle, float turn_speed)
   the body. The decompiler folds every run a helper matches, choosing the
   combination that leaves the fewest statements, so the bytecode stays the
   same.
-- `c2s.h` is never read by the c2s compiler. It defines `string`, `any`
+- `dc2tk.h` is never read by dc2tk's compiler. It defines `string`, `any`
   (a transparent union), `NATIVE`, `OPTIONAL`, `PROGRAM`, `MAIN`, `AT`,
   `DIRECT`, `wait`, `end`, `skip_end`, `print`, `sin` and `cos` so that
   `clang -m32 -fsyntax-only -x c -std=c2x -I sdk` reads a script. `-m32`

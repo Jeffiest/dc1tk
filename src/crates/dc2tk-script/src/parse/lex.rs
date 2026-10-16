@@ -462,7 +462,7 @@ thread_local! {
 /// The macros after #include <path>: the header read as text, as C reads it, from the macros
 /// before it, so its #defines reach the including file's #if. Its declarations are read apart, as
 /// before (library::expand), and its constants stay names in code, so nothing else changes. The
-/// prelude (c2s.h, for C tools only) and a header the headers do not have (an error later) add
+/// prelude (dc2tk.h, for C tools only) and a header the headers do not have (an error later) add
 /// none.
 pub(super) fn header_macros(path: &str, headers: Files, macros: Macros, depth: usize) -> Result<Macros> {
     let Some(text) = headers.get(path).filter(|_| path != crate::sdk::PRELUDE) else {

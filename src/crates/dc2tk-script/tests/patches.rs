@@ -570,7 +570,7 @@ fn editors_get_a_header_of_the_targets_declarations_that_build_never_reads() {
     let (patched, library) = (arguments("/p.c"), arguments("/lib.c"));
     let at = patched.iter().rposition(|item| item == "-include").unwrap();
     assert!(patched[at + 1].ends_with("/m/.editor/p.h"), "{patched:?}");
-    assert!(library.iter().all(|item| !item.ends_with(".h") || item.ends_with("c2s.h")), "{library:?}");
+    assert!(library.iter().all(|item| !item.ends_with(".h") || item.ends_with("dc2tk.h")), "{library:?}");
     // the header is not one of the mod's sources, so what build merges is as it was
     assert!(mods::sources(&dirs[0]).unwrap().iter().all(|(path, _)| path.extension().unwrap() == "c"));
     let after = plan_of(&dirs, &root).unwrap();

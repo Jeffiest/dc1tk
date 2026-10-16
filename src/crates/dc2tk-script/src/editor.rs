@@ -4,7 +4,7 @@
 //! the mod (.editor/s51.h for s51.c): the target's own #include <...> lines, its globals as extern,
 //! a prototype with the doc comment of every function it defines or gets from its libraries, and
 //! its PROGRAM table as a comment. COMMANDS, the mod's compile_commands.json, gives each of the
-//! mod's sources the flags of the tree's compile_flags.txt, -include of the SDK's c2s.h (for a
+//! mod's sources the flags of the tree's compile_flags.txt, -include of the SDK's dc2tk.h (for a
 //! header of NEW_FLAG lines) and the mods folder as an include folder, where
 //! `#include "base/names.h"` finds a mod it requires, and each patch -include of its header. Only
 //! editors read these files: the patch's text is unchanged, and the folder, hidden, is not one of
@@ -182,7 +182,7 @@ pub fn write(
     if let Some(mods_dir) = mod_dir.parent().filter(|parent| !parent.as_os_str().is_empty()) {
         flags.push(format!("-I{}", posix(mods_dir)));
     }
-    // c2s's extensions (NEW_FLAG and the like) in headers and libraries that include nothing
+    // the scripts' extensions (NEW_FLAG and the like) in headers and libraries that include nothing
     let prelude = sdk_dir.join(sdk::PRELUDE);
     if prelude.is_file() {
         flags.extend(["-include".to_string(), posix(&prelude)]);

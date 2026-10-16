@@ -1,4 +1,4 @@
-// c2s SDK. Natives for character action scripts (mainchr, dungeon/act_script). They act on the character running the script.
+// dc2tk SDK. Natives for character action scripts (mainchr, dungeon/act_script). They act on the character running the script.
 //
 // Natives are engine functions, declared extern with their number in
 // NATIVE(...). A native with one result returns it (count = get_counter(3););
@@ -16,7 +16,7 @@
 #ifndef DC2TK_ACTION_H
 #define DC2TK_ACTION_H
 
-#include <c2s.h>
+#include <dc2tk.h>
 #pragma natives action
 
 enum program {

@@ -554,7 +554,7 @@ int f_04d4(int a0[], float a1)
             .replace("a1", "scale")
     }
 
-    const TYPED_HEADER: &str = "#include <c2s.h>
+    const TYPED_HEADER: &str = "#include <dc2tk.h>
 #pragma natives event
 typedef int music;
 enum music_pal {
@@ -584,7 +584,7 @@ void on_init(void)
     }
 
     fn typed_headers() -> IndexMap<String, String> {
-        [("event.h", TYPED_HEADER), ("c2s.h", "#define NATIVE(...)\n")]
+        [("event.h", TYPED_HEADER), ("dc2tk.h", "#define NATIVE(...)\n")]
             .into_iter()
             .map(|(name, text)| (name.to_string(), text.to_string()))
             .collect()

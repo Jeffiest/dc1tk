@@ -15,7 +15,7 @@ use indexmap::IndexMap;
 
 const EVENT_HEADER: &str = r"#ifndef DC2TK_EVENT_H
 #define DC2TK_EVENT_H
-#include <c2s.h>
+#include <dc2tk.h>
 #pragma natives event
 
 enum program {
@@ -41,14 +41,14 @@ static inline void set_actor_face(int actor, string face, string eyes)
 #endif
 ";
 
-const MONSTER_HEADER: &str = "#include <c2s.h>
+const MONSTER_HEADER: &str = "#include <dc2tk.h>
 #pragma natives monster
 
 extern float get_target_angle(void) NATIVE(70, 15);
 ";
 
 fn headers() -> IndexMap<String, String> {
-    texts(&[("event.h", EVENT_HEADER), ("monster.h", MONSTER_HEADER), ("c2s.h", "#define NATIVE(...)\n")])
+    texts(&[("event.h", EVENT_HEADER), ("monster.h", MONSTER_HEADER), ("dc2tk.h", "#define NATIVE(...)\n")])
 }
 
 /// HEADERS with one header replaced (dict(HEADERS, **{name: text})).
@@ -238,7 +238,7 @@ fn void_pointers_are_out_parameters_of_any_type() {
     );
 }
 
-const CONSTANT_HEADER: &str = "#include <c2s.h>
+const CONSTANT_HEADER: &str = "#include <dc2tk.h>
 #pragma natives event
 
 #define PI 3.1415927

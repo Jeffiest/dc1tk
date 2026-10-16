@@ -260,7 +260,7 @@ fn dividing_by_zero_stops_the_test_vm_as_it_stops_the_game() {
     }
 }
 
-// Standard C's forms meet the c2s ones: natives, the SDK's kinds, hoisted results.
+// Standard C's forms meet the scripts' own: natives, the SDK's kinds, hoisted results.
 
 #[test]
 fn natives_work_in_cs_new_forms() {

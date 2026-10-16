@@ -213,7 +213,7 @@ fn with_initialise(program: &Node, functions: Vec<Node>) -> Result<Vec<Node>> {
 
 // ---- integer types -------------------------------------------------------------------------
 
-/// The runtime the integer types need, in c2s: unsigned division, remainder and right shift, and
+/// The runtime the integer types need, in the scripts: unsigned division, remainder and right shift, and
 /// conversions between unsigned int and float, on the VM's signed 32-bit ints (whose arithmetic
 /// wraps). Each function is added to a program that uses it, under its name with c89_ made __.
 const RUNTIME: &str = r"
