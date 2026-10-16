@@ -262,9 +262,9 @@ pub fn context(declarations: &Declarations, table: &str, tables: &BTreeMap<Strin
     found.originals = original_by_number.values().cloned().collect();
     found.program_names = found.programs.iter().map(|(name, number)| (*number, name.clone())).collect();
     if let Some(rows) = rows {
-        found.old_groups = numbered_groups(&rows.old_groups);
-        found.old_direct = numbered_groups(&rows.old_direct);
-        found.old_table_groups = numbered_groups(&rows.old_table_groups);
+        found.old_groups = numbered_groups(&rows.old.old_groups);
+        found.old_direct = numbered_groups(&rows.old.old_direct);
+        found.old_table_groups = numbered_groups(&rows.old.old_table_groups);
     }
     found.by_number = declarations
         .natives

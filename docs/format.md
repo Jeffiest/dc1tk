@@ -171,9 +171,8 @@ the stack in loops and branches. The decompiler does not need it, because the
 bytecode already shows `&x` (`LOAD_ADDR`) and each constant's type.
 `monster.json` and `action.json` also hold `old_groups`, `old_table_groups`
 and `old_direct` (see [the SDK](sdk.md)), which were worked out from the
-scripts rather than the decomp: the command writes the tables without
-them, so regenerate with `--out` into another folder and merge, or they are
-lost.
+scripts rather than the decomp. The command cannot regenerate them, so it
+keeps what the table file it replaces holds of them.
 
 `EXT` pops `arg1` values, and the deepest of them is the native number. It is
 found by walking back from the `EXT` and adding up stack effects (`src/crates/dc2tk-script/src/stack.rs`):

@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use dc2tk_disc::files;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::Result;
@@ -24,15 +25,23 @@ pub struct Table {
     pub source: String,
     pub array: String,
     pub natives: Vec<Native>,
+    #[serde(flatten)]
+    pub old: OldTable,
+}
+
+/// How scripts built for an older native table call it, worked out by hand from those scripts
+/// rather than from the decompilation (monster and action have them; see docs/sdk.md).
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct OldTable {
     /// Groups of an older native table, by base: the base of the same group in this one.
-    #[serde(default)]
-    pub old_groups: indexmap::IndexMap<String, i64>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub old_groups: IndexMap<String, i64>,
     /// Groups that are current groups too, read as old in scripts built for the older table.
-    #[serde(default)]
-    pub old_table_groups: indexmap::IndexMap<String, i64>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub old_table_groups: IndexMap<String, i64>,
     /// Numbers of the older table called without a group, by the number they stand for now.
-    #[serde(default)]
-    pub old_direct: indexmap::IndexMap<String, i64>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub old_direct: IndexMap<String, i64>,
 }
 
 impl Table {
@@ -130,6 +139,9 @@ pub struct Generated {
     pub source: String,
     pub array: String,
     pub natives: Vec<GeneratedNative>,
+    /// Kept from the file the table replaces, since the decompilation cannot give it.
+    #[serde(flatten)]
+    pub old: OldTable,
 }
 
 /// Ordered by number, then name, then accessors (the derived order of the fields).
@@ -290,6 +302,7 @@ fn build_with(patterns: &Patterns, root: &Path, spec: &Spec) -> Result<Generated
         source: spec.source.to_string(),
         array: spec.array.to_string(),
         natives,
+        old: OldTable::default(),
     })
 }
 
@@ -298,16 +311,27 @@ pub fn build_table(root: &Path, spec: &Spec) -> Result<Generated> {
     build_with(&Patterns::new(), root, spec)
 }
 
+/// The hand-recorded part of a table file already written, so regenerating keeps it; none when
+/// there is no file.
+fn recorded(path: &Path) -> Result<OldTable> {
+    if !path.exists() {
+        return Ok(OldTable::default());
+    }
+    serde_json::from_str(&files::read_to_string(path)?)
+        .map_err(|error| crate::Error::invalid(format!("{}: {error}", path.display())))
+}
+
 /// Writes every table into out_dir as <table>.json, one after another (a table that fails leaves
-/// the ones before it written), and returns them.
+/// the ones before it written), and returns them. What a file there already records of the older
+/// tables (`OldTable`) is kept.
 pub fn generate(root: &Path, out_dir: &Path) -> Result<Vec<Generated>> {
     files::create_dir_all(out_dir)?;
     let patterns = Patterns::new();
     let mut tables = Vec::new();
     for spec in &SPECS {
-        let table = build_with(&patterns, root, spec)?;
-        let text = dc2tk_disc::textfile::json_text(&table);
-        dc2tk_disc::textfile::write_text(&out_dir.join(format!("{}.json", spec.table)), &text)?;
+        let path = out_dir.join(format!("{}.json", spec.table));
+        let table = Generated { old: recorded(&path)?, ..build_with(&patterns, root, spec)? };
+        dc2tk_disc::textfile::write_text(&path, &dc2tk_disc::textfile::json_text(&table))?;
         tables.push(table);
     }
     Ok(tables)
@@ -379,6 +403,58 @@ static RS_EXTFUNC_INFO ext_func_info[3] = {
             table.natives,
             vec![native(3, "_SET_FLAG", &["int", "float"]), native(12, "_GET_FLAG", &["string", "out"])]
         );
+    }
+
+    #[test]
+    fn regenerating_keeps_what_the_tables_record_of_the_older_ones() {
+        let root = std::env::temp_dir().join(format!("dc2tk-script-natives-keep-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for spec in &SPECS {
+            let arg_table = SOURCE.replace("ext_func_info", "esa_ext_func_info");
+            for (path, text) in [(spec.source, format!("{SOURCE}{arg_table}")), (spec.header, HEADER.to_string())] {
+                fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+                fs::write(root.join(path), text).unwrap();
+            }
+        }
+        let out = root.join("natives");
+        fs::create_dir_all(&out).unwrap();
+        let old = r#"{"table": "monster", "source": "", "array": "", "natives": [],
+            "old_groups": {"60": 70}, "old_table_groups": {"110": 120}, "old_direct": {"10": 35}}"#;
+        fs::write(out.join("monster.json"), old).unwrap();
+        generate(&root, &out).unwrap();
+        let tables = load(&out).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+        let monster = &tables["monster"].old;
+        assert_eq!(monster.old_groups, IndexMap::from([("60".to_string(), 70)]));
+        assert_eq!(monster.old_table_groups, IndexMap::from([("110".to_string(), 120)]));
+        assert_eq!(monster.old_direct, IndexMap::from([("10".to_string(), 35)]));
+        assert_eq!(tables["monster"].natives.len(), 2);
+        assert_eq!(tables["event"].old, OldTable::default());
+    }
+
+    #[test]
+    fn generated_tables_write_back_as_they_are() {
+        let folder = repository().join("src").join("natives");
+        for name in TABLES {
+            let text = fs::read_to_string(folder.join(format!("{name}.json"))).unwrap().replace("\r\n", "\n");
+            let table: Table = serde_json::from_str(&text).unwrap();
+            let generated = Generated {
+                table: table.table.clone(),
+                source: table.source.clone(),
+                array: table.array.clone(),
+                natives: table
+                    .natives
+                    .iter()
+                    .map(|native| GeneratedNative {
+                        no: native.no.into(),
+                        name: native.name.clone(),
+                        accessors: native.accessors.clone(),
+                    })
+                    .collect(),
+                old: table.old.clone(),
+            };
+            assert_eq!(dc2tk_disc::textfile::json_text(&generated), text, "{name}");
+        }
     }
 
     #[test]
