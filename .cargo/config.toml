@@ -1,3 +1,8 @@
 # Build output goes to build/ (build/release/dc2tk.exe); dc2tk.bat and dc2tk at the root run it.
 [build]
 target-dir = "build"
+
+# One self-contained exe on Windows: the C runtime (vcruntime, the UCRT) linked in, so dc2tk.exe
+# runs without the Visual C++ Redistributable. The C dependencies (zlib, mimalloc) follow it.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]
