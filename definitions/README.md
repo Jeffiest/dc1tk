@@ -219,7 +219,7 @@ its slot name, so the library compiles in every script that includes it.
 `"numbering": "old"` marks a monster script built for the older native
 table, whose group 110, 140 and 160 calls then get the comment naming the
 native they were written for, and `"raw"` one that calls natives by number
-from an older, smaller table (see [older native numberings](../docs/game/scripts.md#older-native-numberings)). An entry also applies to the script's language variants (`X.stb`,
+from an older, smaller table (see [older native numberings](../docs/internals/scripts.md#older-native-numberings)). An entry also applies to the script's language variants (`X.stb`,
 `X_1.stb` ... `X_5.stb`) that have no entry of their own.
 
 ### Strings

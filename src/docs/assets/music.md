@@ -65,7 +65,7 @@ The engine's own unknowns (the driver, the voices) are in
 [music and ambient loops](../../../docs/internals/music.md#what-is-not-known).
 
 1. **New instruments** come from WAVs
-   ([new instruments](../../../docs/guide/music.md#new-instruments)), one sample a key range; velocity layers, an envelope other than a bank program's, and
+   ([new instruments](../../../docs/guide/music.md#custom-instruments)), one sample a key range; velocity layers, an envelope other than a bank program's, and
    importing a SoundFont's instruments are not done. Whether the IOP's synthesizer reads the new
    programs as the disc's is from the format, not yet heard in the game (`text-music-test.iso`).
 2. **The SoundFont is approximate** (above); nothing was compared with the game's output.

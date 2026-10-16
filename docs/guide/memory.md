@@ -15,11 +15,11 @@ The PlayStation 2 has 32 MB of main RAM, 4 MB of video RAM (VRAM), and 2 MB of s
 | Asset Type | Hardware Limit | How to Reduce Size |
 | --- | --- | --- |
 | **Map script (`.stb`)** | `312,816 bytes` (`0x4C5F0`) | Use function patches (`#pragma override`) instead of copying shared helper libraries. |
-| **Disc file index (`DATA.HD4`)** | `327,680 bytes` (`0x50000`, ~150 new top-level files free) | Place new assets inside existing pack archives (`.chr`, `.mpk`, `.snd`) instead of adding top-level disc files. |
+| **Disc file index (`DATA.HD4`)** | `327,680 bytes` (`0x50000`); the retail index leaves 7,780 bytes free, and each new file takes 13 bytes plus its path | Place new assets inside existing pack archives (`.chr`, `.mpk`, `.snd`) instead of adding top-level disc files. |
 | **Hero models & weapons** | Fixed per-slot RAM & VRAM stacks | Keep replacement meshes and textures near the original vertex count and dimensions. |
 | **Textures (`.img`)** | Fixed GS VRAM block count per slot | Use power-of-two dimensions and keep 3D textures at or below `256x256`. |
 | **Sound banks (`.snd`)** | Fixed SPU2 RAM per port | Trim silence from WAV files or downsample to `22050 Hz` or `11025 Hz`. |
-| **Music banks (`BG_*`)** | `546,096 bytes` of sample data | Use shorter loop samples for custom instruments. |
-| **System text (`.mes`)** | `53,248` to `80,000 bytes` | Keep strings concise in `system_N.mes` and `sysmes_N.mes`. |
+| **Music banks (`BG_*`)** | `491,520 bytes` (`0x78000`) of sample data | Use shorter loop samples for custom instruments. |
+| **System text (`.mes`)** | `53,248` (`system_N.mes`) and `80,000 bytes` (`sysmes_N.mes`) | Keep strings concise. |
 
 For exact memory addresses and buffer sizes in the PS2 executable, see [DC2 Internals: Memory Layout](../internals/memory.md).

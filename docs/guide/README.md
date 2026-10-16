@@ -16,53 +16,57 @@ Copy `dc2.iso` into the `dc2tk` folder, open a terminal in that folder, and run:
 dc2tk setup dc2.iso
 ```
 
+(In PowerShell, run `.\dc2tk` instead of `dc2tk`. `extracted/` takes about 7 GB, and every built image is another 4.7 GB.)
+
 This command creates the `extracted/` directory:
 
 | Folder | Contents |
 | --- | --- |
-| `extracted/data/` | Game data tables as JSON (items, weapons, shops, monsters, inventions) |
-| `extracted/assets/` | Textures (`.png`), 3D models (`.gltf`), sounds (`.wav`), music (`.mid`), and menu text (`.txt`) |
-| `extracted/maps/` | 3D maps exported as `.gltf` scenes for Blender |
-| `extracted/scripts/` | All ~2,500 game scripts decompiled into `.c` files |
-| `extracted/disc/` | Unpacked raw disc files used to rebuild the ISO |
+| `extracted/scripts/` | The game's 1,398 scripts decompiled into `.c` files, with their shared functions in `lib/` |
+| `extracted/assets/` | Textures (`.png`), 3D models (`.gltf`), sounds (`.wav`), music (`.mid` and `.sf2`), and menu text (`.txt`), with `manifest.json` listing every asset id |
+| `extracted/data/` | Game data tables as JSON (items, weapons, shops, monsters, inventions, and more), for reference |
+| `extracted/maps/` | 3D maps exported as `.gltf` scenes for Blender, for reference |
+| `extracted/disc/` | Unpacked raw disc files, used to rebuild the ISO |
 
-## Step 2: Make your first starter mod
+A mod lives in its own folder, `mods/<name>/`, so `extracted/` stays a clean copy of the game. `dc2tk diff` and `dc2tk mod make` notice edits in `extracted/scripts`, `extracted/assets`, and `extracted/disc`, but not in `extracted/data` or `extracted/maps`: to change a data table or a map, copy it into a mod first (`dc2tk mod asset` or `dc2tk map-export`).
 
-Edit files in `extracted/` and package your changes into a reusable mod folder.
+## Step 2: Make your first mod
 
 ### Example: Give Max a 999-Attack Battle Wrench
 
-1. Open `extracted/data/items.json` in a text editor, search for `"Battle Wrench"`, and change `"attack": 11` to `"attack": 999`:
+1. Copy the item table into a new mod, `mods/super-wrench/`:
+   ```sh
+   dc2tk mod asset dc2.iso super-wrench data:items
+   ```
+   This writes `mods/super-wrench/data/items.json` and adds `"data:items": "data/items.json"` to `mods/super-wrench/mod.json`.
+2. Open `mods/super-wrench/data/items.json` and replace its contents with only the record and field you change. The Battle Wrench is item `1`, and its attack is `8`:
    ```json
-         "id": 2,
-         "name": { "en": "Battle Wrench" },
-         "weapon": {
-           "attack": 999,
-           "durable": 20
-         }
+   {
+     "items": [
+       { "item": 1, "weapon": { "attack": 999 } }
+     ]
+   }
    ```
-2. Check your change:
+3. Check the mod:
    ```sh
-   dc2tk diff dc2.iso
+   dc2tk mod check extracted/scripts super-wrench --disc dc2.iso
    ```
-3. Package the change into a mod folder (`mods/super-wrench/`):
-   ```sh
-   dc2tk mod make dc2.iso super-wrench
-   ```
+   It prints `1 values changed: item 1 (Battle Wrench) weapon.attack`.
 4. Build `modded.iso` and launch it in PCSX2:
    ```sh
    dc2tk build extracted/scripts dc2.iso -o modded.iso --mod super-wrench --play
    ```
 
-> **Tip: Copy assets directly into a mod**
-> Instead of editing `extracted/`, copy individual assets or functions directly into `mods/<name>/`:
->
-> ```sh
-> dc2tk mod asset dc2.iso super-wrench data:items
-> dc2tk mod asset dc2.iso super-wrench texture:e254a1
-> dc2tk mod override extracted/scripts super-wrench --map s51 start_castle_battle
-> ```
-> See [Creating Mods](mods.md) for details on `mod.json` and patches.
+### Other ways to start a mod
+
+Copy other assets, or a script function, into a mod the same way:
+
+```sh
+dc2tk mod asset dc2.iso super-wrench texture:e254a1
+dc2tk mod override extracted/scripts super-wrench --map s51 start_castle_battle
+```
+
+Or edit scripts and assets in `extracted/` directly, list what you changed with `dc2tk diff dc2.iso`, and package it with `dc2tk mod make dc2.iso super-wrench`. See [Creating Mods](mods.md) for `mod.json` and patches.
 
 ## Finding your way around
 

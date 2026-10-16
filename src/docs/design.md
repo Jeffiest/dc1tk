@@ -259,7 +259,7 @@ in `dc2tk-assets`' `ids`).
   folder of WAVs named by entry number (`004.wav`, or `004_NAME.wav` as the
   tree names them), for entries the bank has; new entries are `add`'s. A
   music asset: a MIDI file (`.mid`), built into the sequence with the
-  disc's as the template ([the MIDI file](../../docs/guide/music.md#the-midi-file)).
+  disc's as the template ([the MIDI file](../../docs/guide/music.md#midi-rules)).
 - **Every place.** A replacement reaches every place the disc has the id,
   each built with that place's own file as the template. `only` keeps the
   places under the disc paths it lists: a place itself
@@ -292,7 +292,7 @@ in `dc2tk-assets`' `ids`).
   A `music:BG_NNN` line under `add` (`{"file": "x.mid", "like": "BG_193"}`)
   makes a new music file `snd2/bgm/BG_NNN.snd`, the like bank playing the
   MIDI file, for `load_bgm(NNN)`; the number is the mod's choice, one the
-  disc lacks ([music](../../docs/guide/music.md#a-music-file-of-a-mods-own)).
+  disc lacks ([music](../../docs/guide/music.md#add-a-new-music-file)).
 - **New files from common formats.** A `file:` line with `like` makes its
   game file whole, from PNGs or a glTF, with the disc's file `like` names
   as the template, so a mod can have a picture file or model pack of its

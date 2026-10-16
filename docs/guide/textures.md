@@ -27,9 +27,11 @@ To export all textures from one `.img` archive as a folder of PNGs:
 dc2tk mod asset dc2.iso my-mod chara/c02a.chr.d/c02a.img --as png
 ```
 
+This writes one PNG per texture into `mods/my-mod/disc/chara/c02a.chr.d/c02a.img.png/`. Delete the PNGs you do not change, edit the rest, and run `dc2tk build`.
+
 ## Add a new texture archive (`.img`)
 
-Create a new `.img` archive from a folder of PNGs using `"add"` in `mod.json` (used with `load_image` and `open_sprite` in scripts):
+Create a new `.img` archive from a folder of PNGs using `"add"` in `mod.json`. Scripts load it with `load_image` and show its textures as sprites by name:
 
 ```json
 {
@@ -47,14 +49,23 @@ Create a new `.img` archive from a folder of PNGs using `"add"` in `mod.json` (u
 | `"file": "ui"` | Packs each `.png` in `mods/<name>/ui/` as a named texture (for example, `ui/calc_body.png` becomes `"calc_body"`). |
 | `"like": "texture:logo_d00"` | Formats textures as 8-bit 256-color paletted images with transparency for 2D UI sprites. |
 
+```c
+load_image(MEMORY_STACK_EVENT, "mods/calculator/calc_ui.img", UI_IMAGE, &block);
+set_sprite_texture(SPRITE_CURSOR, "calc_cursor_wide", block);
+```
+
 See [`calculator.c`](../scripting/examples/calculator/calculator.c) for a working example.
 
 ## Rules and limits
 
 | Texture Type | Requirement |
 | --- | --- |
+| **All textures** | Width and height from 1 to 1024 pixels. Keep the original name of every texture you replace. |
 | **3D model and map textures** | Power-of-two width and height (`64x64`, `128x128`, `256x256`). |
-| **2D UI textures** | Width must be a multiple of 16, up to `1024x1024`. |
+| **Swizzled 8-bit textures** | Width must be a multiple of 16. |
 | **Animated map textures (`#texanime`)** | Keep the original pixel dimensions. |
+| **New texture names** | 1 to 31 Latin-1 characters, unique ignoring case. |
+
+A larger texture can push later textures of the same archive into the next VRAM block; `dc2tk build` checks VRAM budgets (see [Memory Limits](memory.md)).
 
 See [DC2 Internals: Textures](../internals/textures.md) for `.img` and TIM2 binary specifications.

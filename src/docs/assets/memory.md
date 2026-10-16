@@ -27,4 +27,4 @@ re-measure them there when the estimate or the map list changes.
 Not built into the check: the monster and event banks' combinations with each sound set
 (measured by following the scripts), the EE tables of event and monster banks, the Ridepod's and
 the monster form's stacks, the shared pool's free space, and the menu and dungeon message files
-(see [staying within memory](../../../docs/guide/memory.md#what-build-checks)).
+(see [staying within memory](../../../docs/guide/memory.md)).

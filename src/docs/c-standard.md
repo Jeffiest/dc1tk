@@ -4,7 +4,7 @@ The `dc2tk` script compiler provides a conforming C89/C90 freestanding implement
 
 One design rule governs the compiler: every decompiled script from the retail disc must recompile to its exact original bytes. Only syntax forms that the decompiler does not emit use the new C89 lowering paths. Running `dc2tk verify` checks byte-for-byte round-tripping across the entire retail disc.
 
-Where the game VM's native semantics differ from standard C (dynamic slot types on assignment, `&&` and `||` returning the deciding operand, and eager evaluation of native calls inside conditions), decompiled retail scripts require the VM's default behavior. Standard C semantics apply when you enable **strict mode** by placing `#pragma std c89` at the top of a file (see [language.md](language.md)). All other C89 features described on this page work in both default and strict modes.
+Where the game VM's native semantics differ from standard C (dynamic slot types on assignment, `&&` and `||` returning the deciding operand, and eager evaluation of native calls inside conditions), decompiled retail scripts require the VM's default behavior. Standard C semantics apply when you enable **strict mode** by placing `#pragma std c89` at the top of a file (see [language.md](../../docs/scripting/language.md)). All other C89 features described on this page work in both default and strict modes.
 
 ## Conformance test suite
 
@@ -80,7 +80,7 @@ C89 requires a freestanding implementation to document the following behaviors:
 - **Preprocessor**:
   - `#include <...>` searches `sdk/`.
   - `#include "..."` searches the current script's directory, parent directories up to the root, and then `sdk/`.
-  - Recognized `#pragma` directives are documented in [language.md](language.md); unknown pragmas are ignored.
+  - Recognized `#pragma` directives are documented in [language.md](../../docs/scripting/language.md); unknown pragmas are ignored.
   - `__DATE__` and `__TIME__` use UTC (from `SOURCE_DATE_EPOCH` when set).
   - `__STDC__` is defined as `1`. `__STDC_VERSION__` is undefined (introduced in C95).
 - **Translation limits**:

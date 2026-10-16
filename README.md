@@ -10,10 +10,10 @@
   <a href="https://github.com/fakegenie/DC2-Toolkit/releases"><b>Download Releases</b></a>
 </p>
 
-**DC2-Toolkit / dc2tk** is a set of tools for modifying the PS2 game Dark Chrinoicle/Dark Cloud 2. With them you can extract or modify almost everything in the game and even create total conversions. We support extracting, converting and injecting:
+**DC2-Toolkit / dc2tk** is a set of tools for modifying the PS2 game Dark Chronicle/Dark Cloud 2. With them you can extract or modify almost everything in the game and even create total conversions. We support extracting, converting and injecting:
 
-- **Scripting** DC2 heavily uses it's own scripting language for almost all behaviour in the game. dc2tk can extract all the game's scripts as human readable C code, and compile them back into the game's original bytecode format.
-- **Mapping** All game maps can be extracted to modern formats, and we provide a blender plugin to help editing/creating them and a compiler to convert them to the original DC2 Format.
+- **Scripting** DC2 heavily uses its own scripting language for almost all behaviour in the game. dc2tk can extract all the game's scripts as human readable C code, and compile them back into the game's original bytecode format.
+- **Mapping** All game maps can be extracted to modern formats, and we provide a Blender plugin to help editing/creating them and a compiler to convert them to the original DC2 Format.
 - **Models/Textures/Audio** We can extract and convert all to gltf/png/wav/midi files, and can convert them all back. 
 - **Text/Config/Data** Menus, dialogue, shop items, etc in every language, all editable as text and json files
 
@@ -29,9 +29,9 @@ The goal of this project is to support converting from and to the original game 
 - Download the latest release.
 - Extract the zip somewhere and copy your PAL iso to the folder as "dc2.iso"
 - Run `dc2tk setup dc2.iso`. This will extract all the assets on the disc to `extracted/`
-- Optinonally install the blender plugin from the releases page.
-- Modify the files in the extracted folder, see the documentation for some how-tos.
-- Run `dc2tk build extracted dc2.iso -o modded.iso` to build a new iso with your changes.
+- Optionally install the Blender plugin from the releases page.
+- Make a mod in `mods/`, or edit the scripts and assets in `extracted/` and package them with `dc2tk mod make dc2.iso my-mod`. See the documentation for how-tos.
+- Run `dc2tk build extracted/scripts dc2.iso -o modded.iso --mod my-mod` to build a new iso with your changes.
 
 ## Notes
 

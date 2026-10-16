@@ -22,10 +22,10 @@
    ```sh
    dc2tk setup dc2.iso
    ```
-4. Edit files in `extracted/` or create a mod in `mods/` (see the [Getting Started Guide](guide/README.md)).
-5. Build a new `.iso` and open it in [PCSX2](https://pcsx2.net/):
+4. Create a mod in `mods/my-mod/` (see the [Getting Started Guide](guide/README.md)).
+5. Build a new `.iso` with your mod and open it in [PCSX2](https://pcsx2.net/):
    ```sh
-   dc2tk build extracted/scripts dc2.iso -o modded.iso
+   dc2tk build extracted/scripts dc2.iso -o modded.iso --mod my-mod
    ```
 
 ## Documentation

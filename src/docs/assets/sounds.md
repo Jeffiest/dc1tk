@@ -66,7 +66,7 @@ let n = bank.add_entry(&sb::read_wav(&fs::read("new.wav")?)?, "MY_SOUND", "MOD",
 fs::write("SY_000.snd", bank.build()?)?;
 ```
 
-- WAV input is what [editing sounds](../../../docs/guide/sounds.md#what-a-wav-may-be) lists;
+- WAV input is what [editing sounds](../../../docs/guide/sounds.md#wav-requirements-and-limits) lists;
   the resampling rate is `replace_vag`'s `rate`.
 - New chains copy the replaced entry's first voice, as the modding page describes.
 - New program numbers avoid every number a KeyOn row or a `.mid` names,
@@ -83,8 +83,7 @@ fs::write("SY_000.snd", bank.build()?)?;
 
 ## `sounds.rs`: the WAV folders mods use
 
-A mod's WAV folder is `sounds::build_entries`, following the rules on
-[editing sounds](../../../docs/guide/sounds.md#how-build-changes-a-bank): a KeyOn entry whose
+A mod's WAV folder is `sounds::build_entries`: a KeyOn entry whose
 samples no other entry plays is overwritten with `Mode::InPlace`, any other gets samples of its
 own with `Mode::Detach`, and the samples it played before are cut by `free_unused`. The
 constants a mod's named WAVs give (`SE_SP_004_BEEP = 5`) come from `replace::wav_constants`.

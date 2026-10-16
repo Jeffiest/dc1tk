@@ -5,8 +5,8 @@ it as the game draws it, lets you edit its placements, trigger points,
 collision, settings, meshes and textures and model new objects, checks it
 against the game's limits, and exports it into a mod that `dc2tk build` turns
 into a disc image. The scene's conventions (node names, `extras.c2`,
-collision material names) are in [the glTF scene](../docs/modding/maps.md#the-gltf-scene),
-and the formats behind them in [maps](../docs/game/maps.md); the add-on follows them and never renames what carries data.
+collision material names) are in [the glTF scene](../docs/guide/maps.md#scene-reference),
+and the formats behind them in [maps](../docs/internals/maps.md); the add-on follows them and never renames what carries data.
 
 Blender 4.2 or newer (tested with 4.2.23, 5.1.2 and 5.2.2); written to run on 3.6 too. Plain
 Python, nothing to install besides the add-on.
@@ -227,7 +227,7 @@ placement (copied with its template) or, with nothing in a placement active,
 the map's own `points`. A door is made as the disc's are (action button, the
 screen fading out); its program, the map script's program it runs once open,
 is a number or given by name in `mod.json` (`"programs"`, as for a door into
-a new map: [editing maps](../docs/modding/maps.md#a-map-of-a-mods-own-and-a-door-into-it)). An event point's
+a new map: [editing maps](../docs/guide/maps.md#doors-between-maps)). An event point's
 program has a menu of the map script's programs (Read Map Scripts) and "By
 name in mod.json", which writes the point's line in `"programs"` for build to
 number. Names are made unique within their parent and kept
@@ -281,7 +281,7 @@ parts: the game lays them out at run time. Its import shows each template
 once, in rows by family (`way`, `room`, `door`, ...), as a placement marked
 "Template ..., shown once": edit its pieces, collision and points and the
 export changes the template; the placement itself places nothing, so moving
-it changes nothing (see [dungeons](../docs/game/dungeons.md), where
+it changes nothing (see [dungeons](../docs/internals/dungeons.md), where
 area 5 floors are where chests and monsters may stand). Each part's 320 x
 320 cell is drawn about its origin, its closed sides (`MOVE_FLAG`) as walls,
 which the part's box toggles side by side (-X, -Z, +X, +Z). Preview Dungeon
@@ -343,7 +343,7 @@ off node and collision material names in the written file, since pieces and
 points repeat in every placement of a template. To make a new map of the
 export instead, move its line under `add` with the map it came from:
 `"map:m05x": {"file": "maps/m05/m05.gltf", "like": "m05"}`
-([editing maps](../docs/modding/maps.md#a-map-of-a-mods-own-and-a-door-into-it)).
+([editing maps](../docs/guide/maps.md#doors-between-maps)).
 
 **Build.** Set the retail disc, the output ISO and the source tree and press
 Build ISO with Mod: `dc2tk build SOURCE DISC -o OUTPUT --mods MODS --mod NAME`

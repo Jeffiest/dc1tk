@@ -289,7 +289,14 @@ change no member.
 
 ### 7.2 What any importer has to respect
 
-In [editing character models](../../../docs/guide/models.md#what-any-importer-has-to-respect).
+The `.mds` model format has no PS2 VU-specific layout; it stores an indexed mesh that the engine batches at runtime. Any model builder must satisfy six rules:
+
+1. **Keep the skeleton**: Animations, `info.cfg` (`OBJECT_NAME*`, `OUTLINE`, `VERTEX_ANIME`), `.clo` cloth files, `LoadSkin`, and shadow links find frames by name, while `.mot` and `.wgt` files index nodes by number. Always use the original `.mds` as a template: preserve node order, names (including `--` flags), parents, and matrices, replace only `MDT` mesh blocks, and append any new mesh-only leaf nodes at the end. Costume packs must keep the base skeleton's frame names, and bone `bbp` matrices must match the base character because `CreateChangeFrame` copies `bbp` matrices only for mesh nodes.
+2. **Geometry**: Split glTF vertices into separate deduplicated position, normal, UV, and color arrays. Write triangle lists (primitive type `3`, or `0x103` with vertex colors, `+0x10` without UVs, `+0x200` without normals) or stripify into triangle strips (type `4`, which uses fewer indices; the engine supports both). Keep one `FACES_ID` per material run. Although counts are stored as `u32` in the file, the engine stores them in 16-bit signed shorts (`mgCFace.vertex_num`, `index_num = count * stride`), so keep each primitive under `32,767 / stride` corners. Use counter-clockwise (CCW) winding, `w = 1` for vertices and normals, and `uv = (u, v, 1, 0)`.
+3. **Skinned meshes**: Transform vertex positions back into the mesh node's local space using $\text{inv}(\text{bbp}[\text{mesh}])$. Write the mesh node's `bbp` matrix and write `.wgt` blocks (`frame` = mesh node, `target` = bone node, type `20`, keys = `(vertex index, weight * 100)`). Limits: at most 32 bones per mesh, at most 4 weights per vertex, with weights summing to `100`. List every skinned mesh node in `VERTEX_ANIME` (maximum 24 names). The CPU skinning path (`SHAPE_ANIME` / shadows in `MotionProc3`) also warns above 400 vertices or 800 normals per mesh.
+4. **Materials**: Keep texture names to at most 31 bytes in `cp932`, matching textures in the pack's `.img`. Default material values are diffuse `(1, 1, 1, 1)`, field `0x10` `(1, 1, 1, 0)`, and specular power `50`.
+5. **Layout**: Build `.mds` files with `mds::build()` (style A layout) and align all `.chr` pack members to 16-byte boundaries.
+6. **Memory budget**: Character packs load into fixed character memory stacks (`base_stack` holds the `.mds` visuals and packets), and `_MODEL` uses a 6400-qword work buffer (limiting a skinned mesh to at most 3,198 vertices). See [the memory budgets](../../../docs/internals/memory.md) (character packs)—the main party's packs nearly fill their stacks. `POLY_NUM` in `info.cfg` may also need updating (exact engine usage not traced).
 
 ### 7.3 Motions from glTF (`motions.rs`)
 
