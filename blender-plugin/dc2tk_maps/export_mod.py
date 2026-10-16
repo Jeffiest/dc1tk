@@ -294,6 +294,12 @@ class DC2TK_OT_export_mod(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def is_disc(path):
+    """Whether dc2tk build can start from path: a disc image, or a folder dc2tk extract wrote
+    (it holds manifest.json)."""
+    return os.path.isfile(path) or os.path.isfile(os.path.join(path, "manifest.json"))
+
+
 class DC2TK_OT_build(runner.DC2TK_OT_run_job):
     """Run dc2tk build with the mod: a new disc image (output shown in the panel and the text
     "dc2tk output")"""
@@ -315,7 +321,7 @@ class DC2TK_OT_build(runner.DC2TK_OT_run_job):
         for label, value, check in (
             ("mod folder", mod_dir, os.path.isdir),
             ("source tree", source, os.path.isdir),
-            ("retail disc image", iso, os.path.isfile),
+            ("retail disc (an image, or an extracted disc folder)", iso, is_disc),
         ):
             if not value or not check(value):
                 self.report({"ERROR"}, "Set the %s (%s)" % (label, value or "empty"))

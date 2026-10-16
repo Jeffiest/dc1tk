@@ -639,6 +639,20 @@ def main():
         text = "\n".join(runner.current.take()) if runner.current else ""
         check("build" in text and "--mod testmod" in text and "--mods" in text, "build arguments: %s" % text)
         check(bpy.data.texts.get(runner.TEXT_NAME) is not None, "output in the text block")
+        # an extracted disc folder in place of the image; a folder extract did not write is refused
+        folder = os.path.join(work, "extracted_disc")
+        os.makedirs(folder)
+        settings_prefs.iso_path = folder
+        try:
+            refused = bpy.ops.dc2tk.build() == {"CANCELLED"}
+        except RuntimeError as error:  # the operator's error report
+            refused = "Set the retail disc" in str(error)
+        check(refused, "a folder without manifest.json is no disc")
+        open(os.path.join(folder, "manifest.json"), "w").close()
+        result = bpy.ops.dc2tk.build()
+        check(result == {"FINISHED"}, "dc2tk build ran from an extracted disc: %s" % result)
+        text = "\n".join(runner.current.take()) if runner.current else ""
+        check(folder in text, "build reads the extracted disc: %s" % text)
     return work
 
 

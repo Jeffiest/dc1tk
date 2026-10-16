@@ -395,7 +395,7 @@ class DC2TK_PT_export(_Panel, bpy.types.Panel):
         box.label(text="Build", icon="DISC")
         if has_prefs:
             col = box.column(align=True)
-            col.prop(settings, "iso_path", text="Retail ISO")
+            col.prop(settings, "iso_path", text="Retail disc")
             col.prop(settings, "output_iso", text="Output ISO")
             col.prop(settings, "source_dir", text="Source")
         box.operator("dc2tk.build", icon="PLAY")

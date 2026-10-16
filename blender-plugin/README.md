@@ -37,7 +37,7 @@ Preferences:
 | dc2tk executable | `build/release/dc2tk.exe` (`dc2tk` elsewhere), else `dc2tk.bat` / `./dc2tk` in the repository |
 | map export arguments | `map-export {name} -o {out}` |
 | exported maps | `extracted/maps` in the repository |
-| mod folder, source tree, retail and output disc images | for Export and Build; the source tree defaults to `extracted/scripts` |
+| mod folder, source tree, retail disc, output disc image | for Export and Build; the source tree defaults to `extracted/scripts`; the retail disc is the ISO or an untouched extracted disc folder |
 
 ## Use
 
@@ -187,11 +187,12 @@ export instead, move its line under `add` with the map it came from:
 `"map:m05x": {"file": "maps/m05/m05.gltf", "like": "m05"}`
 ([maps](../docs/assets/maps.md) section 9).
 
-**Build.** Set the retail ISO, the output ISO and the source tree and press
-Build ISO with Mod: `dc2tk build SOURCE ISO -o OUTPUT --mods MODS --mod NAME`
+**Build.** Set the retail disc, the output ISO and the source tree and press
+Build ISO with Mod: `dc2tk build SOURCE DISC -o OUTPUT --mods MODS --mod NAME`
 runs in the background, its last lines in the panel and all of it in the
-text "dc2tk output". The add-on asks for the image file; `dc2tk build` on the
-command line also takes an untouched extracted disc folder in its place.
+text "dc2tk output". The retail disc is the game's ISO or an untouched
+extracted disc folder (`extracted/disc`, which `build` packs into the new
+image first); the file browser picks a file, so type or paste a folder.
 `build` refuses a map line's scene of the wrong shape (a node's `children`,
 a mesh's `primitives` or the materials not a list, a child that is not one
 of the nodes) with an error naming it, rather than leaving that part out of

@@ -48,8 +48,8 @@ class Dc2tkPreferences(bpy.types.AddonPreferences):
         default="",
     )
     iso_path: StringProperty(
-        name="Retail disc image",
-        description="The game's ISO the build starts from",
+        name="Retail disc",
+        description="The game's ISO the build starts from, or an untouched extracted disc folder (extracted/disc)",
         subtype="FILE_PATH",
         default="",
     )
