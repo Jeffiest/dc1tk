@@ -9422,7 +9422,7 @@ Colour and alpha level of an event sprite, where 128 is 1.0: full alpha, and a c
 
 ## Value kinds
 
-What a parameter's value means. A kind reads as its type; the decompiler uses it to name or comment the values (see [the SDK](../sdk.md#value-kinds)).
+What a parameter's value means. A kind reads as its type; the decompiler uses it to name or comment the values (see [the SDK](../language.md#value-kinds)).
 
 | Kind | Type | What it is |
 | --- | --- | --- |

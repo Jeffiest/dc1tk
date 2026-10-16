@@ -13,7 +13,7 @@ For background on mod patches, `#pragma every_frame`, and `NEW_FLAG`, see [mods.
 
 > **Tip**
 > **Ready-to-use `modkit` helpers**
-> `sdk/modkit/` provides built-in functions for this exact pattern: `modkit_caption` and `modkit_text_show` in `"modkit/text.c"` for the map script, and `modkit_tick` in `"modkit/tick.c"` for the monster script (see [modkit](../sdk.md#modkit)). The example below writes out the underlying native calls directly to show how the mechanism works.
+> `sdk/modkit/` provides built-in functions for this exact pattern: `modkit_caption` and `modkit_text_show` in `"modkit/text.c"` for the map script, and `modkit_tick` in `"modkit/tick.c"` for the monster script (see [modkit](../language.md#modkit-helper-libraries)). The example below writes out the underlying native calls directly to show how the mechanism works.
 
 ## 1. Declare shared IDs in a header
 

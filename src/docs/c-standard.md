@@ -1,6 +1,6 @@
 # C89 standard support
 
-The `dc2tk` script compiler provides a conforming C89/C90 freestanding implementation (ANSI X3.159-1989, ISO/IEC 9899:1990) for custom script code, targeting the game's bytecode VM (see [script bytecode format](../internals/scripts.md)).
+The `dc2tk` script compiler provides a conforming C89/C90 freestanding implementation (ANSI X3.159-1989, ISO/IEC 9899:1990) for custom script code, targeting the game's bytecode VM (see [script bytecode format](../../docs/internals/scripts.md)).
 
 One design rule governs the compiler: every decompiled script from the retail disc must recompile to its exact original bytes. Only syntax forms that the decompiler does not emit use the new C89 lowering paths. Running `dc2tk verify` checks byte-for-byte round-tripping across the entire retail disc.
 

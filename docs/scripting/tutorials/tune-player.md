@@ -1,6 +1,6 @@
 # Tune the player
 
-This guide explains how to adjust Max's melee combo timing windows, attack hitboxes, and charge attack threshold. For background on player action scripts, see [The player](../README.md#the-player). For other guides, see [Scripting tutorials](README.md).
+This guide explains how to adjust Max's melee combo timing windows, attack hitboxes, and charge attack threshold. For background on player action scripts, see [The player](../systems.md#the-player). For other guides, see [Scripting tutorials](README.md).
 
 ## Procedure: Make Max's melee combo windows more forgiving
 

@@ -1,6 +1,6 @@
 # Add a cutscene to a town
 
-This guide shows how to create a self-contained mod that adds a new cutscene to a town map using one custom library file and `mod.json`, without copying any retail script files. For background on retail cutscene structure, see [Cutscenes](../README.md#cutscenes). For other guides, see [Scripting tutorials](README.md).
+This guide shows how to create a self-contained mod that adds a new cutscene to a town map using one custom library file and `mod.json`, without copying any retail script files. For background on retail cutscene structure, see [Cutscenes](../systems.md#cutscenes). For other guides, see [Scripting tutorials](README.md).
 
 ## Procedure: Play a welcome cutscene the first time the player enters Sindain
 

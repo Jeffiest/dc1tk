@@ -1,6 +1,6 @@
 # How scripts run
 
-This page documents how the engine executes scripts at runtime: script programs, event mode, shared state, language variants, automatic dungeon events, and message text control codes. Each rule cites the corresponding engine source file in the [ChronicleTwo](https://github.com/TheMoonPeople/ChronicleTwo) decompilation. For the `.stb` bytecode format and VM instruction set, see [scripts](scripts.md). For instructions on creating mods and editing scripts, see [mods](../guide/mods.md) and [editing scripts](../guide/scripts.md).
+This page documents how the engine executes scripts at runtime: script programs, event mode, shared state, language variants, automatic dungeon events, and message text control codes. Each rule cites the corresponding engine source file in the [ChronicleTwo](https://github.com/TheMoonPeople/ChronicleTwo) decompilation. For the `.stb` bytecode format and VM instruction set, see [scripts](scripts.md). For instructions on creating mods and editing scripts, see [mods](../guide/mods.md) and [editing scripts](../guide/mods.md).
 
 ## Programs
 
@@ -38,7 +38,7 @@ A mod does not assign a flag, counter, shared monster variable, or program numbe
 
 ## Language variants
 
-Map scripts have one file per language, from `s51_1.c` (English) to `s51_5.c`. The engine loads the variant that matches the console's language (`FileNameConvLanguage`, `event_func.cpp`; `EntryEventScript`, `dng_main.cpp`). A file without a language suffix (`s51.c`) is the original Japanese script, which the PAL game never loads when a numbered variant exists. For instructions on editing language variants, see [editing scripts](../guide/scripts.md#language-variants).
+Map scripts have one file per language, from `s51_1.c` (English) to `s51_5.c`. The engine loads the variant that matches the console's language (`FileNameConvLanguage`, `event_func.cpp`; `EntryEventScript`, `dng_main.cpp`). A file without a language suffix (`s51.c`) is the original Japanese script, which the PAL game never loads when a numbered variant exists. For instructions on editing language variants, see [editing scripts](../guide/mods.md#text-in-each-language).
 
 ## Message text
 

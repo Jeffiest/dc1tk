@@ -81,14 +81,11 @@ nav:
           - 3D Models (glTF): guide/models.md
           - Maps and Blender: guide/maps.md
           - Dungeons: guide/dungeons.md
-          - Editing Scripts: guide/scripts.md
       - Memory Limits: guide/memory.md
   - Scripting:
-      - scripting/README.md
-      - Script Language: scripting/language.md
-      - C89 Standard Support: scripting/c-standard.md
-      - SDK and Modkit: scripting/sdk.md
-      - Editor Setup: scripting/editor.md
+      - How Scripts Work & Lifecycle: scripting/README.md
+      - Map, Monster, and Player Scripts: scripting/systems.md
+      - C Language, SDK, and Patches: scripting/language.md
       - Example Guides:
           - scripting/tutorials/README.md
           - Change What an NPC Says: scripting/tutorials/npc-line.md

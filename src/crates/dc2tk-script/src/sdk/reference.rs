@@ -597,7 +597,7 @@ impl TablePage {
         }
         out.push_str(
             "## Value kinds\n\nWhat a parameter's value means. A kind reads as its type; the decompiler uses it \
-             to name or comment the values (see [the SDK](../sdk.md#value-kinds)).\n\n| Kind | Type | What it \
+             to name or comment the values (see [the SDK](../language.md#value-kinds)).\n\n| Kind | Type | What it \
              is |\n| --- | --- | --- |\n",
         );
         for item in kinds {
@@ -621,7 +621,7 @@ fn index_page(rows: &[Row], functions: usize) -> String {
     out.push_str(
         "Every native, helper, program, constant and value kind the SDK declares, a page a header, and the \
          functions of the modkit libraries. A script includes the header of its kind of script, which declares the \
-         natives the engine gives that kind; [the SDK](../sdk.md) explains how the headers are written, and \
+         natives the engine gives that kind; [the SDK](../language.md) explains how the headers are written, and \
          [the overview](../README.md) what each kind of script does. ",
     );
     let _ = writeln!(out, "{GENERATED}\n");

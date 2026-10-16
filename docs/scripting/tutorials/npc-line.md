@@ -1,6 +1,6 @@
 # Change what an NPC says
 
-This guide explains how to locate and modify an NPC dialogue line in a town script. For background on how town scripts select dialogue lines, see [Talking to people](../README.md#talking-to-people). For other guides, see [Scripting tutorials](README.md).
+This guide explains how to locate and modify an NPC dialogue line in a town script. For background on how town scripts select dialogue lines, see [Talking to people](../systems.md#talking-to-people). For other guides, see [Scripting tutorials](README.md).
 
 ## Procedure: Change Gordon's early dialogue line in Palm Brinks
 

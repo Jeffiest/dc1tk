@@ -1,6 +1,6 @@
 # Change enemy behavior
 
-This guide explains how to modify a monster's combat AI without unintentionally changing other monsters that share the same script or library. For background on monster scripts, see [Monsters](../README.md#monsters). For other guides, see [Scripting tutorials](README.md).
+This guide explains how to modify a monster's combat AI without unintentionally changing other monsters that share the same script or library. For background on monster scripts, see [Monsters](../systems.md#monsters). For other guides, see [Scripting tutorials](README.md).
 
 ## Procedure: Make the Golem attack harder and engage from farther away
 

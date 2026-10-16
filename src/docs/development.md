@@ -88,7 +88,7 @@ deliberate text change makes you take a new baseline, its images must still equa
   on small samples the tests build themselves (`dc2tk_disc::samples`, behind the crate's
   `test-support` feature, which other crates turn on in their `[dev-dependencies]`).
 - **The C89 suite** (`src/crates/dc2tk-script/tests/c89/`): one C file per language feature, each
-  marked with what the compiler must do with it. [c-standard.md](../../docs/scripting/c-standard.md) is its account.
+  marked with what the compiler must do with it. [c-standard.md](c-standard.md) is its account.
 - **The malformed-input sweep** (`dc2tk-assets/src/malformed.rs`) parses every prefix and
   single-byte flips of a sample of each binary format and asserts errors, never a panic. With
   `MALFORMED_TRACE` set it names each case before it runs, to find one that aborts.

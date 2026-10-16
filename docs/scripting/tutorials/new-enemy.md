@@ -1,6 +1,6 @@
 # Add a new enemy to a fight
 
-The engine's monster table has a fixed number of rows, and `dc2tk build` only compiles `.stb` script files that exist on the disc. While a mod cannot append a brand-new monster kind ID, you can place any existing monster kind into a fight or repurpose an event-only monster kind. For background on how scripted fights work, see [Story fights and boss arenas](../README.md#story-fights-and-boss-arenas). For other guides, see [Scripting tutorials](README.md).
+The engine's monster table has a fixed number of rows, and `dc2tk build` only compiles `.stb` script files that exist on the disc. While a mod cannot append a brand-new monster kind ID, you can place any existing monster kind into a fight or repurpose an event-only monster kind. For background on how scripted fights work, see [Story fights and boss arenas](../systems.md#story-fights-and-boss-arenas). For other guides, see [Scripting tutorials](README.md).
 
 ## Approaches for adding or replacing enemies
 

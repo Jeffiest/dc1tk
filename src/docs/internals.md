@@ -341,7 +341,7 @@ table chosen (`#pragma natives`, else by the script's path), and
 then helpers expanded and natives and constants resolved), writes it as
 assembly (`compile::to_asm`) and assembles it. The forms the decompiler
 writes pass through the lowering unchanged, so retail scripts keep their
-bytes; only new code takes the other paths ([the C standard](../../docs/scripting/c-standard.md)).
+bytes; only new code takes the other paths ([the C standard](c-standard.md)).
 
 String blocks hold the function's strings in push order, padded to 16 bytes
 with whatever the compiler's string buffer held there from earlier blocks
@@ -423,7 +423,7 @@ checks (`memory/`, `READ_BUFFER`, the measured `RETAIL_*` maps) are in
 - The C89 suite: a program in `tests/c89/` for each feature of the
   language, compiled in strict mode and run in the test VM, its second line
   saying what it shows (`// expect:`, `// rejects:`, `// differs:`,
-  `// planned:`, `// limit:`); [the C standard](../../docs/scripting/c-standard.md) lists them.
+  `// planned:`, `// limit:`); [the C standard](c-standard.md) lists them.
 - `tests/nesting.rs`: the whole compile at `parse::NESTING`, on a thread
   with a 1 MB stack. `dc2tk-assets`' `malformed.rs`: a small file of each
   binary format cut at every length and with bytes changed at every place,
