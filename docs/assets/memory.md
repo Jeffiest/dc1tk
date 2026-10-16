@@ -282,10 +282,13 @@ what each changed load uses:
 - **A sound bank**: the read buffer, the IOP window, its region (music and system an error, menu
   and character a warning), each sound set that loads it with the other field banks (an error
   past the field region), and a warning when a field, event or monster bank grows, since the
-  scripts' fullest set leaves 5,792 bytes.
+  scripts' fullest set leaves 5,792 bytes. For a music, base, battle, ambient or object bank whose
+  tables on the EE grew, their estimated size against its layer's EE stack (a warning past it;
+  a set's object banks count together; see [sounds](sounds.md#8-memory-the-game-gives-a-bank)).
 - Any other file that grows gets a note that no budget covers it.
 
 Not checked: the monster and event banks' combinations with each sound set (measured in this
-research by following the scripts, not built into `build`), the EE stacks of sound tables
-(see [sounds](sounds.md#8-memory-the-game-gives-a-bank)), the Ridepod's and the monster form's
-stacks, the shared pool's free space.
+research by following the scripts, not built into `build`), the EE tables of event and monster
+banks (where they go was not traced), the Ridepod's and the monster form's stacks, the shared
+pool's free space, and the menu and dungeon message files, whose room in the menu's memory and
+the dungeon's heap is not known ([text](text.md#7-limits)).

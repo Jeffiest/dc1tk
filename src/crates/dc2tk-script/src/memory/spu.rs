@@ -27,6 +27,63 @@ pub const IOP_STAGING: u64 = 0x6_DD00;
 /// EV_115_158) leaves 5,792 bytes.
 pub const SPU_FIELD_RETAIL_FREE: i64 = 5_792;
 
+/// The EE memory stacks a scene's sound layers keep their banks' tables in, in bytes (stSetBuffer
+/// takes quadwords, scenesnd.cpp): base (BS_*, InitSeBas) and battle (FG_*, InitSeBattle) 0x200
+/// quadwords each; ambient (SR_*, InitSeEnv), the object banks (OB_*, InitSeSrc, all of a set's
+/// in one) and music (BG_*, its BGM_INFO's, InitBGM) 0x40.
+pub fn ee_table_stack(bank: &str) -> Option<(u64, &'static str)> {
+    match bank.get(..2)? {
+        "BS" => Some((0x200 * QW, "base")),
+        "FG" => Some((0x200 * QW, "battle")),
+        "SR" => Some((0x40 * QW, "ambient")),
+        "OB" => Some((0x40 * QW, "object")),
+        "BG" => Some((0x40 * QW, "music")),
+        _ => None,
+    }
+}
+
+/// What a bank's tables take of its layer's EE stack, estimated from sndLoadSound's allocations
+/// (snd_mngr.cpp; each mgCMemory::Alloc in quadwords, the tables with 2 more): the entry table
+/// (12 bytes an entry, LoadSeInfoTxt), for music and ambient banks the .sq members' name list and
+/// names, and the .mid sequences' table (16 bytes each), names and events (about 6 bytes each,
+/// LoadSMF). None when the bank has no .cfg.
+pub fn ee_tables(name: &str, bank: &[u8]) -> Option<u64> {
+    let quads = |bytes: usize| bytes.div_ceil(16) as u64;
+    let named = |name: &str| quads(text::encode(name).map_or(name.len(), |bytes| bytes.len()) + 1);
+    let found = members(bank);
+    let of = |ext: &str| -> Vec<&(String, &[u8])> {
+        found.iter().filter(|(name, _)| name.to_lowercase().ends_with(&format!(".{ext}"))).collect()
+    };
+    let cfg = of("cfg").first()?.1;
+    let mut quadwords = quads(dc2tk_assets::soundbank::TextFile::parse(cfg).end_index() * 12) + 2;
+    let sq = of("sq");
+    // the music, ambient and event ports load .sq sequences
+    if !sq.is_empty() && matches!(name.get(..2), Some("BG" | "SR" | "EV")) {
+        quadwords += quads(sq.len() * 4) + 2 + sq.iter().map(|(name, _)| named(name)).sum::<u64>();
+    }
+    let mid = of("mid");
+    if !mid.is_empty() {
+        quadwords += mid.len() as u64 + 2;
+        for (name, data) in mid {
+            quadwords += named(name) + quads(smf_events(data) * 6);
+        }
+    }
+    Some(quadwords * QW)
+}
+
+/// The events LoadSMF keeps of a sequence: its first track's channel events and the end.
+fn smf_events(data: &[u8]) -> usize {
+    let Ok(smf) = dc2tk_assets::music::Smf::read(data) else { return 0 };
+    let events = smf.tracks.first().map_or(0, |track| {
+        track
+            .events
+            .iter()
+            .filter(|(_, message)| !matches!(message, dc2tk_assets::sequence::Message::Meta { .. }))
+            .count()
+    });
+    events + 1
+}
+
 /// The size of a bank's samples: its .bd member.
 pub fn bank_samples(bank: &[u8]) -> Option<u64> {
     members(bank).into_iter().find(|(name, _)| name.to_lowercase().ends_with(".bd")).map(|(_, data)| data.len() as u64)
@@ -65,11 +122,69 @@ pub(super) fn sound_sets(index: &[u8]) -> Vec<(i64, Vec<String>)> {
     out
 }
 
+/// A bank's path on the disc by its name (FG_000), in whichever folder of snd2/ it is.
+fn bank_path<'a>(paths: &'a [String], bank: &str) -> Option<&'a String> {
+    let wanted = format!("/{}.snd", bank.to_lowercase());
+    paths.iter().find(|path| {
+        let lower = path.to_lowercase();
+        lower.starts_with("snd2/") && lower.ends_with(&wanted)
+    })
+}
+
+/// A changed bank's tables against its layer's EE stack (ee_table_stack), when they grew: a note
+/// of the use, and a warning past the stack (the use is estimated). A set's object banks share
+/// one stack, so theirs count together.
+fn check_ee_tables(original: &dyn Disc, modded: &dyn Disc, path: &str, stem: &str) -> Vec<Finding> {
+    let Some((stack, layer)) = ee_table_stack(stem) else { return Vec::new() };
+    let tables =
+        |disc: &dyn Disc, path: &str, bank: &str| disc.read(path).as_deref().and_then(|data| ee_tables(bank, data));
+    let Some(new) = tables(modded, path, stem) else { return Vec::new() };
+    if tables(original, path, stem).is_some_and(|old| new <= old) {
+        return Vec::new();
+    }
+    let (mut used, mut with) = (new, String::new());
+    if let (true, Some(index)) = (layer == "object", modded.read("snd2/MAP_index.txt")) {
+        let paths = modded.paths();
+        for (set, banks) in sound_sets(&index) {
+            if !banks.iter().any(|bank| bank.eq_ignore_ascii_case(stem)) {
+                continue;
+            }
+            let objects = banks.iter().filter(|bank| bank.starts_with("OB"));
+            let total: u64 =
+                objects.filter_map(|bank| bank_path(&paths, bank).and_then(|path| tables(modded, path, bank))).sum();
+            if total > used {
+                (used, with) = (total, format!(" with sound set {set}'s other object banks"));
+            }
+        }
+    }
+    let mut out = vec![finding(
+        Level::Note,
+        format!(
+            "{path}: its tables take about {} bytes{with} of the {layer} sounds' {}-byte EE stack",
+            n(used),
+            n(stack)
+        ),
+    )];
+    if used > stack {
+        out.push(finding(
+            Level::Warning,
+            format!(
+                "{path}: its tables take about {} bytes{with}, more than the {} of the {layer} sounds' EE memory stack (CScene::InitSe*), so loading it overruns the stack (estimated from sndLoadSound's allocations)",
+                n(used),
+                n(stack)
+            ),
+        ));
+    }
+    out
+}
+
 pub(super) fn check_sound(original: &dyn Disc, modded: &dyn Disc, path: &str) -> Vec<Finding> {
     let mut out = check_read_whole(original, modded, path, "sound bank");
+    let name = path.rsplit('/').next().unwrap_or(path).to_uppercase();
+    let stem = name.strip_suffix(".SND").unwrap_or(&name);
+    out.extend(check_ee_tables(original, modded, path, stem));
     let Some(new) = modded.read(path).as_deref().and_then(bank_samples) else { return out };
     let old = original.read(path).as_deref().and_then(bank_samples);
-    let name = path.rsplit('/').next().unwrap_or(path).to_uppercase();
     let grew = old.is_none_or(|old| new > old);
     if (IOP_STAGING + 1..=IOP_STAGING + 0x100).contains(&new) || new > 2 * IOP_STAGING {
         out.push(finding(
@@ -112,19 +227,11 @@ pub(super) fn check_sound(original: &dyn Disc, modded: &dyn Disc, path: &str) ->
         return out;
     }
     // the sets that load this bank with its neighbours, each a stack of banks loaded together
-    let stem = name.strip_suffix(".SND").unwrap_or(&name);
     let mut fullest: Option<(i64, u64)> = None;
     if let Some(index) = modded.read("snd2/MAP_index.txt") {
         let paths = modded.paths();
-        let bank_size = |bank: &str| {
-            let wanted = format!("{}.snd", bank.to_lowercase());
-            paths
-                .iter()
-                .find(|path| {
-                    path.to_lowercase().starts_with("snd2/") && path.to_lowercase().ends_with(&format!("/{wanted}"))
-                })
-                .and_then(|path| modded.read(path).as_deref().and_then(bank_samples))
-        };
+        let bank_size =
+            |bank: &str| bank_path(&paths, bank).and_then(|path| modded.read(path).as_deref().and_then(bank_samples));
         let mut sizes: HashMap<String, u64> = HashMap::new();
         for (set, banks) in sound_sets(&index) {
             if !banks.iter().any(|bank| bank.eq_ignore_ascii_case(stem)) {

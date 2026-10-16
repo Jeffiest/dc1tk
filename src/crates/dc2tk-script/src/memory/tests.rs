@@ -283,6 +283,53 @@ fn sound_banks_are_checked_against_their_regions() {
     );
 }
 
+/// A bank whose .cfg lists entries (and nothing else a table counts).
+fn bank_of_entries(entries: usize) -> Vec<u8> {
+    let cfg: String = (0..entries).map(|entry| format!("{entry}\tSE_{entry}\r\n")).collect::<String>() + "END\r\n";
+    dc2tk_assets::models::write_pack(&[
+        ("x.hd".to_string(), vec![0; 32]),
+        ("x.bd".to_string(), vec![0; 16]),
+        ("x.cfg".to_string(), cfg.into_bytes()),
+    ])
+    .unwrap()
+}
+
+#[test]
+fn sound_tables_are_checked_against_their_layers_stack() {
+    // 12 bytes an entry, in quadwords, and 2 more
+    assert_eq!(ee_tables("FG_000", &bank_of_entries(10)), Some((8 + 2) * QW));
+    let index = "800\tx\tEV\ty\t-\tBS_051\tFG_000\tSR_051\tSR_051_000\tOB_001\tOB_002\t*\n";
+    let original = Files(BTreeMap::from([
+        ("snd2/MAP_index.txt".to_string(), index.as_bytes().to_vec()),
+        ("snd2/fg/FG_000.snd".to_string(), bank_of_entries(10)),
+        ("snd2/sr/SR_051.snd".to_string(), bank_of_entries(10)),
+        ("snd2/ob/OB_001.snd".to_string(), bank_of_entries(10)),
+        ("snd2/ob/OB_002.snd".to_string(), bank_of_entries(40)),
+    ]));
+    let modded = BTreeMap::from([
+        // 8,208 bytes of 8,192; 1,040 of 1,024; 560 + 512 of 1,024 between the set's object banks
+        ("snd2/fg/FG_000.snd".to_string(), bank_of_entries(681)),
+        ("snd2/sr/SR_051.snd".to_string(), bank_of_entries(84)),
+        ("snd2/ob/OB_001.snd".to_string(), bank_of_entries(44)),
+    ]);
+    let overlay = Overlay::new(&original, &modded);
+    let found = check(&original, &overlay, &modded.keys().cloned().collect::<Vec<_>>());
+    let warned = |path: &str| {
+        found.iter().any(|item| {
+            item.level == Level::Warning && item.text.starts_with(path) && item.text.contains("EE memory stack")
+        })
+    };
+    assert!(warned("snd2/fg/FG_000.snd") && warned("snd2/sr/SR_051.snd"), "{found:#?}");
+    assert!(warned("snd2/ob/OB_001.snd"), "{found:#?}");
+    assert!(found.iter().any(|item| item.text.contains("with sound set 800's other object banks")), "{found:#?}");
+    // tables that did not grow say nothing
+    let same = BTreeMap::from([("snd2/fg/FG_000.snd".to_string(), bank_of_entries(10))]);
+    let overlay = Overlay::new(&original, &same);
+    assert!(!check(&original, &overlay, &["snd2/fg/FG_000.snd".to_string()])
+        .iter()
+        .any(|item| item.text.contains("EE")));
+}
+
 #[test]
 fn map_files_name_their_map() {
     assert_eq!(map_of("map/s/s17/s17.mpk").as_deref(), Some("s17"));
@@ -335,6 +382,8 @@ fn corpus_retail_fits_the_budgets() {
     let index = disc.read("snd2/MAP_index.txt").unwrap();
     let paths = disc.paths();
     let mut samples: HashMap<String, u64> = HashMap::new();
+    let mut tables: BTreeMap<&str, (u64, String)> = BTreeMap::new();
+    let mut object_tables: HashMap<String, u64> = HashMap::new();
     for path in
         paths.iter().filter(|path| path.to_lowercase().starts_with("snd2/") && path.to_lowercase().ends_with(".snd"))
     {
@@ -350,14 +399,34 @@ fn corpus_retail_fits_the_budgets() {
         if size + 16 > budget || (IOP_STAGING + 1..=IOP_STAGING + 0x100).contains(&size) || size > 2 * IOP_STAGING {
             wrong.push(format!("{path}: {size} bytes of samples"));
         }
+        if let Some((stack, layer)) = ee_table_stack(&name) {
+            let used = ee_tables(&name, &disc.read(path).unwrap()).unwrap();
+            if used > stack {
+                wrong.push(format!("{path}: {used} bytes of tables"));
+            }
+            let slot = tables.entry(layer).or_default();
+            if used > slot.0 {
+                *slot = (used, name.clone());
+            }
+            if layer == "object" {
+                object_tables.insert(name.clone(), used);
+            }
+        }
         samples.insert(name, size);
     }
+    // the largest tables of the base, battle and ambient layers (docs/assets/sounds.md section 8)
+    assert_eq!(tables["battle"], (7_072, "FG_000".to_string()), "{tables:?}");
+    assert_eq!(tables["ambient"].0, 368, "{tables:?}");
     let sets = sound_sets(&index);
     assert!(sets.len() > 350, "{} sound sets", sets.len());
     for (set, banks) in sets {
         let total: u64 = banks.iter().map(|bank| samples.get(bank).map_or(0, |size| size + 16)).sum();
         if total > SPU_FIELD {
             wrong.push(format!("sound set {set}: {total}"));
+        }
+        let objects: u64 = banks.iter().filter_map(|bank| object_tables.get(bank)).sum();
+        if objects > ee_table_stack("OB").unwrap().0 {
+            wrong.push(format!("sound set {set}: {objects} bytes of object tables"));
         }
     }
     for path in disc.paths() {

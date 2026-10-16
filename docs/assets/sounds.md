@@ -407,15 +407,17 @@ program 0, volume/expression 127, pan 64.
   next region. Keep a modded bank's `.bd` at most its original size unless
   you know the region has room.
 - **EE memory stack** for the tables (`mgCMemory`, sizes in
-  `CScene::InitSe*`): BGM 0x400 bytes, ambient 0x400, objects 0x400
-  (shared by the object banks), base 0x2000, battle 0x2000; the player
-  character's bank uses the character's memory (`dng_main.cpp`). A bank uses `16 x
-  (ceil(se_num x 12 / 16) + 2)` for the entry table, plus for `.sq` and
-  `.mid` members their name strings, a table and the converted events
-  (measured while the format was worked out; `dc2tk` does not compute
-  it). Largest on the disc: `FG_000` 7,072 of 8,192;
-  `SR_*` 368 of 1,024. Each added entry costs 12 bytes. (Where monster
-  banks' tables go was not checked.)
+  `CScene::InitSe*` and `InitBGM`, scenesnd.cpp): BGM 0x400 bytes, ambient
+  0x400, objects 0x400 (shared by the object banks), base 0x2000, battle
+  0x2000; the player character's bank uses the character's memory
+  (`dng_main.cpp`). A bank uses `16 x (ceil(se_num x 12 / 16) + 2)` for the
+  entry table, plus for `.sq` members (music, ambient and event ports) their
+  name list and names, and for `.mid` members a table, their names and the
+  converted events (`sndLoadSound`; `memory::ee_tables` estimates it, and
+  `build` warns when a changed bank's tables outgrow its layer's stack).
+  Largest on the disc: `FG_000` 7,072 of 8,192; `BS_999` 4,576 of 8,192;
+  `SR_120` 368 of 1,024; `OB_000` 176; `BG_031` 160. Each added entry costs
+  12 bytes. (Where event and monster banks' tables go was not checked.)
 - **IOP**: the `.hd` is copied to an IOP heap block of `max(256, size +
   256)`.
 - **EE read buffer**: the whole `.snd` is first read into a shared buffer
