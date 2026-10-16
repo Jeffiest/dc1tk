@@ -24,7 +24,7 @@ Either way, then set the repository folder in the add-on's preferences
 (Edit, Preferences, Add-ons, "Dark Chronicle Maps (dc2tk)"). When the add-on is
 linked from this repository, the repository is found by itself.
 
-- **Install a release:** download `dc2tk_maps-VERSION.zip` from the repository's GitHub
+- **Install a release:** download `dc2tk-VERSION-blender.zip` from the repository's GitHub
   releases, then Edit, Preferences, Add-ons, Install from Disk (Blender 4.2+). Set the
   repository folder to the unzipped dc2tk release, or to a checkout.
 - **Link it (follows the repository):** link `blender-plugin/dc2tk_maps` into

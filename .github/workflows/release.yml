@@ -103,14 +103,13 @@ jobs:
       - name: Package
         run: |
           set -euo pipefail
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' blender-plugin/dc2tk_maps/blender_manifest.toml)
           cd blender-plugin/dc2tk_maps
-          zip -qr "$GITHUB_WORKSPACE/dc2tk_maps-$version.zip" . -x '*__pycache__*'
+          zip -qr "$GITHUB_WORKSPACE/dc2tk-$GITHUB_REF_NAME-blender.zip" . -x '*__pycache__*'
 
       - uses: actions/upload-artifact@v4
         with:
           name: blender-plugin
-          path: dc2tk_maps-*.zip
+          path: dc2tk-*-blender.zip
           if-no-files-found: error
 
   release:

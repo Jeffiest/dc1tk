@@ -149,8 +149,8 @@ what the tools write.
 A tag `v*` pushed to GitHub runs `.github/workflows/release.yml`, which makes a release with four
 zips: `dc2tk` for Windows (x64, the C runtime linked in), Linux (x64, static with musl) and macOS
 (a universal binary for Apple silicon and Intel), each in a folder with the `sdk/`,
-`definitions/` and `src/natives/` it reads, and the Blender add-on as an extension zip named
-after the version in its `blender_manifest.toml`. Each build checks that the packed program
+`definitions/` and `src/natives/` it reads, and the Blender add-on as an extension zip,
+`dc2tk-v1.0.0-blender.zip` for the tag `v1.0.0`. Each build checks that the packed program
 finds its data (`dc2tk api-docs` from the folder gives the committed pages).
 
 ```
