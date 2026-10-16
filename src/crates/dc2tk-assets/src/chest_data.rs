@@ -1,4 +1,4 @@
-//! What dungeon floors' treasure chests hold (docs/assets/dungeons.md section 4, `data:chests`):
+//! What dungeon floors' treasure chests hold (docs/game/dungeons.md section 4, `data:chests`):
 //! `dungeon/cfg_file/tbox_d0<n>.cfg`, n the dungeon from 1 (AutoSetTreasureBox loads
 //! `tbox_d0%d.cfg` with the dungeon's number + 1, and draws the chests of the floor being entered).
 //!

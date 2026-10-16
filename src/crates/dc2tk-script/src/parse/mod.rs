@@ -4,7 +4,7 @@
 //! program tree. The forms the decompiler writes parse to the tree it was written from, key for
 //! key, so a decompiled script compiles back to its own bytes. C89's other forms parse to trees of
 //! forms the compiler has, or to the ones it lowers (lower.rs, and composite.rs for C's pointers
-//! and composite types, which declarations give their C types, ctype.rs); see docs/c-standard.md.
+//! and composite types, which declarations give their C types, ctype.rs); see docs/coding/c-standard.md.
 //!
 //! A #pragma's words are read as the assembly reads a line (asm::tokenize): a plain word is a
 //! string and a quoted one {"string": text}.

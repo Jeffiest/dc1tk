@@ -1,4 +1,4 @@
-//! The game's item master data (docs/assets/data.md, "Items") as one JSON table with named fields,
+//! The game's item master data (docs/game/data.md, "Items") as one JSON table with named fields,
 //! and edits of that table written back into the scripts it comes from.
 //!
 //! CGameData::LoadData (gamedata.cpp) runs seven cfg scripts of `menu/cfg7/` over the tag table
@@ -315,7 +315,7 @@ pub struct ItemText {
     pub file: &'static str,
     pub language: usize,
     pub id: u16,
-    /// The message in the text form of docs/assets/text.md; None copies the message `copy` of
+    /// The message in the text form of docs/modding/text.md; None copies the message `copy` of
     /// the same file (a new item's description, from the item it is like).
     pub text: Option<String>,
     pub copy: u16,

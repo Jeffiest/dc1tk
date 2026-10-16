@@ -414,7 +414,7 @@ WALL_NORMAL_Y = 0.5
 # A dungeon grid cell (CAutoMapGen::Build places cell x, y at x*320, 0, y*320).
 DUNGEON_CELL = 320.0
 # Collision queries take the triangles of every node whose box overlaps, up to the caller's
-# buffer: 128 for monsters and objects, 512 for the camera (docs/assets/maps.md section 4.3).
+# buffer: 128 for monsters and objects, 512 for the camera (docs/game/maps.md section 4.3).
 QUERY_TRIANGLES = 128
 CAMERA_QUERY_TRIANGLES = 512
 # Models a map's model pack holds at most (CMdsList::LoadPCPFile).

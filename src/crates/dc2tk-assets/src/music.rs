@@ -1,5 +1,5 @@
 //! Sequences (.sq) as standard MIDI files, and back: the music and ambient loops of the sound
-//! banks for mods (docs/assets/music.md).
+//! banks for mods (docs/game/music.md).
 //!
 //! A sequence exports as an SMF of format 0 holding its events as they are, at its division, with
 //! the sequence's name and markers `loopStart` and `loopEnd` where its loop is; program numbers
@@ -600,7 +600,7 @@ pub fn build_bank(folder: &Path, original: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// The SPU2 memory the music banks (BG_*) load into, from 0x5210 to the field banks at 0x7D210
-/// (CSound::Init; docs/assets/memory.md section 6). A bank takes its samples' bytes plus 16.
+/// (CSound::Init; docs/game/memory.md section 6). A bank takes its samples' bytes plus 16.
 pub const MUSIC_REGION: usize = 0x7_8000;
 
 /// One sample of a new instrument: a WAV file, the keys it plays, the key at which it sounds at

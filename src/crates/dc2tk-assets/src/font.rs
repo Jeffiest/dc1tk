@@ -1,4 +1,4 @@
-//! The fonts the menus' message files are drawn with (see docs/assets/text.md section 4): what
+//! The fonts the menus' message files are drawn with (see docs/game/text.md, "Codes"): what
 //! each glyph number draws in Japanese, Korean and the English font's added accented letters, and
 //! the English font texture with those letters drawn into it.
 //!

@@ -10,7 +10,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 
 use dc2tk_disc::{extract, DiscSource, Image};
-use dc2tk_script::{datatables, decompiler, natives};
+use dc2tk_script::{datatables, decompiler, natives, sdk};
 
 use crate::files;
 use crate::options::Common;
@@ -146,6 +146,25 @@ pub fn run_natives(args: &NativesArgs) -> Result<ExitCode> {
     for table in &tables {
         let path = files::shown_path(out.join(format!("{}.json", table.table)));
         println!("{:<8} {:>4} natives  {}", table.table, table.natives.len(), path);
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+#[derive(Args)]
+pub struct ApiDocsArgs {
+    /// The SDK's folder; sdk when omitted.
+    #[arg(long)]
+    sdk: Option<PathBuf>,
+    /// Directory for the pages; docs/coding/api when omitted.
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+pub fn run_api_docs(args: &ApiDocsArgs) -> Result<ExitCode> {
+    let sdk_dir = args.sdk.clone().unwrap_or_else(|| files::root().join("sdk"));
+    let out = args.out.clone().unwrap_or_else(|| files::root().join("docs").join("coding").join("api"));
+    for name in sdk::reference::write_pages(&sdk_dir, &out)? {
+        println!("{}", files::shown_path(out.join(name)));
     }
     Ok(ExitCode::SUCCESS)
 }

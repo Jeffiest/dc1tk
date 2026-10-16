@@ -2,8 +2,13 @@
 
 `dc2tk` is the one tool of this repository: it extracts the disc, decompiles
 and compiles the scripts, builds mods into a new disc image and writes the
-asset tree. Its commands are in [usage](../docs/usage.md); how the
-decompiler and compiler work is in [internals](../docs/internals.md).
+asset tree. Its commands are in [commands](../docs/modding/commands.md); how the
+decompiler and compiler work is in [internals](docs/internals.md). The rest of what is
+written about the code is beside it in [docs/](docs/): [design](docs/design.md) (why it is built
+this way), [development](docs/development.md) (the rule, the checks, the conventions),
+[assembly](docs/assembly.md), [history/](docs/history/), and [assets/](docs/assets/), a page a
+kind of asset on the modules that convert it, their choices and how they are verified. What the
+game's formats are is in [docs/game/](../docs/game/README.md).
 
 The workspace's `Cargo.toml` is at the repository root, so run Cargo there:
 
@@ -32,7 +37,7 @@ table (items, shops, monsters, inventions, Georama, dungeon floors and
 layouts, chests, fishing, requests, townspeople, the executable's tables),
 the character packs'
 meshes and motions through glTF (a few seconds each), and checks every load on
-it against the memory budgets of [docs/assets/memory.md](../docs/assets/memory.md)
+it against the memory budgets of [docs/game/memory.md](../docs/game/memory.md)
 (`corpus_retail_fits_the_budgets`, which also pins the retail maxima the
 estimated budgets are measured by). Without the variable, `--include-ignored`
 fails, naming it.
@@ -60,7 +65,7 @@ file of the tree has the manifest's hash, builds every asset back and compares i
 bytes at every place the manifest lists, and checks every game file is listed. Both fail when
 anything differs.
 
-[docs/development.md](../docs/development.md) has the rule every change keeps (an image built
+[docs/development.md](docs/development.md) has the rule every change keeps (an image built
 with nothing edited is retail's, byte for byte), the checks to run and the code's conventions.
 
 ## Speed

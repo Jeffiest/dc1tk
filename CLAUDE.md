@@ -1,6 +1,6 @@
 # DC2-Toolkit
 
-`dc2tk` is a Rust workspace (`src/crates/`). It extracts Dark Chronicle's (PAL) assets and scripts into editable forms, then rebuilds them and mods into a playable disc image. Read [docs/development.md](docs/development.md) before changing code; [docs/internals.md](docs/internals.md) maps the crates and modules.
+`dc2tk` is a Rust workspace (`src/crates/`). It extracts Dark Chronicle's (PAL) assets and scripts into editable forms, then rebuilds them and mods into a playable disc image. Read [src/docs/development.md](src/docs/development.md) before changing code; [src/docs/internals.md](src/docs/internals.md) maps the crates and modules.
 
 - **The one hard rule:** a disc image the tools build must stay identical to retail wherever nothing was edited. Text outputs, reports, warnings and messages may change, as long as the change is deliberate and named in the commit message.
 - **No Python legacy.** The tool was ported from Python. Don't reproduce Python behaviour. Follow C for the scripts, the engine for its files, and plain Rust everywhere else.

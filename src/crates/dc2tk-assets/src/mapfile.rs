@@ -1,4 +1,4 @@
-//! A map's scene file (`.map`, docs/assets/maps.md sections 2-5) as a typed tree, read and written
+//! A map's scene file (`.map`, docs/game/maps.md sections 2-5) as a typed tree, read and written
 //! back byte for byte.
 //!
 //! The file is a tag script (`KEYWORD a,b,...;`, cp932 text) that the engine reads in two passes:
@@ -518,7 +518,7 @@ pub struct SoundData {
 
 /// `FUNC_ANIME_DATA "placement","piece","frame",drives,mode, start xyz, step xyz, end xyz[,uniform,relative]`
 /// (`mapFUNC_ANIME_DATA`, mapload.cpp:1257): a value of a placement, piece or model node that
-/// `CObjAnime::Step` changes every frame (docs/assets/maps.md section 5.1).
+/// `CObjAnime::Step` changes every frame (docs/game/maps.md section 5.1).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AnimeData {
     /// The placement a map's own point moves (`MAP_PARTS` name); a template's points move the
@@ -1473,7 +1473,7 @@ fn count(n: usize) -> Num {
     Num::Int(i32::try_from(n).unwrap_or(i32::MAX))
 }
 
-/// Writes a .map file in the layout of the game's exporter (docs/assets/maps.md 2.3). Fails on a
+/// Writes a .map file in the layout of the game's exporter (docs/game/maps.md 2.3). Fails on a
 /// name cp932 cannot write or one holding a quote or a line break.
 pub fn write(map: &MapFile) -> Result<Vec<u8>> {
     let mut out = Writer { text: String::new() };

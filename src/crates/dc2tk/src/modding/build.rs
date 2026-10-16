@@ -121,7 +121,9 @@ pub fn run_build(args: &BuildArgs) -> Result<ExitCode> {
         return Ok(ExitCode::from(1));
     }
     if over_budget {
-        println!("the image was written, but the game will not load it as built: see the errors above (docs/assets/memory.md)");
+        println!(
+            "the image was written, but the game will not load it as built: see the errors above (docs/game/memory.md)"
+        );
         return Ok(ExitCode::from(1));
     }
     if args.play {
@@ -381,7 +383,7 @@ fn maps(args: &BuildArgs, tools: &Tools, planned: &Planned, files: &Files) -> Re
 }
 
 /// Prints what the loads of the files the build rewrites use of the game's fixed memory
-/// (dc2tk_script::memory, docs/assets/memory.md); true when a budget that is certain is exceeded.
+/// (dc2tk_script::memory, docs/game/memory.md); true when a budget that is certain is exceeded.
 /// The image is mapped only here, so writing the new image can still clone the original.
 fn memory_check(args: &BuildArgs, files: &Files) -> Result<bool> {
     let original = dc2tk_disc::DiscSource::open(&args.disc)?;

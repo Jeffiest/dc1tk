@@ -93,7 +93,7 @@ it defines is added. The decompiled tree stays as it was, and several mods
 can patch the same script, so mods can be kept apart and built in any
 combination. A mod that needs a save flag or a program number asks for one
 by name (`NEW_FLAG(MY_SCENE_SEEN);`) and the build gives it a free one, so
-mods never collide. See [mods](docs/usage.md#mods) for the rest: targeting
+mods never collide. See [mods](docs/modding/mods.md) for the rest: targeting
 a monster's AI, running code every frame, text in each language.
 (You can also edit `extracted/scripts/` directly and save the edits into a
 mod later with `dc2tk mod save extracted/scripts my-first-mod`.)
@@ -108,8 +108,8 @@ dc2tk xref extracted/scripts event 510 --map s51   what starts an event
 dc2tk flags extracted/scripts                      save flags in use
 ```
 
-[A first test](docs/usage.md#a-first-test) has two small edits to try, and
-the [modding guide](docs/modding.md) explains how the game runs its scripts.
+[A first test](docs/modding/mods.md#a-first-test) has two small edits to try, and
+[how scripts run](docs/game/running.md) explains how the game runs its scripts.
 
 ### 4. Rebuild the disc
 
@@ -138,29 +138,26 @@ dc2tk play modded.iso
 
 ## Documentation
 
-- [Codebase guide](docs/codebase-guide.html): an onboarding tour of the
-  game's scripts (towns, dungeons, cutscenes, monsters, the player, effects)
-  with walkthroughs of common tasks (open it in a browser).
-- [Usage](docs/usage.md): every command, mods, and building.
-- [Modding guide](docs/modding.md): how the game runs scripts, as far as a
-  mod needs to know; message text codes; patterns; editor setup.
-- [The language](docs/language.md): what the decompiled C means, and the C
-  you can write in your own code.
-- [The SDK](docs/sdk.md): the headers every script includes, and `modkit`,
-  the shared library for mods.
-- [Definitions](docs/definitions.md): how names and documentation are shared
-  without sharing the scripts.
-- [Example mod](docs/examples/calculator/calculator.c): a calculator with its
-  own model, screen and sounds (`dc2tk build extracted/scripts dc2.iso -o
-  calculator.iso --mod calculator --mods docs/examples`), and
-  [a character of its own](docs/examples/new-character/README.md), rigged
-  and animated in Blender, and
-  [a new map with a door into it](docs/examples/new-map-door/README.md).
-- [The script format](docs/format.md), [assembly](docs/assembly.md) and
-  [how the tools work](docs/internals.md).
-- [Working on dc2tk](docs/development.md): the one rule a change must keep
-  (built images never differ from retail where nothing was edited), the
-  checks to run and the code's conventions.
+The [documentation](docs/README.md) has three sections:
+
+- [The game](docs/game/README.md): how Dark Chronicle works and how its files
+  are made: the disc, the script format and how scripts run, maps, dungeon
+  floors, models, textures, sounds, music, message text, game data and memory.
+- [Modding](docs/modding/README.md): how to make a mod and edit each kind of
+  asset, and [every command](docs/modding/commands.md).
+- [Coding](docs/coding/README.md): a tour of the game's scripts, the script
+  language, the SDK, tutorials, [the full API](docs/coding/api/README.md),
+  and two example mods: [a calculator](docs/coding/examples/calculator/calculator.c)
+  with its own model, screen and sounds (`dc2tk build extracted/scripts dc2.iso
+  -o calculator.iso --mod calculator --mods docs/coding/examples`), and
+  [the Spinning Cult](docs/coding/examples/spinning-cult/README.md), a story of
+  its own with a new map, a character rigged and animated in Blender, an item
+  and its music.
+
+Working on the tools themselves: [src/README.md](src/README.md) and
+[src/docs/development.md](src/docs/development.md), the one rule a change must
+keep (built images never differ from retail where nothing was edited), the
+checks to run and the code's conventions.
 
 ## What is in this repository
 
@@ -175,12 +172,11 @@ dc2tk, dc2tk.bat run dc2tk from this folder, building it first when missing
 sdk/             C headers scripts include: every engine call declared and
                  documented, constants, helpers; sdk/modkit/ for mods
 definitions/pal/ what is known about the PAL scripts: names, docs,
-                 translations; see docs/definitions.md
-docs/            how everything works; docs/development.md for working on
-                 the code
+                 translations; see definitions/README.md
+docs/            the game, modding and coding; see docs/README.md
 tools/           golden.sh, the snapshot that checks a change against the
                  disc byte for byte
-CLAUDE.md        the rules of docs/development.md, in brief, for Claude Code
+CLAUDE.md        the rules of src/docs/development.md, in brief, for Claude Code
 PLAN.md          what is done and what comes next
 ```
 

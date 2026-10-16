@@ -39,7 +39,7 @@ definitions.
 10. **Valid C.** Every decompiled script passes
     `clang -m32 -fsyntax-only -x c -std=c2x -I sdk -I definitions/pal/include`
     with no errors; headers accept every call retail makes (see
-    [the SDK](docs/sdk.md)).
+    [the SDK](docs/coding/sdk.md)).
 
 11. **Disc round trip.** `build` compiles an edited source tree and writes a
     new disc image with only the changed scripts replaced, inside their
@@ -58,7 +58,7 @@ definitions.
     `PROGRAM` lines say which trigger point, door or treasure box in the
     map's `.map` file starts them.
     How scripts run, as far as a mod needs, is in
-    [docs/modding.md](docs/modding.md).
+    [how scripts run](docs/game/running.md).
 
 13. **Definitions format.** A set can give variables a value kind or enum
     (`types`), override return types (`returns`), attach line notes by
@@ -93,7 +93,7 @@ definitions.
 
 ## Done: Rust, an asset tree, and mods by name
 
-See [the design](docs/design.md). In order:
+See [the design](src/docs/design.md). In order:
 
 1. **Port to Rust** (done: `src/`, one `dc2tk` tool with the old Python
    tool's commands), milestone by milestone, each ending when the Rust gave
@@ -122,7 +122,7 @@ See [the design](docs/design.md). In order:
      byte for byte. The last of the Python's rules went (its float text,
      JSON layout, whitespace and `int()` rules, difflib): text files are
      written with LF line endings, JSON with a two-space indent and floats
-     in their shortest form ([usage](docs/usage.md)). The largest modules
+     in their shortest form ([commands](docs/modding/commands.md)). The largest modules
      became folders (`parse/`, `memory/`, `sdk/`, `modding/`), and stages
      the binary held moved into the libraries (`datatables`, `itemtext`,
      `mapedit::apply_maps`, `decompiler::decompile_tree`). One
@@ -149,21 +149,21 @@ trigger points moved, added and deleted, collision painted, meshes and
 pictures edited, new models with collision, animated pieces (`FUNC_ANIME_DATA`,
 decoded: what moves, how and when) shown and edited. All 171 scenes round-trip through
 Blender unchanged. The formats and conventions are in
-[maps](docs/assets/maps.md); the example [map-edit](docs/examples/map-edit/)
-was checked in the game. Left over:
+[maps](docs/game/maps.md) and [editing maps](docs/modding/maps.md); the example
+`map-edit` (since removed) was checked in the game. Left over:
 
 - **New maps** (done; checked in the game: `new-map-test.iso`). A new map
   gets its own script (`"script": "m05x.c"`, compiled per language), and
   any map's event points can be given programs (`"programs": {"door_park":
   "ENTER_PARK"}`), so a door in an existing town leads in and a point leads
   back; patches see each new map's number as `MAP_<NAME>`. Example:
-  [new-map-door](docs/examples/new-map-door/), checked in the game
+  `new-map-door` (since removed), checked in the game
   (`new-map-door-test.iso`). A new map can be all new: the
-  [fish-room](docs/examples/fish-room/) example clears a copy of `m07`,
+  `fish-room` example (since folded into spinning-cult's `fish_room.py`) clears a copy of `m07`,
   models a room, a door and a giant fish in Blender (New Model from
   Selection), spins the fish with a Piece animation point and plays a tune
   of its own (checked in the game: `fish-room.iso`). The
-  [spinning-cult](docs/examples/spinning-cult/) example, a whole eerie mod
+  [spinning-cult](docs/coding/examples/spinning-cult/) example, a whole eerie mod
   on top of it, was played through in the game (`spinning-cult-3.iso`): a
   new character made in Blender with a material fade (Brother Gill), new
   motions added to five townspeople's own packs, their talks and town
@@ -176,7 +176,7 @@ was checked in the game. Left over:
 - **Dungeon floors** (done). Layouts are `data:layouts`, the part kinds
   `data:parts` (entries renamed in place; the table cannot grow, entry 276
   is free), chest items `data:chests`; the parts edit in Blender
-  ([dungeons](docs/assets/dungeons.md)). Left: the tree maps
+  ([dungeons](docs/game/dungeons.md)). Left: the tree maps
   (`menu/dngmap/dmap<n>.cfg`, which decide a floor's ways on) as data, and
   adding a template to a floor's map from Blender is untried.
 
@@ -194,7 +194,7 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    plays. Checked in the game (m05, m01).
 2. **Menu and system text** (done). All 302 `.mes` files (and 8 `fconv`
    files laid out the same way) build back byte for byte and export as UTF-8
-   text with the game's codes as tags ([text](docs/assets/text.md));
+   text with the game's codes as tags ([text](docs/game/text.md));
    `text:en/shopname` in `mod.json` changes a file in every copy and version
    of that language. Japanese and Korean beyond ASCII show as `{XXXX}` (no
    table on the disc gives their glyphs); the English font has no accented
@@ -204,7 +204,7 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    its font by the build; build warns of lines wider than the disc's.
    Checked in the game: accented shop names (`text-music-test.iso`).
 3. **Game data** (done). Where every kind lives is in
-   [data](docs/assets/data.md); each is a `data:` id in `mod.json`, JSON with
+   [data](docs/game/data.md); each is a `data:` id in `mod.json`, JSON with
    only the changed fields, merged field by field across mods: `data:items`
    (item and weapon tables, spectrumising), `data:shops` (prices, goods per
    chapter, Donny's shop), `data:monsters` (stats in `SCES_511.90`, patched
@@ -222,7 +222,7 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    executable boots; a new weapon sold in Palm Brinks, its name,
    description and attack (`new-item-test.iso`). Not addable: monster kinds, rows of executable
    tables, request conditions (code).
-4. **Memory budgets** (done). [memory](docs/assets/memory.md) gives each
+4. **Memory budgets** (done). [memory](docs/game/memory.md) gives each
    budget from the engine (read buffer, map and loading-screen limits,
    script buffer, placements, texture blocks, GS memory, character stacks,
    SPU regions) with the retail maximum and headroom; `build` checks every
@@ -241,11 +241,11 @@ Make the script compiler a conforming C89/C90 freestanding implementation
 (the whole language, and `<float.h>`, `<limits.h>`, `<stdarg.h>` and
 `<stddef.h>`; no hosted library), for code people write: decompiled retail
 code keeps compiling to its own bytes. What the compiler lacks today
-([language](docs/language.md)), in the order to do it:
+([language](docs/coding/language.md)), in the order to do it:
 
 1. **A conformance suite** (done). 115 programs in
    `src/crates/dc2tk-script/tests/c89/`, run in the VM interpreter, each with a
-   row in [c-standard](docs/c-standard.md): 95 supported (83 give C's result,
+   row in [c-standard](docs/coding/c-standard.md): 95 supported (83 give C's result,
    12 the error C requires), 3 differ (step 4, and a header's macros not
    seen by the includer's `#if`), 15 planned (step 5), 2 at the limit
    (`double`).
@@ -289,7 +289,7 @@ fingerprint (`mods/NAME/fingerprints.json`, `mod check --rename`),
 wrapping natives (`#pragma override place_monster` routes the target
 scripts' calls through the mod's function; `original()` calls the native),
 and `mod slim`, which turns copied files into patches that compile to the
-same bytes; see [modding](docs/modding.md). Native wrappers are checked in
+same bytes; see [editing scripts](docs/modding/scripts.md). Native wrappers are checked in
 the game (the castle's soldiers swapped for rats).
 
 - **Save counters** (done). The save holds 128; the disc uses 0 to 25
@@ -300,7 +300,7 @@ the game (the castle's soldiers swapped for rats).
 ## Next: mod assets
 
 Mods can bring models, textures and sounds made with common tools, not only
-scripts (see [usage](docs/usage.md#mods) and [the formats](docs/assets/)):
+scripts (see [mods](docs/modding/mods.md) and [the formats](docs/game/README.md)):
 
 - **Any game file or pack member** replaced from a mod's `disc/` folder,
   laid out as `extract` lays out the disc, with new members added to packs
@@ -353,10 +353,11 @@ do:
    pack from glTF (skeleton, rigid and skinned meshes, weights, bind pose,
    motions as `KEY`s, pictures, `info.cfg`), with a template pack for the
    formats; cloth is left out, motion set 0 only, no shadow model. Example:
-   [new-character](docs/examples/new-character/).
+   `new-character` (since removed); Brother Gill in
+   [spinning-cult](docs/coding/examples/spinning-cult/) is one too.
 6. **Music** (done, checked in the game: a scale in place of Palm Brinks' theme). All background music and ambient loops
    are `.sq` sequences played with their bank's instruments
-   ([music](docs/assets/music.md)); `SOUND.DAT` is streamed voices. All 447
+   ([music](docs/game/music.md)); `SOUND.DAT` is streamed voices. All 447
    round-trip byte for byte and through MIDI; `music:BG_000_000` in
    `mod.json` replaces a tune from a `.mid` (with a `.sf2` of the bank's
    instruments to hear it). A tune can bring new instruments made from
@@ -413,7 +414,7 @@ Script docs (210 corrected), library docs (190 corrected, 85 libraries
 renamed) and the 185 story flags (35 renamed, 91 comments corrected) have
 been audited too. Every Japanese string outside dialogue has an English
 gloss; the dialogue of the original Japanese scripts stays out of the
-shared set by design (see [docs/definitions.md](docs/definitions.md)).
+shared set by design (see [definitions/README.md](definitions/README.md)).
 
 ## Next: what numbers mean
 
@@ -439,7 +440,7 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
   project; it will be brought in here later. Until then mods change scripts
   and data, not `SCES_511.90`.
 - **Automated emulator test.** A built image has been booted in PCSX2 by
-  hand with the two test edits in [docs/usage.md](docs/usage.md) and both
+  hand with the two test edits in [docs/modding/mods.md](docs/modding/mods.md#a-first-test) and both
   showed in game. Script that check, so an image is booted and checked
   without a person watching. PCSX2 can run with its own settings
   (`-datapath`, `-nogui`) and log the game's console output to a file, so a
@@ -472,6 +473,6 @@ shared set by design (see [docs/definitions.md](docs/definitions.md)).
   keyword existed.
 
 Settled: the bytes after functions and the leading strings (the compiler's
-string buffer, see [the format notes](docs/format.md)); the eleventh
+string buffer, see [the format notes](docs/game/scripts.md)); the eleventh
 argument (three functions take 11, nothing calls them, and the engine never
 reads `arg_types`).

@@ -1,4 +1,4 @@
-//! A table of game data (docs/assets/data.md) kept where the engine reads it: arguments of cfg
+//! A table of game data (docs/game/data.md) kept where the engine reads it: arguments of cfg
 //! script statements ([`cfg_text`]) and bytes of the boot executable's `.data`, as one JSON table
 //! of named records. The kinds of data built on it (inventions, Georama, floor medals, monster
 //! placement, fishing, character tables, spectrumising, Donny's shop) say where each field is;

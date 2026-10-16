@@ -1,4 +1,4 @@
-//! Dungeon floor layouts (docs/assets/dungeons.md): the room scripts of `dungeon/cfg_file` that
+//! Dungeon floor layouts (docs/game/dungeons.md): the room scripts of `dungeon/cfg_file` that
 //! `load_dungeon_map(map, cfg, flags)` hands the floor generator (`data:layouts`).
 //!
 //! CAutoMapGen::SetupRoomInfo (automap.cpp) runs a script over `GRID_SIZE cell_w, cell_d;`
@@ -112,7 +112,7 @@ fn name_found_by_the_engine(part: usize) -> Option<&'static str> {
     }
 }
 
-/// PartsInfoData and MiniMapInfoData as a data table (`data:parts`, docs/assets/dungeons.md
+/// PartsInfoData and MiniMapInfoData as a data table (`data:parts`, docs/game/dungeons.md
 /// section 2): each part's name (its string in place, 7 letters at most), kind, link, entrance and
 /// the eight tile numbers no code reads; each mini map's tile for each part.
 pub fn parts_table(elf: &[u8]) -> Result<crate::data_table::Table> {

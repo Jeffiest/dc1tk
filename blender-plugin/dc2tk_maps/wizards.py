@@ -217,7 +217,7 @@ class DC2TK_MT_programs(bpy.types.Menu):
 NEW_SCRIPT = (
     "// The event script of %s, a new map of the mod made from %s by the Blender add-on's New\n"
     "// Map. It is a whole map script: its PROGRAM table, MAIN and functions\n"
-    "// (docs/assets/maps.md section 9.1).\n"
+    "// (docs/modding/maps.md, \"A new map's own script\").\n"
     "\n"
     "#include <event.h>\n"
     "\n"

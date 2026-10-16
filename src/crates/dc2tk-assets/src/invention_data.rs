@@ -1,4 +1,4 @@
-//! Inventions (docs/assets/data.md, "Inventions, ideas and scoops"): the recipes of `inv6.lst`
+//! Inventions (docs/game/data.md, "Inventions, ideas and scoops"): the recipes of `inv6.lst`
 //! and the scoop table of the executable, as one [`data_table`] table (`data:inventions`).
 //!
 //! CInventDataManage::LoadAnalyzeInventFile (inventmn.cpp) reads `DATATABLESET n;` and then

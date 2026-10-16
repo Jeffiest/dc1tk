@@ -28,6 +28,7 @@ const DECLARATION_KEYS: [&str; 5] = ["natives", "programs", "inlines", "constant
 
 mod headers;
 mod present;
+pub mod reference;
 mod resolve;
 
 pub use self::headers::*;

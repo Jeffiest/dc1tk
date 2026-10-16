@@ -1,6 +1,6 @@
 //! Message files (.mes, and the fish race menu's fconv<N>.bin): the menu, item, map and shop
 //! names, NPC lines and system messages the game draws from tables of 16-bit codes, as text a
-//! person edits (see docs/assets/text.md).
+//! person edits (see docs/game/text.md).
 //!
 //! ```text
 //! u16 count, u16 size                      size: bytes of the header and messages, cut to 16 bits
@@ -915,7 +915,7 @@ fn changed_codes(
 
 /// The comment a text file starts with.
 pub fn comment(id: &str, language: Language, path: &str) -> String {
-    format!("{id}: {} text from {path}. Each message follows its @id line; see docs/assets/text.md.", language.name())
+    format!("{id}: {} text from {path}. Each message follows its @id line; see docs/modding/text.md.", language.name())
 }
 
 /// The message file at a path as text.

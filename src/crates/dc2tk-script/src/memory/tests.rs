@@ -414,7 +414,7 @@ fn corpus_retail_fits_the_budgets() {
         }
         samples.insert(name, size);
     }
-    // the largest tables of the base, battle and ambient layers (docs/assets/sounds.md section 8)
+    // the largest tables of the base, battle and ambient layers (docs/game/sounds.md section 8)
     assert_eq!(tables["battle"], (7_072, "FG_000".to_string()), "{tables:?}");
     assert_eq!(tables["ambient"].0, 368, "{tables:?}");
     let sets = sound_sets(&index);

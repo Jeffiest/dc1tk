@@ -1,4 +1,4 @@
-//! A new map's own event script (docs/assets/maps.md section 9): `"script"` on a mod's new map
+//! A new map's own event script (docs/modding/maps.md, "A new map's own script"): `"script"` on a mod's new map
 //! (`"add": {"map:m05x": {"file": ..., "like": "m05", "script": "maps/m05x/m05x.c"}}`), a whole
 //! script of the mod's (PROGRAM lines, MAIN, functions), compiled as build compiles a map's script
 //! and added as new game files where the engine looks for it.

@@ -1,5 +1,5 @@
 //! Sony sequences (.sq): the music of the BG_* banks and the ambient loops of the SR_* banks, which
-//! the IOP's MIDI driver plays with the programs of the bank holding them (docs/assets/music.md).
+//! the IOP's MIDI driver plays with the programs of the bank holding them (docs/game/music.md).
 //!
 //! A Vers chunk (1.0), a Sequ chunk naming one Midi chunk, the Midi chunk with one data block: the
 //! offset of the events in the block (6) and the division, then one track of MIDI events in Sony's

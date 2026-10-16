@@ -30,7 +30,7 @@ pub struct Table {
 }
 
 /// How scripts built for an older native table call it, worked out by hand from those scripts
-/// rather than from the decompilation (monster and action have them; see docs/sdk.md).
+/// rather than from the decompilation (monster and action have them; see docs/coding/sdk.md).
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct OldTable {
     /// Groups of an older native table, by base: the base of the same group in this one.

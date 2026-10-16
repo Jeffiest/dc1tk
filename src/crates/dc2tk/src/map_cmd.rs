@@ -1,4 +1,4 @@
-//! dc2tk map-export: a map as a glTF scene for Blender (docs/assets/maps.md sections 7 and 8).
+//! dc2tk map-export: a map as a glTF scene for Blender (docs/modding/maps.md).
 
 use std::collections::BTreeSet;
 use std::fs;

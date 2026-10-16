@@ -4,8 +4,8 @@
 // hints. It can hold the codes the game's own text uses: [Number1] to [Number16] for numbers set
 // with set_message_value before the text is shown (showing it lays the numbers out, so a value
 // set after shows 0), button icons such as (X), (O), [r1] and [select], \n for a new line, and
-// <page> for a page break (see docs/modding.md, "Message text"). Window 0 is the event window,
-// which stays on screen after an event ends until closed (see the modding guide).
+// <page> for a page break (see docs/game/running.md, "Message text"). Window 0 is the event window,
+// which stays on screen after an event ends until closed (see docs/game/running.md).
 
 #include <event.h>
 #include "modkit/input.c"

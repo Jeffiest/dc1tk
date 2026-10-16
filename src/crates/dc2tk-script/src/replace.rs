@@ -1,5 +1,5 @@
 //! Mods by name: the game assets a mod replaces, named in its mod.json by their asset ids (see
-//! "Mods by name" in docs/design.md) instead of by where they sit on the disc. Where the files sit
+//! "Mods by name" in src/docs/design.md) instead of by where they sit on the disc. Where the files sit
 //! inside the mod's folder does not matter.
 //!
 //! ```text
@@ -26,7 +26,7 @@
 //! ```
 //!
 //! `"data:items": "data/items.json"` (also data:shops, data:monsters, data:inventions, ...) edits a
-//! table of game data as JSON (docs/assets/data.md); datatables.rs builds those, merging several
+//! table of game data as JSON (docs/modding/data.md); datatables.rs builds those, merging several
 //! mods' tables.
 //!
 //! A replacement reaches every place the disc has the asset (ids::Index lists them); "only" keeps
@@ -73,13 +73,13 @@ use crate::{mods, names, paths, Error, Result};
 pub const REPLACE: &str = "replace";
 pub const ADD: &str = "add";
 pub const FILE: &str = "file:";
-/// A map edited as a glTF scene (docs/assets/maps.md section 8): `"map:s17": "maps/s17/s17.gltf"`;
+/// A map edited as a glTF scene (docs/modding/maps.md, "The glTF scene"): `"map:s17": "maps/s17/s17.gltf"`;
 /// under "add", a new map made from another's scene (`{"file": ..., "like": "m05"}`, section 9).
 pub const MAP: &str = "map:";
 /// The longest name a new map may have: its files are `<name>_<language>.stb` and the like in the
 /// engine's 32-byte file names.
 pub const MAP_NAME_MOST: usize = 12;
-/// A table of game data edited as JSON (docs/assets/data.md): `"data:items": "data/items.json"`.
+/// A table of game data edited as JSON (docs/modding/data.md): `"data:items": "data/items.json"`.
 pub const DATA: &str = "data:";
 /// What a music: line's MIDI file may be called.
 const MIDI_SUFFIXES: [&str; 3] = [".mid", ".midi", ".rmi"];
@@ -152,7 +152,7 @@ pub enum LineKind {
         /// files (mapscript).
         script: Option<PathBuf>,
         /// Event points given programs: (point, program), the program a number, a program's name
-        /// or a NEW_PROGRAM name of the mod (docs/assets/maps.md section 9).
+        /// or a NEW_PROGRAM name of the mod (docs/modding/maps.md, "A map of a mod's own").
         programs: Vec<(String, Value)>,
         /// A new map's placements deleted from its scene are left out, not kept hidden in their
         /// slots (`"compact": true`): no script numbers a new map's placements yet.

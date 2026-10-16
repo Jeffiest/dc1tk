@@ -1,4 +1,4 @@
-//! Fishing (docs/assets/data.md, "Fishing"): the fishing spots, the fish race opponents, the
+//! Fishing (docs/game/data.md, "Fishing"): the fishing spots, the fish race opponents, the
 //! race and tournament prizes, and the two fish tables of the executable, as one [`data_table`]
 //! table (`data:fishing`).
 //!

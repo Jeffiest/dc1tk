@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The golden snapshot: dc2tk's behaviour, byte for byte. Runs the release binary over the extracted
 # disc and the mods, hashes every file it writes and every disc image it builds, and with a
-# baseline compares the two. See docs/development.md.
+# baseline compares the two. See src/docs/development.md.
 #
 #   tools/golden.sh <out-dir> [<baseline-dir>]
 #

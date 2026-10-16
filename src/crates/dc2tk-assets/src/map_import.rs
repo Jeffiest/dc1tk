@@ -1,4 +1,4 @@
-//! An edited map scene (docs/assets/maps.md section 8) back to the game's files: the .map rebuilt
+//! An edited map scene (docs/modding/maps.md, "The glTF scene") back to the game's files: the .map rebuilt
 //! from the scene's placements, pieces and points (map_scene, map_edit), and the map models whose
 //! meshes changed rebuilt from the first piece placing each (models::build_map_model). What did
 //! not change keeps its bytes.

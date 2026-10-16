@@ -1,4 +1,4 @@
-//! The kinds of game data built on [`data_table`] (docs/assets/data.md), by the name a `data:`
+//! The kinds of game data built on [`data_table`] (docs/game/data.md), by the name a `data:`
 //! line gives them: where each reads and how it is read. Items and shops have their own modules
 //! ([`crate::item_data`], [`crate::shop_data`]), as do the layouts and chests
 //! ([`crate::dungeon_layout`], [`crate::chest_data`]), which rewrite whole rooms and groups.

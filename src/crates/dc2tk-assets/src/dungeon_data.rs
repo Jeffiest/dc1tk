@@ -1,4 +1,4 @@
-//! Dungeon floors (docs/assets/data.md, "Floor medals" and "Monsters"): the medal conditions of
+//! Dungeon floors (docs/game/data.md, "Floor medals" and "Monsters"): the medal conditions of
 //! `menu/dngmap/dflr<dungeon>.cfg` (`data:medals`) and the monsters of
 //! `dungeon/cfg_file/mos_place<dungeon>.cfg` (`data:floors`), as [`data_table`] tables named by
 //! dungeon and floor.

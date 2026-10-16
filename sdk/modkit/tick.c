@@ -5,7 +5,7 @@
 // Event scripts cannot run beside play (the player waits while an event runs), but monster scripts
 // do, and a monster can ask the map for a program with run_event_script. A map program that never
 // waits runs within one frame without stopping play, so it can update a caption, spawn something
-// or keep score. See the modding guide, "A pattern: a caption every five seconds".
+// or keep score. See docs/coding/tutorials/captions.md.
 
 #include <monster.h>
 

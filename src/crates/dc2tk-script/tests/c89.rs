@@ -11,7 +11,7 @@
 //!   until the program says what it shows instead;
 //! - `// limit: TEXT`: compiling fails with TEXT by design (double, which the VM cannot hold).
 //!
-//! docs/c-standard.md lists every program with its status.
+//! docs/coding/c-standard.md lists every program with its status.
 
 mod common;
 
@@ -246,11 +246,11 @@ programs! {
     library_offsetof,
 }
 
-/// Every program in tests/c89 runs here and has its row in docs/c-standard.md, with its status.
+/// Every program in tests/c89 runs here and has its row in docs/coding/c-standard.md, with its status.
 #[test]
 fn every_program_runs_and_is_documented() {
     let folder = root().join("src/crates/dc2tk-script/tests/c89");
-    let docs = std::fs::read_to_string(root().join("docs/c-standard.md")).unwrap();
+    let docs = std::fs::read_to_string(root().join("docs/coding/c-standard.md")).unwrap();
     let mut names: Vec<String> = std::fs::read_dir(&folder)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -261,7 +261,7 @@ fn every_program_runs_and_is_documented() {
         assert!(PROGRAMS.contains(&name.as_str()), "{name}.c is not in programs!");
         let row = docs.lines().find(|line| line.contains(&format!("`{name}`")));
         let Some(row) = row else {
-            panic!("{name} has no row in docs/c-standard.md");
+            panic!("{name} has no row in docs/coding/c-standard.md");
         };
         let shown = match status(name, &source(name)) {
             Status::Expect(_) | Status::Rejects(_) => "supported",
@@ -269,7 +269,7 @@ fn every_program_runs_and_is_documented() {
             Status::Planned(_) => "planned",
             Status::Limit(_) => "limit",
         };
-        assert!(row.to_lowercase().contains(shown), "{name}: docs/c-standard.md does not say {shown}: {row}");
+        assert!(row.to_lowercase().contains(shown), "{name}: docs/coding/c-standard.md does not say {shown}: {row}");
     }
     assert_eq!(names.len(), PROGRAMS.len(), "a program in programs! has no file");
 }

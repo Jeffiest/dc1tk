@@ -1,4 +1,4 @@
-//! The map table (`map/map<language>.cfg`, docs/assets/maps.md section 9) with new maps' rows
+//! The map table (`map/map<language>.cfg`, docs/game/maps.md section 7) with new maps' rows
 //! appended: what `build` writes for a mod's new maps (`"add": {"map:m05x": {"file": ...,
 //! "like": "m05"}}`), in every language's table alike.
 //!

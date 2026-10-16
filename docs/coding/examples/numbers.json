@@ -1,0 +1,7 @@
+{
+ "program": {
+  "calculator/CALC_START": 9000,
+  "spinning-cult/GILL_TEST": 9002
+ },
+ "note": "Numbers build gave mods' NEW_FLAG, NEW_COUNTER, NEW_PROGRAM and NEW_MONSTER_VAR names, kept so a name keeps its number and saves stay valid. Delete a line to free its number."
+}

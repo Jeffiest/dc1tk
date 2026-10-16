@@ -1,6 +1,6 @@
 //! The asset tree: every texture, character model and sound of the disc once, in formats common
 //! tools open, and a manifest naming each by an id and listing every place the disc has it (see
-//! "The asset tree" in docs/design.md).
+//! "The asset tree" in src/docs/design.md).
 //!
 //! ```text
 //! manifest.json

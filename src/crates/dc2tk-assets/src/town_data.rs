@@ -1,4 +1,4 @@
-//! Georama requests and townspeople (docs/assets/data.md, "Georama" and "Townspeople"), as
+//! Georama requests and townspeople (docs/game/data.md, "Georama" and "Townspeople"), as
 //! [`data_table`] tables: `data:requests` from `geo<language>.cfg` and `data:townspeople` from
 //! `npc<language>.cfg`, one file per language with the same records, an edit going into each.
 //!

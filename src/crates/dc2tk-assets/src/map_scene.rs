@@ -1,4 +1,4 @@
-//! A map as a scene tree, the glTF layout of docs/assets/maps.md section 8, without the meshes:
+//! A map as a scene tree, the glTF layout of docs/modding/maps.md ("The glTF scene"), without the meshes:
 //! the root (`map:`), a node per placement (`place:`) holding its template's pieces (`piece:`)
 //! and points (`point:`), the map's own points and the fixed cameras. `build_scene` makes it from
 //! a .map; `read_scene` reads an edited one back into a `SceneEdit` for `map_edit::rebuild`.

@@ -1,5 +1,5 @@
 //! Maps a mod edits as glTF scenes (`"map:s17": "maps/s17/s17.gltf"` in mod.json; see
-//! docs/assets/maps.md sections 7 to 9): where a map's files are on the disc, and building the
+//! docs/modding/maps.md): where a map's files are on the disc, and building the
 //! chosen mods' map: lines into them (apply_maps), new maps made of a like map's files included.
 
 use std::collections::BTreeMap;
@@ -153,8 +153,8 @@ fn new_map_path(path: &str, like: &MapFiles, name: &str) -> String {
 
 /// Builds the chosen mods' map: lines (an edited scene of `dc2tk map-export`) into the disc files:
 /// the map's .map rebuilt from the scene, and the models whose meshes changed rebuilt into their
-/// model packs. A map: line under "add" makes a new map of its like map's files (docs/assets/maps.md
-/// section 9): each written under the new name, the scene's edits made in the copies, a row
+/// model packs. A map: line under "add" makes a new map of its like map's files (docs/modding/maps.md,
+/// "A map of a mod's own"): each written under the new name, the scene's edits made in the copies, a row
 /// appended to every language's map table. `files` holds what the build already rewrote, by
 /// DATA.DAT path; `program_of` gives the number of a program a line's "programs" names.
 pub fn apply_maps(

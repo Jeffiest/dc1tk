@@ -1,4 +1,4 @@
-//! The message files an item table's names and descriptions go into (docs/assets/data.md,
+//! The message files an item table's names and descriptions go into (docs/modding/data.md,
 //! "Items"): each item's name is system message 10000 + its message number in every language's
 //! `meswin/system_N.mes` (what item slots and the menus show), its description the allmenu.mes
 //! message of that number in the language's menu packs.

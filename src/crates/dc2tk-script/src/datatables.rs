@@ -1,5 +1,5 @@
 //! Game data tables a mod edits as JSON (`"data:items": "data/items.json"` in mod.json; see
-//! docs/assets/data.md): `mod asset ISO NAME data:items` writes a table, and `build` turns the
+//! docs/modding/data.md): `mod asset ISO NAME data:items` writes a table, and `build` turns the
 //! chosen mods' tables into the disc files they come from. Most are cfg scripts in DATA.DAT (some
 //! kept in several copies, some inside packs); monsters, spectrumising, Donny's shop, the
 //! character tables and parts of the inventions and fishing tables are in the boot executable,

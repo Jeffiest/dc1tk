@@ -1,4 +1,4 @@
-//! Memory budgets (docs/assets/memory.md): the fixed memory the engine reads files into and builds
+//! Memory budgets (docs/game/memory.md): the fixed memory the engine reads files into and builds
 //! maps, models, textures and sound banks in, what a load of the disc's files uses of it, and the
 //! check `build` runs over the loads a mod's files change.
 //!

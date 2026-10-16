@@ -125,7 +125,7 @@ pub fn check(original: &dyn Disc, modded: &dyn Disc, changed: &[String]) -> Vec<
             out.push(finding(
                 Level::Note,
                 format!(
-                    "{path}: {} bytes ({}); no budget of docs/assets/memory.md covers this file, so keep it near its original size",
+                    "{path}: {} bytes ({}); no budget of docs/game/memory.md covers this file, so keep it near its original size",
                     n(new.len() as u64),
                     if old.is_some() { format!("was {}", n(old_size as u64)) } else { "a new file".to_string() }
                 ),

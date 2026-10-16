@@ -1,4 +1,4 @@
-//! The shops (docs/assets/data.md, "Shops"): prices and what each shop sells, by chapter, as one
+//! The shops (docs/game/data.md, "Shops"): prices and what each shop sells, by chapter, as one
 //! JSON table, and edits of it written back into the shop lists.
 //!
 //! CShopMenu::InitEnd (menushop.cpp) reads `menu/shopusa<chapter>.cfg` (`menu/shoplst<chapter>.cfg`

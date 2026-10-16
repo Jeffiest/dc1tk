@@ -1,4 +1,4 @@
-//! The monster kinds' stats (docs/assets/data.md, "Monsters") as one JSON table with named
+//! The monster kinds' stats (docs/game/data.md, "Monsters") as one JSON table with named
 //! fields, and edits of it patched into the boot executable: a [`data_table`] table of the
 //! executable, as the other executable tables are ([`crate::exe_tables`]).
 //!

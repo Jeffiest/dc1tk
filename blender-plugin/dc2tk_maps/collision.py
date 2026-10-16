@@ -1,6 +1,6 @@
 """Collision tools: a collision copy made from what is drawn (simplified, so the floor queries
 stay cheap), and a collision node split into compact ones, since the engine looks through every
-node whose box a query touches (docs/assets/maps.md section 4.3)."""
+node whose box a query touches (docs/game/maps.md section 4.3)."""
 
 import bmesh
 import bpy

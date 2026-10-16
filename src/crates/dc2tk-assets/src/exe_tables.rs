@@ -1,4 +1,4 @@
-//! Tables compiled into the boot executable's `.data` (docs/assets/data.md, "Characters and other
+//! Tables compiled into the boot executable's `.data` (docs/game/data.md, "Characters and other
 //! executable tables"), as [`data_table`] tables patched in place like the monster table
 //! ([`crate::monster_data`]): spectrumising (in `data:items`), Donny's shop (in `data:shops`) and
 //! the character tables (`data:characters`). Addresses are those of `config/pal/main.symbols.txt`.

@@ -1,5 +1,5 @@
 """Playing the map's animations (anime points, FUNC_ANIME_DATA) in the 3D view as the engine
-steps them (CObjAnime::Step, docs/assets/maps.md section 5.1), 25 steps a second. What they move
+steps them (CObjAnime::Step, docs/game/maps.md section 5.1), 25 steps a second. What they move
 is put back when playing stops, and before an export, so nothing played is ever written."""
 
 import math

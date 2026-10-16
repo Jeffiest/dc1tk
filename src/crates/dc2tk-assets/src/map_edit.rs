@@ -1,4 +1,4 @@
-//! A map edited as a scene, back to a .map tree (docs/assets/maps.md section 8). In the glTF scene
+//! A map edited as a scene, back to a .map tree (docs/modding/maps.md, "The glTF scene"). In the glTF scene
 //! every placement holds its own copy of its template's pieces and points; here those copies are
 //! folded back into templates:
 //!

@@ -2,7 +2,7 @@
 // single held and worked out by the PS2's FPU. That FPU rounds toward zero (FLT_ROUNDS 0), flushes
 // results below FLT_MIN to zero, and has no infinities or NaNs: past FLT_MAX it goes on to about
 // 6.8E+38 and then stays there. The compiler reads constants as IEEE singles, rounded to nearest,
-// up to FLT_MAX. double and long double are not supported (see docs/c-standard.md), so the DBL_
+// up to FLT_MAX. double and long double are not supported (see docs/coding/c-standard.md), so the DBL_
 // and LDBL_ names are left out, and #ifdef DBL_MAX tells code so.
 
 #ifndef DC2TK_FLOAT_H

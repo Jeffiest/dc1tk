@@ -1,0 +1,128 @@
+# spinning-cult: The Spinning Cult
+
+An eerie mod: a story of its own, with a new map, a new character, a new item
+and invention, new motions and music. Behind a door in Palm Brinks a giant
+fish turns in the dark, and someone is waiting under it: Brother Gill,
+faceless in his hood. He gives Max a camera and asks for the fish's likeness,
+then a shape the town can hold. Max invents the gŷros, and everyone he shows
+it to begins to turn. When five have turned,
+the fish stops, and looks at him.
+
+Nothing of the game's is in this folder: the maps come from your own disc,
+the townspeople's new motions are added to your own disc's models, the
+gyroscope's icon is drawn into your own disc's icon sheet, and Brother Gill,
+the gyroscope, the room, the fish, the pictures and the music are made here.
+
+## Making it
+
+```bash
+dc2tk map-export m01
+dc2tk map-export m07
+blender --background --python docs/coding/examples/spinning-cult/make_gill.py
+blender --background --python docs/coding/examples/spinning-cult/make_gyros.py
+blender --background --python docs/coding/examples/spinning-cult/make_mod.py
+blender --background --python docs/coding/examples/spinning-cult/make_villagers.py
+dc2tk build extracted/scripts dc2.iso -o spinning-cult.iso --mod spinning-cult
+```
+
+- `make_gill.py` models Brother Gill (`model/gill.gltf`, made by code): a
+  gaunt robed figure, 34 units tall, a black void in his hood with two pale
+  unlit eyes, eighteen bones, and six motions: `idle`, `beckon`, `raise`,
+  `spin`, `turn_head` (too far, too slowly) and `vanish` (a material fade to
+  nothing, played held). mod.json makes him a new pack, `mods/gill/gill.chr`.
+- `make_gyros.py` makes the gyros, the cult's gyroscope (made by code): a
+  dark rotor with a blood-red spiral and a pale fish's eye on each face,
+  spinning on its axle inside three gimbal rings of tarnished, notched brass,
+  thorns on the outer ring, on an iron stand; about 7 units tall (Max is 26).
+  Three things, in `model/`:
+  - `gyros_item.gltf`, item 429's model, standing still: mod.json makes it
+    `item/gyros.chr` like the Treasure Chest Key's (`model:takaraky`), and
+    `data/items.json` gives the item `"model": "gyros"`. The menus look for
+    an item's model at `item/` + `model` + `.chr`. Like the game's item
+    models it has no motion: the menus that show one never start a motion
+    (they turn the whole model instead).
+  - `gyros.gltf`, the same gyroscope as a character pack, `mods/gyros/gyros.chr`
+    (like Brother Gill's): five bones (stand, outer, middle, inner, rotor) with
+    each part a rigid mesh on its bone, and one motion, `spin` (4 seconds,
+    looping): the rotor spins twelve turns, the outer ring makes one slow turn,
+    the middle and inner rings rock on their pins. A map script stands it in
+    a scene: `load_chara(MEMORY_STACK_EVENT, "mods/gyros/gyros.chr",
+    "info.cfg", slot)`, then place it (in front of Max, say) and
+    `set_chara_motion(slot, "spin")`.
+  - `gyros_icon.png`, the item's 32x32 menu icon, drawn flat (the outer ring,
+    the inner ring crossing the rotor's red eye, the stand) and outlined in
+    near-black as the game's icons are.
+- `fish_room.py` builds the Fish Room in Blender from your export of `m07`
+  (the opening's Palm Brinks at night, which has no sky): every placement
+  deleted, the background black, and a room of dark tiles and black walls
+  with floor, wall and camera collision, a giant fish about 420 units long
+  floating 230 up, turned 1.5 degrees a frame by a Piece animation point, and
+  a door back. It also puts the door point `door_fish` in Palm Brinks' scene
+  where the closed house door `door10` was.
+- `make_mod.py` builds the Fish Room with `fish_room.py`, then adds: a second fish, awake, its pupils grown huge,
+  three Invent boxes round the fish, turning with it, each seen only from
+  within 60 degrees of its own side, so a photo gives "Turning", "More
+  Turning" or "Endless Turning" (251 to 253) by where the fish is in its
+  turn; black fog, and a red light
+  set for the ending. Palm Brinks gets the door and a ninth light set, dark
+  with a dried-blood fog. It writes the music (`compose_turned.py`), copies
+  this folder's scripts, data and `model/` into `mods/spinning-cult`, and
+  puts the gyros' icon in the menus' item icon sheet: it exports the sheet
+  from your disc (`dc2tk mod asset ISO ... texture:itemicon`; DC2TK and ISO after
+  `--`, by default `build/release/dc2tk.exe` and `pal.iso`), draws
+  `gyros_icon.png` into cell 191, the game's own "reserved" placeholder that no
+  item points at, in the sheet's own 256 colours, and writes
+  `textures/itemicon.png` (`"texture:itemicon"` in mod.json), so build
+  changes that cell and nothing else of the sheet.
+- `make_villagers.py` exports five townspeople from your disc (Parn, Sheriff
+  Blinkhorn, Giles, Aegira and Fournet), adds two motions to each in
+  Blender, `spin` (arms limp, face tilted up, a slow turn on the spot) and
+  `stare` (still, head hung), and exports them back into the mod, where
+  build adds them as new KEYs.
+- `compose_turned.py`: "The Turning", the Fish Room's tune gone wrong: a
+  detuned music box in F minor over a breathing drone, a wordless choir, a
+  deep bell and the odd whisper, all five instruments synthesized; a music
+  file of the mod's own (`BG_201`).
+- `data/items.json` adds the gŷros (item 429, a key item like the
+  Treasure Chest Key, with its own icon, cell 191 of sheet 1, and model,
+  `gyros`); `data/inventions.json` adds the ideas Turning, More Turning and
+  Endless Turning (251 to 253) and the recipe that makes the gŷros of them,
+  from one Scrap of Metal, its card
+  showing the gyros at scale 1.5, position (-10.6, 1.75, 0) (the Treasure
+  Chest Key's card is 1.52 at (-10.82, 2.05, 0) for a key 4.5 tall).
+
+## The scripts
+
+- `cult.h`: the cult's state in one save counter (`NEW_COUNTER`), read through
+  a union of an int and a struct of bit-fields: which of the five have turned,
+  the stage, whether the town has gone dark, how many have turned.
+- `fishroom.c`, the Fish Room's script: Gill turning with the fish; talking
+  to him (he turns his head before he turns round), the camera, the hints, the
+  count; the ending.
+- `m01.c`, a patch of Palm Brinks: the five, turned by the gŷros in a
+  scene each, staying turned across saves; the town going dark and its music
+  changing after three; after the ending, the five standing still, facing the
+  Fish Room's door, for good. Palm Brinks' script is within a few hundred
+  bytes of the most a map's script may be, so this patch is small: it talks
+  through the script's own helpers and reads the counter as plain bits.
+- `speech.h`: speech bubbles and camera helpers for the Fish Room.
+
+## In the game
+
+A new game starts in Palm Brinks (the first arrival moves the story on to
+when the town's people are out, and enters again).
+
+1. Go through the house door near the start of the street (the Fish Room's).
+   Talk to the robed figure under the fish. He turns his head, then himself,
+   and seems to speak, but you hear nothing. You receive a Camera, a
+   notebook, a photo album and a Scrap of Metal.
+2. Put the Camera in one of Max's active item slots (Items menu) and
+   photograph the fish as it turns: which idea a photo gives depends on
+   where the fish is in its turn, "Turning", "More Turning" or "Endless
+   Turning". Take three from where you stand, a moment apart.
+3. Invent: Turning, More Turning and Endless Turning make the gŷros
+   (Invention menu); make it from the Scrap of Metal. Show it to Gill.
+4. Talk to Parn, Sheriff Blinkhorn, Giles, Aegira and Fournet with the gŷros.
+   Each one turns. After the third, the town goes dark.
+5. When all five have turned, go back into the Fish Room: they turn round the
+   fish. Talk to Gill.

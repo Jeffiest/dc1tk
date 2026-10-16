@@ -1,4 +1,4 @@
-//! C's pointers and composite types lowered to what the VM has (docs/c-standard.md), after the
+//! C's pointers and composite types lowered to what the VM has (docs/coding/c-standard.md), after the
 //! initialised globals (lower::initialised_globals) and before the integer types. Every expression
 //! is typed; the forms the compiler had before come out as they went in, so retail scripts keep
 //! their bytes, and the new ones become the VM's slots:

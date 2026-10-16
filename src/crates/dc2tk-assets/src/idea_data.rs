@@ -1,4 +1,4 @@
-//! Ideas (docs/assets/data.md, section 5): the names and notebook order of the photo subjects
+//! Ideas (docs/game/data.md, section 5): the names and notebook order of the photo subjects
 //! below 1000, `PIC_NAME id, "name", sort;` in the seven copies of `neta2.lst`, the `ideas` of
 //! `data:inventions` (merged into the invention table by `dc2tk_script::datatables`, as
 //! spectrumising is into the item table).
