@@ -12,7 +12,10 @@ use dc2tk_assets::map_export::{self, ModelPack};
 use dc2tk_assets::mapfile;
 use dc2tk_disc::DiscSource;
 use dc2tk_script::mapedit::{self, members};
+use dc2tk_script::maps;
 use dc2tk_script::paths;
+
+use crate::options::Common;
 
 /// Where map-export and setup write the maps, a folder each.
 pub const MAPS: &str = "extracted/maps";
@@ -30,6 +33,25 @@ pub struct MapExportArgs {
     /// Export every map that places its templates (into extracted/maps/NAME, or -o's folder/NAME).
     #[arg(long)]
     all: bool,
+    /// Write nothing: list every map there is to export, a line each, its name, a tab and its
+    /// title in the definitions' language (empty for a map the game names nowhere), as the
+    /// Blender add-on's map list reads them.
+    #[arg(long, conflicts_with_all = ["name", "output", "all"])]
+    list: bool,
+    #[command(flatten)]
+    common: Common,
+}
+
+/// The maps of the disc, by name (lower case): every map/ folder's .map file.
+fn map_names(disc: &DiscSource) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for path in disc.paths() {
+        let lower = path.to_lowercase();
+        if lower.starts_with("map/") && lower.ends_with(".map") {
+            names.insert(lower.rsplit('/').next().unwrap_or(&lower).trim_end_matches(".map").to_string());
+        }
+    }
+    names
 }
 
 /// Exports one map; returns the report line.
@@ -88,15 +110,8 @@ fn export_one(disc: &DiscSource, name: &str, out: &Path) -> Result<String> {
 /// Exports every map that places its templates into `root`/NAME, each folder replaced; returns
 /// each map's report line.
 pub fn export_all(disc: &DiscSource, root: &Path) -> Result<Vec<String>> {
-    let mut names: BTreeSet<String> = BTreeSet::new();
-    for path in disc.paths() {
-        let lower = path.to_lowercase();
-        if lower.starts_with("map/") && lower.ends_with(".map") {
-            names.insert(lower.rsplit('/').next().unwrap_or(&lower).trim_end_matches(".map").to_string());
-        }
-    }
     let mut lines = Vec::new();
-    for name in &names {
+    for name in &map_names(disc) {
         let files = mapedit::map_files(disc.paths(), name)?;
         let map = mapfile::parse(&disc.read(&files.map)?).with_context(|| files.map.clone())?;
         if map.placements.is_empty() {
@@ -109,6 +124,13 @@ pub fn export_all(disc: &DiscSource, root: &Path) -> Result<Vec<String>> {
 
 pub fn run_map_export(args: &MapExportArgs) -> Result<ExitCode> {
     let disc = DiscSource::open(&args.disc)?;
+    if args.list {
+        let titles = maps::map_names(&disc, &args.common.definitions()?);
+        for name in map_names(&disc) {
+            println!("{name}\t{}", titles.get(&name).map_or("", String::as_str));
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
     if args.all {
         let root = args.output.clone().unwrap_or_else(|| PathBuf::from(MAPS));
         let lines = export_all(&disc, &root)?;

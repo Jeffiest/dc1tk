@@ -114,7 +114,10 @@ Options of single commands:
   usual install folder.
 - `map-export NAME` writes into `extracted/maps/NAME` (`-o DIR` elsewhere);
   `--all` exports every map that has placements, each into
-  `extracted/maps/NAME` (or `DIR/NAME`). `--disc` is the disc read (default
+  `extracted/maps/NAME` (or `DIR/NAME`). `--list` writes nothing and lists
+  every map there is to export, a line each: its name, a tab, and its title
+  in the definitions' language (empty for a map the game names nowhere), as
+  the Blender add-on's map list reads it. `--disc` is the disc read (default
   `extracted/disc`, or the image).
 - `diff` and `mod make` read the extracted folder from `--extracted DIR`
   (default `extracted`, the folder holding `disc/`, `scripts/` and
