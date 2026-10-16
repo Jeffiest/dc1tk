@@ -837,7 +837,7 @@ impl Lowering<'_> {
         match node.kind() {
             kinds::INT | kinds::FLOAT | kinds::STRING => Ok(literal(node)),
             kinds::WIDE => self.literal_array(node),
-            kinds::VAR => self.variable(node),
+            kinds::VAR => Ok(self.variable(node)),
             kinds::DEREF if self.plain_deref(node).is_none() => self.deref_value(node),
             kinds::INDEX | kinds::DEREF | kinds::SUBSCRIPT | kinds::MEMBER | kinds::FIELD => self.place_value(node),
             kinds::ADDR => self.address_value(node),
@@ -941,14 +941,14 @@ impl Lowering<'_> {
 
     /// A name's value: a variable's (an array's or struct's address), a function's number (its
     /// address), or a constant as it is.
-    fn variable(&mut self, node: &Node) -> Result<Typed> {
+    fn variable(&mut self, node: &Node) -> Typed {
         let name = node.text("name");
         if let Some(found) = self.lookup(name) {
             let place = Place::Var(found.name.clone());
             let loaded = self.load(&place, found.ty.clone());
             // a variable the compiler had before stays as it was written
             let node = if found.name == name && !found.ty.is_aggregate() { node.clone() } else { loaded.node };
-            return Ok(Typed::new(node, loaded.ty));
+            return Typed::new(node, loaded.ty);
         }
         if let Some(signature) = self.signatures.get(name).cloned() {
             return self.function_number(name, &signature);
@@ -958,11 +958,11 @@ impl Lowering<'_> {
             Some("string") => Ty::Scalar("string".into()),
             _ => ctype::int(),
         };
-        Ok(Typed::new(node.clone(), ty))
+        Typed::new(node.clone(), ty)
     }
 
     /// A function's address: its number, given the first time it is taken.
-    fn function_number(&mut self, name: &str, signature: &Signature) -> Result<Typed> {
+    fn function_number(&mut self, name: &str, signature: &Signature) -> Typed {
         let next = self.numbered.len() as i64 + 1;
         let number = *self.numbered.entry(name.to_string()).or_insert(next);
         let ty = ctype::pointer(Ty::Function(
@@ -970,14 +970,14 @@ impl Lowering<'_> {
             signature.params.clone(),
             signature.variadic,
         ));
-        Ok(Typed::new(int_node(number), ty))
+        Typed::new(int_node(number), ty)
     }
 
     fn address_value(&mut self, node: &Node) -> Result<Typed> {
         let target = &node["target"];
         if target.kind() == kinds::VAR && self.lookup(target.text("name")).is_none() {
             if let Some(signature) = self.signatures.get(target.text("name")).cloned() {
-                return self.function_number(target.text("name"), &signature);
+                return Ok(self.function_number(target.text("name"), &signature));
             }
         }
         let (place, ty) = self.place(target)?;

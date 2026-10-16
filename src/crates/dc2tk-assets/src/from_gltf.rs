@@ -68,7 +68,8 @@ pub fn load_json(text: &str) -> Result<Value> {
     serde_json::from_str(text).context("the glTF's JSON does not read")
 }
 
-fn base64(text: &str) -> Result<Vec<u8>> {
+/// A data: uri's base64 text decoded; characters outside the alphabet are skipped, and `=` ends it.
+fn base64(text: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(text.len() * 3 / 4);
     let (mut acc, mut bits) = (0u32, 0);
     for c in text.bytes() {
@@ -88,7 +89,7 @@ fn base64(text: &str) -> Result<Vec<u8>> {
             out.push((acc >> bits) as u8);
         }
     }
-    Ok(out)
+    out
 }
 
 fn utf8(data: &[u8]) -> Result<&str> {
@@ -135,7 +136,7 @@ pub fn with_buffers(json: Value, read: &dyn Fn(&str) -> Result<Arc<Vec<u8>>>) ->
             let Some((_, data)) = uri.split_once(',') else {
                 bail!("a buffer's data: URI has no comma before its data");
             };
-            buffers.push(Arc::new(base64(data)?));
+            buffers.push(Arc::new(base64(data)));
         } else {
             buffers.push(read(uri)?);
         }
@@ -2096,7 +2097,7 @@ pub fn image_bytes(gltf: &Gltf, i: &Value, read: &dyn Fn(&str) -> Result<Vec<u8>
     let image = index(item(&gltf.json, "images")?, i)?;
     if let Some(uri) = image.get("uri").and_then(Value::as_str) {
         if let Some((_, data)) = uri.strip_prefix("data:").and_then(|rest| rest.split_once(',')) {
-            return base64(data);
+            return Ok(base64(data));
         }
         return read(uri);
     }

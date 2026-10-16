@@ -196,6 +196,50 @@ pub struct Section {
     pub adding: Option<Adding>,
 }
 
+impl Section {
+    /// The record a new one's `like` names: an object of the keys, or the last key's value (the
+    /// other keys the new record's own: another part of its town).
+    fn like_of(&self, like: &Value, keys: &[Value], label: &str) -> Result<&Record> {
+        let wanted: Vec<Value> = match like {
+            Value::Object(object) => {
+                self.keys.iter().map(|key| object.get(key).cloned().unwrap_or(Value::Null)).collect()
+            }
+            value => {
+                let mut wanted = keys.to_vec();
+                *wanted.last_mut().expect("a section has keys") = value.clone();
+                wanted
+            }
+        };
+        self.records
+            .iter()
+            .rev()
+            .find(|record| record.keys.iter().zip(&wanted).all(|((_, have), want)| same(have, want)))
+            .filter(|record| !record.block.is_empty())
+            .ok_or_else(|| crate::Error::invalid(format!("{label}: like {like}: no such record to copy")))
+    }
+
+    /// The texts of a new record's keys its statements hold, (tag, argument, text): its place
+    /// (the next one, and checked to be) where the statements hold it (a request's number), the
+    /// keys the section writes; the others are the like record's own.
+    fn key_texts(&self, new: &New, place: usize) -> Result<Vec<(&'static str, usize, Vec<u8>)>> {
+        let adding = self.adding.as_ref().expect("a section that takes records");
+        let label = &new.label;
+        let mut out = Vec::new();
+        for ((key, value), (_, like_value)) in self.keys.iter().zip(&new.added.keys).zip(&new.like.keys) {
+            let written = adding.key_args.iter().find(|(known, ..)| known == key);
+            if Some(key.as_str()) == adding.place && value.as_i64() != Some(place as i64) {
+                bail!("{label}: a new record's {key} is the next one, {place}");
+            }
+            if let Some(&(_, tag, arg, kind)) = written {
+                out.push((tag, arg, value_text(kind, value, &format!("{label} {key}"))?));
+            } else if Some(key.as_str()) != adding.place && !same(value, like_value) {
+                bail!("{label}: a new record has the {key} of the record it is like ({})", shown(like_value));
+            }
+        }
+        Ok(out)
+    }
+}
+
 /// The table: the scripts and executable it reads, and its sections.
 #[derive(Clone, Debug)]
 pub struct Table {
@@ -630,28 +674,6 @@ impl Table {
         Ok(())
     }
 
-    /// The record a new one's `like` names: an object of the keys, or the last key's value (the
-    /// other keys the new record's own: another part of its town).
-    fn like_of<'a>(&self, section: &'a Section, like: &Value, keys: &[Value], label: &str) -> Result<&'a Record> {
-        let wanted: Vec<Value> = match like {
-            Value::Object(object) => {
-                section.keys.iter().map(|key| object.get(key).cloned().unwrap_or(Value::Null)).collect()
-            }
-            value => {
-                let mut wanted = keys.to_vec();
-                *wanted.last_mut().expect("a section has keys") = value.clone();
-                wanted
-            }
-        };
-        section
-            .records
-            .iter()
-            .rev()
-            .find(|record| record.keys.iter().zip(&wanted).all(|((_, have), want)| same(have, want)))
-            .filter(|record| !record.block.is_empty())
-            .ok_or_else(|| crate::Error::invalid(format!("{label}: like {like}: no such record to copy")))
-    }
-
     /// The new records of a section: each a copy of its like record's statements with its keys,
     /// labels and the fields given, after the section's last record in each file; the files'
     /// counts raised.
@@ -661,7 +683,7 @@ impl Table {
         let mut new = Vec::new();
         for added in records {
             let label = format!("{} {} (new)", section.name, keys_text(&section.keys, &added.keys));
-            let like = self.like_of(section, &added.given["like"], &added.keys, &label)?;
+            let like = section.like_of(&added.given["like"], &added.keys, &label)?;
             new.push(New { added, like, label });
         }
         // places continue from the last, in order
@@ -683,7 +705,7 @@ impl Table {
                     adding.why
                 );
             }
-            let key_texts = self.key_texts(section, new, place)?;
+            let key_texts = section.key_texts(new, place)?;
             let copy = Table::new(&self.what, self.copied_statements(adding, new, &key_texts)?, Vec::new());
             let texts = cfg_text::apply_edits(&copy.scripts, &copy.copy_edits(section, new)?)?;
             for (&(file, ..), text) in new.like.block.iter().zip(texts) {
@@ -708,27 +730,6 @@ impl Table {
             }
         }
         self.count_edits(section, &new, edits)
-    }
-
-    /// The texts of a new record's keys its statements hold, (tag, argument, text): its place
-    /// (the next one, and checked to be) where the statements hold it (a request's number), the
-    /// keys the section writes; the others are the like record's own.
-    fn key_texts(&self, section: &Section, new: &New, place: usize) -> Result<Vec<(&'static str, usize, Vec<u8>)>> {
-        let adding = section.adding.as_ref().expect("a section that takes records");
-        let label = &new.label;
-        let mut out = Vec::new();
-        for ((key, value), (_, like_value)) in section.keys.iter().zip(&new.added.keys).zip(&new.like.keys) {
-            let written = adding.key_args.iter().find(|(known, ..)| known == key);
-            if Some(key.as_str()) == adding.place && value.as_i64() != Some(place as i64) {
-                bail!("{label}: a new record's {key} is the next one, {place}");
-            }
-            if let Some(&(_, tag, arg, kind)) = written {
-                out.push((tag, arg, value_text(kind, value, &format!("{label} {key}"))?));
-            } else if Some(key.as_str()) != adding.place && !same(value, like_value) {
-                bail!("{label}: a new record has the {key} of the record it is like ({})", shown(like_value));
-            }
-        }
-        Ok(out)
     }
 
     /// The copy of a new record: its like record's statements in each of its files, with the new

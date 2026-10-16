@@ -317,7 +317,7 @@ pub(super) fn named(state: &mut State, name: &str) -> Result<Node> {
     if indices.len() == 1 && state.variable(&name).is_none_or(|entry| entry.get("dims").is_none()) {
         return Ok(node!({"kind": "index", "name": name, "index": indices.pop().unwrap()}));
     }
-    element(state, &name, indices)
+    element(state, &name, &indices)
 }
 
 /// The inner sizes of a multi-dimensional array: all of a local's after the first, all of a
@@ -334,7 +334,7 @@ pub(super) fn inner_sizes(entry: &Node) -> Vec<i64> {
 
 /// a[i][j] of a multi-dimensional array: the element at i * columns + j, or, with fewer indices
 /// than the array has sizes, the address of that row (a[i] passes a row).
-pub(super) fn element(state: &State, name: &str, indices: Vec<Node>) -> Result<Node> {
+pub(super) fn element(state: &State, name: &str, indices: &[Node]) -> Result<Node> {
     let Some(entry) = state.variable(name) else {
         return state.fail(format!("unknown variable {name}"));
     };

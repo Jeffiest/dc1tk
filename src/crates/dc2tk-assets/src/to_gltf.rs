@@ -109,13 +109,13 @@ impl Gltf {
 
     fn add_accessor(
         &mut self,
-        data: Vec<u8>,
+        data: &[u8],
         count: usize,
         kind: AccessorType,
         ctype: ComponentType,
         target: Option<i64>,
     ) -> Value {
-        let view = self.view(&data, target);
+        let view = self.view(data, target);
         json!({"bufferView": view, "componentType": ctype.code(), "count": count, "type": kind.name()})
     }
 
@@ -126,7 +126,7 @@ impl Gltf {
         for v in values {
             mds::pack_floats(v, &mut data)?;
         }
-        let mut accessor = self.add_accessor(data, values.len(), kind, ComponentType::Float, target);
+        let mut accessor = self.add_accessor(&data, values.len(), kind, ComponentType::Float, target);
         if minmax {
             let n = kind.components();
             let mut low = Vec::with_capacity(n);
@@ -175,7 +175,7 @@ impl Gltf {
                 data.extend(x.to_le_bytes());
             }
         }
-        let accessor = self.add_accessor(data, values.len(), kind, ctype, target);
+        let accessor = self.add_accessor(&data, values.len(), kind, ctype, target);
         self.accessors.push(accessor);
         Ok(self.accessors.len() - 1)
     }
@@ -843,6 +843,17 @@ pub enum Target {
 }
 
 impl Target {
+    /// The target's weight at rest: no vertex frame, the materials' own colours, shown.
+    fn rest(&self, t: &mds::Mdt) -> f64 {
+        let diffuse = |k: usize, c: usize| t.materials.get(k).and_then(|m| m.diffuse.get(c)).copied().unwrap_or(1.0);
+        match *self {
+            Target::Frame { .. } => 0.0,
+            Target::Fade(k) => 1.0 - diffuse(k, 3),
+            Target::Colour(k, c) => diffuse(k, c),
+            Target::Visible(_) => 1.0,
+        }
+    }
+
     /// The target's name (`targetNames`): `c2_frame_<frame>` for the primary set's frames,
     /// `c2_set<id>_frame_<frame>` for another's.
     pub fn name(&self, ids: &[String], primary: usize) -> String {
@@ -936,17 +947,7 @@ impl<'a> MeshMotion<'a> {
 
     /// Each target's weight at rest: no vertex frame, the materials' own colours, shown.
     fn rest_weights(&self, t: &mds::Mdt) -> Vec<f64> {
-        self.targets.iter().map(|target| self.rest(t, target)).collect()
-    }
-
-    fn rest(&self, t: &mds::Mdt, target: &Target) -> f64 {
-        let diffuse = |k: usize, c: usize| t.materials.get(k).and_then(|m| m.diffuse.get(c)).copied().unwrap_or(1.0);
-        match *target {
-            Target::Frame { .. } => 0.0,
-            Target::Fade(k) => 1.0 - diffuse(k, 3),
-            Target::Colour(k, c) => diffuse(k, c),
-            Target::Visible(_) => 1.0,
-        }
+        self.targets.iter().map(|target| target.rest(t)).collect()
     }
 
     /// Each target's weight at a frame of a motion set.
@@ -957,10 +958,10 @@ impl<'a> MeshMotion<'a> {
             .map(|target| match *target {
                 Target::Frame { set: s, frame } => f64::from(u8::from(s == set && frame == f)),
                 Target::Fade(k) => {
-                    motion.list(self.frame, 40, k as i32).map_or(self.rest(t, target), |l| lerped_value(l, f)[0])
+                    motion.list(self.frame, 40, k as i32).map_or(target.rest(t), |l| lerped_value(l, f)[0])
                 }
                 Target::Colour(k, c) => {
-                    motion.list(self.frame, 41, k as i32).map_or(self.rest(t, target), |l| lerped_value(l, f)[c])
+                    motion.list(self.frame, 41, k as i32).map_or(target.rest(t), |l| lerped_value(l, f)[c])
                 }
                 Target::Visible(kind) => motion.list(self.frame, kind, 0).map_or(1.0, |l| held_value(l, f)[0]),
             })

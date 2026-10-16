@@ -210,7 +210,7 @@ pub fn decompile_tree(
     out: &Path,
     force: bool,
     defs: Definitions,
-    tables: BTreeMap<String, Table>,
+    tables: &BTreeMap<String, Table>,
     sdk_dir: &Path,
 ) -> Result<TreeWritten> {
     let root = disc_root(&stb.join(MANIFEST)).unwrap_or_else(|| stb.to_path_buf());
@@ -227,7 +227,7 @@ pub fn decompile_tree(
     let paths: Vec<String> = found.iter().map(|path| format!("{folder}{path}")).collect();
     let headers_used = sdk::header_texts(&defs, sdk_dir)?;
     let (defs, headers, generated) = disc::with_header(&root, defs, headers_used.clone());
-    let mut model = library::model_for(&root, &paths, &tables, &defs, &headers)?;
+    let mut model = library::model_for(&root, &paths, tables, &defs, &headers)?;
     let generated = slots::with_header(generated, &model.naming.folder_slots, &model.naming.villagers);
     let generated = assets::with_header(generated, &model.naming.asset_names);
     let naming = pathnames::lookups(&root, &defs);

@@ -259,18 +259,18 @@ impl Image {
         }
         let palette = self.palette.as_deref().unwrap_or_default();
         let indices = self.indices.as_deref().unwrap_or_default();
-        Ok(Some(lookup(indices, palette, [0, 0, 0, 0])?))
+        Ok(Some(lookup(indices, palette, [0, 0, 0, 0])))
     }
 }
 
 /// The colour of every index: the palette, padded to 256 entries with `fill`.
-fn lookup(indices: &[u8], palette: &[[u8; 4]], fill: [u8; 4]) -> Result<Vec<u8>> {
+fn lookup(indices: &[u8], palette: &[[u8; 4]], fill: [u8; 4]) -> Vec<u8> {
     let mut out = Vec::with_capacity(indices.len() * 4);
     for &i in indices {
         let colour = palette.get(i as usize).copied().unwrap_or(fill);
         out.extend(colour);
     }
-    Ok(out)
+    out
 }
 
 /// Writes the bytes at `at`, which must fit in the buffer.

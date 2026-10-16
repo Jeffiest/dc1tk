@@ -234,7 +234,7 @@ fn parameter(param: &Node) -> String {
     format!("{} {}{}", first_or(param, "kind", "type"), param["name"].plain_text(), array)
 }
 
-fn parameter_list(texts: Vec<String>) -> String {
+fn parameter_list(texts: &[String]) -> String {
     if texts.is_empty() {
         "void".into()
     } else {
@@ -291,7 +291,7 @@ pub fn function_text(function: &Node) -> Result<Vec<String>> {
     if let Some(doc) = function.get("doc").filter(|doc| doc.is_set()) {
         lines.extend(doc_lines(&doc.plain_text()));
     }
-    let params = parameter_list(function.list("params").iter().map(parameter).collect());
+    let params = parameter_list(&function.list("params").iter().map(parameter).collect::<Vec<_>>());
     let returns = function.get("returns").map_or_else(|| "int".to_string(), Node::plain_text);
     lines.push(format!("{} {}({})", returns, function["name"].plain_text(), params));
     lines.push("{".into());
@@ -455,7 +455,7 @@ pub fn typed_parameter(param: &Node) -> String {
 }
 
 pub fn inline_text(inline: &Node) -> Result<Vec<String>> {
-    let params = parameter_list(inline.list("params").iter().map(typed_parameter).collect());
+    let params = parameter_list(&inline.list("params").iter().map(typed_parameter).collect::<Vec<_>>());
     let mut lines = vec![format!("static inline void {}({})", inline["name"].plain_text(), params), "{".to_string()];
     lines.extend(block(inline.list("body"), 1)?);
     lines.push("}".into());
@@ -487,7 +487,7 @@ pub fn native_declaration(declared: &Node) -> Result<String> {
         "extern {} {}({}) NATIVE({});",
         declared["returns"].plain_text(),
         declared["name"].plain_text(),
-        parameter_list(texts),
+        parameter_list(&texts),
         number
     ))
 }

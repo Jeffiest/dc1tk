@@ -10,7 +10,7 @@ use dc2tk_script::decompiler;
 use dc2tk_script::definitions::Definitions;
 
 fn decompiled(extracted: &Path, out: &Path, force: bool) -> dc2tk_script::Result<decompiler::TreeWritten> {
-    decompiler::decompile_tree(extracted, out, force, Definitions::empty(), tables().clone(), &sdk_dir())
+    decompiler::decompile_tree(extracted, out, force, Definitions::empty(), tables(), &sdk_dir())
 }
 
 #[test]

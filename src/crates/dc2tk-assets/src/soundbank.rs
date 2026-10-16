@@ -529,6 +529,32 @@ pub struct Sound {
     pub loop_start: Option<i64>,
 }
 
+impl Sound {
+    /// The sound's ADPCM bytes, rate and whether it loops: resampled to `rate` (default the
+    /// sound's, at most 48000); loop Some(true/false), or None for the sound's own loop point.
+    fn encode(&self, rate: Option<i64>, wanted: Option<bool>) -> Result<(Vec<u8>, u16, bool)> {
+        let rate = rate.unwrap_or(self.rate.min(48000));
+        let samples = if rate == self.rate { self.samples.clone() } else { resample(&self.samples, self.rate, rate) };
+        let mut ls = self.loop_start;
+        if let Some(start) = ls {
+            if rate != self.rate {
+                ls = Some(((start * rate) as f64 / self.rate as f64).round_ties_even() as i64);
+            }
+        }
+        if wanted == Some(true) && ls.is_none() {
+            ls = Some(0);
+        }
+        if wanted == Some(false) {
+            ls = None;
+        }
+        let s = prepare_loop(&Sound { rate, samples, loop_start: ls })?;
+        let Some(rate) = u16::try_from(rate).ok().filter(|&rate| rate > 0) else {
+            bail!("a sample rate of {rate} Hz; a VAG plays at 1 to 65535");
+        };
+        Ok((encode_adpcm(&s.samples, s.loop_start, Search::Exhaustive)?, rate, s.loop_start.is_some()))
+    }
+}
+
 /// A VAG body decoded: its samples and loop start. Decoding stops after the first block with
 /// FLAG_END; the leading all-zero block is skipped when asked.
 pub fn decode_adpcm(data: &[u8], skip_zero_block: bool) -> Result<(Vec<i64>, Option<i64>)> {
@@ -1356,31 +1382,6 @@ impl Bank {
         Ok(Sound { rate: i64::from(self.hd.vags[index].rate), samples, loop_start })
     }
 
-    /// ADPCM bytes, rate and whether it loops for a Sound: resampled to `rate` (default the
-    /// sound's, at most 48000); loop Some(true/false), or None for the sound's own loop point.
-    fn encode(&self, sound: &Sound, rate: Option<i64>, wanted: Option<bool>) -> Result<(Vec<u8>, u16, bool)> {
-        let rate = rate.unwrap_or(sound.rate.min(48000));
-        let samples =
-            if rate == sound.rate { sound.samples.clone() } else { resample(&sound.samples, sound.rate, rate) };
-        let mut ls = sound.loop_start;
-        if let Some(start) = ls {
-            if rate != sound.rate {
-                ls = Some(((start * rate) as f64 / sound.rate as f64).round_ties_even() as i64);
-            }
-        }
-        if wanted == Some(true) && ls.is_none() {
-            ls = Some(0);
-        }
-        if wanted == Some(false) {
-            ls = None;
-        }
-        let s = prepare_loop(&Sound { rate, samples, loop_start: ls })?;
-        let Some(rate) = u16::try_from(rate).ok().filter(|&rate| rate > 0) else {
-            bail!("a sample rate of {rate} Hz; a VAG plays at 1 to 65535");
-        };
-        Ok((encode_adpcm(&s.samples, s.loop_start, Search::Exhaustive)?, rate, s.loop_start.is_some()))
-    }
-
     /// One VAG replaced in place: every sample, program and entry using it plays the new sound.
     pub fn replace_vag(
         &mut self,
@@ -1392,7 +1393,7 @@ impl Bank {
         if wanted.is_none() && sound.loop_start.is_none() && self.hd.vags[index].attribute != 0 {
             wanted = Some(true);
         }
-        let (data, rate, looped) = self.encode(sound, rate, wanted)?;
+        let (data, rate, looped) = sound.encode(rate, wanted)?;
         self.vag_data[index] = data;
         self.hd.vags[index].rate = rate;
         self.hd.vags[index].attribute = looped as u8;
@@ -1427,7 +1428,7 @@ impl Bank {
         {
             wanted = Some(true);
         }
-        let (data, rate, looped) = self.encode(sound, rate, wanted)?;
+        let (data, rate, looped) = sound.encode(rate, wanted)?;
         let vag = self.push_vag(data, rate, looped)?;
         let hd = &mut self.hd;
         let (sample, split, program) = match template {
@@ -1514,7 +1515,7 @@ impl Bank {
             let Ok(number_in_program) = u8::try_from(at) else {
                 bail!("program {number}: a program has at most 255 zones");
             };
-            let (data, rate, looped) = self.encode(&zone.sound, None, zone.looped)?;
+            let (data, rate, looped) = zone.sound.encode(None, zone.looped)?;
             let vag = self.push_vag(data, rate, looped)?;
             let sample = template.and_then(|(_, _, sample)| sample).unwrap_or_else(Sample::fresh);
             // the keys and volume were checked above: they fit a byte

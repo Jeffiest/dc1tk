@@ -34,14 +34,14 @@ pub struct Manifest {
 }
 
 /// Every file and pack member with its bytes, depth first: a file, then its pack's members.
-fn walk<'a>(path: String, data: &'a [u8], depth: usize, out: &mut Vec<(String, &'a [u8], bool)>) {
-    out.push((path.clone(), data, depth > 0));
+fn walk<'a>(path: &str, data: &'a [u8], depth: usize, out: &mut Vec<(String, &'a [u8], bool)>) {
+    out.push((path.to_string(), data, depth > 0));
     if depth >= MAX_PACK_DEPTH {
         return;
     }
     if let Some(members) = archive::parse_pack(data) {
         for member in members {
-            walk(format!("{path}{PACK_SUFFIX}/{}", member.name), member.data(data), depth + 1, out);
+            walk(&format!("{path}{PACK_SUFFIX}/{}", member.name), member.data(data), depth + 1, out);
         }
     }
 }
@@ -126,7 +126,7 @@ pub fn extract(image: &[u8], out_dir: &Path) -> Result<Manifest> {
     let archive = Archive::open(image)?;
     let mut items = Vec::new();
     for entry in &archive.entries {
-        walk(entry.path.clone(), archive.read(image, entry), 0, &mut items);
+        walk(&entry.path, archive.read(image, entry), 0, &mut items);
     }
     write_all(out_dir, &items)?;
     let files: Vec<FileItem> = items

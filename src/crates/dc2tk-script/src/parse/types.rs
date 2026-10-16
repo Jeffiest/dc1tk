@@ -267,16 +267,16 @@ pub(super) fn struct_members(state: &mut State, union: bool, tag: &str) -> Resul
 pub(super) fn member_declaration(state: &mut State, members: &mut Members) -> Result<()> {
     state.nested(|state| {
         let spec = specifiers(state, true)?;
-        member_declarators(state, members, spec)
+        member_declarators(state, members, &spec)
     })
 }
 
 /// The members a declaration's declarators give, after its specifiers.
-pub(super) fn member_declarators(state: &mut State, members: &mut Members, spec: Spec) -> Result<()> {
+pub(super) fn member_declarators(state: &mut State, members: &mut Members, spec: &Spec) -> Result<()> {
     if spec.storage.is_some() {
         return state.fail(format!("a member of {} has no storage class", members.shown));
     }
-    let base = base_ty(state, &spec)?;
+    let base = base_ty(state, spec);
     loop {
         let (name, ty) = declarator(state, base.clone())?;
         members.add(state, name, ty)?;
@@ -384,15 +384,15 @@ pub(super) fn complete(state: &State, name: &str, ty: &Ty) -> Result<()> {
 
 /// The type specifiers give: a struct or typedef'd type as it is, void, or a scalar by its base
 /// type (a typedef's, int for an enum; a header's value kind as it is named).
-pub(super) fn base_ty(state: &State, spec: &Spec) -> Result<Ty> {
+pub(super) fn base_ty(state: &State, spec: &Spec) -> Ty {
     if let Some(ty) = &spec.ty {
-        return Ok(ty.clone());
+        return ty.clone();
     }
-    Ok(match spec.kind.as_str() {
+    match spec.kind.as_str() {
         "void" => Ty::Void,
         kind if kind.starts_with("enum ") => ctype::int(),
         kind => Ty::Scalar(state.base_kind(kind)),
-    })
+    }
 }
 
 /// A declarator, as C 3.5.4 reads one: *s (with their qualifiers), a name or a declarator in
@@ -497,7 +497,7 @@ pub(super) fn parameter_types(state: &mut State) -> Result<(Vec<Ty>, bool)> {
                 break;
             }
             let spec = specifiers(state, true)?;
-            let base = base_ty(state, &spec)?;
+            let base = base_ty(state, &spec);
             let (_, ty) = declarator(state, base)?;
             params.push(adjusted(ty));
             if !state.at(",", 0) {
@@ -535,7 +535,7 @@ pub(super) fn abstract_type(state: &mut State) -> Result<Ty> {
     if spec.storage.is_some() {
         return state.fail("a type name has no storage class");
     }
-    let base = base_ty(state, &spec)?;
+    let base = base_ty(state, &spec);
     let (name, ty) = declarator(state, base)?;
     if !name.is_empty() {
         return state.fail(format!("a type name has no name, found {name}"));

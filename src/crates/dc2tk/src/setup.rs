@@ -80,7 +80,7 @@ pub fn decompile_tree(extracted: &Path, output: Option<&Path>, force: bool, comm
         bail!("decompiling a directory needs -o OUT_DIR");
     };
     let written =
-        decompiler::decompile_tree(extracted, out, force, common.definitions()?, common.tables()?, &common.sdk_dir())?;
+        decompiler::decompile_tree(extracted, out, force, common.definitions()?, &common.tables()?, &common.sdk_dir())?;
     if let Some(warning) = &written.warning {
         println!("warning: {warning}");
     }

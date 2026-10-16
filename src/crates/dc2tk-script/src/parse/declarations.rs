@@ -118,7 +118,7 @@ pub(super) fn declarators(state: &mut State, spec: &Spec) -> Result<Vec<Declared
     loop {
         let line = state.line();
         if complex_ahead(state, spec) {
-            let base = base_ty(state, spec)?;
+            let base = base_ty(state, spec);
             let (name, ty) = declarator(state, base)?;
             if name.is_empty() {
                 let found = state.shown(state.token(0))?;
@@ -377,7 +377,7 @@ pub(super) fn declaration(state: &mut State) -> Result<Vec<Node>> {
             spec.storage.as_deref() == Some("static") && (declared.pointer || !declared.dims.is_empty());
         let wide = matches!(&declared.init, Some(Init::Value(value)) if value.kind() == "wide");
         if declared.ty.is_some() || static_aggregate || wide {
-            statements.extend(typed_local(state, &spec, declared, &kind)?);
+            statements.extend(typed_local(state, &spec, &declared, &kind)?);
             continue;
         }
         let line = declared.line;
@@ -699,10 +699,10 @@ pub(super) fn typed_entry(state: &State, name: &str, ty: &Ty) -> Node {
 /// A local of C's other types (a struct, a pointer to a pointer, a function pointer...) or a
 /// static array or pointer: its slots, and assignments for its initializer. A static one is a
 /// hidden global, as for static scalars.
-pub(super) fn typed_local(state: &mut State, spec: &Spec, declared: Declared, kind: &str) -> Result<Vec<Node>> {
+pub(super) fn typed_local(state: &mut State, spec: &Spec, declared: &Declared, kind: &str) -> Result<Vec<Node>> {
     let ty = match &declared.ty {
         Some(ty) => ty.clone(),
-        None => plain_type(state, &declared, kind)?,
+        None => plain_type(state, declared, kind)?,
     };
     let ty = sized_by(state, ty, declared.init.as_ref())?;
     complete(state, &declared.name, &ty)?;
@@ -715,7 +715,7 @@ pub(super) fn typed_local(state: &mut State, spec: &Spec, declared: Declared, ki
         if let Some(map) = global.as_object_mut() {
             map.remove("pointer");
         }
-        let global = global_values(state, global, &declared, &ty)?;
+        let global = global_values(state, global, declared, &ty)?;
         state.statics.push(global.clone());
         state.scope.as_mut().unwrap().statics.insert(storage, global);
         return Ok(Vec::new());
@@ -746,10 +746,10 @@ pub(super) fn typed_local(state: &mut State, spec: &Spec, declared: Declared, ki
 
 /// A global of C's other types: an array (its slots one after another), a pointer, a struct, a
 /// function pointer. Its initializer is set once per load, as a scalar's.
-pub(super) fn typed_global(state: &mut State, program: &mut Node, spec: &Spec, declared: Declared) -> Result<()> {
+pub(super) fn typed_global(state: &mut State, program: &mut Node, spec: &Spec, declared: &Declared) -> Result<()> {
     let ty = match &declared.ty {
         Some(ty) => ty.clone(),
-        None => plain_type(state, &declared, &spec.kind)?,
+        None => plain_type(state, declared, &spec.kind)?,
     };
     if let Ty::Function(..) = ty {
         // a function's prototype written as a declarator
@@ -761,7 +761,7 @@ pub(super) fn typed_global(state: &mut State, program: &mut Node, spec: &Spec, d
     if let Some(map) = entry.as_object_mut() {
         map.remove("pointer");
     }
-    let mut entry = global_values(state, entry, &declared, &ty)?;
+    let mut entry = global_values(state, entry, declared, &ty)?;
     if spec.constant {
         entry["const"] = Node::Bool(true);
     }
@@ -824,7 +824,7 @@ pub(super) fn typed_typedef(state: &mut State, spec: &Spec) -> Result<bool> {
     if plain {
         return Ok(false);
     }
-    let base = base_ty(state, spec)?;
+    let base = base_ty(state, spec);
     let (name, ty) = declarator(state, base)?;
     if name.is_empty() {
         return state.fail("a typedef needs a name");
@@ -1083,7 +1083,7 @@ pub(super) fn parameter_sizes(state: &mut State) -> Result<Vec<i64>> {
 /// A parameter of C's other types: a pointer to a pointer or a struct, a struct (passed by value,
 /// composite.rs), a function pointer; an array or function declared as one is its pointer.
 pub(super) fn typed_parameter_entry(state: &mut State, spec: &Spec) -> Result<Node> {
-    let base = base_ty(state, spec)?;
+    let base = base_ty(state, spec);
     let (name, ty) = declarator(state, base)?;
     let ty = adjusted(ty);
     if let Ty::Struct(_) = &ty {
@@ -1227,7 +1227,7 @@ pub(super) fn top_declaration(
     if state.token(stars).kind == Kind::Name && state.at("(", stars + 1) {
         let mut returns_ty = spec.ty.clone();
         if stars > 0 {
-            let mut ty = base_ty(state, &spec)?;
+            let mut ty = base_ty(state, &spec);
             for _ in 0..stars {
                 state.take();
                 ty = ctype::pointer(ty);
@@ -1253,7 +1253,7 @@ pub(super) fn top_declaration(
                 // extern int table[];: declares a global another declaration defines
                 continue;
             }
-            typed_global(state, program, &spec, declared)?;
+            typed_global(state, program, &spec, &declared)?;
             continue;
         }
         let mut entry = node!({"name": &declared.name, "type": &spec.kind});

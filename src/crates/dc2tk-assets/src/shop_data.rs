@@ -215,7 +215,7 @@ impl Shops {
     }
 
     /// The text of a new PRICE or SHOP line, added after the file's last line of that tag.
-    fn added(&self, file: usize, tag: &str, args: Vec<Vec<u8>>, what: String, module: &str) -> Result<Edit> {
+    fn added(&self, file: usize, tag: &str, args: &[Vec<u8>], what: String, module: &str) -> Result<Edit> {
         let Some(after) = self.scripts[file].statements.iter().rposition(|statement| statement.tag == tag) else {
             bail!("{what}: {} has no {tag} line to add one after", files()[file]);
         };
@@ -223,7 +223,7 @@ impl Shops {
             file,
             statement: after,
             arg: 0,
-            to: To::Insert(cfg_text::statement_text(self.scripts[file].newline(), tag, &args)),
+            to: To::Insert(cfg_text::statement_text(self.scripts[file].newline(), tag, args)),
             what,
             module: module.to_string(),
         })
@@ -323,7 +323,7 @@ impl Shops {
                 args.push(cfg_text::int_text(price_number(value, &format!("{what} {key}"))?));
             }
             for file in self.chapter_files(chapter) {
-                out.push(self.added(file, "PRICE", args.clone(), what.clone(), module)?);
+                out.push(self.added(file, "PRICE", &args, what.clone(), module)?);
             }
         }
         Ok(())
@@ -371,7 +371,7 @@ impl Shops {
                         // a shop the file lacks: a SHOP line of its own
                         let args = [vec![cfg_text::int_text(shop)], texts.clone()].concat();
                         let what = format!("new shop {shop} (chapter {})", chapter + 1);
-                        out.push(self.added(file, "SHOP", args, what, module)?);
+                        out.push(self.added(file, "SHOP", &args, what, module)?);
                         continue;
                     };
                     let old: Vec<i32> = self.values(file, at)[1..].iter().map(Arg::int).collect();

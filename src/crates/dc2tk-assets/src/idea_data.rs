@@ -385,63 +385,10 @@ impl Ideas {
         given: &BTreeMap<i64, Given>,
         edits: &mut Vec<Edit>,
     ) -> Result<()> {
-        let placed = self.placed(file, disc, given)?;
+        let placed = placed_entries(file, disc, given)?;
         check_room(file, &placed)?;
         entry_edits(file, disc, &placed, edits);
         self.added_edits(file, disc, &placed, edits)
-    }
-
-    /// A copy's entries with the names and keys the mods give, new ones after the disc's: a name
-    /// given without its key is put in its place in the language's order.
-    fn placed(&self, file: usize, disc: &[Entry], given: &BTreeMap<i64, Given>) -> Result<Vec<Placed>> {
-        let language = FILE_LANGUAGES[file];
-        let short = LANGUAGE_NAMES[language];
-        let mut placed: Vec<Placed> =
-            disc.iter().map(|entry| Placed { entry: entry.clone(), fixed: false, owner: None }).collect();
-        let mut to_place = Vec::new();
-        let longest =
-            disc.iter().filter(|entry| entry.id < SCOOP_FIRST).map(|entry| stored_len(&entry.name, language)).max();
-        let most = longest.unwrap_or(0).max(NAME_MOST);
-        for (&id, wanted) in given {
-            let label = format!("idea {id}");
-            let at = match placed.iter().position(|placed| placed.entry.id == id) {
-                Some(at) => at,
-                None => {
-                    let entry = Entry { statement: None, id, name: Vec::new(), sort: 0 };
-                    placed.push(Placed { entry, fixed: false, owner: None });
-                    placed.len() - 1
-                }
-            };
-            let it = &mut placed[at];
-            if let Some((text, module)) = wanted.name.get(&language) {
-                let bytes = name_bytes(text, language, &label)?;
-                if bytes != it.entry.name {
-                    let length = stored_len(&bytes, language);
-                    if length > most {
-                        bail!(
-                            "mod {module}: {label}: its {short} name {text:?} takes {length} bytes; the notebook prints at most {most} \
-                             (MenuInventNetaMemoDraw's text[0x20] after \"[bulb2]\", or the game's own longest)"
-                        );
-                    }
-                    it.entry.name = bytes;
-                    it.owner = Some(module.clone());
-                    if !wanted.sort.contains_key(&language) {
-                        to_place.push(at);
-                    }
-                }
-            }
-            if let Some((sort, module)) = wanted.sort.get(&language) {
-                it.entry.sort = *sort;
-                it.fixed = true;
-                it.owner = Some(module.clone());
-            } else if it.entry.statement.is_none() && !to_place.contains(&at) {
-                to_place.push(at);
-            }
-        }
-        for at in to_place {
-            place(&mut placed, at, language)?;
-        }
-        Ok(placed)
     }
 
     /// The new entries' PIC_NAMEs, after the copy's last idea (before the scoops), and its
@@ -534,6 +481,59 @@ fn name_bytes(text: &str, language: usize, label: &str) -> Result<Vec<u8>> {
         Some(bytes) => Ok(bytes),
         None => bail!("{label}: its {short} name {text:?} has characters the game's {short} text cannot hold"),
     }
+}
+
+/// A copy's entries with the names and keys the mods give, new ones after the disc's: a name
+/// given without its key is put in its place in the language's order.
+fn placed_entries(file: usize, disc: &[Entry], given: &BTreeMap<i64, Given>) -> Result<Vec<Placed>> {
+    let language = FILE_LANGUAGES[file];
+    let short = LANGUAGE_NAMES[language];
+    let mut placed: Vec<Placed> =
+        disc.iter().map(|entry| Placed { entry: entry.clone(), fixed: false, owner: None }).collect();
+    let mut to_place = Vec::new();
+    let longest =
+        disc.iter().filter(|entry| entry.id < SCOOP_FIRST).map(|entry| stored_len(&entry.name, language)).max();
+    let most = longest.unwrap_or(0).max(NAME_MOST);
+    for (&id, wanted) in given {
+        let label = format!("idea {id}");
+        let at = match placed.iter().position(|placed| placed.entry.id == id) {
+            Some(at) => at,
+            None => {
+                let entry = Entry { statement: None, id, name: Vec::new(), sort: 0 };
+                placed.push(Placed { entry, fixed: false, owner: None });
+                placed.len() - 1
+            }
+        };
+        let it = &mut placed[at];
+        if let Some((text, module)) = wanted.name.get(&language) {
+            let bytes = name_bytes(text, language, &label)?;
+            if bytes != it.entry.name {
+                let length = stored_len(&bytes, language);
+                if length > most {
+                    bail!(
+                        "mod {module}: {label}: its {short} name {text:?} takes {length} bytes; the notebook prints at most {most} \
+                         (MenuInventNetaMemoDraw's text[0x20] after \"[bulb2]\", or the game's own longest)"
+                    );
+                }
+                it.entry.name = bytes;
+                it.owner = Some(module.clone());
+                if !wanted.sort.contains_key(&language) {
+                    to_place.push(at);
+                }
+            }
+        }
+        if let Some((sort, module)) = wanted.sort.get(&language) {
+            it.entry.sort = *sort;
+            it.fixed = true;
+            it.owner = Some(module.clone());
+        } else if it.entry.statement.is_none() && !to_place.contains(&at) {
+            to_place.push(at);
+        }
+    }
+    for at in to_place {
+        place(&mut placed, at, language)?;
+    }
+    Ok(placed)
 }
 
 /// Refuses a copy whose entries the notebook cannot sort, or whose names outgrow the heap.
