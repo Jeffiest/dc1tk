@@ -1,5 +1,3 @@
-"""Exporting the map into a mod (maps/NAME/NAME.gltf and its mod.json line) and running dc2tk build."""
-
 import ast
 import json
 import os
@@ -45,85 +43,81 @@ def export_kwargs(path):
     return import_map.operator_kwargs(bpy.ops.export_scene.gltf, wanted)
 
 
-class _Visible:
-    """Makes objects visible and selectable for the export, and puts things back after."""
+def parent_layer(layer_root, wanted):
+    stack = [layer_root]
+    while stack:
+        layer = stack.pop()
+        for child in layer.children:
+            if child == wanted:
+                return layer if layer != layer_root else None
+            stack.append(child)
+    return None
 
-    def __init__(self, context, objects):
-        self.context = context
-        self.objects = objects
 
-    def __enter__(self):
-        context = self.context
-        layer_root = context.view_layer.layer_collection
-        self.layers = []
-        seen = set()
-        for obj in self.objects:
-            for collection in obj.users_collection:
-                layer = import_map.find_layer_collection(layer_root, collection)
-                while layer is not None and layer != layer_root and layer.name not in seen:
-                    seen.add(layer.name)
-                    self.layers.append((layer, layer.exclude, layer.hide_viewport))
-                    layer = self._parent(layer_root, layer)
-        for layer, _, _ in self.layers:
-            if layer.exclude:
-                layer.exclude = False
-            layer.hide_viewport = False
-        self.states = []
-        for obj in self.objects:
-            hidden = obj.hide_get() if obj.name in context.view_layer.objects else False
-            self.states.append((obj.name, hidden, obj.hide_viewport, obj.hide_select, obj.select_get() if obj.name in context.view_layer.objects else False))
-            obj.hide_viewport = False
-            obj.hide_select = False
-            if obj.name in context.view_layer.objects:
-                obj.hide_set(False)
-        self.selected = [obj.name for obj in context.selected_objects]
-        self.active = context.view_layer.objects.active.name if context.view_layer.objects.active else None
-        for obj in context.selected_objects:
-            obj.select_set(False)
-        for obj in self.objects:
-            if obj.name in context.view_layer.objects:
-                obj.select_set(True)
-        return self
+def export_state(context):
+    active = context.view_layer.objects.active
+    return {
+        "layers": [],
+        "objects": [],
+        "selected": [obj.name for obj in context.selected_objects],
+        "active": active.name if active else None,
+        "materials": [],
+    }
 
-    @staticmethod
-    def _parent(layer_root, wanted):
-        stack = [layer_root]
-        while stack:
-            layer = stack.pop()
-            for child in layer.children:
-                if child == wanted:
-                    return layer if layer != layer_root else None
-                stack.append(child)
-        return None
 
-    def __exit__(self, *exc):
-        context = self.context
-        for obj in context.selected_objects:
-            obj.select_set(False)
-        for name, hidden, hide_viewport, hide_select, _ in self.states:
-            obj = bpy.data.objects.get(name)
-            if obj is None:
-                continue
-            obj.hide_viewport = hide_viewport
-            obj.hide_select = hide_select
-            if obj.name in context.view_layer.objects:
-                obj.hide_set(hidden)
-        for name in self.selected:
-            obj = bpy.data.objects.get(name)
-            if obj is not None and obj.name in context.view_layer.objects and obj.visible_get():
-                obj.select_set(True)
-        if self.active and self.active in context.view_layer.objects:
-            context.view_layer.objects.active = context.view_layer.objects[self.active]
-        for layer, exclude, hide_viewport in reversed(self.layers):
-            layer.hide_viewport = hide_viewport
-            if exclude:
-                layer.exclude = True
-        return False
+def select_export_objects(context, objects, state):
+    layer_root = context.view_layer.layer_collection
+    seen = set()
+    for obj in objects:
+        for collection in obj.users_collection:
+            layer = import_map.find_layer_collection(layer_root, collection)
+            while layer is not None and layer != layer_root and layer.name not in seen:
+                seen.add(layer.name)
+                state["layers"].append((layer, layer.exclude, layer.hide_viewport))
+                layer = parent_layer(layer_root, layer)
+    for layer, _, _ in state["layers"]:
+        if layer.exclude:
+            layer.exclude = False
+        layer.hide_viewport = False
+    for obj in objects:
+        hidden = obj.hide_get() if obj.name in context.view_layer.objects else False
+        state["objects"].append((obj.name, hidden, obj.hide_viewport, obj.hide_select))
+        obj.hide_viewport = False
+        obj.hide_select = False
+        if obj.name in context.view_layer.objects:
+            obj.hide_set(False)
+    for obj in context.selected_objects:
+        obj.select_set(False)
+    for obj in objects:
+        if obj.name in context.view_layer.objects:
+            obj.select_set(True)
+
+
+def restore_export_state(context, state):
+    look.restore_materials(state["materials"])
+    for obj in context.selected_objects:
+        obj.select_set(False)
+    for name, hidden, hide_viewport, hide_select in state["objects"]:
+        obj = bpy.data.objects.get(name)
+        if obj is None:
+            continue
+        obj.hide_viewport = hide_viewport
+        obj.hide_select = hide_select
+        if obj.name in context.view_layer.objects:
+            obj.hide_set(hidden)
+    for name in state["selected"]:
+        obj = bpy.data.objects.get(name)
+        if obj is not None and obj.name in context.view_layer.objects and obj.visible_get():
+            obj.select_set(True)
+    if state["active"] and state["active"] in context.view_layer.objects:
+        context.view_layer.objects.active = context.view_layer.objects[state["active"]]
+    for layer, exclude, hide_viewport in reversed(state["layers"]):
+        layer.hide_viewport = hide_viewport
+        if exclude:
+            layer.exclude = True
 
 
 def image_picture(gltf, material):
-    """The game picture a written material's base colour image stands for: the image's name
-    (without Blender's .001), else its file's stem; None without an image."""
     texture = material.get("pbrMetallicRoughness", {}).get("baseColorTexture")
     if not isinstance(texture, dict):
         return None
@@ -136,10 +130,6 @@ def image_picture(gltf, material):
 
 
 def fix_gltf(path):
-    """Game names back in the written glTF: Blender adds .001 to keep object and material names
-    unique (pieces and points repeat in every placement of a template, models' nodes in every
-    piece), and extras.c2 that Blender kept as text goes back to JSON. Returns the count of
-    names changed."""
     with open(path, "r", encoding="utf-8") as handle:
         gltf = json.load(handle, object_pairs_hook=OrderedDict)
     changed = 0
@@ -169,8 +159,7 @@ def fix_gltf(path):
         if schema.parse_col(name) is not None and schema.strip_suffix(name) != name:
             material["name"] = schema.strip_suffix(name)
             changed += 1
-        # the picture a material shows is its image's: one swapped in for the map's own is
-        # named by the image, not by the texture the material was imported with
+
         picture = image_picture(gltf, material)
         extras = material.get("extras")
         if picture and isinstance(extras, dict) and extras.get("texture") not in (None, picture):
@@ -191,8 +180,6 @@ def mod_json_value(name):
 
 
 def adds_file(data, value):
-    """The key of an entry of mod.json's "add" whose "file" is `value` (a new map made from the
-    exported one), or None."""
     added = data.get("add")
     if not isinstance(added, dict):
         return None
@@ -203,9 +190,6 @@ def adds_file(data, value):
 
 
 def update_mod_json(mod_dir, name):
-    """Add or update "map:NAME": "maps/NAME/NAME.gltf" under replace, keeping everything else.
-    When "add" already has a new map whose file is that scene, the export is that map's and the
-    disc's map is left alone."""
     path = os.path.join(mod_dir, "mod.json")
     data = OrderedDict()
     if os.path.isfile(path):
@@ -231,7 +215,6 @@ def update_mod_json(mod_dir, name):
 
 
 def export_map(context, root, mod_dir):
-    """Export the map under `root` into the mod. Returns (gltf path, mod.json path, names fixed)."""
     name = c2data.map_name(root)
     folder = os.path.join(mod_dir, "maps", name)
     os.makedirs(folder, exist_ok=True)
@@ -239,8 +222,13 @@ def export_map(context, root, mod_dir):
     if context.mode != "OBJECT" and context.active_object is not None:
         bpy.ops.object.mode_set(mode="OBJECT")
     objects = c2data.descendants(root)
-    with _Visible(context, objects), look.for_export():
+    state = export_state(context)
+    try:
+        select_export_objects(context, objects, state)
+        look.export_materials(state["materials"])
         result = bpy.ops.export_scene.gltf(**export_kwargs(path))
+    finally:
+        restore_export_state(context, state)
     if "FINISHED" not in result:
         raise RuntimeError("Blender's glTF exporter failed")
     fixed = fix_gltf(path)
@@ -282,7 +270,7 @@ class DC2TK_OT_export_mod(bpy.types.Operator):
                     self.report({"ERROR"}, "%s: %s" % (name, message))
                 self.report({"ERROR"}, "%d validation errors: not exported" % len(errors))
                 return {"CANCELLED"}
-        # what the export leaves out is said, though it does not stop it
+
         for level, name, message in validate.left_out(root)[:10]:
             self.report({"WARNING"}, "%s: %s" % (name, message))
         try:
@@ -300,13 +288,22 @@ def is_disc(path):
     return os.path.isfile(path) or os.path.isfile(os.path.join(path, "manifest.json"))
 
 
-class DC2TK_OT_build(runner.DC2TK_OT_run_job):
+class DC2TK_OT_build(bpy.types.Operator):
     """Run dc2tk build with the mod: a new disc image (output shown in the panel and the text
     "dc2tk output")"""
 
     bl_idname = "dc2tk.build"
     bl_label = "Build ISO with Mod"
     bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        return runner.execute(self, context)
+
+    def modal(self, context, event):
+        return runner.modal(self, context, event)
+
+    def invoke(self, context, event):
+        return runner.invoke(self, context)
 
     def command(self, context):
         settings = prefs.get(context)
@@ -343,10 +340,10 @@ class DC2TK_OT_build(runner.DC2TK_OT_run_job):
         return ("dc2tk build", command, prefs.working_dir(settings))
 
     def finish(self, context, job):
-        if job.returncode == 0:
+        if job["returncode"] == 0:
             self.report({"INFO"}, "dc2tk build finished: %s" % prefs.absolute(prefs.get(context).output_iso))
             return {"FINISHED"}
-        self.report({"ERROR"}, "dc2tk build failed (exit %s); see the text \"%s\"" % (job.returncode, runner.TEXT_NAME))
+        self.report({"ERROR"}, "dc2tk build failed (exit %s); see the text \"%s\"" % (job["returncode"], runner.TEXT_NAME))
         return {"CANCELLED"}
 
 

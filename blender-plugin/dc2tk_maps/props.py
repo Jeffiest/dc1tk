@@ -1,7 +1,3 @@
-"""The values the panels edit. They live on the window manager (never saved in the scene or
-exported) and read and write `obj["c2"]` of the active object (or the map root) through get/set
-callbacks, so there is nothing to keep in sync."""
-
 import bpy
 from bpy.props import (
     BoolProperty,
@@ -14,7 +10,7 @@ from bpy.props import (
     StringProperty,
 )
 
-from . import c2data, schema
+from . import c2data, look, schema
 
 
 def _active():
@@ -35,287 +31,579 @@ def _float(value, default=0.0):
         return default
 
 
-def _keep_type(old, new):
-    """Write a bool where the exporter wrote a bool and an int otherwise."""
-    if isinstance(old, bool):
-        return bool(new)
-    return int(new)
+def set_value(obj, path, value):
+    if obj is not None:
+        c2data.assign(obj, path, value)
 
 
-# Plain fields at a path of obj["c2"].
-
-
-def path_int(path, label, description="", min_value=-(2 ** 31), max_value=2 ** 31 - 1):
-    def get(self):
-        return _int(c2data.lookup(_active(), path, 0))
-
-    def set(self, value):
-        obj = _active()
-        if obj is not None:
-            c2data.assign(obj, path, _keep_type(c2data.lookup(obj, path), value))
-
-    return IntProperty(name=label, description=description, get=get, set=set, min=min_value, max=max_value)
-
-
-def path_bool(path, label, description=""):
-    def get(self):
-        return bool(_int(c2data.lookup(_active(), path, 0)))
-
-    def set(self, value):
-        obj = _active()
-        if obj is not None:
-            c2data.assign(obj, path, _keep_type(c2data.lookup(obj, path), 1 if value else 0))
-            if tuple(path) == ("show",):
-                # the view shows what the game does (it stays active, to be shown again)
-                from . import look
-
-                settings = bpy.context.window_manager.dc2tk_maps
-                look.show_hour(bpy.context, settings.hour, settings.by_hour)
-
-    return BoolProperty(name=label, description=description, get=get, set=set)
-
-
-def path_str(path, label, description=""):
-    def get(self):
-        value = c2data.lookup(_active(), path, "")
-        return value if isinstance(value, str) else str(value)
-
-    def set(self, value):
-        obj = _active()
-        if obj is not None:
-            c2data.assign(obj, path, value)
-
-    return StringProperty(name=label, description=description, get=get, set=set)
-
-
-def path_int_pair(path, start, label, description="", min_value=0, max_value=255):
-    """Two ints at path[start], path[start+1] (hours of a FUNC_FLAG, PIECE_TIME)."""
-
-    def get(self):
-        values = c2data.to_py(c2data.lookup(_active(), path, [])) or []
-        values = list(values) if isinstance(values, list) else []
-        return tuple(_int(values[start + i]) if start + i < len(values) else 0 for i in range(2))
-
-    def set(self, value):
-        obj = _active()
-        if obj is None:
-            return
-        values = c2data.to_py(c2data.lookup(obj, path, [])) or []
-        values = list(values) if isinstance(values, list) else []
-        while len(values) < start + 2:
-            values.append(0)
-        values[start] = int(value[0])
-        values[start + 1] = int(value[1])
-        c2data.assign(obj, path, values)
-
-    return IntVectorProperty(
-        name=label, description=description, size=2, get=get, set=set, min=min_value, max=max_value
-    )
-
-
-def far_clip_value(index, label):
-    """FAR_CLIP distance or fade: `far_clip` as [distance, fade] or {"distance", "fade"}."""
-    keys = ("distance", "fade")
-
-    def get(self):
-        value = c2data.to_py(c2data.lookup(_active(), ("far_clip",)))
-        if isinstance(value, dict):
-            return _float(value.get(keys[index]))
-        if isinstance(value, list) and index < len(value):
-            return _float(value[index])
-        return 0.0
-
-    def set(self, value):
-        obj = _active()
-        if obj is None:
-            return
-        current = c2data.to_py(c2data.lookup(obj, ("far_clip",)))
-        if isinstance(current, dict):
-            current[keys[index]] = value
-        else:
-            current = list(current) if isinstance(current, list) else [0.0, 0.0]
-            while len(current) <= index:
-                current.append(0.0)
-            current[index] = value
-        c2data.assign(obj, ("far_clip",), current)
-
-    return FloatProperty(name=label, get=get, set=set)
-
-
-def col_type_value():
-    """PIECE_COL_TYPE: an int, or [type, int] when the line had two arguments."""
-
-    def get(self):
-        value = c2data.to_py(c2data.lookup(_active(), ("col_type",)))
-        if isinstance(value, list):
-            return _int(value[0]) if value else 0
-        return _int(value)
-
-    def set(self, value):
-        obj = _active()
-        if obj is None:
-            return
-        current = c2data.to_py(c2data.lookup(obj, ("col_type",)))
-        if isinstance(current, list) and current:
-            current[0] = value
-            c2data.assign(obj, ("col_type",), current)
-        else:
-            c2data.assign(obj, ("col_type",), value)
-
-    return IntProperty(
-        name="Collision type",
-        description="PIECE_COL_TYPE: 0 is normal; non-zero hides the piece from collision queries",
-        get=get,
-        set=set,
-    )
-
-
-def node_name(role):
-    """The game name of the active node: the object name without prefix and Blender suffix."""
-    prefix = schema.PREFIX[role]
-
-    def get(self):
-        obj = _active()
-        return schema.game_name(obj.name, role) if obj is not None else ""
-
-    def set(self, value):
-        obj = _active()
-        if obj is not None and value:
-            obj.name = prefix + value
-
-    return StringProperty(name="Name", description="The game's name (31 bytes at most)", get=get, set=set)
-
-
-def point_kind():
-    items = [(kind, kind, schema.KIND_LABELS[kind]) for kind in schema.POINT_KINDS]
-
-    def get(self):
-        kind = c2data.lookup(_active(), ("kind",), "pos")
-        return schema.POINT_KINDS.index(kind) if kind in schema.POINT_KINDS else 0
-
-    def set(self, value):
-        obj = _active()
-        if obj is None:
-            return
-        kind = schema.POINT_KINDS[value]
-        if c2data.lookup(obj, ("kind",)) == kind:
-            return
-        data = c2data.to_py(c2data.lookup(obj, ("data",)))
-        fresh = schema.default_data(kind)
-        if isinstance(data, dict):
-            fresh.update({key: value for key, value in data.items() if key in fresh})
-        c2data.assign(obj, ("kind",), kind)
-        c2data.assign(obj, ("data",), fresh)
-
-    return EnumProperty(name="Kind", items=items, get=get, set=set)
-
-
-# Fields of a point's data.
-
-
-def _sync_light(obj, kind, field):
-    """Keep a point light's Blender light in step with its data (colour as r,g,b / 255)."""
-    if kind != "plight" or obj is None or obj.type != "LIGHT":
+def set_flag(obj, key, value):
+    if obj is None:
         return
-    if field.key == "color":
-        rgb = c2data.data_field(obj, field)
-        obj.data.color = [max(0.0, min(1.0, _float(c) / 255.0)) for c in rgb]
+    old = c2data.lookup(obj, (key,))
+    value = bool(value) if isinstance(old, bool) else int(value)
+    c2data.assign(obj, (key,), value)
+    if key == "show":
+        settings = bpy.context.window_manager.dc2tk_maps
+        look.show_hour(bpy.context, settings.hour, settings.by_hour)
 
 
-def data_prop(kind, field):
-    if field.kind == "str":
+def get_pair(obj, key, start):
+    values = c2data.to_py(c2data.lookup(obj, (key,), []))
+    if not isinstance(values, list):
+        values = []
+    values += [0] * max(0, start + 2 - len(values))
+    return (_int(values[start]), _int(values[start + 1]))
 
-        def get(self):
-            value = c2data.data_field(_active(), field)
-            return value if isinstance(value, str) else str(value)
 
-        def set(self, value):
-            obj = _active()
-            if obj is not None:
-                c2data.set_data_field(obj, field, value)
+def set_pair(obj, key, start, value):
+    if obj is None:
+        return
+    values = c2data.to_py(c2data.lookup(obj, (key,), []))
+    if not isinstance(values, list):
+        values = []
+    values += [0] * max(0, start + 2 - len(values))
+    values[start:start + 2] = [int(value[0]), int(value[1])]
+    c2data.assign(obj, (key,), values)
 
-        return StringProperty(name=field.label, get=get, set=set)
 
-    if field.choices:
-        values = [choice[0] for choice in field.choices]
-        items = [(identifier, label, description, value) for value, identifier, label, description in field.choices]
+def get_far_clip(obj, index):
+    value = c2data.to_py(c2data.lookup(obj, ("far_clip",)))
+    if isinstance(value, dict):
+        return _float(value.get(("distance", "fade")[index]))
+    if isinstance(value, list) and index < len(value):
+        return _float(value[index])
+    return 0.0
 
-        def get(self):
-            value = _int(c2data.data_field(_active(), field))
-            return value if value in values else values[0]
 
-        def set(self, value):
-            obj = _active()
-            if obj is not None:
-                c2data.set_data_field(obj, field, int(value))
+def set_far_clip(obj, index, value):
+    if obj is None:
+        return
+    current = c2data.to_py(c2data.lookup(obj, ("far_clip",)))
+    if isinstance(current, dict):
+        current[("distance", "fade")[index]] = value
+    else:
+        current = current if isinstance(current, list) else []
+        current += [0.0] * max(0, index + 1 - len(current))
+        current[index] = value
+    c2data.assign(obj, ("far_clip",), current)
 
-        return EnumProperty(name=field.label, items=items, get=get, set=set)
 
-    if field.kind == "flag":
+def set_collision_type(obj, value):
+    if obj is None:
+        return
+    current = c2data.to_py(c2data.lookup(obj, ("col_type",)))
+    if isinstance(current, list) and current:
+        current[0] = value
+    else:
+        current = value
+    c2data.assign(obj, ("col_type",), current)
 
-        def get(self):
-            return bool(_int(c2data.data_field(_active(), field)))
 
-        def set(self, value):
-            obj = _active()
-            if obj is not None:
-                c2data.set_data_field(obj, field, 1 if value else 0)
+def set_point_kind(obj, value):
+    if obj is None:
+        return
+    kind = schema.POINT_KINDS[value]
+    if c2data.lookup(obj, ("kind",)) == kind:
+        return
+    data = c2data.to_py(c2data.lookup(obj, ("data",)))
+    fresh = schema.default_data(kind)
+    if isinstance(data, dict):
+        fresh.update({key: value for key, value in data.items() if key in fresh})
+    c2data.assign(obj, ("kind",), kind)
+    c2data.assign(obj, ("data",), fresh)
 
-        return BoolProperty(name=field.label, get=get, set=set)
 
-    if field.size == 1:
-        if field.kind == "int":
+def get_point_value(obj, kind, key):
+    field = schema.data_field(kind, key)
+    value = c2data.data_field(obj, field)
+    if field["kind"] == "str":
+        return str(value)
+    if field["choices"]:
+        choices = [choice[0] for choice in field["choices"]]
+        value = _int(value)
+        return value if value in choices else choices[0]
+    if field["kind"] == "flag":
+        return bool(_int(value))
+    if field["size"] > 1:
+        if field["kind"] == "int":
+            return tuple(_int(item) for item in value)
+        return tuple(_float(item) for item in value)
+    return _int(value) if field["kind"] == "int" else _float(value)
 
-            def get(self):
-                return _int(c2data.data_field(_active(), field))
 
-            def set(self, value):
-                obj = _active()
-                if obj is not None:
-                    c2data.set_data_field(obj, field, value)
-                    _sync_light(obj, kind, field)
+def set_point_value(obj, kind, key, value):
+    if obj is None:
+        return
+    field = schema.data_field(kind, key)
+    if field["kind"] == "flag":
+        value = int(value)
+    c2data.set_data_field(obj, field, value)
+    if kind == "plight" and key == "color" and obj.type == "LIGHT":
+        obj.data.color = [max(0.0, min(1.0, _float(c) / 255.0)) for c in value]
 
-            return IntProperty(name=field.label, get=get, set=set)
 
-        def get(self):
-            return _float(c2data.data_field(_active(), field))
+def get_node_name(self):
+    obj = _active()
+    return c2data.exact_name(obj, c2data.role(obj)) if obj is not None else ""
 
-        def set(self, value):
-            obj = _active()
-            if obj is not None:
-                c2data.set_data_field(obj, field, value)
-                _sync_light(obj, kind, field)
 
-        return FloatProperty(name=field.label, get=get, set=set)
+def set_node_name(self, value):
+    c2data.rename(_active(), value)
 
-    cast = _int if field.kind == "int" else _float
 
-    def get(self):
-        return tuple(cast(v) for v in c2data.data_field(_active(), field))
+def get_collision_type(self):
+    value = c2data.to_py(c2data.lookup(_active(), ("col_type",)))
+    if isinstance(value, list):
+        return _int(value[0]) if value else 0
+    return _int(value)
 
-    def set(self, value):
-        obj = _active()
-        if obj is not None:
-            c2data.set_data_field(obj, field, [cast(v) for v in value])
-            _sync_light(obj, kind, field)
 
-    if field.kind == "int":
-        return IntVectorProperty(name=field.label, size=field.size, get=get, set=set)
-    return FloatVectorProperty(name=field.label, size=field.size, get=get, set=set)
+def set_active_collision_type(self, value):
+    set_collision_type(_active(), value)
+
+
+def get_kind(self):
+    kind = c2data.lookup(_active(), ("kind",), "pos")
+    return schema.POINT_KINDS.index(kind) if kind in schema.POINT_KINDS else 0
+
+
+def set_kind(self, value):
+    set_point_kind(_active(), value)
+
+
+def get_template(self):
+    return str(c2data.lookup(_active(), ("template",), ""))
+
+
+def set_template(self, value):
+    set_value(_active(), ("template",), value)
+
+
+def get_group(self):
+    return str(c2data.lookup(_active(), ("group",), ""))
+
+
+def set_group(self, value):
+    set_value(_active(), ("group",), value)
+
+
+def get_model(self):
+    return str(c2data.lookup(_active(), ("model",), ""))
+
+
+def set_model(self, value):
+    set_value(_active(), ("model",), value)
+
+
+def get_show(self):
+    return bool(_int(c2data.lookup(_active(), ("show",), 0)))
+
+
+def set_show(self, value):
+    set_flag(_active(), "show", value)
+
+
+def get_enable(self):
+    return bool(_int(c2data.lookup(_active(), ("enable",), 0)))
+
+
+def set_enable(self, value):
+    set_flag(_active(), "enable", value)
+
+
+def get_piece_hours(self):
+    return get_pair(_active(), "time", 0)
+
+
+def set_piece_hours(self, value):
+    set_pair(_active(), "time", 0, value)
+
+
+def get_point_flags(self):
+    return get_pair(_active(), "flag", 0)
+
+
+def set_point_flags(self, value):
+    set_pair(_active(), "flag", 0, value)
+
+
+def get_point_hours(self):
+    return get_pair(_active(), "flag", 2)
+
+
+def set_point_hours(self, value):
+    set_pair(_active(), "flag", 2, value)
+
+
+def get_far_distance(self):
+    return get_far_clip(_active(), 0)
+
+
+def set_far_distance(self, value):
+    set_far_clip(_active(), 0, value)
+
+
+def get_far_fade(self):
+    return get_far_clip(_active(), 1)
+
+
+def set_far_fade(self, value):
+    set_far_clip(_active(), 1, value)
+
+
+def get_invent_id(self):
+    return get_point_value(_active(), "invent", "id")
+
+
+def set_invent_id(self, value):
+    set_point_value(_active(), "invent", "id", value)
+
+
+def get_invent_min(self):
+    return get_point_value(_active(), "invent", "min")
+
+
+def set_invent_min(self, value):
+    set_point_value(_active(), "invent", "min", value)
+
+
+def get_invent_max(self):
+    return get_point_value(_active(), "invent", "max")
+
+
+def set_invent_max(self, value):
+    set_point_value(_active(), "invent", "max", value)
+
+
+def get_invent_unknown_int(self):
+    return get_point_value(_active(), "invent", "unknown_int")
+
+
+def set_invent_unknown_int(self, value):
+    set_point_value(_active(), "invent", "unknown_int", value)
+
+
+def get_invent_unknown_float(self):
+    return get_point_value(_active(), "invent", "unknown_float")
+
+
+def set_invent_unknown_float(self, value):
+    set_point_value(_active(), "invent", "unknown_float", value)
+
+
+def get_invent_angle(self):
+    return get_point_value(_active(), "invent", "angle")
+
+
+def set_invent_angle(self, value):
+    set_point_value(_active(), "invent", "angle", value)
+
+
+def get_event_kind(self):
+    return get_point_value(_active(), "event", "kind")
+
+
+def set_event_kind(self, value):
+    set_point_value(_active(), "event", "kind", value)
+
+
+def get_event_event_no(self):
+    return get_point_value(_active(), "event", "event_no")
+
+
+def set_event_event_no(self, value):
+    set_point_value(_active(), "event", "event_no", value)
+
+
+def get_event_program(self):
+    return get_point_value(_active(), "event", "program")
+
+
+def set_event_program(self, value):
+    set_point_value(_active(), "event", "program", value)
+
+
+def get_event_args(self):
+    return get_point_value(_active(), "event", "args")
+
+
+def set_event_args(self, value):
+    set_point_value(_active(), "event", "args", value)
+
+
+def get_event_target(self):
+    return get_point_value(_active(), "event", "target")
+
+
+def set_event_target(self, value):
+    set_point_value(_active(), "event", "target", value)
+
+
+def get_event_flags(self):
+    return get_point_value(_active(), "event", "flags")
+
+
+def set_event_flags(self, value):
+    set_point_value(_active(), "event", "flags", value)
+
+
+def get_flare_color(self):
+    return get_point_value(_active(), "flare", "color")
+
+
+def set_flare_color(self, value):
+    set_point_value(_active(), "flare", "color", value)
+
+
+def get_flare_draw(self):
+    return get_point_value(_active(), "flare", "draw")
+
+
+def set_flare_draw(self, value):
+    set_point_value(_active(), "flare", "draw", value)
+
+
+def get_flare_extra(self):
+    return get_point_value(_active(), "flare", "extra")
+
+
+def set_flare_extra(self, value):
+    set_point_value(_active(), "flare", "extra", value)
+
+
+def get_fire_color(self):
+    return get_point_value(_active(), "fire", "color")
+
+
+def set_fire_color(self, value):
+    set_point_value(_active(), "fire", "color", value)
+
+
+def get_fire_draw(self):
+    return get_point_value(_active(), "fire", "draw")
+
+
+def set_fire_draw(self, value):
+    set_point_value(_active(), "fire", "draw", value)
+
+
+def get_fire_extra(self):
+    return get_point_value(_active(), "fire", "extra")
+
+
+def set_fire_extra(self, value):
+    set_point_value(_active(), "fire", "extra", value)
+
+
+def get_plight_power(self):
+    return get_point_value(_active(), "plight", "power")
+
+
+def set_plight_power(self, value):
+    set_point_value(_active(), "plight", "power", value)
+
+
+def get_plight_color(self):
+    return get_point_value(_active(), "plight", "color")
+
+
+def set_plight_color(self, value):
+    set_point_value(_active(), "plight", "color", value)
+
+
+def get_plight_mode(self):
+    return get_point_value(_active(), "plight", "mode")
+
+
+def set_plight_mode(self, value):
+    set_point_value(_active(), "plight", "mode", value)
+
+
+def get_plight_args(self):
+    return get_point_value(_active(), "plight", "args")
+
+
+def set_plight_args(self, value):
+    set_point_value(_active(), "plight", "args", value)
+
+
+def get_plight_flicker(self):
+    return get_point_value(_active(), "plight", "flicker")
+
+
+def set_plight_flicker(self, value):
+    set_point_value(_active(), "plight", "flicker", value)
+
+
+def get_plight_depth(self):
+    return get_point_value(_active(), "plight", "depth")
+
+
+def set_plight_depth(self, value):
+    set_point_value(_active(), "plight", "depth", value)
+
+
+def get_plight_period(self):
+    return get_point_value(_active(), "plight", "period")
+
+
+def set_plight_period(self, value):
+    set_point_value(_active(), "plight", "period", value)
+
+
+def get_effect_effect(self):
+    return get_point_value(_active(), "effect", "effect")
+
+
+def set_effect_effect(self, value):
+    set_point_value(_active(), "effect", "effect", value)
+
+
+def get_sound_number(self):
+    return get_point_value(_active(), "sound", "number")
+
+
+def set_sound_number(self, value):
+    set_point_value(_active(), "sound", "number", value)
+
+
+def get_sound_near(self):
+    return get_point_value(_active(), "sound", "near")
+
+
+def set_sound_near(self, value):
+    set_point_value(_active(), "sound", "near", value)
+
+
+def get_sound_far(self):
+    return get_point_value(_active(), "sound", "far")
+
+
+def set_sound_far(self, value):
+    set_point_value(_active(), "sound", "far", value)
+
+
+def get_sound_unknown_int(self):
+    return get_point_value(_active(), "sound", "unknown_int")
+
+
+def set_sound_unknown_int(self, value):
+    set_point_value(_active(), "sound", "unknown_int", value)
+
+
+def get_sound_shape(self):
+    return get_point_value(_active(), "sound", "shape")
+
+
+def set_sound_shape(self, value):
+    set_point_value(_active(), "sound", "shape", value)
+
+
+def get_sound_start(self):
+    return get_point_value(_active(), "sound", "start")
+
+
+def set_sound_start(self, value):
+    set_point_value(_active(), "sound", "start", value)
+
+
+def get_sound_end(self):
+    return get_point_value(_active(), "sound", "end")
+
+
+def set_sound_end(self, value):
+    set_point_value(_active(), "sound", "end", value)
+
+
+def get_anime_placement(self):
+    return get_point_value(_active(), "anime", "placement")
+
+
+def set_anime_placement(self, value):
+    set_point_value(_active(), "anime", "placement", value)
+
+
+def get_anime_piece(self):
+    return get_point_value(_active(), "anime", "piece")
+
+
+def set_anime_piece(self, value):
+    set_point_value(_active(), "anime", "piece", value)
+
+
+def get_anime_frame(self):
+    return get_point_value(_active(), "anime", "frame")
+
+
+def set_anime_frame(self, value):
+    set_point_value(_active(), "anime", "frame", value)
+
+
+def get_anime_drives(self):
+    return get_point_value(_active(), "anime", "drives")
+
+
+def set_anime_drives(self, value):
+    set_point_value(_active(), "anime", "drives", value)
+
+
+def get_anime_mode(self):
+    return get_point_value(_active(), "anime", "mode")
+
+
+def set_anime_mode(self, value):
+    set_point_value(_active(), "anime", "mode", value)
+
+
+def get_anime_start(self):
+    return get_point_value(_active(), "anime", "start")
+
+
+def set_anime_start(self, value):
+    set_point_value(_active(), "anime", "start", value)
+
+
+def get_anime_step(self):
+    return get_point_value(_active(), "anime", "step")
+
+
+def set_anime_step(self, value):
+    set_point_value(_active(), "anime", "step", value)
+
+
+def get_anime_end(self):
+    return get_point_value(_active(), "anime", "end")
+
+
+def set_anime_end(self, value):
+    set_point_value(_active(), "anime", "end", value)
+
+
+def get_anime_uniform(self):
+    return get_point_value(_active(), "anime", "uniform")
+
+
+def set_anime_uniform(self, value):
+    set_point_value(_active(), "anime", "uniform", value)
+
+
+def get_anime_relative(self):
+    return get_point_value(_active(), "anime", "relative")
+
+
+def set_anime_relative(self, value):
+    set_point_value(_active(), "anime", "relative", value)
 
 
 def data_prop_name(kind, field):
-    return "d_%s_%s" % (kind, field.key)
+    return "d_%s_%s" % (kind, field["key"])
 
 
 def _show_hour(self, context):
-    from . import look
-
     look.show_hour(context, self.hour, self.by_hour)
 
 
 class Dc2tkSettings(bpy.types.PropertyGroup):
-    """Values of the panels and of the operators' last use (not saved with the file)."""
 
     import_name: StringProperty(name="Map", description="The map to export with dc2tk and import (s17, d01f01, ...)")
     collision_colour: EnumProperty(
@@ -357,32 +645,158 @@ class Dc2tkSettings(bpy.types.PropertyGroup):
         update=_show_hour,
     )
 
-    # Placement.
-    place_name: node_name("placement")
-    place_template: path_str(("template",), "Template", "PARTS_NAME: the template this placement copies")
-    place_show: path_bool(("show",), "Shown", "MAP_PARTS show flag")
-    place_group: path_str(("group",), "Group", "PARTS_GROUP: switched by fixed cameras")
-    place_far_distance: far_clip_value(0, "Far clip distance")
-    place_far_fade: far_clip_value(1, "Far clip fade")
-
-    # Piece.
-    piece_name: node_name("piece")
-    piece_model: path_str(("model",), "Model", "The .mds (or .chr) file")
-    piece_show: path_bool(("show",), "Shown", "PIECE show flag")
-    piece_time: path_int_pair(("time",), 0, "Hours", "PIECE_TIME start, end (equal: always)")
-    piece_col_type: col_type_value()
-
-    # Point.
-    point_name: node_name("point")
-    point_kind: point_kind()
-    point_enable: path_bool(("enable",), "Enabled", "FUNC_DATA enable flag")
-    point_flags: path_int_pair(("flag",), 0, "Flags", "FUNC_FLAG's first two numbers", -(2 ** 31), 2 ** 31 - 1)
-    point_hours: path_int_pair(("flag",), 2, "Hours", "FUNC_FLAG start, end hour (equal: always)")
-
-
-for _kind, _fields in schema.DATA_FIELDS.items():
-    for _field in _fields:
-        Dc2tkSettings.__annotations__[data_prop_name(_kind, _field)] = data_prop(_kind, _field)
+    place_name: StringProperty(name="Name", description="The game's name (31 bytes at most)", get=get_node_name, set=set_node_name)
+    place_template: StringProperty(name="Template", description="PARTS_NAME: the template this placement copies", get=get_template, set=set_template)
+    place_show: BoolProperty(name="Shown", description="MAP_PARTS show flag", get=get_show, set=set_show)
+    place_group: StringProperty(name="Group", description="PARTS_GROUP: switched by fixed cameras", get=get_group, set=set_group)
+    place_far_distance: FloatProperty(name="Far clip distance", get=get_far_distance, set=set_far_distance)
+    place_far_fade: FloatProperty(name="Far clip fade", get=get_far_fade, set=set_far_fade)
+    piece_name: StringProperty(name="Name", description="The game's name (31 bytes at most)", get=get_node_name, set=set_node_name)
+    piece_model: StringProperty(name="Model", description="The .mds (or .chr) file", get=get_model, set=set_model)
+    piece_show: BoolProperty(name="Shown", description="PIECE show flag", get=get_show, set=set_show)
+    piece_time: IntVectorProperty(name="Hours", size=2, min=0, max=255, description="PIECE_TIME start, end (equal: always)", get=get_piece_hours, set=set_piece_hours)
+    piece_col_type: IntProperty(name="Collision type", description="PIECE_COL_TYPE: 0 is normal; non-zero hides the piece from collision queries", get=get_collision_type, set=set_active_collision_type)
+    point_name: StringProperty(name="Name", description="The game's name (31 bytes at most)", get=get_node_name, set=set_node_name)
+    point_kind: EnumProperty(
+        name="Kind", items=[(kind, kind, schema.KIND_LABELS[kind]) for kind in schema.POINT_KINDS],
+        get=get_kind, set=set_kind,
+    )
+    point_enable: BoolProperty(name="Enabled", description="FUNC_DATA enable flag", get=get_enable, set=set_enable)
+    point_flags: IntVectorProperty(name="Flags", size=2, description="FUNC_FLAG's first two numbers", get=get_point_flags, set=set_point_flags)
+    point_hours: IntVectorProperty(name="Hours", size=2, min=0, max=255, description="FUNC_FLAG start, end hour (equal: always)", get=get_point_hours, set=set_point_hours)
+    d_invent_id: IntProperty(
+        name="Invent id", get=get_invent_id, set=set_invent_id,
+    )
+    d_invent_min: FloatVectorProperty(
+        name="Box min", size=3, get=get_invent_min, set=set_invent_min,
+    )
+    d_invent_max: FloatVectorProperty(
+        name="Box max", size=3, get=get_invent_max, set=set_invent_max,
+    )
+    d_invent_unknown_int: IntProperty(
+        name="Int", get=get_invent_unknown_int, set=set_invent_unknown_int,
+    )
+    d_invent_unknown_float: FloatProperty(
+        name="Float", get=get_invent_unknown_float, set=set_invent_unknown_float,
+    )
+    d_invent_angle: FloatProperty(
+        name="Angle (degrees)", get=get_invent_angle, set=set_invent_angle,
+    )
+    d_event_kind: StringProperty(
+        name="Event kind", get=get_event_kind, set=set_event_kind,
+    )
+    d_event_event_no: IntProperty(
+        name="Event number", get=get_event_event_no, set=set_event_event_no,
+    )
+    d_event_program: IntProperty(
+        name="Program", get=get_event_program, set=set_event_program,
+    )
+    d_event_args: IntVectorProperty(
+        name="Arguments", size=3, get=get_event_args, set=set_event_args,
+    )
+    d_event_target: StringProperty(
+        name="Target", get=get_event_target, set=set_event_target,
+    )
+    d_event_flags: IntVectorProperty(
+        name="Flags", size=3, get=get_event_flags, set=set_event_flags,
+    )
+    d_flare_color: IntVectorProperty(
+        name="Colour", size=3, get=get_flare_color, set=set_flare_color,
+    )
+    d_flare_draw: IntProperty(
+        name="Draw", get=get_flare_draw, set=set_flare_draw,
+    )
+    d_flare_extra: IntVectorProperty(
+        name="Extra", size=2, get=get_flare_extra, set=set_flare_extra,
+    )
+    d_fire_color: IntVectorProperty(
+        name="Colour", size=3, get=get_fire_color, set=set_fire_color,
+    )
+    d_fire_draw: IntProperty(
+        name="Draw", get=get_fire_draw, set=set_fire_draw,
+    )
+    d_fire_extra: IntVectorProperty(
+        name="Extra", size=2, get=get_fire_extra, set=set_fire_extra,
+    )
+    d_plight_power: FloatProperty(
+        name="Power", get=get_plight_power, set=set_plight_power,
+    )
+    d_plight_color: IntVectorProperty(
+        name="Colour (0-511)", size=3, get=get_plight_color, set=set_plight_color,
+    )
+    d_plight_mode: IntProperty(
+        name="Mode", get=get_plight_mode, set=set_plight_mode,
+    )
+    d_plight_args: IntVectorProperty(
+        name="Arguments", size=4, get=get_plight_args, set=set_plight_args,
+    )
+    d_plight_flicker: IntProperty(
+        name="Flicker type", get=get_plight_flicker, set=set_plight_flicker,
+    )
+    d_plight_depth: FloatProperty(
+        name="Flicker depth", get=get_plight_depth, set=set_plight_depth,
+    )
+    d_plight_period: FloatProperty(
+        name="Flicker period", get=get_plight_period, set=set_plight_period,
+    )
+    d_effect_effect: StringProperty(
+        name="Effect name", get=get_effect_effect, set=set_effect_effect,
+    )
+    d_sound_number: IntProperty(
+        name="Sound number", get=get_sound_number, set=set_sound_number,
+    )
+    d_sound_near: FloatProperty(
+        name="Near", get=get_sound_near, set=set_sound_near,
+    )
+    d_sound_far: FloatProperty(
+        name="Far", get=get_sound_far, set=set_sound_far,
+    )
+    d_sound_unknown_int: IntProperty(
+        name="Int", get=get_sound_unknown_int, set=set_sound_unknown_int,
+    )
+    d_sound_shape: IntProperty(
+        name="Shape", get=get_sound_shape, set=set_sound_shape,
+    )
+    d_sound_start: FloatVectorProperty(
+        name="Start", size=3, get=get_sound_start, set=set_sound_start,
+    )
+    d_sound_end: FloatVectorProperty(
+        name="End", size=3, get=get_sound_end, set=set_sound_end,
+    )
+    d_anime_placement: StringProperty(
+        name="Placement", get=get_anime_placement, set=set_anime_placement,
+    )
+    d_anime_piece: StringProperty(
+        name="Piece", get=get_anime_piece, set=set_anime_piece,
+    )
+    d_anime_frame: StringProperty(
+        name="Model node", get=get_anime_frame, set=set_anime_frame,
+    )
+    d_anime_drives: EnumProperty(
+        name="Drives",
+        items=[(identifier, label, description, value) for value, identifier, label, description in schema.ANIME_DRIVES],
+        get=get_anime_drives, set=set_anime_drives,
+    )
+    d_anime_mode: EnumProperty(
+        name="Mode",
+        items=[(identifier, label, description, value) for value, identifier, label, description in schema.ANIME_MODES],
+        get=get_anime_mode, set=set_anime_mode,
+    )
+    d_anime_start: FloatVectorProperty(
+        name="Start", size=3, get=get_anime_start, set=set_anime_start,
+    )
+    d_anime_step: FloatVectorProperty(
+        name="Step (per frame)", size=3, get=get_anime_step, set=set_anime_step,
+    )
+    d_anime_end: FloatVectorProperty(
+        name="End", size=3, get=get_anime_end, set=set_anime_end,
+    )
+    d_anime_uniform: BoolProperty(
+        name="Uniform (Y and Z follow X)", get=get_anime_uniform, set=set_anime_uniform,
+    )
+    d_anime_relative: BoolProperty(
+        name="Relative (in the piece's own space)", get=get_anime_relative, set=set_anime_relative,
+    )
 
 
 classes = (Dc2tkSettings,)

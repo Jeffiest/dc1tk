@@ -1,6 +1,3 @@
-"""Operators that change the map: adding points, duplicating placements, painting collision
-attributes, editing any value of extras.c2."""
-
 import json
 
 import bmesh
@@ -12,14 +9,13 @@ from . import c2data, import_map, schema
 
 
 def unique_game_name(base, taken):
-    """`base`, or `base_2`, `base_3`... not in `taken`, within the 31-byte limit."""
-    base = base[: schema.NAME_LIMIT]
+    base = schema.truncate_name(base)
     if base not in taken:
         return base
     number = 2
     while True:
         tail = "_%d" % number
-        candidate = base[: schema.NAME_LIMIT - len(tail)] + tail
+        candidate = schema.truncate_name(base, schema.NAME_LIMIT - len(tail)) + tail
         if candidate not in taken:
             return candidate
         number += 1
@@ -51,8 +47,6 @@ def place_at(obj, parent, world):
 
 
 def anime_names(obj):
-    """An anime point's placement, piece and frame naming what `obj` is in (a model node, a
-    piece or a placement), so the new point moves it."""
     names = {}
     placement = c2data.placement_of(obj)
     if placement is not None:
@@ -97,10 +91,11 @@ class DC2TK_OT_add_point(bpy.types.Operator):
             overrides = dict(overrides, **anime_names(context.active_object))
         placement = c2data.placement_of(context.active_object) if self.in_placement else None
         parent = placement if placement is not None else ensure_group(root, "points", context)
-        # Scripts find points by placement and name, so a name is unique within its parent.
-        taken = {schema.game_name(obj.name, "point") for obj in parent.children if c2data.role(obj) == "point"}
+
+        taken = {c2data.exact_name(obj, "point") for obj in parent.children if c2data.role(obj) == "point"}
         name = unique_game_name(self.name or base, taken)
         data = schema.new_point(kind, overrides)
+        data["name"] = name
         node_name = schema.PREFIX["point"] + name
         if kind == "plight":
             light = bpy.data.lights.new(name, "POINT")
@@ -127,6 +122,98 @@ class DC2TK_OT_add_point(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def copy_object_tree(obj, parent, context):
+    copy = obj.copy()
+    link_like(copy, obj, context)
+    copy.parent = parent
+    copy.matrix_parent_inverse = obj.matrix_parent_inverse.copy()
+    copy.matrix_basis = obj.matrix_basis.copy()
+    for child in obj.children:
+        copy_object_tree(child, copy, context)
+    return copy
+
+
+def new_model_name(root, meshes, active, requested):
+    placements = c2data.placements(root)
+    taken = {c2data.exact_name(obj, "placement") for obj in placements}
+    taken |= {str(c2data.lookup(obj, ("template",), "")) for obj in placements}
+    models = {
+        str(c2data.lookup(obj, ("model",), "")).lower()
+        for obj in c2data.descendants(root)
+        if c2data.role(obj) == "piece"
+    }
+    active = active if active in meshes else meshes[0]
+    wanted = requested or "%s_%s" % (c2data.map_name(root), schema.strip_suffix(active.name))
+    wanted = "".join(c if c.isascii() and (c.isalnum() or c in "_-") else "_" for c in wanted)
+    base = wanted[:schema.NAME_LIMIT - len("-m.mds")]
+    number = 1
+    name = base
+    while name in taken or any("%s-%s.mds" % (name.lower(), kind) in models for kind in "mac"):
+        number += 1
+        suffix = "_%d" % number
+        name = base[:schema.NAME_LIMIT - len("-m.mds") - len(suffix)] + suffix
+    return name
+
+
+def create_model_placement(context, root, meshes, name):
+    group = ensure_group(root, "placements", context)
+    placement = bpy.data.objects.new(schema.PREFIX["placement"] + name, None)
+    placement[c2data.KEY] = {"role": "placement", "name": name, "template": name, "show": 1, "group": ""}
+    placement.empty_display_size = 10.0
+    link_like(placement, group, context)
+    centre = meshes[0].matrix_world.translation * 0
+    for obj in meshes:
+        centre += obj.matrix_world.translation
+    place_at(placement, group, Matrix.Translation(centre / len(meshes)))
+    return placement
+
+
+def create_model_piece(context, placement, name, kind, letter, order):
+    piece_name = "%s-%s" % (name, letter)
+    piece = bpy.data.objects.new(schema.PREFIX["piece"] + piece_name, None)
+    piece[c2data.KEY] = {
+        "role": "piece", "name": piece_name, "order": order,
+        "model": piece_name + ".mds", "kind": kind, "show": 1,
+    }
+    piece.empty_display_size = 2.0
+    link_like(piece, placement, context)
+    place_at(piece, placement, placement.matrix_world.copy())
+    return piece
+
+
+def parent_model_meshes(meshes, piece):
+    for obj in meshes:
+        obj[c2data.KEY] = {"role": "mds"}
+        world = obj.matrix_world.copy()
+        obj.parent = piece
+        obj.matrix_parent_inverse = Matrix.Identity(4)
+        obj.matrix_world = world
+
+
+def create_collision_meshes(context, root, piece, meshes, kind, letter, colour_mode):
+    material = collision_material(0, 0, 6, 0, colour_mode)
+    collection = import_map.collision_collections(context, root)[kind]
+    for obj in meshes:
+        copy = obj.copy()
+        copy.data = obj.data.copy()
+        copy.data.materials.clear()
+        copy.data.materials.append(material)
+        shape = bmesh.new()
+        try:
+            shape.from_mesh(copy.data)
+            bmesh.ops.triangulate(shape, faces=shape.faces[:])
+            for face in shape.faces:
+                face.material_index = 0
+            shape.to_mesh(copy.data)
+        finally:
+            shape.free()
+        collection.objects.link(copy)
+        copy.parent = piece
+        copy.matrix_parent_inverse = Matrix.Identity(4)
+        copy.matrix_world = obj.matrix_world.copy()
+        copy.name = "%s-%s" % (schema.strip_suffix(obj.name), letter)
+
+
 class DC2TK_OT_duplicate_placement(bpy.types.Operator):
     """Duplicate the active placement with its pieces and points (meshes shared) under a new
     unique name; it is appended after the map's placements"""
@@ -145,25 +232,13 @@ class DC2TK_OT_duplicate_placement(bpy.types.Operator):
     def execute(self, context):
         source = c2data.placement_of(context.active_object)
         root = c2data.map_root(source)
-        taken = {schema.game_name(obj.name, "placement") for obj in c2data.placements(root)} if root else set()
-        name = unique_game_name(self.name or schema.game_name(source.name, "placement"), taken)
-        copies = {}
-
-        def copy_tree(obj, parent):
-            new = obj.copy()  # shares the mesh, copies the custom properties
-            copies[obj] = new
-            link_like(new, obj, context)
-            new.parent = parent
-            new.matrix_parent_inverse = obj.matrix_parent_inverse.copy()
-            new.matrix_basis = obj.matrix_basis.copy()
-            for child in obj.children:
-                copy_tree(child, new)
-            return new
-
-        top = copy_tree(source, source.parent)
+        taken = {c2data.exact_name(obj, "placement") for obj in c2data.placements(root)} if root else set()
+        name = unique_game_name(self.name or c2data.exact_name(source, "placement"), taken)
+        top = copy_object_tree(source, source.parent, context)
         top.name = schema.PREFIX["placement"] + name
         data = c2data.get(top) or {"role": "placement"}
-        data.pop("slot", None)  # a new placement: the importer appends it
+        data["name"] = name
+        data.pop("slot", None)
         c2data.put(top, data)
         if self.at_cursor:
             world = top.matrix_world.copy()
@@ -173,12 +248,11 @@ class DC2TK_OT_duplicate_placement(bpy.types.Operator):
             other.select_set(False)
         top.select_set(True)
         context.view_layer.objects.active = top
-        self.report({"INFO"}, "Added placement %s (%d nodes)" % (top.name, len(copies)))
+        self.report({"INFO"}, "Added placement %s (%d nodes)" % (top.name, len(c2data.descendants(top))))
         return {"FINISHED"}
 
 
 def loose_meshes(context):
-    """Selected mesh objects that are not yet part of the map (under no piece)."""
     return [obj for obj in context.selected_objects if obj.type == "MESH" and c2data.piece_of(obj) is None]
 
 
@@ -214,90 +288,24 @@ class DC2TK_OT_new_model(bpy.types.Operator):
     def execute(self, context):
         root = c2data.current_map_root(context)
         meshes = loose_meshes(context)
-        placements = c2data.placements(root)
-        taken = {schema.game_name(obj.name, "placement") for obj in placements}
-        taken |= {str(c2data.lookup(obj, ("template",), "")) for obj in placements}
-        models = {
-            str(c2data.lookup(obj, ("model",), "")).lower()
-            for obj in c2data.descendants(root)
-            if c2data.role(obj) == "piece"
-        }
-        active = context.active_object if context.active_object in meshes else meshes[0]
-        wanted = self.name or "%s_%s" % (c2data.map_name(root), schema.strip_suffix(active.name))
-        wanted = "".join(c if c.isascii() and (c.isalnum() or c in "_-") else "_" for c in wanted)
-        # the name leaves room for a model's "-m.mds"
-        base = wanted[: schema.NAME_LIMIT - 6]
-        number = 1
-        name = base
-        while name in taken or any("%s-%s.mds" % (name.lower(), kind) in models for kind in "mac"):
-            number += 1
-            tail = "_%d" % number
-            name = base[: schema.NAME_LIMIT - 6 - len(tail)] + tail
-        group = ensure_group(root, "placements", context)
-        placement = bpy.data.objects.new(schema.PREFIX["placement"] + name, None)
-        placement[c2data.KEY] = {"role": "placement", "name": name, "template": name, "show": 1, "group": ""}
-        placement.empty_display_size = 10.0
-        link_like(placement, group, context)
-        centre = sum((obj.matrix_world.translation for obj in meshes), meshes[0].matrix_world.translation * 0)
-        centre = centre / len(meshes)
-        place_at(placement, group, Matrix.Translation(centre))
-
-        def new_piece(kind, letter, order):
-            piece = bpy.data.objects.new(schema.PREFIX["piece"] + "%s-%s" % (name, letter), None)
-            piece[c2data.KEY] = {
-                "role": "piece", "name": "%s-%s" % (name, letter), "order": order,
-                "model": "%s-%s.mds" % (name, letter), "kind": kind, "show": 1,
-            }
-            piece.empty_display_size = 2.0
-            link_like(piece, placement, context)
-            place_at(piece, placement, placement.matrix_world.copy())
-            return piece
-
-        drawn = new_piece("model", "m", 0)
-        for obj in meshes:
-            obj[c2data.KEY] = {"role": "mds"}
-            world = obj.matrix_world.copy()
-            obj.parent = drawn
-            obj.matrix_parent_inverse = Matrix.Identity(4)
-            obj.matrix_world = world
-        made = [drawn]
-        copies = []
-        for kind, letter, wanted_kind in (("collision", "a", self.collision), ("camera", "c", self.camera)):
-            if not wanted_kind:
-                continue
-            piece = new_piece(kind, letter, len(made))
-            made.append(piece)
-            material = collision_material(0, 0, 6, 0, context.window_manager.dc2tk_maps.collision_colour)
-            for obj in meshes:
-                copy = obj.copy()
-                copy.data = obj.data.copy()
-                copy.data.materials.clear()
-                copy.data.materials.append(material)
-                # collision is triangles, all with the one attribute
-                shape = bmesh.new()
-                shape.from_mesh(copy.data)
-                bmesh.ops.triangulate(shape, faces=shape.faces[:])
-                for face in shape.faces:
-                    face.material_index = 0
-                shape.to_mesh(copy.data)
-                shape.free()
-                link_like(copy, obj, context)
-                copy.parent = piece
-                copy.matrix_parent_inverse = Matrix.Identity(4)
-                copy.matrix_world = obj.matrix_world.copy()
-                copy.name = "%s-%s" % (schema.strip_suffix(obj.name), letter)
-                copies.append((kind, copy))
-        if copies:
-            collections = import_map.collision_collections(context, root)
-            for kind, copy in copies:
-                import_map.move_to(copy, collections[kind])
+        name = new_model_name(root, meshes, context.active_object, self.name)
+        placement = create_model_placement(context, root, meshes, name)
+        drawn = create_model_piece(context, placement, name, "model", "m", 0)
+        parent_model_meshes(meshes, drawn)
+        pieces = [drawn]
+        mode = context.window_manager.dc2tk_maps.collision_colour
+        for kind, letter, enabled in (("collision", "a", self.collision), ("camera", "c", self.camera)):
+            if enabled:
+                piece = create_model_piece(context, placement, name, kind, letter, len(pieces))
+                create_collision_meshes(context, root, piece, meshes, kind, letter, mode)
+                pieces.append(piece)
         for other in context.selected_objects:
             other.select_set(False)
         placement.select_set(True)
         context.view_layer.objects.active = placement
         self.report(
             {"INFO"},
-            "Added placement %s with %s" % (placement.name, ", ".join(c2data.lookup(p, ("model",)) for p in made)),
+            "Added placement %s with %s" % (placement.name, ", ".join(c2data.lookup(p, ("model",)) for p in pieces)),
         )
         return {"FINISHED"}
 
@@ -445,7 +453,6 @@ class DC2TK_MT_event_kinds(bpy.types.Menu):
 
 
 def parse_like(text, old):
-    """The text typed for a value, as the type the value had."""
     text = text.strip()
     if isinstance(old, bool):
         return text.lower() in ("1", "true", "yes", "on")
@@ -455,19 +462,17 @@ def parse_like(text, old):
         return float(text)
     if isinstance(old, str):
         return text
-    if isinstance(old, list) and not text.startswith("["):
-        parts = [part.strip() for part in text.split(",")] if text else []
-        if old and all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in old):
-            return [int(part) if isinstance(old[0], int) and "." not in part else float(part) for part in parts]
-        return [json.loads(part) if part[:1] in "-0123456789[{\"tfn" else part for part in parts]
+    if isinstance(old, list):
+        value = json.loads(text)
+        if not isinstance(value, list):
+            raise ValueError("Enter a JSON list, such as [1, 2, 3]")
+        return value
     return json.loads(text)
 
 
 def show_value(value):
-    if isinstance(value, list) and all(isinstance(v, (int, float, str)) for v in value):
-        return ", ".join(str(v) for v in value)
     if isinstance(value, (dict, list)) or value is None:
-        return json.dumps(value)
+        return json.dumps(value, ensure_ascii=False)
     return str(value)
 
 
@@ -480,7 +485,7 @@ class DC2TK_OT_edit_value(bpy.types.Operator):
 
     object_name: StringProperty()
     path: StringProperty(description="JSON list of keys and indices inside extras.c2")
-    value: StringProperty(name="Value", description="Numbers, text, or comma-separated values for a list")
+    value: StringProperty(name="Value", description="A number, text, or JSON for lists and objects")
 
     def target(self):
         return bpy.data.objects.get(self.object_name)

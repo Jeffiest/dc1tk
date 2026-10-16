@@ -1,17 +1,10 @@
-"""Draws the boxes of invent points (their data's min and max) and what anime points move (a
-position's path, a rotation's axis and arc) in the 3D viewport. Nothing is added to the scene,
-so nothing extra is exported.
-
-The boxes are worked out and handed to the GPU only when the scene changes (an edit, a selection,
-an undo); every other redraw draws what is already there, so orbiting a big map stays smooth."""
-
 import bpy
 from bpy.app.handlers import persistent
 
 from . import c2data, schema
 
 _handle = None
-# The batches drawn: [(batch, colour)], or None when the scene changed since they were made.
+
 _batches = None
 
 EDGES = ((0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4), (0, 4), (1, 5), (2, 6), (3, 7))
@@ -51,7 +44,6 @@ def _vector(values):
 
 
 def box_coords(context):
-    """(unselected, selected) line coordinates of every visible invent point's box."""
     lines = []
     selected = []
     for obj in context.visible_objects:
@@ -67,14 +59,13 @@ def box_coords(context):
     return lines, selected
 
 
-# What anime points move (docs/assets/maps.md section 5.1). Sizes in game units.
 ARC_RADIUS = 20.0
 AXIS_HALF = 30.0
-LOOP_FRAMES = 50  # a looping position is drawn as far as it goes in a second
+LOOP_FRAMES = 50
 
 
 def _anime_values(obj):
-    fields = {field.key: field for field in schema.DATA_FIELDS["anime"]}
+    fields = {field["key"]: field for field in schema.DATA_FIELDS["anime"]}
 
     def number(key):
         try:
@@ -87,7 +78,6 @@ def _anime_values(obj):
 
 
 def _axis_index(mode, vectors):
-    """The component a rotation turns: Y for the clock hands, else the one changing most."""
     if mode in (8, 9):
         return 1
     if mode in (1, 2, 3, 4, 5):
@@ -101,10 +91,6 @@ def _axis_index(mode, vectors):
 
 
 def anime_lines(obj, by_name=None, link=False, nodes_of=None):
-    """Line coordinates (pairs of world points) of what an anime point does: a position's path
-    from start to end (a looping one as far as it goes in LOOP_FRAMES), a rotation's axis through
-    the moved object and the arc its local Z (X for turns about Z) sweeps, and with `link` a line
-    from the point to what it moves. Empty when the scene lacks what it moves."""
     import math
 
     from mathutils import Euler, Matrix, Vector
@@ -133,7 +119,7 @@ def anime_lines(obj, by_name=None, link=False, nodes_of=None):
             return lines
         start = [math.radians(v) for v in vectors["start"]]
         unit = [Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))]
-        # T·Rz·Ry·Rx: turning X turns about Rz·Ry·X, turning Y about Rz·Y, turning Z about Z
+
         kept = [0.0, start[1] if index == 0 else 0.0, start[2] if index < 2 else 0.0]
         axis_game = Euler(kept, "XYZ").to_matrix() @ unit[index]
         turn = parent.to_3x3()
@@ -152,7 +138,7 @@ def anime_lines(obj, by_name=None, link=False, nodes_of=None):
         else:
             sweep = vectors["end"][index] - vectors["start"][index]
             sweep = max(-360.0, min(360.0, sweep))
-        if turn.determinant() < 0:  # a mirrored parent turns the other way
+        if turn.determinant() < 0:
             sweep = -sweep
         steps = max(4, int(abs(sweep) / 10.0))
         arc = [
@@ -166,8 +152,6 @@ def anime_lines(obj, by_name=None, link=False, nodes_of=None):
 
 
 def anime_coords(context):
-    """(unselected, selected) line coordinates of every visible anime point; a selected one also
-    gets the line to what it moves."""
     lines = []
     selected = []
     by_root = {}
@@ -190,7 +174,6 @@ def anime_coords(context):
 
 
 def invalidate(*_args):
-    """Make the next redraw work the boxes out again."""
     global _batches
     _batches = None
 
@@ -205,8 +188,6 @@ LAYERS = (("show_boxes", box_coords, (0.3, 0.9, 0.9, 1.0)), ("show_anime", anime
 
 
 def _make_batches(context, shader):
-    """[(batch, colour, setting)]: every layer, whether shown or not, so turning one on or off
-    needs no rebuild."""
     from gpu_extras.batch import batch_for_shader
 
     batches = []

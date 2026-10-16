@@ -1,5 +1,3 @@
-"""The "Dark Chronicle" tab of the 3D viewport's sidebar."""
-
 import json
 
 import bpy
@@ -27,15 +25,6 @@ ROLE_ICONS = {
 }
 
 
-class _Panel:
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = CATEGORY
-
-
-# The generic editor of extras.c2 values.
-
-
 def _is_scalar(value):
     return value is None or isinstance(value, (bool, int, float, str))
 
@@ -55,7 +44,6 @@ def draw_value_row(layout, obj, path, label, value):
 
 
 def draw_tree(layout, obj, path, value, label=None, depth=0):
-    """Every value under `path`, editable; dicts and lists of them fold."""
     if _is_scalar(value) or _is_flat(value):
         draw_value_row(layout, obj, path, label or str(path[-1]), value)
         return
@@ -82,10 +70,10 @@ def draw_tree(layout, obj, path, value, label=None, depth=0):
 
 def draw_vector(layout, settings, prop_name, field):
     col = layout.column(align=True)
-    col.label(text=field.label)
-    row = col.row(align=True) if field.size <= 3 and not field.labels else col.column(align=True)
-    for index in range(field.size):
-        text = field.labels[index] if field.labels else ""
+    col.label(text=field["label"])
+    row = col.row(align=True) if field["size"] <= 3 and not field["labels"] else col.column(align=True)
+    for index in range(field["size"]):
+        text = field["labels"][index] if field["labels"] else ""
         row.prop(settings, prop_name, index=index, text=text)
 
 
@@ -111,12 +99,12 @@ def draw_point(layout, obj, settings):
         return
     for field in schema.DATA_FIELDS[kind]:
         prop_name = props.data_prop_name(kind, field)
-        if kind == "event" and field.key == "kind":
+        if kind == "event" and field["key"] == "kind":
             row = box.row(align=True)
             row.prop(settings, prop_name)
             row.menu(edit.DC2TK_MT_event_kinds.bl_idname, text="", icon="DOWNARROW_HLT")
             continue
-        if field.size > 1:
+        if field["size"] > 1:
             draw_vector(box, settings, prop_name, field)
         else:
             box.prop(settings, prop_name)
@@ -137,9 +125,7 @@ def draw_point(layout, obj, settings):
 
 
 def draw_anime(box, obj, settings):
-    """An anime point: what it moves (and whether the scene has it), what it drives and how, and
-    the vectors its mode reads, labelled for it."""
-    fields = {field.key: field for field in schema.DATA_FIELDS["anime"]}
+    fields = {field["key"]: field for field in schema.DATA_FIELDS["anime"]}
 
     def name(key):
         return props.data_prop_name("anime", fields[key])
@@ -196,7 +182,6 @@ def draw_placement(layout, obj, settings):
         op = box.operator(edit.DC2TK_OT_clear_value.bl_idname, text="No far clip", icon="X")
         op.object_name, op.path = obj.name, json.dumps(["far_clip"])
     if c2data.lookup(obj, ("preview",)):
-        # a template library's (a dungeon floor's parts): edits reach the template, nothing is placed
         layout.label(text="Template %s, shown once: edits change it" % c2data.lookup(obj, ("template",)))
         layout.label(text="It places nothing; moving it changes nothing")
         return
@@ -219,7 +204,11 @@ def draw_piece(layout, obj, settings):
         layout.label(text="%d material overrides (All values)" % len(materials))
 
 
-class DC2TK_PT_main(_Panel, bpy.types.Panel):
+class DC2TK_PT_main(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+
     bl_label = "Map"
     bl_idname = "DC2TK_PT_main"
 
@@ -266,7 +255,11 @@ class DC2TK_PT_main(_Panel, bpy.types.Panel):
         counts.label(text="%d placements, %d points" % (len(c2data.placements(root)), len(c2data.points(root))))
 
 
-class DC2TK_PT_selected(_Panel, bpy.types.Panel):
+class DC2TK_PT_selected(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+
     bl_label = "Selected"
     bl_idname = "DC2TK_PT_selected"
 
@@ -307,7 +300,11 @@ class DC2TK_PT_selected(_Panel, bpy.types.Panel):
             draw_tree(layout.box(), obj, [], {k: v for k, v in data.items() if k != "map"})
 
 
-class DC2TK_PT_add(_Panel, bpy.types.Panel):
+class DC2TK_PT_add(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+
     bl_label = "Add"
     bl_idname = "DC2TK_PT_add"
 
@@ -345,7 +342,11 @@ class DC2TK_PT_add(_Panel, bpy.types.Panel):
                 box.label(text="Active: ground %d, foot %d, area %d, mask %d" % attrs)
 
 
-class DC2TK_PT_map_settings(_Panel, bpy.types.Panel):
+class DC2TK_PT_map_settings(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+
     bl_label = "Map Settings"
     bl_idname = "DC2TK_PT_map_settings"
     bl_options = {"DEFAULT_CLOSED"}
@@ -367,7 +368,11 @@ class DC2TK_PT_map_settings(_Panel, bpy.types.Panel):
         draw_tree(layout, root, ["map"], tree)
 
 
-class DC2TK_PT_export(_Panel, bpy.types.Panel):
+class DC2TK_PT_export(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = CATEGORY
+
     bl_label = "Check, Export, Build"
     bl_idname = "DC2TK_PT_export"
 
@@ -403,8 +408,8 @@ class DC2TK_PT_export(_Panel, bpy.types.Panel):
         if lines or runner.current is not None:
             out = box.column(align=True)
             job = runner.current
-            state = "running" if job.returncode is None else "exit %d" % job.returncode
-            out.label(text="%s: %s" % (job.title, state), icon="CONSOLE")
+            state = "running" if job["returncode"] is None else "exit %d" % job["returncode"]
+            out.label(text="%s: %s" % (job["title"], state), icon="CONSOLE")
             for line in lines:
                 out.label(text=line)
             box.operator("dc2tk.show_output", icon="TEXT")

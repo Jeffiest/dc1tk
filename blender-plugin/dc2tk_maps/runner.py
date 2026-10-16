@@ -1,6 +1,3 @@
-"""Running dc2tk: in the background with its output streamed into a text block (from the UI), or to
-the end (from scripts and in background mode)."""
-
 import subprocess
 import sys
 import threading
@@ -8,60 +5,56 @@ import threading
 import bpy
 
 TEXT_NAME = "dc2tk output"
-MAX_LINES = 400
 
 
-class Job:
-    def __init__(self, title, command, cwd):
-        self.title = title
-        self.command = command
-        self.cwd = cwd
-        self.lines = []
-        self.returncode = None
-        self.process = None
-        self._lock = threading.Lock()
-        self._thread = None
-
-    def start(self):
-        flags = 0
-        if sys.platform.startswith("win"):
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self.process = subprocess.Popen(
-            self.command,
-            cwd=self.cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            creationflags=flags,
-        )
-        self._thread = threading.Thread(target=self._read, daemon=True)
-        self._thread.start()
-
-    def _read(self):
-        for raw in self.process.stdout:
-            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-            with self._lock:
-                self.lines.append(line)
-        self.process.wait()
-        with self._lock:
-            self.returncode = self.process.returncode
-
-    def take(self):
-        with self._lock:
-            return list(self.lines)
-
-    @property
-    def done(self):
-        with self._lock:
-            return self.returncode is not None
-
-    def wait(self):
-        if self._thread is not None:
-            self._thread.join()
-
-
-# The last job, for the panel.
 current = None
+
+
+def new_job(title, command, cwd):
+    return {
+        "title": title,
+        "command": command,
+        "cwd": cwd,
+        "lines": [],
+        "returncode": None,
+        "process": None,
+        "lock": threading.Lock(),
+        "thread": None,
+    }
+
+
+def start_job(job):
+    flags = 0
+    if sys.platform.startswith("win"):
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    job["process"] = subprocess.Popen(
+        job["command"], cwd=job["cwd"], stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, creationflags=flags,
+    )
+    job["thread"] = threading.Thread(target=read_output, args=(job,), daemon=True)
+    job["thread"].start()
+
+
+def read_output(job):
+    process = job["process"]
+    for raw in process.stdout:
+        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        with job["lock"]:
+            job["lines"].append(line)
+    process.stdout.close()
+    process.wait()
+    with job["lock"]:
+        job["returncode"] = process.returncode
+
+
+def output_lines(job):
+    with job["lock"]:
+        return list(job["lines"])
+
+
+def job_done(job):
+    with job["lock"]:
+        return job["returncode"] is not None
 
 
 def describe(command):
@@ -71,20 +64,19 @@ def describe(command):
 def write_text(job):
     text = bpy.data.texts.get(TEXT_NAME) or bpy.data.texts.new(TEXT_NAME)
     text.clear()
-    text.write("$ %s\n" % describe(job.command))
-    text.write("\n".join(job.take()))
-    if job.returncode is not None:
-        text.write("\n[exit code %d]\n" % job.returncode)
+    text.write("$ %s\n" % describe(job["command"]))
+    text.write("\n".join(output_lines(job)))
+    if job["returncode"] is not None:
+        text.write("\n[exit code %d]\n" % job["returncode"])
     return text
 
 
 def run_blocking(title, command, cwd):
-    """Run to the end; the job (with its lines and exit code)."""
     global current
-    job = Job(title, command, cwd)
+    job = new_job(title, command, cwd)
     current = job
-    job.start()
-    job.wait()
+    start_job(job)
+    job["thread"].join()
     write_text(job)
     return job
 
@@ -92,62 +84,50 @@ def run_blocking(title, command, cwd):
 def tail(count=12):
     if current is None:
         return []
-    lines = current.take()
+    lines = output_lines(current)
     return lines[-count:]
 
 
-class DC2TK_OT_run_job(bpy.types.Operator):
-    """Base of the operators that run dc2tk in the background and then finish up"""
-
-    bl_idname = "dc2tk.run_job_base"
-    bl_label = "Run dc2tk"
-    bl_options = {"INTERNAL"}
-
-    _timer = None
-    _job = None
-
-    def command(self, context):
-        """(title, command list, cwd), or None after reporting why not."""
-        raise NotImplementedError
-
-    def finish(self, context, job):
-        """Called when the job ended; returns the operator result set."""
-        return {"FINISHED"} if job.returncode == 0 else {"CANCELLED"}
-
-    def execute(self, context):
-        planned = self.command(context)
-        if planned is None:
-            return {"CANCELLED"}
+def execute(operator, context):
+    planned = operator.command(context)
+    if planned is None:
+        return {"CANCELLED"}
+    try:
         job = run_blocking(*planned)
-        return self.finish(context, job)
+    except OSError as error:
+        operator.report({"ERROR"}, "Could not run dc2tk: %s" % error)
+        return {"CANCELLED"}
+    return operator.finish(context, job)
 
-    def invoke(self, context, event):
-        if bpy.app.background:
-            return self.execute(context)
-        planned = self.command(context)
-        if planned is None:
-            return {"CANCELLED"}
-        global current
-        self._job = Job(*planned)
-        current = self._job
-        try:
-            self._job.start()
-        except OSError as error:
-            self.report({"ERROR"}, "Could not run dc2tk: %s" % error)
-            return {"CANCELLED"}
-        self._timer = context.window_manager.event_timer_add(0.25, window=context.window)
-        context.window_manager.modal_handler_add(self)
-        self.report({"INFO"}, "%s: running dc2tk" % planned[0])
-        return {"RUNNING_MODAL"}
 
-    def modal(self, context, event):
-        if event.type != "TIMER":
-            return {"PASS_THROUGH"}
-        for area in context.screen.areas if context.screen else []:
-            if area.type in {"VIEW_3D", "TEXT_EDITOR"}:
-                area.tag_redraw()
-        if not self._job.done:
-            return {"PASS_THROUGH"}
-        context.window_manager.event_timer_remove(self._timer)
-        write_text(self._job)
-        return self.finish(context, self._job)
+def invoke(operator, context):
+    if bpy.app.background:
+        return execute(operator, context)
+    planned = operator.command(context)
+    if planned is None:
+        return {"CANCELLED"}
+    global current
+    operator._job = new_job(*planned)
+    current = operator._job
+    try:
+        start_job(operator._job)
+    except OSError as error:
+        operator.report({"ERROR"}, "Could not run dc2tk: %s" % error)
+        return {"CANCELLED"}
+    operator._timer = context.window_manager.event_timer_add(0.25, window=context.window)
+    context.window_manager.modal_handler_add(operator)
+    operator.report({"INFO"}, "%s: running dc2tk" % planned[0])
+    return {"RUNNING_MODAL"}
+
+
+def modal(operator, context, event):
+    if event.type != "TIMER":
+        return {"PASS_THROUGH"}
+    for area in context.screen.areas if context.screen else []:
+        if area.type in {"VIEW_3D", "TEXT_EDITOR"}:
+            area.tag_redraw()
+    if not job_done(operator._job):
+        return {"PASS_THROUGH"}
+    context.window_manager.event_timer_remove(operator._timer)
+    write_text(operator._job)
+    return operator.finish(context, operator._job)

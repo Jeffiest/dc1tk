@@ -1,14 +1,3 @@
-"""End-to-end test of the dc2tk_maps add-on, headless:
-
-    blender --background --factory-startup --python blender-plugin/tests/test_addon.py
-
-Enables the add-on from blender-plugin, writes the synthetic map of make_test_map.py, imports it
-(through a stand-in dc2tk on Windows, which copies the map as `dc2tk map-export` would, otherwise
-from the file), edits fields, adds points, duplicates a placement, paints collision, validates,
-exports into a mod and checks the written glTF: every node and extras.c2 of the source is kept
-(edited values changed as expected), transforms are unchanged, the new nodes carry valid extras,
-mod.json has its line. Exits with status 1 on a failure."""
-
 import json
 import math
 import os
@@ -25,7 +14,7 @@ ADDON_PARENT = os.path.dirname(HERE)
 sys.path.insert(0, ADDON_PARENT)
 sys.path.insert(0, HERE)
 
-import make_test_map  # noqa: E402
+import make_test_map
 
 failures = []
 checks = 0
@@ -37,9 +26,6 @@ def check(condition, message):
     if not condition:
         failures.append(message)
         print("FAIL:", message)
-
-
-# glTF helpers (no Blender).
 
 
 def same(a, b, tolerance=1e-4):
@@ -79,7 +65,6 @@ def local_matrix(node):
 
 
 def walk(gltf):
-    """{(name path with occurrence numbers): (node, world matrix)}."""
     nodes = gltf["nodes"]
     found = {}
     identity = [[1 if i == j else 0 for j in range(4)] for i in range(4)]
@@ -104,27 +89,16 @@ def key_name(key):
     return "/".join(name for name, _ in key)
 
 
-# The test.
-
-
 def enable_addon():
     import addon_utils
 
-    try:
-        module = addon_utils.enable("dc2tk_maps", default_set=True, persistent=False, handle_error=None)
-    except Exception:  # noqa: BLE001
-        module = None
+    module = addon_utils.enable("dc2tk_maps", default_set=True, persistent=False, handle_error=None)
     if module is None or "dc2tk_maps" not in bpy.context.preferences.addons:
-        import dc2tk_maps
-
-        dc2tk_maps.register()
-        return dc2tk_maps, False
+        raise RuntimeError("Could not enable dc2tk_maps")
     return module, True
 
 
 def write_fake_dc2tk(folder, source_dir):
-    """A stand-in for dc2tk on Windows: `map-export NAME -o DIR` copies the test map into DIR,
-    anything else echoes its arguments."""
     path = os.path.join(folder, "fake_dc2tk.bat")
     with open(path, "w", newline="\r\n") as handle:
         handle.write(
@@ -149,7 +123,7 @@ def main():
         source = json.load(handle)
 
     dc2tk_maps, through_prefs = enable_addon()
-    from dc2tk_maps import c2data, edit, export_mod, import_map, prefs, schema, validate  # noqa: F401
+    from dc2tk_maps import c2data, edit, export_mod, import_map, prefs, schema, validate
 
     print("Blender", bpy.app.version_string, "- add-on enabled through preferences:", through_prefs)
     settings_prefs = prefs.get()
@@ -157,11 +131,9 @@ def main():
     wm = context.window_manager
     settings = wm.dc2tk_maps
 
-    # Start empty.
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj)
 
-    # 1. Import.
     if sys.platform.startswith("win"):
         settings_prefs.dc2tk_path = write_fake_dc2tk(work, source_dir)
         settings_prefs.maps_dir = os.path.join(work, "maps")
@@ -204,9 +176,7 @@ def main():
     water = bpy.data.materials["col_ground0_foot5_area1_mask12"]
     check(tuple(round(c, 2) for c in water.diffuse_color[:3]) == (0.15, 0.35, 0.95), "water area coloured blue")
 
-    # The game look: map materials draw as the game does, collision stays out of renders, the
-    # light set lights the scene, and pieces show by the hour.
-    from dc2tk_maps import look  # noqa: E402
+    from dc2tk_maps import look
 
     wall = bpy.data.materials.get("house_wall")
     check(wall is not None and wall.get(look.FLAG) == 1, "the map material has the game look")
@@ -248,8 +218,7 @@ def main():
     check(lamp.data.use_custom_distance and abs(lamp.data.cutoff_distance - 300.0) < 1e-4, "light range 300 read back")
     check(abs(lamp.data.energy - 120.0) < 1e-4, "light energy 120 (RAW): %s" % lamp.data.energy)
 
-    # 2. Panel fields write extras.c2.
-    expected = {}  # name path -> expected extras.c2 of edited nodes
+    expected = {}
 
     def edited(key, change):
         node = walk(source)[key][0]
@@ -294,7 +263,7 @@ def main():
     from mathutils import Vector
 
     lines = overlay.box_lines(photo)
-    # The corner (20, 40, 20) of photo1's box in game space: T + Ry(45) * corner, then Y up to Z up.
+
     angle = math.radians(45)
     gx = 50 + math.cos(angle) * 20 + math.sin(angle) * 20
     gy = 40.0
@@ -302,7 +271,6 @@ def main():
     want = Vector((gx, -gz, gy))
     check(any((Vector(p) - want).length < 1e-3 for p in lines), "invent box corner in the right place")
 
-    # Anime points: what they move, their fields by name (also under the old names), the overlay.
     house01 = bpy.data.objects["place:house01"]
     house02_obj = bpy.data.objects["place:house02"]
     spin = next(o for o in house01.children if schema.strip_suffix(o.name) == "point:spin")
@@ -322,7 +290,7 @@ def main():
     check(settings.d_anime_drives == "POSITION" and settings.d_anime_mode == "PINGPONG", "old kind and int read by name")
     check(tuple(settings.d_anime_end) == (0.0, 20.0, 0.0) and not settings.d_anime_uniform, "old v2 and extra read by name")
     check(schema.anime_vectors(1, 4)["end"][0] == "End (units)", "a position's end is in units")
-    # bob ping-pongs piece:house_m of house02 from 0 to 20 up: game (-150, 5 + 20, 220), Blender (-150, -220, 25)
+
     lines = overlay.anime_lines(bob)
     check(any((Vector(p) - Vector((-150.0, -220.0, 25.0))).length < 1e-3 for p in lines), "the path's end in the right place: %s" % lines)
     lines = overlay.anime_lines(spin)
@@ -362,18 +330,17 @@ def main():
 
     edited(house02_key, change_house)
 
-    bpy.ops.dc2tk.edit_value(object_name=root.name, path=json.dumps(["map", "light_sets", 0, "fog_enable"]), value="0")
-    bpy.ops.dc2tk.edit_value(object_name=root.name, path=json.dumps(["map", "light_sets", 0, "bgcolor"]), value="1, 2, 3")
+    bpy.ops.dc2tk.edit_value(object_name=root.name, path=json.dumps(["map", "settings", "light_sets", 0, "fog_enable"]), value="0")
+    bpy.ops.dc2tk.edit_value(object_name=root.name, path=json.dumps(["map", "settings", "light_sets", 0, "bgcolor"]), value="[1, 2, 3]")
     root_key = (("map:t01", 1),)
 
     def change_root(c2):
-        c2["map"]["light_sets"][0]["fog_enable"] = 0
-        c2["map"]["light_sets"][0]["bgcolor"] = [1, 2, 3]
+        c2["map"]["settings"]["light_sets"][0]["fog_enable"] = 0
+        c2["map"]["settings"]["light_sets"][0]["bgcolor"] = [1, 2, 3]
 
     edited(root_key, change_root)
-    check(c2data.lookup(root, ("map", "light_sets", 0, "fog_enable")) == 0, "map setting edited")
+    check(c2data.lookup(root, ("map", "settings", "light_sets", 0, "fog_enable")) == 0, "map setting edited")
 
-    # 3. Add points, duplicate a placement.
     context.scene.cursor.location = (10.0, 20.0, 30.0)
     activate(root)
     for preset in schema.POINT_PRESETS:
@@ -406,10 +373,10 @@ def main():
     copy = bpy.data.objects.get("place:house01_2")
     check(copy is not None, "place:house01_2 made")
     if copy is not None:
+        check(c2data.lookup(copy, ("name",)) == "house01_2", "the copy has its own game name")
         check(c2data.lookup(copy, ("slot",)) is None, "the copy has no slot (appended)")
         check(len(c2data.descendants(copy)) == len(c2data.descendants(bpy.data.objects["place:house01"])), "copy has every node")
 
-    # A mesh modelled in Blender made a model: a placement, its piece, and a collision copy.
     for obj in context.selected_objects:
         obj.select_set(False)
     activate(root)
@@ -434,7 +401,6 @@ def main():
     crate.select_set(True)
     check(not bpy.ops.dc2tk.new_model.poll(), "the mesh is a model now, not loose")
 
-    # 4. Paint collision: one face in Edit Mode.
     bpy.ops.dc2tk.toggle_collision(kind="collision")
     check(floor.visible_get(), "collision shown by the toggle")
     for obj in context.selected_objects:
@@ -456,22 +422,21 @@ def main():
     bpy.ops.dc2tk.toggle_collision(kind="collision")
     check(not floor.visible_get(), "collision hidden again")
 
-    # 5. Validate: clean, then a broken name.
     activate(root)
     bpy.ops.dc2tk.validate()
     errors = [r for r in validate.results if r[0] == validate.ERROR]
     check(not errors, "no validation errors: %s" % errors)
     long_name = bpy.data.objects["point:river"]
-    long_name.name = "point:" + "x" * 32
+    c2data.rename(long_name, "x" * 32)
     quad_check = validate.check(root)
     check(any("bytes" in r[2] for r in quad_check if r[0] == validate.ERROR), "a 32-byte name is an error")
-    long_name.name = "point:river"
+    c2data.rename(long_name, "river")
     check(not validate.left_out(root), "nothing left out of the export: %s" % validate.left_out(root))
     loose = bpy.data.objects.new("loose", bpy.data.meshes.new("loose"))
     context.collection.objects.link(loose)
     check(any(r[1] == "loose" for r in validate.left_out(root)), "a mesh outside the map is reported as left out")
     bpy.data.objects.remove(loose)
-    # a new picture on the crate made a model: a size a texture file cannot take, then one it can
+
     crate_obj = bpy.data.objects.get("crate")
     if crate_obj is not None:
         picture = bpy.data.images.new("crate_wood", 100, 64)
@@ -496,7 +461,7 @@ def main():
     results = validate.check(root)
     check(any("Unknown point kind" in r[2] for r in results), "unknown kind reported")
     check(any(r[1] == "Empty" and "No extras.c2" in r[2] for r in results), "missing extras reported")
-    # an invent box among the map's own points: the camera never looks at it
+
     bad["c2"] = {"role": "point", "kind": "invent", "enable": 1, "flag": [0, 0, 0, 0],
                  "data": {"id": 251, "min": [-1, -1, -1], "max": [1, 1, 1], "unknown_int": 0, "unknown_float": 0, "angle": 0}}
     results = validate.check(root)
@@ -504,7 +469,6 @@ def main():
     bpy.data.objects.remove(bad)
     bpy.data.objects.remove(bare)
 
-    # 6. Panels draw (with a stand-in layout that checks every icon, property and operator).
     import ui_check
 
     activate(door)
@@ -528,7 +492,6 @@ def main():
         check(not problems, "panels draw for %s: %s" % (obj.name, problems))
     settings.show_raw = False
 
-    # 7. Export into a mod.
     mod_dir = os.path.join(work, "mods", "testmod")
     os.makedirs(mod_dir)
     with open(os.path.join(mod_dir, "mod.json"), "w") as handle:
@@ -543,7 +506,7 @@ def main():
         mod = json.load(handle)
     check(mod.get("name") == "testmod" and mod.get("add") == {"x": 1}, "mod.json keeps its other keys")
     check(mod["replace"] == {"texture:abc": "a.png", "map:t01": "maps/t01/t01.gltf"}, "mod.json line: %s" % mod["replace"])
-    # a new map made from this one names the scene under "add": the disc's map is left alone
+
     new_map_dir = os.path.join(work, "mods", "newmap")
     os.makedirs(new_map_dir)
     added = {"map:t01x": {"file": "maps/t01/t01.gltf", "like": "t01"}}
@@ -593,7 +556,7 @@ def main():
             check(node["name"].startswith("point:"), "%s prefix" % key_name(key))
             if key[1][0] == "points":
                 world = after[key][1]
-                # The cursor (10, 20, 30) in Blender is (10, 30, -20) in the game's Y-up space.
+
                 at = [world[0][3], world[1][3], world[2][3]]
                 check(same(at, [10.0, 30.0, -20.0]), "%s at the cursor: %s" % (key_name(key), at))
                 rotation = node.get("rotation", [0.0, 0.0, 0.0, 1.0])
@@ -601,14 +564,14 @@ def main():
     check(any(key_name(k) == "map:t01/placements/place:house01_2" for k in new_keys), "the duplicated placement is exported")
     copy_c2 = next((after[k][0]["extras"]["c2"] for k in new_keys if key_name(k).endswith("place:house01_2")), {})
     check("slot" not in copy_c2 and copy_c2.get("template") == "house", "the copy places the same template, no slot")
+    check(copy_c2.get("name") == "house01_2", "the exported copy has its own game name")
     check(any(key_name(k) == "map:t01/placements/place:house01/point:talk" for k in new_keys), "the talk point is in house01")
 
     materials = [m["name"] for m in out.get("materials", [])]
     check("col_ground1_foot3_area7_mask4" in materials, "the painted material is exported: %s" % materials)
     for name in ("col_ground0_foot5_area1_mask12", "col_ground0_foot0_area0_mask0"):
         check(name in materials, "%s exported" % name)
-    # The repainted face was the only one of this material (the floor mesh is shared by both
-    # placements, as in the game), so it is no longer used.
+
     check("col_ground0_foot2_area6_mask0" not in materials, "the repainted material is gone")
     check(out["scenes"][0].get("name") == "t01", "the scene is named after the map")
     check(
@@ -625,7 +588,6 @@ def main():
     check("COLOR_0" in mesh["primitives"][0]["attributes"], "vertex colours exported")
     check(out["asset"].get("generator", "").startswith("Khronos glTF Blender"), "written by Blender's exporter")
 
-    # 8. dc2tk build (with the stand-in dc2tk, which echoes its arguments).
     if sys.platform.startswith("win"):
         iso = os.path.join(work, "dc2.iso")
         open(iso, "wb").close()
@@ -636,7 +598,7 @@ def main():
         check(result == {"FINISHED"}, "dc2tk build ran: %s" % result)
         from dc2tk_maps import runner
 
-        text = "\n".join(runner.current.take()) if runner.current else ""
+        text = "\n".join(runner.output_lines(runner.current)) if runner.current else ""
         check("build" in text and "--mod testmod" in text and "--mods" in text, "build arguments: %s" % text)
         check(bpy.data.texts.get(runner.TEXT_NAME) is not None, "output in the text block")
         # an extracted disc folder in place of the image; a folder extract did not write is refused
@@ -651,8 +613,11 @@ def main():
         open(os.path.join(folder, "manifest.json"), "w").close()
         result = bpy.ops.dc2tk.build()
         check(result == {"FINISHED"}, "dc2tk build ran from an extracted disc: %s" % result)
-        text = "\n".join(runner.current.take()) if runner.current else ""
+        text = "\n".join(runner.output_lines(runner.current)) if runner.current else ""
         check(folder in text, "build reads the extracted disc: %s" % text)
+    import test_regressions
+
+    test_regressions.run(context, root, work)
     return work
 
 
@@ -660,7 +625,7 @@ if __name__ == "__main__":
     work = None
     try:
         work = main()
-    except Exception:  # noqa: BLE001
+    except Exception:
         traceback.print_exc()
         failures.append("exception")
     print("%d checks, %d failures" % (checks, len(failures)))

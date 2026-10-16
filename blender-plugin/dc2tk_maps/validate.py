@@ -1,5 +1,3 @@
-"""Checks a map against what the game and dc2tk's importer accept (docs/assets/maps.md 4.3, 7, 8)."""
-
 import bpy
 
 from . import c2data, schema
@@ -7,7 +5,7 @@ from . import c2data, schema
 ERROR = "ERROR"
 WARNING = "WARNING"
 
-# The last results, for the panel: [(level, object name, message)].
+
 results = []
 
 
@@ -33,7 +31,6 @@ def check(root):
             continue
         data = c2data.get(obj)
         if data is None:
-            # MDS nodes and anything added by hand: the exporter cannot tell what they are.
             found.append((WARNING, obj.name, "No extras.c2: the importer cannot tell what this is"))
             continue
         role = data.get("role")
@@ -45,24 +42,23 @@ def check(root):
             found.append((ERROR, obj.name, "A %s's name must start with \"%s\"" % (role, prefix)))
         if role == "placement":
             placements.append(obj)
-            _len_check(found, obj, "Placement name", schema.game_name(obj.name, role))
+            _len_check(found, obj, "Placement name", c2data.exact_name(obj, role))
             _len_check(found, obj, "Template name", str(data.get("template", "")))
         elif role == "piece":
-            _len_check(found, obj, "Piece name", schema.game_name(obj.name, role))
+            _len_check(found, obj, "Piece name", c2data.exact_name(obj, role))
             if data.get("kind") not in schema.PIECE_KINDS:
                 found.append((WARNING, obj.name, "Unknown piece kind %r" % (data.get("kind"),)))
         elif role == "point":
             check_point(found, obj, data)
         elif role == "mds" and "mds_index" not in data:
             piece = c2data.piece_of(obj)
-            # a part added to a model of the disc's (a model made here has none with an index)
+
             if piece is not None and any("mds_index" in (c2data.get(o) or {}) for o in c2data.descendants(piece)):
                 found.append((WARNING, obj.name, "An MDS node without mds_index (a new node)"))
 
-    # Placement names: unique, and the slot limit.
     seen = {}
     for obj in placements:
-        seen.setdefault(schema.game_name(obj.name, "placement"), []).append(obj)
+        seen.setdefault(c2data.exact_name(obj, "placement"), []).append(obj)
     for game, objects in seen.items():
         if len(objects) > 1:
             new = [obj for obj in objects if c2data.lookup(obj, ("slot",)) is None]
@@ -76,8 +72,7 @@ def check(root):
     elif len(placements) > schema.PLACEMENT_LIMIT:
         found.append((WARNING, root.name, "%d placements: over 320, only dungeons have 400" % len(placements)))
 
-    # Map settings.
-    tree = c2data.to_py(c2data.lookup(root, ("map",))) or {}
+    tree = c2data.map_settings(root)
     if isinstance(tree, dict):
         for key, value in tree.items():
             if str(key).lower() == "time_light_num":
@@ -93,8 +88,6 @@ def check(root):
 
 
 def left_out(root):
-    """What the export would leave out without a word, as warnings: meshes outside every map
-    (modelled but never made a model), and the map in the scene twice (only `root` is exported)."""
     found = []
     scene = bpy.context.scene
     name = c2data.map_name(root)
@@ -110,22 +103,17 @@ def left_out(root):
 
 
 def picture_name(image):
-    """The game picture an image stands for, as the export names it: without Blender's .001 and
-    without a file suffix."""
     name = schema.strip_suffix(image.name)
     stem, dot, suffix = name.rpartition(".")
     return stem if dot and suffix.lower() in ("png", "jpg", "jpeg", "tga", "bmp") else name
 
 
 def is_exported_picture(image):
-    """An image loaded from the textures/ folder of an exported map (a picture of the disc)."""
     path = bpy.path.abspath(image.filepath or "").replace("\\", "/").lower()
     return "/textures/" in path and path.endswith(".png") and not image.is_dirty
 
 
 def check_pictures(found, root):
-    """The pictures the map's materials show: names the game can hold, and new pictures (ones
-    not exported from the disc) of a size a texture file takes."""
     seen = set()
     for obj in c2data.descendants(root):
         if obj.type != "MESH" or c2data.is_collision_mesh(obj):
@@ -152,15 +140,13 @@ def check_pictures(found, root):
                         (ERROR, obj.name, "Picture \"%s\" is %dx%d: sides must be powers of two up to 1024" % (name, w, h))
                     )
                 elif w < 16:
-                    # a new picture takes the format of the texture file's first, and most maps'
-                    # are swizzled 8-bit, whose rows are 16 texels at least
                     found.append(
                         (WARNING, obj.name, "Picture \"%s\" is %d wide: most maps take new pictures 16 wide or more" % (name, w))
                     )
 
 
 def check_point(found, obj, data):
-    _len_check(found, obj, "Point name", schema.game_name(obj.name, "point"))
+    _len_check(found, obj, "Point name", c2data.exact_name(obj, "point"))
     kind = data.get("kind")
     if kind not in schema.POINT_KINDS:
         found.append((ERROR, obj.name, "Unknown point kind %r" % (kind,)))
@@ -170,7 +156,7 @@ def check_point(found, obj, data):
         found.append((WARNING, obj.name, "A %s point without data" % kind))
     elif isinstance(point_data, dict):
         point_data = schema.upgrade_data(kind, point_data)
-        missing = [f.key for f in schema.DATA_FIELDS[kind] if not f.optional and f.key not in point_data]
+        missing = [f["key"] for f in schema.DATA_FIELDS[kind] if not f["optional"] and f["key"] not in point_data]
         if missing:
             found.append((WARNING, obj.name, "Missing %s data: %s" % (kind, ", ".join(missing))))
     if kind == "anime":
@@ -178,7 +164,6 @@ def check_point(found, obj, data):
         if target is None:
             found.append((WARNING, obj.name, "The animation moves nothing: %s" % problem))
     if kind == "invent" and c2data.placement_of(obj) is None:
-        # CMap::InScreenFunc looks only at the points of the placements it draws
         found.append(
             (WARNING, obj.name, "An invent box among the map's own points is never photographed: put it in a placement")
         )

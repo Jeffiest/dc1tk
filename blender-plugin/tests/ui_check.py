@@ -1,7 +1,3 @@
-"""Runs the add-on's panel draw functions headless with a stand-in layout that checks what a real
-one would refuse: unknown icons, properties the data does not have (reading each, which runs the
-get callbacks), operators that do not exist and operator properties they do not have."""
-
 import bpy
 
 _icons = None
@@ -64,7 +60,7 @@ class FakeLayout:
             return
         try:
             getattr(data, name)
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             self.problems.append("reading %s: %s" % (name, error))
 
     def operator(self, idname, **kwargs):
@@ -99,7 +95,7 @@ def draw_all(context):
     for cls in ui.classes:
         try:
             cls.draw(FakePanel(FakeLayout(problems)), context)
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             import traceback
 
             traceback.print_exc()

@@ -1,15 +1,3 @@
-"""Materials shown as the game draws them (Material Preview and Rendered): the picture times the
-vertex colour, alpha from both (the fades painted into meshes), additive and subtractive glows,
-unlit meshes and alpha tests, from the draw flags of the model's frame names (the material's
-`frame_flags`, docs/assets/models.md 1.5).
-
-Blender's glTF importer builds each material around a Principled BSDF, which is also what its
-exporter reads the picture from. The game look is a shader of its own beside it, linked to the
-output; `for_export` links the Principled BSDF back while a scene is written, so the written glTF
-is the same either way."""
-
-import contextlib
-
 import bpy
 
 from . import c2data
@@ -71,7 +59,6 @@ def is_map_material(material):
 
 
 def apply(material):
-    """Give a map material the game look (again: an earlier one is replaced)."""
     tree = material.node_tree
     for node in [node for node in tree.nodes if node.name.startswith(PREFIX)]:
         tree.nodes.remove(node)
@@ -102,7 +89,6 @@ def apply(material):
     blend = flags.get("blend")
     alpha_ref = flags.get("alpha_ref")
     if alpha_ref and blend not in ("add", "subtract") and isinstance(alpha, bpy.types.NodeSocket):
-        # the GS test drops texels under the reference (0x80 is opaque); the rest still blend
         kept = _math(tree, "GREATER_THAN", alpha, max(0.0, float(alpha_ref) - 0.5) / 128.0, "alpha test", x + 400, y - 400)
         alpha = _math(tree, "MULTIPLY", alpha, kept, "tested alpha", x + 550, y - 400)
     unlit = flags.get("lit") is False
@@ -145,7 +131,7 @@ def apply(material):
     tree.links.new(shader.outputs[0], output.inputs["Surface"])
     if hasattr(material, "surface_render_method"):
         material.surface_render_method = method
-    else:  # before Blender 4.2
+    else:
         material.blend_method = "BLEND" if method == "BLENDED" else "HASHED"
     if hasattr(material, "use_transparency_overlap"):
         material.use_transparency_overlap = False
@@ -161,10 +147,7 @@ def apply_all(materials=None):
     return count
 
 
-@contextlib.contextmanager
-def for_export():
-    """The Principled BSDFs linked to the outputs while a scene is written, the look after."""
-    swapped = []
+def export_materials(swapped):
     for material in bpy.data.materials:
         tree = material.node_tree
         if tree is None or not material.get(FLAG):
@@ -174,22 +157,20 @@ def for_export():
             continue
         tree.links.new(principled.outputs[0], output.inputs["Surface"])
         swapped.append((material.name, shader.name))
-    try:
-        yield
-    finally:
-        for name, shader_name in swapped:
-            material = bpy.data.materials.get(name)
-            if material is None:
-                continue
-            tree = material.node_tree
-            output, shader = _output(tree), tree.nodes.get(shader_name)
-            if output is not None and shader is not None:
-                tree.links.new(shader.outputs[0], output.inputs["Surface"])
+
+
+def restore_materials(swapped):
+    for name, shader_name in swapped:
+        material = bpy.data.materials.get(name)
+        if material is None:
+            continue
+        tree = material.node_tree
+        output, shader = _output(tree), tree.nodes.get(shader_name)
+        if output is not None and shader is not None:
+            tree.links.new(shader.outputs[0], output.inputs["Surface"])
 
 
 def shown_at(time, hour):
-    """Whether a piece of hours `time` ([start, end], PIECE_TIME) is drawn at `hour`: from start
-    up to end, across midnight when start is after end; [0, 0] (or start equal to end) always."""
     try:
         start, end = int(time[0]), int(time[1])
     except (TypeError, ValueError, IndexError, KeyError):
@@ -202,7 +183,6 @@ def shown_at(time, hour):
 
 
 def shown(obj):
-    """Whether the game shows a placement or piece at the start (its show flag is not 0)."""
     value = c2data.to_py(c2data.lookup(obj, ("show",)))
     try:
         return value is None or int(value) != 0
@@ -211,10 +191,6 @@ def shown(obj):
 
 
 def show_hour(context, hour, enabled=True, roots=None):
-    """Show the pieces the game draws at `hour` (all of them when not `enabled`), in the
-    viewport and in renders: not those whose hours leave it out, nor those it hides at the start
-    (show 0, theirs or their placement's: deleted placements, pieces scripts show later).
-    Returns how many pieces are hidden."""
     hidden = 0
     layer_objects = context.view_layer.objects
     for root in roots if roots is not None else c2data.scene_map_roots(context.scene):
@@ -236,18 +212,12 @@ def show_hour(context, hour, enabled=True, roots=None):
 
 
 def _srgb(value):
-    """A 0-255 display colour as Blender's linear value."""
     value = max(0.0, min(1.0, float(value) / 255.0))
     return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
 
 
 def active_light_set(root):
-    """The light set the map starts with (ACTIVE_LIGHT_SET, by number), or None."""
-    tree = c2data.to_py(c2data.lookup(root, ("map",))) or {}
-    if not hasattr(tree, "get"):
-        return None
-    # the .map's settings, or (scenes written before they had their own key) the tree itself
-    settings = tree.get("settings") if hasattr(tree.get("settings"), "get") else tree
+    settings = c2data.map_settings(root)
     sets = settings.get("light_sets") or []
     wanted = settings.get("active_light_set")
     for light_set in sets:
@@ -257,10 +227,6 @@ def active_light_set(root):
 
 
 def map_world(context, root):
-    """The scene lit as the map's light set lights it (Rendered and F12): the background colour
-    seen behind everything, the ambient colour from all around and its directional lights as suns
-    (outside the map's tree, so never exported). An earlier one is replaced; a world of your own
-    is kept. Returns the world, or None without a light set."""
     from mathutils import Vector
 
     light_set = active_light_set(root)

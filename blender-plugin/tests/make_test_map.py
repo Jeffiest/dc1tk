@@ -1,16 +1,3 @@
-"""Writes a tiny map scene that follows docs/assets/maps.md section 8, as `dc2tk map-export` would:
-two placements of one template (a model piece, a collision piece and a camera-collision piece,
-a template point and a template animation turning the model's node), the map's own points (a
-door, a point light with a KHR light, a sound emitter, an invent box, an animation moving a
-piece of the second placement whose fields have the names scenes had before they were decoded,
-and two points whose data is a raw argument list), a fixed camera, and the map settings on the
-root.
-
-    python make_test_map.py OUT_DIR            (any Python 3)
-    blender --background --python make_test_map.py -- OUT_DIR
-
-writes OUT_DIR/t01.gltf and OUT_DIR/t01.bin. Only the standard library."""
-
 import json
 import math
 import os
@@ -77,6 +64,8 @@ class Builder:
 
     def node(self, name, c2, children=(), **extra):
         node = {"name": name}
+        if c2 is not None and c2.get("role") in ("map", "placement", "piece", "point", "camera"):
+            c2 = dict(c2, name=name.split(":", 1)[1])
         if children:
             node["children"] = list(children)
         node.update(extra)
@@ -92,7 +81,7 @@ def box_mesh(b):
         (0, 1, 3), (0, 3, 2), (4, 6, 7), (4, 7, 5), (0, 4, 5), (0, 5, 1),
         (2, 3, 7), (2, 7, 6), (0, 2, 6), (0, 6, 4), (1, 5, 7), (1, 7, 3),
     ]
-    # Flat corners (one vertex per triangle corner) so normals and colours are per face.
+
     positions, normals, colours, index = [], [], [], []
     for face in faces:
         a, c, d = (corners[i] for i in face)
@@ -266,10 +255,7 @@ def build():
         translation=[50.0, 0.0, -50.0],
         rotation=quat_y(45),
     )
-    # Two points whose data is the raw argument list of their line instead of named fields: the
-    # add-on reads such data by position. A list mixing text and numbers is more than Blender's
-    # custom properties can hold, so Blender keeps that whole extras.c2 as text; the add-on
-    # writes it back as JSON on export.
+
     raw_door = b.node(
         "point:rawdoor",
         {
@@ -310,9 +296,7 @@ def build():
     placements = b.node("placements", {"role": "group"}, places)
     points = b.node("points", {"role": "group"}, [door, lamp, sound, invent, bob, raw_door, raw_light])
     cameras = b.node("cameras", {"role": "group"}, [camera])
-    map_tree = {
-        "images": ["t01.img"],
-        "packs": ["t01_0.pcp"],
+    settings = {
         "active_light_set": 0,
         "light_sets": [
             {
@@ -331,8 +315,8 @@ def build():
         "time_flag": [0, 0],
         "time_light_num": 4,
         "sky_info": [0.0, 1.0],
-        "hash": "9f86d081884c7d65",
     }
+    map_tree = {"images": ["t01.img"], "packs": ["t01_0.pcp"], "settings": settings}
     root = b.node("map:" + NAME, {"role": "map", "map": map_tree}, [placements, points, cameras])
 
     gltf = {

@@ -8,7 +8,7 @@ into a disc image. The scene's conventions (node names, `extras.c2`,
 collision material names) are in [the map formats](../docs/assets/maps.md),
 section 8; the add-on follows them and never renames what carries data.
 
-Blender 4.2 or newer (tested with 5.1); written to run on 3.6 too. Plain
+Blender 4.2 or newer (tested with 4.2.23 and 5.1.2); written to run on 3.6 too. Plain
 Python, nothing to install besides the add-on.
 
 ## Install
@@ -105,6 +105,11 @@ fields, which write straight into `extras.c2`:
   end values that mode reads, labelled for it;
 - "All values" lists every value of `extras.c2`, each with an edit button,
   for anything without a field of its own (cameras, piece materials).
+
+Name fields update both the Blender object name and `extras.c2.name`, which
+the build uses. Duplicated placements receive a new game name too. Names
+are unique within their game scope; Blender may add a suffix to their display names.
+The list editor accepts JSON, such as `[1, 2, 3]` or `["t01.img", "other.img"]`.
 
 Map Settings shows the map root's settings (`extras.c2.map`: light sets,
 fog, background colours, time, sky...) the same way.
@@ -220,6 +225,37 @@ as edited), transforms unchanged, the new nodes with valid extras, the look
 back after the export, `mod.json` updated; then runs `dc2tk build` through the
 stand-in. `make_test_map.py OUT_DIR` also runs on its
 own with any Python 3.
+
+The fixture includes `extras.c2.name` and the current `map.settings` nesting.
+`test_regressions.py` also checks name edits and duplication in exported glTF,
+validation against game names, CP932 byte limits, JSON list editing, current
+and legacy settings, callbacks for every point kind, failed-export cleanup,
+and subprocess output and exit codes. These checks run from `test_addon.py`.
+
+## Code layout
+
+`schema.py` holds field dictionaries and format rules. Each point field has a
+`key`, `label`, `kind`, and `pos` in the legacy argument list. Vector fields
+also specify `size` and optional element `labels`. `old` names a legacy key,
+or a key and list index. `choices` contain a numeric value, identifier, label,
+and description. Missing defaults are filled from the field's type and size.
+
+`c2data.py` reads and writes game metadata. The toolkit reads game names from
+`c2.name`, falling back to the Blender name for older exports. Map settings
+come from `c2.map.settings`, with the older flat map tree supported too.
+`props.py` declares Blender properties and their named callbacks; editing
+functions receive the object they change. Blender registration classes hold
+the properties, operators, panels, menus, and preferences the API requires.
+
+`edit.py` creates and edits scene objects. Model naming, placement creation,
+piece creation, mesh parenting, and collision copying have separate functions.
+`export_mod.py` saves temporary visibility and selection changes in a dictionary
+and restores them in `finally`. `look.py` switches material shaders for export
+and restores them afterward. `runner.py` stores process state in dictionaries;
+its reader thread collects output without calling Blender's API.
+
+Enable the add-on through Blender before calling its operators or preferences
+from a script. The tests use the same registration path as the application.
 
 ## What Blender does to the scene
 
