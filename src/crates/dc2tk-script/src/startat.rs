@@ -16,7 +16,9 @@
 //! map_start)). For a map the game never loads with load_dungeon_map but which has a map number,
 //! the patch warps that way instead. A map's number is its row in the disc's map table
 //! (map/map<language>.cfg, read by LoadMapName and looked up by GetMapName in mapselect.cpp). The
-//! engine loads the town's own script, so the warp shows a town that has none. The town warp
+//! engine then loads the script at the town's own path (LoadMapScript, mapjump.cpp:372: the map's
+//! path with _<language>.stb), so a town target cannot name another script, and MAP/SCRIPT:PROGRAM
+//! is refused for one. The town warp
 //! clears the skip of the next music load that New Game sets for the opening, so the town's
 //! default music plays (town_function_text).
 
