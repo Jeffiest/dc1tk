@@ -557,11 +557,13 @@ void on_update(void)
 </figure>
 
 <div class="note">
-  <strong>50 frames a second</strong>
-  The PAL game runs at 50 Hz but the scripts were written for 60. The retail
-  <code>wait_frames(n)</code> helper in the map libraries quietly scales <code>n</code> by
-  50/60; monster libraries use <code>scale_frames_to_pal</code>. The mod library's
-  <code>modkit_wait(n)</code> does <em>not</em> scale. When numbers feel off by 20%, this is why.
+  <strong>25 frames a second</strong>
+  The PAL game draws a frame every other 50 Hz vertical blank (<code>mgFrameRate</code> 2),
+  so <code>wait;</code> is 1/25 s; the scripts were written for the NTSC game's 30. Some retail
+  map libraries' <code>wait_frames(n)</code> quietly scale <code>n</code> by 50/60 (5/6),
+  monster libraries use <code>scale_frames_to_pal</code>, and the fades take 5/6 of their
+  frames too. The mod library's <code>modkit_wait(n)</code> does <em>not</em> scale. When
+  numbers feel off by 20%, this is why.
 </div>
 
 <h3>Where state lives</h3>

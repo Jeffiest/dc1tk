@@ -9,8 +9,8 @@
 
 #include <monster.h>
 
-// While save flag flag is set, asks the map for program every frames frames (250 is five seconds
-// at 50 Hz). The dungeon frame timer is shared by every monster on the floor, so with several
+// While save flag flag is set, asks the map for program every frames frames (125 is five seconds
+// at the PAL game's 25 frames a second). The dungeon frame timer is shared by every monster on the floor, so with several
 // monsters ticking only the first to see it run out asks. The map's program should not wait.
 void modkit_tick(int flag, int frames, int program)
 {

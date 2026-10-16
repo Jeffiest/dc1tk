@@ -6,7 +6,7 @@
 // Natives push nothing on the VM stack: a native in an expression is called
 // first, into a hidden local, and the expression reads that.
 // OPTIONAL(...) lists arguments a call may leave out. Natives never wait; scripts
-// wait with `wait;`, which yields one frame (60 per second). While the player
+// wait with `wait;`, which yields one frame (25 a second on PAL). While the player
 // skips a cutscene the engine does not run natives until the script reaches
 // `skip_end;`.
 //
@@ -1553,8 +1553,9 @@ extern void clear_local_counters(void) NATIVE(45);
 
 // Captures the screen and cross-fades from it. With one argument it is the length in frames of a
 // dissolve. With three arguments they are direction (0 fade in, otherwise fade out), type (1 wipe,
-// otherwise dissolve) and frames. Frames are at 60 per second and are converted to 50 Hz frames
-// internally, with a minimum of 1.
+// otherwise dissolve) and frames. Frames are the NTSC game's (30 a second): the PAL engine takes
+// 5/6 of them (rounded down, at least 1) as its own frames (25 a second), so n frames last about
+// n/30 seconds.
 // Original name: _SET_CROSSFADE.
 extern void start_crossfade(int frames_or_direction, OPTIONAL(enum cross_fade_type type, int frames)) NATIVE(46);
 
@@ -1711,13 +1712,15 @@ extern void set_projection(float distance) NATIVE(78);
 // Original name: _GET_PROJECTION.
 extern float get_projection(...) NATIVE(79);
 
-// Fades the screen in over frames from colour r, g, b (0 to 255). Frames are at 60 per second and
-// are converted to 50 Hz frames internally, with a minimum of 1.
+// Fades the screen in over frames from colour r, g, b (0 to 255). Frames are the NTSC game's (30 a
+// second): the PAL engine takes 5/6 of them (rounded down, at least 1) as its own frames (25 a
+// second), so n frames last about n/30 seconds.
 // Original name: _SET_FADE_IN.
 extern void fade_in(int frames, OPTIONAL(float r, float g, float b)) NATIVE(80);
 
-// Fades the screen out over frames to colour r, g, b (0 to 255, default black). Frames are at 60
-// per second and are converted to 50 Hz frames internally, with a minimum of 1.
+// Fades the screen out over frames to colour r, g, b (0 to 255, default black). Frames are the
+// NTSC game's (30 a second): the PAL engine takes 5/6 of them (rounded down, at least 1) as its own
+// frames (25 a second), so n frames last about n/30 seconds.
 // Original name: _SET_FADE_OUT.
 extern void fade_out(int frames, OPTIONAL(float r, float g, float b)) NATIVE(81);
 
@@ -3446,7 +3449,8 @@ extern int get_map_default_bgm(map_id map) NATIVE(668);
 
 // Controls subtitles shown over a movie. With mode 0, value turns captions on (1) or off (0), and
 // off clears all 18 caption slots. With mode 1, value is the slot (0 to 17) and the caption shows
-// text from start_frame for frames frames, both at 60 per second.
+// text from start_frame for frames frames, both NTSC frames (30 a second), which the PAL engine
+// takes 5/6 of.
 // Original name: _SET_MOVIE_CC.
 extern void set_movie_caption(enum movie_caption_mode mode, int value, OPTIONAL(int start_frame, string text, int frames)) NATIVE(669);
 

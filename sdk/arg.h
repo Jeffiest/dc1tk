@@ -6,7 +6,7 @@
 // Natives push nothing on the VM stack: a native in an expression is called
 // first, into a hidden local, and the expression reads that.
 // OPTIONAL(...) lists arguments a call may leave out. Natives never wait; scripts
-// wait with `wait;`, which yields one frame (60 per second). While the player
+// wait with `wait;`, which yields one frame (25 a second on PAL). While the player
 // skips a cutscene the engine does not run natives until the script reaches
 // `skip_end;`.
 //

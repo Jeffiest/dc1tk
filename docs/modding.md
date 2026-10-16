@@ -456,8 +456,8 @@ monsters' patch runs a function every frame, whatever wait their AI is in:
 #include <monster.h>
 #include "captions.h"
 
-// While the fight's flag is set, asks the map for the next caption every 250 frames (5 seconds
-// at 50 Hz). The timer is shared, so with several monsters only the first to see it run out asks.
+// While the fight's flag is set, asks the map for the next caption every 125 frames (5 seconds
+// at 25 frames a second). The timer is shared, so with several monsters only the first to see it run out asks.
 #pragma every_frame
 void tick_captions(void)
 {
@@ -467,7 +467,7 @@ void tick_captions(void)
     fight = get_dungeon_flag(CAPTIONS_ON);
     if (fight) {
         timer = get_floor_timer();
-        if (timer >= 250) {
+        if (timer >= 125) {
             reset_floor_timer();
             run_event_script(SHOW_NEXT_CAPTION);
         }

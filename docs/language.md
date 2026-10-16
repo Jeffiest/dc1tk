@@ -11,7 +11,7 @@ file; a C compiler or IDE can parse it with the SDK's prelude (below), and
 // How an event script runs: the engine starts one of the script's programs (listed below with
 // PROGRAM) when something happens on the map: the map is entered, the player talks to someone,
 // steps on a trigger. The program's function runs until it returns. `wait;` hands control back to
-// the engine for one frame (the game runs at 50 frames a second on a PAL console), so a loop with
+// the engine for one frame (the game runs at 25 frames a second on a PAL console), so a loop with
 // `wait;` in it is how a script waits for something without freezing the game.
 
 // The SDK header for event scripts: it declares the engine functions (natives) a map script can
@@ -87,7 +87,7 @@ void on_talk(void)
     // Waves once and holds the last frame: CHARA_MOTION_RESTART starts the motion from its first
     // frame, CHARA_MOTION_HOLD stops it on its last frame instead of looping.
     set_actor_motion(0, MOTION_WAVE, CHARA_MOTION_HOLD | CHARA_MOTION_RESTART);
-    // Lets the wave play for 30 frames (0.6 seconds) before the message opens.
+    // Lets the wave play for 30 frames (1.2 seconds) before the message opens.
     wait_frames(30);
     if (visits == 1) {
         modkit_say("Hello! First time in the square?");
