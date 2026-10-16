@@ -41,3 +41,7 @@ The goal of this project is to support converting from and to the original game 
 ## Prior art
 
 [ChronicleTwo](https://github.com/TheMoonPeople/ChronicleTwo), [OpenCloud](https://github.com/Gundorada-Workshop/OpenCloud), [SB2-File-Parser](https://github.com/ArsonAssassin/SB2-File-Parser), [DarkCloud-Two-Reforged](https://github.com/ZeldoKavira/DarkCloud-Two-Reforged), [DarkCloud-Toolkit](https://github.com/Gundorada-Workshop/DarkCloud-Toolkit)
+
+## Licence
+
+dc2tk, its SDK, definitions, Blender add-on and documentation are under the [MIT licence](LICENCE). Dark Chronicle and its content (code, art, text, audio, and screenshots of it such as `docs/images/header.png`) belong to their owners and are not covered by it. A release zip also carries `THIRD-PARTY-LICENCES.md`, the licences of the libraries built into dc2tk.

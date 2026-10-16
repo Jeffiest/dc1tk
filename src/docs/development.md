@@ -151,7 +151,10 @@ zips: `dc2tk` for Windows (x64, the C runtime linked in), Linux (x64, static wit
 (a universal binary for Apple silicon and Intel), each in a folder with the `sdk/`,
 `definitions/` (with `definitions/natives/`) it reads, and the Blender add-on as an extension zip,
 `dc2tk-v1.0.0-blender.zip` for the tag `v1.0.0`. Each build checks that the packed program
-finds its data (`dc2tk api-docs` from the folder gives the committed pages).
+finds its data (`dc2tk api-docs` from the folder gives the committed pages). Every zip carries
+the `LICENCE` (MIT), and each dc2tk zip `THIRD-PARTY-LICENCES.md`, the licences of the crates
+built into that platform's executable, which `tools/third_party_licences.py` writes from cargo's
+resolve and the crates' sources; it fails when a crate ships no licence file.
 
 ```
 git tag v1.0.0 && git push origin v1.0.0

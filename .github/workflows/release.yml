@@ -2,8 +2,10 @@
 #
 # Each dc2tk zip holds a folder with the executable and the data it reads beside it (sdk/,
 # definitions/ with its native tables: dc2tk looks for them in the nearest folder above itself that has
-# definitions/). The add-on's zip is a Blender extension: blender_manifest.toml at its root, so
-# Blender's Install from Disk takes it as it is.
+# definitions/), the README, the LICENCE, and THIRD-PARTY-LICENCES.md with the licences of the crates
+# built into that platform's executable (tools/third_party_licences.py). The add-on's zip is a Blender
+# extension: blender_manifest.toml at its root, so Blender's Install from Disk takes it as it is,
+# with the LICENCE beside it.
 #
 #   git tag v1.0.0 && git push origin v1.0.0
 
@@ -76,7 +78,13 @@ jobs:
                 build/aarch64-apple-darwin/release/dc2tk build/x86_64-apple-darwin/release/dc2tk ;;
           esac
           cp -R sdk definitions "$folder/"
-          cp README.md "$folder/"
+          cp README.md LICENCE "$folder/"
+          # the crates' licences, from the sources the build fetched
+          python=python3
+          if [ "${{ runner.os }}" = Windows ]; then python=python; fi
+          targets=()
+          for target in ${{ matrix.targets }}; do targets+=(--target "$target"); done
+          "$python" tools/third_party_licences.py "${targets[@]}" -o "$folder/THIRD-PARTY-LICENCES.md"
           if [ "${{ runner.os }}" = Windows ]; then
             7z a -tzip "$folder.zip" "$folder" > /dev/null
           else
@@ -104,6 +112,7 @@ jobs:
           set -euo pipefail
           cd blender-plugin/dc2tk_maps
           zip -qr "$GITHUB_WORKSPACE/dc2tk-$GITHUB_REF_NAME-blender.zip" . -x '*__pycache__*'
+          zip -qj "$GITHUB_WORKSPACE/dc2tk-$GITHUB_REF_NAME-blender.zip" "$GITHUB_WORKSPACE/LICENCE"
 
       - uses: actions/upload-artifact@v4
         with:
