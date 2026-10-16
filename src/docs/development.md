@@ -157,6 +157,21 @@ finds its data (`dc2tk api-docs` from the folder gives the committed pages).
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
+## The documentation site
+
+`docs/` is published to GitHub Pages with Material for MkDocs (`mkdocs.yml`) by
+`.github/workflows/docs.yml`, on every push to `main` that changes it; a pull request builds it
+without publishing. The pages stay GitHub Markdown, read the same in the repository:
+`tools/mkdocs_hooks.py` gives headings GitHub's anchors, points links the site does not have
+(`src/docs/`, `definitions/`, the examples' sources) at GitHub, and writes lists the way
+Python-Markdown needs them (a blank line before a list, four-space indents in items). The build
+is strict, so a broken link or anchor fails it. To see it locally:
+
+```
+pip install -r tools/docs-requirements.txt
+mkdocs serve
+```
+
 ## Environment variables
 
 | Variable | Read by | Meaning |

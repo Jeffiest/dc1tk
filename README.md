@@ -34,7 +34,7 @@ unedited script compiles back to exactly the bytes on the disc.
 
 ### 1. What you need
 
-- `dc2tk` itself: a [release](https://github.com/fakegenie/ChronicleTwo-Script/releases)
+- `dc2tk` itself: a [release](https://github.com/fakegenie/DC2-Toolkit/releases)
   for Windows, macOS or Linux, or a Rust toolchain ([rustup](https://rustup.rs)) to
   build it once.
 - Your own Dark Chronicle disc image, saved here as `dc2.iso`. It must be the
@@ -143,7 +143,8 @@ dc2tk play modded.iso
 
 ## Documentation
 
-The [documentation](docs/README.md) has three sections:
+The [documentation](docs/README.md) (also [as a website](https://fakegenie.github.io/DC2-Toolkit/)) has
+three sections:
 
 - [The game](docs/game/README.md): how Dark Chronicle works and how its files
   are made: the disc, the script format and how scripts run, maps, dungeon

@@ -1,0 +1,122 @@
+# The documentation site (docs/, built with Material for MkDocs and published to GitHub Pages by
+# .github/workflows/docs.yml). The pages stay plain GitHub Markdown; tools/mkdocs_hooks.py points
+# links that leave docs/ (src/docs/, definitions/, the examples' sources) at GitHub.
+#
+#   pip install -r tools/docs-requirements.txt && mkdocs serve
+
+site_name: DC2-Toolkit
+site_description: Extract, edit and mod Dark Chronicle (Dark Cloud 2), and rebuild a playable disc.
+site_url: https://fakegenie.github.io/DC2-Toolkit/
+repo_url: https://github.com/fakegenie/DC2-Toolkit
+repo_name: fakegenie/DC2-Toolkit
+edit_uri: edit/main/docs/
+docs_dir: docs
+strict: true
+
+# the examples' sources, models and sounds are linked on GitHub, not copied into the site
+exclude_docs: |
+  coding/examples/**/*.*
+  !coding/examples/**/README.md
+
+hooks:
+  - tools/mkdocs_hooks.py
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+markdown_extensions:
+  # its slugify is GitHub's, set by tools/mkdocs_hooks.py, so a link that works there works here
+  - toc:
+      permalink: true
+  - tables
+  - admonition
+  - attr_list
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+
+validation:
+  links:
+    anchors: warn
+
+nav:
+  - Home: README.md
+  - The game:
+      - game/README.md
+      - game/disc.md
+      - game/scripts.md
+      - game/running.md
+      - game/maps.md
+      - game/dungeons.md
+      - game/models.md
+      - game/textures.md
+      - game/sounds.md
+      - game/music.md
+      - game/text.md
+      - game/data.md
+      - game/memory.md
+  - Modding:
+      - modding/README.md
+      - modding/mods.md
+      - modding/scripts.md
+      - modding/textures.md
+      - modding/sounds.md
+      - modding/music.md
+      - modding/text.md
+      - modding/models.md
+      - modding/maps.md
+      - modding/dungeons.md
+      - modding/data.md
+      - modding/memory.md
+      - modding/commands.md
+  - Coding:
+      - coding/README.md
+      - coding/language.md
+      - coding/c-standard.md
+      - coding/sdk.md
+      - coding/editor.md
+      - Tutorials:
+          - coding/tutorials/README.md
+          - coding/tutorials/npc-line.md
+          - coding/tutorials/enemy-behaviour.md
+          - coding/tutorials/new-enemy.md
+          - coding/tutorials/cutscene.md
+          - coding/tutorials/tune-player.md
+          - coding/tutorials/captions.md
+      - API:
+          - coding/api/README.md
+          - coding/api/event.md
+          - coding/api/monster.md
+          - coding/api/action.md
+          - coding/api/effect.md
+          - coding/api/arg.md
+          - coding/api/modkit.md
+      - Examples:
+          - coding/examples/spinning-cult/README.md
