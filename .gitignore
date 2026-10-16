@@ -9,4 +9,5 @@
 /*.asm
 /report.json
 /build/
+/golden/
 __pycache__/
