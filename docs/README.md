@@ -1,3 +1,13 @@
+<p align="center">
+  <img src="images/header.png" alt="A Dark Chronicle town map with its trigger points, beside its decompiled script" width="830">
+</p>
+
+<p align="center">
+  <a class="md-button md-button--primary" href="#documentation"><b>Documentation</b></a>
+  &nbsp;&nbsp;
+  <a class="md-button" href="https://github.com/fakegenie/DC2-Toolkit/releases"><b>Download Releases</b></a>
+</p>
+
 # Documentation
 
 Three sections, each with its own index:

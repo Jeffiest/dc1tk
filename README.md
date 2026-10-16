@@ -1,3 +1,13 @@
+<p align="center">
+  <img src="docs/images/header.png" alt="A Dark Chronicle town map with its trigger points, beside its decompiled script" width="830">
+</p>
+
+<p align="center">
+  <a href="https://fakegenie.github.io/DC2-Toolkit/"><b>Documentation</b></a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="https://github.com/fakegenie/DC2-Toolkit/releases"><b>Download Releases</b></a>
+</p>
+
 # DC2-Toolkit
 
 **DC2-Toolkit** (`dc2tk`) extracts every asset of **Dark Chronicle** (Dark
