@@ -23,7 +23,7 @@ extracted/assets/
   textures/<group>/<id>.png     one per distinct picture
   models/<group>/<id>/          one per distinct character pack
     <id>.gltf, <id>.bin         skeleton, skin, meshes, motions as animations
-  sounds/<bank>/<NNN>_<NAME>.wav  one per entry that plays a sample (<NNN>.wav when unnamed)
+  sounds/<bank>/<NNN>_<NAME>.wav  one per sound that plays a sample (<NNN>.wav when unnamed)
   text/<language>/<name>.txt    the message files' text, one per name and language (assets/text.md)
   music/<bank's folder>/<id>.mid  one per distinct sequence (music, ambient loops; assets/music.md)
   music/<bank's folder>/<bank>.sf2  its bank's instruments, to hear it with
@@ -183,7 +183,9 @@ the index of ids and `assets-check` read back.
   the bank, and `sq`, 437, whose `.sq` sequences are the music assets
   below), and entries that play nothing (9,757 numbered lines of the
   banks' cfgs). A bank's folder of WAVs is what `mod asset --as wav`
-  would write, with names after the numbers.
+  would write, with names after the numbers, less the entries of a
+  bank's other version that are the first version's sounds: their WAV
+  is in that version's folder only.
 - Text: UTF-8, a message after each `@id` line, one file per name and
   language whatever versions the disc has (see [message files](assets/text.md)).
 - Music: a standard MIDI file per distinct sequence, and beside it a

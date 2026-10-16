@@ -98,7 +98,9 @@ copies of a bank's name differ (the menu packs' `SP_001`, `SP_002`, `SP_003`, wh
 bank of its own (`bank:SP_001@inv0_bg`), but an entry that plays the same sound in several of
 them (the same sequence and the same samples, rate, loop, key and base note) is one sound with
 all their places, so a mod replacing `sound:SP_001/0` or a bank's folder reaches every copy
-(`tree::bank_sounds`); the other versions' numbers (`sound:SP_001@inv0_bg/0`) are aliases.
+(`tree::bank_sounds`); the other versions' numbers (`sound:SP_001@inv0_bg/0`) are aliases,
+and its WAV is in the first version's folder only (`sounds/SP_001/`), so the tree has one file
+to edit for it.
 
 ## 2. From `play_se(bank, n)` to voices
 

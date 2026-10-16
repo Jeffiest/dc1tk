@@ -146,7 +146,8 @@ pub fn check(disc: &[DiscFile], root: &Path, temp: &Path) -> Result<Report> {
         };
         let mut folder = root.join(folder);
         if !folder.is_dir() {
-            // a bank with no entry playing a sample has no WAVs
+            // a bank with no WAV of its own (no entry playing a sample, or each one an earlier
+            // version's sound) has no folder
             folder = temp.join("no WAVs");
             files::create_dir_all(&folder)?;
         }

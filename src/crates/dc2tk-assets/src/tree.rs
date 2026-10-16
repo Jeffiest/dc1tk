@@ -6,7 +6,7 @@
 //! manifest.json
 //! textures/<group>/<id>.png           one per distinct picture
 //! models/<group>/<id>/<id>.gltf, .bin one per distinct character pack
-//! sounds/<bank>/<NNN>[_<NAME>].wav    one per entry of a distinct bank that plays a sample
+//! sounds/<bank>/<NNN>[_<NAME>].wav    one per sound that plays a sample, in the folder of its first bank
 //! text/<language>/<name>.txt          one per message file name and language (text.rs)
 //! music/<bank's place>/<id>.mid       one per distinct sequence (.sq) of a bank (music.rs)
 //! music/<bank's place>.sf2            its bank's programs, to hear it with (soundfont.rs)
@@ -459,6 +459,9 @@ struct EntryOut {
     category: String,
     /// The WAV's file name, hash, and the hash of the samples it plays (the VAG).
     wav: Option<(String, String, String)>,
+    /// The WAV, not yet written, of an entry of a bank with other versions: written only if the
+    /// entry is its own sound (write_held_wavs).
+    held: Option<Vec<u8>>,
 }
 
 /// Counts of what the tree holds and what the disc has.
@@ -678,6 +681,16 @@ pub(crate) struct BankSounds {
     pub aliases: BTreeMap<String, String>,
 }
 
+/// Whether each bank's name has other versions among the banks: only then can its entries be
+/// another bank's sounds.
+fn versioned(banks: &[Asset]) -> Vec<bool> {
+    let mut versions: HashMap<String, usize> = HashMap::new();
+    for asset in banks {
+        *versions.entry(asset.name.to_uppercase()).or_default() += 1;
+    }
+    banks.iter().map(|asset| versions[&asset.name.to_uppercase()] > 1).collect()
+}
+
 /// The sound id of every entry of the banks (entries[i] the entry numbers of banks[i], None for
 /// a bank that cannot be read). An entry is one sound with every place the disc has it: where
 /// versions of a bank's name differ (copies in menu packs whose volumes differ), an entry that
@@ -689,11 +702,7 @@ pub(crate) fn bank_sounds(
     entries: &[Option<Vec<usize>>],
     names: &SoundNames,
 ) -> BankSounds {
-    let mut versions: HashMap<String, usize> = HashMap::new();
-    for asset in banks {
-        *versions.entry(asset.name.to_uppercase()).or_default() += 1;
-    }
-    let shared: Vec<bool> = banks.iter().map(|asset| versions[&asset.name.to_uppercase()] > 1).collect();
+    let shared = versioned(banks);
     let hashes: Vec<Option<Vec<String>>> = banks
         .par_iter()
         .zip(&shared)
@@ -756,8 +765,12 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         .par_iter()
         .map(|asset| export_model(asset, files, &texture_ids, &texture_files, write))
         .collect::<Result<Vec<_>>>()?;
-    let bank_outs: Vec<Result<Vec<EntryOut>>> =
-        found.banks.par_iter().map(|asset| export_bank(asset, files, names, write)).collect::<Result<Vec<_>>>()?;
+    let mut bank_outs: Vec<Result<Vec<EntryOut>>> = found
+        .banks
+        .par_iter()
+        .zip(versioned(&found.banks))
+        .map(|(asset, versioned)| export_bank(asset, files, names, versioned, write))
+        .collect::<Result<Vec<_>>>()?;
     let fonts = text::Fonts::from_files(disc.iter().map(|file| (file.path.as_str(), file.data)));
     let text_outs: Vec<Result<(String, String)>> =
         found.texts.par_iter().map(|asset| export_text(asset, files, &fonts, write)).collect::<Result<Vec<_>>>()?;
@@ -771,6 +784,7 @@ pub fn build(disc: &[DiscFile], names: &SoundNames, write: &Write) -> Result<Sum
         .map(|out| out.as_ref().ok().map(|entries| entries.iter().map(|entry| entry.index).collect()))
         .collect();
     let sounds = bank_sounds(&found.banks, files, &bank_entries, names);
+    write_held_wavs(&found.banks, &mut bank_outs, &sounds, write)?;
     tree.banks(&found.banks, bank_outs, &sounds);
     tree.texts(&found.texts, text_outs);
     tree.music(&found.sequences, music_outs);
@@ -1366,10 +1380,17 @@ pub fn wav_name(index: usize, name: Option<&str>, bank: &str) -> String {
 }
 
 /// Every entry of a bank, with a WAV in sounds/<bank>/ for each that plays a sample (as
-/// sounds::export picks them).
-fn export_bank(asset: &Asset, files: &[GameFile], names: &SoundNames, write: &Write) -> Result<Result<Vec<EntryOut>>> {
+/// sounds::export picks them). Of a bank with other versions (`versioned`) the WAVs are held for
+/// write_held_wavs, as an entry may be an earlier version's sound.
+fn export_bank(
+    asset: &Asset,
+    files: &[GameFile],
+    names: &SoundNames,
+    versioned: bool,
+    write: &Write,
+) -> Result<Result<Vec<EntryOut>>> {
     let entry_names = entry_names(asset, names);
-    let read = || -> Result<Vec<(EntryOut, Option<Vec<u8>>)>> {
+    let read = || -> Result<Vec<EntryOut>> {
         let bank = Bank::from_bytes(files[asset.first()].data)?;
         let mut out = Vec::new();
         for entry in bank.entries()? {
@@ -1380,34 +1401,59 @@ fn export_bank(asset: &Asset, files: &[GameFile], names: &SoundNames, write: &Wr
                 EntryKind::SeSeq { .. } => "seseq",
                 _ => "nothing",
             };
+            let mut held = None;
             let mut wav = None;
-            let mut info = None;
             if plays == "sample" {
                 let vag = voices[0].vag;
                 let bytes = soundbank::wav_bytes(&bank.decode_vag(vag)?)?;
                 let name = wav_name(entry.index, entry_names.get(&entry.index).map(String::as_str), &asset.id);
-                info = Some((name, sha256(&[&bytes]), sha256(&[&bank.vag_data[vag]])));
-                wav = Some(bytes);
+                wav = Some((name, sha256(&[&bytes]), sha256(&[&bank.vag_data[vag]])));
+                held = Some(bytes);
             }
             let label = entry.name.clone();
             let category = entry.category.clone();
-            out.push((EntryOut { index: entry.index, plays, label, category, wav: info }, wav));
+            out.push(EntryOut { index: entry.index, plays, label, category, wav, held });
         }
         Ok(out)
     };
-    let entries = match read() {
+    let mut entries = match read() {
         Ok(entries) => entries,
         Err(error) => return Ok(Err(error)),
     };
-    let folder = format!("{SOUNDS}/{}", file_stem(&asset.id));
-    let mut out = Vec::new();
-    for (entry, wav) in entries {
-        if let (Some((name, _, _)), Some(bytes)) = (&entry.wav, wav) {
-            write(&format!("{folder}/{name}"), &bytes)?;
+    if !versioned {
+        let folder = format!("{SOUNDS}/{}", file_stem(&asset.id));
+        for entry in &mut entries {
+            if let (Some((name, _, _)), Some(bytes)) = (&entry.wav, entry.held.take()) {
+                write(&format!("{folder}/{name}"), &bytes)?;
+            }
         }
-        out.push(entry);
     }
-    Ok(Ok(out))
+    Ok(Ok(entries))
+}
+
+/// Writes the WAVs export_bank held, each only when its entry is its own sound: an entry that
+/// plays as an earlier version's does is that entry's sound, whose WAV is in that version's folder,
+/// and the manifest lists no other.
+fn write_held_wavs(
+    banks: &[Asset],
+    outs: &mut [Result<Vec<EntryOut>>],
+    sounds: &BankSounds,
+    write: &Write,
+) -> Result<()> {
+    for (at, (asset, out)) in banks.iter().zip(outs.iter_mut()).enumerate() {
+        let Ok(entries) = out else {
+            continue;
+        };
+        let folder = format!("{SOUNDS}/{}", file_stem(&asset.id));
+        for (entry, (_, id)) in entries.iter_mut().zip(&sounds.ids[at]) {
+            if let (Some((name, _, _)), Some(bytes)) = (&entry.wav, entry.held.take()) {
+                if sounds.places[id][0].0 == at {
+                    write(&format!("{folder}/{name}"), &bytes)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

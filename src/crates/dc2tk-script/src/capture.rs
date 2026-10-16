@@ -445,4 +445,36 @@ mod tests {
         assert!(make(&extracted, &mod_dir, &found).is_err());
         fs::remove_dir_all(&folder).unwrap();
     }
+
+    #[test]
+    fn an_unedited_asset_tree_has_no_changes() {
+        use dc2tk_assets::soundbank::test_bank;
+        use dc2tk_assets::tree::{self as asset_tree, DiscFile};
+        let pack = |name: &str, data: &[u8]| archive::write_pack(&[(name, data)]).unwrap();
+        // a bank, a copy whose volumes differ (every entry the first's sound), and a version
+        // whose entry 2 plays at another rate (that entry a sound of its own)
+        let disc = [
+            ("snd2/sp/SP_009.snd".to_string(), test_bank(&[22050, 11025], 100)),
+            ("menu/m.pac".to_string(), pack("SP_009.snd", &test_bank(&[22050, 11025], 90))),
+            ("menu/n.pac".to_string(), pack("SP_009.snd", &test_bank(&[22050, 16000], 100))),
+        ];
+        let files: Vec<DiscFile> = disc.iter().map(|(path, data)| DiscFile { path: path.clone(), data }).collect();
+        let tree_dir = std::env::temp_dir().join(format!("dc2tk-capture-assets-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tree_dir);
+        let write = |path: &str, data: &[u8]| -> dc2tk_assets::Result<()> {
+            let path = tree_dir.join(path);
+            fs::create_dir_all(path.parent().unwrap())?;
+            Ok(fs::write(path, data)?)
+        };
+        asset_tree::build(&files, &asset_tree::sound_names(""), &write).unwrap();
+        let manifest = asset_manifest(&tree_dir).unwrap();
+        assert_eq!(manifest.aliases["sound:SP_009@m/1"], "sound:SP_009/1");
+        let mut found = Changes::default();
+        assets(&tree_dir, &mut found).unwrap();
+        fs::remove_dir_all(&tree_dir).unwrap();
+        assert!(found.assets_changed.is_empty(), "{found:?}");
+        assert!(found.assets_added.is_empty(), "{found:?}");
+        assert!(found.assets_removed.is_empty(), "{found:?}");
+        assert!(found.skipped.is_empty(), "{found:?}");
+    }
 }
