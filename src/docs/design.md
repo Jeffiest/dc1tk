@@ -456,8 +456,8 @@ as built before. The old `disc/` layout keeps working, alone or beside
 ## 3. One Rust tool
 
 One program, `dc2tk`, does everything: what was built is described in
-[src/README.md](../README.md). A Cargo workspace (`Cargo.toml` at the
-root, the crates in `src/crates/`):
+[src/README.md](../README.md). A Cargo workspace (`src/Cargo.toml`, the
+crates in `src/crates/`):
 
 | crate | what it holds |
 |---|---|

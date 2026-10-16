@@ -28,7 +28,9 @@ def metadata(target):
     command = ["cargo", "metadata", "--format-version", "1", "--locked"]
     if target:
         command += ["--filter-platform", target]
-    return json.loads(subprocess.run(command, check=True, capture_output=True, text=True).stdout)
+    # cargo runs in src/, the workspace
+    workspace = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+    return json.loads(subprocess.run(command, check=True, capture_output=True, text=True, cwd=workspace).stdout)
 
 
 def packages_for(targets):

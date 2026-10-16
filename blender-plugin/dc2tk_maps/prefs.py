@@ -85,7 +85,7 @@ def absolute(path):
 def _own_repo():
     here = os.path.dirname(os.path.realpath(__file__))
     root = os.path.dirname(os.path.dirname(here))
-    if os.path.isfile(os.path.join(root, "dc2tk.bat")) and os.path.isfile(os.path.join(root, "Cargo.toml")):
+    if os.path.isfile(os.path.join(root, "dc2tk.bat")) and os.path.isfile(os.path.join(root, "src", "Cargo.toml")):
         return root
     return ""
 

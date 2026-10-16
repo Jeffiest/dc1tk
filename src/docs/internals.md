@@ -7,7 +7,7 @@ and back, and how the decompiler and compiler work. How to change the code
 
 ## The crates
 
-A Cargo workspace (`Cargo.toml` at the root, the crates in `src/crates/`),
+A Cargo workspace (`src/Cargo.toml`, the crates in `src/crates/`),
 each crate depending only on the ones above it:
 
 | crate | depends on | holds |
@@ -441,7 +441,7 @@ checks (`memory/`, `READ_BUFFER`, the measured `RETAIL_*` maps) are in
 
 # Code style
 
-- Rust, one Cargo workspace (`Cargo.toml` at the root, crates in `src/crates/`;
+- Rust, one Cargo workspace (`src/Cargo.toml`, crates in `src/crates/`;
   see [its README](../README.md)), formatted with `cargo fmt`
   (`rustfmt.toml`: 120 columns), clean under `cargo clippy -- -D warnings`,
   with few dependencies.

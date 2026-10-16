@@ -23,12 +23,19 @@ a file is the engine's, and plain Rust everywhere else.
 
 ## Building
 
+The Cargo workspace is `src/` (`src/Cargo.toml`, with `src/.cargo/config.toml` and
+`src/rustfmt.toml`), and every Cargo command here runs there:
+
 ```
+cd src
 cargo build --release
 ```
 
-The workspace's target folder is `build/` (set in `.cargo/config.toml`), so the binary is
-`build/release/dc2tk` (`dc2tk.exe` on Windows); `dc2tk.bat` and `./dc2tk` at the root run it. The
+Cargo finds `.cargo/config.toml` from the folder it runs in, not from the manifest, so
+`--manifest-path src/Cargo.toml` from the root builds without it (no static C runtime on Windows,
+and the output in `src/target/`). The target folder is the repository's `build/` (`target-dir =
+"../build"`), so the binary is `build/release/dc2tk` (`dc2tk.exe` on Windows); `dc2tk.bat` and
+`./dc2tk` at the root run it, building it first when it is missing. The
 release profile keeps limited debug info (`debug = 1`), so backtraces name functions and lines.
 
 Debug builds of this workspace grow large, over 20 GB of incremental files in a day of work.
@@ -49,7 +56,8 @@ CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=line-tables-only cargo test --worksp
 3. `cargo test --workspace`: the unit tests, the integration tests in each crate's `tests/`, and
    the C89 suite.
 4. The corpus tests, over an extracted retail disc:
-   `DC2TK_CORPUS="$PWD/extracted/disc" cargo test --release --workspace -- --include-ignored`.
+   `DC2TK_CORPUS="$PWD/../extracted/disc" cargo test --release --workspace -- --include-ignored`
+   (from `src/`).
    They are `#[ignore = "needs DC2TK_CORPUS"]` so a plain run skips them visibly, and they fail
    loudly when asked for without the variable. They check, among much else, that the whole disc
    round-trips (scripts, every asset kind, the data tables) and that the retail memory budgets
@@ -62,8 +70,8 @@ CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=line-tables-only cargo test --worksp
 file it writes and each disc image it builds, and compares two runs:
 
 ```
-cargo build --release && tools/golden.sh golden/base             # a baseline, before the change
-cargo build --release && tools/golden.sh golden/new golden/base  # after it
+(cd src && cargo build --release) && tools/golden.sh golden/base             # a baseline, before the change
+(cd src && cargo build --release) && tools/golden.sh golden/new golden/base  # after it
 ```
 
 The comparison prints `disc images: all identical` (or `DISC IMAGE CHANGED: …`, which is never

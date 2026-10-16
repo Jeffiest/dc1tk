@@ -1,6 +1,8 @@
-# Build output goes to build/ (build/release/dc2tk.exe); dc2tk.bat and dc2tk at the root run it.
+# Cargo runs in src/, where the workspace is (it finds this file from the folder it runs in). Build
+# output goes to the repository's build/ (build/release/dc2tk.exe), which dc2tk.bat and dc2tk at the
+# root run.
 [build]
-target-dir = "build"
+target-dir = "../build"
 
 # One self-contained exe on Windows: the C runtime (vcruntime, the UCRT) linked in, so dc2tk.exe
 # runs without the Visual C++ Redistributable. The C dependencies (zlib, mimalloc) follow it.

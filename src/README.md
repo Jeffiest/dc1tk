@@ -10,11 +10,14 @@ this way), [development](docs/development.md) (the rule, the checks, the convent
 kind of asset on the modules that convert it, their choices and how they are verified. What the
 game's formats are is in [docs/internals/](../docs/internals/README.md).
 
-The workspace's `Cargo.toml` is at the repository root, so run Cargo there:
+The workspace is this folder: `Cargo.toml`, `Cargo.lock`, `rustfmt.toml` and `.cargo/` are here,
+so run Cargo in `src/` (Cargo finds `.cargo/config.toml` from the folder it runs in, so running it
+elsewhere with `--manifest-path` loses the settings below):
 
 ```
-cargo build --release          builds build/release/dc2tk (dc2tk.exe on Windows; .cargo/config.toml
-                               puts Cargo's output in build/), which dc2tk.bat and ./dc2tk run
+cargo build --release          builds build/release/dc2tk at the repository root (dc2tk.exe on
+                               Windows; .cargo/config.toml puts Cargo's output in ../build/),
+                               which dc2tk.bat and ./dc2tk run
 cargo test --release           the tests
 cargo fmt                      formatting (rustfmt.toml: 120 columns)
 ```
@@ -33,7 +36,7 @@ dc2tk-disc's `test-support` feature in their dev-dependencies), the SDK and
 the definitions; no game files. The tests that read the game's own files are
 marked `#[ignore = "needs DC2TK_CORPUS"]`, so a plain `cargo test` lists them
 as ignored: with `DC2TK_CORPUS` set to the absolute path of an extracted disc
-(`extracted/disc`), `cargo test --release -- --include-ignored` also
+(`extracted/disc`, so `$PWD/../extracted/disc` from `src/`), `cargo test --release -- --include-ignored` also
 round-trips every script on it (about 40 s), every `.map` scene file (and
 rebuilds every map from its own scene), every message file and music
 sequence (through MIDI too) and every bank's SoundFont, every game data

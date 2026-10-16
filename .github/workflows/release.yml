@@ -29,7 +29,7 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          # one exe with the C runtime linked in (.cargo/config.toml sets +crt-static)
+          # one exe with the C runtime linked in (src/.cargo/config.toml sets +crt-static)
           - platform: windows-x64
             os: windows-latest
             targets: x86_64-pc-windows-msvc
@@ -57,8 +57,10 @@ jobs:
         if: matrix.platform == 'linux-x64'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      # cargo runs in src/, the workspace, where it finds src/.cargo/config.toml; the output goes to build/
       - name: Build
         shell: bash
+        working-directory: src
         run: |
           for target in ${{ matrix.targets }}; do
             cargo build --release --locked --target "$target" -p dc2tk

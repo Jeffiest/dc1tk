@@ -5,8 +5,8 @@
 #
 #   tools/golden.sh <out-dir> [<baseline-dir>]
 #
-#   cargo build --release && tools/golden.sh golden/base             # take a baseline
-#   cargo build --release && tools/golden.sh golden/new golden/base  # compare with it
+#   (cd src && cargo build --release) && tools/golden.sh golden/base             # take a baseline
+#   (cd src && cargo build --release) && tools/golden.sh golden/new golden/base  # compare with it
 #
 # The disc images (logs/*.sha1: pack, build_full, build_<mod>) are the hard limit: they must
 # never change. Everything else (decompiled C, assets, reports, messages) should stay identical
@@ -33,7 +33,7 @@ B=${DC2TK:-$EXE}
 GOLDEN=${GOLDEN_DIR:-$ROOT/golden}
 ISO=$GOLDEN/packed.iso
 MODS=$GOLDEN/mods
-[ -f "$B" ] || { echo "no binary at $B: cargo build --release first" >&2; exit 1; }
+[ -f "$B" ] || { echo "no binary at $B: cargo build --release in src/ first" >&2; exit 1; }
 [ -d extracted/disc ] || { echo "no extracted/disc: run dc2tk setup or dc2tk extract first" >&2; exit 1; }
 mkdir -p "$GOLDEN"
 if [ ! -f "$ISO" ]; then

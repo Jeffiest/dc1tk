@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
-members = ["src/crates/*"]
+members = ["crates/*"]
 
 [workspace.package]
 edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-dc2tk-disc = { path = "src/crates/dc2tk-disc" }
-dc2tk-script = { path = "src/crates/dc2tk-script" }
-dc2tk-assets = { path = "src/crates/dc2tk-assets" }
+dc2tk-disc = { path = "crates/dc2tk-disc" }
+dc2tk-script = { path = "crates/dc2tk-script" }
+dc2tk-assets = { path = "crates/dc2tk-assets" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 encoding_rs = "0.8"
