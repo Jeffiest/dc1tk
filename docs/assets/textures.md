@@ -371,6 +371,34 @@ exposes entries by index (for example `character.cpp:2625`).
   are kept as they were; deletion is not supported. `write(images, None)`
   builds a fresh IM3 (version 3 TIM2 headers, exact total size).
 
+The PNG codec is `png.rs` (`write_png` writes 8-bit RGB, RGBA and indexed
+PNGs; `read_png` reads every colour type, bit depth and interlacing), and the
+median-cut palette is `quantise.rs` (`quantise(rgba, n)`).
+
+### 9.1 `textures.rs`: the PNG folders mods use
+
+* `export(data)` gives a PNG per picture with pixels, named after the picture
+  (`c02a01.png`; characters a file name cannot hold become `_`, and a name
+  given twice gets `_<entry>`). `no_image` pictures are left out.
+* `build(folder, original)` / `build_from(pngs, original)` put the PNGs a
+  folder gives (`c02a.img.png/c02a01.png`) in place of those pictures, each
+  through `from_png` with the original as `like`; pictures the folder leaves
+  out stay as they are. A PNG naming no picture, or a `no_image` render
+  target, is an error.
+* `new_file(pngs, like, power_of_two)` makes a texture file of its own
+  (`build_new`, for a mod's `file:` line with `like` giving a PNG or a folder
+  of PNGs; `models::new_pack` for a new character's), always an IM3, every
+  picture in the format of a template picture (`template_picture`: an
+  entry, or the first with pixels). `with_new_pictures(pngs, original)` adds pictures at the end of an
+  existing file in the format of its first picture with pixels, keeping its
+  `#texanime` scripts (a map's new pictures, [maps](maps.md) section 7.2). Rules
+  for a new picture: a name of 1 to 31 Latin-1 characters, unique ignoring case;
+  sides of 1 to 1024 (`MAX_SIDE`, TEX0's TW and TH go to 2^10); a width that is
+  a multiple of 16 for swizzled 8-bit; sides that are powers of two for a
+  model's or a map's pictures, which wrap at the power of two above their size.
+* `same_pixels(a, b)` compares two PNGs by size and RGBA, however they are
+  encoded (what a map's import uses to tell an edited picture).
+
 ## 10. Verification
 
 Across all 5,217 `.img` files (15,228 pictures, 15,000 with pixels):

@@ -32,6 +32,10 @@ Everything in it is made here; nothing of the game's is in this folder:
   point's program) and a music file of its own, `BG_200`, a copy of the
   fishing music's bank (`BG_193`) playing the tune with the four instruments
   as programs 100 to 103, so no tune of the game's changes.
+- `fishroom.h` asks build for the three program numbers (`NEW_PROGRAM`)
+  both scripts use: the door in, the arrival back in Palm Brinks, and the
+  room's door out; and where the town's new door and the room's arrival
+  are.
 - `fishroom.c` is the room's script: on arrival it plays `BG_200`
   (`load_bgm`, `play_bgm`), stands the player just inside the door facing
   the fish; the door goes back to Palm Brinks. No text pops up.

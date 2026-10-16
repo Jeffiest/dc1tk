@@ -324,7 +324,12 @@ and a floor's `groups` whole; a group or floor the file lacks is added (after
 the last of its kind). `build` writes the changed blocks again in the
 files' layout (five items a line, the start lines' counts kept true) and
 leaves the rest as they were; it refuses a floor naming a group the file
-does not have, and two mods giving one group or floor different contents.
+does not have (or one left without items), and two mods giving one group or
+floor different contents. Dungeons are 0 to 7, a group gives 1 to 96 items,
+a floor (0 to 127) draws from 1 to 64 groups, and a file holds at most 64
+groups. A chest script whose `GROUP` counts other than the items it lists is
+refused when read (the disc's agree), as is a tag a chest script has no place
+for.
 
 ## 5. Layouts as data (`data:layouts`)
 
@@ -348,9 +353,18 @@ size): `{"layouts": [{"layout": "d01f01", "rooms": [{"room": 5, "rate": 0}]}]}`.
 A room after the last is added (with `cells`; `rate` 100, `fixed` 0 and `id`
 its number unless given), up to 64; rooms are never removed (give one `fixed`
 1 to keep it out of random floors). `build` writes each changed room again
-in the files' layout, the rest keep their bytes. Several mods' layouts merge;
-two giving one field different values are refused. Names not in the table,
-uneven rows and more than 900 cells are refused.
+in the files' layout (one statement a line, with the file's own line break,
+and the file's gap between rooms before a new one), the rest keep their
+bytes. A changed `grid_size` is written `GRID_SIZE 400.000000, 400.000000;`
+in place, or after `VER` in a file without one (d02f01). Several mods'
+layouts merge; two giving one field different values are refused. Names not
+in the table, `#N` past its 277 entries, attributes outside -32768 to 32767,
+uneven rows, more than 900 cells, rooms past 63, a room given twice, a new
+room without `cells` or after a gap (`room 2 is missing`), fields a layout or
+room does not have and members of the wrong shape (`"rooms"` an object, not a
+list) are refused. Reading, an `RD` line of another count than the room's
+width and a tag the room script has no place for are refused too (the disc's
+have neither).
 
 Keep in mind: a random floor fits rooms into a 14 × 14 grid (20 × 16 with
 0x08) with a free margin, so a large room is chosen and then rarely fits;

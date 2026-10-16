@@ -603,18 +603,21 @@ and gives what to write; `dc2tk build` does so for each `"map:NAME":
 
 ## 8. The glTF scene (conventions shared by the exporter, the importer and the Blender add-on)
 
-`dc2tk map export NAME` writes `extracted/maps/NAME/NAME.gltf` (with its `.bin`
-and `textures/`); `--all` exports every fixed scene. A mod carries an edited
-scene with a line `"map:NAME": "maps/NAME/NAME.gltf"` in `mod.json`; `build`
-compares it with the disc's map and writes only what changed, and `mod make`
-finds edited exports by the hashes the export records.
+`dc2tk map-export NAME` writes `extracted/maps/NAME/NAME.gltf`, a buffer per
+model (`models/<model>.bin`) and the pictures, shared by every model
+(`textures/<picture>.png`) (`dc2tk_assets::map_export::export_map`); `--all`
+exports every fixed scene. A mod carries an edited scene with a line
+`"map:NAME": "maps/NAME/NAME.gltf"` in `mod.json`, written by hand; `build`
+compares it with the disc's map and writes only what changed. (`mod make` does
+not pick up edited map exports: they are outside the asset tree it compares.)
 
 **Axes and units.** glTF's Y up is the game's; Blender's importer turns it
 into Z up and its exporter back, so nothing else converts. One unit is one
 game unit (a dungeon cell is 320). The game's rotations are Euler XYZ in
 radians (T·Rz·Ry·Rx·S); glTF stores quaternions, so the importer keeps the
-original numbers of any node whose matrix did not change (within 1e-4) and
-writes new Euler angles only for nodes that moved.
+original numbers of any node whose matrix did not change (within 1e-4, its
+translation within 0.005 and 2e-6 of the value) and writes new Euler angles
+only for nodes that moved (`map_transform.rs`).
 
 **Nodes.** Every node the export writes carries `extras.c2` with its role;
 names are prefixed so a tree is readable without the add-on:
@@ -627,7 +630,7 @@ names are prefixed so a tree is readable without the add-on:
 | an MDS node | its full name (`grid54--f2appz0n1t-5_1`) | `{"role": "mds", "mds_index": n}` (meshes shared by every piece placing the same model) |
 | a trigger point | `point:NAME` | `{"role": "point", "kind": "pos" ... "anime", "enable", "flag", "data": {...}}`; transform FUNC_POS; under its placement when the template carries it, under `points` when it is the map's own |
 | group nodes | `placements`, `points`, `cameras` | `{"role": "group"}` |
-| a fixed camera | `camera:INDEX` | `{"role": "camera", ...}` with children for its positions and boxes |
+| a fixed camera | `camera:INDEX` | `{"role": "camera", "index"}`, an empty at its `FIX_CAMERA_POS`; its other positions and boxes are in the root's `map` tree |
 
 **Templates.** glTF has no instancing of node trees, so every placement holds
 its own copy of its template's pieces and points; meshes are shared, so editing
@@ -724,10 +727,14 @@ what the importer needs and the importer allows for the rest:
   it; each `MAP_NAME` fills the next row unchecked, and `GetMapNameInfo` finds
   rows below n only. So a new map is a row appended with n raised: every other
   map keeps its number, which saves (`map_no`) and scripts hold. The tables
-  fill 9,241 to 13,807 bytes (Korean), room for hundreds of rows. The row's
-  fields: `type` (1 a Georama town with edit data, 2 an interior whose events
-  are a shared script's, 5 a map with areas of its own; the edit loop reads
-  it), `sel_type` (the debug map list), `snd_id` (the sound
+  fill 9,248 to 13,808 bytes (Korean), room for hundreds of rows. The row's
+  fields: `type` (`MapType`, `mapselect.hpp`: 1 a Georama town with edit
+  data, 2 an interior of a Georama town, whose events are `g00`'s script
+  (`GotoInterior`, `mapjump.cpp:524`), 4 an interior, 5 a map of the
+  future (f01 to f04: no time board or world map, an area number of its own),
+  6 an interior of a future map; the rest are plain towns and areas (3) and
+  the dungeon loop's maps (7 and 8); the edit loop and the menus read it),
+  `sel_type` (the debug map list), `snd_id` (the sound
   set and default music, `GetMapSndDataID`), `area_no` (the save's area of
   the last main map) and `add_path` (an add map loaded with it). Every
   language's table numbers the maps alike and needs the row.
@@ -748,7 +755,8 @@ what the importer needs and the importer allows for the rest:
   `load_dungeon_map(name)`. The program runs on arrival.
 - **Save flags.** The save keeps map flags (opened chests and the like) for
   map numbers below 256 (`SAVE_MAP_FLAG_MAX`): the disc uses 189, so 67 new
-  maps keep them; a map numbered past that loads but keeps none.
+  maps keep them; a map numbered past that loads but keeps none (`build`
+  warns).
 - **Memory** as any map's ([memory](memory.md)).
 
 **Made by a mod.** A new map is a copy of a map the disc has, edited as a
@@ -771,9 +779,11 @@ ones, the texture pack with the changed and new pictures (a picture another
 map's pack holds is changed there, as in any map edit). It appends to every
 language's table a copy of the like map's row (type, list, sound set, area,
 add map) with the new name, numbered after the disc's maps, and `title` (printable ASCII) in
-place of the like map's title when given. Two mods adding one name are
-refused. `--start-at m05x` (or `"start_at": "m05x"`) counts the new map and
-enters it as a town (`go_to_edit_mode`).
+place of the like map's title when given (`dc2tk_script::maptable`). Two mods
+adding one name are refused, and so is a table whose `MAP_NAME_NUM` is not
+its count of rows (a row appended there would not be read) or that the new
+rows would take past `MapNameBuff`'s 0x8000 bytes. `--start-at m05x` (or
+`"start_at": "m05x"`) counts the new map and enters it as a town (`go_to_edit_mode`).
 
 Checked in the game (`new-map-test.iso`): a copy of `m05` with its 63 trees
 raised 250 units and two ground pictures repainted builds (4 new files, 7

@@ -24,7 +24,6 @@ extracted/assets/
   models/<group>/<id>/          one per distinct character pack
     <id>.gltf, <id>.bin         skeleton, skin, meshes, motions as animations
   sounds/<bank>/<NNN>_<NAME>.wav  one per entry that plays a sample (<NNN>.wav when unnamed)
-  maps/<map>/<map>.gltf         later: the map's pieces placed as the .map file places them
   text/<language>/<name>.txt    the message files' text, one per name and language (assets/text.md)
   music/<bank's folder>/<id>.mid  one per distinct sequence (music, ambient loops; assets/music.md)
   music/<bank's folder>/<bank>.sf2  its bank's instruments, to hear it with
@@ -35,7 +34,10 @@ where the asset is first found: `chara`, `dungeon/monster`, `map/s/s51`);
 nothing depends on them. What identifies an asset is its **id**. The whole
 PAL disc takes 12-16 s (16 cores) and gives 750 MB in 15,646 files; the same
 disc always gives the same tree, byte for byte, whether read from the image
-or from `extracted/disc/`.
+or from `extracted/disc/`. Maps are not in the tree: `dc2tk map-export`
+writes a map as a glTF scene of its placed pieces (`extracted/maps/<map>/`,
+or every map with `--all`; [maps](assets/maps.md) sections 7 and 8), and
+the data tables are copied into a mod by `mod asset` ([data](assets/data.md)).
 
 ### What is an asset
 
@@ -120,42 +122,47 @@ nobody edits it.
 
 ```json
 {
- "format": 1,
- "counts": {"texture": 7036, "model": 2410, "bank": 846, "sound": 16107},
- "assets": {
-  "texture:c02a02": {
-   "kind": "texture", "name": "c02a02",
-   "files": {"textures/chara/c02a02.png": "e081…"},
-   "game_hash": "dd2e…", "format": "PSMT8", "width": 128, "height": 128,
-   "places": [
-    {"path": "chara/c02a.chr", "members": ["c02a.img"], "picture": 1},
-    {"path": "event/LM/c02ev.chr", "members": ["c02a.img"], "picture": 2}
-   ]
+  "format": 1,
+  "counts": {"texture": 7036, "model": 2410, "bank": 846, "sound": 16107, "text": 120, "music": 437},
+  "assets": {
+    "texture:c02a02": {
+      "kind": "texture", "name": "c02a02",
+      "files": {"textures/chara/c02a02.png": "e081…"},
+      "game_hash": "dd2e…", "format": "PSMT8", "width": 128, "height": 128,
+      "places": [
+        {"path": "chara/c02a.chr", "members": ["c02a.img"], "picture": 1},
+        {"path": "event/LM/c02ev.chr", "members": ["c02a.img"], "picture": 2}
+      ]
+    },
+    "model:c02_base": {
+      "kind": "model", "name": "c02_base",
+      "files": {"models/chara/c02_base/c02_base.gltf": "21b2…", "models/chara/c02_base/c02_base.bin": "cf1a…"},
+      "game_hash": "8843…", "textures": ["texture:c02a01", "texture:c02a03"], "placeholders": [],
+      "places": [{"path": "chara/c02_base.chr", "members": []}]
+    },
+    "bank:SY_000": {
+      "kind": "bank", "name": "SY_000", "folder": "sounds/SY_000", "game_hash": "…",
+      "sounds": ["sound:SE_CURSOR_MOVE", "…"], "places": [{"path": "snd2/SY_000.snd", "members": []}]
+    },
+    "sound:SE_CURSOR_MOVE": {
+      "kind": "sound", "bank": "bank:SY_000", "entry": 0, "plays": "sample",
+      "label": "カーソル移動", "category": "カーソル移動",
+      "files": {"sounds/SY_000/000_CURSOR_MOVE.wav": "bfaf…"}, "game_hash": "9b72…",
+      "places": [{"path": "snd2/SY_000.snd", "members": [], "entry": 0}]
+    }
   },
-  "model:c02_base": {
-   "kind": "model", "name": "c02_base",
-   "files": {"models/chara/c02_base/c02_base.gltf": "21b2…", "models/chara/c02_base/c02_base.bin": "cf1a…"},
-   "game_hash": "8843…", "textures": ["texture:c02a01", "texture:c02a03"], "placeholders": [],
-   "places": [{"path": "chara/c02_base.chr", "members": []}]
-  },
-  "bank:SY_000": {
-   "kind": "bank", "name": "SY_000", "folder": "sounds/SY_000", "game_hash": "…",
-   "sounds": ["sound:SE_CURSOR_MOVE", "…"], "places": [{"path": "snd2/SY_000.snd", "members": []}]
-  },
-  "sound:SE_CURSOR_MOVE": {
-   "kind": "sound", "bank": "bank:SY_000", "entry": 0, "plays": "sample",
-   "label": "カーソル移動", "category": "カーソル移動",
-   "files": {"sounds/SY_000/000_CURSOR_MOVE.wav": "bfaf…"}, "game_hash": "9b72…",
-   "places": [{"path": "snd2/SY_000.snd", "members": [], "entry": 0}]
-  }
- },
- "aliases": {"sound:SY_000/0": "sound:SE_CURSOR_MOVE"},
- "unconverted": [{"path": "chara/c01_fishing.chr", "members": [], "error": "the pack's info.cfg names no model"}]
+  "aliases": {"sound:SY_000/0": "sound:SE_CURSOR_MOVE"},
+  "unconverted": [{"path": "chara/c01_fishing.chr", "members": [], "error": "the pack's info.cfg names no model"}]
 }
 ```
 
-Assets are sorted by id. A `files` hash tells a build whether a file in a
-mod is still the extracted one.
+(Abridged and folded onto fewer lines here; the file is serde_json's
+pretty form, a member to a line, two spaces an indent.) A text asset also
+has its `language` and how many `versions` of the file its places hold; a
+music asset its MIDI and SoundFont `files`. Assets are sorted by id. A
+`files` hash tells a build whether a file in a mod is still the extracted
+one. The shape is `dc2tk-assets`' `manifest.rs`, which the tree writes and
+the index of ids and `assets-check` read back.
 
 ### Formats
 
@@ -171,23 +178,29 @@ mod is still the extracted one.
   its textures are assets of their own and change through their texture
   ids.
 - Sounds: WAV per entry that plays a sample (3,771). The other entries
-  are listed in the manifest with what they play, but not exported:
-  sequences (`plays` `seseq`, 2,142, and `sq`, 437) until sequences are
-  decoded, and entries that play nothing (9,757 numbered lines of the
+  are listed in the manifest with what they play, but have no WAV: the
+  ones that play a sequence (`plays` `seseq`, 2,142, a `.mid` member of
+  the bank, and `sq`, 437, whose `.sq` sequences are the music assets
+  below), and entries that play nothing (9,757 numbered lines of the
   banks' cfgs). A bank's folder of WAVs is what `mod asset --as wav`
   would write, with names after the numbers.
 - Text: UTF-8, a message after each `@id` line, one file per name and
   language whatever versions the disc has (see [message files](assets/text.md)).
-- Maps: later. The `.map` file is text placing `.mds` pieces
-  (position, rotation, scale), so a map is a glTF scene of placed meshes;
-  writing it back is its own piece of research.
+- Music: a standard MIDI file per distinct sequence, and beside it a
+  SoundFont of its bank's programs to hear it with, which is never read
+  back ([music](assets/music.md)).
+- Maps: not in the tree (above). The `.map` file is text placing `.mds`
+  pieces (position, rotation, scale), so a map is a glTF scene of placed
+  meshes; a mod's `map:` line builds an edited scene back ([maps](assets/maps.md)).
 
 Every exported file builds back to the disc's own bytes when unedited, at
 every place the manifest lists: the hidden `dc2tk assets-check SOURCE ASSETS`
+(SOURCE the image or an extracted disc)
 checks every file's hash, builds each texture into each texture file the
-manifest gives for it, each model's glTF and buffer into each of its packs
-each bank's folder into each of its places and each text into each of its
-message files, compares with the disc, and checks every texture file, pack,
+manifest gives for it, each model's glTF and buffer into each of its packs,
+each bank's folder into each of its places, each text into each of its
+message files and each music asset's MIDI file into each of its sequences,
+compares with the disc, and checks every texture file, pack,
 bank and message file of the disc is listed. On the PAL disc: 15,764 files,
 15,004 picture places, 2,663 pack places, 861 bank places and 310 message
 file places build back, no problems.
@@ -332,6 +345,16 @@ in `dc2tk-assets`' `ids`).
     villager's (`model:p01_01a`) for a character.
   - Exported again (`mod asset ISO NAME PATH --as png`, `--as gltf`), the
     file gives back its pictures, and its meshes and pictures.
+- **Other kinds.** A `text:` id takes a text file as the tree writes it,
+  and changes at every place the messages whose text differs from the
+  exported one ([message files](assets/text.md)); a `music:` id a MIDI file
+  (above). `"map:s17": "maps/s17/s17.gltf"` builds an edited map scene
+  back into the map's files, and under `add` makes a new map from a map's
+  scene (`"like": "m05"`, with `"script"` for an event script of its own;
+  [maps](assets/maps.md) sections 8 and 9). `"data:items":
+  "data/items.json"` (and `data:shops`, `data:monsters` and the other
+  tables `mod asset` lists) edits a table of game data as JSON, merged with
+  other mods' tables ([data](assets/data.md)).
 - **Scripts** stay as they were: `.c` patches with `#pragma target`,
   anywhere in the folder; `additions` and `start_at` keep their meaning,
   and the `files`/`includes` index of whole-file mods is kept as is.
@@ -341,11 +364,13 @@ in `dc2tk-assets`' `ids`).
 
 ### How a build finds the places
 
-`build` makes the index of ids from the disc image it builds from, only
-when a chosen mod names an id: the same walk and naming as `dc2tk assets`
-(the tree's `named` step, shared), without converting anything. On the
-PAL disc it takes 0.6 s and gives the asset tree's manifest exactly (all
-26,399 ids, 1,497 aliases and every place, compared). It does not read
+`build` makes the index of ids (`ids::Index::from_disc`) from the disc it
+builds from, its image or an extracted disc, only when a chosen mod names
+an id: the same walk and naming as `dc2tk assets` (`tree::named`, shared),
+without converting anything. On the PAL disc it takes 0.6 s and gives the
+asset tree's manifest exactly (all 26,399 texture, model, bank and sound
+ids, 1,497 aliases and every place, compared; the text and music ids are
+indexed the same way). It does not read
 `extracted/assets/manifest.json`: a tree can be stale, made from another disc or
 with other definitions, and a build should not need one. The definition
 sets (`--defs`) name the sound entries, as for `dc2tk assets`. (The index
@@ -355,14 +380,16 @@ export converts: on the PAL disc the same.)
 Then, on top of the scripts and the `disc/` and `file:` files, it builds
 models, then banks (every entry a mod changes at one place in one go),
 then pictures (every picture of one texture file in one go), outer places
-first, so a texture goes into a pack another line's model rebuilt. Each
+first, so a texture goes into a pack another line's model rebuilt; then
+texts and music. New music files, the `map:` lines and the data tables
+follow, each step over the files the steps before wrote. Each
 changed place is read back from the new image, as `disc/` files are, and
 printed with its ids:
 
 ```
 mod castle-showcase: 1 patches, 0 files, 0 game files
   replaces texture:e254a1 at 1 place
-  replaces model:c02fuku1 at 1 place
+  replaces model:c02fuku1 (by model:c02fuku*) at 1 place
   ...
 replaced: dungeon/monster/e254a.chr.d/e254a.img (texture:e254a1, texture:e254a2; mod castle-showcase, 35088 bytes, was 35088)
 ```
@@ -386,6 +413,9 @@ refused. `mod list`, which has no disc, shows each mod's lines and the ids
 two mods both name.
 
 ### Commands
+
+ISO here, and `--disc`, is the disc image or an extracted disc
+(`dc2tk_disc::DiscSource` reads both alike).
 
 - `mod asset ISO NAME ID...` copies assets off the disc by id or pattern,
   each in its common format (`textures/<name>.png`, `models/<name>/` as
@@ -429,11 +459,15 @@ root, the crates in `src/crates/`):
 
 | crate | what it holds |
 |---|---|
-| `dc2tk-disc` | the ISO image, the file index and packs, extract, writing a disc, text files |
-| `dc2tk-script` | stb, the VM, assembly, decompile, parse, compile, the SDK, definitions, names, mods |
-| `dc2tk-assets` | textures, sound banks, models and motions, the asset tree, the data tables |
-| `dc2tk` | the command line |
+| `dc2tk-disc` | the ISO image, the file index and packs, extract and pack, reading an image or an extracted disc alike (`DiscSource`), writing a disc, the text files the tools write |
+| `dc2tk-assets` | textures, sound banks, music, models and motions, maps, message files, the data tables, the asset tree |
+| `dc2tk-script` | stb, the VM, assembly, decompile, parse, compile, the SDK, definitions, names, mods, and the stages `build` runs |
+| `dc2tk` | the command line: arguments, the library's stages, what they did |
 
-The definitions (`definitions/`), native tables (`src/natives/*.json`) and
+Each crate uses only the ones above it in the table; how they are laid out
+inside is in [internals](internals.md). The binary is thin on purpose:
+decompiling a whole disc, building a mod's maps and data tables and the
+memory check are library functions, so the tests reach them as `build`
+does. The definitions (`definitions/`), native tables (`src/natives/*.json`) and
 SDK headers are data files. Most work is per file (decompile 1,398 scripts,
 convert 5,217 texture files), so it runs across all cores (rayon).

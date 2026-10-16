@@ -164,7 +164,7 @@ the key picks the program's splits and the velocity its samples, as for
 sound effects. There is no bank select: a port holds one bank. 4 ambient
 sequences name programs their banks lack, parts that stay silent:
 `SR_248_000` (program 1), `SR_272_001` (43, 44), `SR_273_000` (2).
-`Bank.voices()` resolves a sequence entry's notes to the samples they play:
+`Bank::voices` resolves a sequence entry's notes to the samples they play:
 over the 841 banks of `snd2/`, 2,009 of the 7,215 VAGs are played only by
 sequences, 310 by nothing.
 
@@ -345,6 +345,14 @@ yet heard in the game.
 
 ## 5. Verification
 
+The corpus checks are `dc2tk-assets`' tests `corpus_sequences_round_trip`
+(`sequence.rs`), `corpus_sequences_round_trip_through_midi` and
+`corpus_music_banks_make_new_banks` (`music.rs`),
+`corpus_banks_give_soundfonts` (`soundfont.rs`) and
+`corpus_sequences_are_music_in_the_tree_and_build_back` (`tree_check.rs`),
+run with `DC2TK_CORPUS` set to the extracted disc and `cargo test --release
+-- --include-ignored corpus` (they are ignored otherwise).
+
 | Check | Result |
 |---|---|
 | `.sq` read -> write byte-exact | 447 / 447 (527,181 events) |
@@ -381,5 +389,7 @@ as the disc's are.
    the game (`text-music-test.iso`).
 4. **The SoundFont is approximate** (above); nothing was compared with the
    game's output.
-5. `sounds::free_unused` still leaves banks with sequences alone, though
-   `voices()` now resolves what their sequences play.
+5. `sounds::free_unused` cuts a sample only when no entry plays it, a
+   sequence's notes included (`Bank::voices` follows them); a `.sq` no
+   `.cfg` row names is not seen (the disc's banks have 447 `.sq` rows for
+   their 447 members).

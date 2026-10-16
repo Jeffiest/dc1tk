@@ -116,7 +116,8 @@ dc2tk build extracted/scripts dc2.iso -o modded.iso --mod my-first-mod
 ```
 
 `build` compiles the scripts your mod changes and writes `modded.iso`: your
-disc with only those scripts replaced. It takes seconds. Add `--mod` again for
+disc with only those scripts replaced (`extracted/disc` in place of `dc2.iso`
+works too). It takes seconds. Add `--mod` again for
 more mods. To test a change without playing up to it, add
 `--start-at MAP:PROGRAM` (for example `--start-at s51:story_50`), and New
 Game starts at that scene, with a new game's party; use such images for
@@ -155,6 +156,9 @@ dc2tk play modded.iso
   [a new map with a door into it](docs/examples/new-map-door/README.md).
 - [The script format](docs/format.md), [assembly](docs/assembly.md) and
   [how the tools work](docs/internals.md).
+- [Working on dc2tk](docs/development.md): the one rule a change must keep
+  (built images never differ from retail where nothing was edited), the
+  checks to run and the code's conventions.
 
 ## What is in this repository
 
@@ -170,7 +174,11 @@ sdk/             C headers scripts include: every engine call declared and
                  documented, constants, helpers; sdk/modkit/ for mods
 definitions/pal/ what is known about the PAL scripts: names, docs,
                  translations; see docs/definitions.md
-docs/            how everything works
+docs/            how everything works; docs/development.md for working on
+                 the code
+tools/           golden.sh, the snapshot that checks a change against the
+                 disc byte for byte
+CLAUDE.md        the rules of docs/development.md, in brief, for Claude Code
 PLAN.md          what is done and what comes next
 ```
 

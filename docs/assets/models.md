@@ -18,6 +18,10 @@ The code, in `src/crates/dc2tk-assets/src/`:
 | `from_gltf.rs` | glTF -> MDS + .wgt + .bbp, with the original MDS as a template, or a new model (section 7) |
 | `motions.rs` | glTF animations -> .mot keys and info.cfg `KEY` lines (section 7.3) |
 | `models.rs` | the glTF folders mods use (`mod asset --as gltf`, `build`); map models (`export_map_model`, `build_map_model`); new packs (`new_pack`, 7.4) |
+| `gltf.rs` | glTF's accessor component and element types, shared by the export and the import |
+| `math.rs` | 4x4 column-major matrices, points and quaternions (x, y, z, w) of the converters. Their results reach the disc's bytes (an imported bind pose, a rebuilt motion), so each keeps its order of operations: a change here changes what a build writes |
+| `numeric.rs` | the arithmetic the bytes depend on: JSON numbers kept int or float, compensated (Neumaier) float sums, float32 narrowing |
+| `bytes.rs` | bounds-checked little-endian reads, so a bad offset or count in a modded file is an error naming what was read where, never a panic |
 
 Mods use these through `models.rs`: textures come from the pack's own
 `.img` files (not placeholders), only meshes and motions that differ from the
@@ -52,8 +56,9 @@ changes it.
   given in all of them, and a deleted action takes its KEY out.
 
 **Not settled / open:**
-- Texture pixels: `.img` is researched separately. A material refers to a texture only by
-  name (case-sensitive `strcmp`, see below). UV v orientation still to be confirmed against decoded
+- Texture pixels: `.img` is in [textures.md](textures.md) (decoded by `im3.rs`; the exports carry
+  the pack's own pictures). A material refers to a texture only by name (case-sensitive
+  `strcmp`, see below). UV v orientation still to be confirmed against decoded
   .img data. No flip is expected, because GS and glTF both put (0,0) at the top-left.
 - Meaning of material fields 0x10 (ambient?), 0x20, 0x30 (power?) and odd diffuse values (w = -11,
   components > 1: 8,598 of them in map files). The engine only reads diffuse, 0x10 and the name.
@@ -435,8 +440,10 @@ which puts the pack's own textures in place of the placeholders.
 - primitives: one per (material, attribute set). Corners are deduplicated on (v, n, uv, c).
   Degenerate strip triangles are dropped. Attributes are POSITION, NORMAL, TEXCOORD_0, COLOR_0
   (float), JOINTS_0 (u16) and WEIGHTS_0. Unweighted vertices get the engine's default (slot 0, weight 1).
-- materials: name = texture name. The base colour texture is `textures/<name>.png`, an 8x8
-  placeholder until .img decoding exists. Raw MDT fields are kept in `extras`. diffuse.a < 1 gives BLEND.
+- materials: name = texture name. The base colour texture is `textures/<name>.png`: `to_gltf`
+  writes an 8x8 placeholder (`placeholder_png`), which `models.rs` replaces with the pack's own
+  picture of that name where its `.img` files have one. Raw MDT fields are kept in `extras`.
+  diffuse.a < 1 gives BLEND.
 - animations: one per KEY of every motion set the pack holds a .mot for (a name given twice in a
   set gets `_<start>`), sampled every frame from start to end with the engine's interpolation.
   LINEAR, time = (frame - start) / 30 (3.2). Set 0's KEYs (else the first set's) keep their

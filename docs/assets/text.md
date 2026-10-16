@@ -8,8 +8,14 @@ in the decompiled source) is a different, cp932 format; the codes here are
 the ones its tags turn into (see [the modding guide](../modding.md#message-text)).
 
 `text.rs` (in `src/crates/dc2tk-assets/src/`) reads and writes the format and
-turns it into the text files mods edit; the counts below come from scripts
-run over every message file of the PAL disc while the format was worked out.
+turns it into the text files mods edit (`font.rs` holds the fonts'
+numbering and draws the English font's added letters); the counts below come
+from scripts run over every message file of the PAL disc while the format
+was worked out. The corpus tests (`cargo test --release -- --include-ignored
+corpus` with `DC2TK_CORPUS` set to the extracted disc) read every message
+file and write it back, directly and through its text, byte for byte
+(`corpus_message_files_round_trip`), and check the Japanese and Korean files
+read as text (`corpus_japanese_and_korean_read_as_text`).
 
 Evidence:
 
@@ -125,7 +131,12 @@ A message given new codes gets them in its own span, with `FF01 FF00`
 after; one sharing its span with another id, or a new id, gets a span at
 the end (the last message, when it had no `FF01`, is given one so it keeps
 its text). The table's offsets are recomputed. Offsets are 16-bit words from
-the table, so the messages can grow to about 128 KB.
+the table, so the messages can grow to about 128 KB: `Mes::write` refuses a
+last message starting past their reach, more than 65535 messages, and (for
+the four files with bytes after their messages) messages past what `size`
+can say. `Mes::parse` refuses a file of an odd size or under 4 bytes, and
+one whose table runs past where its messages end, with an error rather than
+a panic.
 
 ## 4. Codes
 
@@ -191,8 +202,9 @@ it was; a small letter takes the small letter's mark and a capital the
 capital's, the other when that does not fit in the cell, and `i` and `j`
 lose their dot under a mark. That covers, past Latin-1, `Ć ć Ĉ ĉ Ĝ ĝ Ĥ ĥ Ĩ
 ĩ Ĵ ĵ Ķ ķ Ĺ ĺ Ļ ļ Ń ń Ņ ņ Ŕ ŕ Ŗ ŗ Ś ś Ŝ ŝ Ş ş Ţ ţ Ũ ũ Ů ů Ŵ ŵ Ŷ ŷ Ÿ Ź ź`
-(`dc2tk_assets::font`; the corpus test draws them all off the PAL disc's
-font). A letter with a macron, breve, dot above, double acute, caron or
+(`dc2tk_assets::font`; the corpus test `corpus_letters_compose` draws them
+all off the PAL disc's font, and prints each as text art with
+`DC2TK_SHOW_LETTERS` set). A letter with a macron, breve, dot above, double acute, caron or
 ogonek (`ā ă ċ ő č ą`), `ģ` (its cedilla does not fit under the `g`), and
 anything else neither font has (`Ø`, `ł`, `€`) are refused, naming the
 mark or the character. Every glyph is mapped to the English palette and
@@ -260,7 +272,14 @@ other characters.
 A message file as text is UTF-8: `#` comment lines, then each message after
 a line `@` and its id, in the table's order. The text runs to the next `@id`
 line; the line break before it, and the one at the end of the file, are not
-part of the message. Each code reads as:
+part of the message. `dc2tk` writes it with LF line breaks and a comment
+line naming the id, language and file; it reads CRLF the same (and drops a
+leading byte order mark), so a text an editor saved with Windows line
+endings builds as it was. Ids are 0 to 65535; an id given twice, and text
+before the first `@id` line that is not a `#` comment or blank, are refused
+with the line's number. A message with no text behind its offset (one
+pointing outside the messages) is not in the text and keeps its offset.
+Each code reads as:
 
 | in the text | code |
 |---|---|
@@ -302,8 +321,10 @@ what would read otherwise. Over the PAL disc's 310 files, the `{XXXX}` left:
 
 Building a text into a message file takes the disc's file as the template
 and a **reference**, the file the text was exported from. Each message whose
-codes differ from the reference's replaces the template's, an id the
-template lacks is added at the end, and everything else stays: a mod's text
+codes differ from the reference's (and from the template's own) replaces the
+template's, an id the template lacks is added at the end, and everything
+else stays; with nothing changed the template's bytes come back as they
+are (`text::build`). A mod's text
 may keep only the messages it changes, and messages cannot be removed. A
 character the font lacks is refused with the message's id and the
 characters the font has.
@@ -337,7 +358,8 @@ gives 120 ids from 310 files.
   bytes.
 - The menu files load with the rest of their pack into the menu's buffer
   and the dungeon file into the dungeon's heap; how much is free there is
-  not known, so `build` warns when a file grows.
+  not known; `build` checks nothing there and only prints each file it
+  replaces with its new size and the old (`replaced: ... N bytes, was M`).
 - A menu draws only as many lines as its window has room for, and an item
   name as wide as its column. How wide a line is follows
   `ClsMes::MakeMesWinTbl` (and `GetMesWidth_system`), with a cell of 15

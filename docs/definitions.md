@@ -41,14 +41,26 @@ its target by something that can be computed from the binary.
 | Line in a function | function fingerprint and instruction index |
 
 **Function fingerprints** (`src/crates/dc2tk-script/src/fingerprint.rs`) are the foundation, so
-their definition is fixed and versioned. The fingerprint is a SHA-1 over:
-the function's record (argument count, local count, argument types); its
-unused strings; its instructions, with jump targets made relative to the
-function, each call target replaced by the callee's fingerprint and each
-string push replaced by the string itself; and the native table it runs
-against. Padding and position in the file are excluded. Two functions with
-the same fingerprint are the same code calling the same code, wherever they
-sit and whatever the decompiler makes of them.
+their definition is fixed and versioned. The fingerprint is the first 16
+hex digits of a SHA-1 over: the function's record (argument count, local
+count, all ten argument types); its unused strings; its instructions, with
+jump targets made relative to the function, each call target replaced by
+the callee's fingerprint and each string push replaced by the string
+itself; and the native table it runs against. Padding, the record's name
+word and position in the file are excluded. Two functions with the same
+fingerprint are the same code calling the same code, wherever they sit and
+whatever the decompiler makes of them.
+
+The hashed text is a compact JSON payload,
+`{"version":1,"table":..,"arg":..,"local":..,"arg_types":[..],"unused":[..],"code":[[op,arg1,arg2],..]}`,
+with jumps as `["jump", offset]`, calls as `["call", fingerprint]` and
+string pushes as `["string", text]`. `fingerprint.rs` writes it by hand
+rather than through a JSON library, so that no change to how the tools
+write JSON elsewhere can change a fingerprint the sets store. Functions
+are fingerprinted in file order, so a callee is named by its fingerprint
+only when it comes earlier in the file; a call to the function itself or
+to a later one keeps the callee's offset from the code section, as does a
+string push the block does not hold.
 
 The **loose fingerprint** is the same with string contents blanked and
 unused strings dropped. The disc's French, German, Italian, Spanish and
@@ -77,9 +89,14 @@ definitions/pal/
   disc.json             the hash of each script on the disc the set is for
   paths.json            readable names for disc folders and scripts the disc
                         does not name (dungeons, the main characters)
+  renamed.json          every constant `defs rename` renamed, old name to new
+  sounds.json           the event sound bank each sound set loads (column 15
+                        of snd2/MAP_index.txt), for naming play_se entries
 ```
 
-Every part is optional. A new set can start with just a manifest.
+Every part is optional. A new set can start with just a manifest. The
+tools write these files as JSON with a two-space indent, text unescaped, LF
+line endings and a final newline, and read CRLF the same.
 
 ### Manifest
 
@@ -103,7 +120,8 @@ Every part is optional. A new set can start with just a manifest.
   this one. A mod's set extends `pal`, so it only adds what the mod
   changes. Sets are applied in order and later ones override earlier ones
   entry by entry. On the command line, `--defs` can be repeated to the same
-  effect.
+  effect; without it the shipped `definitions/pal` applies, and `--no-defs`
+  applies none.
 - `language` picks the language for comments: translations and text read
   from the disc.
 - `include` lists headers from the set's `include/` directory that every
@@ -114,13 +132,16 @@ Every part is optional. A new set can start with just a manifest.
   the PAL disc's folder layout.
 - `text.languages` maps language names to the digit the disc puts on
   localized files (`e215_1.txt` is English).
-- `engine` names the engine the set is for. Only `dc2` exists today.
-- `executable` names the disc's boot executable (`extract` saves it beside
-  the archive) and where tables inside it live, such as the monster table
-  (`{"address": ..., "record_size": 184}`); addresses differ between disc
-  versions, so they belong to the set.
+- `engine` names the engine the set is for. Only `dc2` exists today, and
+  the tools do not read it yet (nor `name` and `description`).
+- `executable` names the disc's boot executable (`"name": "SCES_511.90"`;
+  `extract` saves it beside the archive) and where tables inside it live,
+  such as the monster table
+  (`"monster_table": {"address": 3415456, "record_size": 184}`); addresses
+  differ between disc versions, so they belong to the set.
 - `disc.json`, beside the manifest, holds the hash of each script on the
-  disc the set was made from (`dc2tk defs disc`), so tools can tell
+  disc the set was made from (`dc2tk defs disc`; the first 16 hex digits
+  of the file's SHA-1, under `scripts` by disc path), so tools can tell
   whether a disc matches the set or has been modified.
 
 ### Names
@@ -226,7 +247,7 @@ headers: an enum member that repeats another constant's name, or a
 error naming both, as clang would.
 
 The PAL set ships `include/pal.h` with `enum flag_story`, a name and a doc
-comment for each of the 185 save flags the retail scripts set or read by
+comment for each of the 186 save flags the retail scripts set or read by
 number. Because `set_flag` and `get_flag` take a `flag`, and a kind takes
 constants from every enum named after it, these print wherever a literal
 flag number appears.
@@ -409,7 +430,8 @@ sound sets have enums in the PAL set's `pal.h` (see `notes/sounds.md`).
 
 The easiest way to write definitions is to edit decompiled code:
 
-1. `dc2tk setup dc2.iso` decompiles the disc with the shipped sets.
+1. `dc2tk setup dc2.iso` decompiles the disc (its image, or an extracted
+   disc) with the shipped sets.
 2. Rename functions, parameters, locals and globals, and add doc comments
    above functions and at the top of scripts, in `extracted/scripts/`.
 3. `dc2tk defs learn extracted/scripts definitions/pal` compiles the edited files,

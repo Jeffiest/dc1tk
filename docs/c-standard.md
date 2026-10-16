@@ -13,8 +13,13 @@ VM's, so C's apply in **strict mode**: `#pragma std c89` before the code that wa
 
 Progress is measured by a conformance suite: a small program in
 `src/crates/dc2tk-script/tests/c89/` for each feature, compiled in strict mode with the SDK and run
-in the test VM (`cargo test -p dc2tk-script --test c89`). Each program's second line says what it
-shows, and its row below says the same (a test checks that):
+in the test VM (`cargo test -p dc2tk-script --test c89`). The test VM (`vm.rs`, which `dc2tk mod
+test` uses too) runs the script's own logic as the game's VM does, but not natives (a native's
+result stays 0), and it holds floats as doubles rather than the PS2's singles. It stops a run past
+`vm::STEPS` (10 million) instructions ("ran more than ... steps; does it loop for ever?") or
+`vm::CALLS` (10,000) nested calls ("calls nested deeper than ..."), and its errors name the
+function they stopped in. Each program's second line says what it shows, and its row below says
+the same (a test checks that):
 
 - **supported**: it compiles and gives C's result, or, where C requires a diagnostic, the
   compiler gives one;
@@ -23,7 +28,7 @@ shows, and its row below says the same (a test checks that):
 - **planned**: it does not compile yet (or fails when run); the step given makes it work;
 - **limit**: refused by design.
 
-Today: 129 programs, 125 supported (109 giving C's result, 16 giving C's diagnostic) and 4 at
+Today: 130 programs, 126 supported (110 giving C's result, 16 giving C's diagnostic) and 4 at
 the limit (`double` twice, and comparing or subtracting two pointers); none differ or are
 planned. `src/crates/dc2tk-script/tests/composite.rs` runs larger programs that use the composite
 types together.
@@ -54,18 +59,23 @@ C89 leaves these to the implementation and asks it to say what it does.
 - **Types.** `char` is 8 bits and signed (as on the PS2); `short` is 16 bits; `int` and `long`
   are 32 bits, two's complement, the VM's own ints. `sizeof` gives 1, 2 and 4, 4 for `float`
   and pointers, and is a `size_t`, which is `unsigned int`; `ptrdiff_t` is `int`. A `char` or
-  `short` takes a whole VM slot and is wrapped to its width when stored.
+  `short` takes a whole VM slot and is wrapped to its width when stored. An integer constant
+  too large for 32 bits is refused.
 - **Arithmetic.** Signed arithmetic wraps on overflow, as the game's VM does. `/` and `%`
   truncate toward zero. `>>` of a negative `int` divides by a power of 2, rounding toward
   zero (`-7 >> 1` is -3); of an unsigned value it shifts zeros in. A value out of range for a
   narrow signed type wraps (`(signed char)200` is -56). A shift by 32 or more of a constant
   count is refused.
 - **Floats.** `float` is an IEEE 754 single held by the PS2's FPU, which rounds toward zero,
-  flushes values below `FLT_MIN` to zero, and has no infinities or NaNs. The compiler reads
-  constants rounded to nearest. See `sdk/float.h`.
+  flushes values below `FLT_MIN` to zero, and has no infinities or NaNs. The compiler reads a
+  constant as a double and rounds that to the nearest float; one too large for a float is
+  refused. See `sdk/float.h`.
 - **Characters.** Source files are UTF-8; strings are stored as Shift-JIS, the game's text
   encoding, so `MB_LEN_MAX` is 2 and `L'x'` (a `wchar_t`, `unsigned short`) is the
-  character's Shift-JIS code. `\x` takes two hexadecimal digits.
+  character's Shift-JIS code. `\x` takes two hexadecimal digits. Names are ASCII letters,
+  digits and `_`, and numbers ASCII digits; any other character outside a string, a character
+  constant or a comment is an error. White space between tokens is any Unicode white space (a
+  full-width space too), and a line ends at LF, CRLF reading the same.
 - **Startup.** A freestanding program: the engine starts the functions the `PROGRAM` table
   names, and `MAIN` names the header's main function; there is no `main()`. Objects with
   static storage (globals and static locals) are set to their initializers once each time the
@@ -78,9 +88,14 @@ C89 leaves these to the implementation and asks it to say what it does.
   defined (it came with C95).
 - **Limits.** Identifiers have no length limit and are case-sensitive, external ones too. A
   function can take at least 31 parameters (the VM keeps a type for the first 10 only, which
-  the engine never reads). Parentheses nest 64 deep, blocks, ifs, loops and switches 97, and
-  an expression's operators chain 194 long (`a + b + ...`); deeper is refused ("nested too
-  deeply", parse::NESTING) rather than overflowing the stack.
+  the engine never reads). The parser counts nesting against `parse::NESTING` (200), sized so
+  that it, the lowering and the compiler fit a 1 MB stack (a Windows main thread's) even in a
+  debug build: parentheses take three levels each and a block, if, loop or switch two, so
+  parentheses nest 64 deep, blocks, ifs, loops and switches 97, an expression's operators chain
+  194 long (`a + b + ...`, `!!!...x`), a declarator nests 199 deep and a struct defined in a
+  struct's members 98. Deeper is refused ("line N: nested too deeply") rather than overflowing
+  the stack; `tests/nesting.rs` compiles the deepest expressions and statements on a 1 MB
+  thread, in both modes.
 - **register** asks nothing of the VM (every variable is a slot); taking a register
   variable's address is refused, as C requires.
 - **Pointers** are the VM's addresses, all of one size, and a null pointer is the int 0. A

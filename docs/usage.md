@@ -27,6 +27,8 @@ dc2tk build extracted/scripts dc2.iso -o modded.iso --mod castle --mod other   b
 dc2tk mod list extracted/scripts                    every mod, its patches, numbers and files
 dc2tk mod new extracted/scripts castle map/s/s51_raybrandt_castle/s51_1.c   copy whole files into a mod
 dc2tk mod test extracted/scripts calculator         run a mod's tests.c without the game
+dc2tk mod header extracted/scripts castle           editor headers for a mod's patches
+dc2tk mod slim extracted/scripts castle             turn a mod's whole files into patches
 dc2tk assets dc2.iso --force                        write the asset tree again (setup writes it)
 dc2tk mod asset dc2.iso castle texture:e254a1       copy an asset into a mod to replace it
 dc2tk mod migrate dc2.iso castle                    turn a mod's disc/ folder into asset ids
@@ -58,27 +60,75 @@ A command that reads the disc (`setup`, `build`, `assets`, `map-export`, `diff`,
 `mod make`, `mod asset`, `mod migrate`, `mod check --disc`) takes the disc image
 or `extracted/disc` alike. Given the folder, `build` first packs it into the new
 image (as `dc2tk pack` does) and `setup` decompiles it where it is. `extract`
-alone needs the image.
+needs the image, as do `play` and `pack --check`; `verify`, a whole-disc
+`decompile`, `defs check`, `defs todo`, `defs disc` and the `--extracted` of
+`xref`, `maps` and `map` need the extracted folder.
 
 The tests run with `cargo test --release` in the repository folder. The tests that read the
-game's own files are marked ignored; with `DC2TK_CORPUS` set to an extracted disc
-(`extracted/disc`), `cargo test --release -- --include-ignored` runs them too.
+game's own files are marked ignored; with `DC2TK_CORPUS` set to the absolute path of an
+extracted disc (`extracted/disc`), `cargo test --release -- --include-ignored` runs them too
+(without it they fail, naming the variable).
 
 ## Options shared by most commands
 
 - `--defs DIR` applies a definition set. Repeat it to layer sets, later ones
   winning. Without it the shipped `definitions/pal` set is used; `--no-defs`
-  uses no definitions at all.
+  (once `--defs none`) uses no definitions at all. `assets`, `mod asset` and
+  `mod migrate` take `--defs` only for the set whose header names the sound
+  entries.
 - `--sdk DIR` points at the SDK headers and shared libraries (default
   `sdk/`).
 - `--natives DIR` points at the native tables (default `src/natives/`).
-- `--table NAME` forces a native table (`event`, `monster`, `action`,
-  `effect`, `arg`) instead of choosing it from the script's path.
+- `--table NAME` (`disassemble`, `decompile`, `compile`) forces a native
+  table (`event`, `monster`, `action`, `effect`, `arg`) instead of choosing
+  it from the script's path.
+- `--mods DIR` (`build` and the `mod` commands) is the folder that holds the
+  mods (default `mods`).
 - `--time` prints how long the command took.
+
+The default `sdk/`, `definitions/pal` and `src/natives/` are the repository's:
+the nearest folder above the executable that has `definitions/`, or the folder
+`$DC2TK_ROOT` names.
+
+Options of single commands:
+
+- `setup DISC [OUT]` writes the tree into `OUT` (default `extracted/scripts`),
+  extracts an image into `--extracted DIR` (default `extracted/disc`; an
+  extraction already there is reused) and writes the asset tree into
+  `--assets DIR` (default `extracted/assets`, replaced when there;
+  `--no-assets` leaves it out). `--force` overwrites files edited since the
+  last decompile.
+- `pack [EXTRACTED] -o IMAGE` packs `extracted/disc` when no folder is given;
+  `--check IMAGE` compares the image written with another byte for byte, and
+  fails naming the first byte (and sector) that differs.
+- `verify EXTRACTED` prints the first 20 failures (`--limit N` for more) and
+  `--json FILE` writes the whole report, a result per script; it fails when
+  any script does not round-trip.
+- `play IMAGE` skips the PS2 boot screens (PCSX2's `-fastboot`), as
+  `build --play` does; `--full-boot` shows them. PCSX2 is the one `--pcsx2`
+  names, else `$PCSX2`, else `pcsx2-qt` or `pcsx2` on the PATH, else the
+  usual install folder.
+- `map-export NAME` writes into `extracted/maps/NAME` (`-o DIR` elsewhere);
+  `--all` exports every map that has placements, each into
+  `extracted/maps/NAME` (or `DIR/NAME`). `--disc` is the disc read (default
+  `extracted/disc`, or the image).
+- `diff` and `mod make` read the extracted folder from `--extracted DIR`
+  (default `extracted`, the folder holding `disc/`, `scripts/` and
+  `assets/`); `xref`, `maps` and `map` read map names, monster models and
+  `.map` files from `--extracted DIR` (default `extracted/disc`).
+- `flags SOURCE` prints a summary; `--used` lists every used flag with its
+  name and users, `--flag N` every use of one. `--counters` (and
+  `--counter N`) does the same for the save counters.
+- `defs todo` lists 50 functions (`--limit N` for more).
+- `mod apply --force` replaces files edited in the tree too.
+- `natives CHECKOUT --out DIR` writes the tables elsewhere than
+  `src/natives/`.
 
 The text files `dc2tk` writes (decompiled C, headers, `mod.json` and the
 other JSON files, reports) are UTF-8 with LF line endings on every system,
-and its JSON is indented by two spaces. It reads CRLF as well, so files an
+and its JSON is indented by two spaces. A float is written as the shortest
+text that reads back as the same value (`0.1`, `1.0`, `1e20`), in C and
+assembly as in JSON. It reads CRLF as well, so files an
 editor saved with Windows line endings, or trees and mods written by older
 versions (CRLF on Windows, one-space JSON), read the same. Game files keep
 their bytes.
@@ -88,8 +138,8 @@ their bytes.
 Given a single `.stb`, `decompile` prints one self-contained file: every
 function the script contains, including code other scripts share.
 
-Given the extracted disc, it writes a source tree mirroring the disc, one
-`.c` per script, and moves the code scripts share into library files
+Given the extracted disc and `-o DIR` (a folder needs one), it writes a
+source tree mirroring the disc, one `.c` per script, and moves the code scripts share into library files
 under `lib/`, pulled in with `#include "lib/..."`. A typical script then
 contains only its own code. `setup` does this after extracting.
 
@@ -102,13 +152,16 @@ set's language; the set's `paths.json` names the rest (dungeons, the main
 characters). The game's codes contain underscores too, so the tree records
 the disc path of every renamed file in `unnamed-paths.json`; `build`,
 `defs learn`, `xref` and `mod` read it, so a renamed file still replaces
-the right disc file. Commands that take a map or monster still take the
-game's code (`xref source map s51`).
+the right disc file. Commands that take a map still take the game's code
+(`xref source map s51`); a monster is named by its number, its `MONSTER_`
+constant or its name (`xref source monster golem`).
 
 The tree also gets `compile_flags.txt`, which lets clangd-based editors
 read every file as C with the SDK (see [editor setup](modding.md#editor-setup)),
 and `original-hashes.json`, a record of what was written. Writing into a tree
-again refuses to overwrite files edited since; `--force` overwrites them.
+again refuses to overwrite files edited since; `--force` overwrites them. A
+whole-disc decompile also removes the files an earlier one wrote that it no
+longer writes, keeping (and naming) any of them that were edited.
 
 Given a folder inside the extracted disc (`extracted/disc/map/s/s05`), it
 decompiles only the scripts in that folder, at the same tree paths a
@@ -141,8 +194,13 @@ The ids are what a mod names the assets it replaces by (see
 up from the script's folder and each folder above it; `<...>` headers from
 the SDK, from each definition set's `include/`, and from an `include/`
 folder in the script's folder or any folder above it, where the decompiler
-puts the generated `disc.h`), and writes the `.stb`.
+puts the generated `disc.h`), and writes the `.stb` (by default the source's
+path with `.stb`).
 The output is byte-identical to the original when the source is unchanged.
+Source nested deeper than the parser's limit (`parse::NESTING`, 200 levels:
+about 64 parentheses, 97 nested blocks or statements, or a chain of 194
+operators) is refused as "nested too deeply" rather than overflowing the
+stack; every retail script is within it.
 
 ## Modding workflow
 
@@ -176,7 +234,8 @@ script it:
 It then reads every changed script back out of the new image and checks it
 is the script the source compiles to. Files outside `DATA.DAT`, the ISO
 9660 directories and the UDF bridge are not changed, since no file moves
-in them.
+in them. `-o` may not name the image the build reads (copying a file onto
+itself would empty it); `build` refuses it.
 
 `build` also notes each edited library that reaches scripts you did not edit.
 It compiles only the scripts that can differ from the disc: those edited,
@@ -349,10 +408,13 @@ The commands:
   `--monster`, `--library`) starts a patch, or adds to one: it copies the
   functions from the target (the English variant of a map) into
   `mods/NAME/s51.c`, each after `#pragma override`, with the target line and
-  the script's headers, and writes the editor files `mod header` writes. A
-  native named instead of a function (`place_monster`) gets a wrapper that
-  takes the native's parameters and passes them on, with the native's doc
-  comment.
+  the script's headers, and writes the editor files `mod header` writes.
+  Where a map's other languages have the function with different lines
+  (text, mostly), those lines go under `#if LANGUAGE == ...` branches, or
+  each language gets its whole copy where the copies do not line up. A
+  native named instead of a function (`place_monster`) gets a wrapper,
+  `place_monster_wrapper`, that takes the native's parameters and passes
+  them on, with the native's doc comment.
 - `mod header SOURCE NAME` writes, for each patch, a header of what its
   target declares (`mods/NAME/.editor/s51.h`: the script's functions with
   their signatures and doc comments, those of its libraries, its globals
@@ -365,8 +427,9 @@ The commands:
   `build` would but without a disc, and prints the mods it added for
   `requires`, the order they apply in, the numbers they were given, and
   overridden functions the tree has renamed (`--rename` writes the new
-  names into the mods). With `--disc ISO` it also looks up the files the
-  mods' scripts load by name (`load_chara`, `load_sound`,
+  names into the mods). With `--disc DISC` (the image or `extracted/disc`)
+  it also checks that every asset id the mods name resolves and no two mods
+  change one place, and looks up the files the mods' scripts load by name (`load_chara`, `load_sound`,
   `load_message_file`, `load_image`, `start_background_load`, ... with a
   string path, in the directory the function's `change_dir` set) and the
   member a character pack is loaded by (`info.cfg`), and warns about any the
@@ -462,7 +525,7 @@ plus `.d` (`disc/chara/c01_base.chr.d/c01b.img` is the texture in Max's
 character pack; packs inside packs work the same way).
 
 - `mod asset ISO NAME PATH...` copies files or pack members off the disc
-  image into the mod, to replace there.
+  (the image or `extracted/disc`) into the mod, to replace there.
 - `build` writes each over the disc's own, puts members back into their
   packs, and reads them back from the new image to check. Two chosen mods
   may not replace the same game file.
@@ -817,7 +880,10 @@ runs them in an interpreter of the script VM, without the game. A test
 passes when it returns nonzero, and `print(...)` output is shown for the
 ones that fail. Natives do nothing there (a result they would give is 0),
 so test the logic: write it as functions that take what the game would give
-(the buttons pressed, say) and check what they return or change.
+(the buttons pressed, say) and check what they return or change. A test
+that runs past 10,000,000 instructions (a loop that never ends) or nests
+calls deeper than 10,000 (a function that calls itself without end) stops
+with an error rather than hanging (`vm::STEPS`, `vm::CALLS`).
 `--mods DIR` picks another mods folder. Mods hold game scripts, so they stay
 out of this repository (`mods/` is ignored).
 

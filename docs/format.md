@@ -11,6 +11,11 @@ Everything here comes from the ChronicleTwo decompilation, which contains the VM
   last record is a terminator whose name is empty. Names are null-terminated,
   use `\` as the separator, and may contain Shift-JIS. The PAL disc has 8,752
   files.
+- The engine reads `DATA.HD4` into a buffer of 0x50000 bytes
+  (`dataread.cpp`, `header_buff`), so the index can never be larger. A new
+  file costs its 12-byte record and its name plus a NUL; a build that would
+  pass the limit is refused (`dc2tk_disc::archive::INDEX_LIMIT`), and new
+  files belong in packs instead.
 - A file's data starts at `sector * 2048` inside `DATA.DAT`.
 - Movies (`\MOVIE\`), voice (`\VOICE\`, `\V\`) and IOP modules (`\MODULES\`)
   sit outside the archive and are not needed here.
@@ -117,6 +122,10 @@ code  function      0x38-byte record, instructions, FUNC_END, string block
 | 28 | SKIP_END | where a skipped cutscene stops |
 | 29, 30 | SIN, COS | |
 
+These numbers, the addressing modes and the comparisons below are defined
+once in `src/crates/dc2tk-script/src/stb.rs` (`stb::Op`, `stb::Mode`,
+`stb::Compare`) for every part of the tools.
+
 `NOP` appears 472,159 times and is a label: every jump on the disc lands on
 one, and its `arg1` is the label's number in the order the compiler allocated
 it within the function (see [the decompiler](internals.md#decompiler)). Addressing modes (`RS_ADDR_MODE`): `0x1` local,
@@ -147,7 +156,7 @@ enums in the matching header:
 | Table | Source | Rows | Used by |
 |---|---|---|---|
 | event | `ps2/src/event_func.cpp` `ext_func_info[697]` | 696 | map and dungeon event scripts |
-| monster | `ps2/src/runscript_opcodes.cpp` `ext_func_info[]` | ~173 | `dungeon/monster/*.stb` |
+| monster | `ps2/src/runscript_opcodes.cpp` `ext_func_info[]` | 173 | `dungeon/monster/*.stb` |
 | action | `ps2/src/actscript.cpp` `ext_func_info[]` | 82 | `mainchr/c01.stb`, `c02.stb`, `dungeon/act_script/*.stb` |
 | effect | `ps2/src/effscript.cpp` `ext_func_info[129]` | 128 | `dungeon/eff_script/*.stb` |
 | arg | `ps2/src/event_func.cpp` `esa_ext_func_info[3]` | 2 | argument files loaded by `_LOAD_ARG` |
@@ -160,6 +169,11 @@ source order (`int`, `float`, `string`, `vector`, `any`, `out`,
 `out_vector`). It is a hint for argument types, not a signature: bodies index
 the stack in loops and branches. The decompiler does not need it, because the
 bytecode already shows `&x` (`LOAD_ADDR`) and each constant's type.
+`monster.json` and `action.json` also hold `old_groups`, `old_table_groups`
+and `old_direct` (see [the SDK](sdk.md)), which were worked out from the
+scripts rather than the decomp: the command writes the tables without
+them, so regenerate with `--out` into another folder and merge, or they are
+lost.
 
 `EXT` pops `arg1` values, and the deepest of them is the native number. It is
 found by walking back from the `EXT` and adding up stack effects (`src/crates/dc2tk-script/src/stack.rs`):

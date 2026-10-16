@@ -6,7 +6,8 @@ through a door added in Palm Brinks (`m01`), and back through the park's
 big tree ([maps](../../assets/maps.md) section 9):
 
 - `mod.json` adds the map (`"add": {"map:m05x": {"like": "m05",
-  "script": "m05x.c", ...}}`) and replaces Palm Brinks' scene with one that
+  "title": "Palm Brinks Park II", "script": "m05x.c", ...}}`, the title its
+  row in the map table gets) and replaces Palm Brinks' scene with one that
   has the door. Its `"programs"` give the new door point `door_park` the
   program `ENTER_PARK`, and the park's tree point `dun07` (Palm Brinks'
   dungeon menu, program 290) the program `BACK_TO_TOWN`, by name.
@@ -20,8 +21,9 @@ big tree ([maps](../../assets/maps.md) section 9):
   front of the big tree and shows a message (in French on a French game,
   by `LANGUAGE`), and `BACK_TO_TOWN` goes back to Palm Brinks at
   `BACK_FROM_PARK`. `build` compiles it in every language and adds it as
-  `map/m/m05/m05x_1.stb` to `m05x_5.stb` (one `m05x.stb` when the languages
-  compile alike).
+  `map/m/m05/m05x_1.stb` to `m05x_5.stb`, with `m05x.stb` compiled as
+  Japanese beside them (only `m05x.stb`, which every language falls back
+  to, when the languages compile alike).
 - `"start_at": "m01"`: a new game starts in Palm Brinks, as Max.
 
 Nothing of the game's is in this folder. `make_mod.py` (plain Python, no

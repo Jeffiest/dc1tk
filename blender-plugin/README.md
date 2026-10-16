@@ -5,7 +5,7 @@ it as the game draws it, lets you edit its placements, trigger points,
 collision, settings, meshes and textures and model new objects, checks it
 against the game's limits, and exports it into a mod that `dc2tk build` turns
 into a disc image. The scene's conventions (node names, `extras.c2`,
-collision material names) are in [the map formats](../../docs/assets/maps.md),
+collision material names) are in [the map formats](../docs/assets/maps.md),
 section 8; the add-on follows them and never renames what carries data.
 
 Blender 4.2 or newer (tested with 5.1); written to run on 3.6 too. Plain
@@ -20,7 +20,7 @@ linked from this repository, the repository is found by itself.
 - **Link it (follows the repository):** link `blender-plugin/dc2tk_maps` into
   Blender's add-ons folder and enable it.
   - Windows (Blender 4.2+: the extensions folder):
-    `mklink /J "%APPDATA%\Blender Foundation\Blender\5.1\extensions\user_default\dc2tk_maps" "C:\path\to\DC2-Toolkit\src\blender\dc2tk_maps"`
+    `mklink /J "%APPDATA%\Blender Foundation\Blender\5.1\extensions\user_default\dc2tk_maps" "C:\path\to\DC2-Toolkit\blender-plugin\dc2tk_maps"`
   - Linux, macOS: `ln -s /path/to/DC2-Toolkit/blender-plugin/dc2tk_maps ~/.config/blender/5.1/extensions/user_default/dc2tk_maps`
     (`~/Library/Application Support/Blender/5.1/...` on macOS)
   - Blender 3.6-4.1: the same into `scripts/addons/` instead of
@@ -131,7 +131,7 @@ placement (copied with its template) or, with nothing in a placement active,
 the map's own `points`. A door is made as the disc's are (action button, the
 screen fading out); its program, the map script's program it runs once open,
 is a number or given by name in `mod.json` (`"programs"`, as for a door into
-a new map: [maps](../../docs/assets/maps.md) section 9). Names are made unique within their parent and kept
+a new map: [maps](../docs/assets/maps.md) section 9). Names are made unique within their parent and kept
 to 31 bytes. Duplicate Placement copies a placement with its pieces and
 points (meshes shared) under a new name (`house01_2`); with no slot it is
 appended after the map's placements.
@@ -158,7 +158,7 @@ parts: the game lays them out at run time. Its import shows each template
 once, in rows by family (`way`, `room`, `door`, ...), as a placement marked
 "Template ..., shown once": edit its pieces, collision and points and the
 export changes the template; the placement itself places nothing, so moving
-it changes nothing (see [dungeons](../../docs/assets/dungeons.md), where
+it changes nothing (see [dungeons](../docs/assets/dungeons.md), where
 area 5 floors are where chests and monsters may stand).
 
 **Check.** Validate Map lists errors and warnings (select an entry's object
@@ -177,17 +177,25 @@ copy of the map in the scene, are named in a warning, since they are left
 out) as glTF Separate, +Y up, with custom
 properties, to `maps/NAME/NAME.gltf` in the mod (textures in `textures/`),
 and `mod.json` gets `"map:NAME": "maps/NAME/NAME.gltf"` under `replace`
-(made when missing; other keys kept). Blender's `.001` suffixes are taken
+(made when missing; other keys kept; written with a 2-space indent, as
+dc2tk writes its JSON), unless a line under `add` already names that scene
+as its `"file"`: then the export is that new map's, and the disc's map is
+left alone. Blender's `.001` suffixes are taken
 off node and collision material names in the written file, since pieces and
 points repeat in every placement of a template. To make a new map of the
 export instead, move its line under `add` with the map it came from:
 `"map:m05x": {"file": "maps/m05/m05.gltf", "like": "m05"}`
-([maps](../../docs/assets/maps.md) section 9).
+([maps](../docs/assets/maps.md) section 9).
 
 **Build.** Set the retail ISO, the output ISO and the source tree and press
 Build ISO with Mod: `dc2tk build SOURCE ISO -o OUTPUT --mods MODS --mod NAME`
 runs in the background, its last lines in the panel and all of it in the
-text "dc2tk output".
+text "dc2tk output". The add-on asks for the image file; `dc2tk build` on the
+command line also takes an untouched extracted disc folder in its place.
+`build` refuses a map line's scene of the wrong shape (a node's `children`,
+a mesh's `primitives` or the materials not a list, a child that is not one
+of the nodes) with an error naming it, rather than leaving that part out of
+the map.
 
 ## Tests
 
@@ -201,7 +209,7 @@ piece, a point and an animation of the model's node; a door, a point light
 with a KHR light, a sound, an invent box, an animation of a piece under the
 field names of older exports, and two points whose data is a raw argument
 list; a fixed camera; map settings), imports it (on Windows through a
-stand-in for `dc2tk map export`), checks the game look, the light set's world
+stand-in for `dc2tk map-export`), checks the game look, the light set's world
 and suns and the hour filter, what the animations move and the lines drawn
 for them, edits fields, adds a point of every kind, duplicates a placement,
 makes a new model from a mesh, paints a collision face, validates, draws
@@ -216,6 +224,11 @@ own with any Python 3.
 
 Worth knowing when reading an exported scene:
 
+- `dc2tk map-export` writes the `.gltf` as compact JSON, its floats in
+  their shortest form that reads back to the same value; the add-on's export
+  writes it again with a 1-space indent. dc2tk reads either, and a node's
+  `extras.c2` as an object or as JSON text.
+
 - Object, mesh and material names are unique in Blender, so repeated names
   get `.001`; the export takes them off again.
 - Custom properties hold JSON except integers beyond 32 bits and lists that
@@ -226,8 +239,8 @@ Worth knowing when reading an exported scene:
 - The exporter writes children in name order and adds `NORMAL` to
   collision meshes; placement order is kept by `slot`.
 - It keeps world matrices in 32 bits, so pieces of placements thousands of
-  units out come back moved by a few thousandths; the importer takes
-  positions within 0.005 as unmoved.
+  units out come back moved by a few thousandths; `dc2tk build` takes
+  positions within 0.005 (and 2e-6 of the value) as unmoved.
 - It writes some meshes' colours without alpha, and gives every primitive of
   a mesh with colours a colour (white where there was none); neither counts
   as an edit.

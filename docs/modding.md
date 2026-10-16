@@ -28,7 +28,10 @@ add new files there. `dc2tk diff dc2.iso` lists what changed. `dc2tk mod make dc
 line by its id (so it changes every place the disc has it), and each changed or
 added disc file as a `file:` line. Then `dc2tk build extracted/scripts dc2.iso -o
 mymod.iso --mod mymod`. The disc's own files beside `DATA.DAT` (movies,
-`SOUND.DAT`) are listed but cannot go in a mod.
+`SOUND.DAT`, the indexes, the boot program) are listed but cannot go in a mod.
+`build`, `diff` and `mod make` take an extracted disc folder in place of the
+image too, but it has to be untouched: `build` packs the folder it is given as
+it is, so a folder you edited would put your edits in under the mod's.
 
 Files keep the game's codes with a readable name after them
 (`map/s/s51_raybrandt_castle/`, `dungeon/monster/e33a_golem.c`); commands
@@ -189,21 +192,22 @@ the player is alive and on the ground:
 ## Pictures and models of a mod's own
 
 Scripts load pictures and models by disc path: `load_image(stack,
-"mods/calculator/ui.img", 0, &block)` loads a texture file, whose pictures
-`set_image_texture(image, "calc_bg")` then asks for by name, and
+"mods/calculator/calc_ui.img", 0, &block)` loads a texture file, whose pictures
+`set_image_texture(image, "calc_body")` then asks for by name, and
 `load_chara(stack, "mods/calculator/calc.chr", "info.cfg", slot)` loads a
 character pack. A mod makes such files from PNGs and glTF with `file:`
-lines that say which of the disc's files to make them like:
+lines that say which of the disc's files to make them like (the calculator
+example, `docs/examples/calculator`, does both):
 
 ```json
 "add": {
-  "file:mods/calculator/ui.img": {"file": "ui", "like": "texture:logo_d00"},
+  "file:mods/calculator/calc_ui.img": {"file": "ui", "like": "texture:logo_d00"},
   "file:mods/calculator/calc.chr": {"file": "model/calc.gltf", "like": "model:uki"}
 }
 ```
 
 - **A picture file** takes a folder of PNGs (or one PNG): one picture each,
-  named after its file (`ui/calc_bg.png` is `calc_bg`). `texture:logo_d00`,
+  named after its file (`ui/calc_body.png` is `calc_body`). `texture:logo_d00`,
   the title logo, makes them as the game's 2D pictures are: 8-bit with a
   palette of 256 colours with alpha, so a PNG of more colours is reduced
   to 256, and see-through pixels stay see-through. Sides are up to 1024
@@ -217,16 +221,21 @@ lines that say which of the disc's files to make them like:
   its armature becomes the pack's skeleton, its skinned meshes are skinned
   as the game's are and its actions become motions `set_chara_motion`
   plays by name; take a character's model as the template
-  (`model:p01_01a`, a villager). See
+  (`model:p01_01a`, a villager). A `.glb`, or a folder holding the glTF,
+  works as well as a `.gltf`. See
   [the new-character example](examples/new-character/README.md) and
   [usage](usage.md#mods), "New characters".
+- `"like"` makes only these two: a `.img` like a texture (`texture:NAME` or
+  a texture file's disc path) and a `.chr` like a model (`model:NAME` or a
+  pack's disc path), one id and not a pattern; anything else is refused.
 - `build` lists them as new files; `dc2tk mod asset built.iso NAME
-  mods/calculator/ui.img --as png` (or `calc.chr --as gltf`) copies them
+  mods/calculator/calc_ui.img --as png` (or `calc.chr --as gltf`) copies them
   back out of a built image to check. The rules are in [the
   design](design.md), "Mods by name".
 
 Keep them small: a picture file loads into the memory stack the script
-names, and the 256x128 and 32x32 pictures above make a 36 KB file.
+names, and an 8-bit picture takes a byte a texel and 1 KB of palette, so a
+256x128 and a 32x32 picture make a file of about 36 KB.
 
 ## A map of a mod's own, and a door into it
 
@@ -241,9 +250,34 @@ map's scene, whose program (given by name, `"programs": {"door_park":
 `jump_to_map(-1, "m05x", map_start)`. The way back is the same from the new
 map: a program naming the town's own arrival program, or one of the mod's
 that runs it and places the player at the door. The mod's scripts share
-the program numbers by `NEW_PROGRAM` in a header both include, and see the
+the program numbers by `NEW_PROGRAM` in a header both include (`build` gives
+each one from 9000 to 9999, kept in `mods/numbers.json`), and see the
 new map's number as `MAP_M05X`. See [maps](assets/maps.md) section 9 and the
 [new-map-door example](examples/new-map-door/README.md).
+
+A map line takes `"file"` (the scene) and `"programs"`, and under `add` also
+`"like"`, `"script"` and `"title"` (the new map's own title in the map table,
+printable ASCII without quotes; the like map's otherwise). Any other option,
+`"only"` among them, is refused: a map line changes the one map it names. A
+new map's name is lower-case letters, digits and `_`, starting with a
+letter, at most 12 long, since its files are named after it in the engine's
+32-byte file names. Its row goes after the disc's in every language's map
+table (`map/map<language>.cfg`), so it is numbered after the disc's maps (189
+on the PAL disc) and no map of the game changes number; the save keeps map
+flags (opened chests and the like) only for maps numbered below 256.
+
+## What the game has room for
+
+The game loads into fixed memory, and `build` checks every load the files
+it changes take part in ([memory](assets/memory.md)): a file read whole, a
+map's script (312,816 bytes at most; some of the disc's are within a few
+thousand of it), a map's placements (320, 400 in a dungeon), texture blocks,
+sound memory, a skinned mesh's vertices and bones. A map counts as the kind
+its row in the game's own map tables (`map/map<language>.cfg`) gives it,
+town, interior or dungeon; a new map as its like map's. A budget that is
+certain and exceeded is an error: the image is still written, but `build`
+says the game will not load it and exits with 1. An estimated budget
+exceeded, where the load grew, is a warning.
 
 ## Music of a mod's own
 
@@ -338,6 +372,14 @@ Building that mod builds `captions` in too, first: the flag has the number
 override runs first and its `original()` runs the one from `captions`.
 `"after": ["other"]` orders two mods without either needing the other (see
 [usage](usage.md#mods)).
+
+Mods built together merge where they can: patches of one script, overrides
+of one function, and data tables field by field. Two mods giving one thing
+alike give it once; giving it differently stops `build` (and `mod check
+--disc`),
+naming it and both mods: `d01f01 room 0 rate is given two ways, by mod a and
+mod b`. Two mods may not replace one asset id, one picture or sound entry,
+or one game file either.
 
 ## A pattern: a caption every five seconds during a fight
 
@@ -442,7 +484,16 @@ without a disc (`dc2tk mod check`); build only what changed, which `build`
 does by itself; and start New Game at the scene you are working on, then
 boot it with `--play`. A mod can name its scene in `mod.json`
 (`"start_at": "s17:9000"`, or one of its own programs:
-`"s51:SHOW_NEXT_CAPTION"`), so building it is enough.
+`"s51:SHOW_NEXT_CAPTION"`), so building it is enough; `--no-start-at` builds
+a normal New Game.
+
+`mod test` runs the `test_` functions of the mod's `tests.c` (an `int`, no
+parameters; nonzero passes), compiled with the mod over the tree, in the
+tools' own interpreter of the game's VM. Natives do nothing there, so what
+one would return is 0, and `print` records its values, shown when a test
+fails. A test that runs past 10,000,000 instructions or nests calls past
+10,000 deep stops with an error naming the function, so a loop that never
+ends fails rather than hangs.
 
 `build --start-at MAP:PROGRAM` writes a test image whose New Game goes
 straight to a scene, without changing the source tree:
@@ -450,6 +501,9 @@ straight to a scene, without changing the source tree:
 ```
 dc2tk build extracted/scripts dc2.iso -o test.iso --start-at s51:story_50
 ```
+
+`MAP/SCRIPT:PROGRAM` picks one script of a map that has several
+(`--start-at s06/s06b:500`), and a map alone starts at its `map_start`.
 
 A new game starts in dungeon 1's script at `floor_start` (`title.cpp`,
 `EntryEventScript` in `dng_main.cpp`). The build compiles that script with a
@@ -460,7 +514,8 @@ dungeon 1 play normally. That suits maps the game loads with
 `load_dungeon_map` (story scenes and dungeon-like maps; `xref map` shows
 whether it does). Towns are not loaded that way, and the dungeon loop a new
 game runs in ignores `jump_to_map`; for any other map in the disc's map table
-(`map/map1.cfg`, numbered by row) the warp is the one the game uses to leave a
+(`map/map<language>.cfg`, `map1.cfg` for English, numbered by row; the older
+`map/map.cfg` is read by nothing) the warp is the one the game uses to leave a
 dungeon for a town, `go_to_edit_mode(map number, program)`, so
 `--start-at m05` (at `map_start`) or `--start-at m05:PROGRAM` opens a town.
 `build` prints which way it warps. The scene starts with a new game's party

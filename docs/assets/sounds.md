@@ -25,7 +25,9 @@ Evidence is of three kinds, marked where it matters:
 
 ## 1. The `.snd` pack
 
-The same chain format as the game's other packs (`dc2tk_disc::archive::parse_pack`):
+The same chain format as the game's other packs (`dc2tk_disc::archive`:
+`parse_pack` finds the members, `Pack` reads one whole to write it back byte
+for byte; `soundbank::read_pack` reads a bank's):
 
 | Offset | Size | Field |
 |---|---|---|
@@ -39,8 +41,16 @@ The same chain format as the game's other packs (`dc2tk_disc::archive::parse_pac
 The chain ends with a slot whose name starts with NUL (0x50 bytes, also
 holding leftovers: `.. 50 00 00 00 ff ff ff ff ff ff ff ff xx xx xx xx`).
 Byte-exact rewriting keeps each slot's 64-byte name field, its fourth word
-and the end slot as found; new members get zeros (as the project's
-`discfiles.rs` writes them).
+and the end slot as found (`archive::Pack::write`); new members get zeros
+after the name and in the fourth word (`archive::PackMember::new`,
+`write_slot`; a mod's new member goes after the last,
+`dc2tk_disc::rebuild::added_member`). Data that does not chain slot by slot
+to an end slot right at its end is not a pack, and a member name with `/`
+or `\`, or `.` or `..`, is refused. A bank is read strictly: every member's
+padding must be zeros (as on the disc), so the bank written back is the file
+read, and it must have exactly one `.hd`, `.bd`, `.cfg` and `.vol`, the Head's
+body size the `.bd`'s and the VAG offsets ascending from 0
+(`Bank::from_bytes`); anything else is an error, never a panic.
 
 Members (engine, `sndLoadSound`): looked up by extension with
 `GetPackFileExt`, which compares extensions ignoring case and returns
@@ -124,7 +134,10 @@ prog -> Prog[prog] -> splits with range_low <= key <= range_high
      -> Vagi[sample.vag_index] -> .bd offset, sample rate, loop flag
 ```
 
-`Bank.voices(entry)` returns these chains. Over the disc: 16,127 entries:
+`Bank::voices(&entry)` returns these chains (`Voice`: program, split,
+sample set, sample, VAG, key, velocity); an entry's `kind` is an
+`EntryKind`: `None`, `KeyOn { prog, key }`, `Sq { seq }` or
+`SeSeq { seq }`. Over the disc: 16,127 entries:
 13,284 KeyOn, 2,142 `.mid`, 447 `.sq`, 254 naming a file the pack lacks
 (type 0). 9,503 KeyOn entries reach no voice: they are placeholders
 (`-`, 7,904 rows) or name programs the bank lacks, mostly in banks that
@@ -399,7 +412,8 @@ program 0, volume/expression 127, pan 64.
   character's bank uses the character's memory (`dng_main.cpp`). A bank uses `16 x
   (ceil(se_num x 12 / 16) + 2)` for the entry table, plus for `.sq` and
   `.mid` members their name strings, a table and the converted events
-  (`Bank.ee_table_bytes()`). Largest on the disc: `FG_000` 7,072 of 8,192;
+  (measured while the format was worked out; `dc2tk` does not compute
+  it). Largest on the disc: `FG_000` 7,072 of 8,192;
   `SR_*` 368 of 1,024. Each added entry costs 12 bytes. (Where monster
   banks' tables go was not checked.)
 - **IOP**: the `.hd` is copied to an IOP heap block of `max(256, size +
@@ -452,9 +466,21 @@ fs::write("SY_000.snd", bank.build()?)?;
   even when the bank lacks that program: such rows are silent on purpose in
   shared layouts and must stay so. Numbers past the table come first, then
   holes; 0..127 only.
-- `add_entry` inserts the row before `END` and sets (or adds) its `.vol`
-  line; banks whose `.vol` already lists the index (the extra entry from
-  the header line) get that line updated.
+- `add_entry` inserts the row before `END` (tab-separated, name and category
+  at most 63 bytes of cp932) and sets (or adds) its `.vol` line, each in its
+  file's own line ending (`\r\n` for a file without one); banks whose `.vol`
+  already lists the index (the extra entry from the header line) get that
+  line updated.
+- A mod's WAV folder (`sounds::build_entries`): an entry the folder leaves
+  out stays as it is; a WAV that is the entry's own sound changes only its
+  volume (0 to 127, when given); a KeyOn entry whose samples no other entry
+  plays is overwritten in place (`Mode::InPlace`), any other (shared
+  samples, a sequence entry) gets samples of its own (`Mode::Detach`), and
+  the samples it played before are cut to a silent stub when nothing plays
+  them any more (`free_unused`, a sequence's notes included). A WAV numbered
+  one past the last entry adds one (named by the file, else `MOD_SE`;
+  category `MOD`, volume 100, key 60); a number further on is refused, as
+  are a WAV not named by its number and two WAVs for one entry.
 - The script compiler names entries from `pal.h` enums `se_<bank>_pal`;
   a new entry's number is what `add_entry` returns. A mod's new entries
   get names the same way: an `add` line names its entry
@@ -463,10 +489,35 @@ fs::write("SY_000.snd", bank.build()?)?;
   `sp_004.snd.wav/`) gives `SE_SP_004_BEEP = 5` (`replace::wav_constants`),
   which the mod's patches compile with and `mod check` prints. A name
   `pal.h` gives another number is refused.
+- Decompiled scripts show entry numbers by name (`dc2tk-script`'s
+  `soundpass.rs`): the entry of `play_se`, `stop_se`, `pause_se`,
+  `set_se_volume`, `set_se_pan`, `set_se_pitch`, `get_se_status`,
+  `play_actor_se` and `play_actor_se_after` is written as a constant of the
+  bank's enum (`se_<bank>`, `se_<bank>_pal`) when the pass knows the bank
+  the id was read from: the system bank, a scene's base bank
+  (`SE_BANK_BASE`, 1-3: `base_se`) or battle bank (`SE_BANK_BATTLE`, 4:
+  `battle_se`), a bank `load_sound` loaded (a path names it by its file
+  stem, a sound set number by its event bank in the definition set), or the
+  event port's. It follows ids through variables, globals, parameters and
+  helpers' out-parameters across a program's functions, a few rounds
+  settling it. The event port is followed like a variable every function
+  shares: a function starts with the bank its callers leave there, and an
+  event the engine starts finds the port's resting bank, the one every event
+  that loads another bank puts back before it ends (a dungeon floor's battle
+  music, `EV_200_000`; a function that reads the battle music's volume and
+  whose bank is unknown names entries by `se_event_port`). A library's
+  functions take the banks every script that includes them agrees on.
 
 ## 10. Verification
 
-All 861 banks, 16 processes, about 6 minutes (`check_results.txt`):
+All 861 banks, in the check run while the format was worked out (16
+processes, about 6 minutes; its results file is not kept). What runs now:
+`soundbank.rs`' unit tests (records the sizes Sony gives, a bank written
+back the same, the engine's column split, WAV and ADPCM round trips, a loop
+kept through the encoder, the notes a `.mid` plays), `dc2tk assets` and the
+hidden `dc2tk assets-check DISC TREE` (every bank's WAV folder, unedited,
+builds back to the disc's bytes at every place it is), and the music corpus
+tests ([music](music.md)). The run's results:
 
 | Check | Result |
 |---|---|
@@ -494,9 +545,11 @@ against the mono mix. Replacing one entry and adding one grew the `.bd` by
 ## 11. Open problems
 
 1. **`.sq` sequences are decoded** (see [music](music.md)): `voices()`
-   resolves a sequence entry's notes to the samples they play, and
-   `free_program` avoids the programs sequences name. `free_unused` still
-   leaves banks with sequences alone.
+   resolves a sequence entry's notes to the samples they play,
+   `free_program` avoids the programs sequences name, and `free_unused` cuts
+   a VAG only when no entry plays it, a sequence's notes included (a member
+   no `.cfg` row names is not seen; the disc's banks have 447 `.sq` rows for
+   their 447 `.sq` members).
 2. **Field meanings from Sony's names, not measured.** Layout and sizes
    are certain; the semantics of cross-fades, bend ranges (u16, 256 =
    1 semitone?), velocity curves, LFO fields, the SPU-attribute bits and

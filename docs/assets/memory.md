@@ -32,7 +32,7 @@ of n quadwords holds n - 1.
 | Max's model pack (dungeon stack 0) | 1,096,000 | c01_base3 about 1,080,672 | about 15,000 | estimated use |
 | Sword, second weapon, hat (stacks 2, 3, 4) | 112,000; 74,400; 48,000 | ws 104,496; wg 71,968; ha 47,792 | | estimated use |
 | A skinned mesh | 3,198 vertices, 32 bones | | | certain |
-| Map memory (town map / interior / dungeon map) | shared pool | g01 9.47 MB / i02h01 4.08 MB / d02f01 6.91 MB | unknown | estimated |
+| Map memory (town map / interior / dungeon map) | shared pool | g01 9.47 MB / i04h01a 3.75 MB / d02f01 6.91 MB | unknown | estimated |
 | SPU music region | 0x78000 | BG_056 0x77E80 | 384 | certain |
 | SPU field region (field, event and monster banks) | 0x10DC10 | s01's set 1600 + EV_100_155 0x10E180 | -1,392 | certain size, use from the scripts |
 | SPU system sounds | 0x1D4C0 | SY_000 0x1C6F0 | 3,536 | certain |
@@ -104,8 +104,9 @@ placement past the end is not placed (`NewPlaceParts` returns NULL).
 
 **The map table**, certain. `map/map<language>.cfg` goes into `MapNameBuff`
 (0x8000 bytes, `mapselect.cpp`): 0x1C a row and one more, then the rows'
-strings. The disc's fill 9,241 (Japanese) to 13,807 bytes (Korean); `build`
-refuses new maps' rows past the buffer ([maps](maps.md) section 9).
+strings, each part taken to the next multiple of 16 bytes. The disc's
+fill 9,248 (Japanese) to 13,808 bytes (Korean) (`dc2tk_script::maptable::buffer_use`); `build` refuses
+new maps' rows past the buffer ([maps](maps.md) section 9).
 
 **Texture blocks**, certain (section 5). The add map's picture files then the map's own are
 entered from block 0, each at the block the last left (`CMap::LoadData`, map.cpp:1506). In town the
@@ -136,7 +137,10 @@ older `map/map.cfg`, which nothing reads, gives some maps other types): types 7 
 dungeon loop, the interiors (types 2, 4 and 6) and Palm Brinks' parts m02 to m05 (maps 11 to
 14, which `EditMapJump`, editloop.cpp:2735, loads over m01) as sub maps, the rest as the main map.
 Largest on the disc: town g01 9,471,152 bytes, interior i04h01a 3,752,880, dungeon d02f01
-6,911,504. A map larger than the largest of its kind may still fit; how much its scene leaves
+6,911,504 (`memory::RETAIL_TOWN_MAP`, `RETAIL_INTERIOR_MAP`, `RETAIL_DUNGEON_MAP`; the corpus
+test `corpus_retail_fits_the_budgets` fails when the disc no longer gives them, so re-measure
+them there when the estimate or the map list changes). A map larger than the largest of its
+kind may still fit; how much its scene leaves
 is not known (section 1).
 
 ## 4. Character packs
@@ -263,9 +267,13 @@ where an estimated one is (or a load grows past what the disc shows to work), an
 what each changed load uses:
 
 - **A map** whose `.map`, `.cfg`, `.mpk`, `.ipk`, `.efp` or `.sky`, or whose add map's files, changed:
-  read buffer and loading screen, placements, texture blocks (an error past its blocks; a warning
-  when a town map goes past 24 that did not), and its estimated memory (a warning when it is more
-  than the largest of its kind on the disc and more than before).
+  read buffer and loading screen (past the loading screen an error in town, a warning in a
+  dungeon), placements, texture blocks (an error past its blocks; a warning when a town map goes
+  past 24 that did not), and its estimated memory (a warning when it is more than the largest of
+  its kind on the disc and more than before). The maps and their kinds come from the built disc's
+  map tables (section 3), so a mod's new map is checked as the kind of the map it is like; a
+  changed map file that no table lists is taken by its name's first letter (`d` a dungeon map,
+  `i` an interior, else a town map).
 - **A map script** (`map/**.stb`): the script buffer.
 - **A character pack**: the read buffer; skinned meshes' vertices and bones; for the party's
   packs the estimate against their stack; its pictures against its texture blocks.

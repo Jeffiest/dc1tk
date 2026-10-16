@@ -45,7 +45,25 @@ L_00b0:
 - `native NAME` is the `PUSH_CONST` int that carries an `EXT`'s native number,
   named from the `.natives` table; an unregistered number prints as
   `native 190`.
-- Floats print as the shortest decimal that gives back the same 32 bits.
+- The opcodes, addressing modes and comparisons are `stb::Op`, `stb::Mode`
+  and `stb::Compare` (`src/crates/dc2tk-script/src/stb.rs`), one table each
+  that the assembler, the compiler, the decompiler and the test VM share.
+- Floats print as the shortest decimal that reads back as the same 32 bits
+  (`0.5`, `1.0`, `1e20`, `1.5e-7`); where rounding through a double would
+  land that text beside a halfway point, the double's exact text prints
+  instead. The assembler reads a float (a number with a point or an
+  exponent) as a double and rounds it to a float. Other numbers are decimal
+  or `0x` hexadecimal, with an optional sign.
+- `.function NAME local N arg N` adds `types ...` for the record's
+  `arg_types` up to the last nonzero one, and `name N` when the record's
+  name word is not 0. The header line adds `code`, `prog`, `prog_num`,
+  `unk_14` or `padding HEX` only where the file's differ from the usual.
+  `.tail` (which the compiler writes) zero-fills the code section after the
+  last function to a multiple of 16.
+- Words are separated by white space, and a line holds one item. A string
+  is in double quotes, with `\\`, `\"`, `\n`, `\r`, `\t` and `\xHH`
+  escapes. The disassembler writes LF line endings; the assembler reads
+  CRLF the same.
 - `push "text"` takes the function's next `.string`. Where pushes do not use
   the block in order (198 functions, all with unreferenced strings in their
   block), they print as `push string N`, the index into `.string`.

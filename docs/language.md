@@ -141,8 +141,9 @@ This is a made-up script. For a whole mod, see the
   header's default (see the SDK). 471 of the 1.4 million calls on the disc
   need one.
 - `#include "lib/..."` pulls in a library's functions at that point; include
-  paths are looked up from the including file's folder and then each folder
-  above it, then in `sdk/` (where the `modkit` libraries are). A library's
+  paths are looked up from the script's folder and then each folder above
+  it, then in `sdk/` (where the `modkit` libraries are), and so are the
+  includes of an included library. A library's
   `#define`s, enums, typedefs and helpers become the including script's, as
   with a header.
 - `#pragma` lines carry what the bytes need and the language does not say:
@@ -150,12 +151,21 @@ This is a made-up script. For a whole mod, see the
   file's string buffer was never reset between functions) for the file;
   `strings` before a function and `padding_of NAME HEX` after the code for
   string-block bytes no rule predicts (`padding HEX` before a function
-  still works). None of the PAL disc's scripts need the last two. C
-  compilers ignore unknown pragmas.
+  still works). None of the PAL disc's scripts need the last two.
+  `#pragma natives TABLE` names the native table; each SDK header has one, so a
+  file that includes its header needs none (the decompiler writes it at the
+  top of a library that includes none). `#pragma once` is
+  accepted (a library is read once anyway), and a mod patch's `target`,
+  `override` and `every_frame` are in [usage](usage.md#mods). The parser
+  ignores pragmas it does not know, as C compilers do.
 - A function the decompiler cannot structure prints as
-  `asm f_0388 arg 0 { ... }` around its text assembly, and a file it cannot
-  read at all as `#pragma assembly` followed by the whole disassembly. Neither
-  happens on the retail disc, and neither is C.
+  `asm f_0388 arg 0 { ... }` around its text assembly, after a comment saying
+  why, and a file it cannot read at all as `#pragma assembly` followed by the
+  whole disassembly. Neither happens on the retail disc, and neither is C.
+- A float constant prints as the shortest decimal that reads back as its 32
+  bits (`0.5`, `1.0`, `3.1415927`; `1e20` and `1.5e-7` for very large and
+  very small ones, which no retail script has). Decompiled files have LF line
+  endings; the compiler reads CRLF files the same.
 
 ## Writing your own code
 

@@ -3,8 +3,11 @@
 `sdk/<table>.h` (`event`, `monster`, `action`, `effect`, `arg`) is the
 scripting SDK, `sdk/helpers/<table>.h` holds its inline helpers (each table
 header includes its own), and `sdk/c2s.h` is the C prelude. A script includes its table's
-header instead of naming a native table. `sdk/limits.h`, `sdk/float.h` and `sdk/stddef.h`
-are C89's freestanding headers for the VM's types (see [the standard](c-standard.md)).
+header instead of naming a native table. `sdk/limits.h`, `sdk/float.h`, `sdk/stddef.h` and
+`sdk/stdarg.h` are C89's freestanding headers for the VM's types (see
+[the standard](c-standard.md)). Every header has an include guard,
+`DC2TK_<NAME>_H` (`DC2TK_HELPERS_<NAME>_H` under `helpers/`, `DC2TK_C2S_H`
+for the prelude), which only keeps it from being read twice.
 
 ```c
 enum program {
@@ -18,7 +21,7 @@ extern int get_counter(int index) NATIVE(16);
 
 // Queues turning a texture animation on the actor on or off. ...
 // Original name: _OBJS_TEX_ANIME.
-extern void set_actor_texture_anim(int actor, int on, OPTIONAL(string anim_name)) NATIVE(471);
+extern void set_actor_texture_anim(int actor, any on, OPTIONAL(string anim_name)) NATIVE(471);
 
 extern float get_target_angle(...) NATIVE(70, 15);
 
@@ -58,7 +61,13 @@ static inline void start_turning_to_target(float *angle, float turn_speed)
   matches the PS2 and lets `any` hold a pointer. For mod patches it also
   gives `NEW_FLAG`, `NEW_COUNTER`, `NEW_PROGRAM` and `NEW_MONSTER_VAR` (as
   placeholder constants), `original(...)` and the `LANGUAGE` names, which
-  the compiler knows itself (see [usage](usage.md#mods)).
+  the compiler knows itself (see [usage](usage.md#mods)). A decompiled
+  tree's root holds a `compile_flags.txt` with these flags, `-I` for the
+  SDK, each definition set's `include/` and the tree's own `include/`
+  (`disc.h`) and root, and `-Wno-error=int-conversion` for the retail calls
+  that pass a string or pointer where a native reads an int, so clangd
+  reads every script (see
+  [usage](usage.md#checking-a-c-toolchain-can-read-the-output)).
 
 Signatures accept every call the retail scripts make, so the decompiled disc
 passes clang's type checks. Where a retail call disagrees with what the

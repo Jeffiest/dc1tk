@@ -398,7 +398,7 @@ footer { margin-top: 80px; color: var(--muted); font-size: 0.85rem; border-top: 
     <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-accent"/></marker>
   </defs>
   <rect x="20" y="20" width="860" height="80" rx="10" class="box-blue"/>
-  <text x="450" y="50" text-anchor="middle" class="lbl">Engine (game executable, not editable)</text>
+  <text x="450" y="50" text-anchor="middle" class="lbl">Engine (game executable: scripts can't change it)</text>
   <text x="450" y="72" text-anchor="middle" class="sub">rendering · collision · animation · sound · monster stat table · floor monster lists · chest contents · effect name table</text>
 
   <g>
@@ -440,9 +440,11 @@ footer { margin-top: 80px; color: var(--muted); font-size: 0.85rem; border-top: 
 </svg>
 <figcaption>
   Five kinds of script, each with its own header in <code>sdk/</code> and its own set of
-  natives. The engine-side tables (in grey text at the top) are out of reach: scripts can read
-  and trigger them but not change them. Keep that line in mind; it decides what a task can and
-  cannot do.
+  natives. The engine-side tables (in grey text at the top) are out of a script's reach: scripts
+  can read and trigger them but not change them. Keep that line in mind; it decides what a
+  script can and cannot do. A mod can still change several of those tables as data, beside its
+  scripts: the monster stats, the floors' monster lists and the chests' contents are
+  <code>data:</code> tables in <code>mod.json</code> (see the table below).
 </figcaption>
 </figure>
 
@@ -455,9 +457,10 @@ footer { margin-top: 80px; color: var(--muted); font-size: 0.85rem; border-top: 
     <tr><td>How a monster moves, picks attacks, reacts, dies; boss phases</td><td>monster AI scripts</td><td>Yes</td></tr>
     <tr><td>Combo timing, hit windows, charge attack, guns, magic</td><td>player action scripts</td><td>Yes</td></tr>
     <tr><td>How an effect looks and moves, the damage a shockwave does</td><td>effect scripts</td><td>Yes</td></tr>
-    <tr><td>Which monster kinds exist, their models, HP and stats, which AI script each kind runs</td><td>engine monster table</td><td>No</td></tr>
-    <tr><td>Which monsters roam a random dungeon floor, what a floor chest contains</td><td>engine floor data</td><td>No (but scripts can add monsters and chests on top)</td></tr>
-    <tr><td>Models, animations, textures, sound banks, the text of message files</td><td>data files on the disc</td><td>No (scripts pick from what exists)</td></tr>
+    <tr><td>Which monster kinds exist</td><td>engine monster table</td><td>No: a mod can't add a kind</td></tr>
+    <tr><td>A kind's model, HP and stats, drops, which AI script it runs</td><td>engine monster table</td><td>Not from a script; yes from a mod's <code>data:monsters</code> table, patched into the executable</td></tr>
+    <tr><td>Which monsters roam a random dungeon floor, what a floor chest contains</td><td>floor data the engine reads</td><td>Not from a script (but scripts can add monsters and chests on top); yes from a mod's <code>data:floors</code> and <code>data:chests</code> tables</td></tr>
+    <tr><td>Models, animations, textures, sound banks, music, the text of message files</td><td>data files on the disc</td><td>Scripts pick from what exists; a mod replaces or adds them by asset id in <code>mod.json</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -835,7 +838,8 @@ talk_to_npc(npc_slot, -1, 0, 0);    // -1 = show what's laid out; bubble, wait, 
   monster list from engine data. <code>MONSTER_SEWER_RAT</code> is only how the decompiler
   prints the number 0. So you won't find "the Golem appears on floor 9" in any script, and
   <code>xref monster golem</code> reports no placements. Scripted fights are different: they
-  name exact kinds (see below).
+  name exact kinds (see below). The floor lists are <code>dungeon/cfg_file/mos_place&lt;dungeon&gt;.cfg</code>,
+  which a mod changes as the <code>data:floors</code> table (<a href="assets/data.md">game data</a>).
 </div>
 
 <h3>The programs a dungeon answers</h3>
@@ -1281,11 +1285,11 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
   <li><strong>Copy it into a mod.</strong>
 <pre><code>dc2tk mod new extracted/scripts my-change map/g/g01_sindain/g01_1.c</code></pre>
   Then edit under <code>mods/my-change/files/</code>.</li>
-  <li><strong>Or add without copying.</strong> A mod's <code>mod.json</code> can add programs and includes to a map's scripts (all languages at once), or wrap an existing program with your functions before or after it. See <a href="#task-cutscene">task 14</a>.</li>
+  <li><strong>Or add without copying.</strong> A mod's <code>mod.json</code> can add programs and includes to a map's scripts (all languages at once), or wrap an existing program with your functions before or after it. See <a href="#task-cutscene">task 14</a>. A <em>patch</em> goes further: a <code>.c</code> file with <code>#pragma target map g01</code> (or <code>script</code>, <code>monster</code>, <code>library</code>) holding only the functions it overrides or adds, merged into every script it targets. <code>dc2tk mod override extracted/scripts my-change FUNCTION --map g01</code> starts one, and <code>dc2tk mod slim</code> turns copied files into patches (<a href="modding.md">modding.md</a>).</li>
   <li><strong>Build and play.</strong>
 <pre><code>dc2tk build extracted/scripts dc2.iso -o modded.iso --mod my-change --play</code></pre>
   Only the scripts that change are recompiled, so this takes seconds.</li>
-  <li><strong>Jump straight to the scene.</strong> For maps loaded dungeon-style, <code>--start-at s51:story_50</code> (or <code>"start_at"</code> in <code>mod.json</code>) makes New Game start there. It doesn't work for town maps; for those, keep a PCSX2 save state near the spot.</li>
+  <li><strong>Jump straight to the scene.</strong> <code>--start-at s51:story_50</code> (or <code>"start_at"</code> in <code>mod.json</code>) makes New Game start there, on maps loaded dungeon-style. A town map works too, entered as the game enters towns: <code>--start-at g01</code> starts in Sindain at <code>map_start</code>, as Max. Either way it is a new game's save, with no story flags set, so a scene that waits for one won't play; for those, keep a PCSX2 save state near the spot.</li>
 </ol>
 
 <div class="warn">
@@ -1293,7 +1297,10 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
   <code>build</code> replaces scripts that exist on the disc. A brand-new script file (say
   <code>dungeon/monster/e999a.c</code>) is skipped with "not on the disc", because nothing in
   the game would load it. New <em>library</em> files are fine, since they're pasted into
-  existing scripts. Keep yours under <code>lib/mods/NAME/</code>.
+  existing scripts. Keep yours under <code>lib/mods/NAME/</code>. The one new script a mod
+  can have is a new map's own: a map added under <code>"add"</code> in <code>mod.json</code>
+  takes a <code>"script"</code>, which build compiles where the engine looks for it
+  (<a href="assets/maps.md">maps</a>, section 9).
 </div>
 </section>
 
@@ -1312,7 +1319,7 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
   Use <code>\n</code> for a new line and <code>&lt;page&gt;</code> for a page break; the
   <a href="modding.md#message-text">message text codes</a> list button icons and
   placeholders. Keep lines short enough for the bubble.</li>
-  <li><strong>If the line is a number, not text</strong> (<code>show_message(0, 1090010)</code>), it comes from a message file on the disc, which these tools don't edit. Replace the number with your own literal string. If it was voiced, also remove or replace the voice call, or the old audio plays under your new text.</li>
+  <li><strong>If the line is a number, not text</strong> (<code>show_message(0, 1090010)</code>), it comes from the message file the scene loaded, the event text beside the scripts on the disc, which these tools don't convert (a <code>file:</code> line in <code>mod.json</code> can only replace it whole). Replace the number with your own literal string. If it was voiced, also remove or replace the voice call, or the old audio plays under your new text. (The menus', shops' and system messages are the other kind of message file, <code>.mes</code>, which a mod does edit, by <code>text:</code> id: <a href="assets/text.md">message files</a>.)</li>
   <li><strong>To change it on one map only</strong>, give that map its own copy of the library first: <code>dc2tk fork extracted/scripts lib/map/base_town_villagers_v1.c lib/mods/gordon/villagers_m01_v1.c map/m/m01_palm_brinks/m01_1.c</code>.</li>
 </ol>
 </div>
@@ -1344,10 +1351,15 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
   <li><strong>Build, then find a Golem.</strong> They roam random floors, so either play to one or put some in a scripted fight you can reach with <code>--start-at</code> (next task).</li>
 </ol>
 <div class="note">
-  <strong>Not in reach</strong>
-  HP, attack power, XP and drops are in the engine's monster table. Scripts can scale how a
-  monster takes damage (<code>set_defense_rate</code>) and read its power
-  (<code>get_attack()</code>), but can't edit the table.
+  <strong>Not in a script's reach</strong>
+  HP, attack power, the ABS and money it gives, and drops are in the engine's monster table.
+  Scripts can scale how a monster takes damage (<code>set_defense_rate</code>) and read its power
+  (<code>get_attack()</code>), but can't edit the table. A mod can, beside its scripts:
+  <code>dc2tk mod asset dc2.iso stronger-golem data:monsters</code> writes the table into the mod
+  as <code>data/monsters.json</code> with its <code>mod.json</code> line, and every value you
+  change there (<code>"hp"</code> of <code>{"id": 168, ...}</code>) is patched into the built
+  image's executable; the rest changes nothing. That changes every monster of kind 168, wherever
+  it appears (<a href="assets/data.md">game data</a>, section 4).
 </div>
 </div>
 </section>
@@ -1357,7 +1369,7 @@ MONSTER_GRIFFON_SOLDIER_523 = 523,  // model e254a, AI b254a</code></pre>
 <h2><span class="num">13</span>Task: a new enemy in a fight</h2>
 <div class="task">
 <h3>What "new enemy" can mean here</h3>
-<p class="goal">You can't add a monster kind: kinds are rows in the engine's table, and a new AI file would never be loaded. What you can do covers most requests:</p>
+<p class="goal">You can't add a monster kind: kinds are rows in the engine's table, which a mod can change (<code>data:monsters</code>: stats, model, the AI script a kind runs) but not add to, and a new AI file is never built. What you can do covers most requests:</p>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Request</th><th>How</th></tr></thead>
@@ -1400,7 +1412,7 @@ place_monster(MONSTER_GOLEM, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
 <h3>Play a short scene the first time the player enters Sindain after this point</h3>
 <p class="goal">A complete mod that touches no game file: one new library and a <code>mod.json</code>.</p>
 <ol class="steps">
-  <li><strong>Pick a free flag.</strong> The game uses save flags up to 824. Check yours is free with <code>dc2tk flags extracted/scripts --flag 1300</code>.</li>
+  <li><strong>Pick a free flag.</strong> The game uses save flags up to 824. Check yours is free with <code>dc2tk flags extracted/scripts --flag 1300</code>. Or let build choose: <code>NEW_FLAG(FLAG_SINDAIN_HELLO_SEEN);</code> in one of the mod's patches or headers (outside <code>files/</code>) gets a number nothing else uses, kept from build to build in <code>mods/numbers.json</code> (<a href="usage.md#mods">usage</a>).</li>
   <li><strong>See what the map already does on entry.</strong> <code>dc2tk map extracted/scripts g01</code> lists its programs, trigger points and free program numbers (9000 and up). Read its <code>map_start</code> so your scene doesn't fight a story scene that also auto-plays there.</li>
   <li><strong>Write the scene as a library.</strong> <code>mods/sindain-hello/files/lib/mods/sindain-hello/hello.c</code>:
 <figure class="code">
@@ -1459,7 +1471,7 @@ void play_sindain_hello(void)
 }</code></pre>
   <code>"scripts"</code> takes disc paths (codes without the readable names) and <code>?</code> stands for the language digit. The shorter <code>"map": "g01"</code> would also reach every other script of the map: the g01b and g01c alternates, the rush script, and the interiors in its folder, so the scene would play inside the Dwarves' house too. An <code>"after"</code> function never runs if the program it wraps warps to another map, so check what <code>map_start</code> does first.
   To trigger it from somewhere else instead, add it as a program (<code>"programs": {"9000": "play_sindain_hello"}</code>) and warp to it: <code>jump_to_map(-1, "g01", 9000)</code>.</li>
-  <li><strong>Build and play.</strong> <code>--start-at</code> can't start in a town, so play to Sindain or use a save state:
+  <li><strong>Build and play.</strong> <code>--start-at g01</code> would start a new game in Sindain, but with no story flags set, so this scene (which waits for the Rococo flag) wouldn't play; play to Sindain or use a save state:
 <pre><code>dc2tk build extracted/scripts dc2.iso -o modded.iso --mod sindain-hello --play</code></pre></li>
 </ol>
 <div class="note">
@@ -1468,7 +1480,8 @@ void play_sindain_hello(void)
   scene slots, bind actors, and tear everything down after. If the scene must be skippable,
   wrap the timeline in <code>enable_scene_skip()</code> … <code>skip_end;</code>
   <code>disable_scene_skip();</code> and keep every flag and cleanup outside it.
-  <a href="examples/cutscene.c">docs/examples/cutscene.c</a> is a fuller made-up scene, and
+  The mods in <a href="examples/">docs/examples/</a> are fuller ones (a new map with a script of
+  its own behind a door, a character made in Blender waving in a scene), and
   <code>dc2tk mod test</code> runs a mod's logic without the game.
 </div>
 </div>
@@ -1502,9 +1515,9 @@ void play_sindain_hello(void)
   <li><strong>Frame counts.</strong> Retail <code>wait_frames</code> scales by 50/60; <code>modkit_wait</code> and bare loops don't.</li>
   <li><strong>Asset names are exact.</strong> <code>MOTION_*</code>, <code>HIT_*</code> and <code>EFFECT_*</code> stand for Japanese strings the engine looks up. <code>MOTION_ATTACK_1</code> and <code>MOTION_ATTACK_1_2</code> are different strings (half- and full-width digits). Use the constants the model's own script uses; a wrong one silently does nothing.</li>
   <li><strong>Effects must be loaded</strong> (<code>load_effect</code> in <code>init</code>) before they're spawned.</li>
-  <li><strong>Flags.</strong> New flags come from 825–2046; 2047 belongs to <code>--start-at</code>. Clear scene-only flags when the scene ends and on game over.</li>
+  <li><strong>Flags.</strong> New flags come from 825–2046 (<code>NEW_FLAG</code> hands them out from 1024); 2047 belongs to <code>--start-at</code>. Clear scene-only flags when the scene ends and on game over.</li>
   <li><strong>Message window 0 stays open</strong> after an event ends in a dungeon until something closes it.</li>
-  <li><strong>New script files aren't built.</strong> Only new libraries included by existing scripts.</li>
+  <li><strong>New script files aren't built.</strong> Only new libraries included by existing scripts, and a new map's own script.</li>
 </ul>
 </section>
 
@@ -1537,6 +1550,7 @@ void play_sindain_hello(void)
     <tr><td>Monster kinds, items, NPC ids, motions, effects, hit types</td><td><code>extracted/scripts/include/disc.h</code></td></tr>
     <tr><td>Story flags, music, sound sets</td><td><code>definitions/pal/include/pal.h</code></td></tr>
     <tr><td>Text helpers and waits for mods</td><td><code>sdk/modkit/</code></td></tr>
+    <tr><td>Monster stats, floor monster lists, chest contents, items, shops (to change them)</td><td><code>dc2tk mod asset dc2.iso NAME data:monsters</code> (<code>data:floors</code>, <code>data:chests</code>, <code>data:items</code>, ...); <a href="assets/data.md">assets/data.md</a></td></tr>
   </tbody>
 </table>
 </div>

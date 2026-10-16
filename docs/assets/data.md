@@ -14,11 +14,17 @@ into the boot executable `SCES_511.90`. Its one `PT_LOAD` maps file offset
 0x80 to address 0x100000, so a `.data` address `A` is at file offset
 `A - 0xFFF80` (for addresses below 0x37CD80; above that is `.bss`, filled at
 run time). Addresses below are the symbols of `config/pal/main.symbols.txt`.
+`dc2tk-assets`' `elf.rs` finds an address through the program header that
+loads it and refuses an executable without the table there ("not the PAL
+executable"); its patches are made in place, the file's size unchanged, and
+two mods' patches giving one value different bytes are refused.
 
 ## Status
 
-**Editable through `mod.json`** (`dc2tk mod asset ISO NAME data:items`, then
-`"data:items": "data/items.json"`; see [usage](../usage.md#mods)):
+**Editable through `mod.json`** (`dc2tk mod asset ISO NAME data:items`, ISO
+the disc image or an extracted disc, which writes `data/items.json` and adds
+`"data:items": "data/items.json"`, leaving a table the mod has a line for
+already as it is; see [usage](../usage.md#mods)):
 
 - **Items** (`data:items`, section 2): the seven `menu/cfg7` tables, every
   item number with its weapon, effect, attachment, ridepod and fish data
@@ -91,7 +97,7 @@ past (from the engine; each in its section):
 | ideas (`data:inventions`) | all 7 `neta2.lst` | ids 1 to 999; 0x247 16-byte units of table and names a language (French: 11 short names more); 388 ideas and scoops; a name 24 bytes (or the language's longest) | `pic_name_text_buff_1660` (0x248 units); `UpdataNetaMemoStr`'s `sort_keys[0x184]`; `MenuInventNetaMemoDraw`'s `text[0x20]` |
 | Georama parts (`data:georama`) | the town's 7 `.gpi` | 384 a town; IDs 0 to 127; names 47 bytes; g01's files 0x77D0 bytes | `GEORAMA_PARTS_LIST_MAX`; the stock list's IDs; `name[0x30]`; `MakeDownLoadAnaunce`'s buffer |
 | fixed and starting parts (`data:georama`) | the town's `gNN.cfg` | 256 placed | `CEditMap::CreateTable` |
-| fishing spots, a spot's fish (`data:fishing`) | `fishing.cfg` | 8 fish a spot | `kFishPlaceMaxFish` |
+| fishing spots, a spot's fish (`data:fishing`) | `fishing.cfg` | 8 fish a spot; 256 spots | `kFishPlaceMaxFish`; no array bounds the spots (`FISH_MAP_NUM` allocates them), 256 is the tool's own limit |
 | requests (`data:requests`) | all 7 `geo<N>.cfg` | 16 a town; 7 conditions a request; 0x300 string units a file | `EditAnalyzeSrc::data[16]`, `CON_NO`, `buff_1271` |
 | townspeople (`data:townspeople`) | all 7 `npc<N>.cfg` | 180 (3 more); names 27 bytes, models 15; 0x7FD0 bytes a file | `NpcBaseData[180]`, `NPC_BASE_DATA`, `LoadNPCCfg`'s buffer |
 
@@ -120,10 +126,52 @@ bytes of the executable. A field kept in several files (the copies of
 English file where languages differ) and written to every copy. `build` patches
 the executable once with every table's changes.
 
+The build's side is `dc2tk-script`'s `datatables.rs` (what `mod asset` writes
+and what `build` and `mod check --disc` make of the mods' tables) and
+`itemtext.rs` (the item names and descriptions put into the message files,
+section 2.8). It applies the tables in one order, `replace::DATA_TABLES`
+(items, shops, monsters, inventions, georama, medals, floors, fishing,
+characters, parts, layouts, chests, requests, townspeople, gifts, spheda,
+breeding), each reading the files as the tables before it left them; `parts`
+comes before `layouts`, whose cells name the parts. An unknown table name is
+an error listing the tables.
+
+**The JSON.** `mod asset` writes each table as `json::json_text` lays it out
+for a person to edit: a 2-space indent, an object a member a line, a list of
+numbers on one line, and a small entry of a list (at most three plain members,
+`{"item": 210, "count": 5}`) on one line; a newline at the end. A table a mod
+gives back is read member by member, and a member of the wrong shape is an
+error naming it (`dungeon 0: "groups" is a list, not an object`, `"floors" is
+a list of records`), never read as nothing; so is a section, field or key the
+table does not have. A float argument is written in the JSON in its shortest
+form that reads back as the same f32, with `.0` when it is whole (`320.0`),
+and a float of the executable in its shortest form (`320` when whole);
+`data:items` alone keeps the form its files have always had, the f32 widened
+to an f64 with every digit (`0.9900000095367432`). Values are compared as
+the engine holds them: two whole numbers exactly, a float as its f32, so
+`0.99` there changes nothing. A float argument a mod gives as a JSON integer
+(`320`, not `320.0`) is written as that integer (the engine's float read
+takes an int); otherwise as the f32's shortest text, `.0` added when it has
+no point.
+
 **Settled (engine code and whole-corpus checks):** every cfg script the tables
 come from is read by `dc2tk-assets`' `cfg_text.rs` (statements with the spaces,
 line breaks and comments around every argument) and written back byte for
-byte; an edit replaces only the arguments it changes. `cargo test --release --
+byte; an edit replaces only the arguments it changes, and a new statement or
+copied record takes the file's own line break (`Script::newline`: `\r\n` in
+every cfg script of the disc, and for a file of one line). It reads each
+argument as the engine's `GetArg` does: comments (`//` to the line's end,
+`/* */`) blanked first, the arguments split at commas outside quotes (a
+Shift-JIS lead byte takes the next byte with it, `\"` is a quote); a quoted
+argument is a string, otherwise its text up to the first space is a float when
+it has a `.` (C's `atof`), an int when it is digits and `-` (`atoi`, wrapping at
+32 bits), and invalid when it has anything else or is empty (0, or a null
+string); an empty last argument before the `;` is not counted. A character's
+or pack's `info.cfg` is read by the same rules (`info_cfg.rs`, through
+`cfg_text::number`; a float keeps its text's own value there, not the f32 the
+engine makes of it). Binary scripts (`BIN` first) and comments inside a
+statement are refused: the engine blanks a comment even inside quotes, which
+a kept file could not show. `cargo test --release --
 --include-ignored corpus` with `DC2TK_CORPUS` set checks all three versions of the item tables
 (`menu/cfg5`, `cfg6`, `cfg7`: 1,260 records), the 16 shop lists, the monster
 table and every kind above (136 recipes in 19 copies, 53 scoops, 218 Georama
@@ -304,8 +352,9 @@ the like item's `WEP`..`WEP_BUILD` block, `AT_ST`..`AT_ST_SP` block, or
 `ITEM`, `RB_PARTS`, `FISH`, `GRD` line with the fields given; `MES_SYS` in
 all seven `comdatmes`; message 10000 + `message` into each language's
 `meswin/system_N.mes` and into every `allmenu.mes` of its menu packs that
-has the item descriptions (`text.rs` writes them; `system_N.mes` stays
-within its 0xD000 bytes). For an item of the game's own, `name` changes the
+has the item descriptions (`dc2tk-script`'s `itemtext.rs` puts them there,
+in `text.rs`'s message format; `system_N.mes` stays within its 0xD000
+bytes). For an item of the game's own, `name` changes the
 English name and `names`/`descriptions` any language's, the same places.
 Names and descriptions are message text ([text.md](text.md#5-the-text-form))
 in each language's font. In English they may use letters past the font's
@@ -545,7 +594,8 @@ than 388 ideas and scoops (the units run out first); a name longer than 24
 bytes or than the longest idea name the game has in that language
 (`MenuInventNetaMemoDraw`), empty, with a control character or backslash, or
 with characters the language's text lacks; a file past the 0x5000-byte
-buffer; one value given two ways by two mods. Photographing a new idea needs
+buffer (less its 64-byte alignment); one value given two ways by two mods.
+Photographing a new idea needs
 a map invent point giving its id (`FUNC_INVENT_DATA`, the Blender add-on's
 invent box), and inventing with it a recipe naming it.
 

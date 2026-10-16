@@ -115,7 +115,22 @@ See [the design](docs/design.md). In order:
    - Done: the Python removed; `dc2tk` is the only tool.
    - Done: the project renamed from ChronicleTwo-Script (the tool `c2`, the
      add-on `c2_maps`) to DC2-Toolkit (`dc2tk`, `dc2tk_maps`). Formats keep
-     their names: map scenes' `extras.c2`, the script language c2s (`sdk/c2s.h`).
+     their names: map scenes' `extras.c2`, the script language c2s (`sdk/c2s.h`,
+     whose include guards are `DC2TK_*` now, as every SDK header's).
+   - Done: a review of the whole code, every built image still retail's
+     byte for byte. The last of the Python's rules went (its float text,
+     JSON layout, whitespace and `int()` rules, difflib): text files are
+     written with LF line endings, JSON with a two-space indent and floats
+     in their shortest form ([usage](docs/usage.md)). The largest modules
+     became folders (`parse/`, `memory/`, `sdk/`, `modding/`), and stages
+     the binary held moved into the libraries (`datatables`, `itemtext`,
+     `mapedit::apply_maps`, `decompiler::decompile_tree`). One
+     `dc2tk_disc::DiscSource` reads an image or an extracted disc, so every
+     command that reads the disc, `build` and `setup` included, takes either.
+     Malformed input is an error, never a panic; the parser has a nesting
+     limit and the test VM step and call limits. Renamed: `C2S_CORPUS` to
+     `DC2TK_CORPUS` (the corpus tests are ignored without it), `--defs none`
+     to `--no-defs`.
 2. **The asset tree** (done: `dc2tk assets`): `extracted/assets/` beside `extracted/scripts/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.
@@ -213,7 +228,11 @@ What still cannot be taken apart, edited and put back, in the order to do it:
    changed load against them (an error over a certain budget, a warning over
    an estimated one). Estimates remain for map and pack memory; retail is
    predicted to overflow the field SPU region by 1,392 bytes in s01 (set
-   1600 with EV_100_155), not observed.
+   1600 with EV_100_155), not observed. Since: a map's kind (town, interior
+   or dungeon) is the game's own map tables' (`map<language>.cfg`, which
+   `LoadMapName` reads), not the older `map/map.cfg`'s, which the game never
+   reads and which differs for s19 and i03h02; the retail interior maximum
+   was measured again (3,752,880 bytes).
 
 ## Next: standard C
 
