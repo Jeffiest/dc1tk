@@ -378,8 +378,8 @@ void start_castle_battle(void)
 - **`PROGRAM` lines** add programs. To change a program the script has,
   override its function.
 - **`NEW_FLAG(name)`, `NEW_COUNTER(name)`, `NEW_PROGRAM(name)` and
-  `NEW_MONSTER_VAR(name)`**, in any file of the mod (a shared `.h` is
-  handy), ask `build` for a save flag (from 1024), a 16-bit save counter
+  `NEW_MONSTER_VAR(name)`**, in any of the mod's own files outside
+  `files/` (a shared `.h` is handy), ask `build` for a save flag (from 1024), a 16-bit save counter
   (from 32, of 128), a program number (from 9000) or a shared monster
   variable (8 to 135) that the game, the engine and every mod in `mods/`
   leave alone, hand-written numbers included. The numbers are kept in
@@ -388,7 +388,10 @@ void start_castle_battle(void)
   numbers reserved. Use the name where the number would go:
   `PROGRAM(SHOW_CAPTION, show_caption);` in the map and
   `run_event_script(SHOW_CAPTION);` in the monster. `"start_at"` in
-  `mod.json` can name a mod's program too (`"s51:SHOW_CAPTION"`).
+  `mod.json` can name a mod's program too (`"s51:SHOW_CAPTION"`). Whole
+  files under `files/` (below) are compiled without the numbers, so they
+  can neither ask for one nor use its name; `build` refuses a whole file
+  that asks.
 - **`LANGUAGE`** is the language of the script a patch is merged into
   (`LANGUAGE_ENGLISH` for `s51_1.c` to `LANGUAGE_SPANISH` for `s51_5.c`;
   -1 for scripts that are not language variants), for `#if` and in code, so
@@ -456,7 +459,9 @@ the game's scripts; whole files suit scripts and libraries of the mod's own.
   tree's.
 - `mod save SOURCE NAME` copies every file edited or added in the tree into
   the mod instead, for edits made in the tree.
-- `build` compiles each mod file in place of the tree's, libraries included.
+- `build` compiles each mod file in place of the tree's, libraries included,
+  without the mod's `NEW_FLAG` and kin numbers (above): a whole file writes
+  its numbers by hand.
   Two chosen mods may not replace the same file; `build` names the file and
   the mods. `mod list` marks the files whose decompiler version changed
   since the mod was made ("stale": the mod replaces the whole file, so

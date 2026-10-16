@@ -116,8 +116,9 @@ event and marks the AI scripts of monsters the map places.
   use `get_flag` and `set_flag`, monster scripts `get_dungeon_flag` and
   `set_dungeon_flag`; both reach the same bits. No script on the disc and
   nothing in the engine uses a flag above 824; 2047 is taken by
-  `build --start-at`. A mod asks for a flag with `NEW_FLAG(name)` rather
-  than picking a number, and `build` gives it one from 1024 up that no
+  `build --start-at`. A mod asks for a flag with `NEW_FLAG(name)` (in its
+  own sources, outside `files/`) rather than picking a number, and `build`
+  gives it one from 1024 up that no
   script, the engine or another mod uses, and keeps it in
   `mods/numbers.json` so saves stay valid (see [usage](usage.md#mods)).
   A flag is saved with the game, so clear one that only matters during a

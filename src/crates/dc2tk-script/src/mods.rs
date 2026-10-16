@@ -236,10 +236,12 @@ pub fn patch_plan(mod_dirs: &[PathBuf], tree_dir: &Path, consts: &IndexMap<Strin
     let mut mod_list = Vec::new();
     let mut required = required_among(mod_dirs)?;
     for mod_dir in mod_dirs {
+        let whole = contents(mod_dir, tree_dir)?;
+        no_numbers_asked(mod_dir, &whole)?;
         mod_list.push(ModTexts {
             name: paths::file_name(mod_dir),
             texts: sources(mod_dir)?,
-            written: contents(mod_dir, tree_dir)?.into_values().collect(),
+            written: whole.into_values().collect(),
             requires: required.remove(&paths::file_name(mod_dir)).unwrap_or_default(),
         });
     }
@@ -260,6 +262,25 @@ pub fn patch_plan(mod_dirs: &[PathBuf], tree_dir: &Path, consts: &IndexMap<Strin
     }
     let held = parent.filter(|_| lock).map(|parent| parent.join(numbers::LOCK));
     patches::plan(&mod_list, tree_dir, consts, held.as_deref(), &written)
+}
+
+/// A mod's whole files (`contents`) are compiled as the tree's own, without the numbers build
+/// gives the mod, so one that asks for a number (NEW_FLAG and the like) is refused rather than
+/// left with a name that has none.
+fn no_numbers_asked(mod_dir: &Path, whole: &IndexMap<String, String>) -> Result<()> {
+    for (path, text) in whole {
+        let Some((kind, names)) = numbers::requests([text]).into_iter().next() else { continue };
+        let name = names.first().map_or("", String::as_str);
+        return Err(Error::invalid(format!(
+            "mod {}: its whole file {path} asks for a number with NEW_{}({name}), but build compiles the files \
+             under {FILES}/ without the mod's numbers; ask for it and use it in the mod's own sources outside \
+             {FILES}/ (a patch, a header or library it includes, tests.c), or write a free {} by hand",
+            paths::file_name(mod_dir),
+            kind.key().to_uppercase(),
+            kind.word()
+        )));
+    }
+    Ok(())
 }
 
 pub struct Overridden {

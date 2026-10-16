@@ -464,6 +464,14 @@ fn numbers_are_given_once_kept_and_never_shared() {
 }
 
 #[test]
+fn a_whole_file_asking_for_a_number_is_refused() {
+    let folder = TempDir::new("patches-whole-file-number");
+    let library = "NEW_FLAG(SEEN);\n\nvoid greet(void)\n{\n    set_flag(SEEN, 1);\n}\n";
+    let (root, dirs) = setup(folder.path(), &[("a", &[("files/lib/map/s/s17/greet.c", library)])]);
+    fails(plan_of(&dirs, &root), "asks for a number with NEW_FLAG(SEEN), but build compiles the files under files/");
+}
+
+#[test]
 fn a_number_the_tree_takes_later_is_reported() {
     let folder = TempDir::new("patches-taken");
     let (root, dirs) = setup(folder.path(), &[("a", &[("p.c", "NEW_FLAG(FIGHT);\n")])]);

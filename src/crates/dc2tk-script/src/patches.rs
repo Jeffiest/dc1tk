@@ -30,9 +30,10 @@
 //! - A function after #pragma every_frame is called before every wait; in the script, so it runs
 //!   once a frame whatever the script is waiting in (a monster's AI keeping a timer, say). It takes
 //!   no parameters and must not wait.
-//! - NEW_FLAG(name), NEW_COUNTER(name), NEW_PROGRAM(name) and NEW_MONSTER_VAR(name), in any file
-//!   of the mod, are numbers build gives the mod (numbers); every patch of the mod sees them as
-//!   constants.
+//! - NEW_FLAG(name), NEW_COUNTER(name), NEW_PROGRAM(name) and NEW_MONSTER_VAR(name), in any of
+//!   the mod's own files outside files/, are numbers build gives the mod (numbers); every patch of
+//!   the mod sees them as constants. Whole files are compiled without them, and one that asks is
+//!   refused (mods::patch_plan).
 //! - LANGUAGE is the language of the script being patched (s51_2.c is LANGUAGE_FRENCH), for #if
 //!   and in code, so one patch can carry each language's text. Scripts that are not language
 //!   variants (monster AI, say) have LANGUAGE -1.
