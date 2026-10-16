@@ -103,6 +103,11 @@ def write_fake_dc2tk(folder, source_dir):
     with open(path, "w", newline="\r\n") as handle:
         handle.write(
             "@echo off\n"
+            'if "%~1"=="map-export" if "%~2"=="--list" (\n'
+            "  echo t01\tTest Town\n"
+            "  echo t02\t\n"
+            "  exit /b 0\n"
+            ")\n"
             'if "%~1"=="map-export" (\n'
             '  xcopy /E /I /Y /Q "' + source_dir + '" "%~4" >nul\n'
             "  echo exported %~2 to %~4\n"
@@ -137,7 +142,14 @@ def main():
     if sys.platform.startswith("win"):
         settings_prefs.dc2tk_path = write_fake_dc2tk(work, source_dir)
         settings_prefs.maps_dir = os.path.join(work, "maps")
-        result = bpy.ops.dc2tk.import_map(map_name="t01")
+        # the map list, from dc2tk map-export --list: a map with a title, and one without
+        result = bpy.ops.dc2tk.load_maps()
+        check(result == {"FINISHED"}, "the map list loads: %s" % result)
+        listed = [(entry.name, entry.code, entry.title) for entry in settings.maps]
+        check(listed == [("t01  Test Town", "t01", "Test Town"), ("t02", "t02", "")], "the map list: %s" % listed)
+        check(import_map.map_code("t01  Test Town") == "t01" and import_map.map_code(" s17 ") == "s17", "a map's code")
+        # a map picked from the list is imported by its code
+        result = bpy.ops.dc2tk.import_map(map_name="t01  Test Town")
         check(result == {"FINISHED"}, "import through dc2tk finished: %s" % result)
         check(os.path.isfile(os.path.join(work, "maps", "t01", "t01.gltf")), "dc2tk wrote maps/t01/t01.gltf")
     else:
@@ -618,7 +630,37 @@ def main():
     import test_regressions
 
     test_regressions.run(context, root, work)
+    check_unload(context, source_path)
     return work
+
+
+def check_unload(context, source_path):
+    from dc2tk_maps import c2data, import_map
+
+    # importing again replaces the map in the scene: one root, and as many objects as one import
+    result = bpy.ops.dc2tk.import_map_gltf(filepath=source_path)
+    check(result == {"FINISHED"}, "the map imports again: %s" % result)
+    once = len(bpy.data.objects)
+    result = bpy.ops.dc2tk.import_map_gltf(filepath=source_path)
+    roots = c2data.scene_map_roots(context.scene)
+    check([root.name for root in roots] == ["map:t01"], "one map after importing it again: %s" % roots)
+    check(len(bpy.data.objects) == once, "as many objects as one import: %d, %d" % (once, len(bpy.data.objects)))
+    # unloading leaves nothing of the map, and keeps what is not the map's
+    mine = bpy.data.objects.new("mine", bpy.data.meshes.new("mine"))
+    context.scene.collection.objects.link(mine)
+    objects = [obj for obj in c2data.descendants(roots[0])]
+    meshes = {obj.data.name for obj in objects if obj.type == "MESH"}
+    materials = {slot.material.name for obj in objects for slot in obj.material_slots if slot.material}
+    collections = {collection.name for obj in objects for collection in obj.users_collection}
+    removed = import_map.unload_maps(context)
+    check(removed == ["map:t01"], "unload removes the map: %s" % removed)
+    check(not c2data.scene_map_roots(context.scene), "no map left in the scene")
+    check(not meshes & set(bpy.data.meshes.keys()), "the map's meshes are gone")
+    check(not materials & set(bpy.data.materials.keys()), "the map's materials are gone")
+    left = collections & set(bpy.data.collections.keys())
+    check(not left, "the map's collections are gone: %s" % sorted(left))
+    check(mine.name in bpy.data.objects and mine.data.name in bpy.data.meshes, "an object of one's own stays")
+    check(import_map.unload_maps(context) == [], "unload with no map does nothing")
 
 
 if __name__ == "__main__":

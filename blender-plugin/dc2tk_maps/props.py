@@ -1,6 +1,7 @@
 import bpy
 from bpy.props import (
     BoolProperty,
+    CollectionProperty,
     EnumProperty,
     FloatProperty,
     FloatVectorProperty,
@@ -603,9 +604,21 @@ def _show_hour(self, context):
     look.show_hour(context, self.hour, self.by_hour)
 
 
+class Dc2tkMapEntry(bpy.types.PropertyGroup):
+    """A map of the disc, as dc2tk map-export --list gives it: name is what the list shows
+    ("m01  Palm Brinks"), code the map's own name (m01)."""
+
+    code: StringProperty()
+    title: StringProperty()
+
+
 class Dc2tkSettings(bpy.types.PropertyGroup):
 
-    import_name: StringProperty(name="Map", description="The map to export with dc2tk and import (s17, d01f01, ...)")
+    import_name: StringProperty(
+        name="Map",
+        description="The map to export with dc2tk and import: pick it from the list, or type its name (s17, d01f01, ...)",
+    )
+    maps: CollectionProperty(type=Dc2tkMapEntry, description="The disc's maps, from dc2tk map-export --list")
     collision_colour: EnumProperty(
         name="Colour collision by",
         items=(
@@ -799,7 +812,7 @@ class Dc2tkSettings(bpy.types.PropertyGroup):
     )
 
 
-classes = (Dc2tkSettings,)
+classes = (Dc2tkMapEntry, Dc2tkSettings)
 
 
 def register():

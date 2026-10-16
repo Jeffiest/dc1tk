@@ -44,11 +44,24 @@ Preferences:
 Everything is in the 3D viewport's sidebar (N), tab **Dark Chronicle**, and
 in File, Import.
 
-**Import.** Type the map's name (`s17`) and press Import: the add-on runs
-`dc2tk map-export s17 -o extracted/maps/s17` and imports the result. File,
-Import, "Dark Chronicle map (.gltf)" imports a scene exported before. The
-import keeps every custom property (`extras.c2`), merges no vertices and keeps
-the node tree, then:
+**Import.** Pick the map from the list (it searches as you type: `palm`, `s17`)
+or type its name, and press Import: the add-on runs
+`dc2tk map-export s17 -o extracted/maps/s17` and imports the result. The list
+is every map on the disc with its title ("m01  Palm Brinks"), read from
+`dc2tk map-export --list` when the panel first shows; the refresh button reads
+it again. File, Import, "Dark Chronicle map (.gltf)" imports a scene exported
+before.
+
+An import replaces the map already in the scene: the old map's objects, its
+collections (once they hold nothing else) and the meshes, materials, images,
+actions and world only it used are removed first, so maps don't pile up as
+`.001` copies. Objects of your own outside the map stay. Untick "Unload other
+maps" in the operator's options (F9, or the File, Import dialog) to keep the
+old map beside the new one. An edit not yet exported into a mod goes with the
+map it was made in.
+
+The import keeps every custom property (`extras.c2`), merges no vertices and
+keeps the node tree, then:
 
 - moves collision (pieces of kind `collision`) and camera collision (`camera`)
   into the collections "NAME collision" and "NAME camera collision", hidden;

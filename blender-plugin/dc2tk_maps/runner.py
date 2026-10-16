@@ -35,6 +35,20 @@ def start_job(job):
     job["thread"].start()
 
 
+def run_quick(command, cwd, timeout=120):
+    """Runs a short dc2tk command to its end without a console window: (exit code, its output).
+    A command that cannot start gives exit code None and the reason."""
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform.startswith("win") else 0
+    try:
+        done = subprocess.run(
+            command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL, creationflags=flags, timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return None, str(error)
+    return done.returncode, done.stdout.decode("utf-8", errors="replace")
+
+
 def read_output(job):
     process = job["process"]
     for raw in process.stdout:

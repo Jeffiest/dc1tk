@@ -215,14 +215,20 @@ class DC2TK_PT_main(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         settings = props.settings(context)
+        found = prefs.dc2tk_command(prefs.get(context)) is not None
+        if found and not settings.maps:
+            import_map.load_map_list_once()
         col = layout.column(align=True)
         row = col.row(align=True)
-        row.prop(settings, "import_name", text="")
-        op = row.operator(import_map.DC2TK_OT_import_map.bl_idname, text="Import", icon="IMPORT")
+        row.prop_search(settings, "import_name", settings, "maps", text="", icon="WORLD")
+        row.operator(import_map.DC2TK_OT_load_maps.bl_idname, text="", icon="FILE_REFRESH")
+        op = col.operator(import_map.DC2TK_OT_import_map.bl_idname, text="Import", icon="IMPORT")
         op.map_name = settings.import_name
         col.operator(import_map.DC2TK_OT_import_gltf.bl_idname, text="Import exported .gltf", icon="FILE_FOLDER")
-        if prefs.dc2tk_command(prefs.get(context)) is None:
+        if not found:
             col.label(text="Set the dc2tk repository in the preferences", icon="ERROR")
+        elif c2data.scene_map_roots(context.scene):
+            col.label(text="Importing replaces the map in the scene", icon="INFO")
 
         root = c2data.current_map_root(context)
         if root is None:

@@ -3,7 +3,7 @@ import json
 import os
 
 import bpy
-from bpy.props import StringProperty
+from bpy.props import BoolProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper
 
 from . import c2data, look, prefs, runner, schema
@@ -362,6 +362,123 @@ def import_gltf(context, path):
     return postprocess(context, path, new_objects)
 
 
+def map_code(text):
+    """The map's own name in what the map field holds: "m01  Palm Brinks" from the list, or
+    "m01" typed."""
+    words = text.split()
+    return words[0] if words else ""
+
+
+def load_map_list(context):
+    """Fills the map list from dc2tk map-export --list; returns what went wrong, or None."""
+    settings = prefs.get(context)
+    dc2tk = prefs.dc2tk_command(settings)
+    if dc2tk is None:
+        return "dc2tk not found: set the repository (or dc2tk itself) in the add-on's preferences"
+    code, output = runner.run_quick(dc2tk + ["map-export", "--list"], prefs.working_dir(settings))
+    if code != 0:
+        last = output.strip().splitlines()[-1:] or ["no output"]
+        return "dc2tk map-export --list failed (exit %s): %s" % (code, last[0])
+    entries = context.window_manager.dc2tk_maps.maps
+    entries.clear()
+    for line in output.splitlines():
+        name, _, title = line.partition("\t")
+        if not name.strip():
+            continue
+        entry = entries.add()
+        entry.code = name.strip()
+        entry.title = title.strip()
+        entry.name = "%s  %s" % (entry.code, entry.title) if entry.title else entry.code
+    return None
+
+
+# The kinds of data a map's objects use that unloading removes with them, by ID.id_type, each
+# with its bpy.data collection; users come before what they use.
+USED_DATA = {
+    "MESH": "meshes",
+    "CURVE": "curves",
+    "LIGHT": "lights",
+    "CAMERA": "cameras",
+    "ARMATURE": "armatures",
+    "ACTION": "actions",
+    "WORLD": "worlds",
+    "MATERIAL": "materials",
+    "IMAGE": "images",
+}
+
+
+def unload_maps(context):
+    """Removes every map from the scene before another is imported: each map's objects, the
+    collections the import made for it (the scene's and its collision collections) once they hold
+    nothing else, and the meshes, materials, images, actions and world only it used. Other objects
+    stay. Returns the names of the maps removed."""
+    roots = c2data.scene_map_roots(context.scene)
+    if not roots:
+        return []
+    if context.mode != "OBJECT" and context.active_object is not None:
+        bpy.ops.object.mode_set(mode="OBJECT")
+    names = [root.name for root in roots]
+    objects = {obj for root in roots for obj in c2data.descendants(root)}
+    # the map's collection (when the scene was imported as one) and its collision collections,
+    # which sit in that collection or, beside the root, in the scene's
+    homes = {
+        collection.name
+        for root in roots
+        for collection in root.users_collection
+        if collection != context.scene.collection
+    }
+    for root in roots:
+        homes.update(found.name for found in collision_collections(context, root, create=False).values() if found)
+    # the data the maps use, by name, since removing one block can free others: (bpy.data's
+    # collection, name), looked up again before each removal
+    used = set()
+
+    def note(block):
+        collection = USED_DATA.get(getattr(block, "id_type", None))
+        if collection is not None:
+            used.add((collection, block.name))
+
+    for obj in objects:
+        if obj.data is not None:
+            note(obj.data)
+        if obj.animation_data is not None and obj.animation_data.action is not None:
+            note(obj.animation_data.action)
+        for slot in getattr(obj, "material_slots", []):
+            if slot.material is not None:
+                note(slot.material)
+                if slot.material.node_tree is not None:
+                    for node in slot.material.node_tree.nodes:
+                        if node.type == "TEX_IMAGE" and node.image is not None:
+                            note(node.image)
+    for root in roots:
+        world = bpy.data.worlds.get("c2 %s" % c2data.map_name(root))
+        if world is not None:
+            if context.scene.world == world:
+                context.scene.world = None
+            note(world)
+    bpy.data.batch_remove(list(objects))
+    # what the maps used, once nothing else does: in USED_DATA's order, so a material goes
+    # before the images it shows
+    for collection in dict.fromkeys(USED_DATA.values()):
+        blocks = getattr(bpy.data, collection)
+        for kind, name in sorted(used):
+            block = blocks.get(name) if kind == collection else None
+            if block is not None and block.users == 0:
+                blocks.remove(block)
+
+    def remove_empty(collection):
+        for child in list(collection.children):
+            remove_empty(child)
+        if not collection.objects and not collection.children:
+            bpy.data.collections.remove(collection)
+
+    for name in sorted(homes):
+        collection = bpy.data.collections.get(name)
+        if collection is not None:
+            remove_empty(collection)
+    return names
+
+
 def find_export(folder, name):
     candidates = [
         os.path.join(folder, name + ".gltf"),
@@ -399,8 +516,15 @@ class DC2TK_OT_import_gltf(bpy.types.Operator, ImportHelper):
 
     filename_ext = ".gltf"
     filter_glob: StringProperty(default="*.gltf;*.glb", options={"HIDDEN"})
+    unload: BoolProperty(
+        name="Unload other maps",
+        description="Remove the maps already in the scene (and the data only they use) first",
+        default=True,
+    )
 
     def execute(self, context):
+        if self.unload:
+            unload_maps(context)
         roots, warnings = import_gltf(context, self.filepath)
         if roots is None:
             for warning in warnings:
@@ -417,6 +541,11 @@ class DC2TK_OT_import_map(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     map_name: StringProperty(name="Map", description="The map to export and import (s17, d01f01, ...)")
+    unload: BoolProperty(
+        name="Unload other maps",
+        description="Remove the maps already in the scene (and the data only they use) first",
+        default=True,
+    )
     out_dir: StringProperty(
         name="Folder",
         description="Where dc2tk writes the export; empty for <exported maps>/NAME",
@@ -438,7 +567,7 @@ class DC2TK_OT_import_map(bpy.types.Operator):
     def command(self, context):
         if not self.map_name:
             self.map_name = context.window_manager.dc2tk_maps.import_name
-        name = self.map_name.strip()
+        name = map_code(self.map_name)
         self.map_name = name
         if not name:
             self.report({"ERROR"}, "Give the map's name (s17, d01f01, ...)")
@@ -465,6 +594,8 @@ class DC2TK_OT_import_map(bpy.types.Operator):
         if path is None:
             self.report({"ERROR"}, "dc2tk wrote no .gltf into %s" % self.folder(context))
             return {"CANCELLED"}
+        if self.unload:
+            unload_maps(context)
         roots, warnings = import_gltf(context, path)
         if roots is None:
             for warning in warnings:
@@ -478,12 +609,50 @@ class DC2TK_OT_import_map(bpy.types.Operator):
         return runner.invoke(self, context)
 
 
+class DC2TK_OT_load_maps(bpy.types.Operator):
+    """Read the disc's maps for the map list again (dc2tk map-export --list)"""
+
+    bl_idname = "dc2tk.load_maps"
+    bl_label = "Reload Map List"
+
+    def execute(self, context):
+        problem = load_map_list(context)
+        if problem:
+            self.report({"ERROR"}, problem)
+            return {"CANCELLED"}
+        self.report({"INFO"}, "%d maps" % len(context.window_manager.dc2tk_maps.maps))
+        return {"FINISHED"}
+
+
+_list_tried = False
+
+
+def load_map_list_once():
+    """Fills the map list the first time the panel is drawn without one: a panel cannot change
+    data while it draws, so the load runs from a timer. A failure is left for Reload to report."""
+    global _list_tried
+    if _list_tried:
+        return
+    _list_tried = True
+
+    def load():
+        context = bpy.context
+        if load_map_list(context) is None:
+            for window in context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == "VIEW_3D":
+                        area.tag_redraw()
+        return None
+
+    bpy.app.timers.register(load, first_interval=0.0)
+
+
 def menu_import(self, context):
     self.layout.operator(DC2TK_OT_import_gltf.bl_idname, text="Dark Chronicle map (.gltf)")
     self.layout.operator(DC2TK_OT_import_map.bl_idname, text="Dark Chronicle map (dc2tk map-export)")
 
 
-classes = (DC2TK_OT_import_gltf, DC2TK_OT_import_map)
+classes = (DC2TK_OT_import_gltf, DC2TK_OT_import_map, DC2TK_OT_load_maps)
 
 
 def register():

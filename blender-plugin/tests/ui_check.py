@@ -63,6 +63,10 @@ class FakeLayout:
         except Exception as error:
             self.problems.append("reading %s: %s" % (name, error))
 
+    def prop_search(self, data, name, search_data, search_name, **kwargs):
+        self.prop(data, name, **kwargs)
+        self.prop(search_data, search_name)
+
     def operator(self, idname, **kwargs):
         self._icon(kwargs)
         allowed = operator_props(idname)
