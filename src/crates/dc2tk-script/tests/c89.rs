@@ -4,8 +4,7 @@
 //!
 //! - `// expect: V`: it compiles, and test() returns V (an int, or a float when V has a point);
 //! - `// rejects: TEXT`: C requires a diagnostic, and the compiler gives one with TEXT in it;
-//! - `// differs: V; C gives W (...)`: it compiles and returns V where C gives W, until the step
-//!   of PLAN.md's "Next: standard C" it names;
+//! - `// differs: V; C gives W (...)`: it compiles and returns V where C gives W;
 //! - `// planned: step N: TEXT`: it does not work yet: compiling fails with TEXT in the error, or,
 //!   with no TEXT, compiling or running fails; step N makes it work, and this test then fails
 //!   until the program says what it shows instead;
