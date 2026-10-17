@@ -960,24 +960,33 @@ impl Model {
         source::library_text(&library.table, &presented, header.as_deref(), &library.doc)
     }
 
-    /// What a library's code sees around it, for its (any) marks (lower::kept_as_is): every shared
-    /// function's signature under its class name, and the globals as the first script that
-    /// includes it declares them, under the library's names for them.
+    /// What a library's code sees around it, for its marks (lower::kept_as_is): every shared
+    /// function's signature under its class name, those of the libraries the first script that
+    /// includes it includes winning over others of the same name, and the globals as that script
+    /// declares them, under the library's names for them.
     fn library_surroundings(
         &self,
         library: &Library,
         class_names: &HashMap<String, String>,
         names: &HashMap<String, String>,
     ) -> (Vec<Node>, Vec<Node>) {
-        let signatures = self
-            .shared
-            .shapes
-            .iter()
-            .filter_map(|(print, shape)| {
-                let name = class_names.get(print)?;
-                Some(node!({"kind": "function", "name": name.clone(), "params": shape["params"].clone(), "returns": shape["returns"].clone()}))
-            })
+        let user = library.user_paths.first();
+        let reachable: HashSet<&String> = user
+            .and_then(|path| self.survey.layouts.get(path))
+            .into_iter()
+            .flatten()
+            .flat_map(|segment| &segment.fingerprints)
             .collect();
+        let signature = |(print, shape): (&String, &Node)| {
+            let name = class_names.get(print)?;
+            Some(
+                node!({"kind": "function", "name": name.clone(), "params": shape["params"].clone(), "returns": shape["returns"].clone()}),
+            )
+        };
+        // later signatures win: the reachable ones come last
+        let (near, far): (Vec<(&String, &Node)>, Vec<(&String, &Node)>) =
+            self.shared.shapes.iter().partition(|(print, _)| reachable.contains(print));
+        let signatures = far.into_iter().chain(near).filter_map(signature).collect();
         let globals = library
             .user_paths
             .first()

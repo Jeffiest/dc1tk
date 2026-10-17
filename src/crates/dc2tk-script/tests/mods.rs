@@ -180,7 +180,7 @@ fn build_compiles_only_what_can_have_changed() {
     write(&root, "lib/m/shared.c", "void helper(void)\n{\n}\n");
     let found = changes(&tools, &root, &iso_path, &IndexMap::new(), false);
     assert!(found.compiled == 2 && found.scripts.len() == 2);
-    let texts = map(&[("map/m/t01.c", &SCRIPT.replace("helper();", "helper();\n    wait;"))]);
+    let texts = map(&[("map/m/t01.c", &SCRIPT.replace("helper();", "helper();\n    WAIT();"))]);
     write(&root, "lib/m/shared.c", LIBRARY);
     let found = changes(&tools, &root, &iso_path, &texts, false);
     assert_eq!(found.compiled, 1);

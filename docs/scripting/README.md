@@ -76,25 +76,25 @@ Every script also has a `MAIN(function)` line required by the binary header. Whe
 - **Monster scripts**: Load when a monster spawns on a floor. Each active monster runs its own script instance.
 - All **global variables** start at `0` when a script loads.
 
-### 2. Run and yield (`wait;`)
-Active programs run as **coroutines**. A program runs until it executes `wait;` or returns:
+### 2. Run and yield (`WAIT();`)
+Active programs run as **coroutines**. A program runs until it executes `WAIT();` or returns:
 
 ```text
 Frame 1                 Frame 2                 Frame 3
 [Script runs...]        [Script resumes...]     [Script resumes...]
   set_motion(...);        check_done();           finish_event();
-  wait;  ------------->   wait;  ------------->   return;
+  WAIT();  ------------->   WAIT();  ------------->   return;
          [Engine draws]          [Engine draws]
 ```
 
 - Native functions do not block. For example, `set_actor_motion` starts an animation and returns immediately.
-- `wait;` pauses the script for the rest of the current frame so the engine can render graphics, update physics, and advance animations.
-- On the next frame (25 frames per second on PAL), the script resumes after `wait;`.
-- To pause for 1 second (25 frames), run `wait;` in a 25-iteration loop or call `modkit_wait(25)`.
+- `WAIT();` pauses the script for the rest of the current frame so the engine can render graphics, update physics, and advance animations.
+- On the next frame (25 frames per second on PAL), the script resumes after `WAIT();`.
+- To pause for 1 second (25 frames), run `WAIT();` in a 25-iteration loop or call `modkit_wait(25)`.
 
 ### 3. Event mode vs. gameplay
-- **Programs that execute `wait;` pause the player**: When a map program executes `wait;`, the engine enters **event mode** until that program returns. The player cannot move or attack during event mode.
-- **Programs without `wait;` run in one frame**: If a map program returns without executing `wait;`, the engine runs the entire function in a single frame and does not enter event mode.
+- **Programs that execute `WAIT();` pause the player**: When a map program executes `WAIT();`, the engine enters **event mode** until that program returns. The player cannot move or attack during event mode.
+- **Programs without `WAIT();` run in one frame**: If a map program returns without executing `WAIT();`, the engine runs the entire function in a single frame and does not enter event mode.
 - **Monsters can start map programs**: A monster AI script can call `run_event_script(program_number)` during combat to start a program in the active map script (for example, to end a scripted fight when the last enemy dies).
 
 ### 4. Unload

@@ -1,26 +1,32 @@
 # C Language, SDK, and Patches
 
-Scripts in `dc2tk` use C89 syntax plus a few built-in statements for the game's virtual machine.
+Scripts in `dc2tk` are standard C99. What the game's virtual machine has that C does not is written as macros, which `sdk/dc2tk.h` defines for C compilers and editors and `dc2tk` compiles as built-ins, so a script (a decompiled one too) compiles with any C99 compiler: `cc -std=c99 -pedantic -fsyntax-only` with the SDK's folder on the include path.
 
 ## Language basics
 
 - **Built-in types**: `int` (32-bit signed integer), `float` (32-bit float), and `string` (text literal, such as `"Hello"`).
 - **Standard C features**: Functions, local and global variables, arrays, pointers (`*p`, `&x`), `struct`, `union`, `enum`, `typedef`, `if`/`else`, `while`, `for`, `do`/`while`, `switch`/`case`, `break`, `continue`, `return`, `#define`, `#include`, and `#if`.
-- **Built-in VM statements and functions**:
-  - `wait;` — Yield execution until the next frame (1/25 second on PAL).
-  - `end;` — Stop the current script program immediately.
-  - `skip_end;` — Target label where a skipped cutscene jumps when the player presses Start.
-  - `sin(x)` and `cos(x)` — Trigonometric functions (angles in radians).
-  - `print(...)` — Debug print instruction.
+- **The VM's statements and instructions**:
+  - `WAIT();` — Yield execution until the next frame (1/25 second on PAL).
+  - `END();` — Stop the current script program immediately.
+  - `SKIP_END();` — Target label where a skipped cutscene jumps when the player presses Start.
+  - `SIN(x)` and `COS(x)` — Trigonometric functions (angles in radians).
+  - `PRINT(...)` — Debug print instruction.
 
-## C's semantics, and the VM's `(any)`
+## C's semantics, and the VM's values
 
-Every script is C89: a value stored in a variable, passed to one of the script's functions or returned is converted to that type (an `int` stored in a `float` becomes a float, a `float` stored in an `int` is truncated), `&&` and `||` give `0` or `1`, and a native call in an operand C skips (`a && get_flag(5)`) is not made. Two things the game's virtual machine does its own way show up in code:
+Every script has C's semantics: a value stored in a variable, passed to one of the script's functions or returned is converted to that type (an `int` stored in a `float` becomes a float, a `float` stored in an `int` is truncated), `&&` and `||` give `0` or `1`, and a native call in an operand C skips (`a && get_flag(5)`) is not made. A native's arguments go as they are: `set_bgm_master_volume(1)` passes the int `1`, and the engine reads it with `GetStackFloat`, which converts as C does, so the native sees `1.0` either way. `x = 0;` with `x` a `float` stores the int `0`: its bits are `0.0`'s, and every read of a `float` variable treats the slot as a float, so nothing can tell them apart.
 
-- **Native arguments go as they are.** `set_bgm_master_volume(1)` passes the int `1`. The engine reads a native's arguments with `GetStackInt` and `GetStackFloat`, which convert as C does, so the native sees `1.0` either way.
-- **`(any)` keeps the VM's value.** The VM stores a value with the type it has: an `int` variable can end up holding a float. `(any)x` stores, passes or returns `x` without C's conversion, and `(any)(a && b)` gives the VM's value of `a && b` (the operand that decided it, not `0` or `1`). The decompiler writes `(any)` wherever a retail script relies on this, as in `count = (any)get_rage_hits_left();`, which leaves the float's bits in an `int` (the native writes its result straight into the variable). New code rarely needs it.
+The virtual machine keeps a value's own type where it is stored, and some of the game's scripts rely on it. The decompiler writes these macros where they do, so the script compiles to its own bytes; new code rarely needs them:
 
-`x = 0;` with `x` a `float` stores the int `0`: its bits are `0.0`'s, and every read of a `float` variable treats the slot as a float, so nothing can tell them apart.
+| Macro | What the VM does | What C tools read |
+|---|---|---|
+| `FLOAT_AS_INT(x)` | `x` stored, passed or returned as an `int` with no conversion: the variable holds a float, or (`count = FLOAT_AS_INT(get_rage_hits_left());`) the bits of a native's float result, which the native writes straight into it | `(int)(x)` |
+| `INT_AS_FLOAT(x)` | the same for an `int` value where a `float` is expected | `(float)(x)` |
+| `AND_VALUE(a, b)`, `OR_VALUE(a, b)` | `a && b` and `a \|\| b` as the VM gives them: `0` or `1` when `a` decides, else `b`'s own value, where C gives `b` as `0` or `1` | `a ? b : 0`, `a ? 1 : b` |
+| `DOUBLE_STORE(x = value)` | `value` stored in `x` twice, as some scripts do (`x = x = value` says the same, but C leaves a variable changed twice in one expression undefined) | `(x = value)` |
+
+A native's declaration that C cannot write (a parameter of type `any`, which takes whatever the call passes, or `OPTIONAL(...)` first) holds its parameters in `VM_ARGS(...)`: `extern void get_camera_pos VM_ARGS(any x, any y, any z) NATIVE(207);`. C tools read it as a function whose parameters are not checked.
 
 ## SDK headers
 
@@ -97,7 +103,7 @@ void start_castle_battle(void)
   - `#pragma target library lib/map/base_town_villagers_v1.c` — Every script that includes a shared library.
 - **`#pragma override`**: Replaces a function of the same name in the target script, including functions the script gets from an `#include "lib/..."` file. Call `original(...)` inside it to run the replaced function.
 - **`#pragma override NATIVE_NAME`**: Intercepts every call the target script makes to an engine native (such as `place_monster` or `play_se`).
-- **`#pragma every_frame`**: Calls a `void func(void)` function before every `wait;` in the target script.
+- **`#pragma every_frame`**: Calls a `void func(void)` function before every `WAIT();` in the target script.
 
 ## Message text formatting codes
 

@@ -40,8 +40,8 @@ fn int(value: i128) -> Value {
 #[test]
 fn initializers_and_declarations_anywhere() {
     same(
-        "void f(void)\n{\n    int a = 1;\n    wait;\n    float b = 2.0;\n    int c[3] = {4, 5};\n}\n",
-        "void f(void)\n{\n    int a;\n    float b;\n    int c[3];\n\n    a = 1;\n    wait;\n    b = 2.0;\n    c[0] = 4;\n    c[1] = 5;\n    c[2] = 0;\n}\n",
+        "void f(void)\n{\n    int a = 1;\n    WAIT();\n    float b = 2.0;\n    int c[3] = {4, 5};\n}\n",
+        "void f(void)\n{\n    int a;\n    float b;\n    int c[3];\n\n    a = 1;\n    WAIT();\n    b = 2.0;\n    c[0] = 4;\n    c[1] = 5;\n    c[2] = 0;\n}\n",
         HEAD,
     );
     same(
@@ -54,8 +54,8 @@ fn initializers_and_declarations_anywhere() {
 #[test]
 fn for_loops_are_while_loops_that_step_before_continue() {
     same(
-        "void f(void)\n{\n    for (int i = 0; i < 3; i++) {\n        if (i == 1) {\n            continue;\n        }\n        wait;\n    }\n}\n",
-        "void f(void)\n{\n    int i;\n\n    i = 0;\n    while (i < 3) {\n        if (i == 1) {\n            i = i + 1;\n            continue;\n        }\n        wait;\n        i = i + 1;\n    }\n}\n",
+        "void f(void)\n{\n    for (int i = 0; i < 3; i++) {\n        if (i == 1) {\n            continue;\n        }\n        WAIT();\n    }\n}\n",
+        "void f(void)\n{\n    int i;\n\n    i = 0;\n    while (i < 3) {\n        if (i == 1) {\n            i = i + 1;\n            continue;\n        }\n        WAIT();\n        i = i + 1;\n    }\n}\n",
         HEAD,
     );
 }
@@ -63,8 +63,8 @@ fn for_loops_are_while_loops_that_step_before_continue() {
 #[test]
 fn do_loops_test_after_the_body() {
     same(
-        "void f(void)\n{\n    int i;\n\n    do {\n        wait;\n    } while (i);\n}\n",
-        "void f(void)\n{\n    int i;\n\n    while (1) {\n        wait;\n        if (!i) {\n            break;\n        }\n    }\n}\n",
+        "void f(void)\n{\n    int i;\n\n    do {\n        WAIT();\n    } while (i);\n}\n",
+        "void f(void)\n{\n    int i;\n\n    while (1) {\n        WAIT();\n        if (!i) {\n            break;\n        }\n    }\n}\n",
         HEAD,
     );
 }
@@ -72,8 +72,8 @@ fn do_loops_test_after_the_body() {
 #[test]
 fn compound_assignment_steps_and_braceless_bodies() {
     same(
-        "void f(void)\n{\n    int i;\n\n    i += 2;\n    i *= 3;\n    ++i;\n    i--;\n    if (i) wait;\n    else end;\n}\n",
-        "void f(void)\n{\n    int i;\n\n    i = i + 2;\n    i = i * 3;\n    i = i + 1;\n    i = i - 1;\n    if (i) {\n        wait;\n    } else {\n        end;\n    }\n}\n",
+        "void f(void)\n{\n    int i;\n\n    i += 2;\n    i *= 3;\n    ++i;\n    i--;\n    if (i) WAIT();\n    else END();\n}\n",
+        "void f(void)\n{\n    int i;\n\n    i = i + 2;\n    i = i * 3;\n    i = i + 1;\n    i = i - 1;\n    if (i) {\n        WAIT();\n    } else {\n        END();\n    }\n}\n",
         HEAD,
     );
 }
@@ -90,8 +90,8 @@ fn literals_blocks_and_empty_statements() {
 #[test]
 fn preprocessor_conditions_choose_code() {
     same(
-        "#define LEVEL 2\n\nvoid f(void)\n{\n#if LEVEL > 1 && defined(LEVEL)\n    wait;\n#elif 1\n    end;\n#else\n    not even code;\n#endif\n#ifdef MISSING\n    end;\n#endif\n#ifndef MISSING\n    wait;\n#endif\n}\n",
-        "void f(void)\n{\n    wait;\n    wait;\n}\n",
+        "#define LEVEL 2\n\nvoid f(void)\n{\n#if LEVEL > 1 && defined(LEVEL)\n    WAIT();\n#elif 1\n    END();\n#else\n    not even code;\n#endif\n#ifdef MISSING\n    END();\n#endif\n#ifndef MISSING\n    WAIT();\n#endif\n}\n",
+        "void f(void)\n{\n    WAIT();\n    WAIT();\n}\n",
         HEAD,
     );
 }
@@ -108,8 +108,8 @@ fn natives_in_expressions_are_called_into_a_hidden_local_first() {
 #[test]
 fn a_native_in_a_loop_condition_runs_every_iteration() {
     same(
-        "void f(void)\n{\n    while (get_flag(5)) {\n        wait;\n    }\n}\n",
-        "void f(void)\n{\n    int __value_0;\n\n    while (1) {\n        get_flag(5, &__value_0);\n        if (!__value_0) {\n            break;\n        }\n        wait;\n    }\n}\n",
+        "void f(void)\n{\n    while (get_flag(5)) {\n        WAIT();\n    }\n}\n",
+        "void f(void)\n{\n    int __value_0;\n\n    while (1) {\n        get_flag(5, &__value_0);\n        if (!__value_0) {\n            break;\n        }\n        WAIT();\n    }\n}\n",
         EVENT,
     );
 }
@@ -117,8 +117,8 @@ fn a_native_in_a_loop_condition_runs_every_iteration() {
 #[test]
 fn natives_run_only_when_c_evaluates_them() {
     same(
-        "int f(void)\n{\n    int a;\n    int x;\n\n    x = a && get_flag(5);\n    if (a || get_counter(2) > 1) {\n        wait;\n    }\n    return a ? get_flag(6) : x;\n}\n",
-        "int f(void)\n{\n    int a;\n    int x;\n    int __value_0;\n    int __value_1;\n    int __value_2;\n    int __value_3;\n    int __value_4;\n    int __value_5;\n\n    __value_0 = !!a;\n    if (__value_0) {\n        get_flag(5, &__value_1);\n        __value_0 = !!__value_1;\n    }\n    x = !!__value_0;\n    __value_2 = !!a;\n    if (!__value_2) {\n        get_counter(2, &__value_3);\n        __value_2 = !!(__value_3 > 1);\n    }\n    if (__value_2) {\n        wait;\n    }\n    if (a) {\n        get_flag(6, &__value_5);\n        __value_4 = __value_5;\n    } else {\n        __value_4 = x;\n    }\n    return __value_4;\n}\n",
+        "int f(void)\n{\n    int a;\n    int x;\n\n    x = a && get_flag(5);\n    if (a || get_counter(2) > 1) {\n        WAIT();\n    }\n    return a ? get_flag(6) : x;\n}\n",
+        "int f(void)\n{\n    int a;\n    int x;\n    int __value_0;\n    int __value_1;\n    int __value_2;\n    int __value_3;\n    int __value_4;\n    int __value_5;\n\n    __value_0 = !!a;\n    if (__value_0) {\n        get_flag(5, &__value_1);\n        __value_0 = !!__value_1;\n    }\n    x = !!__value_0;\n    __value_2 = !!a;\n    if (!__value_2) {\n        get_counter(2, &__value_3);\n        __value_2 = !!(__value_3 > 1);\n    }\n    if (__value_2) {\n        WAIT();\n    }\n    if (a) {\n        get_flag(6, &__value_5);\n        __value_4 = __value_5;\n    } else {\n        __value_4 = x;\n    }\n    return __value_4;\n}\n",
         EVENT,
     );
 }
@@ -127,7 +127,7 @@ fn natives_run_only_when_c_evaluates_them() {
 fn natives_take_int_and_float_arguments_as_they_are() {
     // the engine converts what it reads (GetStackInt, GetStackFloat), so 1 goes as the int 1
     let text = "void f(void)\n{\n    set_bgm_master_volume(1);\n}\n";
-    same(text, "void f(void)\n{\n    set_bgm_master_volume((any)1);\n}\n", EVENT);
+    same(text, "void f(void)\n{\n    set_bgm_master_volume(INT_AS_FLOAT(1));\n}\n", EVENT);
     assert_ne!(built(text, EVENT).unwrap(), built(&text.replace("(1)", "(1.0)"), EVENT).unwrap());
 }
 
@@ -136,16 +136,16 @@ fn zero_stored_in_a_float_stays_the_int_zero() {
     // its bits are 0.0's, and a float read makes the slot a float again
     same(
         "void f(void)\n{\n    float x;\n\n    x = 0;\n}\n",
-        "void f(void)\n{\n    float x;\n\n    x = (any)0;\n}\n",
+        "void f(void)\n{\n    float x;\n\n    x = INT_AS_FLOAT(0);\n}\n",
         HEAD,
     );
 }
 
 #[test]
-fn any_keeps_a_native_result_as_the_native_wrote_it() {
+fn float_as_int_keeps_a_native_result_as_the_native_wrote_it() {
     // the native writes straight into the variable, as x = native(); does for a float
     same(
-        "void f(void)\n{\n    int x;\n\n    x = (any)get_battle_bgm_volume();\n}\n",
+        "void f(void)\n{\n    int x;\n\n    x = FLOAT_AS_INT(get_battle_bgm_volume());\n}\n",
         "void f(void)\n{\n    int x;\n\n    _GET_BTL_BGM_VOL(&x);\n}\n",
         EVENT,
     );
@@ -154,6 +154,17 @@ fn any_keeps_a_native_result_as_the_native_wrote_it() {
         built("void f(void)\n{\n    int x;\n\n    x = get_battle_bgm_volume();\n}\n", EVENT).unwrap(),
         built("void f(void)\n{\n    int x;\n\n    _GET_BTL_BGM_VOL(&x);\n}\n", EVENT).unwrap()
     );
+}
+
+#[test]
+fn double_store_stores_twice() {
+    // the bytes some retail scripts have: the value stored, then stored again
+    let text = "void f(void)\n{\n    float x;\n\n    DOUBLE_STORE(x = x + 1.0);\n}\n";
+    assert_ne!(
+        built(text, HEAD).unwrap(),
+        built(&text.replace("DOUBLE_STORE(x = x + 1.0)", "x = x + 1.0"), HEAD).unwrap()
+    );
+    fails("void f(void)\n{\n    int x;\n\n    DOUBLE_STORE(x + 1);\n}\n", "DOUBLE_STORE takes an assignment");
 }
 
 // Features with code of their own are run.
@@ -165,16 +176,19 @@ fn values_convert_as_c_converts_them() {
     assert_eq!(result(passed, &[3]), int(15));
     let stored = "int f(int v)\n{\n    int x;\n\n    x = v / 2.0;\n    return x * 2;\n}\n";
     assert_eq!(result(stored, &[3]), int(2));
-    // (any) stores the value as it is: x holds 1.5, and x * 2 is the float 3.0
-    assert_eq!(result(&stored.replace("x = v / 2.0;", "x = (any)(v / 2.0);"), &[3]), Value::Float(3.0));
+    // FLOAT_AS_INT stores the value as it is: x holds 1.5, and x * 2 is the float 3.0
+    assert_eq!(result(&stored.replace("x = v / 2.0;", "x = FLOAT_AS_INT(v / 2.0);"), &[3]), Value::Float(3.0));
 }
 
 #[test]
-fn logical_values_are_0_or_1_and_any_keeps_the_vms() {
+fn logical_values_are_0_or_1_and_and_value_keeps_the_vms() {
     let text = "int f(int v)\n{\n    int x;\n\n    x = v && 7;\n    return x;\n}\n";
     assert_eq!(result(text, &[1]), int(1));
-    // the VM's && leaves the deciding operand
-    assert_eq!(result(&text.replace("x = v && 7;", "x = (any)(v && 7);"), &[1]), int(7));
+    // the VM's && and || give b's own value when a does not decide, and 0 or 1 when it does
+    let and = text.replace("x = v && 7;", "x = AND_VALUE(v, 7);");
+    assert_eq!((result(&and, &[1]), result(&and, &[0])), (int(7), int(0)));
+    let or = text.replace("x = v && 7;", "x = OR_VALUE(v, 7);");
+    assert_eq!((result(&or, &[3]), result(&or, &[0])), (int(1), int(7)));
 }
 
 #[test]
@@ -222,7 +236,7 @@ fn pointer_locals_point_at_variables() {
 #[test]
 fn string_variables_hold_strings() {
     let text =
-        "int f(void)\n{\n    string s = \"hello\";\n    string t;\n\n    t = s;\n    print(t);\n    return 1;\n}\n";
+        "int f(void)\n{\n    string s = \"hello\";\n    string t;\n\n    t = s;\n    PRINT(t);\n    return 1;\n}\n";
     assert_eq!(result(text, &[]), int(1));
 }
 
@@ -230,7 +244,7 @@ fn string_variables_hold_strings() {
 
 #[test]
 fn errors_name_the_line() {
-    fails("void f(void)\n{\n    wait;\n    nope = 1;\n}\n", "line 9: unknown variable nope");
+    fails("void f(void)\n{\n    WAIT();\n    nope = 1;\n}\n", "line 9: unknown variable nope");
     fails("int g[2];\nint f(void)\n{\n    return g + 1 == g;\n}\n", "line 9: comparing two pointers is not supported");
     fails("int h;\nint g = h;\nvoid f(void)\n{\n}\n", "the value of global g must be a constant expression, not h");
     fails(

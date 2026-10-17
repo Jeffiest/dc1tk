@@ -35,7 +35,7 @@ fn status_tells_edits_from_decompiler_output_ignoring_line_endings() {
     let root = recorded(folder.path());
     fs::write(root.join("map/a.c"), FILES[0].1.replace('\n', "\r\n")).unwrap();
     assert_eq!(status(&root), (vec![], vec![], vec![]));
-    write(&root, "lib/shared.c", "void shared(void)\n{\n    wait;\n}\n");
+    write(&root, "lib/shared.c", "void shared(void)\n{\n    WAIT();\n}\n");
     write(&root, "lib/new.c", "");
     write(&root, ".cache/clangd/index.idx", "");
     fs::remove_file(root.join("map/b.c")).unwrap();
@@ -73,7 +73,7 @@ fn record_keeps_files_another_decompile_wrote() {
 fn library_notes_count_scripts_an_edit_reaches_unasked() {
     let folder = TempDir::new("tree-notes");
     let root = recorded(folder.path());
-    write(&root, "lib/shared.c", "void shared(void)\n{\n    wait;\n}\n");
+    write(&root, "lib/shared.c", "void shared(void)\n{\n    WAIT();\n}\n");
     write(&root, "map/a.c", "#include \"lib/shared.c\"\n// edited\n");
     let found = tree::status(&root).unwrap().unwrap();
     assert_eq!(

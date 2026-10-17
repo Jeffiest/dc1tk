@@ -322,7 +322,7 @@ struct Types<'a> {
     returns: String,
     used: &'a mut Vec<&'static str>,
     /// Marking a decompiled function (kept_as_is): a conversion between int and float is not made
-    /// but shown, as (any).
+    /// but shown, as FLOAT_AS_INT or INT_AS_FLOAT.
     mark: bool,
 }
 
@@ -437,13 +437,14 @@ type Lowered = Result<(Node, String)>;
 
 impl Types<'_> {
     /// A value stored in a variable, passed for a parameter or returned, as type to: converted as
-    /// C converts it, or when marking, kept as it is in (any) where C would convert between int
-    /// and float.
+    /// C converts it, or when marking, kept as it is in FLOAT_AS_INT or INT_AS_FLOAT where C would
+    /// convert between int and float.
     fn stored(&mut self, value: Node, from: &str, to: &str) -> Node {
         let crosses = (to == "float" && is_integer(from) && from != "unsigned int")
             || (is_integer(to) && to != "unsigned int" && from == "float");
         if self.mark && crosses {
-            return node!({"kind": "cast", "type": "any", "operand": value, "as_is": true});
+            let kind = if to == "float" { "float" } else { "int" };
+            return node!({"kind": "as_is", "type": kind, "operand": value, "mark": true});
         }
         converted(value, from, to, self.used)
     }
@@ -485,6 +486,7 @@ impl Types<'_> {
             kinds::LOGICAL => self.logical(node, condition),
             kinds::TERNARY => self.ternary(node),
             kinds::CAST => self.cast(node),
+            kinds::AS_IS => self.as_is(node),
             kinds::COMMA => self.comma(node),
             kinds::CALL => self.call(node),
             kinds::BUILTIN => self.builtin(node),
@@ -566,14 +568,24 @@ impl Types<'_> {
         Ok((node, result))
     }
 
+    /// FLOAT_AS_INT(x) or INT_AS_FLOAT(x): x as it is, of the type it is taken as.
+    fn as_is(&mut self, mut node: Node) -> Lowered {
+        self.child(&mut node, "operand")?;
+        let kind = node.text("type").to_string();
+        Ok((node, kind))
+    }
+
     fn logical(&mut self, mut node: Node, condition: bool) -> Lowered {
+        // AND_VALUE(a, b) and OR_VALUE(a, b) keep the VM's value: b's own when a does not decide
+        let condition = condition || node.get("vm").is_some_and(Node::is_set);
         let (left, _) = self.condition(node.take("left"))?;
         let (right, _) = self.typed(node.take("right"), condition)?;
         node["left"] = left;
         node["right"] = right;
-        // the VM's && and || leave the deciding value; C's give 0 or 1
+        // the VM's && and || leave b's own value when a does not decide; C's give 0 or 1
         if self.mark && !condition {
-            return Ok((node!({"kind": "cast", "type": "any", "operand": node, "as_is": true}), "int".into()));
+            node["vm"] = Node::Bool(true);
+            return Ok((node, "int".into()));
         }
         Ok((if condition { node } else { truth(node) }, "int".into()))
     }
@@ -629,12 +641,7 @@ impl Types<'_> {
 
     fn cast(&mut self, mut node: Node) -> Lowered {
         let to = node.text("type").to_string();
-        // (any)(a && b) is the VM's value of a && b: the deciding operand, not 0 or 1
-        let (operand, from) = if to == "any" && node["operand"].kind() == kinds::LOGICAL {
-            self.condition(node.take("operand"))?
-        } else {
-            self.expression(node.take("operand"))?
-        };
+        let (operand, from) = self.expression(node.take("operand"))?;
         if let Some(narrow) = IntType::narrow(&to) {
             return Ok((narrowed(operand, &from, narrow), to));
         }
@@ -858,8 +865,10 @@ impl Types<'_> {
         let from =
             self.found.natives.get(node.text("name")).map_or("any".into(), |native| native.text("returns").to_string());
         let mut node = self.arguments(node)?;
-        if (to == "float" && is_integer(&from)) || (is_integer(&to) && from == "float") {
-            node["as_is"] = Node::Bool(true);
+        if to == "float" && is_integer(&from) {
+            node["as_is"] = Node::from("float");
+        } else if is_integer(&to) && from == "float" {
+            node["as_is"] = Node::from("int");
         }
         Ok(node)
     }
@@ -983,8 +992,9 @@ pub fn integer_types(mut program: Node, kinds: &Map, found: &Context) -> Result<
 /// Decompiled functions with each value the VM stores as it is shown so: the bytecode stores a
 /// value with the type it has (a float in an int variable keeps being a float), where C converts
 /// it on assignment, on passing it to a function of the script and on return. Each value C would
-/// convert between int and float there is wrapped in (any), which converts nothing, so the
-/// function compiles to the bytes it came from. signatures are the functions calls can reach
+/// convert between int and float there is wrapped in FLOAT_AS_INT or INT_AS_FLOAT, which convert
+/// nothing, and a && or || whose value is used is written AND_VALUE or OR_VALUE, so the function
+/// compiles to the bytes it came from. signatures are the functions calls can reach
 /// besides these (the included ones), globals the script's.
 pub fn kept_as_is(functions: Vec<Node>, signatures: &[Node], globals: &[Node], found: &Context) -> Vec<Node> {
     let kinds = &found.kinds;
@@ -1041,12 +1051,14 @@ pub fn kept_as_is(functions: Vec<Node>, signatures: &[Node], globals: &[Node], f
         .collect()
 }
 
-/// The original tree with the (any) marks of its marked copy, which differs from it only in those
-/// marks and in constants given as their values.
+/// The original tree with the marks of its marked copy (FLOAT_AS_INT and INT_AS_FLOAT around a
+/// value, a native's as_is, a logical's vm), which differs from it only in those marks and in
+/// constants given as their values.
 fn marked_as_is(original: &Node, marked: &Node) -> Node {
-    let is_mark = |node: &Node| node.kind() == kinds::CAST && node.get("as_is").is_some();
-    if is_mark(marked) && !(original.kind() == kinds::CAST && original["type"] == "any") {
-        return node!({"kind": "cast", "type": "any", "operand": marked_as_is(original, &marked["operand"])});
+    let is_mark = |node: &Node| node.kind() == kinds::AS_IS && node.get("mark").is_some();
+    if is_mark(marked) && original.kind() != kinds::AS_IS {
+        let operand = marked_as_is(original, &marked["operand"]);
+        return node!({"kind": "as_is", "type": marked["type"].clone(), "operand": operand});
     }
     match (original, marked) {
         (Node::List(items), Node::List(others)) if items.len() == others.len() => {
@@ -1059,8 +1071,10 @@ fn marked_as_is(original: &Node, marked: &Node) -> Node {
                     (key.clone(), marked.get(key).map_or_else(|| value.clone(), |other| marked_as_is(value, other)))
                 })
                 .collect();
-            if marked.get("as_is").is_some_and(Node::is_set) && original.kind() == kinds::NATIVE {
-                merged.insert("as_is".to_string(), Node::Bool(true));
+            for key in ["as_is", "vm"] {
+                if let Some(mark) = marked.get(key).filter(|mark| mark.is_set() && merged.get(key).is_none()) {
+                    merged.insert(key.to_string(), mark.clone());
+                }
             }
             Node::Map(merged)
         }

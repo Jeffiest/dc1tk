@@ -26,7 +26,7 @@
 //!   join the script's; a tag the script defines otherwise is refused.
 //! - PROGRAM lines add programs. A program the script already has is changed by overriding its
 //!   function instead, so that several mods can change it.
-//! - A function after #pragma every_frame is called before every wait; in the script, so it runs
+//! - A function after #pragma every_frame is called before every WAIT(); in the script, so it runs
 //!   once a frame whatever the script is waiting in (a monster's AI keeping a timer, say). It takes
 //!   no parameters and must not wait.
 //! - NEW_FLAG(name), NEW_COUNTER(name), NEW_PROGRAM(name) and NEW_MONSTER_VAR(name), in any of
@@ -1337,7 +1337,7 @@ impl Wrapping<'_> {
     }
 }
 
-/// A call to each #pragma every_frame function before every wait; in the script, so it runs once
+/// A call to each #pragma every_frame function before every WAIT(); in the script, so it runs once
 /// a frame whatever the script is waiting in. The functions themselves, and what they call, are
 /// left alone, and must not wait.
 fn with_frame_calls(program: Node, hooks: &[String]) -> Result<Node> {

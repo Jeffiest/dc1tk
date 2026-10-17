@@ -126,7 +126,7 @@ void start_castle_battle(void)
 | `#pragma target <kind> <name>` | Select scripts to patch (`map s51`, `monster golem`, `script mainchr/c01.c`, or `library lib/...`). `map` picks every script in the map's folder, including its interiors and sub-scripts, and an override must find its function in each; use `script` with a `?` or `*` pattern to pick fewer. A `.c` file without `#pragma target` is a shared header/library. |
 | `#pragma override` | Replace a function in the target script. Call `original(...)` to run the replaced function. |
 | `#pragma override <native_name>` | Wrap an engine native function (such as `place_monster`) across the target script. |
-| `#pragma every_frame` | Run the `void func(void)` function after it once per frame, before every `wait;` in the target script. The function must not `wait` itself. |
+| `#pragma every_frame` | Run the `void func(void)` function after it once per frame, before every `WAIT();` in the target script. The function must not `wait` itself. |
 | `PROGRAM(id, func)` | Register a new event program entry point in the target script. |
 
 Example native override:

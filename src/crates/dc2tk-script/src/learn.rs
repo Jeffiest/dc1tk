@@ -510,14 +510,14 @@ void f_0000(void)
     v1 = 0.5;
     v2[v0] = v0 = 2;
     g0 = g0 + 1;
-    g1 = sin(v1) * -2.0;
+    g1 = SIN(v1) * -2.0;
     _GET_FLAG(12, &v0);
     if (v0 == 1 && g0 > 2 || !v0) {
-        print("hello", v0);
+        PRINT("hello", v0);
     } else if (v0 < 0) {
-        wait;
+        WAIT();
     } else {
-        skip_end;
+        SKIP_END();
     }
     while (1) {
         if (v2[0] >= 4) {
@@ -528,7 +528,7 @@ void f_0000(void)
         }
         v2[0] = f_04d4(&v2[0], (float)v0) - (v0 - 1);
     }
-    end;
+    END();
 }
 
 int f_04d4(int a0[], float a1)
@@ -701,7 +701,7 @@ void on_init(void)
     fn names_reach_variants_that_differ_only_in_strings() {
         let folder = folder("variants");
         learn_text(&folder, "greet.c", &documented(), &IndexMap::new());
-        let variant = EVENT.replace(r#"print("hello", v0);"#, r#"print("hallo", v0);"#);
+        let variant = EVENT.replace(r#"PRINT("hello", v0);"#, r#"PRINT("hallo", v0);"#);
         let shown = named_source(&build(&variant, &IndexMap::new()), learned_entries(&folder), None);
         assert!(shown.contains("void greet_visitor(void)"), "{shown}");
         let _ = fs::remove_dir_all(&folder);
@@ -740,8 +740,10 @@ void on_init(void)
     #[test]
     fn a_declared_return_type_is_learned_when_it_differs() {
         let headers = typed_headers();
-        let source =
-            TYPED.replace("void on_init(void)", "float scale(void)\n{\n    return (any)2;\n}\n\nvoid on_init(void)");
+        let source = TYPED.replace(
+            "void on_init(void)",
+            "float scale(void)\n{\n    return INT_AS_FLOAT(2);\n}\n\nvoid on_init(void)",
+        );
         let folder = folder("returns");
         learn_text(&folder, "typed.c", &source, &headers);
         let entries = learned_entries(&folder);

@@ -3,7 +3,7 @@
 // Natives are built-in engine functions declared with NATIVE(...). A native
 // with one result returns a value. A native with multiple results writes to
 // pointer arguments. `OPTIONAL(...)` marks arguments that a call can omit.
-// Natives return immediately and do not yield frames; use `wait;` to pause a
+// Natives return immediately and do not yield frames; use `WAIT();` to pause a
 // script for one frame (25 FPS on PAL).
 
 #ifndef DC2TK_EFFECT_H
@@ -113,7 +113,7 @@ extern void wrap_angle(float *angle) NATIVE(12);
 // Writes a random number from 0 up to but not including range into value. A float range gives a
 // float; an int range gives an int.
 // Original name: _GET_RAND.
-extern void get_random(any range, void *value) NATIVE(13);
+extern void get_random VM_ARGS(any range, void *value) NATIVE(13);
 
 // Computes the rotation in radians that faces from point (from_x, from_y, from_z) toward point
 // (to_x, to_y, to_z). With three out parameters it writes pitch, yaw and 0; with only one it
@@ -167,7 +167,7 @@ extern void get_effect_value(int index, void *value) NATIVE(57);
 
 // Stores value, int or float, in value slot index (0 to 7) of this effect.
 // Original name: _SET_VALUE.
-extern void set_effect_value(int index, any value) NATIVE(58);
+extern void set_effect_value VM_ARGS(int index, any value) NATIVE(58);
 
 // Shows (1) or hides (0) the effect's model. With fade = 1 it fades in from transparent or out
 // from opaque at a fixed 0.1 alpha per frame; fade_speed is read and ignored. Fails when the
@@ -447,7 +447,7 @@ extern void set_sprite_spin(int first, float velocity, OPTIONAL(int count)) NATI
 // count sprites starting at first (count defaults to 1); it stops and fails at the first index
 // past the effect's sprite count. A fourth argument seen on the disc is ignored.
 // Original name: _SPT_SET_ACC_ROTZ.
-extern void set_sprite_spin_accel(int first, float accel, OPTIONAL(int count, any unused)) NATIVE(177);
+extern void set_sprite_spin_accel VM_ARGS(int first, float accel, OPTIONAL(int count, any unused)) NATIVE(177);
 
 // Sets the amount added to each sprite colour channel every frame. Affects count sprites starting
 // at first (count defaults to 1); it stops and fails at the first index past the effect's sprite
@@ -460,7 +460,7 @@ extern void set_sprite_color_velocity(int first, float red, float green, float b
 // Original name: _SPT_SET_ACC_COL.
 extern void set_sprite_color_accel(int first, float red, float green, float blue, float alpha, OPTIONAL(int count)) NATIVE(179);
 
-// Makes sprites pulse: each drawn frame adds sin(phase) times the given amplitude to each colour
+// Makes sprites pulse: each drawn frame adds SIN(phase) times the given amplitude to each colour
 // channel, and phase advances by speed radians. speed = 0 turns blinking off. Affects count
 // sprites starting at first (count defaults to 1); it stops and fails at the first index past the
 // effect's sprite count.
@@ -478,7 +478,7 @@ extern void spread_sprite_color(int first, float red, float green, float blue, f
 // sprites starting at first (count defaults to 1); it stops and fails at the first index past the
 // effect's sprite count. A fifth argument seen on the disc is ignored.
 // Original name: _SPT_SET_VELO_SCL.
-extern void set_sprite_scale_velocity(int first, float scale_x, float scale_y, OPTIONAL(int count, any unused)) NATIVE(182);
+extern void set_sprite_scale_velocity VM_ARGS(int first, float scale_x, float scale_y, OPTIONAL(int count, any unused)) NATIVE(182);
 
 // Sets the per-frame change of the sprite scale velocity. Affects count sprites starting at first
 // (count defaults to 1); it stops and fails at the first index past the effect's sprite count.
@@ -559,7 +559,7 @@ extern void create_attack(string damage_name, OPTIONAL(int owner)) NATIVE(210);
 // z, radius) a line with that radius; (frame_name, radius) a sphere following that frame of the
 // effect's model; (frame_name, end_frame_name, radius) a line between two frames of the model.
 // Original name: _COLPRIM_SET_COORD.
-extern void set_attack_shape(any start_x, any start_y, OPTIONAL(any start_z, float radius_or_end_x, float end_y, float end_z, float radius)) NATIVE(211);
+extern void set_attack_shape VM_ARGS(any start_x, any start_y, OPTIONAL(any start_z, float radius_or_end_x, float end_y, float end_z, float radius)) NATIVE(211);
 
 // Removes this effect's attack. The argument is read and ignored; scripts pass -1.
 // Original name: _COLPRIM_DELETE.
@@ -657,12 +657,12 @@ extern void start_child_effect(string effect_name, OPTIONAL(int *handle)) NATIVE
 // Sets the first work vector of a child effect, read there with get_work_vector1. Pass (x, y, z)
 // for the most recently started effect, or (handle, x, y, z) for the effect in that slot.
 // Original name: _ES_SET_VECT1.
-extern void set_child_vector1(any handle_or_x, float x_or_y, float y_or_z, OPTIONAL(float z)) NATIVE(241);
+extern void set_child_vector1 VM_ARGS(any handle_or_x, float x_or_y, float y_or_z, OPTIONAL(float z)) NATIVE(241);
 
 // Sets the second work vector of a child effect, read there with get_work_vector2. Pass (x, y, z)
 // for the most recently started effect, or (handle, x, y, z) for the effect in that slot.
 // Original name: _ES_SET_VECT2.
-extern void set_child_vector2(any handle_or_x, float x_or_y, float y_or_z, OPTIONAL(float z)) NATIVE(242);
+extern void set_child_vector2 VM_ARGS(any handle_or_x, float x_or_y, float y_or_z, OPTIONAL(float z)) NATIVE(242);
 
 // Sets the target scene character slot of a child effect, read there with get_target_id. Pass
 // (target) for the most recently started effect, or (handle, target) for the effect in that slot.
@@ -677,7 +677,7 @@ extern void share_attack_with_child(void) NATIVE(244);
 // get_effect_value. Pass (index, value) for the most recently started effect, or (handle, index,
 // value) for the effect in that slot.
 // Original name: _ES_SET_VALUE.
-extern void set_child_value(int handle_or_index, any index_or_value, OPTIONAL(any value)) NATIVE(245);
+extern void set_child_value VM_ARGS(int handle_or_index, any index_or_value, OPTIONAL(any value)) NATIVE(245);
 
 // Writes the position of whatever event object handle number handle refers to into the three out
 // variables.
@@ -696,7 +696,7 @@ extern int check_model_motion_end(void) NATIVE(253);
 
 // Numbers the disc calls that this table never registers. The engine prints "not found ext" and
 // moves on, so these calls do nothing.
-extern void _EXT_250(...) NATIVE(250);
+extern void _EXT_250 VM_ARGS(...) NATIVE(250);
 
 #include <helpers/effect.h>
 

@@ -43,7 +43,7 @@ DOOR_PROGRAM = (
     "void %s(void)\n"
     "{\n"
     "    jump_to_map(-1, \"%s\", %s);\n"
-    "    wait;\n"
+    "    WAIT();\n"
     "}\n"
 )
 

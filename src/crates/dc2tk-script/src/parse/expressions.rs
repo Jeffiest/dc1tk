@@ -112,15 +112,24 @@ pub(super) fn parenthesised(state: &mut State) -> Result<Node> {
     postfix_operators(state, node)
 }
 
-/// What a name starts: sin(x) or cos(x), a call (of a function, or through a function pointer
-/// variable), offsetof, va_arg or va_start, or a variable; and the postfix operators after it.
+/// What a name starts: SIN(x) or COS(x), one of the VM's value macros, a call (of a function, or
+/// through a function pointer variable), offsetof, va_arg or va_start, or a variable; and the
+/// postfix operators after it.
 pub(super) fn named_primary(state: &mut State, name: &str) -> Result<Node> {
     if !state.at("(", 0) {
         let node = named(state, name)?;
         return postfix_operators(state, node);
     }
-    if BUILTINS.contains(&name) {
-        return builtin(state, name);
+    if let Some((_, builtin_name)) = BUILTINS.iter().find(|(macro_name, _)| *macro_name == name) {
+        return builtin(state, builtin_name);
+    }
+    match name {
+        "FLOAT_AS_INT" => return as_is(state, "int"),
+        "INT_AS_FLOAT" => return as_is(state, "float"),
+        "AND_VALUE" => return logical_value(state, "&&"),
+        "OR_VALUE" => return logical_value(state, "||"),
+        "DOUBLE_STORE" => return double_store(state),
+        _ => {}
     }
     match name {
         "__offsetof" => return offsetof(state),
@@ -132,12 +141,45 @@ pub(super) fn named_primary(state: &mut State, name: &str) -> Result<Node> {
     postfix_operators(state, call)
 }
 
-/// sin(x) or cos(x), which the VM has instructions for.
+/// SIN(x) or COS(x), which the VM has instructions for.
 pub(super) fn builtin(state: &mut State, name: &str) -> Result<Node> {
     state.expect("(")?;
     let operand = assignment(state)?;
     state.expect(")")?;
     Ok(node!({"kind": "builtin", "name": name, "operand": operand}))
+}
+
+/// FLOAT_AS_INT(x) or INT_AS_FLOAT(x): the value of x as it is, with no conversion, taken as an int
+/// or a float. The VM keeps a value's own type where it is stored: a float stored in an int stays
+/// a float.
+pub(super) fn as_is(state: &mut State, kind: &str) -> Result<Node> {
+    state.expect("(")?;
+    let operand = assignment(state)?;
+    state.expect(")")?;
+    Ok(node!({"kind": "as_is", "type": kind, "operand": operand}))
+}
+
+/// AND_VALUE(a, b) or OR_VALUE(a, b): a && b or a || b with the VM's value: 0 or 1 when a
+/// decides, else b's own value, where C gives b as 0 or 1.
+pub(super) fn logical_value(state: &mut State, op: &str) -> Result<Node> {
+    state.expect("(")?;
+    let left = assignment(state)?;
+    state.expect(",")?;
+    let right = assignment(state)?;
+    state.expect(")")?;
+    Ok(node!({"kind": "logical", "op": op, "left": left, "right": right, "vm": true}))
+}
+
+/// DOUBLE_STORE(x = value): x = value, stored twice, as some of the game's scripts do. x = x =
+/// value says the same, but C leaves a variable changed twice in one expression undefined.
+pub(super) fn double_store(state: &mut State) -> Result<Node> {
+    state.expect("(")?;
+    let inner = assignment(state)?;
+    state.expect(")")?;
+    if inner.kind() != "assign" {
+        return state.fail("DOUBLE_STORE takes an assignment, x = value");
+    }
+    Ok(node!({"kind": "assign", "target": inner["target"].clone(), "value": inner}))
 }
 
 /// name(args): a call of a function, or through a function pointer the name is a variable of.
@@ -380,7 +422,7 @@ pub(super) fn postfix(target: Node, text: &str) -> Node {
 pub(super) fn cast_ahead(state: &State) -> bool {
     state.at("(", 0)
         && state.token(1).kind == Kind::Name
-        && (CAST_TYPES.contains(&state.token(1).text()) || state.token(1).text() == "any")
+        && CAST_TYPES.contains(&state.token(1).text())
         && state.at(")", 2)
 }
 
@@ -611,8 +653,7 @@ pub(super) fn increment(state: &mut State) -> Result<Node> {
     Ok(stepped(target, op))
 }
 
-/// The decompiler's casts: (int)x and (float)x, which convert between the VM's ints and floats,
-/// and (any)x, which keeps the value as it is.
+/// The decompiler's casts, (int)x and (float)x, which convert between the VM's ints and floats.
 pub(super) fn plain_cast(state: &mut State) -> Result<Node> {
     state.take();
     let kind = state.take();

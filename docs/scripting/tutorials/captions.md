@@ -4,7 +4,7 @@ This guide shows how to display a new caption every five seconds during an activ
 
 This pattern combines four engine rules explained in [How scripts run](../../internals/running.md):
 
-1. [A map event that never executes `wait;` finishes in one frame without freezing the player](../../internals/running.md#an-event-that-never-waits-costs-nothing).
+1. [A map event that never executes `WAIT();` finishes in one frame without freezing the player](../../internals/running.md#an-event-that-never-waits-costs-nothing).
 2. [Message window `0` stays on screen in dungeon mode after the event returns](../../internals/running.md#message-window-0-stays-on-screen).
 3. [Monster AI scripts run every frame during combat and can start map programs with `run_event_script`](../../internals/running.md#monsters-can-start-map-events).
 4. [Map and monster scripts share save flags and the floor timer](../../internals/running.md#shared-state).
@@ -36,7 +36,7 @@ int caption;
 
 PROGRAM(SHOW_NEXT_CAPTION, show_next_caption);
 
-// Updates message window 0 and returns without executing wait;.
+// Updates message window 0 and returns without executing WAIT();.
 void show_next_caption(void)
 {
     caption = caption + 1;
@@ -80,7 +80,7 @@ void start_georama_with_starter_items(void)
 
 ## 3. Write the monster patch
 
-Because map scripts do not run in the background during active combat, the monsters in the fight drive the timer. Create `mods/captions/soldier.c` targeting `MONSTER_GRIFFON_SOLDIER_523` (`523`) with `#pragma every_frame` so `tick_captions` runs once per frame before every `wait;`:
+Because map scripts do not run in the background during active combat, the monsters in the fight drive the timer. Create `mods/captions/soldier.c` targeting `MONSTER_GRIFFON_SOLDIER_523` (`523`) with `#pragma every_frame` so `tick_captions` runs once per frame before every `WAIT();`:
 
 ```c
 // mods/captions/soldier.c

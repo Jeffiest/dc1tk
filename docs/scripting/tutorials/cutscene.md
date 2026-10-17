@@ -41,7 +41,7 @@ NEW_FLAG(SINDAIN_HELLO_SEEN);
 static void wait_for_actor(int actor)
 {
     while (check_actor_busy(actor)) {
-        wait;
+        WAIT();
     }
 }
 
@@ -109,5 +109,5 @@ dc2tk build extracted/scripts dc2.iso -o test.iso --mod sindain-hello --play
 > **Tip: Custom characters, scene skipping, and warps**
 > - **Triggering from a warp or map point**: Declare `NEW_PROGRAM(HELLO_SCENE);` and `PROGRAM(HELLO_SCENE, play_sindain_hello);`, then warp to it with `jump_to_map(-1, "g01", HELLO_SCENE)` or set `"start_at": "g01:HELLO_SCENE"` in `mod.json`.
 > - **Adding NPCs**: Load `.chr` models into unused scene slots with `load_inactive_chara` or `load_scene_chara`, bind actors to those slots, and call `delete_chara` before `finish_event()`.
-> - **Skipping with Start**: Wrap the camera and actor sequence between `enable_scene_skip();` and `skip_end; disable_scene_skip();`. Keep all `set_flag`, `delete_chara`, and `finish_event` calls outside the skippable block.
+> - **Skipping with Start**: Wrap the camera and actor sequence between `enable_scene_skip();` and `SKIP_END(); disable_scene_skip();`. Keep all `set_flag`, `delete_chara`, and `finish_event` calls outside the skippable block.
 > - **Complete example**: See [`spinning-cult`](../examples/spinning-cult/README.md) for a multi-scene quest mod with custom Blender models and map triggers.

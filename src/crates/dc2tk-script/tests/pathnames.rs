@@ -100,10 +100,10 @@ fn script(body: &str) -> Vec<u8> {
 }
 
 fn disc(folder: &Path, filler: usize) -> PathBuf {
-    let chara = pack(&[("info.cfg", b"MODEL c01;".to_vec()), ("c01.stb", script("    wait;\n"))]);
+    let chara = pack(&[("info.cfg", b"MODEL c01;".to_vec()), ("c01.stb", script("    WAIT();\n"))]);
     let (index, dat) = archive_files(&[
-        ("\\map\\t01.stb", script("    wait;\n")),
-        ("\\map\\t02.stb", script("    end;\n")),
+        ("\\map\\t01.stb", script("    WAIT();\n")),
+        ("\\map\\t02.stb", script("    END();\n")),
         ("\\chara\\c01.chr", chara),
     ]);
     let mut files = vec![("DATA.HD4", index), ("DATA.DAT", dat)];
@@ -127,7 +127,8 @@ fn source(folder: &Path, scripts: &[(&str, &str)]) -> PathBuf {
 fn build_finds_the_disc_script_of_a_named_file() {
     let folder = TempDir::new();
     let iso_path = disc(folder.path(), 4);
-    let root = source(folder.path(), &[("map/t01_town.c", "    wait;\n    wait;\n"), ("map/t02.c", "    end;\n")]);
+    let root =
+        source(folder.path(), &[("map/t01_town.c", "    WAIT();\n    WAIT();\n"), ("map/t02.c", "    END();\n")]);
     pathnames::record(&root, &renames(&[("map/t01.c", "map/t01_town.c")])).unwrap();
     let headers = no_texts();
     let sdk_dir = common::sdk_dir();

@@ -32,7 +32,7 @@ static void frames(int count)
 {
     while (count > 0) {
         count = count - 1;
-        wait;
+        WAIT();
     }
 }
 
@@ -79,7 +79,7 @@ int play_map_start_arrival(void)
     if (progress < 3) {
         set_save_value(SAVE_SET_PROGRESS, 3);
         jump_to_map(-1, "m01", map_start);
-        wait;
+        WAIT();
         return 0;
     }
     result = original();
@@ -91,7 +91,7 @@ int play_map_start_arrival(void)
 void enter_fish_room(void)
 {
     jump_to_map(-1, "fishroom", map_start);
-    wait;
+    WAIT();
 }
 
 // Back from the Fish Room: the town's own arrival, then the player comes out of the door.

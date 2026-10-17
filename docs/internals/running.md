@@ -14,7 +14,7 @@ This page documents how the engine executes scripts at runtime: script programs,
 | Map / event script | `enum program` in `sdk/event.h` | `map_start` (town load), `floor_start` (dungeon floor load), `monsters_cleared` (`1500`, when no monsters remain on a floor), and numbered story programs triggered by warps |
 | Monster script | `enum program` in `sdk/monster.h` | `init`, `update`, `damage`, and `death` |
 
-- **Coroutine execution**: Programs execute as coroutines. The `wait;` statement yields execution for the rest of the current frame, and the program resumes from that point on the next frame.
+- **Coroutine execution**: Programs execute as coroutines. The `WAIT();` statement yields execution for the rest of the current frame, and the program resumes from that point on the next frame.
 - **PAL frame rate**: The PAL game runs at 50 frames per second, so PAL scripts scale 60 Hz frame counts by `50 / 60`.
 
 ## While an event runs, the player waits
@@ -25,9 +25,9 @@ This page documents how the engine executes scripts at runtime: script programs,
 
 ## An event that never waits costs nothing
 
-- If a program reaches its end without executing a `wait;` instruction, the VM's `run` function returns `0` (`runscript.cpp`), and `EventScriptSetup` never enters event mode.
+- If a program reaches its end without executing a `WAIT();` instruction, the VM's `run` function returns `0` (`runscript.cpp`), and `EventScriptSetup` never enters event mode.
 - The entire program completes within a single frame, with no camera transition and no lost controller input.
-- A program with no `wait;` on any execution path acts as a synchronous function that the dungeon can call during normal gameplay.
+- A program with no `WAIT();` on any execution path acts as a synchronous function that the dungeon can call during normal gameplay.
 
 ## Message window 0 stays on screen
 

@@ -99,7 +99,7 @@ A door is an `event` point of kind `door` in a map's scene, plus a program in th
    void enter_fish_room(void)
    {
        jump_to_map(-1, "fishroom", map_start);
-       wait;
+       WAIT();
    }
 
    PROGRAM(ENTER_FISH_ROOM, enter_fish_room);

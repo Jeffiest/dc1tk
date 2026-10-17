@@ -432,7 +432,7 @@ void use_calculator(void)
             draw_display(state);
             draw_cursor(state, block);
         }
-        wait;
+        WAIT();
     }
     play_se(sound, SE_MOD_CALC_CLOSE);
     modkit_wait(10);

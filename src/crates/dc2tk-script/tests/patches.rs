@@ -16,11 +16,11 @@ use indexmap::IndexMap;
 // A map in two languages and a monster, sharing a library, as the decompiler lays them out.
 const MAP: &str = "#pragma natives event\n\nint visits;\n\nPROGRAM(100, start);\nPROGRAM(500, talk);\nMAIN(start);\n\n\
                    #include \"lib/map/s/s17/greet.c\"\n\nvoid start(void)\n{\n    greet();\n}\n\n\
-                   void talk(void)\n{\n    int frames;\n\n    frames = 3;\n    while (frames > 0) {\n        wait;\n\
-                   \x20       frames = frames - 1;\n    }\n    print(\"talked\");\n}\n";
-const GREET: &str = "void greet(void)\n{\n    print(\"hello\");\n}\n";
+                   void talk(void)\n{\n    int frames;\n\n    frames = 3;\n    while (frames > 0) {\n        WAIT();\n\
+                   \x20       frames = frames - 1;\n    }\n    PRINT(\"talked\");\n}\n";
+const GREET: &str = "void greet(void)\n{\n    PRINT(\"hello\");\n}\n";
 const MONSTER: &str =
-    "#pragma natives monster\n\nPROGRAM(0, start);\nMAIN(start);\n\nvoid start(void)\n{\n    print(\"roar\");\n}\n";
+    "#pragma natives monster\n\nPROGRAM(0, start);\nMAIN(start);\n\nvoid start(void)\n{\n    PRINT(\"roar\");\n}\n";
 const DISC_H: &str = "enum monster_kind {\n    MONSTER_GOLEM = 168,  // model e33a, AI e33a\n};\n";
 const FILES: [(&str, &str); 7] = [
     ("map/s/s17_valley/s17_1.c", MAP),
@@ -84,7 +84,7 @@ fn run(program: &Node, name: &str) -> Vec<String> {
 
 #[test]
 fn an_override_replaces_a_library_function_in_the_patched_scripts_only() {
-    let patch = "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    print(\"hi there\");\n}\n";
+    let patch = "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    PRINT(\"hi there\");\n}\n";
     let folder = TempDir::new("patches-override");
     let (root, dirs) = setup(folder.path(), &[("hello", &[("s17.c", patch)])]);
     let plan = plan_of(&dirs, &root).unwrap();
@@ -104,7 +104,7 @@ fn comments_after_a_patchs_pragmas_are_not_their_words() {
     {
         let patch = format!(
             "#pragma target map s17{target}\n\n#pragma override{override_}\n\
-             void greet(void)\n{{\n    print(\"hi there\");\n}}\n"
+             void greet(void)\n{{\n    PRINT(\"hi there\");\n}}\n"
         );
         let folder = TempDir::new("patches-commented");
         let (root, dirs) = setup(folder.path(), &[("hello", &[("s17.c", &patch)])]);
@@ -118,9 +118,9 @@ fn comments_after_a_patchs_pragmas_are_not_their_words() {
 #[test]
 fn original_runs_the_replaced_function_and_mods_chain() {
     let first =
-        "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    print(\"first\");\n    original();\n}\n";
+        "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    PRINT(\"first\");\n    original();\n}\n";
     let second =
-        "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    original();\n    print(\"second\");\n}\n";
+        "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n    original();\n    PRINT(\"second\");\n}\n";
     let folder = TempDir::new("patches-original");
     let (root, dirs) = setup(folder.path(), &[("a", &[("p.c", first)]), ("b", &[("p.c", second)])]);
     let plan = plan_of(&dirs, &root).unwrap();
@@ -133,7 +133,7 @@ fn original_runs_the_replaced_function_and_mods_chain() {
 #[test]
 fn two_mods_replacing_one_function_without_original_are_refused() {
     let replace = |text: &str| {
-        format!("#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{{\n    print(\"{text}\");\n}}\n")
+        format!("#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{{\n    PRINT(\"{text}\");\n}}\n")
     };
     let (a, b) = (replace("a"), replace("b"));
     let folder = TempDir::new("patches-refused");
@@ -164,7 +164,7 @@ fn overrides_are_checked_against_the_script() {
 fn mods_adding_the_same_names_each_keep_their_own() {
     let patch = |number: i64, step: i64| {
         format!(
-            "#pragma target map s17\n\nint count;\n\nPROGRAM({number}, bump);\n\nvoid bump(void)\n{{\n    count = count + {step};\n    print(count);\n}}\n"
+            "#pragma target map s17\n\nint count;\n\nPROGRAM({number}, bump);\n\nvoid bump(void)\n{{\n    count = count + {step};\n    PRINT(count);\n}}\n"
         )
     };
     let (a, b) = (patch(9000, 1), patch(9001, 10));
@@ -208,7 +208,7 @@ const C_PATCH: &str = "#pragma target map s17\n\n#include <limits.h>\n#include <
                        \x20   check(sum(3, 1, 2, 3) == 6);\n    next();\n    check(next() == 2);\n    truncated = 2.75;\n    check(truncated == 2 && (5 && 7) == 1);\n\
                        \x20   c.f = 1.5;\n    check(c.f == 1.5 && sizeof c == 4);\n\
                        #if INT_MAX > 0\n    check(sizeof(wchar_t) == 2 && offsetof(struct point, y) == 4);\n#else\n    check(0);\n#endif\n\
-                       \x20   print(passed);\n}\n";
+                       \x20   PRINT(passed);\n}\n";
 const SHAPES: &str = "struct point {\n    int x;\n    int y;\n};\n\nstruct point moved(struct point p, int by)\n{\n    p.x += by;\n    p.y += by;\n    return p;\n}\n";
 
 fn program_with_headers(root: &Path, plan: &Plan, script: &str) -> Result<Node> {
@@ -255,9 +255,9 @@ fn two_mods_unnamed_structs_keep_their_own_tags() {
     // each mod's file defines an unnamed struct of its own, and its library another
     let library = "typedef struct {\n    float scale;\n} zoom;\n";
     let first = "#pragma target map s17\n#include \"zoom.c\"\n\ntypedef struct {\n    int x;\n    int y;\n} pair;\n\n\
-                 void sum(void)\n{\n    pair p;\n    zoom z;\n\n    p.x = 2;\n    p.y = 3;\n    z.scale = 0.5;\n    print(p.x + p.y, z.scale);\n}\n";
+                 void sum(void)\n{\n    pair p;\n    zoom z;\n\n    p.x = 2;\n    p.y = 3;\n    z.scale = 0.5;\n    PRINT(p.x + p.y, z.scale);\n}\n";
     let second = "#pragma target map s17\n\nstruct {\n    float f;\n    int i;\n    int j;\n} totals;\n\n\
-                  void count(void)\n{\n    totals.i = 4;\n    totals.j = totals.i * 2;\n    print(totals.j);\n}\n";
+                  void count(void)\n{\n    totals.i = 4;\n    totals.j = totals.i * 2;\n    PRINT(totals.j);\n}\n";
     let folder = TempDir::new("patches-unnamed-structs");
     let (root, dirs) =
         setup(folder.path(), &[("a", &[("a.c", first), ("zoom.c", library)]), ("b", &[("b.c", second)])]);
@@ -320,8 +320,8 @@ void counted(void)
         counts[i] = TWICE(i);
         total += counts[i];
     }
-    print(total, converts[0].a, (int)(sizeof(converts) / sizeof(converts[0])), (int)(sizeof(sized) / sizeof(int)));
-    print((int)(sizeof(grid) / sizeof(int)), NEXT, kind(5), kind(3), big, local[0], (int)(sizeof(local) / sizeof(int)), texts[LANGUAGE]);
+    PRINT(total, converts[0].a, (int)(sizeof(converts) / sizeof(converts[0])), (int)(sizeof(sized) / sizeof(int)));
+    PRINT((int)(sizeof(grid) / sizeof(int)), NEXT, kind(5), kind(3), big, local[0], (int)(sizeof(local) / sizeof(int)), texts[LANGUAGE]);
 }
 "#;
 
@@ -342,12 +342,12 @@ fn a_patch_uses_its_own_headers_macros_as_c_expands_them() {
 
 #[test]
 fn every_frame_functions_run_before_each_wait() {
-    let patch = "#pragma target map s17\n\n#pragma every_frame\nvoid tick(void)\n{\n    print(\"tick\");\n}\n";
+    let patch = "#pragma target map s17\n\n#pragma every_frame\nvoid tick(void)\n{\n    PRINT(\"tick\");\n}\n";
     let folder = TempDir::new("patches-every-frame");
     let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch)])]);
     let program = program_of(&root, &plan_of(&dirs, &root).unwrap(), "map/s/s17_valley/s17_1.c").unwrap();
     assert_eq!(run(&program, "talk"), strings(&["tick", "tick", "tick", "talked"]));
-    let waiting = patch.replace("print(\"tick\");", "wait;");
+    let waiting = patch.replace("PRINT(\"tick\");", "WAIT();");
     let (root, dirs) = setup(&folder.path().join("waits"), &[("m", &[("p.c", &waiting)])]);
     fails(program_of(&root, &plan_of(&dirs, &root).unwrap(), "map/s/s17_valley/s17_1.c"), "tick waits");
 }
@@ -355,7 +355,7 @@ fn every_frame_functions_run_before_each_wait() {
 #[test]
 fn language_picks_each_variants_text() {
     let patch = "#pragma target map s17\n\n#pragma override\nvoid greet(void)\n{\n#if LANGUAGE == LANGUAGE_FRENCH\n\
-                 \x20   print(\"bonjour\");\n#else\n    print(\"hello\");\n#endif\n    print(LANGUAGE);\n}\n";
+                 \x20   PRINT(\"bonjour\");\n#else\n    PRINT(\"hello\");\n#endif\n    PRINT(LANGUAGE);\n}\n";
     let folder = TempDir::new("patches-language");
     let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch)])]);
     let plan = plan_of(&dirs, &root).unwrap();
@@ -372,14 +372,14 @@ fn copies(pairs: &[(i64, &str)]) -> BTreeMap<i64, String> {
 
 #[test]
 fn copies_from_several_languages_keep_each_ones_lines() {
-    let english = "void f(void)\n{\n    wait;\n    say(\"Hello\");\n}\n";
+    let english = "void f(void)\n{\n    WAIT();\n    say(\"Hello\");\n}\n";
     let french = english.replace("Hello", "Bonjour");
     assert_eq!(patches::language_text(&copies(&[(1, english), (3, english)])), english);
     assert_eq!(
         patches::language_text(&copies(&[(2, &french), (1, english)])),
-        "void f(void)\n{\n    wait;\n#if LANGUAGE == LANGUAGE_FRENCH\n    say(\"Bonjour\");\n#else\n    say(\"Hello\");\n#endif\n}\n"
+        "void f(void)\n{\n    WAIT();\n#if LANGUAGE == LANGUAGE_FRENCH\n    say(\"Bonjour\");\n#else\n    say(\"Hello\");\n#endif\n}\n"
     );
-    let longer = french.replace("    wait;\n", "    wait;\n    wait;\n");
+    let longer = french.replace("    WAIT();\n", "    WAIT();\n    WAIT();\n");
     assert_eq!(
         patches::language_text(&copies(&[(1, english), (2, &longer)])),
         format!("#if LANGUAGE == LANGUAGE_FRENCH\n{longer}#else\n{english}#endif\n")
@@ -447,7 +447,7 @@ fn given(pairs: &[(&str, &[(&str, i64)])]) -> BTreeMap<String, IndexMap<String, 
 #[test]
 fn numbers_are_given_once_kept_and_never_shared() {
     let shared = "NEW_FLAG(FIGHT);\nNEW_PROGRAM(SHOW);\n";
-    let patch = "#pragma target map s17\n#include \"names.h\"\n\nPROGRAM(SHOW, show);\n\nvoid show(void)\n{\n    print(FIGHT, SHOW);\n}\n";
+    let patch = "#pragma target map s17\n#include \"names.h\"\n\nPROGRAM(SHOW, show);\n\nvoid show(void)\n{\n    PRINT(FIGHT, SHOW);\n}\n";
     let folder = TempDir::new("patches-numbers");
     let (root, dirs) = setup(
         folder.path(),
@@ -492,14 +492,14 @@ fn a_number_the_tree_takes_later_is_reported() {
     let folder = TempDir::new("patches-taken");
     let (root, dirs) = setup(folder.path(), &[("a", &[("p.c", "NEW_FLAG(FIGHT);\n")])]);
     assert_eq!(plan_of(&dirs, &root).unwrap().numbers, given(&[("a", &[("FIGHT", 1024)])]));
-    write(&root, "map/s/s18/s18_1.c", &MAP.replace("print(\"talked\");", "set_flag(1024, 1);"));
+    write(&root, "map/s/s18/s18_1.c", &MAP.replace("PRINT(\"talked\");", "set_flag(1024, 1);"));
     fails(plan_of(&dirs, &root), "which something else now uses");
 }
 
 #[test]
 fn counters_are_given_from_32_kept_and_never_shared() {
     let patch = "#pragma target map s17\n#include \"names.h\"\n\nvoid score(void)\n{\n    _SET_CNT(WINS, 1);\n    \
-                 print(WINS, WON);\n}\n";
+                 PRINT(WINS, WON);\n}\n";
     let folder = TempDir::new("patches-counters");
     let (root, dirs) = setup(
         folder.path(),
@@ -515,7 +515,7 @@ fn counters_are_given_from_32_kept_and_never_shared() {
             ),
         ],
     );
-    write(&root, "map/s/s18/s18_1.c", &MAP.replace("print(\"talked\");", "set_counter(32, 1);"));
+    write(&root, "map/s/s18/s18_1.c", &MAP.replace("PRINT(\"talked\");", "set_counter(32, 1);"));
     let plan = plan_of(&dirs, &root).unwrap();
     // the tree uses 32, b writes 33
     assert_eq!(plan.numbers, given(&[("a", &[("WINS", 34), ("WON", 1024)]), ("b", &[("LOSSES", 35), ("WINS", 36)])]));
@@ -540,12 +540,13 @@ fn build_compiles_patched_scripts_and_override_starts_a_patch() {
     assert!(result.added == helper && result.scripts == strings(&["map/m/t01.c"]));
     let text = read(&result.path);
     assert!(text.contains("#pragma target script map/m/t01.c"), "{text}");
-    assert!(text.contains("#pragma override\nvoid helper(void)\n{\n    wait;\n}"), "{text}");
+    assert!(text.contains("#pragma override\nvoid helper(void)\n{\n    WAIT();\n}"), "{text}");
     assert!(mods::override_functions(&root, &module, TargetKind::Script, "map/m/t01.c", &helper, &IndexMap::new())
         .unwrap()
         .added
         .is_empty());
-    dc2tk_disc::textfile::write_text(&result.path, &text.replace("    wait;\n", "    wait;\n    wait;\n")).unwrap();
+    dc2tk_disc::textfile::write_text(&result.path, &text.replace("    WAIT();\n", "    WAIT();\n    WAIT();\n"))
+        .unwrap();
     let modules = [module];
     let plan = plan_of(&modules, &root).unwrap();
     let found = build::changes(&root, &iso_path, &tools.toolchain(), &IndexMap::new(), false, Some(&plan)).unwrap();
@@ -637,9 +638,9 @@ fn required_mods_are_added_and_every_mod_comes_after_those_it_names() {
 
 #[test]
 fn a_mod_uses_the_library_numbers_and_overrides_of_the_mods_it_requires() {
-    let base_patch = "#pragma target map s17\n#include \"names.h\"\n\n#pragma override\nvoid greet(void)\n{\n    print(\"base\");\n    original();\n}\n";
+    let base_patch = "#pragma target map s17\n#include \"names.h\"\n\n#pragma override\nvoid greet(void)\n{\n    PRINT(\"base\");\n    original();\n}\n";
     let patch = "#pragma target map s17\n#include \"base/names.h\"\n#include \"base/value.c\"\n\nNEW_FLAG(OWN);\n\n\
-                 #pragma override\nvoid greet(void)\n{\n    print(\"top\", SHARED, OWN, base_value());\n    original();\n}\n";
+                 #pragma override\nvoid greet(void)\n{\n    PRINT(\"top\", SHARED, OWN, base_value());\n    original();\n}\n";
     let folder = TempDir::new("patches-requires-use");
     let (root, dirs) = setup(
         folder.path(),
@@ -670,10 +671,10 @@ fn a_mod_uses_the_library_numbers_and_overrides_of_the_mods_it_requires() {
 // the other.
 const FIGHT: &str = "#include <event.h>\n\nPROGRAM(500, fight);\nMAIN(fight);\n\nvoid fight(void)\n{\n\
                      \x20   load_monster_data(5, 1);\n    place_monster(5, 1.0, 2.0, 3.0, 0.0, 0.5, 0.0);\n\
-                     \x20   wait;\n    place_monster(-1);\n    print(\"placed\");\n}\n";
+                     \x20   WAIT();\n    place_monster(-1);\n    PRINT(\"placed\");\n}\n";
 const WRAPPER: &str = "#pragma target map s17\n#include <event.h>\n\n#pragma override\n\
                        void place_monster(monster_kind monster, float x, float y, float z, float rot_x, float rot_y, \
-                       float rot_z, int talk_param)\n{\n    print(\"NAME\", monster, x, talk_param);\n\
+                       float rot_z, int talk_param)\n{\n    PRINT(\"NAME\", monster, x, talk_param);\n\
                        \x20   original(monster + 1, x, y, z, rot_x, rot_y, rot_z, talk_param);\n}\n";
 
 fn fight_setup(folder: &Path, mod_files: &ModFiles) -> (PathBuf, Vec<PathBuf>, Tools) {
@@ -823,7 +824,7 @@ fn override_starts_a_wrapper_of_a_native_with_its_parameters() {
 
 #[test]
 fn a_patch_that_adds_no_global_keeps_the_scripts_count() {
-    let patch = "#pragma target monster golem\n\n#pragma override\nvoid start(void)\n{\n    print(\"roar\");\n}\n";
+    let patch = "#pragma target monster golem\n\n#pragma override\nvoid start(void)\n{\n    PRINT(\"roar\");\n}\n";
     let folder = TempDir::new("patches-global-count");
     let (root, dirs) = setup(folder.path(), &[("m", &[("p.c", patch)])]);
     // some act scripts count no globals at all: the compiler's 0xCCCCCCCC fill
@@ -865,7 +866,7 @@ fn slim_turns_whole_files_into_patches_that_build_the_same() {
         write(&module.join("files"), path, &text.replacen(from, to, 1));
     };
     // a changed function, and a global, a function and a program added at the end
-    edit(copied[0], "print(\"talked\");", "print(\"talked a lot\");");
+    edit(copied[0], "PRINT(\"talked\");", "PRINT(\"talked a lot\");");
     edit(copied[0], "MAIN(start);", "PROGRAM(9000, extra);\nMAIN(start);");
     edit(copied[0], "int visits;\n", "int visits;\nint times;\n");
     write(

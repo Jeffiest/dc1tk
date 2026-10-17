@@ -18,7 +18,7 @@ Waits the given number of frames.
 void modkit_wait(int frames)
 {
     while (frames-- > 0) {
-        wait;
+        WAIT();
     }
 }
 ```
@@ -43,9 +43,9 @@ int modkit_wait_for_button(int mask)
 {
     int pressed;
 
-    wait;
+    WAIT();
     while (!(pressed = get_pad_pressed() & mask)) {
-        wait;
+        WAIT();
     }
     return pressed;
 }
@@ -141,7 +141,7 @@ void modkit_caption(string text)
 
 modkit tick: runs a map event program on a repeating timer during combat. Include with `#include "modkit/tick.c"` in a monster AI patch, and call `modkit_tick` from a `#pragma every_frame` function.
 
-Because a map event program that does not execute `wait;` finishes in a single frame without pausing player control, monster scripts can use `run_event_script` to update live HUD captions or run periodic checks (see `docs/scripting/tutorials/captions.md`).
+Because a map event program that does not execute `WAIT();` finishes in a single frame without pausing player control, monster scripts can use `run_event_script` to update live HUD captions or run periodic checks (see `docs/scripting/tutorials/captions.md`).
 
 ### modkit_tick
 

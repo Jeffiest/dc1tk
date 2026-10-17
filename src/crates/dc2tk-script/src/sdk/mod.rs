@@ -19,10 +19,41 @@ pub use crate::soundpass::{library_sounds, Passed, Seed, Sounds};
 
 /// The prelude every script includes; it declares no natives.
 pub const PRELUDE: &str = "dc2tk.h";
-pub const KEYWORDS: [&str; 28] = [
-    "if", "else", "while", "return", "break", "continue", "wait", "end", "skip_end", "print", "sin", "cos", "int",
-    "float", "void", "string", "any", "extern", "static", "inline", "enum", "program", "NATIVE", "OPTIONAL", "PROGRAM",
-    "MAIN", "AT", "DIRECT",
+pub const KEYWORDS: [&str; 34] = [
+    "if",
+    "else",
+    "while",
+    "return",
+    "break",
+    "continue",
+    "WAIT",
+    "END",
+    "SKIP_END",
+    "PRINT",
+    "SIN",
+    "COS",
+    "int",
+    "float",
+    "void",
+    "string",
+    "any",
+    "extern",
+    "static",
+    "inline",
+    "enum",
+    "program",
+    "NATIVE",
+    "OPTIONAL",
+    "PROGRAM",
+    "MAIN",
+    "AT",
+    "DIRECT",
+    "FLOAT_AS_INT",
+    "INT_AS_FLOAT",
+    "AND_VALUE",
+    "OR_VALUE",
+    "DOUBLE_STORE",
+    "VM_ARGS",
 ];
 const DECLARATION_KEYS: [&str; 5] = ["natives", "programs", "inlines", "constants", "kinds"];
 

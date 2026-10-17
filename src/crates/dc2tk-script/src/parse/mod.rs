@@ -60,16 +60,20 @@ pub const NESTING: usize = 200;
 const TYPES: [&str; 3] = ["int", "float", "string"];
 /// Words that start a statement, which a value kind's name can never be.
 const STATEMENT_WORDS: [&str; 22] = [
-    "return", "if", "else", "while", "for", "do", "switch", "case", "default", "break", "continue", "goto", "wait",
-    "end", "skip_end", "print", "sizeof", "AT", "DIRECT", "void", "const", "static",
+    "return", "if", "else", "while", "for", "do", "switch", "case", "default", "break", "continue", "goto", "WAIT",
+    "END", "SKIP_END", "PRINT", "sizeof", "AT", "DIRECT", "void", "const", "static",
 ];
 const CAST_TYPES: [&str; 2] = ["int", "float"];
 const RETURN_TYPES: [&str; 4] = ["void", "int", "float", "string"];
 const NATIVE_RETURN_TYPES: [&str; 6] = ["void", "int", "float", "string", "string", "any"];
 const NATIVE_TYPES: [&str; 4] = ["int", "float", "string", "any"];
 const CONDITIONALS: [&str; 6] = ["if", "ifdef", "ifndef", "elif", "else", "endif"];
-const SIMPLE: [&str; 5] = ["wait", "end", "skip_end", "break", "continue"];
-const BUILTINS: [&str; 2] = ["sin", "cos"];
+const SIMPLE: [&str; 2] = ["break", "continue"];
+/// The VM's statements, written as macros so that a script is standard C (sdk/dc2tk.h gives C
+/// tools a meaning for them): WAIT(); and the statement it is.
+const VM_STATEMENTS: [(&str, &str); 3] = [("WAIT", "wait"), ("END", "end"), ("SKIP_END", "skip_end")];
+/// SIN(x) and COS(x), the VM's instructions, and the builtin each is.
+const BUILTINS: [(&str, &str); 2] = [("SIN", "sin"), ("COS", "cos")];
 /// What a mod patch's #pragma target can pick scripts by.
 pub const TARGET_KINDS: [&str; 4] = ["map", "script", "monster", "library"];
 const LONG_OPERATORS: [&str; 3] = ["...", "<<=", ">>="];

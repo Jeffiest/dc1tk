@@ -844,6 +844,7 @@ impl Lowering<'_> {
             kinds::LOGICAL => self.logical(node),
             kinds::TERNARY => self.ternary(node),
             kinds::CAST => self.cast(node),
+            kinds::AS_IS => self.as_is(node),
             kinds::COMMA => self.comma(node),
             kinds::CALL => self.call(node),
             kinds::CALL_PTR => self.call_through(node),
@@ -1227,6 +1228,12 @@ impl Lowering<'_> {
             "!=" => Typed::new(not(not(pointer.node)), ctype::int()),
             _ => return fail(format!("{op} of a pointer and a null pointer")),
         })
+    }
+
+    /// FLOAT_AS_INT(x) or INT_AS_FLOAT(x): x as it is, of the type it is taken as.
+    fn as_is(&mut self, node: &Node) -> Result<Typed> {
+        let operand = self.scalar(&node["operand"], "a value taken as it is")?;
+        Ok(Typed::new(node.clone().with("operand", operand.node), Ty::Scalar(node.text("type").to_string())))
     }
 
     fn cast(&mut self, node: &Node) -> Result<Typed> {

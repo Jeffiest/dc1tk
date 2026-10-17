@@ -233,7 +233,7 @@ pub fn pack(members: &[(&str, Vec<u8>)]) -> Vec<u8> {
 
 pub const MOD_SCRIPT: &str =
     "#pragma natives event\n\nPROGRAM(100, f);\nMAIN(f);\n\n#include \"lib/m/shared.c\"\n\nvoid f(void)\n{\n    helper();\n}\n";
-pub const MOD_LIBRARY: &str = "void helper(void)\n{\n    wait;\n}\n";
+pub const MOD_LIBRARY: &str = "void helper(void)\n{\n    WAIT();\n}\n";
 
 pub fn mod_tree_files() -> Vec<(String, String)> {
     vec![

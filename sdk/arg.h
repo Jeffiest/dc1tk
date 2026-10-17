@@ -21,7 +21,7 @@ enum program {
 // next record id, then adds 1 to that id. Event natives called with a single record id read their
 // arguments from the matching record.
 // Original name: _DATA.
-extern void add_arg_record(any value, ...) NATIVE(0);
+extern void add_arg_record VM_ARGS(any value, ...) NATIVE(0);
 
 // Sets the id that the next add_arg_record call stores its record under; ids start at 0.
 // Original name: _ID_OFFSET.

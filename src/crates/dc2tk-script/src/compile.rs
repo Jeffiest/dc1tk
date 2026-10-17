@@ -225,6 +225,8 @@ fn expression(state: &mut State, node: &Node) -> Result<()> {
         kinds::COMMA => comma(state, node),
         kinds::UNARY => unary(state, node),
         kinds::CAST => cast(state, node),
+        // the value as it is, whichever kind it holds
+        kinds::AS_IS => expression(state, &node["operand"]),
         kinds::BUILTIN => then_emit(state, &node["operand"], node.text("name")),
         kinds::CALL => call(state, node),
         kinds::LOGICAL => logical(state, node),
@@ -335,8 +337,6 @@ fn cast(state: &mut State, node: &Node) -> Result<()> {
         other if other.ends_with(" *") => {}
         // the value is worked out and dropped
         "void" => {}
-        // the value as it is, whichever kind it holds
-        "any" => {}
         other if other.starts_with("enum ") && node["operand"].kind() == kinds::ADDR => {}
         other => return fail(format!("unknown cast to {other}")),
     }
@@ -359,7 +359,7 @@ fn call(state: &mut State, node: &Node) -> Result<()> {
     Ok(())
 }
 
-/// a && b and a || b: a jump past b that keeps a's value when it decides.
+/// a && b and a || b: a jump past b when a decides, which leaves 0 (&&) or 1 (||); else b's value.
 fn logical(state: &mut State, node: &Node) -> Result<()> {
     expression(state, &node["left"])?;
     let label = state.new_label();

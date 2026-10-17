@@ -2,7 +2,7 @@
 // Include with `#include "modkit/tick.c"` in a monster AI patch, and call
 // `modkit_tick` from a `#pragma every_frame` function.
 //
-// Because a map event program that does not execute `wait;` finishes in a
+// Because a map event program that does not execute `WAIT();` finishes in a
 // single frame without pausing player control, monster scripts can use
 // `run_event_script` to update live HUD captions or run periodic checks
 // (see `docs/scripting/tutorials/captions.md`).

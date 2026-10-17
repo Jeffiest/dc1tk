@@ -1,11 +1,14 @@
 // dc2tk SDK helpers for event scripts. Each helper stands for the native calls in its body; the
 // compiler expands it in place, so a helper call produces the same bytecode as writing the calls
-// out, and the decompiler folds every run it matches. Included by event.h.
+// out, and the decompiler folds every run it matches. Included by event.h; dc2tk reads it on its
+// own, so it declares the chara_slot value kind as event.h does (once, for a C compiler).
 #ifndef DC2TK_HELPERS_EVENT_H
 #define DC2TK_HELPERS_EVENT_H
 
-// The value kind of a scene character slot, as event.h declares it.
+#ifndef DC2TK_CHARA_SLOT
+#define DC2TK_CHARA_SLOT
 typedef int chara_slot;
+#endif
 
 // Clears the actor's sequence and makes it drive the event object handle with the same number.
 static inline void init_actor(int actor)
@@ -30,6 +33,11 @@ static inline void init_sprite_actor(int actor, int sprite)
     bind_actor_object(actor, actor);
 }
 
+#ifdef DC2TK_C_TOOLS
+// A map part is given by name or number, which no one C type holds: C tools read these unchecked.
+void init_map_piece_actor();
+void init_map_part_actor();
+#else
 // Binds a handle to a named piece of a map part and sets up the actor of the same number to drive
 // it.
 static inline void init_map_piece_actor(int actor, any part, string piece)
@@ -46,6 +54,7 @@ static inline void init_map_part_actor(int actor, any part)
     clear_actor_seq(actor);
     bind_actor_object(actor, actor);
 }
+#endif
 
 // Binds a handle to a scene character and sets up an actor with a different number to drive that
 // handle.
@@ -321,6 +330,13 @@ static inline void set_message_style(int window, enum mes_window_mode mode, floa
     set_message_speed(window, speed);
 }
 
+#ifdef DC2TK_C_TOOLS
+// A map part is given by name or number, which no one C type holds: C tools read these unchecked.
+void show_map_part();
+void hide_map_part();
+void show_map_piece();
+void hide_map_piece();
+#else
 // Binds a handle to a map part and shows it.
 static inline void show_map_part(int handle, any part)
 {
@@ -348,6 +364,7 @@ static inline void hide_map_piece(int handle, any part, string piece)
     bind_handle_map_part(handle, part, piece);
     set_handle_visible(handle, 0);
 }
+#endif
 
 // Resets an event sprite to a screen sprite showing a texture from a texture block.
 static inline void init_screen_sprite(int sprite, string texture, int tex_block)

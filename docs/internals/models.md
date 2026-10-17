@@ -293,7 +293,7 @@ Max's base pack (`chara/c01_base.chr.d/c01b.mds`) holds only his skeleton and 3-
 
 ### 3.3 Motion names and sound cues (`info.cfg`)
 
-`_KEY` populates a `CHRINFO_KEY_SET` record (`0x30` bytes: `char name[0x24]; s32 start, end; f32 step;`). A character supports up to 8 motion sets (`MOTION 0..7`).
+`_KEY` populates a `CHRINFO_KEY_SET` record (`0x30` bytes: `char name[0x24]; s32 start, END(); f32 step;`). A character supports up to 8 motion sets (`MOTION 0..7`).
 
 | Statement | Arguments | Description |
 |---|---|---|

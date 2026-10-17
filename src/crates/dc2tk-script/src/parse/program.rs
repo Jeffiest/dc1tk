@@ -48,6 +48,10 @@ pub(super) fn typed_parameter(state: &mut State) -> Result<Node> {
 pub(super) fn native_declaration(state: &mut State) -> Result<Node> {
     let returns = type_name(state, &NATIVE_RETURN_TYPES)?;
     let name = state.name()?;
+    // VM_ARGS(...) holds parameters C cannot declare (any, or OPTIONAL(...) first): C tools see ()
+    if state.at("VM_ARGS", 0) {
+        state.take();
+    }
     state.expect("(")?;
     let mut params = Vec::new();
     let mut variadic = false;

@@ -153,6 +153,17 @@ fn scan(text: &str, file: &str) -> Result<Header> {
             at += 1;
             continue;
         }
+        // what a header gives C tools only (dc2tk.h defines DC2TK_C_TOOLS; dc2tk does not)
+        if line.trim_end() == "#ifdef DC2TK_C_TOOLS" {
+            if !doc.is_empty() {
+                return Err(invalid(file, at + 1, "a comment documents a directive"));
+            }
+            while at < lines.len() && !matches!(lines[at].trim_end(), "#else" | "#endif") {
+                at += 1;
+            }
+            at += 1;
+            continue;
+        }
         let kind = if let Some(rest) = line.strip_prefix("#define ") {
             let (name, value) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
             at += 1;

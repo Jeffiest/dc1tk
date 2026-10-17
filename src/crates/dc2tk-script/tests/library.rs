@@ -18,7 +18,7 @@ const HELPERS: &str = "
 void wait_frames(int count)
 {
     while (count > 0) {
-        wait;
+        WAIT();
         count = count - 1;
     }
 }
@@ -137,7 +137,7 @@ fn padding_of_overrides_an_included_function() {
         "#pragma natives event\nPROGRAM(100, talk);\nMAIN(talk);\n#include \"lib.c\"\nvoid talk(void)\n{\n}\n#pragma padding_of helper 01020304\n",
     )
     .unwrap();
-    let found = texts(&[("lib.c", "#pragma natives event\nvoid helper(void)\n{\n    print(\"abc\");\n}\n")]);
+    let found = texts(&[("lib.c", "#pragma natives event\nvoid helper(void)\n{\n    PRINT(\"abc\");\n}\n")]);
     let expanded = library::expand(program, &found, &no_texts()).unwrap();
     let functions = expanded["functions"].as_array().unwrap();
     assert_eq!(
@@ -247,7 +247,7 @@ fn unused_pointer_corpus(folder: &Path, types: [&str; 3]) -> (PathBuf, Vec<Strin
     let mut paths = Vec::new();
     for (number, kind) in types.iter().enumerate() {
         let text = format!(
-            "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{{\n    wait;\n}}\n\nvoid talk(void)\n{{\n    {kind} value;\n\n    keep((int *)&value);\n}}\n"
+            "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{{\n    WAIT();\n}}\n\nvoid talk(void)\n{{\n    {kind} value;\n\n    keep((int *)&value);\n}}\n"
         );
         let path = format!("map/m{number}.stb");
         write(&folder.join(&path), compiled(&text));
@@ -274,7 +274,7 @@ fn an_unused_pointer_parameter_takes_what_every_caller_passes() {
 
 #[test]
 fn addresses_passed_for_a_pointer_of_another_type_are_cast() {
-    let text = "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{\n    wait;\n}\n\nvoid measure(int out[])\n{\n    out[0] = 5;\n}\n\nvoid talk(void)\n{\n    float distance;\n    int count;\n\n    measure((int *)&distance);\n    keep((int *)&distance);\n    keep(&count);\n}\n";
+    let text = "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{\n    WAIT();\n}\n\nvoid measure(int out[])\n{\n    out[0] = 5;\n}\n\nvoid talk(void)\n{\n    float distance;\n    int count;\n\n    measure((int *)&distance);\n    keep((int *)&distance);\n    keep(&count);\n}\n";
     let data = compiled(text);
     let shown = source::text(&decompile::decompile(&stb::read(&data), "event", tables())).unwrap();
     // measure reads an int through the pointer, so the float's address is cast; keep reads
@@ -284,7 +284,8 @@ fn addresses_passed_for_a_pointer_of_another_type_are_cast() {
     assert!(shown.contains("((int *)&v0);"), "{shown}");
     assert_eq!(compiled(&shown), data);
     // a void * parameter cannot be read through
-    let read = text.replace("void keep(int unused[])\n{\n    wait;", "void keep(void *unused)\n{\n    unused[0] = 1;");
+    let read =
+        text.replace("void keep(int unused[])\n{\n    WAIT();", "void keep(void *unused)\n{\n    unused[0] = 1;");
     let error = compile::compile_program(&parse::parse(&read).unwrap(), tables()).unwrap_err().to_string();
     assert!(error.contains("void pointer"), "{error}");
     let cast = parse::parse(&text.replace("measure((int *)&distance)", "measure((int *)distance)")).unwrap();

@@ -259,7 +259,7 @@ static void turn_with_us(void)
             set_map_light(ROOM_RED_LIGHT);
             move_camera_to(0.0, 40.0, 430.0, 0.0, FISH_HEIGHT, 0.0, 360);
         }
-        wait;
+        WAIT();
     }
 }
 
@@ -304,5 +304,5 @@ void talk_in_room(void)
 void leave_room(void)
 {
     jump_to_map(-1, "m01", BACK_FROM_FISH_ROOM);
-    wait;
+    WAIT();
 }

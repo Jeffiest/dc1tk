@@ -14,7 +14,7 @@ MAIN(setup_floor);
 
 void setup_floor(void)
 {
-    wait;
+    WAIT();
 }
 
 #pragma padding_of setup_floor 00000000

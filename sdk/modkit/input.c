@@ -8,7 +8,7 @@
 void modkit_wait(int frames)
 {
     while (frames-- > 0) {
-        wait;
+        WAIT();
     }
 }
 
@@ -23,9 +23,9 @@ int modkit_wait_for_button(int mask)
 {
     int pressed;
 
-    wait;
+    WAIT();
     while (!(pressed = get_pad_pressed() & mask)) {
-        wait;
+        WAIT();
     }
     return pressed;
 }

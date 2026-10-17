@@ -3,7 +3,7 @@
 // Natives are built-in engine functions declared with NATIVE(...). A native
 // with one result returns a value. A native with multiple results writes to
 // pointer arguments. `OPTIONAL(...)` marks arguments that a call can omit.
-// Natives return immediately and do not yield frames; use `wait;` to pause a
+// Natives return immediately and do not yield frames; use `WAIT();` to pause a
 // script for one frame (25 FPS on PAL).
 
 #ifndef DC2TK_ACTION_H
@@ -131,12 +131,12 @@ enum se_bank {
 // motion sound triggers and sword trails, and drops whatever it holds and any pending impulse or
 // knockback. Arguments are ignored.
 // Original name: _INIT_SCRIPT.
-extern void reset_action_setup(OPTIONAL(void *ignored)) NATIVE(0);
+extern void reset_action_setup VM_ARGS(OPTIONAL(void *ignored)) NATIVE(0);
 
 // Stores a 16-bit value on the character that the action script keeps for its own use between
 // program runs, such as a combo step counter. It starts at 0.
 // Original name: _PROG_SET.
-extern void set_saved_value(any value) NATIVE(1);
+extern void set_saved_value VM_ARGS(any value) NATIVE(1);
 
 // Returns the value last stored with set_saved_value.
 // Original name: _PROG_GET.
@@ -161,7 +161,7 @@ extern void set_move_speed(float speed) NATIVE(5);
 // one cycle holds, frames is the cycle length (0 turns it off), and repeats is how many more
 // cycles follow (-1 repeats forever, default 0).
 // Original name: _SET_PALLET.
-extern void flash_chara_color(int red, any green, OPTIONAL(int blue, int pulses, int frames, int repeats)) NATIVE(30);
+extern void flash_chara_color VM_ARGS(int red, any green, OPTIONAL(int blue, int pulses, int frames, int repeats)) NATIVE(30);
 
 // Returns the item number equipped in an equipment slot of the active character.
 // Original name: _CHECK_EQUIP.
@@ -170,7 +170,7 @@ extern int get_equip_item(enum equip_slot slot, ...) NATIVE(31);
 // Shakes the dungeon camera with the given strength, fading linearly to nothing over the given
 // number of frames.
 // Original name: _CAMERA_QUAKE.
-extern void shake_camera(float power, any frames, OPTIONAL(any extra3, any extra4, any extra5, any extra6)) NATIVE(32);
+extern void shake_camera VM_ARGS(float power, any frames, OPTIONAL(any extra3, any extra4, any extra5, any extra6)) NATIVE(32);
 
 // Returns the dungeon pause flags ANDed with mask, so it is nonzero when any of those flags is
 // set. For example 8192 (0x2000) is set while weapons are hidden.
@@ -184,17 +184,17 @@ extern int get_status_flags(void) NATIVE(34);
 // Plays a sound effect from the character's own sound bank. bank must be -1 (the character's
 // bank); any other value fails without playing.
 // Original name: _SE_PLAY.
-extern void play_chara_se(enum se_bank bank, int se_no, OPTIONAL(any extra3)) NATIVE(35);
+extern void play_chara_se VM_ARGS(enum se_bank bank, int se_no, OPTIONAL(any extra3)) NATIVE(35);
 
 // Keeps a looping sound effect from the character's own sound bank playing for keep_frames more
 // frames; call it again before they run out to sustain it. bank must be -1 (the character's bank).
 // Original name: _SE_LOOP_PLAY.
-extern void play_chara_loop_se(OPTIONAL(enum se_bank bank, int se_no, int keep_frames)) NATIVE(36);
+extern void play_chara_loop_se VM_ARGS(OPTIONAL(enum se_bank bank, int se_no, int keep_frames)) NATIVE(36);
 
 // Returns the attack type of the active character's sub weapon (equipment slot 1), for example 0
 // or 11 normal gun, 10 grenade, 20 laser, 30 machine gun.
 // Original name: _GET_SHOT_TYPE.
-extern int get_shot_type(...) NATIVE(37);
+extern int get_shot_type VM_ARGS(...) NATIVE(37);
 
 // Returns the monster id of the active character's monster transformation, or -1 when the active
 // character is not a transformed monster.
@@ -207,7 +207,7 @@ extern void get_front_vec(float *x, float *y, float *z) NATIVE(39);
 
 // Returns the bitmask of controller buttons currently held.
 // Original name: _GET_PADON.
-extern int get_pad_held(...) NATIVE(40);
+extern int get_pad_held VM_ARGS(...) NATIVE(40);
 
 // Returns the bitmask of controller buttons pressed this frame.
 // Original name: _GET_PADDOWN.
@@ -215,7 +215,7 @@ extern int get_pad_pressed(void) NATIVE(41);
 
 // Returns the bitmask of controller buttons released this frame.
 // Original name: _GET_PADUP.
-extern int get_pad_released(...) NATIVE(42);
+extern int get_pad_released VM_ARGS(...) NATIVE(42);
 
 // Returns the state of a logical game button (nonzero when it triggers this frame). Action buttons
 // are 50 attack (confirm, pressed), 51 square, 52 cancel and 56 attack held.
@@ -229,7 +229,7 @@ extern int get_attack_presses(void) NATIVE(45);
 
 // Clears the attack press history read by get_attack_presses. Arguments are ignored.
 // Original name: _RESET_PAD_HISTORY.
-extern void reset_attack_presses(OPTIONAL(any ignored)) NATIVE(46);
+extern void reset_attack_presses VM_ARGS(OPTIONAL(any ignored)) NATIVE(46);
 
 // Returns how many frames in a row the attack button (logical button 56) has been held; it drops
 // to 0 when released.
@@ -259,7 +259,7 @@ extern void run_charge_move(void) NATIVE(51);
 // switches to move_motion while the stick moves, turning toward the locked-on target if there is
 // one. Both names are required; calls without them do nothing.
 // Original name: _RUN_HOLD_MOVE.
-extern void run_aim_move(OPTIONAL(string stand_motion, string move_motion)) NATIVE(52);
+extern void run_aim_move VM_ARGS(OPTIONAL(string stand_motion, string move_motion)) NATIVE(52);
 
 // Writes the character's world position into three float out parameters.
 // Original name: _GET_POS.
@@ -366,7 +366,7 @@ extern float get_target_distance(void) NATIVE(92);
 // monster's body width. Each call turns it 90/turn_divisor degrees toward the target, snapping
 // when closer than that. Both arguments are required; calls with fewer do nothing.
 // Original name: _SET_TRG_ANGLE.
-extern void turn_to_target(OPTIONAL(float radius, float turn_divisor)) NATIVE(93);
+extern void turn_to_target VM_ARGS(OPTIONAL(float radius, float turn_divisor)) NATIVE(93);
 
 // Turns guarding on (1) or off (0). While guarding, incoming damage is scaled by the hit's guard
 // rate, unless the hit ignores guard, which also turns guarding off.
@@ -401,24 +401,24 @@ extern void try_grab(string object_name, OPTIONAL(int pick_up, int *found)) NATI
 // 120 units, toward the locked target) and a held item is kept for the throw; with 0 or no
 // argument a held item is discarded and a monster is dropped.
 // Original name: _RELEASE_OBJ.
-extern void release_held(OPTIONAL(int throw, any extra2, any extra3)) NATIVE(100);
+extern void release_held VM_ARGS(OPTIONAL(int throw, any extra2, any extra3)) NATIVE(100);
 
 // Fires the active character's sub weapon from an object slot: Max's gun by its type, or Monica's
 // magic with damage scaled by scale (default 1.0). The second and third arguments are read but
 // unused, and wait_frames sets the delay before the next shot. With an empty gun it plays a click
 // instead.
 // Original name: _SET_SHOT.
-extern void fire_sub_weapon(any slot, OPTIONAL(string unused_name, int unused, int wait_frames, float scale)) NATIVE(101);
+extern void fire_sub_weapon VM_ARGS(any slot, OPTIONAL(string unused_name, int unused, int wait_frames, float scale)) NATIVE(101);
 
 // Fires the ridepod's arm weapon (rocket, machine gun, missile, cannon or beam by attack type),
 // alternating muzzles. For the beam type left nonzero picks the left muzzle.
 // Original name: _SHOT.
-extern void fire_ridepod_weapon(any left) NATIVE(102);
+extern void fire_ridepod_weapon VM_ARGS(any left) NATIVE(102);
 
 // Writes the world position of a named model frame of the character into three float out
 // parameters.
 // Original name: _GET_OBJECT_POS.
-extern void get_object_pos(any object_name, OPTIONAL(float *x, float *y, float *z)) NATIVE(103);
+extern void get_object_pos VM_ARGS(any object_name, OPTIONAL(float *x, float *y, float *z)) NATIVE(103);
 
 // Lets the character aim its gun at the locked-on target this frame; the engine clears it every
 // frame.
@@ -429,7 +429,7 @@ extern void enable_gun_aim(void) NATIVE(104);
 // stored element and power, then clears it. Does nothing when no magic is stored or a shot was
 // fired in the last 5 frames.
 // Original name: _SET_SPECIAL_SHOT.
-extern void fire_sword_magic(any object_name) NATIVE(105);
+extern void fire_sword_magic VM_ARGS(any object_name) NATIVE(105);
 
 // Returns, as a float, current HP divided by maximum HP. The division is done in integers, so it
 // is 1.0 at full HP and 0.0 otherwise.
@@ -530,16 +530,16 @@ extern void delete_effect(int effect_id) NATIVE(154);
 // Sets numbered value index of an effect to an int or float. effect_id -1 means the most recently
 // created effect.
 // Original name: _ESM_SET_VALUE.
-extern void set_effect_value(int effect_id, int index, any value) NATIVE(155);
+extern void set_effect_value VM_ARGS(int effect_id, int index, any value) NATIVE(155);
 
 // Numbers the disc calls that this table never registers. The engine prints "not found ext" and
 // moves on, so these calls do nothing.
-extern void _EXT_6(...) NATIVE(6);
-extern void _EXT_7(...) NATIVE(7);
-extern void _EXT_13(...) NATIVE(13);
-extern void _EXT_14(...) NATIVE(14);
-extern void _EXT_44(...) NATIVE(44);
-extern void _EXT_80(...) NATIVE(80);
+extern void _EXT_6 VM_ARGS(...) NATIVE(6);
+extern void _EXT_7 VM_ARGS(...) NATIVE(7);
+extern void _EXT_13 VM_ARGS(...) NATIVE(13);
+extern void _EXT_14 VM_ARGS(...) NATIVE(14);
+extern void _EXT_44 VM_ARGS(...) NATIVE(44);
+extern void _EXT_80 VM_ARGS(...) NATIVE(80);
 
 #include <helpers/action.h>
 

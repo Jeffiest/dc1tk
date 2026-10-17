@@ -14,13 +14,13 @@ Declared in `sdk/arg.h` and `sdk/helpers/arg.h`. See [C Language, SDK, and Patch
 
 | Native | Number | What it does |
 | --- | --- | --- |
-| [`add_arg_record`](#add_arg_record) | 0 | Stores all its arguments (ints, floats and strings, in order) as one argument record under the next record id, then adds 1 to that id. |
+| [`VM_ARGS`](#vm_args) | 0 | Stores all its arguments (ints, floats and strings, in order) as one argument record under the next record id, then adds 1 to that id. |
 | [`set_arg_record_id`](#set_arg_record_id) | 1 | Sets the id that the next add_arg_record call stores its record under; ids start at 0. |
 
-### add_arg_record
+### VM_ARGS
 
 ```c
-extern void add_arg_record(any value, ...) NATIVE(0);
+extern void add_arg_record VM_ARGS(any value, ...) NATIVE(0);
 ```
 
 Stores all its arguments (ints, floats and strings, in order) as one argument record under the next record id, then adds 1 to that id. Event natives called with a single record id read their arguments from the matching record.

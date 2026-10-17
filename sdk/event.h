@@ -5,7 +5,7 @@
 // native with multiple results writes to pointer arguments (for example,
 // `get_actor_pos(0, &x, &y, &z);`). `OPTIONAL(...)` marks arguments that a
 // call can omit. Natives return immediately and do not yield frames; use
-// `wait;` to pause a script for one frame (25 FPS on PAL).
+// `WAIT();` to pause a script for one frame (25 FPS on PAL).
 
 #ifndef DC2TK_EVENT_H
 #define DC2TK_EVENT_H
@@ -25,7 +25,10 @@ typedef int flag;
 typedef int bgm_file;
 typedef int sound_set;
 typedef int system_se;
+#ifndef DC2TK_CHARA_SLOT
+#define DC2TK_CHARA_SLOT
 typedef int chara_slot;
+#endif
 typedef int npc_id;
 typedef int monster_kind;
 typedef string chara_pack;
@@ -1408,7 +1411,7 @@ extern int get_counter(int index) NATIVE(16);
 // Sets the directory that file names given to later load calls are relative to. An empty string,
 // "DEFAULT" or no argument resets it to the default.
 // Original name: _SET_CURRENT_DIR.
-extern void set_current_dir(OPTIONAL(string dir)) NATIVE(17);
+extern void set_current_dir VM_ARGS(OPTIONAL(string dir)) NATIVE(17);
 
 // Removes a scene character and clears any event object handles that refer to it. Its texture
 // block is freed too unless delete_texture is 0 (default 1).
@@ -1425,7 +1428,7 @@ extern void load_chara_motion(enum memory_stack stack_no, chara_pack pack_path, 
 // jump_point is the entry point (-1 for the default) and event_no is the event started on arrival
 // (default 100).
 // Original name: _MAP_JUMP.
-extern void jump_to_map(int jump_point, map_id map, OPTIONAL(enum program event_no)) NATIVE(20);
+extern void jump_to_map VM_ARGS(int jump_point, map_id map, OPTIONAL(enum program event_no)) NATIVE(20);
 
 // Starts the event rain effect when on is non-zero, stops it when 0.
 // Original name: _SET_RAIN.
@@ -1443,7 +1446,7 @@ extern void set_marker(int value) NATIVE(23);
 // positions and the camera are placed relative to. Pass all four values, or none to reset the
 // frame to the world origin.
 // Original name: _SET_WORLD_COORD.
-extern void set_world_coord(OPTIONAL(float x, float y, float z, float rot_y)) NATIVE(24);
+extern void set_world_coord VM_ARGS(OPTIONAL(float x, float y, float z, float rot_y)) NATIVE(24);
 
 // Ends the event: applies a pending world coordinate to the camera and resets sequences, sprites,
 // hit effects, lip sync and the world coordinate.
@@ -1498,7 +1501,7 @@ extern void open_party_select_menu(void) NATIVE(34);
 // calls find them. Each argument is a file path string, or an item number followed by a variant
 // number naming that item's model file. Poll check_background_load until it finishes.
 // Original name: _SET_LOADBG_FILE.
-extern void start_background_load(any file, ...) NATIVE(35);
+extern void start_background_load VM_ARGS(any file, ...) NATIVE(35);
 
 // Returns 1 while background file reads are still in progress, 0 once all are done.
 // Original name: _CHECK_LOADBG_FILE.
@@ -1564,7 +1567,7 @@ extern void set_map_light(int light_no) NATIVE(48);
 // Sets the texture animations used for lip sync on an actor: talk_anim is the moving mouth,
 // idle_anim (optional) the closed mouth. trigger_lip_sync_anim then switches between them.
 // Original name: _SET_PAKU_ANIM.
-extern void set_lip_sync_anim(int actor, any talk_anim, OPTIONAL(string idle_anim)) NATIVE(49);
+extern void set_lip_sync_anim VM_ARGS(int actor, any talk_anim, OPTIONAL(string idle_anim)) NATIVE(49);
 
 // Clears the lip sync texture animation setup.
 // Original name: _RESET_PAKU_ANIM.
@@ -1628,7 +1631,7 @@ extern void go_to_dungeon(int dungeon, OPTIONAL(int floor, enum program event_no
 // Ends the event and switches the game to the town edit mode for map_no. event_no defaults to -1
 // (none).
 // Original name: _GOTO_EDIT.
-extern void go_to_edit_mode(map_id map_no, OPTIONAL(enum program event_no)) NATIVE(63);
+extern void go_to_edit_mode VM_ARGS(map_id map_no, OPTIONAL(enum program event_no)) NATIVE(63);
 
 // Writes up to five result values left by the last menu, one per argument given.
 // Original name: _GET_MENU_PARAM.
@@ -1704,7 +1707,7 @@ extern void set_projection(float distance) NATIVE(78);
 
 // Returns the event's projection distance.
 // Original name: _GET_PROJECTION.
-extern float get_projection(...) NATIVE(79);
+extern float get_projection VM_ARGS(...) NATIVE(79);
 
 // Fades the screen in over frames from colour r, g, b (0 to 255). Frames are the NTSC game's (30 a
 // second): the PAL engine takes 5/6 of them (rounded down, at least 1) as its own frames (25 a
@@ -1773,7 +1776,7 @@ extern void get_monster_talk_data(int *monster_chara, int *id_or_param, OPTIONAL
 // Enables or disables a named function point (an interaction trigger) on the active map. place is
 // a map part number or part name string; an empty string means the map's own function points.
 // Original name: _FUNC_POINT_SHOW.
-extern void set_func_point_enabled(any place, string name, int enable) NATIVE(93);
+extern void set_func_point_enabled VM_ARGS(any place, string name, int enable) NATIVE(93);
 
 // Returns the current map number.
 // Original name: _GET_NOW_MAP_NO.
@@ -1827,7 +1830,7 @@ extern void set_chara_rot(chara_slot chara, float x, float y, OPTIONAL(float z))
 // Reads a scene character's rotation in radians around the x, y and z axes into three out
 // parameters.
 // Original name: _GET_CHARA_ROT.
-extern void get_chara_rot(chara_slot chara, any x, any y, any z) NATIVE(105);
+extern void get_chara_rot VM_ARGS(chara_slot chara, any x, any y, any z) NATIVE(105);
 
 // Starts a motion or motion sequence on a scene character by name. flags: 1 pauses on the current
 // frame, 2 holds the last frame instead of looping, 4 restarts from the first frame without
@@ -1929,7 +1932,7 @@ extern void copy_chara_sound_info(chara_slot chara) NATIVE(124);
 // out nothing. A string is shown as literal text. The optional out parameter receives the number
 // of characters laid out.
 // Original name: _MES_MAKE.
-extern void show_message(int mes, message text, OPTIONAL(int *char_count)) NATIVE(192);
+extern void show_message VM_ARGS(int mes, message text, OPTIONAL(int *char_count)) NATIVE(192);
 
 // Closes a message window, clears its message number and text, and restores its default reveal
 // speed and bubble centre.
@@ -1999,7 +2002,7 @@ extern void set_camera_pos(float x, float y, float z) NATIVE(206);
 
 // Reads the active camera's eye position into x, y and z.
 // Original name: _GET_CAMERA_POS.
-extern void get_camera_pos(any x, any y, any z) NATIVE(207);
+extern void get_camera_pos VM_ARGS(any x, any y, any z) NATIVE(207);
 
 // Puts the active camera's look-at point at a world position at once. Called with a single
 // argument, that argument is the key of a stored argument block holding the position.
@@ -2008,7 +2011,7 @@ extern void set_camera_target(float x, float y, float z) NATIVE(208);
 
 // Reads the active camera's look-at point into x, y and z.
 // Original name: _GET_CAMERA_REF.
-extern void get_camera_target(any x, any y, any z) NATIVE(209);
+extern void get_camera_target VM_ARGS(any x, any y, any z) NATIVE(209);
 
 // Sets how many steps the active camera's eye and look-at point take to reach their next
 // positions.
@@ -2067,7 +2070,7 @@ extern void set_message_source(int mes, enum mes_source source, int unused) NATI
 
 // Returns a message window's frame mode (see set_message_window_mode).
 // Original name: _GET_MES_WINDOW_MODE.
-extern int get_message_window_mode(any mes, ...) NATIVE(220);
+extern int get_message_window_mode VM_ARGS(any mes, ...) NATIVE(220);
 
 // Returns 1 while a voice stream started by the event is playing, else 0.
 // Original name: _GET_MES_VOICE.
@@ -2092,14 +2095,14 @@ extern void set_message_close_timer(int mes, int frames) NATIVE(225);
 // outline style, 9 text offset inside the fixed frame (x, y, negative for default), 10 window
 // alpha (128 opaque).
 // Original name: _SET_MES_ETC.
-extern void set_message_option(int mes, enum mes_option option, OPTIONAL(any value1, int value2, int value3, int value4)) NATIVE(226);
+extern void set_message_option VM_ARGS(int mes, enum mes_option option, OPTIONAL(any value1, int value2, int value3, int value4)) NATIVE(226);
 
 // Reads one of several values chosen by query: 0 line indent flag, 1 cursor centring flag, 2
 // number of fish in the main aquarium tank, each into the third argument. Query 3 takes a villager
 // number as the third argument and writes two fields of that villager's info to the fourth and
 // fifth.
 // Original name: _GET_MES_ETC.
-extern void get_message_info(int mes, enum mes_info_query query, any value, OPTIONAL(int *result1, int *result2)) NATIVE(227);
+extern void get_message_info VM_ARGS(int mes, enum mes_info_query query, any value, OPTIONAL(int *result1, int *result2)) NATIVE(227);
 
 // Loads a text file into the event scene's memory stack and makes show_message read message
 // numbers from it. Called with two arguments it unloads instead and the window goes back to the
@@ -2199,7 +2202,7 @@ extern void play_asq_motion(int slot, string motion_name) NATIVE(314);
 // Does nothing in the retail build: the body reads no arguments and reports success. Parameters
 // follow how the disc calls it.
 // Original name: _ASQ_MOTION_STOP.
-extern void stop_asq_motion(int slot, any value) NATIVE(315);
+extern void stop_asq_motion VM_ARGS(int slot, any value) NATIVE(315);
 
 // Does nothing in the retail build: the body reads no arguments and reports success. Never called
 // on the disc.
@@ -2214,7 +2217,7 @@ extern void trigger_asq_anime(int slot) NATIVE(317);
 // Does nothing in the retail build: the body reads no arguments and reports success. Parameters
 // follow how the disc calls it.
 // Original name: _ASQ_ANIME.
-extern void set_asq_anime(int slot, any anime, OPTIONAL(any extra)) NATIVE(318);
+extern void set_asq_anime VM_ARGS(int slot, any anime, OPTIONAL(any extra)) NATIVE(318);
 
 // Does nothing in the retail build: the body reads no arguments and reports success. Never called
 // on the disc.
@@ -2290,7 +2293,7 @@ extern void set_sprite_color(int sprite, enum color_level r, enum color_level g,
 // Sets an event sprite's horizontal and vertical scale. A fourth argument seen on the disc is
 // ignored.
 // Original name: _SPRITE_SET_SCALE.
-extern void set_sprite_scale(int sprite, float scale_x, float scale_y, OPTIONAL(any unused)) NATIVE(358);
+extern void set_sprite_scale VM_ARGS(int sprite, float scale_x, float scale_y, OPTIONAL(any unused)) NATIVE(358);
 
 // Sets an event sprite's alpha blend mode: 1 normal, 2 additive, 3 subtractive, 4 none, 5 full
 // additive. Sprites start at 1.
@@ -2324,7 +2327,7 @@ extern void set_camera_seq_ref(float x, float y, float z) NATIVE(404);
 // even speed over a number of frames. The call fails with any count other than seven arguments;
 // one disc script passes nine.
 // Original name: _CMRS_MOVE.
-extern void move_camera_to(float x, float y, float z, float ref_x, float ref_y, float ref_z, int frames, OPTIONAL(any extra1, any extra2)) NATIVE(405);
+extern void move_camera_to VM_ARGS(float x, float y, float z, float ref_x, float ref_y, float ref_z, int frames, OPTIONAL(any extra1, any extra2)) NATIVE(405);
 
 // Queues moving only the camera look-at point to a world position at an even speed over a number
 // of frames.
@@ -2483,7 +2486,7 @@ extern int check_actor_busy(int actor) NATIVE(450);
 // Stops every track of the actor's sequence, drops its queued commands, forgets which event object
 // it drives and clears its position and rotation. Any second argument is ignored.
 // Original name: _OBJS_INIT.
-extern void clear_actor_seq(int actor, OPTIONAL(any unused)) NATIVE(451);
+extern void clear_actor_seq VM_ARGS(int actor, OPTIONAL(any unused)) NATIVE(451);
 
 // Makes the actor's sequence drive an event object handle, set up earlier by the event object
 // handle natives. Most scripts pass the same number for both.
@@ -2498,7 +2501,7 @@ extern void delay_actor_moves(int actor, int frames) NATIVE(453);
 // Queues putting the actor at a world position at once. The call fails with any count other than
 // four arguments.
 // Original name: _OBJS_SET_POS.
-extern void set_actor_pos(int actor, any x, float y, float z, OPTIONAL(any extra)) NATIVE(454);
+extern void set_actor_pos VM_ARGS(int actor, any x, float y, float z, OPTIONAL(any extra)) NATIVE(454);
 
 // Queues moving the actor to a world position at an even speed over a number of frames. With
 // on_ground = 1 the actor's height follows the ground under it while moving and at the end.
@@ -2559,7 +2562,7 @@ extern void set_actor_motion(int actor, string motion_name, OPTIONAL(enum chara_
 // current frame, 2 stops on the last frame instead of looping, 4 starts from the first frame
 // without blending; speed, when not -1, sets the playback step.
 // Original name: _OBJS_NEXT_MOTION.
-extern void queue_actor_motion(int actor, string motion_name, OPTIONAL(enum chara_motion_flag flags, float speed, any extra5)) NATIVE(466);
+extern void queue_actor_motion VM_ARGS(int actor, string motion_name, OPTIONAL(enum chara_motion_flag flags, float speed, any extra5)) NATIVE(466);
 
 // Queues holding the actor's motion track until its current motion ends.
 // Original name: _OBJS_MOTION_WAIT.
@@ -2583,7 +2586,7 @@ extern void delay_actor_texture_anim(int actor, OPTIONAL(int frames)) NATIVE(470
 // of the actor's texture animations; with on = 1 it plays the named animation, such as a face or
 // eye-blink loop.
 // Original name: _OBJS_TEX_ANIME.
-extern void set_actor_texture_anim(int actor, any on, OPTIONAL(string anim_name)) NATIVE(471);
+extern void set_actor_texture_anim VM_ARGS(int actor, any on, OPTIONAL(string anim_name)) NATIVE(471);
 
 // Queues holding the actor's motion track until its motion sequence reaches its trigger state
 // (status 3).
@@ -2639,7 +2642,7 @@ extern void set_actor_motion_speed(int actor, float step) NATIVE(482);
 // 3, 4, 6 or 7 arguments; with 4 the fourth is the frame count, with 6 or 7 the offset is x, y, z
 // and the seventh is the frame count.
 // Original name: _OBJS_SET_EOH_FRAME_POS.
-extern void attach_actor_to_frame(int actor, int handle, string frame_name, OPTIONAL(any x_or_frames, float y, float z, int frames)) NATIVE(483);
+extern void attach_actor_to_frame VM_ARGS(int actor, int handle, string frame_name, OPTIONAL(any x_or_frames, float y, float z, int frames)) NATIVE(483);
 
 // Queues adding an offset (world units) to the actor's position every frame for a number of
 // frames, 1 when left out.
@@ -2659,7 +2662,7 @@ extern void play_actor_se(int actor, int sound, int se_no) NATIVE(486);
 // Queues writing the actor's sequence position and rotation to its object and putting its dynamic-
 // animation parts (swinging hair, cloth and the like) back to rest. Extra arguments are ignored.
 // Original name: _OBJS_RESET_DA_POSITION.
-extern void reset_actor_dynamics(int actor, OPTIONAL(any unused1, any unused2, any unused3)) NATIVE(487);
+extern void reset_actor_dynamics VM_ARGS(int actor, OPTIONAL(any unused1, any unused2, any unused3)) NATIVE(487);
 
 // Queues moving the actor to a world position over a number of frames with eased speed. ease is 0
 // to speed up and slow down, 1 to speed up only, 2 to slow down only; ease_rate is the share of
@@ -2948,13 +2951,13 @@ extern void start_subgame(enum subgame_type type) NATIVE(557);
 // called as (command, message, name_slot, entry) and copy that race entry's fish name (5) or race
 // time as mm:ss:hh text (6) into the message's name slot, counted from 1.
 // Original name: _SET_GYORACE_ETC.
-extern void set_fish_race_value(enum gyorace_set_command command, OPTIONAL(any value, int name_slot, int entry)) NATIVE(558);
+extern void set_fish_race_value VM_ARGS(enum gyorace_set_command command, OPTIONAL(any value, int name_slot, int entry)) NATIVE(558);
 
 // Reads fish race state into value by command: 0 aquarium number, 1 ranking, 2 class, 3 race
 // progress, 5 tournament count. Command 4 is called as (4, race, place, &prize_item, &prize_count)
 // and reads the prize for a place counted from 1.
 // Original name: _GET_GYORACE_ETC.
-extern void get_fish_race_value(enum gyorace_get_command command, any value, OPTIONAL(int place, int *prize_item, int *prize_count)) NATIVE(559);
+extern void get_fish_race_value VM_ARGS(enum gyorace_get_command command, any value, OPTIONAL(int place, int *prize_item, int *prize_count)) NATIVE(559);
 
 // Changes save data by command: 0 sets the game progress to value; 1 unlocks the badge of monster
 // value; 2 repairs every ridepod part and refills its energy; 3 sets a flag that makes the next
@@ -2968,13 +2971,13 @@ extern void set_save_value(enum save_set_command command, OPTIONAL(int value, in
 // tournament kind. Commands 1 and 3 are called as (command, input, &result): 1 gives whether the
 // badge of monster input is unlocked, 3 the bait item on fishing rod input.
 // Original name: _GET_SAVEDATA_ETC.
-extern void get_save_value(enum save_get_command command, any value, OPTIONAL(int *result)) NATIVE(561);
+extern void get_save_value VM_ARGS(enum save_get_command command, any value, OPTIONAL(int *result)) NATIVE(561);
 
 // Removes every dungeon monster and clears ridepod projectiles, then resets monster memory,
 // collision, effects, monster textures and the monster sound port. The argument is not read; the
 // disc passes -1.
 // Original name: _DEL_MONSTER.
-extern void clear_monsters(any unused) NATIVE(562);
+extern void clear_monsters VM_ARGS(any unused) NATIVE(562);
 
 // Menu helpers by command: 0 (prompt, answer, code) sets the text a name entry checks against; 1
 // clears fish fatigue and ends the current fishing tournament; 3 shows (1) or hides (0) the
@@ -2982,7 +2985,7 @@ extern void clear_monsters(any unused) NATIVE(562);
 // announcement in a scene memory stack and starts the download effect; 7 clears the announcement.
 // Commands 2 and 6 do nothing.
 // Original name: _SET_MENU_ETC.
-extern void set_menu_value(enum menu_set_command command, OPTIONAL(any arg1, any arg2, any arg3)) NATIVE(563);
+extern void set_menu_value VM_ARGS(enum menu_set_command command, OPTIONAL(any arg1, any arg2, any arg3)) NATIVE(563);
 
 // Menu queries by command, written to value: 0 floors with a cleared spheda challenge, 1 the town
 // square event type, 3 scoops newly marked known, 4 scoops newly marked obtained, 8 1 once the
@@ -2990,7 +2993,7 @@ extern void set_menu_value(enum menu_set_command command, OPTIONAL(any arg1, any
 // &total) the scoop totals; 6 (&count, &status) Donny's shop lineup count and status; 7 (confirm,
 // &done) steps the Geostone announcement and gives 1 when it has ended.
 // Original name: _GET_MENU_ETC.
-extern void get_menu_value(enum menu_get_command command, any value, OPTIONAL(void *value2)) NATIVE(564);
+extern void get_menu_value VM_ARGS(enum menu_get_command command, any value, OPTIONAL(void *value2)) NATIVE(564);
 
 // Checks one town analysis entry. analysis_id is town * 100 + entry, with towns counted from 1,
 // and the result is whether all of the entry's conditions hold.
@@ -3006,7 +3009,7 @@ extern int get_town_percent(int town) NATIVE(566);
 // at the town's start point; 2 reloads the NPC living in the placed house into slot 8; 3
 // (&can_burn) gives whether any placed part can burn.
 // Original name: _GEORAMA_FUNC.
-extern void run_georama_command(int command, OPTIONAL(any value)) NATIVE(567);
+extern void run_georama_command VM_ARGS(int command, OPTIONAL(any value)) NATIVE(567);
 
 // Searches scene character slots 8 to 63 for the character with this number. Returns the slot, or
 // -1 when none matches.
@@ -3025,7 +3028,7 @@ extern void load_monster_talk_message(int message, enum memory_stack stack) NATI
 
 // Leaves the event for Georama edit mode. The argument is not read.
 // Original name: _GOTO_EDITMODE.
-extern void start_georama_mode(any unused) NATIVE(571);
+extern void start_georama_mode VM_ARGS(any unused) NATIVE(571);
 
 // Returns the story chapter derived from the game progress: 0 below progress 2, 1 at progress 2 or
 // 3, otherwise progress minus 2.
@@ -3092,7 +3095,7 @@ extern void request_edit_event(enum edit_event_command command) NATIVE(583);
 // fish, and the rank into value. 1 is called as (1, place, &prize_item, &prize_count) and reads
 // the prize for a place counted from 1.
 // Original name: _GET_FISHINGTOURNAMENT_ETC.
-extern void get_fishing_tournament_value(enum fish_tour_get_command command, any value, OPTIONAL(int *prize_item, int *prize_count)) NATIVE(584);
+extern void get_fishing_tournament_value VM_ARGS(enum fish_tour_get_command command, any value, OPTIONAL(int *prize_item, int *prize_count)) NATIVE(584);
 
 // Sets the camera distance beyond which a character is not drawn, in world units, on the character
 // and all its linked parts.
@@ -3132,7 +3135,7 @@ extern void reset_sound_port(enum snd_port port) NATIVE(600);
 // (file, &sound_id) for port 4; file is a path string, or an int sound data number whose event
 // sound file is used. Port 8 uses the second event sound buffer.
 // Original name: _SND_LOAD_SOUND.
-extern void load_sound(enum snd_port port, any file, OPTIONAL(int *sound_id)) NATIVE(601);
+extern void load_sound VM_ARGS(enum snd_port port, any file, OPTIONAL(int *sound_id)) NATIVE(601);
 
 // Plays sound effect se_no from a loaded sound bank. volume runs 0 to 127 and pan 0 to 127 with 64
 // centered; without them the bank defaults are used.
@@ -3156,7 +3159,7 @@ extern void stop_se(int sound_id, int se_no) NATIVE(605);
 // Sets the volume of a playing sound effect. An int is an absolute volume from 0 to 127; a float
 // scales the effect's default volume, capped at 127.
 // Original name: _SND_SET_SE_VOL.
-extern void set_se_volume(int sound_id, int se_no, any volume) NATIVE(606);
+extern void set_se_volume VM_ARGS(int sound_id, int se_no, any volume) NATIVE(606);
 
 // Sets the pan of sound effect se_no in a sound bank, 0 to 127 with 64 centered.
 // Original name: _SND_SET_SE_PAN.
@@ -3188,7 +3191,7 @@ extern void stop_bgm(int track) NATIVE(612);
 // and a string is a stream file name; with three arguments voice is a pack name and base_name a
 // file inside it. The channel is not used; poll check_stream_busy until it finishes.
 // Original name: _STREAM_OPEN.
-extern void open_stream(enum stream_channel channel, any voice, OPTIONAL(string base_name)) NATIVE(613);
+extern void open_stream VM_ARGS(enum stream_channel channel, any voice, OPTIONAL(string base_name)) NATIVE(613);
 
 // Plays the opened event voice stream. Without a volume the maximum stream volume is used; the
 // volume is lowered by the current reverb depth. The channel is not used.
@@ -3295,7 +3298,7 @@ extern void fade_out_bgm(int frames) NATIVE(636);
 // Sets the volume of the playing music. An int sets it directly (0 to 127, negative restores the
 // bank's default volume); a float multiplies the current volume by that factor.
 // Original name: _SET_BGM_VOL.
-extern void set_bgm_volume(any volume) NATIVE(637);
+extern void set_bgm_volume VM_ARGS(any volume) NATIVE(637);
 
 // Does nothing and reports failure. The engine leaves this native empty.
 // Original name: _SND_SET_REVERB.
@@ -3362,7 +3365,7 @@ extern void load_bgm_pack(bgm_file bgm_no) NATIVE(650);
 
 // Returns the number of the currently loaded music pack.
 // Original name: _GET_BGM_NO.
-extern int get_bgm_no(...) NATIVE(651);
+extern int get_bgm_no VM_ARGS(...) NATIVE(651);
 
 // Returns the master volume factor of the active music channel.
 // Original name: _GET_MASTER_VOL.
@@ -3439,7 +3442,7 @@ extern void allow_bgm_play(void) NATIVE(667);
 // Returns the default music number of a map's sound data, or -1 when it has none. Called without
 // map, it uses the current map (or sub map when one is active).
 // Original name: _GET_DEF_BGM_NO.
-extern int get_map_default_bgm(map_id map) NATIVE(668);
+extern int get_map_default_bgm VM_ARGS(map_id map) NATIVE(668);
 
 // Controls subtitles shown over a movie. With mode 0, value turns captions on (1) or off (0), and
 // off clears all 18 caption slots. With mode 1, value is the slot (0 to 17) and the caption shows
@@ -3469,7 +3472,7 @@ extern void bind_handle_chara(int handle, int chara) NATIVE(700);
 // name it binds that piece of the part in local coordinates; with a frame name too it binds that
 // frame of the piece.
 // Original name: _EOH_SYNC_OBJ.
-extern void bind_handle_map_part(int handle, any part, OPTIONAL(string piece_name, string frame_name)) NATIVE(701);
+extern void bind_handle_map_part VM_ARGS(int handle, any part, OPTIONAL(string piece_name, string frame_name)) NATIVE(701);
 
 // Moves the object bound to a handle to a position in world units, relative to the event's world
 // origin when one is set. Sprites and frames take the position as given.
@@ -3507,7 +3510,7 @@ extern void set_handle_motion_step(int handle, float step) NATIVE(707);
 // all; (handle, on, name) turns the named one on or off; (handle, name) turns it on; (handle,
 // off_name, on_name) switches from one to the other.
 // Original name: _EOH_SET_TEX_ANIM.
-extern void set_handle_texture_anim(int handle, any mode, OPTIONAL(string anim_name)) NATIVE(708);
+extern void set_handle_texture_anim VM_ARGS(int handle, any mode, OPTIONAL(string anim_name)) NATIVE(708);
 
 // Sets the scale of the object bound to a handle on each axis. 1.0 is normal size.
 // Original name: _EOH_SET_SCALE.
@@ -3602,7 +3605,7 @@ extern void apply_handle_motion(int handle) NATIVE(727);
 // name it binds that piece in local coordinates; with a frame name too it binds that frame of the
 // piece.
 // Original name: _EOH_SYNC_EDIT_OBJ.
-extern void bind_handle_edit_part(int handle, any part, OPTIONAL(string piece_name, string frame_name)) NATIVE(728);
+extern void bind_handle_edit_part VM_ARGS(int handle, any part, OPTIONAL(string piece_name, string frame_name)) NATIVE(728);
 
 // Sets the opacity of a named model frame of the character or frame bound to a handle, from 0.0
 // (invisible) to 1.0.
@@ -3612,7 +3615,7 @@ extern void set_handle_frame_alpha(int handle, string frame_name, float alpha) N
 // Binds a handle to a named function point of the active map. part picks the placed part that owns
 // it, by number or by name; an empty name "" searches the map's own points.
 // Original name: _EOH_SYNC_FUNCP.
-extern void bind_handle_func_point(int handle, any part, string point_name) NATIVE(730);
+extern void bind_handle_func_point VM_ARGS(int handle, any part, string point_name) NATIVE(730);
 
 // Sets the footstep sound effect bank of the character bound to a handle.
 // Original name: _EOH_SET_FOOT_SE_ID.
@@ -3814,7 +3817,7 @@ extern void run_mt_test(void) NATIVE(998);
 
 // Debug leftover that does nothing and ignores its argument.
 // Original name: _TEST.
-extern void run_test(OPTIONAL(any value)) NATIVE(999);
+extern void run_test VM_ARGS(OPTIONAL(any value)) NATIVE(999);
 
 // Sets the three out variables to 0.0.
 // Original name: _ZERO_VECTOR.
@@ -3874,7 +3877,7 @@ extern void wrap_angle(float *angle) NATIVE(1012);
 // Reads a random number from 0 up to but not including range into result. A float range gives a
 // float; an int range gives an int.
 // Original name: _GET_RAND.
-extern void get_random(any range, void *result) NATIVE(1013);
+extern void get_random VM_ARGS(any range, void *result) NATIVE(1013);
 
 // Returns the distance from point p to the segment from a to b, or -1.0 when p projects outside
 // the segment.
@@ -4012,7 +4015,7 @@ extern void set_fast_floor(void) NATIVE(1038);
 // practice, 0x10 time clear, 0x20 fishing, 0x80 spheda, 0x100 geostone found, 0x200 geostone read,
 // 0x400 seal cleared), 6 kill count, 7 visit count.
 // Original name: _SET_FLOOR_INFO.
-extern void set_floor_info(int dungeon, int floor, enum floor_info_field field, any value) NATIVE(1039);
+extern void set_floor_info VM_ARGS(int dungeon, int floor, enum floor_info_field field, any value) NATIVE(1039);
 
 // Returns one field of a dungeon floor's save record, using the same field numbers as
 // set_floor_info; field 5 gives all the progress flag bits.
@@ -4056,7 +4059,7 @@ extern int get_dungeon_timer(void) NATIVE(1047);
 // an item number, whose model file is used, or a file path string; info_name names the skin entry
 // inside the pack.
 // Original name: _LOAD_SKIN.
-extern void load_chara_skin(enum memory_stack stack_no, any pack, string info_name, int chara) NATIVE(1048);
+extern void load_chara_skin VM_ARGS(enum memory_stack stack_no, any pack, string info_name, int chara) NATIVE(1048);
 
 // Tests the line from one point to another against the map's camera collision. With 7 arguments
 // the 7th receives the index of the polygon hit or -1; with 10 arguments the 7th to 9th receive
@@ -4167,7 +4170,7 @@ extern int get_sound_port_bank(enum snd_port port) NATIVE(1070);
 // Finds map parts in the active maps by number or by name and reads its position into the out
 // variables. Fails if none is found.
 // Original name: _GET_PARTS_POS.
-extern void get_parts_pos(any parts, float *x, float *y, float *z) NATIVE(1071);
+extern void get_parts_pos VM_ARGS(any parts, float *x, float *y, float *z) NATIVE(1071);
 
 // Makes the running drama scene unskippable by clearing its skip state.
 // Original name: _CANCEL_DRAMA_SCENE.
@@ -4199,7 +4202,7 @@ extern void change_player_chara(enum user_chara chara) NATIVE(1077);
 // With an int, adds the character to the party when state is 1 and removes it otherwise. Passing
 // &variable instead reads 1 into it if the character is in the party, else 0.
 // Original name: _JOIN_PARTY_MEMBER.
-extern void set_party_member(enum user_chara chara, any state) NATIVE(1078);
+extern void set_party_member VM_ARGS(enum user_chara chara, any state) NATIVE(1078);
 
 // Lets the player change to a character (on = 1) or forbids it (on = 0).
 // Original name: _SET_CHARA_CHANGE_FLAG.
@@ -4213,7 +4216,7 @@ extern void set_chara_change_mask(enum user_chara chara, int on) NATIVE(1080);
 // Sets the directory later file names are loaded relative to, such as "event/dng/". An empty
 // string, or no argument, clears it so files load from the root.
 // Original name: _CHANGE_DIR.
-extern void change_dir(OPTIONAL(directory dir)) NATIVE(1081);
+extern void change_dir VM_ARGS(OPTIONAL(directory dir)) NATIVE(1081);
 
 // Removes count of an item from the player's inventory; count defaults to 1.
 // Original name: _SUB_ITEM.
@@ -4263,7 +4266,7 @@ extern int get_debug_mode(void) NATIVE(1091);
 // Looks up a map by number or by name and returns its type: 1 for a georama map that has edit
 // data, -1 when the map is not found.
 // Original name: _GET_MAP_TYPE.
-extern int get_map_type(any map, ...) NATIVE(1092);
+extern int get_map_type VM_ARGS(any map, ...) NATIVE(1092);
 
 // Reinitializes the dungeon scene's collision primitive manager, removing every collision
 // primitive it holds.
@@ -4282,7 +4285,7 @@ extern int check_memory_card_load(void) NATIVE(1095);
 // Sets the scene's current map number. When it changes, the old number is kept as the previous
 // map.
 // Original name: _SET_NOW_MAP_NO.
-extern void set_current_map(map_id map_no) NATIVE(1096);
+extern void set_current_map VM_ARGS(map_id map_no) NATIVE(1096);
 
 // Reads the treasure chest nearest the player in the dungeon: its flags, the two item numbers it
 // holds and the count of each.
@@ -4318,7 +4321,7 @@ extern void clear_effect_scripts(void) NATIVE(1102);
 // Loads an effect script base, given by name or by number, so effects can be created from it. Does
 // nothing if it is already loaded.
 // Original name: _ESM_LOAD_BASE.
-extern void load_effect_script(any effect) NATIVE(1103);
+extern void load_effect_script VM_ARGS(any effect) NATIVE(1103);
 
 // Starts an effect from a loaded effect script base. owner (default -1) is the id the effect
 // belongs to. With the third argument the effect also takes a free slot under owner and slot
@@ -4360,7 +4363,7 @@ extern void load_effect_script_pack(string effect_name, string file_name) NATIVE
 // Sets work value number index of the effect created last to an int or float. The engine also
 // accepts a four argument form (owner, slot, index, value) for an effect in a slot.
 // Original name: _ESM_SET_VALUE.
-extern void set_effect_value(int index, any value) NATIVE(1111);
+extern void set_effect_value VM_ARGS(int index, any value) NATIVE(1111);
 
 // Changes a party character's status condition bits (1 poison, 2 slow, 0x10 power up, others
 // unnamed). With clear = 1 the bits are removed, otherwise they are added. The engine also accepts
@@ -4380,13 +4383,13 @@ extern void add_hp_rate(float rate, enum hp_rate_kind mode, OPTIONAL(float frame
 
 // Returns the scene's time of day, a float from 0 to 24.
 // Original name: _GET_TIME.
-extern float get_time_of_day(...) NATIVE(1203);
+extern float get_time_of_day VM_ARGS(...) NATIVE(1203);
 
 // With one argument (&over_item) it receives the number of the first item the player holds more of
 // than its limit, or 0. With three arguments (item, count, &allowed) allowed receives count if the
 // player can hold count more of item, otherwise 0.
 // Original name: _CHECK_GET_ITEM_LIMIT.
-extern void check_item_limit(any item, OPTIONAL(int count, int *allowed)) NATIVE(1204);
+extern void check_item_limit VM_ARGS(any item, OPTIONAL(int count, int *allowed)) NATIVE(1204);
 
 // Returns how many items sit in the overflow slots past the end of the player's current bag.
 // Original name: _CHECK_ITEM_OVER.
@@ -4438,12 +4441,12 @@ extern void stop_screen_wave(float amplitude, float speed, float pitch, int fram
 // placed part's number or name, searched in every active map; piece_name names the piece inside
 // it. motion_flags (default 0) are passed to the motion.
 // Original name: _SET_MPCHARA_MOTION.
-extern void set_map_part_motion(any part, string piece_name, string motion_name, OPTIONAL(enum chara_motion_flag motion_flags)) NATIVE(1214);
+extern void set_map_part_motion VM_ARGS(any part, string piece_name, string motion_name, OPTIONAL(enum chara_motion_flag motion_flags)) NATIVE(1214);
 
 // Moves a function point of the active map to x, y, z. part is a placed part's number or name, or
 // "" for the map's own function points.
 // Original name: _FUNC_POINT_POS.
-extern void set_func_point_pos(any part, string point_name, float x, float y, float z) NATIVE(1215);
+extern void set_func_point_pos VM_ARGS(any part, string point_name, float x, float y, float z) NATIVE(1215);
 
 // Turns the player camera toward the yaw angle (radians), step by step each frame until it is
 // within 0.1 of it.
@@ -4466,13 +4469,13 @@ extern void show_floor_title(int on) NATIVE(1219);
 // Reads the position of a function point in the active map. part is a placed part's number or
 // name, or "" for the map's own function points.
 // Original name: _FUNC_POINT_GET_POS.
-extern void get_func_point_pos(any part, string point_name, float *x, float *y, float *z) NATIVE(1220);
+extern void get_func_point_pos VM_ARGS(any part, string point_name, float *x, float *y, float *z) NATIVE(1220);
 
 // Reads the rotation of a function point in the active map, in radians. With one out argument it
 // receives the Y rotation; with three they receive X, Y and Z. part is a placed part's number or
 // name, or "" for the map's own points.
 // Original name: _FUNC_POINT_GET_ROT.
-extern void get_func_point_rot(any part, string point_name, float *rot, OPTIONAL(float *rot_y, float *rot_z)) NATIVE(1221);
+extern void get_func_point_rot VM_ARGS(any part, string point_name, float *rot, OPTIONAL(float *rot_y, float *rot_z)) NATIVE(1221);
 
 // Stops the action of a scene character and plays its default motion on it and every chained part.
 // motion_flags (default 0) are passed to the motion.
@@ -4597,7 +4600,7 @@ extern void open_item_choice_menu(int *item, int consume, item_id allowed_item, 
 
 // Sets or clears every georama analysis condition linked to analysis entry entry of map map_no.
 // Original name: _DBG_SET_ANALYZE_FLAG.
-extern void set_georama_analyze_flag(map_id map_no, int entry, int flag) NATIVE(1248);
+extern void set_georama_analyze_flag VM_ARGS(map_id map_no, int entry, int flag) NATIVE(1248);
 
 // Shows or hides the Atlamillia model parts on scene character actor. mode 0 changes both parts, 1
 // the first, 2 the second.
@@ -4719,8 +4722,8 @@ extern void start_fishing_tournament(void) NATIVE(1274);
 
 // Numbers the disc calls that this table never registers. The engine prints "not found ext" and
 // moves on, so these calls do nothing.
-extern void _EXT_492(...) NATIVE(492);
-extern void _EXT_800(...) NATIVE(800);
+extern void _EXT_492 VM_ARGS(...) NATIVE(492);
+extern void _EXT_800 VM_ARGS(...) NATIVE(800);
 
 #include <helpers/event.h>
 

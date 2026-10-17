@@ -36,9 +36,10 @@ definitions.
    and enum-typed parameters, spread into script functions; the 185 story
    flags as `enum flag_story` in `definitions/pal/include/pal.h`.
 
-10. **Valid C.** Every decompiled script passes
-    `clang -m32 -fsyntax-only -x c -std=c2x -I sdk -I definitions/pal/include`
-    with no errors; headers accept every call retail makes (see
+10. **Valid C.** Every decompiled script is standard C99: it passes
+    `clang -m32 -fsyntax-only -x c -std=c99 -pedantic -I sdk -I definitions/pal/include`
+    with no errors; the VM's statements, instructions and values are macros
+    (`WAIT();`, `FLOAT_AS_INT(x)`) and headers accept every call retail makes (see
     [the SDK](docs/coding/sdk.md)).
 
 11. **Disc round trip.** `build` compiles an edited source tree and writes a
@@ -81,7 +82,7 @@ definitions.
     `library ...`) and holds only what it changes: `#pragma override`
     functions, which can call `original()` and chain across mods, added
     functions, globals and programs, and `#pragma every_frame` functions
-    that run before every `wait;`. Mods ask for save flags, program numbers
+    that run before every `WAIT();`. Mods ask for save flags, program numbers
     and shared monster variables by name (`NEW_FLAG`), and `build` gives
     numbers nothing else uses, kept in `mods/numbers.json` so saves stay
     valid. `LANGUAGE` lets one patch carry every language's text, and
@@ -260,7 +261,7 @@ code keeps compiling to its own bytes. What the compiler lacks today
 4. **C's semantics everywhere** (done): C's conversions on stores,
    arguments and returns, `&&`/`||` as 0 or 1, natives evaluated only where
    C would, and C's pointer diagnostics, in every script; the decompiler
-   writes `(any)` where a retail script keeps the VM's value, so every
+   writes `FLOAT_AS_INT(x)` and its kin where a retail script keeps the VM's value, so every
    script still compiles to its bytes. Headers are read as text, so their
    macros reach `#if`.
 5. **Composite types** (done): structs and unions (slots at constant

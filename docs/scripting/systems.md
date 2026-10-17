@@ -1,6 +1,6 @@
 # Map, Monster, and Player Scripts
 
-This page explains how each script type in `extracted/scripts/` works. For the execution model (`PROGRAM`, `wait;`, and state), see [How Scripts Work & Lifecycle](README.md).
+This page explains how each script type in `extracted/scripts/` works. For the execution model (`PROGRAM`, `WAIT();`, and state), see [How Scripts Work & Lifecycle](README.md).
 
 ## Talking to people
 
@@ -45,7 +45,7 @@ void play_welcome_scene(void)
 
     set_actor_motion(0, MOTION_WAVE, CHARA_MOTION_RESTART | CHARA_MOTION_HOLD);
     while (check_actor_busy(0)) {
-        wait;
+        WAIT();
     }
 
     modkit_say("Here we are!");             // 4. Show dialogue
@@ -56,7 +56,7 @@ void play_welcome_scene(void)
 ```
 
 - **Actors vs. character slots**: Characters occupy scene slots (`CHARA_PLAYER` is the active player; townspeople use slots `8` and above; custom models load into free slots with `load_scene_chara` or `load_inactive_chara`). `init_chara_actor(actor, slot)` binds an actor controller to a character slot.
-- **Skipping cutscenes**: Wrap the skippable timeline between `enable_scene_skip();` and `skip_end; disable_scene_skip();`. Pressing Start jumps to `skip_end;`. Keep all `set_flag`, character cleanup, and map warps after `skip_end;` so they always run.
+- **Skipping cutscenes**: Wrap the skippable timeline between `enable_scene_skip();` and `SKIP_END(); disable_scene_skip();`. Pressing Start jumps to `SKIP_END();`. Keep all `set_flag`, character cleanup, and map warps after `SKIP_END();` so they always run.
 - **Warping to another map**: Call `jump_to_map(area, "m01", program_number)` to load another map and start `program_number` (`map_start` is `100`). See [Add a cutscene to a town](tutorials/cutscene.md).
 
 ## Story fights and boss arenas
@@ -70,7 +70,7 @@ void start_castle_battle(void)
     load_monster_data(MONSTER_GRIFFON_SOLDIER_523, 1);
     place_monster(MONSTER_GRIFFON_SOLDIER_523, -382.5, -0.2, 120.2, 0.0, 1.61, 0.0);
     place_monster(MONSTER_GRIFFON_SOLDIER_523, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
-    wait;
+    WAIT();
     fade_in(20);
     finish_event();
 }

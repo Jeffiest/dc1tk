@@ -51,7 +51,7 @@ pub fn editor_flags(sdk_dir: &Path, definition_sets: &[std::path::PathBuf], tree
     let mut folders = vec![sdk_dir.to_path_buf()];
     folders.extend(definition_sets.iter().map(|directory| directory.join("include")));
     let mut flags: Vec<String> =
-        ["-xc", "-std=c2x", "-m32", "-Wno-unknown-pragmas", "-Wno-return-type", "-Wno-error=int-conversion"]
+        ["-xc", "-std=c99", "-m32", "-Wno-unknown-pragmas", "-Wno-return-type", "-Wno-error=int-conversion"]
             .iter()
             .map(|flag| flag.to_string())
             .collect();
@@ -103,10 +103,24 @@ pub fn expression(node: &Node) -> Result<(String, i32)> {
             let (operand, found) = expression(&node["operand"])?;
             (format!("*{}", wrap(operand, found, UNARY)), UNARY)
         }
+        // x = x = value changes x twice in one expression, which C leaves undefined
+        "assign" if node["value"].kind() == "assign" && node["value"]["target"] == node["target"] => {
+            (format!("DOUBLE_STORE({})", expression(&node["value"])?.0), PRIMARY)
+        }
         "assign" => {
             let target = expression(&node["target"])?.0;
             let (value, found) = expression(&node["value"])?;
             (format!("{} = {}", target, wrap(value, found, ASSIGN)), ASSIGN)
+        }
+        "logical" if node.get("vm").is_some_and(Node::is_set) => {
+            let name = if node["op"] == "&&" { "AND_VALUE" } else { "OR_VALUE" };
+            let (left, left_found) = expression(&node["left"])?;
+            let (right, right_found) = expression(&node["right"])?;
+            (format!("{name}({}, {})", wrap(left, left_found, ASSIGN), wrap(right, right_found, ASSIGN)), PRIMARY)
+        }
+        "as_is" => {
+            let (operand, found) = expression(&node["operand"])?;
+            (format!("{}({})", as_is_name(&node["type"]), wrap(operand, found, ASSIGN)), PRIMARY)
         }
         "binary" | "logical" => {
             let op = text_of(node, "op")?;
@@ -126,7 +140,9 @@ pub fn expression(node: &Node) -> Result<(String, i32)> {
             let (operand, found) = expression(&node["operand"])?;
             (format!("({}){}", node["type"].plain_text(), wrap(operand, found, UNARY)), UNARY)
         }
-        "builtin" => (format!("{}({})", node["name"].plain_text(), expression(&node["operand"])?.0), PRIMARY),
+        "builtin" => {
+            (format!("{}({})", node["name"].plain_text().to_uppercase(), expression(&node["operand"])?.0), PRIMARY)
+        }
         "call" => (format!("{}({})", node["name"].plain_text(), arguments(node.list("args"))?), PRIMARY),
         _ => return Err(Error::invalid(format!("unknown expression {kind}"))),
     })
@@ -172,8 +188,9 @@ fn bare_statement(node: &Node, depth: usize) -> Result<Vec<String>> {
             }
         }
         "native" => vec![format!("{pad}{}", native_text(node)?)],
-        "print" => vec![format!("{pad}print({});", arguments(node.list("args"))?)],
-        "wait" | "end" | "skip_end" | "break" | "continue" => vec![format!("{pad}{kind};")],
+        "print" => vec![format!("{pad}PRINT({});", arguments(node.list("args"))?)],
+        "wait" | "end" | "skip_end" => vec![format!("{pad}{}();", kind.to_uppercase())],
+        "break" | "continue" => vec![format!("{pad}{kind};")],
         "if" => conditional(node, depth, &format!("{pad}if"))?,
         "while" => {
             let mut lines = vec![format!("{pad}while ({}) {{", expression(&node["cond"])?.0)];
@@ -192,14 +209,24 @@ pub fn native_text(node: &Node) -> Result<String> {
         _ if base == "direct" => "DIRECT ".to_string(),
         _ => format!("AT({}) ", int(base)?),
     };
-    let mut call = format!("{}({});", node["name"].plain_text(), arguments(node.list("args"))?);
-    if node.get("as_is").is_some_and(Node::is_set) {
-        call = format!("(any){call}");
+    let mut call = format!("{}({})", node["name"].plain_text(), arguments(node.list("args"))?);
+    if let Some(kind) = node.get("as_is").filter(|kind| kind.is_set()) {
+        call = format!("{}({call})", as_is_name(kind));
     }
     if let Some(result) = node.get("result").filter(|result| !result.is_null()) {
         call = format!("{} = {}", expression(result)?.0, call);
     }
-    Ok(prefix + &call)
+    Ok(prefix + &call + ";")
+}
+
+/// The macro that takes a value as it is, as the type given: FLOAT_AS_INT for an int,
+/// INT_AS_FLOAT for a float.
+fn as_is_name(kind: &Node) -> &'static str {
+    if *kind == "float" {
+        "INT_AS_FLOAT"
+    } else {
+        "FLOAT_AS_INT"
+    }
 }
 
 fn conditional(node: &Node, depth: usize, opening: &str) -> Result<Vec<String>> {
@@ -486,10 +513,14 @@ pub fn native_declaration(declared: &Node) -> Result<String> {
         let base = int(&declared["base"])?;
         format!("{}, {}", base, int(&declared["no"])? - base)
     };
+    // any, or OPTIONAL(...) or ... first, which C cannot declare: C tools read VM_ARGS(...) as ()
+    let unchecked = params.iter().any(|param| param["type"] == "any" && !param["out"].is_set())
+        || texts.first().is_some_and(|first| first.starts_with("OPTIONAL(") || first == "...");
     Ok(format!(
-        "extern {} {}({}) NATIVE({});",
+        "extern {} {}{}({}) NATIVE({});",
         declared["returns"].plain_text(),
         declared["name"].plain_text(),
+        if unchecked { " VM_ARGS" } else { "" },
         parameter_list(&texts),
         number
     ))

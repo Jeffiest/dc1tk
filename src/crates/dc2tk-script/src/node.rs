@@ -167,6 +167,8 @@ pub mod kinds {
     pub const LOGICAL: &str = "logical";
     pub const UNARY: &str = "unary";
     pub const CAST: &str = "cast";
+    /// FLOAT_AS_INT(x) and INT_AS_FLOAT(x): x as it is, taken as an int or a float.
+    pub const AS_IS: &str = "as_is";
     /// sin and cos, which the VM has instructions for.
     pub const BUILTIN: &str = "builtin";
     pub const CALL: &str = "call";

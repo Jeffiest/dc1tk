@@ -28,14 +28,14 @@ void f_0000(void)
     v1 = 0.5;
     v2[v0] = v0 = 2;
     g0 = g0 + 1;
-    g1 = sin(v1) * -2.0;
+    g1 = SIN(v1) * -2.0;
     _GET_FLAG(12, &v0);
     if (v0 == 1 && g0 > 2 || !v0) {
-        print("hello", v0);
+        PRINT("hello", v0);
     } else if (v0 < 0) {
-        wait;
+        WAIT();
     } else {
-        skip_end;
+        SKIP_END();
     }
     while (1) {
         if (v2[0] >= 4) {
@@ -46,7 +46,7 @@ void f_0000(void)
         }
         v2[0] = f_04d4(&v2[0], (float)v0) - (v0 - 1);
     }
-    end;
+    END();
 }
 
 int f_04d4(int a0[], float a1)
@@ -75,14 +75,14 @@ void start(void)
     angle = 0.5;
     slots[count] = count = 2;
     visits = visits + 1;
-    speed = sin(angle) * -2.0;
+    speed = SIN(angle) * -2.0;
     _GET_FLAG(12, &count);
     if (count == 1 && visits > 2 || !count) {
-        print("hello", count);
+        PRINT("hello", count);
     } else if (count < 0) {
-        wait;
+        WAIT();
     } else {
-        skip_end;
+        SKIP_END();
     }
     while (1) {
         if (slots[0] >= 4) {
@@ -93,7 +93,7 @@ void start(void)
         }
         slots[0] = helper(&slots[0], (float)count) - (count - 1);
     }
-    end;
+    END();
 }
 
 int helper(int values[], float scale)
@@ -232,7 +232,7 @@ fn errors_name_the_line() {
     for (broken, expected) in [
         ("void f_0000(void)\n{\n    v0 = ;\n}\n", "line 3"),
         ("MAIN(f_0000);\nvoid f_0000(void)\n{\n    wait\n}\n", "line 5"),
-        ("MAIN(f_0000);\nvoid f_0000(void)\n{\n    print(\"a);\n}\n", "line 4"),
+        ("MAIN(f_0000);\nvoid f_0000(void)\n{\n    PRINT(\"a);\n}\n", "line 4"),
     ] {
         let error = message(parse::parse(broken));
         assert!(error.contains(expected), "{error}");
@@ -270,7 +270,7 @@ fn fingerprints_ignore_names_and_position() {
 fn editor_flags_point_clang_at_the_sdk_the_sets_and_the_tree() {
     let text = source::editor_flags(&sdk_dir(), &[default_set()], None);
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines[..3], ["-xc", "-std=c2x", "-m32"]);
+    assert_eq!(lines[..3], ["-xc", "-std=c99", "-m32"]);
     assert!(lines.contains(&format!("-I{}", resolved_posix(&sdk_dir())).as_str()));
     assert!(lines.contains(&format!("-I{}", resolved_posix(&default_set().join("include"))).as_str()));
     assert_eq!(lines[lines.len() - 2..], ["-Iinclude", "-I."]);

@@ -48,7 +48,7 @@ void start_monica_gear_battle(void)
     place_monster(MONSTER_GRIFFON_SOLDIER_523, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
     place_monster(MONSTER_GRIFFON_SOLDIER_523, -452.5, -0.2, 287.0, 0.0, 1.98, 0.0);
     place_monster(MONSTER_GRIFFON_SOLDIER_523, -324.2, -0.2, 260.5, 0.0, 2.34, 0.0);
-    wait;
+    WAIT();
     fade_in(20);
     finish_event();
 }
@@ -94,7 +94,7 @@ void start_monica_gear_battle(void)
     place_monster(MONSTER_GRIFFON_SOLDIER_523, -324.2, -0.2, 260.5, 0.0, 2.34, 0.0);
     load_monster_data(MONSTER_SEWER_RAT, 0);
     place_monster(MONSTER_SEWER_RAT, -360.0, -0.2, 180.0, 0.0, 1.61, 0.0);
-    wait;
+    WAIT();
     fade_in(20);
     finish_event();
 }
@@ -133,7 +133,7 @@ void start_monica_gear_battle(void)
     place_monster(MONSTER_GOLEM, -428.0, -0.2, 202.7, 0.0, 1.71, 0.0);
     place_monster(MONSTER_GOLEM, -452.5, -0.2, 287.0, 0.0, 1.98, 0.0);
     place_monster(MONSTER_GOLEM, -324.2, -0.2, 260.5, 0.0, 2.34, 0.0);
-    wait;
+    WAIT();
     fade_in(20);
     finish_event();
 }

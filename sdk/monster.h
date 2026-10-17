@@ -4,7 +4,7 @@
 // with one result returns a value (for example, `hp = get_hp();`). A native
 // with multiple results writes to pointer arguments. `OPTIONAL(...)` marks
 // arguments that a call can omit. Natives return immediately and do not yield
-// frames; use `wait;` to pause a script for one frame (25 FPS on PAL).
+// frames; use `WAIT();` to pause a script for one frame (25 FPS on PAL).
 
 #ifndef DC2TK_MONSTER_H
 #define DC2TK_MONSTER_H
@@ -178,7 +178,7 @@ extern void normalize_vector(float *x, float *y, float *z) NATIVE(0, 0);
 
 // Copies src_x, src_y, src_z into the three variables x, y, z.
 // Original name: _COPY_VECTOR.
-extern void copy_vector(float *x, float *y, float *z, float src_x, any src_y, any src_z) NATIVE(0, 1);
+extern void copy_vector VM_ARGS(float *x, float *y, float *z, float src_x, any src_y, any src_z) NATIVE(0, 1);
 
 // Adds add_x, add_y, add_z to the vector held in variables x, y, z, in place.
 // Original name: _ADD_VECTOR.
@@ -218,11 +218,11 @@ extern float calc_atan2(float y, float x) NATIVE(0, 9);
 // Does nothing and reports success. Disc scripts pass a number and a variable, but the native
 // reads and writes neither.
 // Original name: _ND_TEST.
-extern void run_nd_test(any value, any result) NATIVE(10);
+extern void run_nd_test VM_ARGS(any value, any result) NATIVE(10);
 
 // Writes the length of the vector x, y, z into length.
 // Original name: _GET_DIST_VECTOR.
-extern void get_vector_length(float x, any y, OPTIONAL(float z, float *length)) NATIVE(11);
+extern void get_vector_length VM_ARGS(float x, any y, OPTIONAL(float z, float *length)) NATIVE(11);
 
 // Returns the distance between point 1 and point 2.
 // Original name: _GET_DIST_VECTOR2.
@@ -232,7 +232,7 @@ extern float get_distance_between(float x1, float y1, float z1, float x2, float 
 // hit_count receives 0, 1 or 2; hit1 is written when there is at least one hit and hit2 only when
 // there are two.
 // Original name: _CALC_IP_CIRCLE_LINE.
-extern void calc_circle_line_hits(float center_x, any center_z, OPTIONAL(float radius, float ax, float az, float bx, float bz, int *hit_count, float *hit1_x, float *hit1_z, float *hit2_x, float *hit2_z)) NATIVE(13);
+extern void calc_circle_line_hits VM_ARGS(float center_x, any center_z, OPTIONAL(float radius, float ax, float az, float bx, float bz, int *hit_count, float *hit1_x, float *hit1_z, float *hit2_x, float *hit2_z)) NATIVE(13);
 
 // Turns two yaw angles in radians into horizontal unit directions and writes their dot product
 // into dot: 1 when they face the same way, -1 when opposite. Fails unless all three arguments are
@@ -243,17 +243,17 @@ extern void calc_angle_dot(float angle_a, float angle_b, OPTIONAL(float *dot)) N
 // Plays a sound effect from this monster's sound bank, with volume and pan set from the monster's
 // position (full volume within 160 units, silent beyond 1200).
 // Original name: _MY_SE_PLAY.
-extern void play_monster_se(int se, OPTIONAL(any extra2, any extra3)) NATIVE(20, 1);
+extern void play_monster_se VM_ARGS(int se, OPTIONAL(any extra2, any extra3)) NATIVE(20, 1);
 
 // Stops a sound effect from this monster's sound bank.
 // Original name: _MY_SE_STOP.
-extern void stop_monster_se(int se, OPTIONAL(any extra2, any extra3)) NATIVE(20, 2);
+extern void stop_monster_se VM_ARGS(int se, OPTIONAL(any extra2, any extra3)) NATIVE(20, 2);
 
 // Plays a sound effect from another monster's sound bank at fixed volume. Monster handles are
 // character numbers 24 to 47 (24 plus the active slot), as get_monster_handle and
 // get_monster_in_range give them. Fails unless both arguments are given.
 // Original name: _MONS_SE_PLAY.
-extern void play_se_on_monster(any monster, OPTIONAL(int se)) NATIVE(20, 3);
+extern void play_se_on_monster VM_ARGS(any monster, OPTIONAL(int se)) NATIVE(20, 3);
 
 // Stops a sound effect from another monster's sound bank. Monster handles are character numbers 24
 // to 47 (24 plus the active slot), as get_monster_handle and get_monster_in_range give them.
@@ -279,7 +279,7 @@ extern void move_camera_to(float x, float y, float z) NATIVE(25, 2);
 // the first monster (the boss), 2 circles a fixed arena point, 4 is a variant of the normal
 // camera, and other values leave the camera to scripts.
 // Original name: _SET_CAMERA_MODE.
-extern void set_camera_mode(OPTIONAL(enum camera_mode mode)) NATIVE(25, 3);
+extern void set_camera_mode VM_ARGS(OPTIONAL(enum camera_mode mode)) NATIVE(25, 3);
 
 // Sets how fast the active camera moves toward its next eye position and look point.
 // Original name: _SET_CAMERA_SPEED.
@@ -293,14 +293,14 @@ extern void shake_camera(float power, int frames) NATIVE(25, 5);
 // near and far (defaults 100, 160, 18, 10). Pass -99999.9 to leave a value unchanged. The engine
 // rejects calls with 1 to 4 arguments, so a fifth, ignored value is needed.
 // Original name: _SET_CAMERA_CTRL_PARAM1.
-extern void set_camera_distance_limits(float min_dist, float max_dist, float near_height, float far_height, any ignored) NATIVE(31);
+extern void set_camera_distance_limits VM_ARGS(float min_dist, float max_dist, float near_height, float far_height, any ignored) NATIVE(31);
 
 // Sets the active camera's height limits and how far it stays above the ground (defaults height
 // -15, max 40, min -15, resting max 20, resting min -15, ground space 25). Pass -99999.9 to leave
 // a value unchanged. The engine rejects calls with 1 to 6 arguments, so a seventh, ignored value
 // is needed.
 // Original name: _SET_CAMERA_CTRL_PARAM2.
-extern void set_camera_height_limits(float height, float max_height, float min_height, float rest_max_height, float rest_min_height, float ground_space, any ignored) NATIVE(32);
+extern void set_camera_height_limits VM_ARGS(float height, float max_height, float min_height, float rest_max_height, float rest_min_height, float ground_space, any ignored) NATIVE(32);
 
 // Restores the active camera's distance and height limits to their defaults (distance 100 to 160,
 // near height 18, far height 10, height -15, max 40, min -15, resting max 20, resting min -15,
@@ -311,7 +311,7 @@ extern void reset_camera_limits(void) NATIVE(25, 8);
 // Writes a random whole number from 0 to range - 1 into value. Fails unless both arguments are
 // given.
 // Original name: _GET_RND.
-extern void get_random_int(any range, OPTIONAL(any value)) NATIVE(35);
+extern void get_random_int VM_ARGS(any range, OPTIONAL(any value)) NATIVE(35);
 
 // Returns a random number from 0 up to range, truncated to a whole number and stored as a float.
 // Original name: _GET_RNDF.
@@ -320,7 +320,7 @@ extern float get_random_float(float range, ...) NATIVE(35, 1);
 // Stores value in a monster variable. Indexes 0 to 7 belong to this monster; 8 to 135 are shared
 // by all monsters on the floor. An int value is stored as an int and a float as a float.
 // Original name: _V_PUSH.
-extern void set_monster_var(int index, any value) NATIVE(35, 2);
+extern void set_monster_var VM_ARGS(int index, any value) NATIVE(35, 2);
 
 // Reads a monster variable into value, as an int or a float to match the receiving variable's
 // type. Indexes 0 to 7 belong to this monster; 8 to 135 are shared by all monsters on the floor.
@@ -342,7 +342,7 @@ extern int get_monster_kind_slot(void) NATIVE(41);
 // Returns this monster's handle (24 plus its active slot), the number other natives take to pick a
 // monster.
 // Original name: _GET_USERID.
-extern int get_monster_handle(...) NATIVE(35, 7);
+extern int get_monster_handle VM_ARGS(...) NATIVE(35, 7);
 
 // When the player is transformed into a monster and that form matches the one this monster kind
 // recognises as its own, returns the form's id; otherwise returns -1.
@@ -377,19 +377,19 @@ extern void get_frame_pos(string frame_name, float *x, float *y, float *z) NATIV
 // into x, y, z. With chara_name only the linked part with that name is searched. Fails unless
 // given four or five arguments.
 // Original name: _GET_OBJ_POS.
-extern void get_object_pos(any object_name, OPTIONAL(float *x, float *y, float *z, string chara_name)) NATIVE(49);
+extern void get_object_pos VM_ARGS(any object_name, OPTIONAL(float *x, float *y, float *z, string chara_name)) NATIVE(49);
 
 // Writes the world position of the named frame on the map piece this monster is linked to into x,
 // y, z. Fails if the monster is not linked to a map piece or the frame is missing.
 // Original name: _GET_MAPOBJ_POS.
-extern void get_map_object_pos(any frame_name, float *x, float *y, OPTIONAL(float *z)) NATIVE(50);
+extern void get_map_object_pos VM_ARGS(any frame_name, float *x, float *y, OPTIONAL(float *z)) NATIVE(50);
 
 // Sets (on = 1) or clears (on = 0) dungeon pause bits given in mask: 1 monster AI, 2 player
 // movement, 4 player control, 0x10 monster drawing, 0x20 sky, 0x80 map, 0x100 minimap, 0x200
 // pickups, 0x400 player status, 0x800 exit heal, 0x1000 enemy movement, 0x2000 weapon drawing,
 // 0x4000 battle music, 0x8000 pad reset, 0x10000 monster names.
 // Original name: _SET_PAUSE.
-extern void set_pause_flags(enum pause_flags mask, int on, OPTIONAL(any extra3)) NATIVE(51);
+extern void set_pause_flags VM_ARGS(enum pause_flags mask, int on, OPTIONAL(any extra3)) NATIVE(51);
 
 // Returns which of the dungeon pause bits in mask are set (the bitwise AND); the bits are the ones
 // set_pause_flags lists.
@@ -406,7 +406,7 @@ extern void set_dungeon_flag(int flag, int value) NATIVE(54);
 
 // Returns the kind of the last attack that hit this monster.
 // Original name: _GET_ATT_TYPE.
-extern int get_last_hit_type(...) NATIVE(35, 20);
+extern int get_last_hit_type VM_ARGS(...) NATIVE(35, 20);
 
 // Returns the status bits of the character the player controls: 1 poison, 2 slow, 0x10 power
 // boost, and 4, 8, 0x20, 0x40 for other conditions.
@@ -416,7 +416,7 @@ extern int get_player_status(void) NATIVE(56);
 // Copies reserved image 0 or 1, loaded earlier by the monster's script, over the monster's first
 // texture image. Fails if that image was not loaded.
 // Original name: _TRANS_RESERV_IMG.
-extern void apply_reserved_texture(OPTIONAL(int image)) NATIVE(57);
+extern void apply_reserved_texture VM_ARGS(OPTIONAL(int image)) NATIVE(57);
 
 // Returns which of this monster's status bits in mask are set: 1 poison, 2 slow, 8 and 0x20 greyed
 // out by a hit.
@@ -426,26 +426,26 @@ extern int get_status_flags(enum monster_status mask, ...) NATIVE(35, 23);
 // Stores value in this monster's second variable set, indexes 0 to 31. An int value is stored as
 // an int and a float as a float. Fails unless both arguments are given.
 // Original name: _V_PUSH2.
-extern void set_monster_var2(any index, OPTIONAL(any value)) NATIVE(35, 24);
+extern void set_monster_var2 VM_ARGS(any index, OPTIONAL(any value)) NATIVE(35, 24);
 
 // Reads this monster's second variable set, indexes 0 to 31, into value as an int or a float to
 // match the receiving variable's type. Fails unless both arguments are given.
 // Original name: _V_POP2.
-extern void get_monster_var2(any index, OPTIONAL(void *value)) NATIVE(35, 25);
+extern void get_monster_var2 VM_ARGS(any index, OPTIONAL(void *value)) NATIVE(35, 25);
 
 // Sets how the player picks a target: 0 locks onto the nearest monster, 2 uses the cycling target
 // selection.
 // Original name: _SET_LOCKON_MODE.
-extern void set_lockon_mode(enum lock_on_mode mode, OPTIONAL(any extra2, any extra3, any extra4, any extra5)) NATIVE(60, 1);
+extern void set_lockon_mode VM_ARGS(enum lock_on_mode mode, OPTIONAL(any extra2, any extra3, any extra4, any extra5)) NATIVE(60, 1);
 
 // Sets the scene's motion blur amount; 0 turns it off.
 // Original name: _SET_MOTION_BLUR.
-extern void set_motion_blur(any amount, OPTIONAL(any extra2, any extra3)) NATIVE(60, 2);
+extern void set_motion_blur VM_ARGS(any amount, OPTIONAL(any extra2, any extra3)) NATIVE(60, 2);
 
 // Shows (show = 1) or hides (show = 0) a piece of a named part of the active maps. Called with two
 // arguments (parts_name, show) it shows or hides the whole part.
 // Original name: _SET_MAPOBJ_SHOW.
-extern void show_map_part(any parts_name, any piece_name, int show) NATIVE(35, 28);
+extern void show_map_part VM_ARGS(any parts_name, any piece_name, int show) NATIVE(35, 28);
 
 // Returns event state chosen by selector. Only selector 0 is supported: the stopwatch time limit,
 // 0 when the stopwatch counts up.
@@ -457,13 +457,13 @@ extern int get_event_info(enum event_info selector, ...) NATIVE(64);
 // going. Monster handles are character numbers 24 to 47 (24 plus the active slot), as
 // get_monster_handle and get_monster_in_range give them.
 // Original name: _MONS_SE_LOOP.
-extern void loop_se_on_monster(any monster, any se, any keep_frames, OPTIONAL(any extra4)) NATIVE(60, 5);
+extern void loop_se_on_monster VM_ARGS(any monster, any se, any keep_frames, OPTIONAL(any extra4)) NATIVE(60, 5);
 
 // Sets how this monster's sound effects are mixed: 1 sets volume and pan from its position, 2
 // plays them at fixed volume. Any other value lasts one frame, after which the monster goes back
 // to 1.
 // Original name: _MONS_VOL_CTRL.
-extern void set_se_positional(any mode, OPTIONAL(any extra2, any extra3)) NATIVE(35, 31);
+extern void set_se_positional VM_ARGS(any mode, OPTIONAL(any extra2, any extra3)) NATIVE(35, 31);
 
 // Returns the distance from this monster to the point x, y, z.
 // Original name: _GET_DIST.
@@ -473,20 +473,20 @@ extern float get_distance_to(float x, float y, float z, ...) NATIVE(60, 10);
 // distance units, and writes how far it gets before hitting map collision into clear_dist
 // (distance when nothing is hit).
 // Original name: _SEARCH_AREA.
-extern void measure_clear_distance(any distance, OPTIONAL(float angle, float *clear_dist)) NATIVE(70, 1);
+extern void measure_clear_distance VM_ARGS(any distance, OPTIONAL(float angle, float *clear_dist)) NATIVE(70, 1);
 
 // Writes this monster's home position, where it was placed unless a script moved it, into x, y, z.
 // Original name: _GET_PLACE_POS.
-extern void get_home_pos(OPTIONAL(float *x, float *y, float *z)) NATIVE(70, 2);
+extern void get_home_pos VM_ARGS(OPTIONAL(float *x, float *y, float *z)) NATIVE(70, 2);
 
 // Sets this monster's home position.
 // Original name: _SET_PLACE_POS.
-extern void set_home_pos(any x, any y, any z) NATIVE(70, 3);
+extern void set_home_pos VM_ARGS(any x, any y, any z) NATIVE(70, 3);
 
 // Finds an active monster of the given kind number and writes its position into x, y, z. Only the
 // first N active slots are checked, where N is the monster count, and it fails if none matches.
 // Original name: _GET_INDEX_POS.
-extern void get_kind_pos(any kind, OPTIONAL(float *x, float *y, float *z)) NATIVE(60, 14);
+extern void get_kind_pos VM_ARGS(any kind, OPTIONAL(float *x, float *y, float *z)) NATIVE(60, 14);
 
 // Writes this monster's position into x, y, z. Fails unless all three are given.
 // Original name: _GET_POS.
@@ -494,13 +494,13 @@ extern void get_pos(float *x, OPTIONAL(float *y, float *z)) NATIVE(70, 5);
 
 // Moves this monster straight to x, y, z.
 // Original name: _SET_POS.
-extern void set_pos(any x, any y, any z, OPTIONAL(any extra4, any extra5)) NATIVE(70, 6);
+extern void set_pos VM_ARGS(any x, any y, any z, OPTIONAL(any extra4, any extra5)) NATIVE(70, 6);
 
 // Writes this monster's rotation in radians into rot_x, rot_y (yaw), rot_z. Called with four
 // arguments, the first is an active monster slot (0 to 23, the handle minus 24) and that monster's
 // rotation is written to the other three.
 // Original name: _GET_ROT.
-extern void get_rot(any rot_x, float *rot_y, float *rot_z, OPTIONAL(any extra4)) NATIVE(70, 7);
+extern void get_rot VM_ARGS(any rot_x, float *rot_y, float *rot_z, OPTIONAL(any extra4)) NATIVE(70, 7);
 
 // Sets this monster's rotation in radians at once and cancels any turn started by turn_to. Fails
 // unless all three are given.
@@ -510,13 +510,13 @@ extern void set_rot(float rot_x, float rot_y, OPTIONAL(float rot_z)) NATIVE(70, 
 // Starts this monster turning toward yaw (radians) by turn_speed radians per frame. The turn ends
 // when the monster faces yaw; get_rot shows progress.
 // Original name: _SET_NEXT_ROT.
-extern void turn_to(OPTIONAL(float yaw, float turn_speed)) NATIVE(70, 9);
+extern void turn_to VM_ARGS(OPTIONAL(float yaw, float turn_speed)) NATIVE(70, 9);
 
 // Starts this monster walking toward x, y, z at speed units per frame. The walk ends within
 // arrive_dist units of the point (20 when omitted), and ends at once if the monster is already
 // that close; check_move_end polls it.
 // Original name: _SET_NEXT_POS.
-extern void move_to(any x, OPTIONAL(float y, float z, any speed, float arrive_dist)) NATIVE(70, 10);
+extern void move_to VM_ARGS(any x, OPTIONAL(float y, float z, any speed, float arrive_dist)) NATIVE(70, 10);
 
 // Returns 1 when this monster is within the arrive distance of its move_to point, else 0.
 // Original name: _CHK_MOVE_END.
@@ -529,7 +529,7 @@ extern void stop_moving(void) NATIVE(70, 12);
 // Writes the position of this monster's target, usually the player, into x, y, z, and with a
 // fourth argument the distance to it into dist. Fails if there is no target.
 // Original name: _GET_TARGET_POS.
-extern void get_target_pos(any x, any y, any z, OPTIONAL(float *dist)) NATIVE(70, 13);
+extern void get_target_pos VM_ARGS(any x, any y, any z, OPTIONAL(float *dist)) NATIVE(70, 13);
 
 // Returns the distance from this monster to its target. Fails if there is no target.
 // Original name: _GET_TARGET_DIST.
@@ -538,7 +538,7 @@ extern float get_target_dist(void) NATIVE(70, 14);
 // Returns the world yaw in radians from this monster toward its target. Compare it with the
 // monster's own yaw from get_rot. Fails if there is no target.
 // Original name: _GET_TARGET_ANGLE.
-extern float get_target_angle(...) NATIVE(70, 15);
+extern float get_target_angle VM_ARGS(...) NATIVE(70, 15);
 
 // Writes the point distance units from this monster's target in the world direction angle (yaw in
 // radians) into x, y, z. Fails if there is no target.
@@ -568,7 +568,7 @@ extern float get_angle_to(float x, float y, float z, ...) NATIVE(70, 20);
 
 // Returns this monster's height above the ground, or 0 when it is standing on the ground.
 // Original name: _GET_HIGH.
-extern float get_air_height(...) NATIVE(70, 21);
+extern float get_air_height VM_ARGS(...) NATIVE(70, 21);
 
 // Writes the position of the nearest other script-driven monster into x, y, z and its distance
 // into dist. With no other monster the position is 0, 0, 0 and dist is -1.
@@ -618,12 +618,12 @@ extern float get_active_monster_dist(int monster) NATIVE(99);
 // 24 to 47 (24 plus the active slot), as get_monster_handle and get_monster_in_range give them.
 // Fails unless both arguments are given.
 // Original name: _GET_ACTIVE_MONS_ANGLE.
-extern void get_active_monster_yaw(any monster, OPTIONAL(any yaw, any extra3)) NATIVE(100);
+extern void get_active_monster_yaw VM_ARGS(any monster, OPTIONAL(any yaw, any extra3)) NATIVE(100);
 
 // Writes the rotation that faces this monster toward the point x, y, z into rot_x (pitch), rot_y
 // (yaw) and rot_z (0), in radians. Fails unless all six arguments are given.
 // Original name: _GET_REF_ROT.
-extern void get_rot_to(any x, OPTIONAL(float y, float z, float *rot_x, float *rot_y, float *rot_z)) NATIVE(70, 31);
+extern void get_rot_to VM_ARGS(any x, OPTIONAL(float y, float z, float *rot_x, float *rot_y, float *rot_z)) NATIVE(70, 31);
 
 // Gets the direction from the from point to the to point (note the to point comes first). With one
 // out argument dir_x receives the yaw in radians; with three they receive the unit direction
@@ -635,7 +635,7 @@ extern void get_dir_between(float to_x, float to_y, float to_z, float from_x, fl
 // its facing), up to distance units, and writes how far it gets before hitting map collision into
 // clear_dist (distance when nothing is hit).
 // Original name: _FLYING_SEARCH_AREA.
-extern void measure_flight_clearance(any distance, OPTIONAL(float yaw, float *clear_dist)) NATIVE(70, 33);
+extern void measure_flight_clearance VM_ARGS(any distance, OPTIONAL(float yaw, float *clear_dist)) NATIVE(70, 33);
 
 // Returns how high the point x, y, z is above the map ground below it. If no ground is found
 // within 300 units below, it returns -3.4e38.
@@ -652,7 +652,7 @@ extern int get_monster_in_range(float range, int rank) NATIVE(70, 35);
 // x, y, z. monster is a handle (24 to 47) or -1 for this monster. If the entry frame is missing
 // the monster's own position is written.
 // Original name: _GET_ENTRY_OBJ_POS.
-extern void get_entry_object_pos(any monster, OPTIONAL(int entry, float *x, float *y, float *z)) NATIVE(100, 6);
+extern void get_entry_object_pos VM_ARGS(any monster, OPTIONAL(int entry, float *x, float *y, float *z)) NATIVE(100, 6);
 
 // Casts a ray from the from point to the to point and returns how far it gets before hitting map
 // collision (the full length when nothing is hit).
@@ -692,14 +692,14 @@ extern void ride_map_piece(string part_name, string piece_name) NATIVE(110, 5);
 // already loaded. level is the load level (-1 by default). is_loaded receives 1 when the base was
 // newly loaded and 0 when it was already loaded or failed.
 // Original name: _LOAD_EFFECT_SCRIPT.
-extern void load_effect(any effect, OPTIONAL(int level, int *is_loaded)) NATIVE(110, 6);
+extern void load_effect VM_ARGS(any effect, OPTIONAL(int level, int *is_loaded)) NATIVE(110, 6);
 
 // Sets when a photo of this monster can be taken. With one argument, photo_no, a photo can be
 // taken at any time; with four arguments (motion_name, start_ratio, end_ratio, photo_no) only
 // while that motion plays between start_ratio and end_ratio, fractions 0.0 to 1.0 of its length.
 // Other argument counts do nothing.
 // Original name: _SET_SCOOP.
-extern void set_photo_window(any photo_no_or_motion, OPTIONAL(float start_ratio, float end_ratio, int photo_no)) NATIVE(110, 7);
+extern void set_photo_window VM_ARGS(any photo_no_or_motion, OPTIONAL(float start_ratio, float end_ratio, int photo_no)) NATIVE(110, 7);
 
 // Reads an image file, such as "dungeon/monster/b13a01.img", into reserve slot 0 or 1 of this
 // monster so a later texture swap can copy it into the model.
@@ -709,7 +709,7 @@ extern void load_reserve_image(int slot, string path) NATIVE(110, 8);
 // Sets how many of the monsters nearest their target are allowed to come into sight, from 0 to 23.
 // Applies to all monsters on the floor.
 // Original name: _SET_PRIORITY_LIMMIT.
-extern void set_visible_monster_limit(int count, OPTIONAL(any extra2)) NATIVE(110, 9);
+extern void set_visible_monster_limit VM_ARGS(int count, OPTIONAL(any extra2)) NATIVE(110, 9);
 
 // Turns scene lighting on (1) or off (0) for this monster's model, or for one named frame of it.
 // Off draws it with flat neutral colour 128.
@@ -741,19 +741,19 @@ extern void start_color_pulse(int red, int green, int blue, int pulse_count, int
 
 // Stops the colour pulse started with start_color_pulse on this monster.
 // Original name: _RESET_PALLET_ANIM.
-extern void stop_color_pulse(OPTIONAL(any extra1)) NATIVE(120, 6);
+extern void stop_color_pulse VM_ARGS(OPTIONAL(any extra1)) NATIVE(120, 6);
 
 // Sets (on = 1) or clears (on = 0) behaviour bits on this monster: 1 no lock-on, 4 walking
 // replaces velocity, 8 ignore map collision, 16 not pushed by other monsters, 32 takes no damage
 // and cannot be stunned, 64 vanishes at once on death, 256 skip ground search, 512 always counts
 // as in sight.
 // Original name: _SET_ATTRIB.
-extern void set_attrib(OPTIONAL(enum monster_attrib mask, int on)) NATIVE(120, 7);
+extern void set_attrib VM_ARGS(OPTIONAL(enum monster_attrib mask, int on)) NATIVE(120, 7);
 
 // Sets (on = 1, the default) or clears (on = 0) status bits on this monster's scene character
 // slot.
 // Original name: _SET_STATUS.
-extern void set_scene_status(any mask, OPTIONAL(int on)) NATIVE(110, 18);
+extern void set_scene_status VM_ARGS(any mask, OPTIONAL(int on)) NATIVE(110, 18);
 
 // Sets (on = 1) or clears (on = 0) mask flag bits on this monster. Bit 1 stops it guarding hits;
 // bit 2 stops it dodging attacks.
@@ -803,7 +803,7 @@ extern void get_scale(float *x, float *y, float *z) NATIVE(120, 19);
 
 // Returns the radius this monster uses for map collision, or 15.0 when it has none.
 // Original name: _GET_MONS_WIDTH.
-extern float get_body_radius(...) NATIVE(140);
+extern float get_body_radius VM_ARGS(...) NATIVE(140);
 
 // Knocks this monster back at speed (scaled by its knockback rate), slowing by decel each step,
 // for the given number of steps.
@@ -813,12 +813,12 @@ extern void start_knockback(float speed, float decel, int frames) NATIVE(150);
 // Marks this monster dead, stops its colour pulse, and scatters its reward money, its
 // transformation badge if it has one, and random drop items, playing a sound.
 // Original name: _SET_DEAD_START.
-extern void start_death_drops(OPTIONAL(any extra1)) NATIVE(150, 1);
+extern void start_death_drops VM_ARGS(OPTIONAL(any extra1)) NATIVE(150, 1);
 
 // Starts this monster's fade-out, plays its death smoke unless attribute bit 2 is set, and
 // scatters weapon experience pickups for the character that dealt the last hit.
 // Original name: _SET_DEAD_OFF.
-extern void finish_death(OPTIONAL(any extra1, any extra2)) NATIVE(150, 2);
+extern void finish_death VM_ARGS(OPTIONAL(any extra1, any extra2)) NATIVE(150, 2);
 
 // Clears this monster's held or thrown state after it has been caught or thrown.
 // Original name: _SET_SHROW_END.
@@ -826,16 +826,16 @@ extern void end_throw(void) NATIVE(150, 3);
 
 // Returns this monster's current attack power.
 // Original name: _GET_BASE_ATTACK.
-extern int get_attack(...) NATIVE(160);
+extern int get_attack VM_ARGS(...) NATIVE(160);
 
 // Sets this monster's defence to its table defence multiplied by rate.
 // Original name: _SET_DEF_RATE.
-extern void set_defense_rate(float rate, OPTIONAL(any extra2)) NATIVE(160, 1);
+extern void set_defense_rate VM_ARGS(float rate, OPTIONAL(any extra2)) NATIVE(160, 1);
 
 // Sets this monster's life. An int sets it directly; a float sets it as a fraction of max life.
 // The result is clamped to 0 through max life, and a value above 0 marks the monster alive again.
 // Original name: _SET_MONSTER_LIFE.
-extern void set_life(any life, OPTIONAL(any extra2, any extra3)) NATIVE(160, 2);
+extern void set_life VM_ARGS(any life, OPTIONAL(any extra2, any extra3)) NATIVE(160, 2);
 
 // Reads this monster's life into an int variable, or its life as a fraction 0.0 to 1.0 of max life
 // into a float variable.
@@ -844,12 +844,12 @@ extern void get_life(void *life) NATIVE(160, 3);
 
 // Returns how many hits on this monster did no damage.
 // Original name: _GET_NO_DAMAGE_CNT.
-extern int get_no_damage_count(...) NATIVE(160, 4);
+extern int get_no_damage_count VM_ARGS(...) NATIVE(160, 4);
 
 // Returns a monster's current life. Scene character number of a monster (its slot plus 24), or -1
 // for this monster.
 // Original name: _GET_ACTIVE_MONS_LIFEI.
-extern int get_monster_life(any monster, ...) NATIVE(160, 5);
+extern int get_monster_life VM_ARGS(any monster, ...) NATIVE(160, 5);
 
 // Returns a monster's life as a fraction 0.0 to 1.0 of its max life. Scene character number of a
 // monster (its slot plus 24), or -1 for this monster.
@@ -879,7 +879,7 @@ extern void show_damage_number(int monster, int value, OPTIONAL(enum damage_numb
 // Returns a monster's grade from its kind's table. Scene character number of a monster (its slot
 // plus 24), or -1 for this monster.
 // Original name: _GET_MONS_GRADE.
-extern int get_monster_grade(any monster, ...) NATIVE(160, 11);
+extern int get_monster_grade VM_ARGS(any monster, ...) NATIVE(160, 11);
 
 // Sets a monster's chance to guard a hit to its table chance multiplied by rate, capped at 100
 // percent. Scene character number of a monster (its slot plus 24), or -1 for this monster.
@@ -896,7 +896,7 @@ extern void set_dodge_rate(int monster, float rate) NATIVE(160, 13);
 // values multiplied by rate, capped at 100. Scene character number of a monster (its slot plus
 // 24), or -1 for this monster.
 // Original name: _SET_EXT_PARAM_RATE.
-extern void set_damage_kind_rate(int monster, enum damage_kind_mask mask, float rate, OPTIONAL(any extra4)) NATIVE(170, 4);
+extern void set_damage_kind_rate VM_ARGS(int monster, enum damage_kind_mask mask, float rate, OPTIONAL(any extra4)) NATIVE(170, 4);
 
 // Returns nonzero when this monster is a boss, whose life shows across the foot of the screen.
 // Original name: _GET_BOSS_FLAG.
@@ -905,7 +905,7 @@ extern int is_boss(void) NATIVE(160, 15);
 // Sets the size of one of this monster's entry objects, the frames used as hit points; index -1
 // means 0.
 // Original name: _SET_INDEXOBJ_SIZE.
-extern void set_entry_object_size(int index, float size, OPTIONAL(any extra3, any extra4)) NATIVE(170, 6);
+extern void set_entry_object_size VM_ARGS(int index, float size, OPTIONAL(any extra3, any extra4)) NATIVE(170, 6);
 
 // Returns the size of one of this monster's entry objects; index -1 means 0.
 // Original name: _GET_INDEXOBJ_SIZE.
@@ -919,7 +919,7 @@ extern void reset_motion(void) NATIVE(180);
 // per step; -1 keeps the current speed. flags: 1 pause, 2 hold on the last frame instead of
 // looping, 4 restart without blending.
 // Original name: _SET_MOS.
-extern void set_motion(any motion_name, OPTIONAL(float speed, enum motion_flags flags)) NATIVE(180, 2);
+extern void set_motion VM_ARGS(any motion_name, OPTIONAL(float speed, enum motion_flags flags)) NATIVE(180, 2);
 
 // Reads 1 into is_done when the motion of this monster, or of its named chained part, reaches its
 // last frame within two steps or no motion plays.
@@ -986,7 +986,7 @@ extern int get_effect_owner(int slot) NATIVE(201);
 // Sets script value number index of this monster's effect in slot, -1 for the last started one, to
 // an int or float.
 // Original name: _ESM_SET_VALUE.
-extern void set_effect_value(int slot, int index, any value) NATIVE(190, 12);
+extern void set_effect_value VM_ARGS(int slot, int index, any value) NATIVE(190, 12);
 
 // Adds a sword trail to this monster using its trail effect 0 to 2. The trail starts while
 // motion_name plays between start_ratio and end_ratio (fractions 0.0 to 1.0 of its length) and is
@@ -1015,19 +1015,19 @@ extern void clear_owner_effects(int owner) NATIVE(190, 17);
 
 // Numbers the disc calls that this table never registers. The engine prints "not found ext" and
 // moves on, so these calls do nothing.
-extern void _EXT_17(...) NATIVE(17);
-extern void _EXT_18(...) NATIVE(18);
-extern void _EXT_20(...) NATIVE(20);
-extern void _EXT_67(...) NATIVE(60, 7);
-extern void _EXT_68(...) NATIVE(60, 8);
-extern void _EXT_69(...) NATIVE(60, 9);
-extern void _EXT_141(...) NATIVE(140, 1);
-extern void _EXT_142(...) NATIVE(140, 2);
-extern void _EXT_143(...) NATIVE(140, 3);
-extern void _EXT_154(...) NATIVE(154);
-extern void _EXT_155(...) NATIVE(155);
-extern void _EXT_157(...) NATIVE(157);
-extern void _EXT_159(...) NATIVE(159);
+extern void _EXT_17 VM_ARGS(...) NATIVE(17);
+extern void _EXT_18 VM_ARGS(...) NATIVE(18);
+extern void _EXT_20 VM_ARGS(...) NATIVE(20);
+extern void _EXT_67 VM_ARGS(...) NATIVE(60, 7);
+extern void _EXT_68 VM_ARGS(...) NATIVE(60, 8);
+extern void _EXT_69 VM_ARGS(...) NATIVE(60, 9);
+extern void _EXT_141 VM_ARGS(...) NATIVE(140, 1);
+extern void _EXT_142 VM_ARGS(...) NATIVE(140, 2);
+extern void _EXT_143 VM_ARGS(...) NATIVE(140, 3);
+extern void _EXT_154 VM_ARGS(...) NATIVE(154);
+extern void _EXT_155 VM_ARGS(...) NATIVE(155);
+extern void _EXT_157 VM_ARGS(...) NATIVE(157);
+extern void _EXT_159 VM_ARGS(...) NATIVE(159);
 
 #include <helpers/monster.h>
 

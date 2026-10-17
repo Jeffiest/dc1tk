@@ -307,9 +307,9 @@ fn resolved_statement(
         }
     }
     if let Some(expression) = expression {
-        // x = native(); and x = (any)native();: the native writes its result into x, as it is
+        // x = native(); and x = FLOAT_AS_INT(native());: the native writes its result into x, as it is
         let value = match &expression["value"] {
-            cast if cast.kind() == kinds::CAST && cast["type"] == "any" => &cast["operand"],
+            as_is if as_is.kind() == kinds::AS_IS => &as_is["operand"],
             value => value,
         };
         if expression.kind() == kinds::ASSIGN && value.kind() == kinds::CALL && is_native(value.text("name"), found) {

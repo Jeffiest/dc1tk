@@ -265,7 +265,15 @@ pub(super) fn statement_nodes(state: &mut State) -> Result<Vec<Node>> {
         "switch" => Ok(vec![switch(state)?]),
         "goto" => goto(state),
         "return" => return_statement(state),
-        "print" => print(state),
+        "PRINT" => print(state),
+        word if VM_STATEMENTS.iter().any(|(name, _)| *name == word) => {
+            let kind = VM_STATEMENTS.iter().find(|(name, _)| *name == word).map(|(_, kind)| *kind).unwrap();
+            state.take();
+            state.expect("(")?;
+            state.expect(")")?;
+            state.expect(";")?;
+            Ok(vec![node!({"kind": kind})])
+        }
         word if SIMPLE.contains(&word) => {
             state.take();
             state.expect(";")?;

@@ -238,7 +238,7 @@ appended after the map's placements.
 Door to Another Map adds a door at the cursor that goes to a map of the list
 (or a new map of the mod): the door point (its target the map), a program in
 the mod's patch of this map's script (`doors_MAP.c`, appended to:
-`jump_to_map(-1, "TARGET", map_start); wait;`, or another program of the
+`jump_to_map(-1, "TARGET", map_start); WAIT();`, or another program of the
 target to arrive at), and the map line's `"programs"` giving the door that
 program. The way back is a door in the other map, made the same way.
 

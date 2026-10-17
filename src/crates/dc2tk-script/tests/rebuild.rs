@@ -22,10 +22,10 @@ fn script(tools: &Tools, body: &str) -> Vec<u8> {
 }
 
 fn disc(tools: &Tools, folder: &Path, filler: usize) -> PathBuf {
-    let chara = pack(&[("info.cfg", b"MODEL c01;".to_vec()), ("c01.stb", script(tools, "    wait;\n"))]);
+    let chara = pack(&[("info.cfg", b"MODEL c01;".to_vec()), ("c01.stb", script(tools, "    WAIT();\n"))]);
     let (index, dat) = archive_files(&[
-        ("\\map\\t01.stb", script(tools, "    wait;\n")),
-        ("\\map\\t02.stb", script(tools, "    end;\n")),
+        ("\\map\\t01.stb", script(tools, "    WAIT();\n")),
+        ("\\map\\t02.stb", script(tools, "    END();\n")),
         ("\\chara\\c01.chr", chara),
     ]);
     let mut files = vec![("DATA.HD4", index), ("DATA.DAT", dat)];
@@ -77,7 +77,7 @@ fn unchanged_source_rebuilds_the_same_image() {
     let tools = Tools::new();
     let folder = TempDir::new("rebuild-unchanged");
     let (iso_path, out, found, _) =
-        built(&tools, folder.path(), 4, &[("map/t01.c", "    wait;\n"), ("map/t02.c", "    end;\n")]);
+        built(&tools, folder.path(), 4, &[("map/t01.c", "    WAIT();\n"), ("map/t02.c", "    END();\n")]);
     assert!(found.scripts.is_empty());
     assert!(fs::read(&out).unwrap() == fs::read(&iso_path).unwrap());
 }
@@ -86,20 +86,24 @@ fn unchanged_source_rebuilds_the_same_image() {
 fn changed_scripts_land_in_place_inside_packs_and_in_the_filler() {
     let tools = Tools::new();
     let folder = TempDir::new("rebuild-changed");
-    let long_body = "    wait;\n".repeat(400);
+    let long_body = "    WAIT();\n".repeat(400);
     let (_, out, found, result) = built(
         &tools,
         folder.path(),
         4,
-        &[("map/t01.c", &long_body), ("map/t02.c", "    end;\n"), ("chara/c01.chr.d/c01.c", "    wait;\n    wait;\n")],
+        &[
+            ("map/t01.c", &long_body),
+            ("map/t02.c", "    END();\n"),
+            ("chara/c01.chr.d/c01.c", "    WAIT();\n    WAIT();\n"),
+        ],
     );
     assert_eq!(sources(&found), strings(&["chara/c01.chr.d/c01.c", "map/t01.c"]));
     let moved: BTreeMap<&str, bool> = result.placed.iter().map(|item| (item.path.as_str(), item.moved)).collect();
     assert_eq!(moved, BTreeMap::from([("chara/c01.chr", false), ("map/t01.stb", true)]));
     assert_eq!(result.grown, 0);
     assert_eq!(read(&out, "map/t01.stb", &[]), script(&tools, &long_body));
-    assert_eq!(read(&out, "map/t02.stb", &[]), script(&tools, "    end;\n"));
-    assert_eq!(read(&out, "chara/c01.chr", &["c01.stb"]), script(&tools, "    wait;\n    wait;\n"));
+    assert_eq!(read(&out, "map/t02.stb", &[]), script(&tools, "    END();\n"));
+    assert_eq!(read(&out, "chara/c01.chr", &["c01.stb"]), script(&tools, "    WAIT();\n    WAIT();\n"));
     assert_eq!(read(&out, "chara/c01.chr", &["info.cfg"]), b"MODEL c01;");
     assert!(build::check(&out, &found.scripts).unwrap().is_empty());
 }
@@ -108,7 +112,7 @@ fn changed_scripts_land_in_place_inside_packs_and_in_the_filler() {
 fn image_grows_when_there_is_no_filler() {
     let tools = Tools::new();
     let folder = TempDir::new("rebuild-grows");
-    let long_body = "    wait;\n".repeat(400);
+    let long_body = "    WAIT();\n".repeat(400);
     let (iso_path, out, _, result) = built(&tools, folder.path(), 0, &[("map/t01.c", &long_body)]);
     assert!(result.grown > 0);
     assert_eq!(

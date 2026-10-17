@@ -51,7 +51,7 @@ fn calls_carry_arguments_lines_and_functions_and_skip_comments() {
         folder.path(),
         &[(
             "map/m.c",
-            "// calls set_flag(1, 1) in a comment\nvoid start(void)\n{\n    set_flag(FLAG_A + 1, get(2, 3));\n    print(\"set_flag(9)\");\n}\n",
+            "// calls set_flag(1, 1) in a comment\nvoid start(void)\n{\n    set_flag(FLAG_A + 1, get(2, 3));\n    PRINT(\"set_flag(9)\");\n}\n",
         )],
     );
     let found = index::calls(&root, &BTreeSet::from(["set_flag".to_string()])).unwrap();

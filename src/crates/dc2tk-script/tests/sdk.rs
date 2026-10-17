@@ -232,10 +232,11 @@ fn void_pointers_are_out_parameters_of_any_type() {
     let params = header["natives"][0]["params"].as_array().unwrap();
     assert!(params[1].same_value(&node!({"name": "value", "type": "any", "out": true, "optional": false})));
     assert!(params[2].same_value(&node!({"name": "other", "type": "any", "out": true, "optional": true})));
-    assert_eq!(
-        source::native_declaration(&header["natives"][0]).unwrap(),
-        "extern void get_random(any range, void *value, OPTIONAL(void *other)) NATIVE(1013);"
-    );
+    // any is no C type: C tools read the parameters in VM_ARGS(...) as unchecked ones
+    let written = source::native_declaration(&header["natives"][0]).unwrap();
+    assert_eq!(written, "extern void get_random VM_ARGS(any range, void *value, OPTIONAL(void *other)) NATIVE(1013);");
+    let again = parse::parse(&written).unwrap()["declarations"].clone();
+    assert!(again["natives"][0]["params"].same_value(&header["natives"][0]["params"]));
 }
 
 const CONSTANT_HEADER: &str = "#include <dc2tk.h>
@@ -375,16 +376,17 @@ fn calls_by_raw_number_show_as_direct() {
 }
 
 #[test]
-fn values_the_vm_stores_as_they_are_show_as_any() {
+fn values_the_vm_keeps_as_they_are_show_as_its_macros() {
     let header = EVENT_HEADER.replace("#endif", "extern float get_scale(void) NATIVE(654);\n#endif");
     let headers = headers_with("event.h", &header);
-    let text = "#include <event.h>\n\nPROGRAM(init, f);\nMAIN(f);\n\nint half(int v)\n{\n    return v;\n}\n\nvoid f(void)\n{\n    int count;\n    float scale;\n\n    count = (any)get_scale();\n    count = (any)(scale * 2.0);\n    half((any)scale);\n    scale = 0;\n    count = (any)(count && 3);\n}\n";
+    let text = "#include <event.h>\n\nPROGRAM(init, f);\nMAIN(f);\n\nint half(int v)\n{\n    return v;\n}\n\nvoid f(void)\n{\n    int count;\n    float scale;\n\n    count = FLOAT_AS_INT(get_scale());\n    count = FLOAT_AS_INT(scale * 2.0);\n    half(FLOAT_AS_INT(scale));\n    scale = 0;\n    count = AND_VALUE(count, 3);\n    DOUBLE_STORE(scale = scale + 1.0);\n}\n";
     let data = build_with(text, &headers).unwrap();
     let shown = shown(&data, "event", &headers, true);
-    // a native's result, a float stored in an int, a float passed for an int and a used &&; not
-    // the 0 stored in a float, which C stores as the same bits
-    assert_eq!(shown.matches("(any)").count(), 4, "{shown}");
+    // a native's result, a float stored in an int, a float passed for an int; not the 0 stored in
+    // a float, which C stores as the same bits
+    assert_eq!(shown.matches("FLOAT_AS_INT(").count(), 3, "{shown}");
     assert!(shown.contains(" = 0;"), "{shown}");
+    assert!(shown.contains("AND_VALUE(") && shown.contains("DOUBLE_STORE("), "{shown}");
     assert_eq!(build_with(&shown, &headers).unwrap(), data);
 }
 
