@@ -29,7 +29,7 @@ See [the big picture](../scripting/README.md#the-big-picture) for details on wha
 | Page | Contents |
 |---|---|
 | [The disc](disc.md) | ISO 9660 layout, the `DATA.DAT` archive, the `DATA.HD4` index, and pack files |
-| [The script format](scripts.md) | `.stb` bytecode files, the virtual machine (VM) instruction set, native function tables, and legacy native numberings |
+| [The script format](scripts.md) | `.stb` bytecode files, the virtual machine (VM) instruction set, and native function tables |
 | [How scripts run](running.md) | Script programs, event mode, shared state (save flags, save counters, monster variables, and script globals), language variants, dungeon-triggered events, and message text control codes |
 | [Maps](maps.md) | `.map`, `.pcp`, `.mpk`, and `.ipk` formats, collision meshes, part placement, trigger points, animated pieces, and map categories |
 | [Dungeon floors](dungeons.md) | Procedural floor generation, room configuration scripts, part templates, treasure chests, and monster spawns |

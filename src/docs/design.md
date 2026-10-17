@@ -122,7 +122,6 @@ nobody edits it.
 
 ```json
 {
-  "format": 1,
   "counts": {"texture": 7036, "model": 2410, "bank": 846, "sound": 16107, "text": 120, "music": 437},
   "assets": {
     "texture:c02a02": {
@@ -211,7 +210,7 @@ file places build back, no problems.
 
 A mod is a folder with a `mod.json`. Where files sit inside the folder does
 not matter: `mod.json` says what each one replaces, by asset id (section
-1). Built in `dc2tk` (`dc2tk-script`'s `replace` and `migrate`, the index of ids
+1). Built in `dc2tk` (`dc2tk-script`'s `replace`, the index of ids
 in `dc2tk-assets`' `ids`).
 
 ```json
@@ -254,7 +253,7 @@ in `dc2tk-assets`' `ids`).
   `models/.../<id>.gltf`), whose images are not read: the model's
   textures change through their own ids. Or a folder as `mod asset` writes
   it, the export's `c02b.gltf`, buffer and `textures/` (PNGs edited there
-  go into the pack, as the old `--as gltf` folders do); a folder holding
+  go into the pack, as the `--as gltf` folders under `disc/` do); a folder holding
   one other `.gltf` is that file. A sound: a WAV for that entry. A bank: a
   folder of WAVs named by entry number (`004.wav`, or `004_NAME.wav` as the
   tree names them), for entries the bank has; new entries are `add`'s. A
@@ -275,7 +274,7 @@ in `dc2tk-assets`' `ids`).
 - **`file:`** replaces a disc file or pack member by path, as `extract`
   lays the disc out (`a.pac.d/b.chr.d/c.img`): the escape hatch for
   anything without an id (the 340 game files of the manifest's
-  `unconverted`, scripts' packs, anything else). It is the old `disc/`
+  `unconverted`, scripts' packs, anything else). It is the `disc/`
   layout by line: the same code builds both, a file is the game file
   itself, a folder converts by the game file's suffix (PNGs for a `.img`,
   WAVs for a `.snd`, a glTF folder for a `.chr`) whatever it is named, and
@@ -430,28 +429,6 @@ ISO here, and `--disc`, is the disc image or an extracted disc
   each reaches and refuses clashes; without `--disc` it checks the lines
   and files only.
 - `mod list` shows each mod's lines (`replaces texture:e254a1: ...`).
-- `mod migrate ISO NAME` turns a mod's `disc/` folder into `replace`
-  lines (it needs the disc for the ids).
-
-### Migrating disc/ mods
-
-`mod migrate` gives each PNG of a texture folder its texture id's line
-(found by the picture at that place), each WAV of a bank folder its sound
-id's, and each model folder its model id's, and moves the files out of
-`disc/` (which `build` would still read) into `textures/`, `models/` and
-`sounds/`, named after the ids. What has no id (a raw game file, a new
-member, a bank folder adding entries) becomes a `file:` line with its file
-under `raw/`; files no line uses go to `unused/`. A line whose id the disc
-has at more places than the old file covered gets `only`, so the migrated
-mod builds the same image; removing it then reaches the rest. Nothing is
-written when a line cannot be made.
-
-castle-showcase migrates to 14 lines: `texture:e254a1` and
-`texture:e254a2` (each at 5 places, so with `only`), the ten
-`model:c02fuku*` packs and two named sounds of `EV_000_130`. Built old and
-migrated, the images are identical, and identical to `castle-showcase.iso`
-as built before. The old `disc/` layout keeps working, alone or beside
-`replace` lines.
 
 ## 3. One Rust tool
 

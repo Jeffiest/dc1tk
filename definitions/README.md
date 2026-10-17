@@ -83,8 +83,7 @@ each other.
 ```
 definitions/natives/    the engine's native tables, one JSON file a table
                         (event, monster, action, effect, arg): each native's
-                        number, engine name and stack accessors, and how
-                        older scripts number them (`old_*`)
+                        number, engine name and stack accessors
 definitions/pal/
   definitions.json      manifest
   names/                functions: names, parameters, locals, docs
@@ -96,7 +95,6 @@ definitions/pal/
   disc.json             the hash of each script on the disc the set is for
   paths.json            readable names for disc folders and scripts the disc
                         does not name (dungeons, the main characters)
-  renamed.json          every constant `defs rename` renamed, old name to new
   sounds.json           the event sound bank each sound set loads (column 15
                         of snd2/MAP_index.txt), for naming play_se entries
 ```
@@ -223,10 +221,7 @@ statement's instruction index. Other comments are the decompiler's own
 `doc` is printed at the top of the file. `globals` names the script's
 globals in slot order; a global that included library code also uses keeps
 its slot name, so the library compiles in every script that includes it.
-`"numbering": "old"` marks a monster script built for the older native
-table, whose group 110, 140 and 160 calls then get the comment naming the
-native they were written for, and `"raw"` one that calls natives by number
-from an older, smaller table (see [older native numberings](../docs/internals/scripts.md#older-native-numberings)). An entry also applies to the script's language variants (`X.stb`,
+An entry also applies to the script's language variants (`X.stb`,
 `X_1.stb` ... `X_5.stb`) that have no entry of their own.
 
 ### Strings
@@ -275,19 +270,6 @@ its source; a tree's files that held no edits stay unedited for `changes`
 and `mod save`. A fresh decompile then prints the new name everywhere, and
 every script compiles to the same bytes. The new name must not be declared
 anywhere yet.
-
-The set lists every rename in `renamed.json`, old name to new, so trees and
-mods made before one, which still say the old name, can catch up: building
-or checking them stops with `unknown variable FLAG_S17_E308_SEEN` and a note
-of its new name, and
-
-```
-dc2tk defs migrate extracted/scripts mods/my-mod
-```
-
-gives each folder every rename the set records, in order, keeping unedited
-files unedited. Renaming by hand works too, but then the rename is not in
-`renamed.json`, and trees made before it have to be fixed by hand.
 
 ### Libraries
 
@@ -490,14 +472,6 @@ or mod given with `--in`, keeping unedited files unedited:
 
 ```
 dc2tk defs rename definitions/pal FLAG_S18_ARRIVAL_SEEN FLAG_YORDA_TREE_ARRIVAL_SEEN --in extracted/scripts
-```
-
-The set records each rename in `renamed.json`. A tree or mod made before
-a rename still says the old name and stops compiling (the error notes the
-new name); `defs migrate` gives it every recorded rename:
-
-```
-dc2tk defs migrate extracted/scripts mods/my-mod
 ```
 
 ## What people will want to do

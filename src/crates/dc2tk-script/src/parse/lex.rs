@@ -302,26 +302,9 @@ pub fn comment_block(comments: &[(usize, String)], line: usize) -> String {
     paragraphs
         .iter()
         .filter(|paragraph| !paragraph.is_empty())
-        .map(|paragraph| joined(paragraph))
+        .map(|paragraph| paragraph.join(" "))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-/// Joins wrapped comment lines. Older trees wrapped after a hyphen (mid-/motion), which joins
-/// without a space.
-pub(super) fn joined(lines: &[&str]) -> String {
-    let mut text = String::new();
-    for line in lines {
-        let mut end = text.chars().rev();
-        let hyphen = end.next() == Some('-')
-            && end.next().is_some_and(|c| c.is_ascii_alphabetic())
-            && line.chars().next().is_some_and(char::is_alphabetic);
-        if !hyphen && !text.is_empty() {
-            text.push(' ');
-        }
-        text.push_str(line);
-    }
-    text
 }
 
 /// The end of a directive's line, read on past a backslash that ends a line (C's line splicing)

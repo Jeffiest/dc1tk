@@ -90,8 +90,6 @@ def draw_point(layout, obj, settings):
     if kind not in schema.POINT_KINDS:
         layout.label(text="Unknown kind %r" % (kind,), icon="ERROR")
         return
-    if c2data.lookup(obj, ("data",)) is not None and not hasattr(c2data.lookup(obj, ("data",)), "keys"):
-        layout.label(text="data is a list: fields by position", icon="INFO")
     box = layout.box()
     box.label(text=schema.KIND_LABELS[kind], icon="PROPERTIES")
     if kind == "anime":

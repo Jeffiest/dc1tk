@@ -1,5 +1,5 @@
 //! Mods by name: mod.json's replace and add lines, found by asset id on a tiny disc, built into its
-//! files, refused when two mods clash, and mod migrate turning a disc/ folder into such lines.
+//! files, refused when two mods clash.
 //! Message files' text too: a made-up one in two menu packs, in two versions.
 
 mod build_common;
@@ -17,8 +17,8 @@ use dc2tk_assets::text::{self, Fonts, Language, Mes};
 use dc2tk_assets::tree::{self, DiscFile, Kind, Place};
 use dc2tk_disc::archive::Archive;
 use dc2tk_disc::{rebuild, Image};
+use dc2tk_script::discfiles;
 use dc2tk_script::replace::{self, Change, Line, LineKind};
-use dc2tk_script::{discfiles, migrate};
 use indexmap::IndexSet;
 use serde_json::{json, Value};
 
@@ -735,93 +735,6 @@ fn named_wavs_give_the_mods_patches_constants() {
     fails(replace::sound_constants(&mods, &consts, &BTreeMap::new()), "headers give 2");
 }
 
-#[test]
-fn a_migrated_mod_builds_the_same_files() {
-    let disc = disc("migrate");
-    let mod_dir = disc.mods.join("old");
-    let root = mod_dir.join(discfiles::DISC);
-    write(&root.join("chara/c01.chr.d/c.img.png/tex01.png"), &png([5, 5, 5]));
-    write(&root.join("map/b/b02.ipk.d/x.img.png/wall.png"), &png([6, 6, 6]));
-    write(&root.join("map/b/b02.ipk.d/x.img.png/notes.txt"), b"not a picture");
-    for (name, data) in tree::exported_model(&character(), "c01").unwrap() {
-        write(&root.join("chara/c01.chr.gltf").join(name), &data);
-    }
-    write(&root.join("map/a/a01.ipk.d/new.bin"), b"a new member");
-    write(&root.join("menu/1/b.pac.d/names.mes.txt"), b"@2\nCover\n@1\nPan\n");
-    mod_json(&mod_dir, &json!({"start_at": "s51:500"}));
-    let old_files = |mod_dir: &Path| {
-        let (wanted, _) = discfiles::collect(&[mod_dir.to_path_buf()]).unwrap();
-        discfiles::replaced(&disc.iso, &wanted, &BTreeMap::new(), &Default::default(), &Default::default()).unwrap().0
-    };
-    let before = old_files(&mod_dir);
-
-    let found = migrate::migrate(&mod_dir, &disc.iso, &disc.index).unwrap();
-    assert!(!root.exists());
-    let body: Value = serde_json::from_str(&fs::read_to_string(mod_dir.join("mod.json")).unwrap()).unwrap();
-    assert_eq!(body["start_at"], "s51:500");
-    assert_eq!(
-        body["replace"],
-        json!({
-            "texture:tex01": {"file": "textures/tex01.png", "only": ["chara/c01.chr.d/c.img"]},
-            "model:c01": {"file": "models/c01", "only": ["chara/c01.chr"]},
-            "file:map/a/a01.ipk.d/new.bin": "raw/map/a/a01.ipk.d/new.bin",
-            "texture:wall": {"file": "textures/wall.png", "only": ["map/b/b02.ipk.d/x.img"]},
-            "text:en/names": {"file": "text/en/names.txt", "only": ["menu/1/b.pac.d/names.mes"]},
-        })
-    );
-    assert_eq!(found.lines.len(), 5);
-    assert!(mod_dir.join("unused/map/b/b02.ipk.d/x.img.png/notes.txt").is_file());
-    assert!(found.notes.iter().any(|note| note.contains("notes.txt")));
-
-    let mut after = old_files(&mod_dir);
-    let lines = replace::lines(&mod_dir).unwrap();
-    let resolved = replace::resolve(&lines, &disc.index).unwrap();
-    after = replace::apply(&disc.iso, &resolved, &after).unwrap().0;
-    assert_eq!(before, after);
-    // nothing left to migrate
-    fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "no disc/ folder");
-}
-
-#[test]
-fn migrate_gathers_an_ids_places_into_one_line() {
-    let disc = disc("migrate-places");
-    let mod_dir = disc.mods.join("walls");
-    let root = mod_dir.join(discfiles::DISC);
-    // wall is in both texture files; the mod changes it alike in both, so it needs no "only"
-    write(&root.join("map/a/a01.ipk.d/a01.img.png/wall.png"), &png([6, 6, 6]));
-    write(&root.join("map/b/b02.ipk.d/x.img.png/wall.png"), &png([6, 6, 6]));
-    let found = migrate::migrate(&mod_dir, &disc.iso, &disc.index).unwrap();
-    assert_eq!(found.lines, [("texture:wall".to_string(), json!("textures/wall.png"))]);
-    assert!(mod_dir.join("textures/wall.png").is_file());
-    // the other copy is kept aside
-    assert!(mod_dir.join("unused/duplicates/map/b/b02.ipk.d/x.img.png/wall.png").is_file());
-    assert!(found.notes.iter().any(|note| note.contains("a copy of a file a line has")), "{:?}", found.notes);
-}
-
-#[test]
-fn migrate_refuses_what_it_cannot_make_one_line_of_and_leaves_the_mod_alone() {
-    let disc = disc("migrate-refused");
-    let mod_dir = disc.mods.join("walls");
-    let root = mod_dir.join(discfiles::DISC);
-    let a01 = root.join("map/a/a01.ipk.d/a01.img.png/wall.png");
-    write(&a01, &png([6, 6, 6]));
-    write(&root.join("map/b/b02.ipk.d/x.img.png/wall.png"), &png([7, 7, 7]));
-    fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "texture:wall is given differently");
-    assert!(a01.is_file());
-    fs::remove_dir_all(root.join("map/b")).unwrap();
-    // a file where the line's would go
-    write(&mod_dir.join("textures/wall.png"), b"mine");
-    fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "is there already");
-    fs::remove_file(mod_dir.join("textures/wall.png")).unwrap();
-    // a line mod.json has for the id already
-    write(&mod_dir.join("w.png"), &png([1, 1, 1]));
-    mod_json(&mod_dir, &json!({"replace": {"texture:wall": "w.png"}}));
-    fails(migrate::migrate(&mod_dir, &disc.iso, &disc.index), "has a line for texture:wall already");
-    assert!(a01.is_file());
-}
-
-/// A music bank as the disc's are: entry 0 plays BG_001_000.sq, a short tune on program 1 (a saw
-/// wave); program 2, another saw wave, nothing plays.
 fn music_bank() -> Vec<u8> {
     use dc2tk_assets::sequence::{Event, Message, Sequence};
     use dc2tk_assets::soundbank::{self, Bank};

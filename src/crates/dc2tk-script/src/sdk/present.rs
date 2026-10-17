@@ -251,8 +251,8 @@ fn named_args(args: &[Node], params: &[Node], found: &Context) -> Vec<Node> {
             });
             let enumeration = param.and_then(|param| param.get("enum")).filter(|value| value.is_set());
             match (kind, enumeration) {
-                // an address where the native takes an enum (a call written for an older native
-                // table): C needs the conversion written out; it compiles to nothing
+                // an address where the native takes an enum: C needs the conversion written out;
+                // it compiles to nothing
                 (_, Some(enumeration)) if arg.kind() == kinds::ADDR => {
                     node!({"kind": "cast", "type": format!("enum {}", enumeration.plain_text()), "operand": arg.clone()})
                 }
@@ -734,87 +734,29 @@ fn prepared_function(function: &Node, found: &Context, function_names: &HashSet<
     if function.kind() != kinds::FUNCTION {
         return function.clone();
     }
-    let body = assets::named(&old_numbered(function.list("body"), found), found);
+    let body = assets::named(&unregistered_noted(function.list("body")), found);
     let function = named_locals(function.clone().with("body", body), found, function_names);
     let body = folded(function.list("body"), found, inlines, &HashSet::new());
     function.with("body", body)
 }
 
-/// The context for a script its definition entry marks as built for an older native table, or a
-/// library only such scripts use. "old": groups that are current groups too (old_table_groups) are
-/// read as old there. "raw": every call by number without a group comes from the older, smaller
-/// table, also those that land on a native the header gives no group (old_direct).
-pub fn numbered(found: Option<Context>, numbering: Option<&str>) -> Option<Context> {
-    let mut found = found?;
-    match numbering {
-        Some("raw") => found.raw_table = true,
-        Some("old") => {
-            let groups: Vec<(i64, i64)> = found.old_table_groups.iter().map(|(base, new)| (*base, *new)).collect();
-            found.old_groups.extend(groups);
-            found.old_table = true;
-        }
-        _ => {}
-    }
-    Some(found)
-}
-
-pub fn numbering_of(entry: &Node) -> Option<String> {
-    entry.get("numbering").and_then(Node::as_str).map(str::to_string)
-}
-
-/// The native an old-numbered call was written for. A call with an old group base selects the
-/// native that many numbers on (old_groups); a call by raw number where the header gives the
-/// native a group (shown as DIRECT) comes from an older table, and old_direct maps the numbers
-/// whose same-shaped twins elsewhere on the disc show what they stand for.
-pub fn meant_native(node: &Node, found: &Context) -> Option<String> {
-    let name = node.text("name");
-    let (no, declared_base) = match found.by_original.get(name) {
-        Some(declared) => (declared["no"].as_i64()?, declared["base"].clone()),
-        // a number the engine does not register, as the decompiler names it
-        None => (ext_number(name)?, Node::Null),
-    };
-    if node["base"].is_null() && found.old_table {
-        if let Some(group) = found.old_groups.get(&no) {
-            // a call to an old group's first number, made without a group
-            return found.by_number.get(group).cloned();
-        }
-    }
-    if node["base"].is_null() {
-        if (declared_base.is_null() && !found.raw_table) || !found.old_direct.contains_key(&no) {
-            return None;
-        }
-        return found.by_number.get(&found.old_direct[&no]).cloned();
-    }
-    let base = node["base"].as_i64()?;
-    let group = found.old_groups.get(&base)?;
-    found.by_number.get(&(no - base + group)).cloned()
-}
-
-fn old_numbered(nodes: &[Node], found: &Context) -> Node {
+/// Notes on calls to numbers the engine's table does not register.
+fn unregistered_noted(nodes: &[Node]) -> Node {
     nodes
         .iter()
         .map(|node| match node.kind() {
             kinds::IF => {
                 let otherwise = match node["else"].as_array() {
-                    Some(items) => old_numbered(items, found),
+                    Some(items) => unregistered_noted(items),
                     None => Node::Null,
                 };
-                node.clone().with("then", old_numbered(node.list("then"), found)).with("else", otherwise)
+                node.clone().with("then", unregistered_noted(node.list("then"))).with("else", otherwise)
             }
-            kinds::WHILE => node.clone().with("body", old_numbered(node.list("body"), found)),
-            kinds::NATIVE => {
-                let mut notes = Vec::new();
-                if let Some(meant) = meant_native(node, found) {
-                    notes.push(format!("old numbering, meant as {meant}"));
-                }
-                if node.text("name").starts_with("_EXT_") {
-                    // the engine's table has no function at this number; the VM prints "not found
-                    // ext" and goes on (CRunScript::ext, runscript.cpp)
-                    notes.push("no native at this number, so the call does nothing".into());
-                }
-                if notes.is_empty() {
-                    return node.clone();
-                }
+            kinds::WHILE => node.clone().with("body", unregistered_noted(node.list("body"))),
+            // the engine's table has no function at this number; the VM prints "not found ext" and
+            // goes on (CRunScript::ext, runscript.cpp)
+            kinds::NATIVE if node.text("name").starts_with("_EXT_") => {
+                let mut notes = vec!["no native at this number, so the call does nothing".to_string()];
                 if let Some(comment) = node.get("comment").filter(|comment| comment.is_set()) {
                     notes.push(comment.plain_text());
                 }

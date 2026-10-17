@@ -324,22 +324,12 @@ fn data_from(kind: PointKind, value: &Value, original: Option<&PointData>) -> Re
     })
 }
 
-/// An anime point's data read back. Scenes exported before the fields were decoded name them kind,
-/// unknown_int, v0, v1, v2 and extra.
+/// An anime point's data read back.
 fn anime_from(fields: &Fields, o: Option<&AnimeData>) -> Result<AnimeData> {
-    let named = |name: &str, old: &str| match fields.get(name) {
-        Value::Null => fields.get(old),
-        found => found,
-    };
-    let num = |name: &str, old_name: &str, old: Option<Num>| match named(name, old_name) {
-        Value::Null => Ok(old.unwrap_or(Num::Int(0))),
-        found => num_from(found, old, name),
-    };
     let flags = o.and_then(|o| o.flags);
-    let flags = match (fields.get("uniform"), fields.get("relative"), fields.get("extra")) {
-        (Value::Null, Value::Null, Value::Null) => None,
-        (Value::Null, Value::Null, extra) => Some(nums_from(extra, flags.as_ref(), "extra")?),
-        (uniform, relative, _) => {
+    let flags = match (fields.get("uniform"), fields.get("relative")) {
+        (Value::Null, Value::Null) => None,
+        (uniform, relative) => {
             let one = |found: &Value, name: &str, at: usize| match found {
                 Value::Null => Ok(flags.map_or(Num::Int(0), |flags| flags[at])),
                 found => num_from(found, flags.map(|flags| flags[at]), name),
@@ -351,11 +341,11 @@ fn anime_from(fields: &Fields, o: Option<&AnimeData>) -> Result<AnimeData> {
         placement: fields.text("placement", o.map(|o| &o.placement))?,
         piece: fields.text("piece", o.map(|o| &o.piece))?,
         frame: fields.text("frame", o.map(|o| &o.frame))?,
-        drives: num("drives", "kind", o.map(|o| o.drives))?,
-        mode: num("mode", "unknown_int", o.map(|o| o.mode))?,
-        start: nums_or_old(named("start", "v0"), "start", o.map(|o| &o.start))?,
-        step: nums_or_old(named("step", "v1"), "step", o.map(|o| &o.step))?,
-        end: nums_or_old(named("end", "v2"), "end", o.map(|o| &o.end))?,
+        drives: fields.num("drives", o.map(|o| o.drives))?,
+        mode: fields.num("mode", o.map(|o| o.mode))?,
+        start: fields.nums("start", o.map(|o| &o.start))?,
+        step: fields.nums("step", o.map(|o| &o.step))?,
+        end: fields.nums("end", o.map(|o| &o.end))?,
         flags,
     })
 }
@@ -806,30 +796,8 @@ mod tests {
             let edit = read_scene(&scene, &map).unwrap();
             let rebuilt = map_edit::rebuild(&map, &edit).unwrap();
             assert_eq!(mapfile::write(&rebuilt).unwrap(), bytes, "{}", path.display());
-            old_anime_names(&mut scene);
-            let edit = read_scene(&scene, &map).unwrap();
-            let rebuilt = map_edit::rebuild(&map, &edit).unwrap();
-            assert_eq!(mapfile::write(&rebuilt).unwrap(), bytes, "{} (old anime names)", path.display());
         }
         println!("{} maps go to scenes and back byte for byte", paths.len());
-    }
-
-    /// Anime point data as scenes exported before its fields were decoded name it.
-    fn old_anime_names(node: &mut SceneNode) {
-        let c2 = &mut node.extras["c2"];
-        if c2["kind"] == "anime" {
-            let data = c2["data"].as_object_mut().unwrap();
-            for (new, old) in
-                [("drives", "kind"), ("mode", "unknown_int"), ("start", "v0"), ("step", "v1"), ("end", "v2")]
-            {
-                let value = data.remove(new).unwrap();
-                data.insert(old.into(), value);
-            }
-            if let (Some(uniform), Some(relative)) = (data.remove("uniform"), data.remove("relative")) {
-                data.insert("extra".into(), json!([uniform, relative]));
-            }
-        }
-        node.children.iter_mut().for_each(old_anime_names);
     }
 
     #[test]
@@ -852,13 +820,10 @@ mod tests {
         let PointData::Anime(back) = data_from(PointKind::Anime, &edited, Some(&original)).unwrap() else { panic!() };
         assert_eq!((back.drives, back.mode, back.flags), (Num::Int(3), Num::Int(7), Some([Num::Int(1), Num::Int(1)])));
         assert_eq!(back.end, [Num::Int(0), Num::Int(50), Num::Int(0)]);
-        // old names, and no flags: the line has 14 arguments
-        let old = json!({"kind": 1, "unknown_int": 3, "v0": [1, 2, 3], "v1": [4, 5, 6], "v2": [7, 8, 9]});
-        let PointData::Anime(back) = data_from(PointKind::Anime, &old, None).unwrap() else { panic!() };
+        // no flags: the line has 14 arguments
+        let bare = json!({"drives": 1, "mode": 3, "start": [1, 2, 3], "step": [4, 5, 6], "end": [7, 8, 9]});
+        let PointData::Anime(back) = data_from(PointKind::Anime, &bare, None).unwrap() else { panic!() };
         assert_eq!((back.drives, back.mode, back.step[2], back.flags), (Num::Int(1), Num::Int(3), Num::Int(6), None));
-        let old = json!({"extra": [1, 0]});
-        let PointData::Anime(back) = data_from(PointKind::Anime, &old, Some(&original)).unwrap() else { panic!() };
-        assert_eq!(back.flags, Some([Num::Int(1), Num::Int(0)]));
     }
 
     /// What Blender does to a scene: suffixes repeated names, reverses children, writes ints in

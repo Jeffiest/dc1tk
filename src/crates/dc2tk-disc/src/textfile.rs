@@ -1,9 +1,8 @@
 //! The text files the tools write: UTF-8 with \n line endings on every system, and JSON as
 //! serde_json writes it pretty (two-space indent, text as it is rather than \u-escaped) with a
 //! final newline.
-//! Reading takes \r\n as \n, so a file an editor saved with Windows line endings, or one an older
-//! version of the tools wrote, reads the same. Game files are never read or written through here:
-//! they keep their bytes.
+//! Reading takes \r\n as \n, so a file an editor saved with Windows line endings reads the same.
+//! Game files are never read or written through here: they keep their bytes.
 
 use std::path::Path;
 

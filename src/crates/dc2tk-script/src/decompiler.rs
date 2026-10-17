@@ -132,8 +132,7 @@ pub fn script_source(setup: &Setup, path: &Path, table: &str) -> Result<String> 
         Some(found) if named.get("asm").is_none() => messages::kind_params(named.list("functions"), found),
         _ => HashMap::new(),
     };
-    let found = sdk::numbered(found.cloned(), sdk::numbering_of(&entry).as_deref());
-    let presented = sdk::present(scripted, found.as_ref(), &params, &[], &mut sdk::Sounds::default());
+    let presented = sdk::present(scripted, found, &params, &[], &mut sdk::Sounds::default());
     source::text(&notes::annotate(presented, &setup.defs.strings))
 }
 

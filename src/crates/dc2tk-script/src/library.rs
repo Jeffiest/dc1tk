@@ -921,16 +921,7 @@ impl Model {
             );
         }
         functions = notes::annotate_siblings(functions, &self.library_siblings(library));
-        // a library only scripts built for one older native table use reads its calls the same way
-        let numberings: HashSet<Option<String>> = library
-            .user_paths
-            .iter()
-            .map(|path| definitions::script_entry(&self.source.defs, path).and_then(sdk::numbering_of))
-            .collect();
-        let mut found = found.cloned();
-        if numberings.len() == 1 {
-            found = sdk::numbered(found, numberings.into_iter().next().unwrap().as_deref());
-        }
+        let found = found.cloned();
         // sound banks the scripts that include the library pass it, when they agree
         let uses = self.caches.sound_uses.lock().unwrap().get(&library.path).cloned().unwrap_or_default();
         let mut sounds = sdk::Sounds { seed: Some(sdk::library_sounds(&uses)), ..sdk::Sounds::default() };
@@ -1069,13 +1060,10 @@ impl Model {
             .filter(|function| function.kind() == "function")
             .map(|function| function.clone().with("body", names::renamed_variables(&function["body"], &global_names)))
             .collect();
-        let numbering = sdk::numbering_of(&entry);
-        let keys = sound_keys(&hidden, &global_names, &natives_name, numbering.as_deref());
+        let keys = sound_keys(&hidden, &global_names, &natives_name);
         let mut sounds = sdk::Sounds { want_out: true, keys, ..sdk::Sounds::default() };
-        let numbered = sdk::numbered(context, numbering.as_deref());
-        let mut presented = sdk::present(scripted, numbered.as_ref(), &params, &shown_hidden, &mut sounds);
-        if let (Some(notes), Some(found)) =
-            (map.and_then(|map| self.naming.villagers.notes.get(map)), numbered.as_ref())
+        let mut presented = sdk::present(scripted, context.as_ref(), &params, &shown_hidden, &mut sounds);
+        if let (Some(notes), Some(found)) = (map.and_then(|map| self.naming.villagers.notes.get(map)), context.as_ref())
         {
             presented =
                 presented.clone().with("functions", with_villager_notes(presented.list("functions"), found, notes));
@@ -1182,13 +1170,8 @@ fn split_includes<'a>(functions: &[Node], included: &HashMap<usize, (&'a Library
 }
 
 /// The key of each included function for the sound pass's cache: the function as the script
-/// sees it (its native table, numbering, name, and the globals it uses under the script's names).
-fn sound_keys(
-    hidden: &[Node],
-    global_names: &HashMap<String, String>,
-    natives_name: &str,
-    numbering: Option<&str>,
-) -> HashMap<String, String> {
+/// sees it (its native table, name, and the globals it uses under the script's names).
+fn sound_keys(hidden: &[Node], global_names: &HashMap<String, String>, natives_name: &str) -> HashMap<String, String> {
     hidden
         .iter()
         .filter(|function| function.kind() == "function")
@@ -1202,7 +1185,7 @@ fn sound_keys(
                 .collect();
             uses.sort();
             let name = function.text("name").to_string();
-            (name.clone(), format!("{natives_name}\u{0}{numbering:?}\u{0}{name}\u{0}{uses:?}"))
+            (name.clone(), format!("{natives_name}\u{0}{name}\u{0}{uses:?}"))
         })
         .collect()
 }

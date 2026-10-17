@@ -30,12 +30,8 @@ fn a_rename_reaches_the_header_the_set_and_a_tree() {
     let renamed =
         constants::rename(&root, "FLAG_E520_SEEN", "FLAG_BRIDGE_FIXED", &map(&[]), std::slice::from_ref(&edited))
             .unwrap();
-    // the header, the names, the notes and the set's list of renames
-    assert_eq!(renamed.set_files.len(), 4);
-    assert_eq!(
-        constants::renamed(&root).unwrap(),
-        vec![("FLAG_E520_SEEN".to_string(), "FLAG_BRIDGE_FIXED".to_string())]
-    );
+    // the header, the names and the notes
+    assert_eq!(renamed.set_files.len(), 3);
     assert!(read(&root.join("include/pal.h")).contains("    FLAG_BRIDGE_FIXED = 520,"));
     let names = read(&root.join("names/event.json"));
     // the local the decompiler names after the flag follows it; a function of that name does not
@@ -58,33 +54,4 @@ fn a_rename_needs_a_constant_of_the_set_and_a_free_name() {
     fails(constants::rename(&root, "FLAG_E520_SEEN", "FLAG_TAKEN", &sdk, &[]), "already used in event.h");
     fails(constants::rename(&root, "FLAG_E520_SEEN", "2BAD", &map(&[]), &[]), "not a valid name");
     assert_eq!(read(&root.join("include/pal.h")), HEADER);
-}
-
-#[test]
-fn a_tree_made_before_renames_follows_them() {
-    let folder = TempDir::new("constants-migrate");
-    let root = set(&folder);
-    let old = make_tree(folder.path(), &[("map/a.c", SCRIPT)]);
-    tree::record(&old, &["map/a.c".to_string()], None, &[]).unwrap();
-    constants::rename(&root, "FLAG_E520_SEEN", "FLAG_BRIDGE_FIXED", &map(&[]), &[]).unwrap();
-    constants::rename(&root, "FLAG_BRIDGE_FIXED", "FLAG_BRIDGE_MENDED", &map(&[]), &[]).unwrap();
-    assert_eq!(
-        constants::renamed_to(std::slice::from_ref(&root), "FLAG_E520_SEEN").as_deref(),
-        Some("FLAG_BRIDGE_MENDED")
-    );
-    assert_eq!(constants::renamed_to(std::slice::from_ref(&root), "FLAG_OTHER"), None);
-    let changed = constants::migrate(std::slice::from_ref(&root), std::slice::from_ref(&old)).unwrap();
-    assert_eq!(changed, vec![(old.clone(), vec!["map/a.c".to_string()])]);
-    let script = read(&old.join("map/a.c"));
-    assert!(
-        script.contains(
-            "    bridge_mended = get_flag(FLAG_BRIDGE_MENDED);
-    e520_seen();"
-        ),
-        "{script}"
-    );
-    assert!(tree::status(&old).unwrap().unwrap().edited.is_empty());
-    // a second time there is nothing left to do
-    let again = constants::migrate(std::slice::from_ref(&root), std::slice::from_ref(&old)).unwrap();
-    assert_eq!(again, vec![(old, vec![])]);
 }

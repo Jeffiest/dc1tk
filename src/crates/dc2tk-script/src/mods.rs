@@ -18,9 +18,9 @@
 //! built.
 //!
 //! Game assets the mod replaces (textures, models, sounds) are named by asset id in mod.json's
-//! "replace", with the files anywhere in the mod (replace). Mods made before that keep game files
-//! under disc/, laid out as extract lays the disc out (discfiles); mod migrate turns them into
-//! replace lines. "title" and "version" in mod.json are shown by mod list.
+//! "replace", with the files anywhere in the mod (replace), or by disc path under disc/, laid out
+//! as extract lays the disc out (discfiles). "title" and "version" in mod.json are shown by mod
+//! list.
 //!
 //! "requires" in mod.json names mods a mod is built with: choosing it chooses them too, and it is
 //! applied after them and sees their numbers, so it can include their libraries and headers and
@@ -43,7 +43,7 @@ use crate::compile::Toolchain;
 use crate::discfiles::Clashes;
 use crate::node::Node;
 use crate::patches::{self, ModTexts, Plan, Scripts, Target, TargetKind};
-use crate::{additions, discfiles, index, numbers, pathnames, paths, renames, source, tree, Error, Result};
+use crate::{additions, discfiles, index, numbers, pathnames, paths, source, tree, Error, Result};
 
 pub const INDEX: &str = "mod.json";
 pub const FILES: &str = "files";
@@ -387,14 +387,10 @@ pub struct Checked {
     pub compiled: usize,
     pub errors: Vec<(String, String)>,
     pub numbers: BTreeMap<String, IndexMap<String, i64>>,
-    /// Overrides of functions the tree has renamed since, found by fingerprint (renames).
-    pub following: renames::Following,
 }
 
 /// Compiles every script the chosen mods change, as build would, without a disc: the scripts their
-/// files replace or reach through a library, and the scripts their patches change. Overrides of
-/// functions the tree has renamed follow them by fingerprint, and the fingerprints of overridden
-/// functions not yet in a mod's renames::LOCK are recorded there.
+/// files replace or reach through a library, and the scripts their patches change.
 pub fn check(
     mod_dirs: &[PathBuf],
     tree_dir: &Path,
@@ -423,7 +419,6 @@ pub fn check_with(
             patch.numbers.extend(added.iter().map(|(name, value)| (name.clone(), *value)));
         }
     }
-    let following = renames::follow(mod_dirs, &mut found, tree_dir, tools, &texts)?;
     let mut scripts: BTreeSet<String> =
         texts.keys().filter(|path| path.ends_with(source::EXTENSION) && !index::is_library(path)).cloned().collect();
     scripts.extend(found.scripts.keys().cloned());
@@ -453,12 +448,7 @@ pub fn check_with(
             result.err().map(|error| (path.clone(), error.to_string()))
         })
         .collect();
-    Ok(Checked {
-        compiled: scripts.len(),
-        errors: errors.into_iter().flatten().collect(),
-        numbers: found.numbers,
-        following,
-    })
+    Ok(Checked { compiled: scripts.len(), errors: errors.into_iter().flatten().collect(), numbers: found.numbers })
 }
 
 fn sorted_keys(value: &Value) -> Value {

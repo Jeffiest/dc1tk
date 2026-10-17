@@ -285,15 +285,10 @@ def _time_flag(settings):
             int(flag.get("follow_clock") or 0), int(flag.get("blend") or 0),
             float(flag.get("fixed_time") or 12.0), int(flag.get("fixed_time_enable") or 0),
         )
-    if isinstance(flag, list) and flag:
-        values = list(flag) + [0, 0, 12, 0][len(flag):]
-        return int(values[0]), int(values[1]), float(values[2]), int(values[3])
     return 0, 0, 12.0, 0
 
 
 def _number(value, default=0):
-    if isinstance(value, list):
-        value = value[0] if value else default
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -362,15 +357,11 @@ def _sun(hour, sun_angle):
 def _plain(light_set):
     lights = []
     for light in light_set.get("lights") or []:
-        if hasattr(light, "get") and light.get("type", "light") == "light":
+        if hasattr(light, "get") and light.get("type") == "light":
             lights.append({"index": light.get("index", len(lights)), "dir": list(light.get("dir") or [0, 1, 0]),
                            "color": list(light.get("color") or [128, 128, 128])})
     fog = light_set.get("fog")
-    if isinstance(fog, list):
-        # FOG near,far[,r,g,b[,offset,far2]] as a plain list
-        values = list(fog) + [0.0] * (5 - len(fog))
-        fog = {"near": values[0], "far": values[1], "color": values[2:5]}
-    elif not hasattr(fog, "get"):
+    if not hasattr(fog, "get"):
         fog = {}
     return {
         "bgcolor": list(light_set.get("bgcolor") or [0, 0, 0]),
@@ -567,7 +558,7 @@ def fog_group():
 
 def set_fog(lighting, shown=True):
     group = fog_group()
-    fog = _plain(lighting)["fog"] if not hasattr(lighting.get("fog"), "get") else lighting.get("fog")
+    fog = lighting.get("fog") if hasattr(lighting.get("fog"), "get") else {}
     near, far = float(fog.get("near") or 0.0), float(fog.get("far") or 0.0)
     on = bool(lighting.get("fog_enable")) and shown and far > near
     ramp = group.nodes["range"]

@@ -62,8 +62,7 @@ definitions.
 
 13. **Definitions format.** A set can give variables a value kind or enum
     (`types`), override return types (`returns`), attach line notes by
-    instruction (`notes`), mark scripts built for an older native table
-    (`"numbering": "old"` or `"raw"`), and record the disc it was made for
+    instruction (`notes`), and record the disc it was made for
     (`disc.json`). `defs learn` reads all of these from edited source, and
     a whole-disc decompile removes the files an earlier one wrote that it
     no longer writes. Music, sound sets, sound bank entries and fixed
@@ -135,10 +134,9 @@ See [the design](src/docs/design.md). In order:
 2. **The asset tree** (done: `dc2tk assets`): `extracted/assets/` beside `extracted/scripts/`, every distinct
    texture, model and sound once, as PNG, glTF and WAV, with a manifest of
    ids and every place the disc has each.
-3. **Mods by name** (done: `replace`/`add` by id in mod.json, `dc2tk mod migrate`): `mod.json` maps asset ids (`texture:c02a02`,
+3. **Mods by name** (done: `replace`/`add` by id in mod.json): `mod.json` maps asset ids (`texture:c02a02`,
    `sound:SE_EV_000_130_GRIFFON_BREAK_WINDOW`) to files anywhere in the mod;
-   a replacement reaches every copy on the disc. `mod migrate` converts the
-   `disc/` layout.
+   a replacement reaches every copy on the disc.
 
 ## Done: editing maps in Blender
 
@@ -284,9 +282,7 @@ code keeps compiling to its own bytes. What the compiler lacks today
 ## Next: modding
 
 Done: mods that need mods (`requires`, `after`), editor headers for patches
-(`mod header`), and overrides that follow a renamed function by its
-fingerprint (`mods/NAME/fingerprints.json`, `mod check --rename`),
-wrapping natives (`#pragma override place_monster` routes the target
+(`mod header`), wrapping natives (`#pragma override place_monster` routes the target
 scripts' calls through the mod's function; `original()` calls the native),
 and `mod slim`, which turns copied files into patches that compile to the
 same bytes; see [editing scripts](docs/modding/scripts.md). Native wrappers are checked in
@@ -407,8 +403,7 @@ do:
    the music, sound and bank enums) live in the set's `include/pal.h`,
    which a decompiled tree includes from the set itself (done): `dc2tk defs
    rename` renames one in the set and its uses in trees and mods (26 story
-   flags renamed so far), records it in `renamed.json`, and `dc2tk defs
-   migrate` brings trees and mods made before a rename up to date.
+   flags renamed so far).
 
 Script docs (210 corrected), library docs (190 corrected, 85 libraries
 renamed) and the 185 story flags (35 renamed, 91 comments corrected) have
@@ -454,16 +449,6 @@ shared set by design (see [definitions/README.md](definitions/README.md)).
 
 ## Open questions
 
-- Old native tables. Seven monster scripts (`b02a2` to `b02a7`, `e236a`)
-  and two action scripts (`c01win`, `f204a`) were built for older native
-  tables. Lining their calls up with current twins pins down 41 monster and
-  27 action numbers (`old_direct` in `definitions/natives/`), which also says
-  what most of their unregistered `_EXT_n` calls were meant to be. Still
-  unknown: monster old 161 and 162 (only in the b02a2 to b02a7 init), and
-  what the current-numbered `_EXT_20(1)` and `_EXT_20(5)` in `b02a1` did
-  (the base of the sound group, which the engine leaves unregistered).
-  `b02a1` and `p00_23a` use the current table: a call by bare number is
-  how any script calls the first native of a group.
 - Whether the original language had a `for` loop. All 36,503 loops on the
   disc have the one shape a `while` gives (condition at the top, one jump
   back, two labels), and all 278 `continue`s jump to the condition. Of the

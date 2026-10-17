@@ -60,11 +60,8 @@ def rename(obj, name):
 
 
 def map_settings(root):
-    tree = to_py(lookup(root, ("map",)))
-    if not isinstance(tree, dict):
-        return {}
-    settings = tree.get("settings")
-    return settings if isinstance(settings, dict) else tree
+    settings = to_py(lookup(root, ("map", "settings")))
+    return settings if isinstance(settings, dict) else {}
 
 
 def role(obj):
@@ -259,55 +256,18 @@ def is_collision_mesh(obj):
 
 def data_field(obj, field):
     data = lookup(obj, ("data",))
-    if data is None:
+    value = data.get(field["key"]) if hasattr(data, "keys") else None
+    if value is None:
         return field["default"]
-    if hasattr(data, "keys"):
-        value = data.get(field["key"])
-        if value is None and field["old"] is not None:
-            key, index = (field["old"], None) if isinstance(field["old"], str) else field["old"]
-            value = data.get(key)
-            if value is not None and index is not None:
-                value = list(to_py(value))
-                value = value[index] if index < len(value) else None
-        if value is None:
-            return field["default"]
-        if field["size"] > 1:
-            value = list(to_py(value))
-            value += list(field["default"])[len(value):]
-            return value[: field["size"]]
-        return value
-    data = to_py(data)
     if field["size"] > 1:
-        value = list(data[field["pos"]: field["pos"] + field["size"]])
+        value = list(to_py(value))
         value += list(field["default"])[len(value):]
-        return value
-    return data[field["pos"]] if field["pos"] < len(data) else field["default"]
+        return value[: field["size"]]
+    return value
 
 
 def set_data_field(obj, field, value):
-    data = lookup(obj, ("data",))
-    if data is not None and not hasattr(data, "keys"):
-        data = to_py(data)
-        if field["size"] > 1:
-            for index in range(field["size"]):
-                while len(data) <= field["pos"] + index:
-                    data.append(0)
-                data[field["pos"] + index] = value[index]
-        else:
-            while len(data) <= field["pos"]:
-                data.append(0)
-            data[field["pos"]] = value
-        assign(obj, ("data",), data)
-        return
-    value = list(value) if field["size"] > 1 else value
-    if data is not None and field["old"] is not None:
-        data = to_py(data)
-        upgraded = schema.upgrade_data(lookup(obj, ("kind",)), data)
-        if upgraded != data:
-            upgraded[field["key"]] = value
-            assign(obj, ("data",), upgraded)
-            return
-    assign(obj, ("data", field["key"]), value)
+    assign(obj, ("data", field["key"]), list(value) if field["size"] > 1 else value)
 
 
 def exact_name(obj, role=None):

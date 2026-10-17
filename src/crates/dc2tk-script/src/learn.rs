@@ -708,15 +708,6 @@ void on_init(void)
     }
 
     #[test]
-    fn docs_wrapped_at_a_hyphen_join_without_a_space() {
-        let comment =
-            "// Pushes backwards while the flip is mid-\n// motion, then stops - briefly.\nvoid f(void)\n{\n}\n";
-        let program = parse::parse(comment).unwrap();
-        let function = program.list("functions").iter().find(|item| item.kind() == "function").unwrap();
-        assert_eq!(function.text("doc"), "Pushes backwards while the flip is mid-motion, then stops - briefly.");
-    }
-
-    #[test]
     fn a_handler_takes_the_name_of_the_program_it_handles() {
         let program = node!({"functions": [{"name": "f_0000", "kind": "function"}, {"name": "f_0010", "kind": "function"}],
                              "programs": [{"no": 102, "function": "f_0000"}], "main": "f_0010"});

@@ -203,7 +203,7 @@ Set `"start_at"` in `mod.json` (or pass `--start-at` to `dc2tk build`) to make *
 
 ## The mod commands
 
-See [CLI Reference: Creating and managing mods](commands.md#creating-and-managing-mods) for all `dc2tk mod` subcommands (`make`, `asset`, `override`, `new`, `save`, `check`, `test`, `list`, `slim`, `apply`, `migrate`, `header`).
+See [CLI Reference: Creating and managing mods](commands.md#creating-and-managing-mods) for all `dc2tk mod` subcommands (`make`, `asset`, `override`, `new`, `save`, `check`, `test`, `list`, `slim`, `apply`, `header`).
 
 ## Tests
 

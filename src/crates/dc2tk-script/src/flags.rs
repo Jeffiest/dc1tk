@@ -182,8 +182,7 @@ pub fn scan_space(space: &'static Space, tree: &Path, consts: &IndexMap<String, 
     let mut found = Found { space, uses: BTreeMap::new(), computed: Vec::new() };
     // index::calls lists files in order and calls in each in order
     for call in index::calls(tree, &names)? {
-        // an old-numbered call that lands on a flag native was written for another one
-        if call.args.is_empty() || call.meant.is_some() {
+        if call.args.is_empty() {
             continue;
         }
         let access = space.functions.iter().find(|(name, _)| *name == call.name).map(|(_, access)| *access).unwrap();

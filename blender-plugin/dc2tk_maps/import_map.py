@@ -139,10 +139,6 @@ def point_display(obj):
     kind = c2data.lookup(obj, ("kind",))
     if kind == "event":
         event_kind = c2data.lookup(obj, ("data", "kind"))
-        if event_kind is None:
-            data = c2data.lookup(obj, ("data",))
-            if data is not None and not hasattr(data, "keys"):
-                event_kind = c2data.to_py(data)[0] if len(data) else None
         obj.empty_display_type = "CUBE"
         scale = obj.scale
         near_one = all(abs(abs(s) - 1.0) < 0.01 for s in scale)

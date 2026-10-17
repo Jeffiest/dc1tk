@@ -161,12 +161,6 @@ pub struct Context {
     pub enums: IndexMap<String, IndexMap<i64, String>>,
     /// Float constants by their bits.
     pub float_names: IndexMap<i64, String>,
-    pub old_groups: HashMap<i64, i64>,
-    pub old_direct: HashMap<i64, i64>,
-    pub old_table_groups: HashMap<i64, i64>,
-    pub old_table: bool,
-    pub raw_table: bool,
-    pub by_number: HashMap<i64, String>,
     /// The headers a decompiled script includes.
     pub includes: Vec<String>,
     /// The event bank of each sound set, by number.
@@ -180,10 +174,6 @@ pub struct Context {
     /// may not evaluate runs only when C would evaluate it.
     pub strict: bool,
     pub(super) reserved: HashSet<String>,
-}
-
-fn numbered_groups(found: &IndexMap<String, i64>) -> HashMap<i64, i64> {
-    found.iter().filter_map(|(key, value)| Some((key.parse::<i64>().ok()?, *value))).collect()
 }
 
 /// Refuses a constant declared twice: an enum member whose name another enum member or a #define
@@ -261,16 +251,6 @@ pub fn context(declarations: &Declarations, table: &str, tables: &BTreeMap<Strin
     }
     found.originals = original_by_number.values().cloned().collect();
     found.program_names = found.programs.iter().map(|(name, number)| (*number, name.clone())).collect();
-    if let Some(rows) = rows {
-        found.old_groups = numbered_groups(&rows.old.old_groups);
-        found.old_direct = numbered_groups(&rows.old.old_direct);
-        found.old_table_groups = numbered_groups(&rows.old.old_table_groups);
-    }
-    found.by_number = declarations
-        .natives
-        .iter()
-        .map(|declared| (declared["no"].as_i64().unwrap_or(0), declared.text("name").to_string()))
-        .collect();
     found.refresh_reserved();
     for inline in &declarations.inlines {
         let shadowed: HashSet<String> =

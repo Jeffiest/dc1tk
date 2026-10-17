@@ -30,13 +30,12 @@ Run `dc2tk help <command>` to see all options for any command.
 | `dc2tk mod new extracted/scripts <name> <file>` | Copy whole script files into `mods/<name>/files/` to edit there. |
 | `dc2tk mod save extracted/scripts <name>` | Copy every script file edited or added in `extracted/scripts` into `mods/<name>/`. |
 | `dc2tk mod override extracted/scripts <name> --map s51 <func>` | Create a patch in `mods/<name>/` that overrides `<func>` (also accepts `--monster`, `--script`, or `--library`). |
-| `dc2tk mod check extracted/scripts <name>` | Compile and validate a mod without building an ISO (pass `--disc dc2.iso` to also check assets and data tables, and `--rename` to update overridden functions the definitions have renamed). |
+| `dc2tk mod check extracted/scripts <name>` | Compile and validate a mod without building an ISO (pass `--disc dc2.iso` to also check assets and data tables). |
 | `dc2tk mod test extracted/scripts <name>` | Run unit tests in `mods/<name>/tests.c` inside the built-in script VM. |
 | `dc2tk mod list extracted/scripts` | List all mods in `mods/`, their patches, and allocated IDs. |
 | `dc2tk mod slim extracted/scripts <name>` | Convert full-file script copies in a mod into small function patches. |
 | `dc2tk mod header extracted/scripts <name>` | Regenerate `.editor/` headers and `compile_commands.json` for `clangd`. |
 | `dc2tk mod apply extracted/scripts <name>...` | Write mods' files into a source tree. |
-| `dc2tk mod migrate dc2.iso <name>` | Turn an old mod's `disc/` folder into `mod.json` lines by asset id. |
 
 ## Searching and inspecting the game
 
@@ -94,5 +93,5 @@ Pass `--start-at <target>` to `dc2tk build` (or set `"start_at"` in `mod.json`) 
 | `dc2tk assemble file.asm -o file.stb` | Assemble text assembly into `.stb` bytecode. |
 | `dc2tk fork extracted/scripts lib/old.c lib/new.c script.c` | Split a shared library file for specific scripts. |
 | `dc2tk verify extracted/disc` | Verify that all 1,398 retail scripts decompile and recompile byte-for-byte (`--json <file>` writes the full report). |
-| `dc2tk defs learn` / `check` / `todo` / `rename` / `migrate` / `disc` | Maintain the decompiler's naming definitions (see [definitions/README.md](../../definitions/README.md)). After a `dc2tk` update renames constants, `dc2tk defs migrate` renames them in your trees and mods. |
+| `dc2tk defs learn` / `check` / `todo` / `rename` / `disc` | Maintain the decompiler's naming definitions (see [definitions/README.md](../../definitions/README.md)). |
 | `dc2tk natives` / `dc2tk api-docs` | Regenerate the native tables and the [API Reference](../scripting/api/README.md). |

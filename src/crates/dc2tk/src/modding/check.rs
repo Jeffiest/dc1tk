@@ -10,10 +10,9 @@ use anyhow::{bail, Result};
 use indexmap::IndexMap;
 
 use dc2tk_script::patches::{self, ModConstants};
-use dc2tk_script::{datatables, disc, discfiles, loads, mapscript, maptable, mods, renames, replace};
+use dc2tk_script::{datatables, disc, discfiles, loads, mapscript, maptable, mods, replace};
 
-use super::{default_constants, mod_folders, new_music_lines, reached_lines, resolved, shown};
-use crate::files;
+use super::{default_constants, mod_folders, new_music_lines, reached_lines, resolved};
 use crate::options::{Common, ModsDir, Tools};
 
 pub fn run_mod_check(
@@ -21,7 +20,6 @@ pub fn run_mod_check(
     names: &[String],
     mods_dir: &ModsDir,
     disc: Option<&Path>,
-    rename: bool,
     common: &Common,
 ) -> Result<ExitCode> {
     let tools = common.tools()?;
@@ -66,13 +64,8 @@ pub fn run_mod_check(
             println!("{name}: {constant} = {number}");
         }
     }
-    print_renames(&mod_dirs, &result.following, rename)?;
     for (path, error) in &result.errors {
         println!("error: {path}: {error}");
-    }
-    let errors = result.errors.iter().map(|(_, error)| error.as_str());
-    if let Some(hint) = files::rename_hint(&common.def_sets(), errors, source) {
-        println!("{hint}");
     }
     match disc {
         Some(disc) => {
@@ -179,27 +172,6 @@ fn mod_constants(
         patches::merge_constants(&mut constants, &patches::for_every_mod(&maps, mod_dirs));
     }
     Ok(constants)
-}
-
-/// The overridden functions the tree has renamed, found by their fingerprints, and with --rename
-/// the new names written into the mods' files.
-fn print_renames(mod_dirs: &[PathBuf], following: &renames::Following, rename: bool) -> Result<()> {
-    for followed in &following.followed {
-        println!("{}", renames::describe(followed));
-    }
-    for note in &following.notes {
-        println!("note: {note}");
-    }
-    if rename {
-        for mod_dir in mod_dirs {
-            for path in renames::rename(mod_dir, &following.followed)? {
-                println!("renamed in {}", shown(&path));
-            }
-        }
-    } else if !following.followed.is_empty() {
-        println!("--rename writes the new names into the mods");
-    }
-    Ok(())
 }
 
 /// The files the mods' scripts load by name (loads.rs) that the disc, with the files the mods

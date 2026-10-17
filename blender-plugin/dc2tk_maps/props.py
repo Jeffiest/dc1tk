@@ -97,8 +97,6 @@ def set_pair(obj, key, start, value):
 
 def get_far_clip(obj, index):
     value = c2data.to_py(c2data.lookup(obj, ("far_clip",)))
-    if isinstance(value, dict):
-        return _float(value.get(("distance", "fade")[index]))
     if isinstance(value, list) and index < len(value):
         return _float(value[index])
     return 0.0
@@ -108,12 +106,9 @@ def set_far_clip(obj, index, value):
     if obj is None:
         return
     current = c2data.to_py(c2data.lookup(obj, ("far_clip",)))
-    if isinstance(current, dict):
-        current[("distance", "fade")[index]] = value
-    else:
-        current = current if isinstance(current, list) else []
-        current += [0.0] * max(0, index + 1 - len(current))
-        current[index] = value
+    current = current if isinstance(current, list) else []
+    current += [0.0] * max(0, index + 1 - len(current))
+    current[index] = value
     c2data.assign(obj, ("far_clip",), current)
 
 

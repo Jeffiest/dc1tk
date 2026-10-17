@@ -16,9 +16,7 @@ def _root():
     return c2data.current_map_root(bpy.context)
 
 
-def _settings_path(root):
-    tree = c2data.to_py(c2data.lookup(root, ("map",)))
-    return ("map", "settings") if isinstance(tree, dict) and isinstance(tree.get("settings"), dict) else ("map",)
+SETTINGS = ("map", "settings")
 
 
 def _sets(root):
@@ -61,7 +59,7 @@ def _set_value(key, value):
     root, at, _found = _chosen()
     if at is None:
         return
-    c2data.assign(root, _settings_path(root) + ("light_sets", at) + tuple(key), value)
+    c2data.assign(root, SETTINGS + ("light_sets", at) + tuple(key), value)
     refresh(bpy.context)
 
 
@@ -96,9 +94,6 @@ def _colour_set(key):
 
 def _fog(self):
     fog = _get(("fog",), None)
-    if isinstance(fog, list):
-        values = list(fog) + [0.0] * (5 - len(fog))
-        return {"near": values[0], "far": values[1], "color": values[2:5], "list": True}
     return dict(fog) if isinstance(fog, dict) else {"near": 0.0, "far": 0.0, "color": [0, 0, 0]}
 
 
@@ -107,15 +102,6 @@ def _fog_set(field, value):
     if found is None:
         return
     fog = found.get("fog")
-    if isinstance(fog, list):
-        values = list(fog) + [0.0] * (5 - len(fog))
-        index = {"near": 0, "far": 1}.get(field)
-        if index is not None:
-            values[index] = value
-        else:
-            values[2:5] = value
-        _set_value(("fog",), values)
-        return
     fog = dict(fog) if isinstance(fog, dict) else {}
     fog[field] = value
     _set_value(("fog",), fog)
@@ -139,7 +125,7 @@ def _light_set(slot, key, value):
         return
     lights = found.get("lights")
     place = [i for i, light in enumerate(lights) if isinstance(light, dict)][slot]
-    c2data.assign(root, _settings_path(root) + ("light_sets", at, "lights", place, key), value)
+    c2data.assign(root, SETTINGS + ("light_sets", at, "lights", place, key), value)
     refresh(bpy.context)
 
 
@@ -149,34 +135,25 @@ def _time_flag():
     return flag
 
 
-def _time_get(field, index, default):
+def _time_get(field, default):
     def get(self):
         flag = _time_flag()
-        if isinstance(flag, dict):
-            value = flag.get(field, default)
-        elif isinstance(flag, list) and index < len(flag):
-            value = flag[index]
-        else:
-            value = default
+        value = flag.get(field, default) if isinstance(flag, dict) else default
         return type(default)(value) if value is not None else default
 
     return get
 
 
-def _time_set(field, index):
+def _time_set(field):
     def set_(self, value):
         root = _root()
         if root is None:
             return
         flag = _time_flag()
         value = int(value) if not isinstance(value, float) else value
-        if isinstance(flag, list):
-            flag = list(flag) + [0] * (index + 1 - len(flag))
-            flag[index] = value
-        else:
-            flag = dict(flag) if isinstance(flag, dict) else {}
-            flag[field] = value
-        c2data.assign(root, _settings_path(root) + ("time_flag",), flag)
+        flag = dict(flag) if isinstance(flag, dict) else {}
+        flag[field] = value
+        c2data.assign(root, SETTINGS + ("time_flag",), flag)
         refresh(bpy.context)
 
     return set_
@@ -186,8 +163,6 @@ def _number_get(key, default):
     def get(self):
         root = _root()
         value = c2data.map_settings(root).get(key, default) if root else default
-        if isinstance(value, list):
-            value = value[0] if value else default
         try:
             return int(value)
         except (TypeError, ValueError):
@@ -201,8 +176,7 @@ def _number_set(key):
         root = _root()
         if root is None:
             return
-        old = c2data.map_settings(root).get(key)
-        c2data.assign(root, _settings_path(root) + (key,), [int(value)] if isinstance(old, list) else int(value))
+        c2data.assign(root, SETTINGS + (key,), int(value))
         refresh(bpy.context)
 
     return set_
@@ -304,17 +278,17 @@ def lighting_properties():
         ),
         "time_follow": BoolProperty(
             name="Follows the clock", description="TIME_FLAG: the light set is chosen by the hour",
-            get=_time_get("follow_clock", 0, False), set=_time_set("follow_clock", 0),
+            get=_time_get("follow_clock", False), set=_time_set("follow_clock"),
         ),
         "time_blend": BoolProperty(
             name="Blends", description="TIME_FLAG: each set blends into the next over the last hour, the first light following the sun",
-            get=_time_get("blend", 1, False), set=_time_set("blend", 1),
+            get=_time_get("blend", False), set=_time_set("blend"),
         ),
         "time_fixed": FloatProperty(
-            name="Fixed hour", min=0.0, max=24.0, get=_time_get("fixed_time", 2, 12.0), set=_time_set("fixed_time", 2),
+            name="Fixed hour", min=0.0, max=24.0, get=_time_get("fixed_time", 12.0), set=_time_set("fixed_time"),
         ),
         "time_fixed_on": BoolProperty(
-            name="At a fixed hour", get=_time_get("fixed_time_enable", 3, False), set=_time_set("fixed_time_enable", 3),
+            name="At a fixed hour", get=_time_get("fixed_time_enable", False), set=_time_set("fixed_time_enable"),
         ),
         "time_light_num": IntProperty(
             name="Sets by the hour", description="TIME_LIGHT_NUM: 4 follows day, evening, night and morning; "

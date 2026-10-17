@@ -14,8 +14,6 @@ use crate::{Context, Result};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Manifest {
-    /// tree::FORMAT, the layout's version.
-    pub format: i64,
     pub counts: Counts,
     /// Every asset by id, in id order.
     pub assets: BTreeMap<String, Asset>,

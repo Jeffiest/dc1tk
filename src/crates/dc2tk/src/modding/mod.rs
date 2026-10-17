@@ -14,9 +14,7 @@ use clap::Subcommand;
 use indexmap::{IndexMap, IndexSet};
 
 use dc2tk_script::patches::TargetKind;
-use dc2tk_script::{
-    capture, datatables, definitions, discfiles, editor, index, migrate, mods, paths, renames, replace, sdk, slim,
-};
+use dc2tk_script::{capture, datatables, definitions, discfiles, editor, index, mods, paths, replace, sdk, slim};
 
 use crate::options::{Common, ModsDir};
 use crate::{asset_tree, files};
@@ -174,10 +172,6 @@ pub enum ModCommand {
         /// no two mods change one place and every file the scripts load is there.
         #[arg(long)]
         disc: Option<PathBuf>,
-        /// Write the new names of overridden functions the tree has renamed (found by their
-        /// fingerprints) into the mods' files.
-        #[arg(long)]
-        rename: bool,
         #[command(flatten)]
         common: Common,
     },
@@ -195,18 +189,6 @@ pub enum ModCommand {
         mods: ModsDir,
         #[command(flatten)]
         common: Common,
-    },
-    /// Turn a mod's disc/ folder into mod.json lines by asset id, moving its files out of disc/.
-    Migrate {
-        /// The disc the mod's files replace: its image, or an extracted disc folder.
-        iso: PathBuf,
-        /// The mod's name.
-        name: String,
-        #[command(flatten)]
-        mods: ModsDir,
-        /// Definition set naming the sound entries; the shipped PAL set when omitted.
-        #[arg(long, value_name = "DIR")]
-        defs: Vec<PathBuf>,
     },
 }
 
@@ -234,11 +216,10 @@ pub fn run_mod(command: &ModCommand) -> Result<ExitCode> {
         ModCommand::Asset { iso, name, paths, form, mods, defs } => {
             run_mod_asset(iso, name, paths, form.as_deref(), mods, defs)
         }
-        ModCommand::Check { source, names, mods, disc, rename, common } => {
-            check::run_mod_check(source, names, mods, disc.as_deref(), *rename, common)
+        ModCommand::Check { source, names, mods, disc, common } => {
+            check::run_mod_check(source, names, mods, disc.as_deref(), common)
         }
         ModCommand::Make { iso, name, extracted, mods, common } => run_mod_make(iso, name, extracted, mods, common),
-        ModCommand::Migrate { iso, name, mods, defs } => run_mod_migrate(iso, name, mods, defs),
     }
 }
 
@@ -276,7 +257,6 @@ fn run_mod_slim(source: &Path, name: &str, mods_dir: &ModsDir, common: &Common) 
     }
     if outcome.slimmed.iter().any(|slimmed| slimmed.patch.is_some()) {
         write_editor_files(&mod_dir, source, common)?;
-        record_fingerprints(&mod_dir, source, common)?;
     }
     let patched = outcome.slimmed.iter().filter(|slimmed| slimmed.patch.is_some()).count();
     println!(
@@ -344,7 +324,6 @@ fn run_mod_override(
         if result.scripts.len() == 1 { "" } else { "s" }
     );
     write_editor_files(&mod_dir, source, common)?;
-    record_fingerprints(&mod_dir, source, common)?;
     Ok(ExitCode::SUCCESS)
 }
 
@@ -436,19 +415,6 @@ fn run_mod_make(iso: &Path, name: &str, extracted: &Path, mods_dir: &ModsDir, co
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_mod_migrate(iso: &Path, name: &str, mods_dir: &ModsDir, defs: &[PathBuf]) -> Result<ExitCode> {
-    let mod_dir = mods_dir.folder(name)?;
-    let found = migrate::migrate(&mod_dir, iso, &asset_tree::index_of(iso, defs)?)?;
-    for (key, value) in &found.lines {
-        println!("{key}: {value}");
-    }
-    for note in &found.notes {
-        println!("note: {note}");
-    }
-    println!("{} lines written to {}", found.lines.len(), shown(&mod_dir.join(mods::INDEX)));
-    Ok(ExitCode::SUCCESS)
-}
-
 /// The constants mods' additions see: the shipped definitions' and the default SDK's, with the
 /// tree's own headers.
 fn default_constants(tree_dir: &Path) -> Result<IndexMap<String, i64>> {
@@ -479,16 +445,6 @@ fn shown(path: &Path) -> String {
 fn write_editor_files(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Result<Vec<PathBuf>> {
     let tools = common.tools()?;
     Ok(editor::write(mod_dir, tree_dir, &tools.toolchain(), &tools.sdk_dir, &tools.defs.sets)?)
-}
-
-/// The fingerprints of the functions a mod's patches override, kept in its renames::LOCK so build
-/// finds them when a later decompile renames them.
-fn record_fingerprints(mod_dir: &Path, tree_dir: &Path, common: &Common) -> Result<()> {
-    let tools = common.tools()?;
-    let dirs = [mod_dir.to_path_buf()];
-    let mut plan = mods::patch_plan(&dirs, tree_dir, &default_constants(tree_dir)?, false)?;
-    renames::follow(&dirs, &mut plan, tree_dir, &tools.toolchain(), &IndexMap::new())?;
-    Ok(())
 }
 
 /// The places and changes of the chosen mods' asset ids, and the templates of the game files they

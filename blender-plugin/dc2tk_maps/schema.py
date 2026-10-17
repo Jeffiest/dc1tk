@@ -72,25 +72,23 @@ _FIRE = [
         "label": "Colour",
         "kind": "int",
         "size": 3,
-        "pos": 0,
         "labels": ("R", "G", "B"),
         "default": [128, 90, 38],
     },
-    {"key": "draw", "label": "Draw", "kind": "int", "pos": 3},
-    {"key": "extra", "label": "Extra", "kind": "int", "size": 2, "pos": 4, "optional": True},
+    {"key": "draw", "label": "Draw", "kind": "int"},
+    {"key": "extra", "label": "Extra", "kind": "int", "size": 2, "optional": True},
 ]
 
 
 DATA_FIELDS = {
     "pos": [],
     "invent": [
-        {"key": "id", "label": "Invent id", "kind": "int", "pos": 0},
+        {"key": "id", "label": "Invent id", "kind": "int"},
         {
             "key": "min",
             "label": "Box min",
             "kind": "float",
             "size": 3,
-            "pos": 1,
             "labels": ("X", "Y", "Z"),
             "default": [-10.0, -10.0, -10.0],
         },
@@ -99,115 +97,79 @@ DATA_FIELDS = {
             "label": "Box max",
             "kind": "float",
             "size": 3,
-            "pos": 4,
             "labels": ("X", "Y", "Z"),
             "default": [10.0, 10.0, 10.0],
         },
-        {"key": "unknown_int", "label": "Int", "kind": "int", "pos": 7},
-        {"key": "unknown_float", "label": "Float", "kind": "float", "pos": 8},
-        {"key": "angle", "label": "Angle (degrees)", "kind": "float", "pos": 9},
+        {"key": "unknown_int", "label": "Int", "kind": "int"},
+        {"key": "unknown_float", "label": "Float", "kind": "float"},
+        {"key": "angle", "label": "Angle (degrees)", "kind": "float"},
     ],
     "event": [
-        {"key": "kind", "label": "Event kind", "kind": "str", "pos": 0, "default": "event"},
-        {"key": "event_no", "label": "Event number", "kind": "int", "pos": 1},
-        {"key": "program", "label": "Program", "kind": "int", "pos": 2},
+        {"key": "kind", "label": "Event kind", "kind": "str", "default": "event"},
+        {"key": "event_no", "label": "Event number", "kind": "int"},
+        {"key": "program", "label": "Program", "kind": "int"},
         {
             "key": "args",
             "label": "Arguments",
             "kind": "int",
             "size": 3,
-            "pos": 3,
             "labels": ("Arg 1", "Arg 2", "Call program"),
         },
-        {"key": "target", "label": "Target", "kind": "str", "pos": 6},
+        {"key": "target", "label": "Target", "kind": "str"},
         {
             "key": "flags",
             "label": "Flags",
             "kind": "int",
             "size": 3,
-            "pos": 7,
             "labels": ("Action button", "Use item", "0x100"),
         },
     ],
     "flare": _FIRE,
     "fire": _FIRE,
     "plight": [
-        {"key": "power", "label": "Power", "kind": "float", "pos": 0, "default": 100.0},
+        {"key": "power", "label": "Power", "kind": "float", "default": 100.0},
         {
             "key": "color",
             "label": "Colour (0-511)",
             "kind": "int",
             "size": 3,
-            "pos": 1,
             "labels": ("R", "G", "B"),
             "default": [255, 255, 255],
         },
-        {"key": "mode", "label": "Mode", "kind": "int", "pos": 4},
-        {"key": "args", "label": "Arguments", "kind": "int", "size": 4, "pos": 5},
-        {"key": "flicker", "label": "Flicker type", "kind": "int", "pos": 9},
-        {"key": "depth", "label": "Flicker depth", "kind": "float", "pos": 10},
-        {"key": "period", "label": "Flicker period", "kind": "float", "pos": 11},
+        {"key": "mode", "label": "Mode", "kind": "int"},
+        {"key": "args", "label": "Arguments", "kind": "int", "size": 4},
+        {"key": "flicker", "label": "Flicker type", "kind": "int"},
+        {"key": "depth", "label": "Flicker depth", "kind": "float"},
+        {"key": "period", "label": "Flicker period", "kind": "float"},
     ],
-    "effect": [{"key": "effect", "label": "Effect name", "kind": "str", "pos": 0}],
+    "effect": [{"key": "effect", "label": "Effect name", "kind": "str"}],
     "sound": [
-        {"key": "number", "label": "Sound number", "kind": "int", "pos": 0},
-        {"key": "near", "label": "Near", "kind": "float", "pos": 1, "default": 50.0},
-        {"key": "far", "label": "Far", "kind": "float", "pos": 2, "default": 200.0},
-        {"key": "unknown_int", "label": "Int", "kind": "int", "pos": 3},
-        {"key": "shape", "label": "Shape", "kind": "int", "pos": 4},
-        {"key": "start", "label": "Start", "kind": "float", "size": 3, "pos": 5, "labels": ("X", "Y", "Z")},
-        {"key": "end", "label": "End", "kind": "float", "size": 3, "pos": 8, "labels": ("X", "Y", "Z")},
+        {"key": "number", "label": "Sound number", "kind": "int"},
+        {"key": "near", "label": "Near", "kind": "float", "default": 50.0},
+        {"key": "far", "label": "Far", "kind": "float", "default": 200.0},
+        {"key": "unknown_int", "label": "Int", "kind": "int"},
+        {"key": "shape", "label": "Shape", "kind": "int"},
+        {"key": "start", "label": "Start", "kind": "float", "size": 3, "labels": ("X", "Y", "Z")},
+        {"key": "end", "label": "End", "kind": "float", "size": 3, "labels": ("X", "Y", "Z")},
     ],
     "anime": [
-        {"key": "placement", "label": "Placement", "kind": "str", "pos": 0},
-        {"key": "piece", "label": "Piece", "kind": "str", "pos": 1},
-        {"key": "frame", "label": "Model node", "kind": "str", "pos": 2},
-        {
-            "key": "drives",
-            "label": "Drives",
-            "kind": "int",
-            "pos": 3,
-            "default": 2,
-            "choices": ANIME_DRIVES,
-            "old": "kind",
-        },
-        {
-            "key": "mode",
-            "label": "Mode",
-            "kind": "int",
-            "pos": 4,
-            "default": 1,
-            "choices": ANIME_MODES,
-            "old": "unknown_int",
-        },
-        {"key": "start", "label": "Start", "kind": "float", "size": 3, "pos": 5, "labels": _XYZ, "old": "v0"},
+        {"key": "placement", "label": "Placement", "kind": "str"},
+        {"key": "piece", "label": "Piece", "kind": "str"},
+        {"key": "frame", "label": "Model node", "kind": "str"},
+        {"key": "drives", "label": "Drives", "kind": "int", "default": 2, "choices": ANIME_DRIVES},
+        {"key": "mode", "label": "Mode", "kind": "int", "default": 1, "choices": ANIME_MODES},
+        {"key": "start", "label": "Start", "kind": "float", "size": 3, "labels": _XYZ},
         {
             "key": "step",
             "label": "Step (per frame)",
             "kind": "float",
             "size": 3,
-            "pos": 8,
             "labels": _XYZ,
             "default": [0.0, 1.0, 0.0],
-            "old": "v1",
         },
-        {"key": "end", "label": "End", "kind": "float", "size": 3, "pos": 11, "labels": _XYZ, "old": "v2"},
-        {
-            "key": "uniform",
-            "label": "Uniform (Y and Z follow X)",
-            "kind": "flag",
-            "pos": 14,
-            "optional": True,
-            "old": ("extra", 0),
-        },
-        {
-            "key": "relative",
-            "label": "Relative (in the piece's own space)",
-            "kind": "flag",
-            "pos": 15,
-            "optional": True,
-            "old": ("extra", 1),
-        },
+        {"key": "end", "label": "End", "kind": "float", "size": 3, "labels": _XYZ},
+        {"key": "uniform", "label": "Uniform (Y and Z follow X)", "kind": "flag", "optional": True},
+        {"key": "relative", "label": "Relative (in the piece's own space)", "kind": "flag", "optional": True},
     ],
 }
 
@@ -218,7 +180,6 @@ for fields in DATA_FIELDS.values():
         field.setdefault("labels", None)
         field.setdefault("optional", False)
         field.setdefault("choices", None)
-        field.setdefault("old", None)
         if "default" not in field:
             zero = {"int": 0, "flag": 0, "float": 0.0, "str": ""}[field["kind"]]
             field["default"] = zero if field["size"] == 1 else [zero] * field["size"]
@@ -229,27 +190,6 @@ def data_field(kind, key):
         if field["key"] == key:
             return field
     raise KeyError(key)
-
-
-def upgrade_data(kind, data):
-    fields = [field for field in DATA_FIELDS.get(kind, []) if field["old"] is not None]
-    if not isinstance(data, dict) or not fields:
-        return data
-    data = dict(data)
-    olds = set()
-    for field in fields:
-        key, index = (field["old"], None) if isinstance(field["old"], str) else field["old"]
-        olds.add(key)
-        if field["key"] in data or key not in data:
-            continue
-        value = data[key]
-        if index is not None:
-            value = value[index] if isinstance(value, (list, tuple)) and index < len(value) else None
-        if value is not None:
-            data[field["key"]] = value
-    for key in olds:
-        data.pop(key, None)
-    return data
 
 
 def anime_vectors(drives, mode):
@@ -427,36 +367,29 @@ MOD_PROGRAMS = (9000, 10000)
 
 MAP_LABELS = {
     "images": "Texture files (IMG)",
-    "img": "Texture files (IMG)",
     "packs": "Model packs (PCP)",
-    "pcp": "Model packs (PCP)",
     "active_light_set": "Active light set",
     "light_sets": "Light sets",
-    "light_set": "Light sets",
     "fov": "FOV (ignored, always 52)",
     "bgcolor": "Background colour",
     "bgcolor2": "Background colour 2",
     "ambient": "Ambient (128 neutral)",
     "lights": "Lights",
-    "light": "Lights",
-    "plights": "Point lights",
-    "plight": "Point lights",
     "fog_enable": "Fog on",
-    "fog": "Fog (near, far, r, g, b, offset, far2)",
+    "fog": "Fog",
     "floor": "Floor",
     "chara_pos": "Character position",
     "def_foot": "Default foot sound",
-    "time_flag": "Time (follow clock, blend, hour, fixed)",
+    "time_flag": "Time flag",
     "time_light_num": "Time light sets (8 or less)",
     "time_cfade": "Time colour fade",
-    "sky_info": "Sky (int, float, sun angle)",
+    "sky_info": "Sky",
     "lens_flare": "Lens flare",
     "all_scissor": "All scissor",
     "chara_light_adjust": "Character light adjust",
     "cameras": "Fixed cameras",
-    "camera_info": "Fixed cameras",
 }
 
 
 def map_label(key):
-    return MAP_LABELS.get(str(key).lower(), str(key))
+    return MAP_LABELS.get(key, key)

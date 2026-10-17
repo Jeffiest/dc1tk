@@ -13,7 +13,7 @@ use dc2tk_disc::rebuild;
 use dc2tk_script::discfiles::{self, Files};
 use dc2tk_script::mapedit::{self, MapChange};
 use dc2tk_script::{
-    build, datatables, disc, index, mapscript, maptable, memory, mods, patches, renames, replace, startat, tree,
+    build, datatables, disc, index, mapscript, maptable, memory, mods, patches, replace, startat, tree,
 };
 
 use super::{default_constants, joined, launch, mod_folders, new_music_lines, reached_lines, resolved, shown};
@@ -246,18 +246,9 @@ fn print_tree_notes(args: &BuildArgs, mod_dirs: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-/// The overridden functions followed to their new names, and every script that can have changed
-/// compiled and compared with the disc's.
+/// Every script that can have changed compiled and compared with the disc's.
 fn compile(args: &BuildArgs, tools: &Tools, planned: &mut Planned) -> Result<build::Changes> {
     let toolchain = tools.toolchain();
-    let following =
-        renames::follow(&planned.mod_dirs, &mut planned.plan, &args.source, &toolchain, &planned.overrides)?;
-    for followed in &following.followed {
-        println!("note: {}; dc2tk mod check --rename writes the new name into the mod", renames::describe(followed));
-    }
-    for note in &following.notes {
-        println!("note: {note}");
-    }
     let found =
         build::changes(&args.source, &args.disc, &toolchain, &planned.overrides, args.full, Some(&planned.plan))?;
     match &found.all_because {

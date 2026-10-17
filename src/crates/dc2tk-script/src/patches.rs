@@ -252,9 +252,6 @@ pub struct Patch {
     pub scripts: Vec<String>,
     pub plain: HashMap<String, String>,
     pub numbers: IndexMap<String, i64>,
-    /// Overridden functions the tree has renamed, found by fingerprint (renames): {script: {name
-    /// in the patch: name in the script}}. The patch is merged as if it said the new names.
-    pub follow: HashMap<String, IndexMap<String, String>>,
 }
 
 impl Patch {
@@ -399,7 +396,6 @@ pub fn located(mod_list: &[ModTexts], tree: &Path) -> Result<(ByScript, Vec<Patc
                 plain: chosen.iter().map(|script| (script.clone(), scripts.plain[script].clone())).collect(),
                 scripts: chosen.into_iter().collect(),
                 numbers: IndexMap::new(),
-                follow: HashMap::new(),
             });
         }
     }
@@ -457,29 +453,7 @@ pub fn prepared(
                 .extend(library_program.list("globals").iter().map(|declared| declared.clone().with("source", path)));
         }
     }
-    let mut expanded = library::expand(parsed, &texts, headers)?;
-    if let Some(follow) = patch.follow.get(script).filter(|follow| !follow.is_empty()) {
-        // overrides of functions the tree renamed: the override and every call to the old name
-        // take the new one
-        let functions: Vec<Node> = expanded
-            .list("functions")
-            .iter()
-            .map(|function| {
-                let name = function.text("name");
-                let mut out = renamed(function, follow, &IndexMap::new(), &own_names(function));
-                if function["override"].is_set() {
-                    if let Some(to) = follow.get(name) {
-                        out["name"] = to.as_str().into();
-                    }
-                    if let Some(to) = function["override_of"].as_str().and_then(|of| follow.get(of)) {
-                        out["override_of"] = to.as_str().into();
-                    }
-                }
-                out
-            })
-            .collect();
-        expanded = expanded.with("functions", functions);
-    }
+    let expanded = library::expand(parsed, &texts, headers)?;
     let mut consts: IndexMap<String, Node> = expanded["declarations"]
         .list("constants")
         .iter()

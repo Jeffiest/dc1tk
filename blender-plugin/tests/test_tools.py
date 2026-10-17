@@ -72,7 +72,7 @@ def check_outliner(context, check, root):
     settings.outline_kind = "event"
     listed = [obj.name for obj in bpy.data.objects if outliner.wanted(obj, settings, root)]
     kinds = {c2data.lookup(bpy.data.objects[name], ("kind",)) for name in listed}
-    check({"point:exit", "point:rawdoor"} <= set(listed) and kinds == {"event"}, "points of a kind: %s" % listed)
+    check({"point:exit", "point:textdoor"} <= set(listed) and kinds == {"event"}, "points of a kind: %s" % listed)
     settings.outline_kind = "ALL"
     settings.outline_search = "lamp"
     listed = [obj.name for obj in bpy.data.objects if outliner.wanted(obj, settings, root)]
@@ -158,7 +158,7 @@ def check_lighting(context, check, root):
     settings.ls_bgcolor = (1.0, 0.5, 0.0)
     check(list(c2data.lookup(root, ("map", "settings", "light_sets", 0, "bgcolor"))) == [255, 128, 0], "background edited")
     settings.ls_fog_far = 2500.0
-    check(abs(c2data.lookup(root, ("map", "settings", "light_sets", 0, "fog"))[1] - 2500.0) < 1e-6, "fog far edited (a list fog)")
+    check(abs(c2data.lookup(root, ("map", "settings", "light_sets", 0, "fog", "far")) - 2500.0) < 1e-6, "fog far edited")
     sun = next(obj for obj in bpy.data.objects if obj.name.startswith(look.SUN_PREFIX % "t01"))
     sun.rotation_euler = Vector((1.0, 0.0, 0.0)).to_track_quat("Z", "Y").to_euler()
     context.view_layer.update()
@@ -167,7 +167,7 @@ def check_lighting(context, check, root):
     check(abs(direction[0] - 1.0) < 1e-3 and abs(direction[1]) < 1e-3, "a sun turned sets its light's direction: %s" % direction)
     c2data.assign(root, ("map", "settings", "light_sets", 0, "lights", 0, "dir"), [0.0, -1.0, 0.0])
     c2data.assign(root, ("map", "settings", "light_sets", 0, "bgcolor"), [10, 20, 30])
-    c2data.assign(root, ("map", "settings", "light_sets", 0, "fog"), [100.0, 3000.0, 40.0, 50.0, 60.0])
+    c2data.assign(root, ("map", "settings", "light_sets", 0, "fog", "far"), 3000.0)
     settings.light_preview = "GAME"
 
 

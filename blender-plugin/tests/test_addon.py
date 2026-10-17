@@ -171,13 +171,13 @@ def main():
         return work
     check(c2data.role(root) == "map", "root role is map")
     as_text = sorted(obj.name for obj in bpy.data.objects if c2data.is_stringified(obj))
-    check(as_text == ["point:rawdoor"], "only the mixed-list point is kept as text: %s" % as_text)
-    raw_door = bpy.data.objects["point:rawdoor"]
-    check(c2data.lookup(raw_door, ("data",))[0] == "door", "text extras read back")
-    check(raw_door.empty_display_type == "CUBE" and abs(raw_door.empty_display_size - 15.0) < 1e-6, "raw door size 15")
-    raw_light = bpy.data.objects["point:rawlight"]
-    check(raw_light.type == "LIGHT", "a plight without a KHR light becomes a light")
-    check(abs(raw_light.data.color[1] - 128 / 255) < 1e-4, "its colour from the raw data")
+    check(as_text == ["point:textdoor"], "only the mixed-list point is kept as text: %s" % as_text)
+    text_door = bpy.data.objects["point:textdoor"]
+    check(c2data.lookup(text_door, ("data", "kind")) == "door", "text extras read back")
+    check(text_door.empty_display_type == "CUBE" and abs(text_door.empty_display_size - 15.0) < 1e-6, "text door size 15")
+    glow = bpy.data.objects["point:glow"]
+    check(glow.type == "LIGHT", "a plight without a KHR light becomes a light")
+    check(abs(glow.data.color[1] - 128 / 255) < 1e-4, "its colour from the data")
 
     collision = [obj for obj in c2data.collision_meshes(root)]
     check(len(collision) == 4, "4 collision meshes (2 placements x collision and camera): %d" % len(collision))
@@ -272,14 +272,6 @@ def main():
     lamp_key = (("map:t01", 1), ("points", 1), ("point:lamp0", 1))
     edited(lamp_key, lambda c2: c2["data"].update(color=[128, 128, 255]))
 
-    activate(raw_light)
-    check(abs(settings.d_plight_power - 80.0) < 1e-6, "power read by position")
-    check(tuple(settings.d_plight_color) == (255, 128, 64), "colour read by position")
-    settings.d_plight_power = 90.0
-    check(abs(c2data.lookup(raw_light, ("data",))[0] - 90.0) < 1e-6, "power written by position")
-    raw_light_key = (("map:t01", 1), ("points", 1), ("point:rawlight", 1))
-    edited(raw_light_key, lambda c2: c2["data"].__setitem__(0, 90.0))
-
     from dc2tk_maps import overlay
     from mathutils import Vector
 
@@ -308,8 +300,8 @@ def main():
         "a map's own animation moves the piece of the placement it names: %s %s" % (target and target.name, problem),
     )
     activate(bob)
-    check(settings.d_anime_drives == "POSITION" and settings.d_anime_mode == "PINGPONG", "old kind and int read by name")
-    check(tuple(settings.d_anime_end) == (0.0, 20.0, 0.0) and not settings.d_anime_uniform, "old v2 and extra read by name")
+    check(settings.d_anime_drives == "POSITION" and settings.d_anime_mode == "PINGPONG", "drives and mode read")
+    check(tuple(settings.d_anime_end) == (0.0, 20.0, 0.0) and not settings.d_anime_uniform, "end and uniform read")
     check(schema.anime_vectors(1, 4)["end"][0] == "End (units)", "a position's end is in units")
 
     lines = overlay.anime_lines(bob)
@@ -323,16 +315,9 @@ def main():
     )
     check(len(overlay.anime_lines(bob, link=True)) == len(overlay.anime_lines(bob)) + 2, "a selected point's line to what it moves")
     settings.d_anime_mode = "REPEAT"
-    data = c2data.to_py(c2data.lookup(bob, ("data",)))
-    check("unknown_int" not in data and "v0" not in data and "extra" not in data, "an edit gives every field its name: %s" % data)
+    check(c2data.lookup(bob, ("data", "mode")) == 3, "mode set")
     bob_key = (("map:t01", 1), ("points", 1), ("point:bob", 1))
-    edited(
-        bob_key,
-        lambda c2: c2.__setitem__("data", {
-            "placement": "house02", "piece": "house_m", "frame": "", "drives": 1, "mode": 3, "start": [0.0, 0.0, 0.0],
-            "step": [0.0, 0.5, 0.0], "end": [0.0, 20.0, 0.0], "uniform": 0, "relative": 0,
-        }),
-    )
+    edited(bob_key, lambda c2: c2["data"].update(mode=3))
     activate(spin)
     settings.d_anime_uniform = True
     check(c2data.lookup(spin, ("data", "uniform")) == 1, "uniform set")
@@ -498,8 +483,8 @@ def main():
         door,
         lamp,
         photo,
-        raw_door,
-        raw_light,
+        text_door,
+        glow,
         spin,
         bob,
         house02,

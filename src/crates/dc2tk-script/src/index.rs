@@ -25,11 +25,6 @@ static PROGRAM_PATTERN: LazyLock<Regex> =
 
 pub static INCLUDE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?m)^#include\s+"([^"]+)""#).unwrap());
 
-/// The decompiler's comment on a call written for an older native table: the engine runs the
-/// native the call names, but the script meant another.
-static OLD_NUMBERING: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"//.*\bold numbering, meant as ([A-Za-z0-9_]+)").unwrap());
-
 /// Every integer constant the headers define: enum members (including program names such as
 /// story_50) and #defines.
 pub fn constants<'a>(texts: impl IntoIterator<Item = &'a String>) -> IndexMap<String, i64> {
@@ -446,7 +441,6 @@ pub struct Call {
     pub name: String,
     pub args: Vec<String>,
     pub text: String,
-    pub meant: Option<String>,
 }
 
 /// One record per call to any of names.
@@ -480,8 +474,6 @@ pub fn calls(tree: &Path, names: &BTreeSet<String>) -> Result<Vec<Call>> {
                 .take_while(|(position, _)| *position <= whole.start())
                 .last()
                 .map(|(_, name)| name.clone());
-            let line_end = text[end..].find('\n').map_or(text.len(), |at| end + at);
-            let meant = OLD_NUMBERING.captures(&text[end..line_end]).map(|found| found[1].to_string());
             found.push(Call {
                 path: relative.clone(),
                 line: text[..whole.start()].matches('\n').count() + 1,
@@ -489,7 +481,6 @@ pub fn calls(tree: &Path, names: &BTreeSet<String>) -> Result<Vec<Call>> {
                 name: capture[1].to_string(),
                 args: split_args(&text[whole.end()..end]),
                 text: text[whole.start()..=end].to_string(),
-                meant,
             });
         }
     }

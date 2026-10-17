@@ -256,25 +256,27 @@ def build():
         rotation=quat_y(45),
     )
 
-    raw_door = b.node(
-        "point:rawdoor",
+    # an argument written with an exponent is kept as the text was ({"exponent": ...}): a list
+    # mixing it with numbers is one Blender cannot store
+    text_door = b.node(
+        "point:textdoor",
         {
             "role": "point",
             "kind": "event",
             "enable": 1,
             "flag": [0, 0, 0, 0],
-            "data": ["door", 1, 520, 0, 0, 0, "s20", 1, 0, 0],
+            "data": {"kind": "door", "event_no": 1, "program": 520, "args": [0, {"exponent": 100000.0}, 0], "target": "s20", "flags": [1, 0, 0]},
         },
         translation=[0.0, 0.0, 200.0],
     )
-    raw_light = b.node(
-        "point:rawlight",
+    glow = b.node(
+        "point:glow",
         {
             "role": "point",
             "kind": "plight",
             "enable": 1,
             "flag": [0, 0, 0, 0],
-            "data": [80.0, 255, 128, 64, 0, 0, 0, 0, 0, 0, 0.0, 0.0],
+            "data": {"power": 80.0, "color": [255, 128, 64], "mode": 0, "args": [0, 0, 0, 0], "flicker": 0, "depth": 0.0, "period": 0.0},
         },
         translation=[0.0, 50.0, 200.0],
     )
@@ -286,15 +288,15 @@ def build():
             "enable": 1,
             "flag": [0, 0, 0, 0],
             "data": {
-                "placement": "house02", "piece": "house_m", "frame": "", "kind": 1, "unknown_int": 4,
-                "v0": [0.0, 0.0, 0.0], "v1": [0.0, 0.5, 0.0], "v2": [0.0, 20.0, 0.0], "extra": [0, 0],
+                "placement": "house02", "piece": "house_m", "frame": "", "drives": 1, "mode": 4,
+                "start": [0.0, 0.0, 0.0], "step": [0.0, 0.5, 0.0], "end": [0.0, 20.0, 0.0], "uniform": 0, "relative": 0,
             },
         },
     )
     camera = b.node("camera:0", {"role": "camera", "index": 0, "pos": [0.0, 100.0, -50.0], "groups": ["inside"]})
 
     placements = b.node("placements", {"role": "group"}, places)
-    points = b.node("points", {"role": "group"}, [door, lamp, sound, invent, bob, raw_door, raw_light])
+    points = b.node("points", {"role": "group"}, [door, lamp, sound, invent, bob, text_door, glow])
     cameras = b.node("cameras", {"role": "group"}, [camera])
     settings = {
         "active_light_set": 0,
@@ -305,16 +307,16 @@ def build():
                 "bgcolor": [10, 20, 30],
                 "bgcolor2": [0, 0, 0],
                 "ambient": [128, 128, 128],
-                "lights": [{"index": 0, "dir": [0.0, -1.0, 0.0], "color": [128, 128, 128]}],
+                "lights": [{"type": "light", "index": 0, "dir": [0.0, -1.0, 0.0], "color": [128, 128, 128]}],
                 "fog_enable": 1,
-                "fog": [100.0, 3000.0, 40.0, 50.0, 60.0],
+                "fog": {"near": 100.0, "far": 3000.0, "color": [40, 50, 60], "offset_far": None},
             }
         ],
         "floor": 0,
         "def_foot": 2,
-        "time_flag": [0, 0],
+        "time_flag": {"follow_clock": 0, "blend": 0, "fixed_time": None, "fixed_time_enable": None},
         "time_light_num": 4,
-        "sky_info": [0.0, 1.0],
+        "sky_info": {"sky": 0, "offset": 1, "sun_angle": None},
     }
     map_tree = {"images": ["t01.img"], "packs": ["t01_0.pcp"], "settings": settings}
     root = b.node("map:" + NAME, {"role": "map", "map": map_tree}, [placements, points, cameras])

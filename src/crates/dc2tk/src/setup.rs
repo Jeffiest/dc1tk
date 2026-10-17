@@ -82,22 +82,14 @@ pub fn run_setup(args: &SetupArgs) -> Result<ExitCode> {
     Ok(code)
 }
 
-/// The disc image extracted into `extracted`, or the extraction already there brought up to date
-/// (the boot executable, and the disc's layout an older extraction lacks).
+/// The disc image extracted into `extracted`, unless an extraction is there already.
 fn extract_image(iso: &Path, extracted: &Path) -> Result<()> {
-    {
-        let image = Image::open(iso)?;
-        if extracted.join(extract::MANIFEST).is_file() {
-            extract::extract_boot(image.bytes(), extracted)?;
-            if !extracted.join(dc2tk_disc::layout::LAYOUT).is_file() {
-                dc2tk_disc::layout::record(image.bytes(), extracted)?;
-                println!("the disc's other files and layout written to {}", files::shown_path(extracted));
-            }
-        } else {
-            let manifest = extract::extract(image.bytes(), extracted)?;
-            println!("{} files extracted to {}", manifest.files.len(), files::shown_path(extracted));
-        }
+    if extracted.join(extract::MANIFEST).is_file() {
+        return Ok(());
     }
+    let image = Image::open(iso)?;
+    let manifest = extract::extract(image.bytes(), extracted)?;
+    println!("{} files extracted to {}", manifest.files.len(), files::shown_path(extracted));
     Ok(())
 }
 

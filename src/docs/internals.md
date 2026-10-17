@@ -131,7 +131,7 @@ description.
   of what the decompiler wrote, which tells edits from its output).
 - Mods and building: `mods` (mod folders, whole files, `mod.json`),
   `patches` (`#pragma target`), `additions`, `numbers` (`NEW_FLAG` and its
-  kin, kept in the lock file), `renames`, `slim`, `migrate`, `capture`
+  kin, kept in the lock file), `slim`, `capture`
   (`diff`, `mod make`), `editor`, `replace` (assets by id), `discfiles`
   (`disc/` and `file:`), `datatables` and `itemtext`, `mapedit`,
   `mapscript`, `maptable`, `startat`, `build` (which scripts can have
@@ -145,11 +145,7 @@ native's body in source order (`int`, `float`, `string`, `vector`, `any`,
 `out`, `out_vector`). It is a hint for argument types, not a signature:
 bodies index the stack in loops and branches. The decompiler does not need
 it, because the bytecode already shows `&x` (`LOAD_ADDR`) and each
-constant's type. `monster.json` and `action.json` also hold `old_groups`,
-`old_table_groups` and `old_direct` ([older native
-numberings](../../docs/internals/scripts.md#older-native-numberings)), which were
-worked out from the scripts rather than the decomp. The command cannot
-regenerate them, so it keeps what the table file it replaces holds of them.
+constant's type.
 
 ### dc2tk
 
@@ -192,9 +188,8 @@ their causes; any error exits with 1.
      disc's index (`replace`, `ids::Index::from_disc`), clashes refused, the
      patches planned and their numbers given (`patches`, `numbers`);
      `--start-at`'s patch of the new-game script (`startat`);
-   - compile: overrides followed to renamed functions (`renames::follow`),
-     then every script that can differ from the disc compiled and compared
-     with it (`build::changes`);
+   - compile: every script that can differ from the disc compiled and
+     compared with it (`build::changes`);
    - game files, each step over the files the steps before wrote: `disc/`
      and `file:` files (`discfiles::replaced`); the id lines
      (`replace::apply_with`: models, then banks, then pictures, then texts

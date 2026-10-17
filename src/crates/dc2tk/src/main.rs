@@ -431,9 +431,6 @@ fn main() -> ExitCode {
         Err(error) => {
             let text = format!("{error:#}");
             eprintln!("{text}");
-            if let Some(hint) = files::rename_hint(&[files::default_defs()], [text.as_str()], Path::new("<tree>")) {
-                eprintln!("{hint}");
-            }
             ExitCode::from(1)
         }
     }

@@ -34,8 +34,6 @@ use crate::soundbank::{self, Bank, EntryKind};
 use crate::{im3, models, text, Context, Error, Result};
 
 pub const MANIFEST: &str = "manifest.json";
-/// The manifest's layout; changes when a reader of an older one would misread it.
-pub const FORMAT: i64 = 1;
 pub const TEXTURES: &str = "textures";
 pub const MODELS: &str = "models";
 pub const SOUNDS: &str = "sounds";
@@ -1006,7 +1004,7 @@ impl<'a> Building<'a> {
             text: self.summary.texts,
             music: self.summary.music,
         };
-        let manifest = Manifest { format: FORMAT, counts, assets: self.assets, aliases, unconverted };
+        let manifest = Manifest { counts, assets: self.assets, aliases, unconverted };
         (manifest, self.summary)
     }
 }

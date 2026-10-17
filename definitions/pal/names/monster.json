@@ -6501,7 +6501,7 @@
         "frames"
       ],
       "loose": "27d5ace00b740a3d",
-      "doc": "Meant to turn toward the target at speed_deg and wait until facing it, but in this toolkit's old numbering start_turn_to_target starts no turn, the target angle read gets the monster's x position instead, and wait_turn_to_angle never reads the heading, so the monster does not turn: the wait ends at once or runs the full 360 frames, depending on those leftover values. Returns the frames waited."
+      "doc": "Meant to turn toward the target at speed_deg and wait until facing it, but in this script's old numbering start_turn_to_target starts no turn, the target angle read gets the monster's x position instead, and wait_turn_to_angle never reads the heading, so the monster does not turn: the wait ends at once or runs the full 360 frames, depending on those leftover values. Returns the frames waited."
     },
     "27f85ae3fce05108": {
       "name": "fly_random_forward",
@@ -19676,7 +19676,7 @@
     "70316b594c2c5869": {
       "name": "stop_actions_and_disable_lighting",
       "loose": "70316b594c2c5869",
-      "doc": "Meant to stop moving and turning, reset the motion and set act status 0 at the start of the damage program (recoil_from_damage in e08a, e09a and b07a_atora_yellow). In this toolkit's old numbering the stop, reset and act-status calls run get_home_pos, get_attack and set_model_lighting, and stop_turning does nothing here, so its only effect is turning the model's scene lighting off."
+      "doc": "Meant to stop moving and turning, reset the motion and set act status 0 at the start of the damage program (recoil_from_damage in e08a, e09a and b07a_atora_yellow). In this script's old numbering the stop, reset and act-status calls run get_home_pos, get_attack and set_model_lighting, and stop_turning does nothing here, so its only effect is turning the model's scene lighting off."
     },
     "703c5c5ce5fb8e85": {
       "name": "read_orbit_angle",
@@ -33580,7 +33580,7 @@
         "target_angle",
         "frame"
       ],
-      "doc": "Meant to turn toward the target and walk at it each frame, returning -1 once closer than stop_dist or the frames spent after max_frames. In this toolkit's old numbering the distance read, target read, move and stops run get_kind_pos, set_home_pos, get_distance_to and get_home_pos, the rotation read has no native, and this toolkit's turn helpers do not turn either, so the monster neither turns nor moves, its home position is overwritten each frame, and the -1 exit tests a distance that is never read."
+      "doc": "Meant to turn toward the target and walk at it each frame, returning -1 once closer than stop_dist or the frames spent after max_frames. In this script's old numbering the distance read, target read, move and stops run get_kind_pos, set_home_pos, get_distance_to and get_home_pos, the rotation read has no native, and this toolkit's turn helpers do not turn either, so the monster neither turns nor moves, its home position is overwritten each frame, and the -1 exit tests a distance that is never read."
     },
     "c36efd245bcc1e2b": {
       "name": "run_at_target",

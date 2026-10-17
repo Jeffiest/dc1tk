@@ -365,9 +365,9 @@ blender --background --factory-startup --python blender-plugin/tests/test_addon.
 enables the add-on, writes a small map with `tests/make_test_map.py` (two
 placements of a template with a model, a collision and a camera-collision
 piece, a point and an animation of the model's node; a door, a point light
-with a KHR light, a sound, an invent box, an animation of a piece under the
-field names of older exports, and two points whose data is a raw argument
-list; a fixed camera; map settings), imports it (on Windows through a
+with a KHR light, a sound, an invent box, an animation of a piece, a point
+light without a KHR light, and a door whose `extras.c2` Blender keeps as
+text; a fixed camera; map settings), imports it (on Windows through a
 stand-in for `dc2tk map-export`), checks the game look, the light set's world
 and suns and the hour filter, what the animations move and the lines drawn
 for them, edits fields, adds a point of every kind, duplicates a placement,
@@ -391,21 +391,22 @@ dungeon layout, and a new map from the scene.
 
 The fixture includes `extras.c2.name` and the current `map.settings` nesting.
 `test_regressions.py` also checks name edits and duplication in exported glTF,
-validation against game names, CP932 byte limits, JSON list editing, current
-and legacy settings, callbacks for every point kind, failed-export cleanup,
+validation against game names, CP932 byte limits, JSON list editing, light
+settings, callbacks for every point kind, failed-export cleanup,
 and subprocess output and exit codes. These checks run from `test_addon.py`.
 
 ## Code layout
 
 `schema.py` holds field dictionaries and format rules. Each point field has a
-`key`, `label`, `kind`, and `pos` in the legacy argument list. Vector fields
-also specify `size` and optional element `labels`. `old` names a legacy key,
-or a key and list index. `choices` contain a numeric value, identifier, label,
-and description. Missing defaults are filled from the field's type and size.
+`key` in the point's `data`, a `label` and a `kind`. Vector fields also specify
+`size` and optional element `labels`. `choices` contain a numeric value,
+identifier, label, and description. Missing defaults are filled from the
+field's type and size.
 
 `c2data.py` reads and writes game metadata. The toolkit reads game names from
-`c2.name`, falling back to the Blender name for older exports. Map settings
-come from `c2.map.settings`, with the older flat map tree supported too.
+`c2.name`, falling back to the Blender name (less its prefix and `.001`) for
+nodes without one, such as model nodes. Map settings come from
+`c2.map.settings`.
 `props.py` declares Blender properties and their named callbacks; editing
 functions receive the object they change. Blender registration classes hold
 the properties, operators, panels, menus, and preferences the API requires.

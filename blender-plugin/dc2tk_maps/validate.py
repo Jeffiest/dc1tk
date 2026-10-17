@@ -73,13 +73,9 @@ def check(root):
     elif len(placements) > schema.PLACEMENT_LIMIT:
         found.append((WARNING, root.name, "%d placements: over 320, only dungeons have 400" % len(placements)))
 
-    tree = c2data.map_settings(root)
-    if isinstance(tree, dict):
-        for key, value in tree.items():
-            if str(key).lower() == "time_light_num":
-                number = value[0] if isinstance(value, list) and value else value
-                if isinstance(number, (int, float)) and number > schema.TIME_LIGHT_NUM_LIMIT:
-                    found.append((ERROR, root.name, "TIME_LIGHT_NUM is %s (8 at most)" % number))
+    number = c2data.map_settings(root).get("time_light_num")
+    if isinstance(number, (int, float)) and number > schema.TIME_LIGHT_NUM_LIMIT:
+        found.append((ERROR, root.name, "TIME_LIGHT_NUM is %s (8 at most)" % number))
 
     for obj in c2data.collision_meshes(root):
         check_collision(found, obj)
@@ -216,8 +212,9 @@ def check_point(found, obj, data):
     point_data = data.get("data")
     if schema.DATA_FIELDS[kind] and point_data is None:
         found.append((WARNING, obj.name, "A %s point without data" % kind))
+    elif point_data is not None and not isinstance(point_data, dict):
+        found.append((ERROR, obj.name, "A %s point's data is not an object of named fields" % kind))
     elif isinstance(point_data, dict):
-        point_data = schema.upgrade_data(kind, point_data)
         missing = [f["key"] for f in schema.DATA_FIELDS[kind] if not f["optional"] and f["key"] not in point_data]
         if missing:
             found.append((WARNING, obj.name, "Missing %s data: %s" % (kind, ", ".join(missing))))

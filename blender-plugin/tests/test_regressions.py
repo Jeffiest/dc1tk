@@ -54,17 +54,15 @@ def check_value_editor(root):
 def check_light_limits(root):
     original = c2data.to_py(c2data.lookup(root, ("map",)))
     try:
-        for legacy in (False, True):
-            for number in (8, 9):
-                settings = dict(original["settings"], time_light_num=number)
-                tree = settings if legacy else dict(original, settings=settings)
-                c2data.assign(root, ("map",), tree)
-                errors = [message for level, name, message in validate.check(root) if level == validate.ERROR]
-                assert any("TIME_LIGHT_NUM" in message for message in errors) == (number > 8), errors
-                assert look.active_light_set(root)["index"] == settings["active_light_set"]
+        for number in (8, 9):
+            settings = dict(original["settings"], time_light_num=number)
+            c2data.assign(root, ("map",), dict(original, settings=settings))
+            errors = [message for level, name, message in validate.check(root) if level == validate.ERROR]
+            assert any("TIME_LIGHT_NUM" in message for message in errors) == (number > 8), errors
+            assert look.active_light_set(root)["index"] == settings["active_light_set"]
     finally:
         c2data.assign(root, ("map",), original)
-    print("PASS: current and legacy light settings")
+    print("PASS: light settings")
 
 
 def check_byte_names(context, root):

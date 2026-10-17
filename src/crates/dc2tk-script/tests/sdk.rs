@@ -345,43 +345,33 @@ fn locals_shadow_constants() {
 }
 
 #[test]
-fn raw_numbered_calls_name_the_native_they_were_written_for() {
-    let headers = headers_with(
-        "monster.h",
-        &format!("{MONSTER_HEADER}extern void get_monster_var2(int index, OPTIONAL(int *value)) NATIVE(35, 25);\n"),
-    );
-    let text = MONSTER.replace("    AT(60) target_angle = get_target_angle();\n", "    DIRECT get_monster_var2(1);\n");
-    let data = build_with(&text, &headers).unwrap();
-    let shown = shown(&data, "monster", &headers, true);
-    // raw 60 is get_target_angle in the table the call was written for
-    assert!(
-        shown.contains("    DIRECT get_monster_var2(1);  // old numbering, meant as get_target_angle\n"),
-        "{shown}"
-    );
-    assert!(shown.contains("    DIRECT target_angle = get_target_angle();\n"));
-}
-
-#[test]
-fn scripts_built_for_the_old_table_read_current_groups_as_old() {
+fn calls_by_raw_number_show_as_direct() {
     let headers = headers_with(
         "monster.h",
         &format!(
-            "{MONSTER_HEADER}extern void set_visible_monster_limit(int count, OPTIONAL(int extra2)) NATIVE(110, 9);\nextern void set_mask_flag(int mask, int on) NATIVE(120, 9);\n"
+            "{MONSTER_HEADER}extern void get_monster_var2(int index, OPTIONAL(int *value)) NATIVE(35, 25);
+"
         ),
     );
-    let text =
-        MONSTER.replace("    AT(60) target_angle = get_target_angle();\n", "    set_visible_monster_limit(4, 1);\n");
+    let text = MONSTER.replace(
+        "    AT(60) target_angle = get_target_angle();
+",
+        "    DIRECT get_monster_var2(1);
+",
+    );
     let data = build_with(&text, &headers).unwrap();
-    let found = header_context("monster", &headers);
-    let program = decompile::decompile(&stb::read(&data), "monster", tables());
-    let named = named(program, &found, &found.program_names);
-    assert!(!source::text(&present(named.clone(), &found)).unwrap().contains("old numbering"));
-    let old = sdk::numbered(Some(found.clone()), Some("old")).unwrap();
-    let shown = source::text(&present(named, &old)).unwrap();
+    let shown = shown(&data, "monster", &headers, true);
     assert!(
-        shown.contains("    set_visible_monster_limit(4, 1);  // old numbering, meant as set_mask_flag\n"),
+        shown.contains(
+            "    DIRECT get_monster_var2(1);
+"
+        ),
         "{shown}"
     );
+    assert!(shown.contains(
+        "    DIRECT target_angle = get_target_angle();
+"
+    ));
 }
 
 #[test]
@@ -399,18 +389,6 @@ fn sound_entries_take_the_names_of_the_bank_their_id_came_from() {
     let shown = shown(&data, "event", &headers, true);
     assert!(shown.contains("play_se(flag, SE_TREASURE_GET);"), "{shown}");
     assert!(shown.contains("play_se(flag, 18);"));
-}
-
-#[test]
-fn unregistered_numbers_of_an_old_table_name_their_native() {
-    let mut found = Context::default();
-    found.raw_table = true;
-    found.old_direct.insert(80, 76);
-    found.by_number.insert(76, "add_motion_se".into());
-    let call = node!({"name": "_EXT_80", "base": null});
-    assert_eq!(sdk::meant_native(&call, &found).as_deref(), Some("add_motion_se"));
-    found.raw_table = false;
-    assert_eq!(sdk::meant_native(&call, &found), None);
 }
 
 fn var(name: &str) -> Node {
