@@ -943,7 +943,11 @@ impl Model {
             _ => found,
         };
         let presented = match &found {
-            Some(found) => sdk::present_functions(&functions, found, &params, &[], &mut sounds),
+            Some(found) => {
+                let presented = sdk::present_functions(&functions, found, &params, &[], &mut sounds);
+                let (signatures, globals) = self.library_surroundings(library, &class_names, &globals);
+                crate::lower::kept_as_is(presented, &signatures, &globals, found)
+            }
             None => functions,
         };
         let presented = match (map.and_then(|map| self.naming.villagers.notes.get(map)), &found) {
@@ -954,6 +958,42 @@ impl Model {
         };
         let presented = notes::annotate_functions(presented, &self.source.defs.strings);
         source::library_text(&library.table, &presented, header.as_deref(), &library.doc)
+    }
+
+    /// What a library's code sees around it, for its (any) marks (lower::kept_as_is): every shared
+    /// function's signature under its class name, and the globals as the first script that
+    /// includes it declares them, under the library's names for them.
+    fn library_surroundings(
+        &self,
+        library: &Library,
+        class_names: &HashMap<String, String>,
+        names: &HashMap<String, String>,
+    ) -> (Vec<Node>, Vec<Node>) {
+        let signatures = self
+            .shared
+            .shapes
+            .iter()
+            .filter_map(|(print, shape)| {
+                let name = class_names.get(print)?;
+                Some(node!({"kind": "function", "name": name.clone(), "params": shape["params"].clone(), "returns": shape["returns"].clone()}))
+            })
+            .collect();
+        let globals = library
+            .user_paths
+            .first()
+            .and_then(|path| self.survey.programs.get(path))
+            .map(|program| {
+                program
+                    .list("globals")
+                    .iter()
+                    .map(|global| {
+                        let name = global.text("name");
+                        global.clone().with("name", names.get(name).cloned().unwrap_or_else(|| name.to_string()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        (signatures, globals)
     }
 
     /// Every library's source text, by path.

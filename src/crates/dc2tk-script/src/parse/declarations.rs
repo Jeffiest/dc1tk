@@ -805,9 +805,6 @@ pub(super) fn global_values(state: &State, mut entry: Node, declared: &Declared,
             },
         };
     }
-    if state.strict {
-        entry["std"] = Node::from("c89");
-    }
     Ok(entry)
 }
 
@@ -940,9 +937,6 @@ pub(super) fn static_local(
     }
     if spec.constant {
         entry["const"] = Node::Bool(true);
-    }
-    if state.strict && entry.get("init").is_some() {
-        entry["std"] = Node::from("c89");
     }
     state.statics.push(entry.clone());
     state.scope.as_mut().unwrap().statics.insert(hidden.to_string(), entry);
@@ -1191,9 +1185,6 @@ pub(super) fn function_definition(
     if let Some(returns) = returns_ty {
         function["ctype_returns"] = returns.to_node();
     }
-    if state.strict {
-        function["std"] = Node::from("c89");
-    }
     Ok(Some(function))
 }
 
@@ -1267,9 +1258,6 @@ pub(super) fn top_declaration(
         }
         if spec.constant {
             entry["const"] = Node::Bool(true);
-        }
-        if state.strict && entry.get("init").is_some() {
-            entry["std"] = Node::from("c89");
         }
         let globals = program["globals"].as_array_mut().unwrap();
         match globals.iter_mut().find(|global| global["name"] == *declared.name) {

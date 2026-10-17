@@ -189,10 +189,10 @@ fn mods_adding_the_same_names_each_keep_their_own() {
     assert_eq!(machine.printed, strings(&["1", "10", "2"]));
 }
 
-/// A patch in standard C: its structs, unions, enums and typedefs, #pragma std c89, static
+/// A patch in standard C: its structs, unions, enums and typedefs, static
 /// functions, a header's macros and typedef sizes, varargs, function pointers, global arrays with
 /// values and static locals all carry into the script it is merged into.
-const C_PATCH: &str = "#pragma target map s17\n#pragma std c89\n\n#include <limits.h>\n#include <stddef.h>\n#include <stdarg.h>\n#include \"shapes.c\"\n\n\
+const C_PATCH: &str = "#pragma target map s17\n\n#include <limits.h>\n#include <stddef.h>\n#include <stdarg.h>\n#include \"shapes.c\"\n\n\
                        union cell {\n    int i;\n    float f;\n};\n\nenum mode {\n    MODE_ADD,\n    MODE_MUL\n};\n\ntypedef int (*operation)(int, int);\n\n\
                        int table[4] = {1, 2, 3, 4};\nstruct point corners[2];\nint passed;\n\n\
                        static int add(int a, int b)\n{\n    return a + b;\n}\n\nstatic int mul(int a, int b)\n{\n    return a * b;\n}\n\n\

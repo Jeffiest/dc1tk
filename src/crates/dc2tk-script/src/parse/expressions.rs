@@ -380,7 +380,7 @@ pub(super) fn postfix(target: Node, text: &str) -> Node {
 pub(super) fn cast_ahead(state: &State) -> bool {
     state.at("(", 0)
         && state.token(1).kind == Kind::Name
-        && CAST_TYPES.contains(&state.token(1).text())
+        && (CAST_TYPES.contains(&state.token(1).text()) || state.token(1).text() == "any")
         && state.at(")", 2)
 }
 
@@ -611,7 +611,8 @@ pub(super) fn increment(state: &mut State) -> Result<Node> {
     Ok(stepped(target, op))
 }
 
-/// The decompiler's casts, (int)x and (float)x, which convert between the VM's ints and floats.
+/// The decompiler's casts: (int)x and (float)x, which convert between the VM's ints and floats,
+/// and (any)x, which keeps the value as it is.
 pub(super) fn plain_cast(state: &mut State) -> Result<Node> {
     state.take();
     let kind = state.take();

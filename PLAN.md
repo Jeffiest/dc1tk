@@ -257,10 +257,12 @@ code keeps compiling to its own bytes. What the compiler lacks today
    `unsigned` with biased comparisons and a small runtime for `/`, `%`, `>>`
    and float conversions, added only when used; `<limits.h>`, `<stddef.h>`,
    `<float.h>`. Retail bytes are unchanged (`dc2tk verify` OK).
-4. **Strict mode** (done): `#pragma std c89` per file (a patch too) gives
-   C's conversions on stores, arguments and returns, `&&`/`||` as 0 or 1,
-   natives evaluated only where C would, and C's pointer diagnostics;
-   headers are read as text, so their macros reach `#if`.
+4. **C's semantics everywhere** (done): C's conversions on stores,
+   arguments and returns, `&&`/`||` as 0 or 1, natives evaluated only where
+   C would, and C's pointer diagnostics, in every script; the decompiler
+   writes `(any)` where a retail script keeps the VM's value, so every
+   script still compiles to its bytes. Headers are read as text, so their
+   macros reach `#if`.
 5. **Composite types** (done): structs and unions (slots at constant
    offsets, copied, passed and returned by value), pointer arithmetic,
    pointers to pointers, global and static arrays and pointers, function

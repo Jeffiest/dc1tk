@@ -63,8 +63,3 @@ fn deepest_forms_compile(head: &'static str) {
 fn the_deepest_nesting_the_parser_takes_compiles() {
     deepest_forms_compile("");
 }
-
-#[test]
-fn the_deepest_nesting_the_parser_takes_compiles_with_cs_semantics() {
-    deepest_forms_compile("#pragma std c89\n");
-}

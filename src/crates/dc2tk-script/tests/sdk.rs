@@ -375,6 +375,20 @@ fn calls_by_raw_number_show_as_direct() {
 }
 
 #[test]
+fn values_the_vm_stores_as_they_are_show_as_any() {
+    let header = EVENT_HEADER.replace("#endif", "extern float get_scale(void) NATIVE(654);\n#endif");
+    let headers = headers_with("event.h", &header);
+    let text = "#include <event.h>\n\nPROGRAM(init, f);\nMAIN(f);\n\nint half(int v)\n{\n    return v;\n}\n\nvoid f(void)\n{\n    int count;\n    float scale;\n\n    count = (any)get_scale();\n    count = (any)(scale * 2.0);\n    half((any)scale);\n    scale = 0;\n    count = (any)(count && 3);\n}\n";
+    let data = build_with(text, &headers).unwrap();
+    let shown = shown(&data, "event", &headers, true);
+    // a native's result, a float stored in an int, a float passed for an int and a used &&; not
+    // the 0 stored in a float, which C stores as the same bits
+    assert_eq!(shown.matches("(any)").count(), 4, "{shown}");
+    assert!(shown.contains(" = 0;"), "{shown}");
+    assert_eq!(build_with(&shown, &headers).unwrap(), data);
+}
+
+#[test]
 fn sound_entries_take_the_names_of_the_bank_their_id_came_from() {
     let header = EVENT_HEADER.replace(
         "#endif",

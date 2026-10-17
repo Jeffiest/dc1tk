@@ -1,6 +1,6 @@
 //! Standard C the VM has no form for, lowered to forms it has, before the program is resolved
-//! (sdk::resolve). Only code the decompiler never writes takes these paths, so retail scripts
-//! compile to their own bytes.
+//! (sdk::resolve). The decompiler writes retail scripts so that these paths leave their code as
+//! it is (kept_as_is), and they compile to their own bytes.
 //!
 //! Initialised globals and static locals: the VM's globals start at 0 when the script loads and
 //! cannot hold data, so a hidden function, __initialise, sets them, and every function the engine
@@ -94,7 +94,6 @@ pub fn initialised_globals(mut program: Node, found: &Context) -> Result<Node> {
         program["globals"] = Node::List(globals);
         return Ok(program);
     }
-    let strict = globals.iter().any(|global| global["std"] == "c89");
     let (plain, body) = assignments(globals, program.list("functions"), found)?;
     if body.is_empty() {
         program["globals"] = Node::List(plain);
@@ -105,14 +104,14 @@ pub fn initialised_globals(mut program: Node, found: &Context) -> Result<Node> {
     program["globals"] = Node::List(plain);
     let functions = program.take("functions").into_list();
     program["functions"] = Node::List(with_initialise(&program, functions)?);
-    let initialise = initialise_function(body, strict);
+    let initialise = initialise_function(body);
     program["functions"].as_array_mut().expect("the functions are a list").push(initialise);
     let count: i64 = program.list("globals").iter().map(|global| global["size"].as_i64().unwrap_or(1)).sum();
     let declared = program["global_num"].as_i64().unwrap_or(0);
     Ok(program.with("global_num", count.max(declared)))
 }
 
-/// The globals as plain declarations (their values, consts and std left out), and an assignment
+/// The globals as plain declarations (their values and consts left out), and an assignment
 /// for each value one is given: a scalar's, or each slot an array's or struct's list gives. Every
 /// value must be a constant expression, as C requires of static storage.
 fn assignments(globals: Vec<Node>, functions: &[Node], found: &Context) -> Result<(Vec<Node>, Vec<Node>)> {
@@ -125,7 +124,6 @@ fn assignments(globals: Vec<Node>, functions: &[Node], found: &Context) -> Resul
         let name = global.text("name").to_string();
         let (init, inits) = (global.remove("init"), global.remove("inits"));
         global.remove("const");
-        global.remove("std");
         plain.push(global);
         let values: Vec<(Node, Node)> = match (init, inits) {
             (Some(value), _) => vec![(node!({"kind": "var", "name": name.as_str()}), value)],
@@ -160,14 +158,14 @@ fn assignments(globals: Vec<Node>, functions: &[Node], found: &Context) -> Resul
 
 /// The hidden function that sets the globals, once per load: it returns at once when its flag is
 /// set, and sets the flag first.
-fn initialise_function(body: Vec<Node>, strict: bool) -> Node {
+fn initialise_function(body: Vec<Node>) -> Node {
     let flag = node!({"kind": "var", "name": INITIALISED});
     let mut statements = vec![
         node!({"kind": "if", "cond": flag.clone(), "then": [{"kind": "return", "value": null}], "else": null}),
         node!({"kind": "expr", "expr": {"kind": "assign", "target": flag, "value": {"kind": "int", "value": 1}}}),
     ];
     statements.extend(body);
-    let mut initialise = node!({
+    node!({
         "kind": "function",
         "name": INITIALISE,
         "returns": "void",
@@ -176,12 +174,7 @@ fn initialise_function(body: Vec<Node>, strict: bool) -> Node {
         "body": statements,
         "unused_strings": [],
         "padding": null,
-    });
-    if strict {
-        // a value given under #pragma std c89 converts to its global's type
-        initialise["std"] = Node::from("c89");
-    }
-    initialise
+    })
 }
 
 /// The functions with a call of the hidden function first in each the engine can start: the main
@@ -328,8 +321,9 @@ struct Types<'a> {
     found: &'a Context,
     returns: String,
     used: &'a mut Vec<&'static str>,
-    /// #pragma std c89: C's conversions on assignment, and && and || giving 0 or 1.
-    strict: bool,
+    /// Marking a decompiled function (kept_as_is): a conversion between int and float is not made
+    /// but shown, as (any).
+    mark: bool,
 }
 
 /// A declared type as the base type it stands for (a typedef's, int for an enum).
@@ -363,21 +357,33 @@ fn narrowed(value: Node, from: &str, kind: IntType) -> Node {
     node!({"kind": "narrow", "type": kind.name(), "operand": value})
 }
 
-/// A value converted for a variable or parameter of a type: narrowed to a narrow type; an unsigned
-/// value made a float for a float. Anything else keeps its type, as the VM's values do, except in
-/// strict mode, where C's conversions on assignment apply: an int stored in a float becomes a float
-/// and a float stored in an int is truncated.
-fn converted(value: Node, from: &str, to: &str, strict: bool, used: &mut Vec<&'static str>) -> Node {
+/// A value converted for a variable or parameter of a type, as C converts on assignment: narrowed
+/// to a narrow type, an integer made a float for a float and a float truncated for an integer.
+fn converted(value: Node, from: &str, to: &str, used: &mut Vec<&'static str>) -> Node {
     if let Some(narrow) = IntType::narrow(to) {
         narrowed(value, from, narrow)
     } else if to == "float" && from == "unsigned int" {
         call(UTOF, vec![value], used)
-    } else if strict && to == "float" && is_integer(from) {
+    } else if to == "float" && is_integer(from) {
         as_float(value)
-    } else if strict && to == "unsigned int" && from == "float" {
+    } else if to == "unsigned int" && from == "float" {
         call(FTOU, vec![value], used)
-    } else if strict && is_integer(to) && from == "float" {
+    } else if is_integer(to) && from == "float" {
         as_int(value)
+    } else {
+        value
+    }
+}
+
+/// A native's argument for a parameter of a type: narrowed to a narrow type, an unsigned value made
+/// a float for a float, and otherwise as it is. The engine reads an int or float argument with
+/// GetStackInt or GetStackFloat, which convert the other kind as C would (truncating a float,
+/// making an int a float), so converting first changes nothing the native sees.
+fn native_argument(value: Node, from: &str, to: &str, used: &mut Vec<&'static str>) -> Node {
+    if let Some(narrow) = IntType::narrow(to) {
+        narrowed(value, from, narrow)
+    } else if to == "float" && from == "unsigned int" {
+        call(UTOF, vec![value], used)
     } else {
         value
     }
@@ -412,16 +418,15 @@ fn truth(value: Node) -> Node {
     node!({"kind": "unary", "op": "!", "operand": {"kind": "unary", "op": "!", "operand": value}})
 }
 
-/// Whether a function was written under #pragma std c89, where C's own semantics apply.
-pub fn is_strict(function: &Node) -> bool {
-    function["std"] == "c89"
-}
-
 const UDIV: &str = "__udiv";
 const UMOD: &str = "__umod";
 const USHR: &str = "__ushr";
 const UTOF: &str = "__utof";
 const FTOU: &str = "__ftou";
+
+fn is_zero(node: &Node) -> bool {
+    node.kind() == kinds::INT && node.get("unsigned").is_none() && node["value"].as_i64() == Some(0)
+}
 
 fn literal(node: &Node) -> Option<u32> {
     (node.kind() == kinds::INT).then(|| node["value"].as_i64()).flatten().map(|value| value as u32)
@@ -431,6 +436,18 @@ fn literal(node: &Node) -> Option<u32> {
 type Lowered = Result<(Node, String)>;
 
 impl Types<'_> {
+    /// A value stored in a variable, passed for a parameter or returned, as type to: converted as
+    /// C converts it, or when marking, kept as it is in (any) where C would convert between int
+    /// and float.
+    fn stored(&mut self, value: Node, from: &str, to: &str) -> Node {
+        let crosses = (to == "float" && is_integer(from) && from != "unsigned int")
+            || (is_integer(to) && to != "unsigned int" && from == "float");
+        if self.mark && crosses {
+            return node!({"kind": "cast", "type": "any", "operand": value, "as_is": true});
+        }
+        converted(value, from, to, self.used)
+    }
+
     /// The type of a variable named in code, and whether it is an array or pointer of that type.
     fn variable(&self, name: &str) -> Option<(String, bool)> {
         self.variables.get(name).cloned().or_else(|| self.globals.get(name).map(|kind| (kind.clone(), false)))
@@ -523,7 +540,20 @@ impl Types<'_> {
     fn assign(&mut self, mut node: Node) -> Lowered {
         let to = self.child(&mut node, "target")?;
         let (value, from) = self.expression(node.take("value"))?;
-        node["value"] = converted(value, &from, &to, self.strict, self.used);
+        node["value"] = self.stored(value, &from, &to);
+        Ok((node, to))
+    }
+
+    /// x = 0; with x a float stores the int 0 as it is. Its bits are 0.0's, and every read of a
+    /// float variable makes the slot a float again (a float load), so nothing can tell the two
+    /// apart; it is how the game's own scripts clear a float.
+    fn zero_into_float(&mut self, mut node: Node) -> Lowered {
+        let to = self.child(&mut node, "target")?;
+        if to == "float" {
+            return Ok((node, to));
+        }
+        let (value, from) = self.expression(node.take("value"))?;
+        node["value"] = self.stored(value, &from, &to);
         Ok((node, to))
     }
 
@@ -542,7 +572,10 @@ impl Types<'_> {
         node["left"] = left;
         node["right"] = right;
         // the VM's && and || leave the deciding value; C's give 0 or 1
-        Ok((if self.strict && !condition { truth(node) } else { node }, "int".into()))
+        if self.mark && !condition {
+            return Ok((node!({"kind": "cast", "type": "any", "operand": node, "as_is": true}), "int".into()));
+        }
+        Ok((if condition { node } else { truth(node) }, "int".into()))
     }
 
     fn ternary(&mut self, mut node: Node) -> Lowered {
@@ -552,7 +585,7 @@ impl Types<'_> {
         let kind = common(&then_kind, &otherwise_kind);
         let float = |types: &mut Self, value: Node, from: &str| {
             if kind == "float" {
-                converted(value, from, "float", types.strict, types.used)
+                types.stored(value, from, "float")
             } else {
                 value
             }
@@ -569,20 +602,20 @@ impl Types<'_> {
         Ok((node, kind))
     }
 
-    /// A call: its arguments converted to the function's parameters' types (or, in strict mode,
-    /// a native's), and the type it returns.
+    /// A call: its arguments converted to the parameters' types (a native's as native_argument
+    /// says), and the type it returns.
     fn call(&mut self, mut node: Node) -> Lowered {
         let name = node.text("name").to_string();
-        let params = match self.functions.get(&name) {
-            Some((_, params)) => params.clone(),
-            None if self.strict => native_params(self.found, &name),
-            None => Vec::new(),
+        let (params, native) = match self.functions.get(&name) {
+            Some((_, params)) => (params.clone(), false),
+            None => (native_params(self.found, &name), true),
         };
         let mut args = Vec::new();
         for (at, arg) in node.take("args").into_list().into_iter().enumerate() {
             let (arg, from) = self.expression(arg)?;
             args.push(match params.get(at) {
-                Some(to) => converted(arg, &from, to, self.strict, self.used),
+                Some(to) if native => native_argument(arg, &from, to, self.used),
+                Some(to) => self.stored(arg, &from, to),
                 None => arg,
             });
         }
@@ -595,8 +628,13 @@ impl Types<'_> {
     }
 
     fn cast(&mut self, mut node: Node) -> Lowered {
-        let (operand, from) = self.expression(node.take("operand"))?;
         let to = node.text("type").to_string();
+        // (any)(a && b) is the VM's value of a && b: the deciding operand, not 0 or 1
+        let (operand, from) = if to == "any" && node["operand"].kind() == kinds::LOGICAL {
+            self.condition(node.take("operand"))?
+        } else {
+            self.expression(node.take("operand"))?
+        };
         if let Some(narrow) = IntType::narrow(&to) {
             return Ok((narrowed(operand, &from, narrow), to));
         }
@@ -653,9 +691,17 @@ impl Types<'_> {
             }
         }
         if kind == "float" {
-            // an unsigned operand of float arithmetic converts by its value
-            let left = converted(left, &left_kind, "float", false, self.used);
-            let right = converted(right, &right_kind, "float", false, self.used);
+            // an unsigned operand of float arithmetic converts by its value; the VM's float
+            // arithmetic takes an int as it is
+            let as_float = |value: Node, from: &str, used: &mut Vec<&'static str>| {
+                if from == "unsigned int" {
+                    call(UTOF, vec![value], used)
+                } else {
+                    value
+                }
+            };
+            let left = as_float(left, &left_kind, self.used);
+            let right = as_float(right, &right_kind, self.used);
             return Ok((plain(node, left, right), result));
         }
         if kind != "unsigned int" {
@@ -719,10 +765,10 @@ impl Types<'_> {
             }
             let binary = node!({"kind": "binary", "op": op, "left": target.clone(), "right": value});
             let (operation, kind) = self.binary(binary)?;
-            let stored = converted(operation, &kind, &to, self.strict, self.used);
+            let stored = converted(operation, &kind, &to, self.used);
             return Ok((node!({"kind": "assign", "target": target, "value": stored}), to));
         }
-        if self.strict && to == "unsigned int" && kind == "float" {
+        if to == "unsigned int" && kind == "float" {
             // the float result converts by its value
             if contains_effects(&target) {
                 return Err(Error::invalid(
@@ -735,7 +781,7 @@ impl Types<'_> {
         }
         node["target"] = target;
         node["value"] = value;
-        if self.strict && is_integer(&to) && kind == "float" {
+        if is_integer(&to) && kind == "float" {
             node["convert"] = Node::from("int");
         }
         if is_narrow(&to) {
@@ -747,6 +793,11 @@ impl Types<'_> {
     /// A statement, and those in it, lowered.
     fn statement(&mut self, mut node: Node) -> Result<Node> {
         match node.kind() {
+            kinds::EXPR if node["expr"].kind() == kinds::ASSIGN && is_zero(&node["expr"]["value"]) => {
+                let (assign, _) = self.zero_into_float(node.take("expr"))?;
+                node["expr"] = assign;
+                Ok(node)
+            }
             kinds::EXPR => {
                 self.child(&mut node, "expr")?;
                 Ok(node)
@@ -755,6 +806,7 @@ impl Types<'_> {
             kinds::IF => self.conditional(node),
             kinds::WHILE => self.while_loop(node),
             kinds::SWITCH => self.switch(node),
+            kinds::NATIVE if self.mark && node.get("result").is_some_and(Node::is_set) => self.native_result(node),
             kinds::PRINT | kinds::NATIVE => self.arguments(node),
             _ => Ok(node),
         }
@@ -763,7 +815,7 @@ impl Types<'_> {
     fn return_value(&mut self, mut node: Node) -> Result<Node> {
         let (value, from) = self.expression(node.take("value"))?;
         let to = self.returns.clone();
-        node["value"] = converted(value, &from, &to, self.strict, self.used);
+        node["value"] = self.stored(value, &from, &to);
         Ok(node)
     }
 
@@ -799,6 +851,19 @@ impl Types<'_> {
     }
 
     /// A print's or a native call's arguments.
+    /// A native's call that gives its result to a variable (x = get_x();), marked as_is when C
+    /// would convert the result for the variable: the native writes it there as it is.
+    fn native_result(&mut self, node: Node) -> Result<Node> {
+        let (_, to) = self.expression(node["result"].clone())?;
+        let from =
+            self.found.natives.get(node.text("name")).map_or("any".into(), |native| native.text("returns").to_string());
+        let mut node = self.arguments(node)?;
+        if (to == "float" && is_integer(&from)) || (is_integer(&to) && from == "float") {
+            node["as_is"] = Node::Bool(true);
+        }
+        Ok(node)
+    }
+
     fn arguments(&mut self, mut node: Node) -> Result<Node> {
         let mut args = Vec::new();
         for arg in node.take("args").into_list() {
@@ -846,37 +911,15 @@ fn contains_effects(node: &Node) -> bool {
     }
 }
 
-/// Whether a program uses C's other integer types: a variable, parameter, function or cast of one,
-/// or an unsigned constant. Retail scripts use none, and are left as they are.
-fn uses_integer_types(node: &Node, kinds: &Map) -> bool {
-    match node {
-        Node::List(items) => items.iter().any(|item| uses_integer_types(item, kinds)),
-        Node::Map(map) => {
-            let typed = ["type", "returns"].iter().any(|key| {
-                node.get(key).and_then(Node::as_str).is_some_and(|kind| {
-                    let kind = base(kind, kinds);
-                    kind != "int" && is_integer(&kind)
-                })
-            });
-            typed || node.get("unsigned").is_some() || map.values().any(|value| uses_integer_types(value, kinds))
-        }
-        _ => false,
-    }
-}
-
 /// char, short, unsigned and their kin on the VM's 32-bit ints: a value stored in a char or short
 /// is wrapped to its width with a mask; unsigned int keeps its bits in an int, and its division,
 /// remainder, right shift, comparisons and conversions to and from float are worked out as C's
-/// (the first three by functions of the runtime above). Conversions happen where C's would on
-/// storing to a variable of a narrow type, passing an argument, returning, and in casts and
-/// mixed arithmetic.
+/// (the first three by functions of the runtime above). Conversions happen where C's do: on
+/// storing to a variable, passing an argument (a native's as native_argument says) and
+/// returning, an int made a float, a float truncated and a narrow type wrapped; and in casts and
+/// mixed arithmetic. && and || give 0 or 1 where their value is used.
 pub fn integer_types(mut program: Node, kinds: &Map, found: &Context) -> Result<Node> {
-    let unsigned_constants = found.constants.values().any(|constant| constant.get("unsigned").is_some());
-    let used_anywhere = unsigned_constants
-        || uses_integer_types(&program["functions"], kinds)
-        || uses_integer_types(&program["globals"], kinds);
-    let strict_anywhere = program.list("functions").iter().any(is_strict);
-    if program.get("asm").is_some() || !(used_anywhere || strict_anywhere) {
+    if program.get("asm").is_some() {
         return Ok(program);
     }
     let globals: HashMap<String, String> = program
@@ -900,7 +943,7 @@ pub fn integer_types(mut program: Node, kinds: &Map, found: &Context) -> Result<
     let mut used = Vec::new();
     let mut lowered = Vec::new();
     for mut function in program.take("functions").into_list() {
-        if function.kind() != kinds::FUNCTION || !(used_anywhere || is_strict(&function)) {
+        if function.kind() != kinds::FUNCTION {
             lowered.push(function);
             continue;
         }
@@ -923,7 +966,7 @@ pub fn integer_types(mut program: Node, kinds: &Map, found: &Context) -> Result<
             found,
             returns: base(function.text("returns"), kinds),
             used: &mut used,
-            strict: is_strict(&function),
+            mark: false,
         };
         // constants as their values, so an unsigned one is typed as one
         let body = crate::sdk::with_constants(&function["body"], &found.constants, &shadowed);
@@ -935,6 +978,94 @@ pub fn integer_types(mut program: Node, kinds: &Map, found: &Context) -> Result<
     }
     program["functions"] = Node::List(lowered);
     Ok(program)
+}
+
+/// Decompiled functions with each value the VM stores as it is shown so: the bytecode stores a
+/// value with the type it has (a float in an int variable keeps being a float), where C converts
+/// it on assignment, on passing it to a function of the script and on return. Each value C would
+/// convert between int and float there is wrapped in (any), which converts nothing, so the
+/// function compiles to the bytes it came from. signatures are the functions calls can reach
+/// besides these (the included ones), globals the script's.
+pub fn kept_as_is(functions: Vec<Node>, signatures: &[Node], globals: &[Node], found: &Context) -> Vec<Node> {
+    let kinds = &found.kinds;
+    let global_types: HashMap<String, String> =
+        globals.iter().map(|global| (global.text("name").to_string(), base(global.text("type"), kinds))).collect();
+    let callable: HashMap<String, (String, Vec<String>)> = signatures
+        .iter()
+        .chain(&functions)
+        .filter(|function| function.kind() == kinds::FUNCTION)
+        .map(|function| {
+            let params = function
+                .list("params")
+                .iter()
+                .map(|param| if param.flag("array") { "pointer".into() } else { base(param.text("type"), kinds) })
+                .collect();
+            (function.text("name").to_string(), (base(function.text("returns"), kinds), params))
+        })
+        .collect();
+    let mut used = Vec::new();
+    functions
+        .into_iter()
+        .map(|function| {
+            if function.kind() != kinds::FUNCTION {
+                return function;
+            }
+            let mut variables = HashMap::new();
+            let mut shadowed: HashSet<String> = global_types.keys().cloned().collect();
+            for param in function.list("params") {
+                shadowed.insert(param.text("name").to_string());
+                variables
+                    .insert(param.text("name").to_string(), (base(param.text("type"), kinds), param.flag("array")));
+            }
+            for local in function.list("locals") {
+                shadowed.insert(local.text("name").to_string());
+                let array = !local["size"].is_null() || local.flag("pointer");
+                variables.insert(local.text("name").to_string(), (base(local.text("type"), kinds), array));
+            }
+            let mut types = Types {
+                variables,
+                globals: global_types.clone(),
+                functions: &callable,
+                found,
+                returns: base(function.text("returns"), kinds),
+                used: &mut used,
+                mark: true,
+            };
+            let body = crate::sdk::with_constants(&function["body"], &found.constants, &shadowed);
+            let Ok(marked) = types.statements(body.into_list()) else {
+                return function;
+            };
+            let body = marked_as_is(&function["body"], &Node::List(marked));
+            function.with("body", body)
+        })
+        .collect()
+}
+
+/// The original tree with the (any) marks of its marked copy, which differs from it only in those
+/// marks and in constants given as their values.
+fn marked_as_is(original: &Node, marked: &Node) -> Node {
+    let is_mark = |node: &Node| node.kind() == kinds::CAST && node.get("as_is").is_some();
+    if is_mark(marked) && !(original.kind() == kinds::CAST && original["type"] == "any") {
+        return node!({"kind": "cast", "type": "any", "operand": marked_as_is(original, &marked["operand"])});
+    }
+    match (original, marked) {
+        (Node::List(items), Node::List(others)) if items.len() == others.len() => {
+            Node::List(items.iter().zip(others).map(|(item, other)| marked_as_is(item, other)).collect())
+        }
+        (Node::Map(map), Node::Map(_)) if original.kind() == marked.kind() => {
+            let mut merged: Map = map
+                .entries()
+                .map(|(key, value)| {
+                    (key.clone(), marked.get(key).map_or_else(|| value.clone(), |other| marked_as_is(value, other)))
+                })
+                .collect();
+            if marked.get("as_is").is_some_and(Node::is_set) && original.kind() == kinds::NATIVE {
+                merged.insert("as_is".to_string(), Node::Bool(true));
+            }
+            Node::Map(merged)
+        }
+        _ => original.clone(),
+    }
 }
 
 /// The runtime's functions a call was made to, and those they call, under their hidden names.

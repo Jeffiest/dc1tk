@@ -7,7 +7,7 @@ use common::{sdk_texts, tables};
 use dc2tk_script::vm::Value;
 use dc2tk_script::{compile, library, parse};
 
-const HEAD: &str = "#pragma std c89\n#line 1\n";
+const HEAD: &str = "#line 1\n";
 const TRAILER: &str = "\n#pragma natives event\nPROGRAM(100, test);\nMAIN(test);\n";
 
 fn run(text: &str) -> dc2tk_script::Result<Value> {
@@ -107,13 +107,6 @@ fn extern_arrays_name_the_definition() {
         "extern int table[];\nextern struct pair *where;\n\nstruct pair {\n    int a;\n    int b;\n};\n\nint read(int i)\n{\n    return table[i];\n}\n\nint table[3] = {4, 5, 6};\nstruct pair *where;\n\nint test(void)\n{\n    return read(2) + (where == 0);\n}\n",
         7,
     );
-}
-
-#[test]
-fn composite_types_work_outside_strict_mode_too() {
-    // the VM's own semantics for the rest: a float stored in an int stays a float
-    let text = "struct pair {\n    int a;\n    int b;\n};\n\nint g[2];\n\nint test(void)\n{\n    struct pair p = {1, 2};\n    struct pair *q = &p;\n    int *r = &g[1];\n\n    *r = 5;\n    q->b = 2.5;\n    return p.a + g[1] + (p.b == 2.5) * 10;\n}\n";
-    assert_eq!(run_with("", text).unwrap(), Value::Int(16));
 }
 
 #[test]

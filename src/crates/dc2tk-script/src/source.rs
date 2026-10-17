@@ -193,6 +193,9 @@ pub fn native_text(node: &Node) -> Result<String> {
         _ => format!("AT({}) ", int(base)?),
     };
     let mut call = format!("{}({});", node["name"].plain_text(), arguments(node.list("args"))?);
+    if node.get("as_is").is_some_and(Node::is_set) {
+        call = format!("(any){call}");
+    }
     if let Some(result) = node.get("result").filter(|result| !result.is_null()) {
         call = format!("{} = {}", expression(result)?.0, call);
     }

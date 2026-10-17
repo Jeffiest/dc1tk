@@ -1,6 +1,6 @@
 //! The C89 conformance suite: a small program in tests/c89/ for each feature of the language
-//! (ANSI X3.159-1989, by section of the standard), compiled with the SDK's headers in strict mode
-//! (#pragma std c89) and run in the test VM. A program's second line says what it shows:
+//! (ANSI X3.159-1989, by section of the standard), compiled with the SDK's headers and run in the
+//! test VM. A program's second line says what it shows:
 //!
 //! - `// expect: V`: it compiles, and test() returns V (an int, or a float when V has a point);
 //! - `// rejects: TEXT`: C requires a diagnostic, and the compiler gives one with TEXT in it;
@@ -19,9 +19,8 @@ use common::{root, sdk_texts, tables};
 use dc2tk_script::vm::{self, Value};
 use dc2tk_script::{compile, library, parse};
 
-/// Every program is compiled in strict mode, where C's semantics apply; #line keeps its line
-/// numbers its own.
-const HEAD: &str = "#pragma std c89\n#line 1\n";
+/// #line keeps a program's line numbers its own.
+const HEAD: &str = "#line 1\n";
 
 /// What makes a program a script: its native table and the program table.
 const TRAILER: &str = "\n#pragma natives event\nPROGRAM(100, test);\nMAIN(test);\n";

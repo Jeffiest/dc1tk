@@ -741,7 +741,7 @@ void on_init(void)
     fn a_declared_return_type_is_learned_when_it_differs() {
         let headers = typed_headers();
         let source =
-            TYPED.replace("void on_init(void)", "float scale(void)\n{\n    return 2;\n}\n\nvoid on_init(void)");
+            TYPED.replace("void on_init(void)", "float scale(void)\n{\n    return (any)2;\n}\n\nvoid on_init(void)");
         let folder = folder("returns");
         learn_text(&folder, "typed.c", &source, &headers);
         let entries = learned_entries(&folder);

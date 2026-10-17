@@ -335,6 +335,8 @@ fn cast(state: &mut State, node: &Node) -> Result<()> {
         other if other.ends_with(" *") => {}
         // the value is worked out and dropped
         "void" => {}
+        // the value as it is, whichever kind it holds
+        "any" => {}
         other if other.starts_with("enum ") && node["operand"].kind() == kinds::ADDR => {}
         other => return fail(format!("unknown cast to {other}")),
     }
@@ -407,7 +409,7 @@ fn narrow(state: &mut State, kind: &str) -> Result<()> {
 /// target op= value. A variable compiles as target = target op value. An element's address is
 /// worked out once, into a hidden local, and the element is read and written through it, so an
 /// index with side effects (a[i++] += 1) runs them once. "convert": "int" truncates a float result
-/// for an int target (strict mode), before a narrow type wraps it.
+/// for an int target, before a narrow type wraps it.
 fn compound(state: &mut State, node: &Node) -> Result<()> {
     let target = &node["target"];
     if target.kind() == kinds::VAR {

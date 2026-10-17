@@ -247,7 +247,7 @@ fn unused_pointer_corpus(folder: &Path, types: [&str; 3]) -> (PathBuf, Vec<Strin
     let mut paths = Vec::new();
     for (number, kind) in types.iter().enumerate() {
         let text = format!(
-            "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{{\n    wait;\n}}\n\nvoid talk(void)\n{{\n    {kind} value;\n\n    keep(&value);\n}}\n"
+            "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{{\n    wait;\n}}\n\nvoid talk(void)\n{{\n    {kind} value;\n\n    keep((int *)&value);\n}}\n"
         );
         let path = format!("map/m{number}.stb");
         write(&folder.join(&path), compiled(&text));
@@ -274,7 +274,7 @@ fn an_unused_pointer_parameter_takes_what_every_caller_passes() {
 
 #[test]
 fn addresses_passed_for_a_pointer_of_another_type_are_cast() {
-    let text = "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{\n    wait;\n}\n\nvoid measure(int out[])\n{\n    out[0] = 5;\n}\n\nvoid talk(void)\n{\n    float distance;\n    int count;\n\n    measure(&distance);\n    keep(&distance);\n    keep(&count);\n}\n";
+    let text = "#pragma natives event\n\nPROGRAM(100, talk);\nMAIN(talk);\n\nvoid keep(int unused[])\n{\n    wait;\n}\n\nvoid measure(int out[])\n{\n    out[0] = 5;\n}\n\nvoid talk(void)\n{\n    float distance;\n    int count;\n\n    measure((int *)&distance);\n    keep((int *)&distance);\n    keep(&count);\n}\n";
     let data = compiled(text);
     let shown = source::text(&decompile::decompile(&stb::read(&data), "event", tables())).unwrap();
     // measure reads an int through the pointer, so the float's address is cast; keep reads
@@ -287,7 +287,7 @@ fn addresses_passed_for_a_pointer_of_another_type_are_cast() {
     let read = text.replace("void keep(int unused[])\n{\n    wait;", "void keep(void *unused)\n{\n    unused[0] = 1;");
     let error = compile::compile_program(&parse::parse(&read).unwrap(), tables()).unwrap_err().to_string();
     assert!(error.contains("void pointer"), "{error}");
-    let cast = parse::parse(&text.replace("measure(&distance)", "measure((int *)distance)")).unwrap();
+    let cast = parse::parse(&text.replace("measure((int *)&distance)", "measure((int *)distance)")).unwrap();
     let error = compile::compile_program(&cast, tables()).unwrap_err().to_string();
     assert!(error.contains("float cannot be converted to a pointer"), "{error}");
 }

@@ -31,8 +31,7 @@
 //!   hidden global (a literal's storage lasts the program), set before the statement that uses
 //!   it.
 //!
-//! In strict mode (#pragma std c89) C's diagnostics for mixing pointers and integers and for
-//! incompatible pointers are given.
+//! C's diagnostics for mixing pointers and integers and for incompatible pointers are given.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -250,9 +249,8 @@ struct Lowering<'a> {
     numbered: IndexMap<String, i64>,
     /// The numbers of arguments calls through pointers pass.
     arities: BTreeSet<usize>,
-    /// The current function's name, and whether it is written in strict mode.
+    /// The current function's name.
     function: String,
-    strict: bool,
     /// Hidden globals: the arrays string literals become.
     literals: Vec<Node>,
 }
@@ -286,7 +284,6 @@ pub fn lower(program: &Node, kinds: &Map, found: &Context) -> Result<Node> {
         numbered: IndexMap::new(),
         arities: BTreeSet::new(),
         function: String::new(),
-        strict: false,
         literals: Vec::new(),
     };
     let mut functions = Vec::new();
@@ -335,7 +332,6 @@ impl Lowering<'_> {
 
     fn function(&mut self, function: &Node) -> Result<Node> {
         self.function = function.text("name").to_string();
-        self.strict = crate::lower::is_strict(function);
         self.variables.clear();
         self.hidden.clear();
         let signature = self.signatures[&self.function].clone();
@@ -1323,7 +1319,7 @@ impl Lowering<'_> {
         let storage = self.hidden_storage("arguments", &Ty::Array(Box::new(ctype::int()), extra.len().max(1) as i64));
         for (slot, arg) in extra.iter().enumerate() {
             let value = self.scalar(arg, "an argument after ...")?;
-            // stored as it is: of its own type, so strict mode converts nothing
+            // stored as it is: of its own type, so nothing converts it
             let kind = self.slot_kind(&value.ty);
             let cell = node!({"kind": "field", "name": storage.as_str(), "offset": slot, "type": kind});
             parts.push(assign(cell, value.node));
@@ -1479,11 +1475,8 @@ impl Lowering<'_> {
 
     /// C's constraints on assignment (3.3.16.1), as argument passing and return have them: an
     /// integer is not a pointer (but for a null pointer constant), nor a pointer an integer, and
-    /// pointers point at the same type or one of them at void. Strict mode gives them.
+    /// pointers point at the same type or one of them at void.
     fn assignable(&self, to: &Ty, value: &Typed, what: &str) -> Result<()> {
-        if !self.strict {
-            return Ok(());
-        }
         let from = &value.ty;
         if matches!(from, Ty::Scalar(name) if name == "any") {
             // what a native gives

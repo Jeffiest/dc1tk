@@ -170,9 +170,8 @@ pub struct Context {
     /// The constant a slot takes while a load has put a pack in it: {(slot, pack): name}, for the
     /// folder's scripts (slots::loaded_names).
     pub slot_packs: HashMap<(i64, String), String>,
-    /// The function being resolved was written under #pragma std c89: a native in an operand C
-    /// may not evaluate runs only when C would evaluate it.
-    pub strict: bool,
+    /// The headers' value kinds: each typedef's base type.
+    pub kinds: Map,
     pub(super) reserved: HashSet<String>,
 }
 
@@ -215,7 +214,7 @@ pub fn context(declarations: &Declarations, table: &str, tables: &BTreeMap<Strin
     let rows = tables.get(table);
     let original_by_number: IndexMap<i64, String> =
         rows.map(|rows| rows.natives.iter().map(|row| (row.no as i64, row.name.clone())).collect()).unwrap_or_default();
-    let mut found = Context { table: table.to_string(), ..Context::default() };
+    let mut found = Context { table: table.to_string(), kinds: declarations.kinds.clone(), ..Context::default() };
     for declared in &declarations.natives {
         let no = declared["no"].as_i64().unwrap_or(0);
         let canonical = original_by_number.get(&no).cloned().unwrap_or_else(|| format!("_EXT_{no}"));

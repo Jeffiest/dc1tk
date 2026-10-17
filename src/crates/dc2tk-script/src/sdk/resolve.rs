@@ -157,8 +157,8 @@ fn truth(value: Node) -> Node {
     node!({"kind": "unary", "op": "!", "operand": {"kind": "unary", "op": "!", "operand": value}})
 }
 
-/// Whether an operand C evaluates only some of the time holds a native call, so that strict mode
-/// calls it only when C would (sequenced).
+/// Whether an operand C evaluates only some of the time holds a native call, which is then called
+/// only when C would evaluate it (sequenced).
 fn is_sequenced(node: &Node, found: &Context) -> bool {
     match node.kind() {
         kinds::LOGICAL | kinds::COMMA => calls_native(&node["right"], found),
@@ -167,7 +167,7 @@ fn is_sequenced(node: &Node, found: &Context) -> bool {
     }
 }
 
-/// An operand C evaluates only some of the time, holding a native call, in strict mode: the
+/// An operand C evaluates only some of the time, holding a native call: the
 /// operands it depends on are worked out first into a hidden local, and the native is called in an
 /// if, so it runs only when C would evaluate it. a && b is t = !!a; if (t) { t = !!b; } and a || b
 /// the same with if (!t); c ? x : y is if (c) { t = x; } else { t = y; }; in a, b the a is a
@@ -224,12 +224,12 @@ fn sequenced_comma(node: &Node, found: &Context, temps: &mut Vec<String>, before
 
 /// Native calls inside an expression. The VM's natives push no value, so each one is called
 /// first, into a hidden local (__value_N), and the expression reads that local. The calls are
-/// added to before, in the order the expression would make them; one in a condition therefore runs
-/// before the condition is tested, even on the right of && or || or in a branch of ?:, except in
-/// strict mode (sequenced). This only dispatches, so the frames of a deep expression stay small.
+/// added to before, in the order the expression would make them, except those in an operand C
+/// evaluates only some of the time (sequenced). This only dispatches, so the frames of a deep
+/// expression stay small.
 fn hoisted(node: &Node, found: &Context, temps: &mut Vec<String>, before: &mut Vec<Node>) -> Result<Node> {
     match node {
-        _ if found.strict && is_sequenced(node, found) => sequenced(node, found, temps, before),
+        _ if is_sequenced(node, found) => sequenced(node, found, temps, before),
         Node::List(items) => hoisted_list(items, found, temps, before),
         Node::Map(map) if node.kind() == kinds::CALL => hoisted_call(node, map, found, temps, before),
         Node::Map(map) => hoisted_map(map, found, temps, before),
@@ -307,17 +307,19 @@ fn resolved_statement(
         }
     }
     if let Some(expression) = expression {
-        if expression.kind() == kinds::ASSIGN
-            && expression["value"].kind() == kinds::CALL
-            && is_native(expression["value"].text("name"), found)
-        {
-            let name = expression["value"].text("name");
+        // x = native(); and x = (any)native();: the native writes its result into x, as it is
+        let value = match &expression["value"] {
+            cast if cast.kind() == kinds::CAST && cast["type"] == "any" => &cast["operand"],
+            value => value,
+        };
+        if expression.kind() == kinds::ASSIGN && value.kind() == kinds::CALL && is_native(value.text("name"), found) {
+            let name = value.text("name");
             if !found.natives.get(name).is_some_and(has_result) {
                 return Err(Error::invalid(format!(
                     "native {name} returns nothing; pass &variable instead of assigning"
                 )));
             }
-            let mut args = hoisted(&expression["value"]["args"], found, temps, before)?;
+            let mut args = hoisted(&value["args"], found, temps, before)?;
             let target = address_of(hoisted(&expression["target"], found, temps, before)?);
             if let Some(items) = args.as_array_mut() {
                 items.push(target);
@@ -451,7 +453,7 @@ pub fn resolve(program: &Node, tables: &BTreeMap<String, Table>) -> Result<Node>
         return Ok(program.clone());
     }
     let declarations = program.get("declarations").map(Declarations::of).unwrap_or_default();
-    let mut found = context(&declarations, program.text("natives"), tables)?;
+    let found = context(&declarations, program.text("natives"), tables)?;
     let program = crate::lower::initialised_globals(program.clone(), &found)?;
     let program = crate::composite::lower(&program, &declarations.kinds, &found)?;
     let program = &crate::lower::integer_types(program, &declarations.kinds, &found)?;
@@ -470,7 +472,6 @@ pub fn resolve(program: &Node, tables: &BTreeMap<String, Table>) -> Result<Node>
                 .collect::<Result<_>>()?;
             function = function.with("params", params).with("locals", locals);
             let body = with_constants(&function["body"], &found.constants, &variable_names(&function, &global_names));
-            found.strict = crate::lower::is_strict(&function);
             let mut temps = Vec::new();
             let body = statements(body.as_array().map(Vec::as_slice).unwrap_or(&[]), &found, &mut temps)?;
             let mut locals = sized_locals(&function, &found)?;

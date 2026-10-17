@@ -115,15 +115,67 @@ fn a_native_in_a_loop_condition_runs_every_iteration() {
 }
 
 #[test]
-fn natives_run_only_when_c_evaluates_them_in_strict_mode() {
+fn natives_run_only_when_c_evaluates_them() {
     same(
-        "#pragma std c89\nint f(void)\n{\n    int a;\n    int x;\n\n    x = a && get_flag(5);\n    if (a || get_counter(2) > 1) {\n        wait;\n    }\n    return a ? get_flag(6) : x;\n}\n",
+        "int f(void)\n{\n    int a;\n    int x;\n\n    x = a && get_flag(5);\n    if (a || get_counter(2) > 1) {\n        wait;\n    }\n    return a ? get_flag(6) : x;\n}\n",
         "int f(void)\n{\n    int a;\n    int x;\n    int __value_0;\n    int __value_1;\n    int __value_2;\n    int __value_3;\n    int __value_4;\n    int __value_5;\n\n    __value_0 = !!a;\n    if (__value_0) {\n        get_flag(5, &__value_1);\n        __value_0 = !!__value_1;\n    }\n    x = !!__value_0;\n    __value_2 = !!a;\n    if (!__value_2) {\n        get_counter(2, &__value_3);\n        __value_2 = !!(__value_3 > 1);\n    }\n    if (__value_2) {\n        wait;\n    }\n    if (a) {\n        get_flag(6, &__value_5);\n        __value_4 = __value_5;\n    } else {\n        __value_4 = x;\n    }\n    return __value_4;\n}\n",
         EVENT,
     );
 }
 
+#[test]
+fn natives_take_int_and_float_arguments_as_they_are() {
+    // the engine converts what it reads (GetStackInt, GetStackFloat), so 1 goes as the int 1
+    let text = "void f(void)\n{\n    set_bgm_master_volume(1);\n}\n";
+    same(text, "void f(void)\n{\n    set_bgm_master_volume((any)1);\n}\n", EVENT);
+    assert_ne!(built(text, EVENT).unwrap(), built(&text.replace("(1)", "(1.0)"), EVENT).unwrap());
+}
+
+#[test]
+fn zero_stored_in_a_float_stays_the_int_zero() {
+    // its bits are 0.0's, and a float read makes the slot a float again
+    same(
+        "void f(void)\n{\n    float x;\n\n    x = 0;\n}\n",
+        "void f(void)\n{\n    float x;\n\n    x = (any)0;\n}\n",
+        HEAD,
+    );
+}
+
+#[test]
+fn any_keeps_a_native_result_as_the_native_wrote_it() {
+    // the native writes straight into the variable, as x = native(); does for a float
+    same(
+        "void f(void)\n{\n    int x;\n\n    x = (any)get_battle_bgm_volume();\n}\n",
+        "void f(void)\n{\n    int x;\n\n    _GET_BTL_BGM_VOL(&x);\n}\n",
+        EVENT,
+    );
+    // without it C converts the float result for the int
+    assert_ne!(
+        built("void f(void)\n{\n    int x;\n\n    x = get_battle_bgm_volume();\n}\n", EVENT).unwrap(),
+        built("void f(void)\n{\n    int x;\n\n    _GET_BTL_BGM_VOL(&x);\n}\n", EVENT).unwrap()
+    );
+}
+
 // Features with code of their own are run.
+
+#[test]
+fn values_convert_as_c_converts_them() {
+    // an int passed for a float parameter is made a float, a float stored in an int truncated
+    let passed = "float half(float x)\n{\n    return x / 2;\n}\n\nint f(int v)\n{\n    return half(v) * 10;\n}\n";
+    assert_eq!(result(passed, &[3]), int(15));
+    let stored = "int f(int v)\n{\n    int x;\n\n    x = v / 2.0;\n    return x * 2;\n}\n";
+    assert_eq!(result(stored, &[3]), int(2));
+    // (any) stores the value as it is: x holds 1.5, and x * 2 is the float 3.0
+    assert_eq!(result(&stored.replace("x = v / 2.0;", "x = (any)(v / 2.0);"), &[3]), Value::Float(3.0));
+}
+
+#[test]
+fn logical_values_are_0_or_1_and_any_keeps_the_vms() {
+    let text = "int f(int v)\n{\n    int x;\n\n    x = v && 7;\n    return x;\n}\n";
+    assert_eq!(result(text, &[1]), int(1));
+    // the VM's && leaves the deciding operand
+    assert_eq!(result(&text.replace("x = v && 7;", "x = (any)(v && 7);"), &[1]), int(7));
+}
 
 #[test]
 fn switch_compares_in_order_falls_through_and_breaks() {

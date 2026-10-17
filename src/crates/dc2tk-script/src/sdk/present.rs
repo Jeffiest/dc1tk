@@ -917,6 +917,7 @@ pub fn present(
     sounds.entries = Some(entries);
     let mut functions: Vec<Node> =
         found.includes.iter().map(|path| node!({"kind": "include", "path": path.clone(), "system": true})).collect();
-    functions.extend(present_functions(program.list("functions"), found, params_by_kind, hidden, sounds));
+    let presented = present_functions(program.list("functions"), found, params_by_kind, hidden, sounds);
+    functions.extend(crate::lower::kept_as_is(presented, hidden, program.list("globals"), found));
     program.with("natives", Node::Null).with("programs", programs).with("functions", functions)
 }

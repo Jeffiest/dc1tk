@@ -374,11 +374,6 @@ pub(super) fn pragma(state: &mut State, token: &Token, program: &mut Node, pendi
             pending.override_of = rest.first().map(word).transpose()?;
         }
         "every_frame" => pending.every_frame = true,
-        "std" => match first()?.as_str() {
-            // C's semantics where the VM's differ, for the code after it (docs/coding/c-standard.md)
-            Some("c89" | "c90") => state.strict = true,
-            _ => return state.fail("#pragma std takes c89"),
-        },
         "once" => {}
         // C ignores a pragma it does not know
         _ => {}

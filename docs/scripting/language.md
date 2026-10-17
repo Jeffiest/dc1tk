@@ -13,7 +13,14 @@ Scripts in `dc2tk` use C89 syntax plus a few built-in statements for the game's 
   - `sin(x)` and `cos(x)` — Trigonometric functions (angles in radians).
   - `print(...)` — Debug print instruction.
 
-> **VM semantics vs. strict C89:** In retail bytecode, `&&` and `||` evaluate both sides, and assigning a `float` to an `int` requires an explicit `(int)` cast. Add `#pragma std c89` at the top of a patch file to enable standard C short-circuit evaluation and implicit numeric conversions.
+## C's semantics, and the VM's `(any)`
+
+Every script is C89: a value stored in a variable, passed to one of the script's functions or returned is converted to that type (an `int` stored in a `float` becomes a float, a `float` stored in an `int` is truncated), `&&` and `||` give `0` or `1`, and a native call in an operand C skips (`a && get_flag(5)`) is not made. Two things the game's virtual machine does its own way show up in code:
+
+- **Native arguments go as they are.** `set_bgm_master_volume(1)` passes the int `1`. The engine reads a native's arguments with `GetStackInt` and `GetStackFloat`, which convert as C does, so the native sees `1.0` either way.
+- **`(any)` keeps the VM's value.** The VM stores a value with the type it has: an `int` variable can end up holding a float. `(any)x` stores, passes or returns `x` without C's conversion, and `(any)(a && b)` gives the VM's value of `a && b` (the operand that decided it, not `0` or `1`). The decompiler writes `(any)` wherever a retail script relies on this, as in `count = (any)get_rage_hits_left();`, which leaves the float's bits in an `int` (the native writes its result straight into the variable). New code rarely needs it.
+
+`x = 0;` with `x` a `float` stores the int `0`: its bits are `0.0`'s, and every read of a `float` variable treats the slot as a float, so nothing can tell them apart.
 
 ## SDK headers
 

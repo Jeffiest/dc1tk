@@ -268,8 +268,6 @@ struct State {
     statics: Vec<Node>,
     /// How deep the parser is nested, against NESTING.
     depth: usize,
-    /// #pragma std c89 has been read: the functions and globals after it get C's semantics.
-    strict: bool,
     /// The structs and unions declared so far, by tag.
     structs: Structs,
     /// typedefs of types beyond the scalars (pointers, structs, arrays, functions).
@@ -302,7 +300,6 @@ impl State {
             globals: HashMap::new(),
             statics: Vec::new(),
             depth: 0,
-            strict: false,
             structs: Structs::new(),
             // what <stdarg.h>'s va_list stands for: a pointer into a variadic call's arguments
             types: HashMap::from([("__va_list".to_string(), ctype::pointer(ctype::int()))]),
@@ -614,12 +611,12 @@ int yes;
         let parsed = |text: &str| {
             parse_with(text, &ParseOptions { headers: Some(&headers), ..ParseOptions::default() }).unwrap().to_string()
         };
-        let body = "#pragma std c89\n#define N 2\n#ifdef N\n#pragma override\nint f() { return FLAG + N; }\n#endif\n";
+        let body = "#define N 2\n#ifdef N\n#pragma override\nint f() { return FLAG + N; }\n#endif\n";
         let plain = parsed(&format!("#include <h.h>\n\n{body}"));
         for text in [
-            "#include <h.h> // FLAG\n\n#pragma std c89 // strict\n#define N 2 // two\n#ifdef N // c\n\
+            "#include <h.h> // FLAG\n\n#define N 2 // two\n#ifdef N // c\n\
              #pragma override   // Replace f\nint f() { return FLAG + N; }\n#endif // N\n",
-            "#include <h.h> /* FLAG */\n\n#pragma std /* c */ c89\n#define N /* c */ 2\n#ifdef N /* c */\n\
+            "#include <h.h> /* FLAG */\n\n#define N /* c */ 2\n#ifdef N /* c */\n\
              #pragma override /* Replace f */\nint f() { return FLAG + N; }\n#endif\n",
             &format!("#include <h.h> /* FLAG,\n   over two lines */\n{body}"),
             &format!("#include <h.h> // FLAG, and a backslash \\\n   splices this line to the comment\n{body}"),

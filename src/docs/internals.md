@@ -416,7 +416,7 @@ checks (`memory/`, `READ_BUFFER`, the measured `RETAIL_*` maps) are in
   hold what they share), on small discs, packs and scripts built in memory
   (`dc2tk_disc::samples`). Nothing needs the game's files.
 - The C89 suite: a program in `tests/c89/` for each feature of the
-  language, compiled in strict mode and run in the test VM, its second line
+  language, compiled and run in the test VM, its second line
   saying what it shows (`// expect:`, `// rejects:`, `// differs:`,
   `// planned:`, `// limit:`); [the C standard](c-standard.md) lists them.
 - `tests/nesting.rs`: the whole compile at `parse::NESTING`, on a thread

@@ -2,13 +2,13 @@
 
 The `dc2tk` script compiler provides a conforming C89/C90 freestanding implementation (ANSI X3.159-1989, ISO/IEC 9899:1990) for custom script code, targeting the game's bytecode VM (see [script bytecode format](../../docs/internals/scripts.md)).
 
-One design rule governs the compiler: every decompiled script from the retail disc must recompile to its exact original bytes. Only syntax forms that the decompiler does not emit use the new C89 lowering paths. Running `dc2tk verify` checks byte-for-byte round-tripping across the entire retail disc.
+One design rule governs the compiler: every decompiled script from the retail disc must recompile to its exact original bytes. Running `dc2tk verify` checks byte-for-byte round-tripping across the entire retail disc.
 
-Where the game VM's native semantics differ from standard C (dynamic slot types on assignment, `&&` and `||` returning the deciding operand, and eager evaluation of native calls inside conditions), decompiled retail scripts require the VM's default behavior. Standard C semantics apply when you enable **strict mode** by placing `#pragma std c89` at the top of a file (see [language.md](../../docs/scripting/language.md)). All other C89 features described on this page work in both default and strict modes.
+Every script is compiled with C's semantics. Where a retail script relies on the VM's own (a slot keeps the type of the value stored in it, and `&&` and `||` leave the operand that decided them), the decompiler writes `(any)`, which keeps the value as the VM has it, so the script still compiles to its own bytes (`lower::kept_as_is`; see [language.md](../../docs/scripting/language.md)). A native's `int` and `float` arguments are passed as they are: the engine's `GetStackInt` and `GetStackFloat` convert them as C would.
 
 ## Conformance test suite
 
-An automated conformance test suite in `src/crates/dc2tk-script/tests/c89/` verifies each C89 feature (`cargo test -p dc2tk-script --test c89`). Each test file is compiled in strict mode (`#pragma std c89`) with the SDK headers and executed in the test VM (`vm.rs`, also used by `dc2tk mod test`).
+An automated conformance test suite in `src/crates/dc2tk-script/tests/c89/` verifies each C89 feature (`cargo test -p dc2tk-script --test c89`). Each test file is compiled with the SDK headers and executed in the test VM (`vm.rs`, also used by `dc2tk mod test`).
 
 The test VM executes all script bytecode instructions identically to the game VM, with two differences:
 
@@ -141,11 +141,11 @@ C89 requires a freestanding implementation to document the following behaviors:
 | 3.2.1.3 Integer to float | supported | `conversions_int_to_float` | |
 | 3.2.1.3 Unsigned and float | supported | `conversions_unsigned_float` | Converted via helper runtime functions |
 | 3.2.1.5 Usual arithmetic conversions | supported | `conversions_usual_arithmetic` | |
-| 3.2.1.3 Conversion on assignment | supported | `conversions_assignment` | Strict mode emits `FTOI` or `ITOF` on assignment, argument pass, return, and `op=` |
+| 3.2.1.3 Conversion on assignment | supported | `conversions_assignment` | `FTOI` or `ITOF` on assignment, argument pass (to the script's functions), return, and `op=`; `(any)` keeps a value as it is |
 | 3.2.2.2 void | supported | `conversions_void` | |
 | 3.2.2.3 Null pointer constants | supported | `conversions_null_pointer` | `p == 0` compiles to `!p`; `p != 0` compiles to `!!p` |
-| 3.3.16.1 An integer as a pointer | supported | `conversions_pointer_integer` | Rejected in strict mode |
-| 3.3.16.1 Incompatible pointers | supported | `conversions_incompatible_pointers` | Rejected in strict mode |
+| 3.3.16.1 An integer as a pointer | supported | `conversions_pointer_integer` | Rejected |
+| 3.3.16.1 Incompatible pointers | supported | `conversions_incompatible_pointers` | Rejected |
 
 ### 3.3 Expressions, 3.4 Constant expressions
 
@@ -173,14 +173,14 @@ C89 requires a freestanding implementation to document the following behaviors:
 | 3.3.9 Equality operators | supported | `expressions_equality` | |
 | 3.3.10-12 `& ^ \|` | supported | `expressions_bitwise` | |
 | 3.3.13-14 `&&` and `\|\|` | supported | `expressions_logical` | Short-circuit evaluation |
-| 3.3.13-14 Their value | supported | `expressions_logical_value` | Strict mode normalizes used values with `NOT NOT` |
+| 3.3.13-14 Their value | supported | `expressions_logical_value` | A used value is normalized with `NOT NOT`; `(any)(a && b)` keeps the VM's |
 | 3.3.15 `?:` | supported | `expressions_conditional` | |
 | 3.3.15 `?:` of structs | supported | `expressions_conditional_structs` | Selects the address of the chosen struct |
 | 3.3.16.1 Assignment | supported | `expressions_assignment` | |
 | 3.3.16.2 Compound assignment | supported | `expressions_compound_assignment` | |
 | 3.3.17 Comma operator | supported | `expressions_comma` | |
 | 3.4 Constant expressions | supported | `expressions_constant` | Evaluated for array sizes, enums, `case` labels, and `#if` |
-| Natives in conditions | supported | | Strict mode wraps short-circuited native calls in an `if` (tested in `c_features.rs`) |
+| Natives in conditions | supported | | Short-circuited native calls run in an `if` (tested in `c_features.rs`) |
 
 ### 3.5 Declarations
 
@@ -298,7 +298,7 @@ The parser, preprocessor (`cpp.rs`), and lowering passes (`lower.rs` and `compos
 - **`unsigned int` operations**: Stored in standard 32-bit integer slots. Addition, subtraction, multiplication, bitwise logic, left shift, and equality work identically to signed integers. Relational comparisons (`<`, `<=`, `>`, `>=`) bias both operands by $-2^{31}$. Unsigned division (`/`), remainder (`%`), right shift (`>>`), and `float` conversions call small helper functions injected into the compiled script.
 - **Block-scoped variables**: Each local variable receives one slot in the function frame. If an inner block declares a variable that shadows an outer variable, the compiler renames the inner variable to give it a separate slot.
 - **Header typedefs vs. variable names**: Standard typedefs from included headers (such as `size_t`) act as type specifiers unless shadowed by a variable, enumerator, or constant of the same name (allowing retail scripts to name local variables `flag` or `message`).
-- **Strict mode (`#pragma std c89`)**: Inserts `FTOI` or `ITOF` instructions (or unsigned conversion calls) when storing, passing, or returning across `int` and `float` types; appends `NOT NOT` when the value of `&&` or `||` is used; and rewrites native calls inside short-circuited operands (`a && f()`, `a || f()`, `c ? f() : x`, `a, f()`) into guarded `if` blocks using a temporary variable.
+- **C's conversions and logical values**: Inserts `FTOI` or `ITOF` instructions (or unsigned conversion calls) when storing, passing to a script function, or returning across `int` and `float` types, except for a value cast to `any` and the int `0` stored in a `float` (the same bits); appends `NOT NOT` when the value of `&&` or `||` is used, except under `(any)`; and rewrites native calls inside short-circuited operands (`a && f()`, `a || f()`, `c ? f() : x`, `a, f()`) into guarded `if` blocks using a temporary variable. A native's arguments are not converted between `int` and `float` (the engine does it as it reads them). `x = (any)f();` with `f` a native that gives a result still writes it straight into `x`.
 
 ### Lowering pointers and composite types (`composite.rs`)
 

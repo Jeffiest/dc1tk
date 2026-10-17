@@ -23,8 +23,7 @@
 //!   slots, and their values are set once per load as the script's own are.
 //! - A patch is parsed as C reads it: the SDK headers' and its libraries' macros reach its #if,
 //!   and their typedefs and structs its declarations. Its structs and unions (and its libraries')
-//!   join the script's; a tag the script defines otherwise is refused. #pragma std c89 in a patch
-//!   gives its functions C's semantics, as in any file.
+//!   join the script's; a tag the script defines otherwise is refused.
 //! - PROGRAM lines add programs. A program the script already has is changed by overriding its
 //!   function instead, so that several mods can change it.
 //! - A function after #pragma every_frame is called before every wait; in the script, so it runs
