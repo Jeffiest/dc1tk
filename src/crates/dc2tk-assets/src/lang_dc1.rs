@@ -235,3 +235,131 @@ mod tests {
         assert_eq!(file_language("noda_w/dun00_eng.mes"), -1);
     }
 }
+
+// ---- import: lang/ JSON back into the game's message files ----
+
+/// A message file under a data folder: its path as export keys it (a pack's entry as
+/// `<pack>/<entry>`), the file holding it, the entry's name in that pack, and its bytes.
+struct MessageFile {
+    key: String,
+    file: String,
+    member: Option<String>,
+    data: Vec<u8>,
+}
+
+fn message_files(root: &Path, folder: &Path, out: &mut Vec<MessageFile>) -> Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(folder)
+        .map_err(|e| Error::invalid(format!("cannot read {}: {e}", folder.display())))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .collect();
+    entries.sort();
+    for path in entries {
+        if path.is_dir() {
+            message_files(root, &path, out)?;
+            continue;
+        }
+        let key = path.strip_prefix(root).expect("below the root").to_string_lossy().replace('\\', "/").to_lowercase();
+        if key.starts_with("mods/") {
+            continue;
+        }
+        let mes = key.ends_with(".mes");
+        if !mes && !key.ends_with(".pak") && !key.ends_with(".pac") {
+            continue;
+        }
+        let bytes = std::fs::read(&path).map_err(|e| Error::invalid(format!("cannot read {}: {e}", path.display())))?;
+        if mes {
+            out.push(MessageFile { key: key.clone(), file: key, member: None, data: bytes });
+            continue;
+        }
+        let Some(members) = dc2tk_disc::archive::parse_pack(&bytes) else {
+            continue;
+        };
+        for member in members {
+            let name = member.name.to_lowercase();
+            if name.ends_with(".mes") || name == "opmes.bin" {
+                out.push(MessageFile {
+                    key: format!("{key}/{name}"),
+                    file: key.clone(),
+                    member: Some(member.name.clone()),
+                    data: member.data(&bytes).to_vec(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The game files (by data path) that a lang/ folder's `<language>.json` files change: every
+/// message whose text differs from the data's is written into its file (text_dc1's codes), a
+/// pack's message entry into the pack. Files the texts leave alone are not given. Also gives the
+/// messages that could not be written (a character the font cannot draw), as "key: why".
+pub fn import(root: &Path, lang: &Path) -> Result<(Vec<(String, Vec<u8>)>, Vec<String>)> {
+    // the texts by file key, then message id, for each language whose file the folder has
+    let mut texts: Vec<(usize, BTreeMap<String, BTreeMap<i32, String>>)> = Vec::new();
+    for (code, name) in LANGUAGE_FILES.iter().enumerate() {
+        let path = lang.join(format!("{name}.json"));
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let flat: BTreeMap<String, String> =
+            serde_json::from_str(&raw).map_err(|e| Error::invalid(format!("{}: {e}", path.display())))?;
+        let mut by_file: BTreeMap<String, BTreeMap<i32, String>> = BTreeMap::new();
+        for (key, text) in flat {
+            let Some((file, id)) = key.rsplit_once('.') else { continue };
+            if let Ok(id) = id.parse::<i32>() {
+                by_file.entry(file.to_string()).or_default().insert(id, text);
+            }
+        }
+        texts.push((code, by_file));
+    }
+    let mut files = Vec::new();
+    message_files(root, root, &mut files)?;
+    let mut problems = Vec::new();
+    let mut changed: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut packs: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for file in &files {
+        let Some(original) = read_messages(&file.data) else { continue };
+        let mut language = file_language(&file.key);
+        if language != 0 && is_japanese(&original) {
+            language = 0;
+        }
+        let key = message_key(&file.key);
+        let mut edits: BTreeMap<i32, String> = BTreeMap::new();
+        for (code, by_file) in &texts {
+            if language != *code as i32 && language != -1 {
+                continue;
+            }
+            for (id, text) in by_file.get(&key).into_iter().flatten() {
+                if original.get(id) != Some(text) {
+                    edits.insert(*id, text.clone());
+                }
+            }
+        }
+        if edits.is_empty() {
+            continue;
+        }
+        let mut mes = crate::text::Mes::parse(&file.data)?;
+        for (id, text) in edits {
+            match text_dc1::encode(&text) {
+                Ok(codes) => mes.set(id as i16 as u16, codes),
+                Err(error) => problems.push(format!("{key}.{id}: {error}")),
+            }
+        }
+        let built = mes.write()?;
+        match &file.member {
+            None => {
+                changed.insert(file.file.clone(), built);
+            }
+            Some(member) => {
+                let pack = match packs.get(&file.file) {
+                    Some(pack) => pack.clone(),
+                    None => std::fs::read(root.join(&file.file)).map_err(|e| Error::invalid(e.to_string()))?,
+                };
+                let rebuilt = dc2tk_disc::rebuild::replaced_member(&pack, std::slice::from_ref(member), &built)?;
+                packs.insert(file.file.clone(), rebuilt);
+            }
+        }
+    }
+    changed.extend(packs);
+    Ok((changed.into_iter().collect(), problems))
+}

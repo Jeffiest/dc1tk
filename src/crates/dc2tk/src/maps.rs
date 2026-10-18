@@ -33,7 +33,7 @@ fn write_files(folder: &Path, files: &[(String, Vec<u8>)]) -> Result<()> {
 }
 
 /// The texture files a floor draws from besides its pack's: the .img files of its SET_PATH folder.
-fn floor_images(data: &Path, cfg: &[u8]) -> Vec<(String, Vec<u8>)> {
+pub(crate) fn floor_images(data: &Path, cfg: &[u8]) -> Vec<(String, Vec<u8>)> {
     let set_path = info_cfg::parse(cfg)
         .into_iter()
         .find(|(tag, _)| tag == "SET_PATH")
@@ -53,7 +53,7 @@ pub fn scene_images(scn: &Path) -> Vec<(String, Vec<u8>)> {
     out
 }
 
-fn floor_paths(data: &Path, floor: &str) -> (PathBuf, PathBuf) {
+pub(crate) fn floor_paths(data: &Path, floor: &str) -> (PathBuf, PathBuf) {
     (data.join("dun").join(format!("{floor}.cfg")), data.join("dun").join("mpd_pack").join(format!("{floor}.mpd")))
 }
 
@@ -180,12 +180,30 @@ pub fn run_export(data: &Path, out: &Path, check: bool) -> Result<ExitCode> {
     Ok(if bad == 0 { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }
 
+/// Says whether a built file fits where the game's goes: MoonMod's game.resources.override takes a
+/// replacement only when it is no larger than the retail file, and the game reads files into
+/// buffers sized for them. Gives true when it fits.
+pub fn size_check(what: &str, built: usize, original: usize) -> bool {
+    if built > original {
+        println!(
+            "warning: {what} is {built} bytes, {} more than the game's {original}: MoonMod will refuse it              (keep edits to moving vertices or changing values, or remove something to make room)",
+            built - original
+        );
+        false
+    } else {
+        println!("{what}: {built} bytes, fits (the game's is {original})");
+        true
+    }
+}
+
 pub fn run_floor_build(folder: &Path, data: &Path, floor: &str, output: &Path) -> Result<ExitCode> {
     let (cfg_path, mpd_path) = floor_paths(data, floor);
     let (cfg, mpd) = (std::fs::read(&cfg_path)?, std::fs::read(&mpd_path)?);
     let images = floor_images(data, &cfg);
     let (new_cfg, new_mpd) = map_dc1::floor_build(folder, &cfg, &mpd, &images)?;
     std::fs::create_dir_all(output)?;
+    size_check(&format!("{floor}.cfg"), new_cfg.len(), cfg.len());
+    size_check(&format!("{floor}.mpd"), new_mpd.len(), mpd.len());
     std::fs::write(output.join(format!("{floor}.cfg")), new_cfg)?;
     std::fs::write(output.join(format!("{floor}.mpd")), new_mpd)?;
     println!("written to {}", output.display());

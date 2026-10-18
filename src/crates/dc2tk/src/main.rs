@@ -5,6 +5,7 @@ mod defs;
 mod files;
 mod map_cmd;
 mod maps;
+mod pack;
 mod modding;
 mod options;
 mod setup;
@@ -110,6 +111,30 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
+    /// Dark Cloud 1: a MoonMod package from a work folder of edited exports (floors/, scenes/, layouts/,
+    /// models/, scripts/, sound/, lang/, soundtrack/; see DC1.md): every file that differs from the
+    /// game's and fits its size, with mod.json and a main.lua that overrides each.
+    ModPack {
+        /// The work folder.
+        work: PathBuf,
+        /// The game's data folder.
+        data: PathBuf,
+        /// The package's id (its folder name), e.g. jeffiest.red-cave.
+        #[arg(long)]
+        id: String,
+        /// The package's display name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Folder to write the package into (MoonMod's save/mods).
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Native tables for scripts.
+        #[arg(long, default_value = "definitions/dc1/natives")]
+        natives: PathBuf,
+        /// SDK headers for scripts.
+        #[arg(long, default_value = "sdk-dc1")]
+        sdk: PathBuf,
+    },
     /// A character pack (.chr) as glTF (its model, skin and motions, textures/), to edit and give
     /// to model-build.
     ModelExport {
@@ -145,6 +170,9 @@ enum Command {
         /// The .edt to write.
         #[arg(short, long)]
         output: PathBuf,
+        /// The game's .edt, to check the built one is no larger.
+        #[arg(long)]
+        original: Option<PathBuf>,
     },
     /// Write a map as a glTF scene to edit in Blender (and build back with a mod's map: line).
     MapExport(map_cmd::MapExportArgs),
@@ -531,7 +559,9 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Extract { iso, out } => run_extract(iso, out),
         Command::SoundExport { source, out, check } => run_sound_export(source, out, *check),
         Command::SoundBuild { folder, original, output } => {
-            let built = dc2tk_assets::sound_dc1::build(folder, &std::fs::read(original)?)?;
+            let data = std::fs::read(original)?;
+            let built = dc2tk_assets::sound_dc1::build(folder, &data)?;
+            maps::size_check(&output.display().to_string(), built.len(), data.len());
             std::fs::write(output, built)?;
             println!("written to {}", output.display());
             Ok(ExitCode::SUCCESS)
@@ -540,11 +570,22 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::FloorBuild { folder, data, floor, output } => maps::run_floor_build(folder, data, floor, output),
         Command::SceneBuild { folder, original, output } => {
             let images = maps::scene_images(original);
-            let built = dc2tk_assets::map_dc1::scene_build(folder, &std::fs::read(original)?, &images)?;
+            let data = std::fs::read(original)?;
+            let built = dc2tk_assets::map_dc1::scene_build(folder, &data, &images)?;
+            maps::size_check(&output.display().to_string(), built.len(), data.len());
             std::fs::write(output, built)?;
             println!("written to {}", output.display());
             Ok(ExitCode::SUCCESS)
         }
+        Command::ModPack { work, data, id, name, out, natives, sdk } => pack::run(&pack::Options {
+            work,
+            data,
+            id,
+            name: name.as_deref(),
+            out,
+            natives,
+            sdk,
+        }),
         Command::ModelExport { pack, out } => {
             let name = pack.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let files = dc2tk_assets::tree::exported_model(&std::fs::read(pack)?, &name)?;
@@ -558,13 +599,19 @@ fn run(command: &Command) -> Result<ExitCode> {
         }
         Command::ModelBuild { folder, original, output } => {
             let name = original.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-            let built = dc2tk_assets::tree::build_model(folder, &std::fs::read(original)?, &name)?;
+            let data = std::fs::read(original)?;
+            let built = dc2tk_assets::tree::build_model(folder, &data, &name)?;
+            maps::size_check(&output.display().to_string(), built.len(), data.len());
             std::fs::write(output, built)?;
             println!("written to {}", output.display());
             Ok(ExitCode::SUCCESS)
         }
-        Command::LayoutBuild { json, output } => {
-            std::fs::write(output, dc2tk_assets::map_dc1::layout_build(&std::fs::read(json)?)?)?;
+        Command::LayoutBuild { json, output, original } => {
+            let built = dc2tk_assets::map_dc1::layout_build(&std::fs::read(json)?)?;
+            if let Some(original) = original {
+                maps::size_check(&output.display().to_string(), built.len(), std::fs::metadata(original)?.len() as usize);
+            }
+            std::fs::write(output, built)?;
             println!("written to {}", output.display());
             Ok(ExitCode::SUCCESS)
         }
