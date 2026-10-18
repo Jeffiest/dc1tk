@@ -98,3 +98,8 @@ Use `--table monster` for `dun/monstor/*.stb` and `--table event` for everything
 | in game (MoonMod play-fork, 2026-10-18) | package `save\mods\dc1tk.ingame-test` (`game.resources.override`): red fog/background in Divine Beast Cave, Toan's turban x1.8 and Skeleton Soldiers 3x faster all seen by Jeff; corridor walls x1.5 built and accepted (not singled out in the screenshot). Every file kept at retail size (MoonMod refuses larger) |
 | tests | `cargo test --release`: all pass |
 | not converted | 115 bad faces header, 16 faces size mismatch, 103 cfgs with no MODEL, 7 CLUT type 1, 8 empty texture files |
+
+## Blender add-on (`blender-plugin/dc1tk_maps`)
+Imports floors (parts, collision, camera, torches), Georama scenes (parts, cells) and layouts from `maps-export`, and
+exports edits back (vertex moves keep file sizes; face changes warn). See its README. 2026-10-18: d01main_a, 0101.scn
+and e01 gdata0.edt round-trip and build byte-identical; edits build at retail size (Blender 4.2.3).
