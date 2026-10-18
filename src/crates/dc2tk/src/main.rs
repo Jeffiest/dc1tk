@@ -134,6 +134,10 @@ enum Command {
         /// SDK headers for scripts.
         #[arg(long, default_value = "sdk-dc1")]
         sdk: PathBuf,
+        /// For the PC port (play-fork from 2026-10-18): let files grow past the game's size up to
+        /// their kind's limit (DC1_PORT_SIZE_LIMITS.md) instead of making them fit.
+        #[arg(long)]
+        port: bool,
     },
     /// A character pack (.chr) as glTF (its model, skin and motions, textures/), to edit and give
     /// to model-build.
@@ -577,7 +581,7 @@ fn run(command: &Command) -> Result<ExitCode> {
             println!("written to {}", output.display());
             Ok(ExitCode::SUCCESS)
         }
-        Command::ModPack { work, data, id, name, out, natives, sdk } => pack::run(&pack::Options {
+        Command::ModPack { work, data, id, name, out, natives, sdk, port } => pack::run(&pack::Options {
             work,
             data,
             id,
@@ -585,6 +589,7 @@ fn run(command: &Command) -> Result<ExitCode> {
             out,
             natives,
             sdk,
+            port: *port,
         }),
         Command::ModelExport { pack, out } => {
             let root = pack::data_root_of(pack).context("the pack is not in a game data folder (one holding dun/ and chara/)")?;

@@ -71,6 +71,13 @@ comes out unchanged, refuses what is larger than the game's file (MoonMod's limi
 `layout-build --original`, `model-build`, `sound-build`) prints the same size check. Text goes back into the `.mes`
 files (inside `.pak`/`.pac` packs too), so a mod's text is per mod and removable. Enable the package in MoonMod's Mod Manager.
 
+**Port mode (`--port`)**: for the PC port only (play-fork from 2026-10-18). Files may grow past the game's size, up to a
+limit per kind (`.mpd` 6.4 MB, `.cfg` 1 MB, `.chr` 16 MB, `.stb` 4 MB, `.mes` 1 MB (opening `opdat/*.mes` 68,992), `.snd`
+16 MB, `.scn` 8 MB, `.edt` 64 KB; see `E:\Chronicle-project-Claude\DC1_PORT_SIZE_LIMITS.md`), so mesh topology edits,
+longer scripts and extra parts go in as they are. Other kinds (`.mds`, `.img`, `.pak`, ...) stay at retail size. The game
+checks at load time that a grown file fits the buffer it reads it into and logs `moonmod: override for <path> grows ...`
+or `moonmod: refused override ...`. Without `--port` the package also works on builds without port mode.
+
 ## Commands (Git Bash, from E:\Chronicle-project-Claude\dc1tk)
 ```bash
 build/release/dc2tk.exe natives "C:/Users/armor/Documents/Codex/2026-10-14/i-want-to-build-an-all/Chronicle" --out definitions/dc1/natives

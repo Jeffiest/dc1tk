@@ -93,6 +93,26 @@ fn lua_string(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+/// How large a replacement of a game file may grow on the PC port (play-fork from 2026-10-18;
+/// E:\Chronicle-project-Claude\DC1_PORT_SIZE_LIMITS.md), or None for a kind held to its retail size.
+/// The port also checks at load time that the file fits the room left where the game reads it.
+pub fn port_limit(path: &str) -> Option<usize> {
+    let lower = path.to_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or("");
+    match ext {
+        "mpd" => Some(6_399_999),
+        "cfg" => Some(1_048_576),
+        "chr" => Some(16_777_216),
+        "stb" => Some(4_194_304),
+        "mes" if lower.starts_with("opdat/") => Some(68_992),
+        "mes" => Some(1_048_576),
+        "snd" => Some(16_777_216),
+        "scn" => Some(8_388_608),
+        "edt" => Some(65_536),
+        _ => None,
+    }
+}
+
 pub struct Options<'a> {
     pub work: &'a Path,
     pub data: &'a Path,
@@ -101,6 +121,8 @@ pub struct Options<'a> {
     pub out: &'a Path,
     pub natives: &'a Path,
     pub sdk: &'a Path,
+    /// For the PC port: files may grow past the retail size up to their kind's limit (port_limit).
+    pub port: bool,
 }
 
 pub fn run(options: &Options) -> Result<ExitCode> {
@@ -208,10 +230,25 @@ pub fn run(options: &Options) -> Result<ExitCode> {
         if file.data == original {
             continue;
         }
-        if maps::size_check(&file.path, file.data.len(), original.len()) {
+        if file.data.len() <= original.len() {
+            maps::size_check(&file.path, file.data.len(), original.len());
             kept.push(file);
             continue;
         }
+        if options.port {
+            if let Some(limit) = port_limit(&file.path).filter(|&limit| file.data.len() <= limit) {
+                println!(
+                    "{}: {} bytes, {} more than the game's {} (port mode: this kind may grow to {limit}; the game also checks it fits its buffer when it loads)",
+                    file.path,
+                    file.data.len(),
+                    file.data.len() - original.len(),
+                    original.len()
+                );
+                kept.push(file);
+                continue;
+            }
+        }
+        maps::size_check(&file.path, file.data.len(), original.len());
         // too big: the slack the game's files carry taken out (fit_dc1), when that is enough
         match dc2tk_assets::fit_dc1::fit(&file.path, &file.data, original.len())? {
             (Some(fitted), notes) => {
