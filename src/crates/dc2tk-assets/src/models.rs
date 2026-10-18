@@ -239,6 +239,59 @@ pub fn skeleton_for(path: &str, data: &[u8], disc: &DiscFiles) -> Result<(String
     if own.iter().any(|w| w.starts_with("monica") || w.starts_with("c02")) {
         candidates.push("chara/c02_base.chr".into());
     }
+    // Dark Cloud 1: a character code (c01d, c23a, p14a) in the pack's name or its .mot members' names
+    // (e11.chr's e11c01d.mot, e505c23a.chr) names the model pack: a .chr of just that name, the
+    // pack's own folder first, then dun/mainchara/, chara/, then anywhere
+    let mut codes: Vec<String> = Vec::new();
+    let mut names: Vec<String> = vec![stem.to_lowercase()];
+    names.extend(found.iter().filter(|(n, _)| n.to_lowercase().ends_with(".mot")).map(|(n, _)| path_stem(n).to_lowercase()));
+    for name in &names {
+        let bytes = name.as_bytes();
+        for at in 0..bytes.len() {
+            let fits = at + 4 <= bytes.len()
+                && matches!(bytes[at], b'c' | b'p')
+                && bytes[at + 1].is_ascii_digit()
+                && bytes[at + 2].is_ascii_digit()
+                && bytes[at + 3].is_ascii_lowercase();
+            if fits {
+                let code = name[at..at + 4].to_string();
+                if !codes.contains(&code) {
+                    codes.push(code);
+                }
+            }
+        }
+    }
+    let folder_of = |p: &str| p.rsplit_once('/').map_or("", |(f, _)| f).to_lowercase();
+    let own_folder = folder_of(path);
+    for code in &codes {
+        let file = format!("{code}.chr");
+        let mut found_packs: Vec<&String> = disc
+            .paths
+            .iter()
+            .filter(|other| other.rsplit('/').next().unwrap_or(other).eq_ignore_ascii_case(&file))
+            .collect();
+        let rank = |p: &&String| match folder_of(p).as_str() {
+            f if f == own_folder => 0,
+            "dun/mainchara" => 1,
+            "chara" => 2,
+            _ => 3,
+        };
+        found_packs.sort_by_key(|p| (rank(p), (*p).clone()));
+        if found_packs.is_empty() {
+            // no pack of that code (e503c01e.chr's c01e): the character's other versions (c01d)
+            let number = &code[..3];
+            found_packs = disc
+                .paths
+                .iter()
+                .filter(|other| {
+                    let name = other.rsplit('/').next().unwrap_or(other).to_lowercase();
+                    name.len() == 8 && name.starts_with(number) && name.ends_with(".chr")
+                })
+                .collect();
+            found_packs.sort_by_key(|p| (rank(p), (*p).clone()));
+        }
+        candidates.extend(found_packs.into_iter().cloned());
+    }
     let folder = path.rsplit_once('/').map_or("", |(folder, _)| folder);
     let mut beside: Vec<(usize, String)> = disc
         .paths
@@ -360,6 +413,9 @@ pub fn build_motions(folder: &Path, original: &[u8], skeleton: &[u8], skeleton_n
 /// models::export for any character pack on the disc: a pack of motions alone on the model pack
 /// skeleton_for finds, any other as itself (its cfg named after it, as tree::model_pack reads it).
 pub fn export_on_disc(data: &[u8], path: &str, disc: &DiscFiles) -> Result<Vec<(String, Vec<u8>)>> {
+    let own_stem = path_stem(path.rsplit('/').next().unwrap_or(path));
+    let (renamed, _) = crate::tree::model_pack(data, own_stem);
+    let data: &[u8] = &renamed;
     if motions_only(data) {
         let (skeleton_path, skeleton) = skeleton_for(path, data, disc)?;
         let name = path_stem(skeleton_path.rsplit('/').next().unwrap_or(&skeleton_path)).to_string();
@@ -371,10 +427,18 @@ pub fn export_on_disc(data: &[u8], path: &str, disc: &DiscFiles) -> Result<Vec<(
 
 /// models::build for any character pack on the disc, as export_on_disc exports it.
 pub fn build_on_disc(folder: &Path, original: &[u8], path: &str, disc: &DiscFiles) -> Result<Vec<u8>> {
-    if motions_only(original) {
-        let (skeleton_path, skeleton) = skeleton_for(path, original, disc)?;
+    let own_stem = path_stem(path.rsplit('/').next().unwrap_or(path));
+    let (renamed, old) = crate::tree::model_pack(original, own_stem);
+    if motions_only(&renamed) {
+        let (skeleton_path, skeleton) = skeleton_for(path, &renamed, disc)?;
         let name = path_stem(skeleton_path.rsplit('/').next().unwrap_or(&skeleton_path)).to_string();
-        return build_motions(folder, original, &skeleton, &name);
+        let built = build_motions(folder, &renamed, &skeleton, &name)?;
+        // the cfg's own name back (tree::model_pack named it info.cfg)
+        return Ok(match old {
+            Some(old) if built.as_slice() != &renamed[..] => crate::tree::restore_cfg_name(built, &old)?,
+            Some(_) => original.to_vec(),
+            None => built,
+        });
     }
     let stem = path_stem(path.rsplit('/').next().unwrap_or(path));
     crate::tree::build_model(folder, original, stem)

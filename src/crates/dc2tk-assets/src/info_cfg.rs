@@ -244,8 +244,22 @@ impl CharInfo {
     pub fn new(statements: &[(String, Vec<Arg>)]) -> CharInfo {
         let mut info = CharInfo::default();
         let mut current: Option<usize> = None;
+        // Dark Cloud 1's KEY lines are `KEY start, end, speed`, numbered on from `KEY_START <n>`
+        let mut key_number: i64 = 0;
         for (tag, a) in statements {
             match tag.as_str() {
+                "KEY_START" => key_number = a.first().and_then(Arg::as_f64).map_or(0, |n| n as i64),
+                "KEY" if a.len() == 3 && a[0].as_str().is_none() => {
+                    if let Some(at) = current {
+                        info.motions[at].1.keys.push(Key {
+                            name: Arg::Str(format!("key{key_number}")),
+                            start: a[0].clone(),
+                            end: a[1].clone(),
+                            step: a[2].clone(),
+                        });
+                    }
+                    key_number += 1;
+                }
                 "NAME" if !a.is_empty() => info.name = Some(a[0].clone()),
                 "MODEL" if !a.is_empty() => info.model = Some(a[0].clone()),
                 "SHADOW_MODEL" if !a.is_empty() => info.shadow_model = Some(a[0].clone()),

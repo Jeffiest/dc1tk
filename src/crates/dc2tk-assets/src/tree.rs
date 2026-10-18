@@ -1400,6 +1400,18 @@ fn moved_vertices(folder: &std::path::Path, pack: &[u8]) -> Result<Option<Vec<u8
     }
 }
 
+/// A pack model_pack renamed, with its info.cfg given back the name field it had (`old`).
+pub(crate) fn restore_cfg_name(mut built: Vec<u8>, old: &[u8]) -> Result<Vec<u8>> {
+    let members = archive::parse_pack(&built).ok_or_else(|| Error::invalid("the built pack is not a pack"))?;
+    let cfg = members
+        .iter()
+        .find(|member| member.name == INFO_CFG)
+        .ok_or_else(|| Error::invalid("the built pack has no info.cfg"))?
+        .clone();
+    rename_in_place(&mut built, &cfg, old);
+    Ok(built)
+}
+
 /// models::export for a character pack read as model_pack reads it: the export's glTF, buffer and
 /// textures/, which build_model builds back.
 pub fn exported_model(data: &[u8], name: &str) -> Result<Vec<(String, Vec<u8>)>> {

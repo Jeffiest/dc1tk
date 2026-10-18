@@ -22,7 +22,7 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 
-use dc2tk_assets::{lang_dc1, map_dc1, sound_dc1, tree};
+use dc2tk_assets::{lang_dc1, map_dc1, sound_dc1};
 
 use crate::maps;
 
@@ -64,8 +64,23 @@ fn export_folders(root: &Path, extensions: &[&str]) -> Vec<(String, PathBuf)> {
     out
 }
 
-fn relative(root: &Path, path: &Path) -> String {
+pub(crate) fn relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root).unwrap_or(path).to_string_lossy().replace('\\', "/")
+}
+
+/// Every file's data path under a data folder, for models::DiscFiles (skeleton_for looks a
+/// motion pack's model up among them).
+pub(crate) fn data_paths(root: &Path) -> Vec<String> {
+    let mut files = Vec::new();
+    walk_files(root, &mut files);
+    let mut out: Vec<String> = files.iter().map(|f| relative(root, f)).filter(|p| !p.starts_with("mods/")).collect();
+    out.sort();
+    out
+}
+
+/// The data folder a game file is in: the nearest folder above it holding `dun/` and `chara/`.
+pub(crate) fn data_root_of(file: &Path) -> Option<PathBuf> {
+    file.ancestors().skip(1).find(|dir| dir.join("dun").is_dir() && dir.join("chara").is_dir()).map(Path::to_path_buf)
 }
 
 /// A built file for the package: its data path and bytes.
@@ -132,11 +147,13 @@ pub fn run(options: &Options) -> Result<ExitCode> {
             Err(error) => problems.push(format!("layouts/{path}: {error}")),
         }
     }
-    // character models
+    // character models, and packs of motions alone (on their character's skeleton)
+    let paths = data_paths(data);
+    let read_any = |path: &str| std::fs::read(data.join(path)).ok();
+    let disc = dc2tk_assets::models::DiscFiles { paths: paths.clone(), read: &read_any };
     for (path, folder) in export_folders(&work.join("models"), &[".chr"]) {
         let original = read(&path)?;
-        let name = Path::new(&path).file_stem().unwrap_or_default().to_string_lossy().to_string();
-        match tree::build_model(&folder, &original, &name) {
+        match dc2tk_assets::models::build_on_disc(&folder, &original, &path, &disc) {
             Ok(new) => built.push(Built { path, data: new }),
             Err(error) => problems.push(format!("models/{path}: {error}")),
         }

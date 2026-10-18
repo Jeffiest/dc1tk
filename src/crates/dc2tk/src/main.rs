@@ -587,8 +587,12 @@ fn run(command: &Command) -> Result<ExitCode> {
             sdk,
         }),
         Command::ModelExport { pack, out } => {
-            let name = pack.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-            let files = dc2tk_assets::tree::exported_model(&std::fs::read(pack)?, &name)?;
+            let root = pack::data_root_of(pack).context("the pack is not in a game data folder (one holding dun/ and chara/)")?;
+            let paths = pack::data_paths(&root);
+            let path = pack::relative(&root, pack);
+            let read = |p: &str| std::fs::read(root.join(p)).ok();
+            let disc = dc2tk_assets::models::DiscFiles { paths, read: &read };
+            let files = dc2tk_assets::models::export_on_disc(&std::fs::read(pack)?, &path, &disc)?;
             for (path, data) in &files {
                 let target = out.join(path);
                 std::fs::create_dir_all(target.parent().expect("in a folder"))?;
@@ -600,7 +604,17 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::ModelBuild { folder, original, output } => {
             let name = original.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let data = std::fs::read(original)?;
-            let built = dc2tk_assets::tree::build_model(folder, &data, &name)?;
+            let built = match pack::data_root_of(original) {
+                // a pack in a data folder may be motions alone, built on its character's skeleton
+                Some(root) => {
+                    let paths = pack::data_paths(&root);
+                    let path = pack::relative(&root, original);
+                    let read = |p: &str| std::fs::read(root.join(p)).ok();
+                    let disc = dc2tk_assets::models::DiscFiles { paths, read: &read };
+                    dc2tk_assets::models::build_on_disc(folder, &data, &path, &disc)?
+                }
+                None => dc2tk_assets::tree::build_model(folder, &data, &name)?,
+            };
             maps::size_check(&output.display().to_string(), built.len(), data.len());
             std::fs::write(output, built)?;
             println!("written to {}", output.display());
