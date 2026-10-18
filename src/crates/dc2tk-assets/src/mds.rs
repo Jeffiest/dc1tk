@@ -199,6 +199,33 @@ pub struct Mdt {
     pub style: char,
     pub faces_pad: Option<Vec<u8>>,
     pub layout: Option<Layout>,
+    /// Dark Cloud 1's collision mesh (dataset.cpp CreateCollisionMDT), read into prims (triangle
+    /// lists, the vertex index only) and materials (each attribute record as the collision
+    /// material its ground, foot sound, area and ignore mask make) and written back in its form.
+    pub dc1_collision: Option<Dc1Collision>,
+}
+
+/// What a Dark Cloud 1 collision mesh holds besides its triangles and attributes: the set's
+/// first word, each triangle's last word, every attribute record as it was (its last 8 bytes are
+/// kept when the attributes are), the header's material count, and the material standing for "no
+/// attributes" (with the negative index it stands for), when there is one.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Dc1Collision {
+    /// The faces header's last word (0, or bytes left over in some of the game's files).
+    pub header_word: u32,
+    pub set_unk: u32,
+    pub poly_unk: Vec<i32>,
+    pub records: Vec<[u8; 16]>,
+    pub material_count: i32,
+    pub none: Option<(u32, i32)>,
+}
+
+/// A Dark Cloud 1 collision attribute record's size (CCPolyInfo).
+const DC1_RECORD: usize = 16;
+
+fn dc1_attributes(record: &[u8; 16]) -> crate::to_gltf::CollisionAttributes {
+    let s = |i: usize| i16::from_le_bytes([record[i], record[i + 1]]) as i64;
+    crate::to_gltf::CollisionAttributes { ground: s(0), foot: s(2), area: s(4), mask: s(6) }
 }
 
 fn vecs(b: &[u8], at: i64, n: i32) -> Result<Vec<[f64; 4]>> {
@@ -225,6 +252,7 @@ impl Default for Mdt {
             style: 'A',
             faces_pad: None,
             layout: None,
+            dc1_collision: None,
         }
     }
 }
@@ -248,6 +276,15 @@ impl Mdt {
             unk_3c,
             ..Mdt::default()
         };
+        if let Some(dc1) = Mdt::unpack_dc1_collision(b, at(fo), fsz, at(mo), mn, &mut mdt)? {
+            mdt.dc1_collision = Some(dc1);
+            mdt.style = if cn == 0 && co == -1 { 'B' } else { 'A' };
+            let original = &b[m.min(b.len())..(m as i64 + size as i64).clamp(m as i64, b.len() as i64) as usize];
+            if mdt.pack()? != original {
+                mdt.layout = Some(Layout { offsets: [vo, no, co, fo, uo, mo], size, raw: original.to_vec() });
+            }
+            return Ok(mdt);
+        }
         for i in 0..mn.max(0) as i64 {
             let o = at(mo) + 0x60 * i;
             if o < 0 {
@@ -292,7 +329,126 @@ impl Mdt {
         Ok(mdt)
     }
 
+    /// A Dark Cloud 1 collision mesh's faces (16-byte header, then one set {3, n} of n triangles of
+    /// five words: three vertex indices, the attribute record's index, a word) and attribute
+    /// records, into mdt's prims and materials; None when the faces are not that.
+    fn unpack_dc1_collision(b: &[u8], f: i64, fsz: i32, mo: i64, mn: i32, mdt: &mut Mdt) -> Result<Option<Dc1Collision>> {
+        if f < 0 {
+            return Ok(None);
+        }
+        let f = f as usize;
+        let word = |o: usize| u32_at(b, o).ok();
+        let (Some(unk00), Some(0x10), Some(num), Some(header_word), Some(set_unk), Some(set_num)) =
+            (word(f), word(f + 4), word(f + 8), word(f + 12), word(f + 16), word(f + 20))
+        else {
+            return Ok(None);
+        };
+        if set_num != num || fsz < 0 || fsz as usize != 24 + 20 * num as usize || set_unk != PRIM_TRIANGLES {
+            return Ok(None);
+        }
+        mdt.faces_unk00 = unk00;
+        let mut polys = Vec::with_capacity(num as usize);
+        for i in 0..num as usize {
+            let o = f + 24 + 20 * i;
+            polys.push([i32_at(b, o)?, i32_at(b, o + 4)?, i32_at(b, o + 8)?, i32_at(b, o + 12)?, i32_at(b, o + 16)?]);
+        }
+        let count = polys.iter().map(|p| p[3] + 1).max().unwrap_or(0).max(0) as usize;
+        let mut records = Vec::with_capacity(count);
+        for i in 0..count {
+            if mo <= 0 {
+                bail!("collision triangles name attribute record {i} but the mesh has none");
+            }
+            let o = mo as usize + DC1_RECORD * i;
+            let raw = b.get(o..o + DC1_RECORD).ok_or_else(|| crate::Error::invalid("the attribute records run past the file"))?;
+            records.push(<[u8; 16]>::try_from(raw).unwrap());
+        }
+        for record in &records {
+            let mut material = Material::new("");
+            material.diffuse = dc1_attributes(record).encode();
+            mdt.materials.push(material);
+        }
+        let mut none: Option<(u32, i32)> = None;
+        let kind = PRIM_TRIANGLES | F_NO_NORMAL | F_NO_UV;
+        let mut at = 0;
+        while at < polys.len() {
+            let index = polys[at][3];
+            let mut end = at;
+            while end < polys.len() && polys[end][3] == index {
+                end += 1;
+            }
+            let material = if index >= 0 {
+                index as u32
+            } else {
+                none.get_or_insert((count as u32, index)).0
+            };
+            let verts = polys[at..end].iter().flat_map(|p| [vec![p[0]], vec![p[1]], vec![p[2]]]).collect();
+            mdt.prims.push(Prim { kind, material, verts });
+            at = end;
+        }
+        if none.is_some() {
+            let mut material = Material::new("");
+            material.diffuse = crate::to_gltf::CollisionAttributes::default().encode();
+            mdt.materials.push(material);
+        }
+        Ok(Some(Dc1Collision { header_word, set_unk, poly_unk: polys.iter().map(|p| p[4]).collect(), records, material_count: mn, none }))
+    }
+
+    /// The faces and attribute records of a Dark Cloud 1 collision mesh, from its prims and
+    /// materials, and the number of records; a record whose attributes did not change keeps its
+    /// bytes.
+    fn dc1_collision_bytes(&self, dc1: &Dc1Collision) -> Result<(Vec<u8>, Vec<u8>, usize)> {
+        let none_slot = dc1.none.map(|(slot, _)| slot);
+        let mut triangles = Vec::new();
+        for prim in &self.prims {
+            if prim.verts.iter().any(|v| v.is_empty()) {
+                bail!("a collision corner has no vertex index");
+            }
+            let index = match dc1.none {
+                Some((slot, value)) if prim.material == slot => value,
+                _ => prim.material as i32,
+            };
+            for [a, b, c] in prim.triangles() {
+                triangles.push([prim.verts[a][0], prim.verts[b][0], prim.verts[c][0], index]);
+            }
+        }
+        let mut faces = Vec::new();
+        faces.extend(self.faces_unk00.to_le_bytes());
+        faces.extend(0x10u32.to_le_bytes());
+        faces.extend((triangles.len() as u32).to_le_bytes());
+        faces.extend(dc1.header_word.to_le_bytes());
+        faces.extend(dc1.set_unk.to_le_bytes());
+        faces.extend((triangles.len() as u32).to_le_bytes());
+        let same_count = triangles.len() == dc1.poly_unk.len();
+        for (i, t) in triangles.iter().enumerate() {
+            for value in t {
+                faces.extend(value.to_le_bytes());
+            }
+            faces.extend((if same_count { dc1.poly_unk[i] } else { 0 }).to_le_bytes());
+        }
+        let mut records = Vec::new();
+        let mut count = 0;
+        for (i, material) in self.materials.iter().enumerate() {
+            if Some(i as u32) == none_slot {
+                continue;
+            }
+            let attributes = crate::to_gltf::CollisionAttributes::decode(&material.diffuse);
+            let mut record = dc1.records.get(i).copied().unwrap_or([0xFF; 16]);
+            if dc1.records.get(i).map(dc1_attributes) != Some(attributes) {
+                let values = [attributes.ground, attributes.foot, attributes.area, attributes.mask];
+                for (slot, value) in values.iter().enumerate() {
+                    record[slot * 2..slot * 2 + 2].copy_from_slice(&(*value as i16).to_le_bytes());
+                }
+            }
+            records.extend(record);
+            count += 1;
+        }
+        Ok((faces, records, count))
+    }
+
     fn faces_bytes(&self) -> Result<Vec<u8>> {
+        if let Some(dc1) = &self.dc1_collision {
+            return Ok(self.dc1_collision_bytes(dc1)?.0);
+        }
         let mut out = Vec::new();
         out.extend(self.faces_unk00.to_le_bytes());
         out.extend(0x10u32.to_le_bytes());
@@ -333,8 +489,15 @@ impl Mdt {
         let (v, n, c, u) = (vec(&self.vertices)?, vec(&self.normals)?, vec(&self.colours)?, vec(&self.uvs)?);
         let f = self.faces_bytes()?;
         let mut m = Vec::new();
-        for material in &self.materials {
-            m.extend(material.pack()?);
+        let mut material_count = self.materials.len();
+        if let Some(dc1) = &self.dc1_collision {
+            let (_, records, count) = self.dc1_collision_bytes(dc1)?;
+            m = records;
+            material_count = if count == dc1.records.len() { dc1.material_count.max(0) as usize } else { count };
+        } else {
+            for material in &self.materials {
+                m.extend(material.pack()?);
+            }
         }
         let (vo, no, co, fo, uo, mo, size, body);
         if let Some(layout) = &self.layout {
@@ -393,7 +556,7 @@ impl Mdt {
             self.colours.len(),
             f.len(),
             self.uvs.len(),
-            self.materials.len(),
+            material_count,
         ];
         let header = [
             0x40,

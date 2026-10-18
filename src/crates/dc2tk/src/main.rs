@@ -4,6 +4,7 @@ mod asset_tree;
 mod defs;
 mod files;
 mod map_cmd;
+mod maps;
 mod modding;
 mod options;
 mod setup;
@@ -82,6 +83,48 @@ enum Command {
         /// The original .snd.
         original: PathBuf,
         /// The .snd to write.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Dark Cloud 1: every dungeon floor (dun/*.cfg with dun/mpd_pack/*.mpd), Georama scene (.scn) and
+    /// Georama layout (gdata0.edt) under the data folder, as floors/, scenes/ and layouts/ folders;
+    /// with --check, build each back from what was written and compare.
+    MapsExport {
+        /// The game's data folder.
+        data: PathBuf,
+        /// Folder to write into.
+        out: PathBuf,
+        /// Build everything back from its folder and compare with the original, byte for byte.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Dark Cloud 1: a floor's script and parts pack from its exported folder.
+    FloorBuild {
+        /// The floor's exported folder (floor.cfg, parts/).
+        folder: PathBuf,
+        /// The game's data folder.
+        data: PathBuf,
+        /// The floor's name (d01main_a).
+        floor: String,
+        /// Folder to write <floor>.cfg and <floor>.mpd into.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Dark Cloud 1: a Georama scene (.scn) from its exported folder.
+    SceneBuild {
+        /// The scene's exported folder (scene.json, part folders).
+        folder: PathBuf,
+        /// The original .scn.
+        original: PathBuf,
+        /// The .scn to write.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Dark Cloud 1: a Georama layout (gdata0.edt) from its layout.json.
+    LayoutBuild {
+        /// The layout.json.
+        json: PathBuf,
+        /// The .edt to write.
         #[arg(short, long)]
         output: PathBuf,
     },
@@ -472,6 +515,20 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::SoundBuild { folder, original, output } => {
             let built = dc2tk_assets::sound_dc1::build(folder, &std::fs::read(original)?)?;
             std::fs::write(output, built)?;
+            println!("written to {}", output.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::MapsExport { data, out, check } => maps::run_export(data, out, *check),
+        Command::FloorBuild { folder, data, floor, output } => maps::run_floor_build(folder, data, floor, output),
+        Command::SceneBuild { folder, original, output } => {
+            let images = maps::scene_images(original);
+            let built = dc2tk_assets::map_dc1::scene_build(folder, &std::fs::read(original)?, &images)?;
+            std::fs::write(output, built)?;
+            println!("written to {}", output.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::LayoutBuild { json, output } => {
+            std::fs::write(output, dc2tk_assets::map_dc1::layout_build(&std::fs::read(json)?)?)?;
             println!("written to {}", output.display());
             Ok(ExitCode::SUCCESS)
         }
