@@ -1,0 +1,17 @@
+schema_version = "1.0.0"
+
+id = "dc1tk_maps"
+version = "0.1.0"
+name = "Dark Cloud 1 Maps (dc1tk)"
+tagline = "Dark Cloud 1 floors, Georama scenes and layouts from dc1tk"
+maintainer = "DC2-Toolkit"
+type = "add-on"
+
+tags = ["Import-Export", "Scene"]
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:MIT"]
+
+[permissions]
+files = "Reads and writes dc1tk map exports in chosen folders"
