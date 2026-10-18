@@ -29,15 +29,13 @@ build/release/dc2tk.exe assets E:/dc1tk-work/extracted -o E:/dc1tk-work/assets
 build/release/dc2tk.exe assets-check E:/dc1tk-work/extracted E:/dc1tk-work/assets
 build/release/dc2tk.exe decompile --no-defs --natives definitions/dc1/natives --sdk sdk-dc1 --table monster <file.stb> -o <file.c>
 build/release/dc2tk.exe compile --no-defs --natives definitions/dc1/natives --sdk sdk-dc1 --table monster <file.c> -o <file.stb>
-```
 build/release/dc2tk.exe lang-export C:/Users/armor/AppData/Local/chronicle/data E:/dc1tk-work/lang
 build/release/dc2tk.exe sound-export C:/Users/armor/AppData/Local/chronicle/data E:/dc1tk-work/sound --check
 build/release/dc2tk.exe sound-build E:/dc1tk-work/sound/sound/bgm/bgm0.snd C:/Users/armor/AppData/Local/chronicle/data/sound/bgm/bgm0.snd -o E:/dc1tk-work/bgm0.snd
 ```
-To try an edit in the game, put the built file under `win-save\mods\<mod>iles\` at its data path (FILES.md), or put text in
+To try an edit in the game, put the built file under `win-save\mods\<mod>\files\` at its data path (FILES.md), or put text in
 upstream's `lang/`.
 
-```text
 Use `--table monster` for `dun/monstor/*.stb` and `--table event` for everything else.
 
 ## Results (2026-10-18)
