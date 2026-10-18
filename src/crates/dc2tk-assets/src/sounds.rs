@@ -98,6 +98,10 @@ pub struct Given {
 
 /// build from WAVs by entry number, sorted by number.
 pub fn build_entries(given: &[Given], original: &[u8]) -> Result<Vec<u8>> {
+    if crate::sound_dc1::samples(original).is_some() {
+        let numbered: Vec<(usize, PathBuf)> = given.iter().map(|g| (g.number, g.path.clone())).collect();
+        return crate::sound_dc1::build_numbered(&numbered, original);
+    }
     let mut bank = Bank::from_bytes(original)?;
     let mut changed = false;
     for Given { number, name, path, volume } in given.iter().cloned() {

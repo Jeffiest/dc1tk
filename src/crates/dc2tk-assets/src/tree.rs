@@ -536,7 +536,8 @@ fn sequences_of(files: &[GameFile]) -> Vec<(String, String, usize, Option<usize>
     let mut out = Vec::new();
     for (index, file) in files.iter().enumerate().filter(|(_, file)| file.kind == FileKind::Bank) {
         for (position, member) in reachable_members(file.data) {
-            if member.name.to_lowercase().ends_with(".sq") {
+            // Dark Cloud 1 packs hold empty .sq placeholders
+            if member.name.to_lowercase().ends_with(".sq") && member.size > 0 {
                 let stem = member.name.rsplit_once('.').map_or(member.name.as_str(), |(stem, _)| stem).to_string();
                 out.push((stem, sha256(&[member.data(file.data)]), index, Some(position)));
             }
@@ -1039,7 +1040,19 @@ fn export_music(sequences: &[Asset], files: &[GameFile], write: &Write) -> Resul
             let place = files[*file].place.display();
             let base = format!("{MUSIC}/{}", place.rsplit_once('.').map_or(place.as_str(), |(stem, _)| stem));
             let folder = base.rsplit_once('/').map_or(MUSIC, |(folder, _)| folder);
-            let font = Bank::from_bytes(files[*file].data)
+            // a Dark Cloud 1 pack: the bank named as its first sequence, else its first bank
+            let data = files[*file].data;
+            let font = Bank::from_bytes(data)
+                .or_else(|error| {
+                    let pairs = Bank::pairs(data)?;
+                    let wanted = indices.first().map(|&i| sequences[i].shown.to_lowercase());
+                    let pair = pairs
+                        .iter()
+                        .find(|pair| Some(pair.to_lowercase()) == wanted)
+                        .or(pairs.first())
+                        .ok_or(error)?;
+                    Bank::from_pair(data, pair)
+                })
                 .and_then(|bank| crate::soundfont::write(&bank, &file_name_stem(&files[*file].place)));
             let font = match font {
                 Ok(font) => {
@@ -1484,7 +1497,25 @@ fn export_bank(
 ) -> Result<Result<Vec<EntryOut>>> {
     let entry_names = entry_names(asset, names);
     let read = || -> Result<Vec<EntryOut>> {
-        let bank = Bank::from_bytes(files[asset.first()].data)?;
+        let data = files[asset.first()].data;
+        // a Dark Cloud 1 pack: every sample of its banks an entry (sound_dc1::samples)
+        if let Some(samples) = crate::sound_dc1::samples(data) {
+            let mut banks: HashMap<String, Bank> = HashMap::new();
+            let mut out = Vec::new();
+            for (index, (stem, vag)) in samples.into_iter().enumerate() {
+                if !banks.contains_key(&stem) {
+                    banks.insert(stem.clone(), Bank::from_pair(data, &stem)?);
+                }
+                let bank = &banks[&stem];
+                let bytes = soundbank::wav_bytes(&bank.decode_vag(vag)?)?;
+                let name = wav_name(index, entry_names.get(&index).map(String::as_str), &asset.id);
+                let wav = Some((name, sha256(&[&bytes]), sha256(&[&bank.vag_data[vag]])));
+                let label = format!("{stem}/{vag}");
+                out.push(EntryOut { index, plays: "sample", label, category: String::new(), wav, held: Some(bytes) });
+            }
+            return Ok(out);
+        }
+        let bank = Bank::from_bytes(data)?;
         let mut out = Vec::new();
         for entry in bank.entries()? {
             let voices = if entry.kind.is_key_on() { bank.voices(&entry)? } else { Vec::new() };
