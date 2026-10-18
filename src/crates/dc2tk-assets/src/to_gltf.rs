@@ -1367,6 +1367,16 @@ struct Corners {
     indices: Vec<i64>,
 }
 
+/// The vertex each glTF vertex of a frame's mesh stands for, per primitive in the export's order
+/// (add_mesh): what vertex_patch writes a moved position back to.
+pub fn corner_vertices(t: &mds::Mdt) -> Vec<Vec<i64>> {
+    corner_groups(t)
+        .into_values()
+        .filter(|corners| !corners.indices.is_empty())
+        .map(|corners| corners.keys.iter().map(|k| k[0]).collect())
+        .collect()
+}
+
 /// A mesh's triangles grouped into one primitive per kind of corner, degenerate ones (strip
 /// joins) left out.
 fn corner_groups(t: &mds::Mdt) -> BTreeMap<CornerKind, Corners> {
@@ -1541,10 +1551,8 @@ impl<'a> Parts<'a> {
             return Ok(None);
         }
         let name = frame_name(node, self.options.full_names);
-        let mut mesh_extras = json!({"mdt_style": t.style.to_string()});
-        if self.options.full_names {
-            mesh_extras["mds_index"] = Value::from(i);
-        }
+        // the frame the mesh is (vertex_patch finds a character's meshes' frames by it too)
+        let mesh_extras = json!({"mdt_style": t.style.to_string(), "mds_index": i});
         let mut gmesh = json!({"name": name, "primitives": Value::Array(prims), "extras": mesh_extras});
         if let Some(morph) = &morph {
             gmesh["weights"] = Value::from(morph.rest_weights(t).to_vec());

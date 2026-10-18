@@ -119,7 +119,16 @@ fn build_model(folder: &Path, base: &str, original: &[u8], collision: bool, text
     if untouched {
         return Ok(original.to_vec());
     }
-    models::build_map_model(&load_gltf_file(&path)?, original, &options).context(path.display())
+    let given = load_gltf_file(&path)?;
+    // only vertices moved: written into the model's own bytes, so it keeps its size
+    let exported_gltf = from_gltf::load_gltf(
+        &exported.iter().find(|(name, _)| *name == format!("{base}.gltf")).map(|(_, d)| d.clone()).unwrap_or_default(),
+        &|uri| exported.iter().find(|(name, _)| name == uri).map(|(_, d)| d.clone()).ok_or_else(|| Error::invalid(uri.to_string())),
+    )?;
+    if let Some(patched) = crate::vertex_patch::patch(original, &exported_gltf, &given)? {
+        return Ok(patched);
+    }
+    models::build_map_model(&given, original, &options).context(path.display())
 }
 
 fn arg_json(arg: &Arg) -> Value {

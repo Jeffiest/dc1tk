@@ -110,6 +110,24 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
+    /// A character pack (.chr) as glTF (its model, skin and motions, textures/), to edit and give
+    /// to model-build.
+    ModelExport {
+        /// The pack.
+        pack: PathBuf,
+        /// Folder to write into.
+        out: PathBuf,
+    },
+    /// A character pack (.chr) from its exported model folder (model-export's, or an asset tree's).
+    ModelBuild {
+        /// The model's exported folder (its .gltf and .bin).
+        folder: PathBuf,
+        /// The original pack.
+        original: PathBuf,
+        /// The .chr to write.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
     /// Dark Cloud 1: a Georama scene (.scn) from its exported folder.
     SceneBuild {
         /// The scene's exported folder (scene.json, part folders).
@@ -523,6 +541,24 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::SceneBuild { folder, original, output } => {
             let images = maps::scene_images(original);
             let built = dc2tk_assets::map_dc1::scene_build(folder, &std::fs::read(original)?, &images)?;
+            std::fs::write(output, built)?;
+            println!("written to {}", output.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::ModelExport { pack, out } => {
+            let name = pack.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let files = dc2tk_assets::tree::exported_model(&std::fs::read(pack)?, &name)?;
+            for (path, data) in &files {
+                let target = out.join(path);
+                std::fs::create_dir_all(target.parent().expect("in a folder"))?;
+                std::fs::write(&target, data)?;
+            }
+            println!("{} files written to {}", files.len(), out.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::ModelBuild { folder, original, output } => {
+            let name = original.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let built = dc2tk_assets::tree::build_model(folder, &std::fs::read(original)?, &name)?;
             std::fs::write(output, built)?;
             println!("written to {}", output.display());
             Ok(ExitCode::SUCCESS)

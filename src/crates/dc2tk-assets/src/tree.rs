@@ -1330,7 +1330,10 @@ fn rename_in_place(pack: &mut [u8], member: &archive::Member, name: &[u8]) -> Ve
 /// models::build for a character pack read as model_pack reads it.
 pub fn build_model(folder: &std::path::Path, data: &[u8], name: &str) -> Result<Vec<u8>> {
     let (pack, old) = model_pack(data, name);
-    let mut built = models::build(folder, &pack)?;
+    let mut built = match moved_vertices(folder, &pack)? {
+        Some(built) => built,
+        None => models::build(folder, &pack)?,
+    };
     if let Some(old) = old {
         let members = archive::parse_pack(&built).ok_or_else(|| Error::invalid("the built pack is not a pack"))?;
         let cfg = members
@@ -1340,6 +1343,48 @@ pub fn build_model(folder: &std::path::Path, data: &[u8], name: &str) -> Result<
         rename_in_place(&mut built, cfg, &old);
     }
     Ok(built)
+}
+
+/// A character pack whose glTF differs from the export only in vertex positions, with them written
+/// into its model's own bytes (vertex_patch), so the pack keeps its size; None otherwise.
+fn moved_vertices(folder: &std::path::Path, pack: &[u8]) -> Result<Option<Vec<u8>>> {
+    let (_, files) = models::unpacked(pack)?;
+    // the export's name, else the folder's one glTF (an asset tree names it after the asset)
+    let mut path = folder.join(format!("{}.gltf", files.stem));
+    if !path.is_file() {
+        let gltfs: Vec<std::path::PathBuf> = std::fs::read_dir(folder)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("gltf")))
+            .collect();
+        let [only] = gltfs.as_slice() else {
+            return Ok(None);
+        };
+        path = only.clone();
+    }
+    let Ok(raw) = std::fs::read(&path) else {
+        return Ok(None);
+    };
+    let given = crate::from_gltf::load_gltf(&raw, &|uri| {
+        std::fs::read(folder.join(uri)).map_err(|e| Error::invalid(format!("cannot read {uri}: {e}")))
+    })?;
+    let exported = models::export(pack)?;
+    let get = |name: &str| exported.iter().find(|(n, _)| n == name).map(|(_, d)| d.clone());
+    let Some(gltf) = get(&format!("{}.gltf", files.stem)) else {
+        return Ok(None);
+    };
+    let exported_gltf =
+        crate::from_gltf::load_gltf(&gltf, &|uri| get(uri).ok_or_else(|| Error::invalid(uri.to_string())))?;
+    let member = [files.model.clone()];
+    let Some(model) = dc2tk_disc::rebuild::read_member(pack, &member) else {
+        return Ok(None);
+    };
+    match crate::vertex_patch::patch(model, &exported_gltf, &given)? {
+        Some(patched) if patched != model => Ok(Some(dc2tk_disc::rebuild::replaced_member(pack, &member, &patched)?)),
+        _ => Ok(None),
+    }
 }
 
 /// models::export for a character pack read as model_pack reads it: the export's glTF, buffer and
