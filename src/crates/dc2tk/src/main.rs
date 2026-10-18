@@ -51,7 +51,7 @@ enum Command {
     /// Write every file of the disc: DATA.DAT's files and the packs' members, the disc's other files
     /// and its layout.
     Extract {
-        /// The disc image.
+        /// The disc image, or a game folder already unpacked (Dark Cloud 1's PC data folder).
         iso: PathBuf,
         /// Directory to write the files into, with manifest.json listing them.
         out: PathBuf,
@@ -223,8 +223,12 @@ enum Command {
 }
 
 fn run_extract(iso: &Path, out: &Path) -> Result<ExitCode> {
-    let image = Image::open(iso)?;
-    let manifest = extract::extract(image.bytes(), out)?;
+    let manifest = if iso.is_dir() {
+        extract::extract_folder(iso, out)?
+    } else {
+        let image = Image::open(iso)?;
+        extract::extract(image.bytes(), out)?
+    };
     let packed = manifest.files.iter().filter(|item| item.packed).count();
     println!("{} files written to {} ({} from packs)", manifest.files.len(), out.display(), packed);
     println!("{} scripts listed in {}", manifest.scripts.len(), files::shown_path(out.join(extract::MANIFEST)));

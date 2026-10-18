@@ -147,6 +147,48 @@ pub fn extract(image: &[u8], out_dir: &Path) -> Result<Manifest> {
     Ok(manifest)
 }
 
+/// Every file below a folder, as forward-slash paths relative to it, sorted.
+fn folder_files(root: &Path, folder: &Path, out: &mut Vec<String>) -> Result<()> {
+    for entry in fs::read_dir(folder).with_path("read", folder)? {
+        let path = entry.with_path("read", folder)?.path();
+        if path.is_dir() {
+            folder_files(root, &path, out)?;
+        } else {
+            let relative = path.strip_prefix(root).expect("a file below the root");
+            out.push(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
+}
+
+/// The extract of a game already unpacked into a folder (Dark Cloud 1's PC data folder): its files
+/// and every pack member as extract writes them, and a manifest, with no disc layout or boot file
+/// (the folder cannot be packed back into an image). The manifest is written last, as extract does.
+pub fn extract_folder(source: &Path, out_dir: &Path) -> Result<Manifest> {
+    let mut paths = Vec::new();
+    folder_files(source, source, &mut paths)?;
+    paths.sort();
+    let datas: Vec<Vec<u8>> =
+        paths.par_iter().map(|path| fs::read(source.join(path)).with_path("read", &source.join(path))).collect::<Result<_>>()?;
+    let mut items = Vec::new();
+    for (path, data) in paths.iter().zip(&datas) {
+        walk(path, data, 0, &mut items);
+    }
+    write_all(out_dir, &items)?;
+    let files: Vec<FileItem> = items
+        .iter()
+        .map(|(path, data, packed)| FileItem { path: path.clone(), size: data.len(), packed: *packed })
+        .collect();
+    let scripts =
+        files.iter().filter(|item| item.path.to_lowercase().ends_with(".stb")).map(|item| item.path.clone()).collect();
+    let manifest = Manifest { files, scripts, boot: None };
+    let partial = out_dir.join(format!("{MANIFEST}.partial"));
+    fs::write(&partial, crate::textfile::json_text(&manifest)).with_path("write", &partial)?;
+    let done = out_dir.join(MANIFEST);
+    fs::rename(&partial, &done).with_path("write", &done)?;
+    Ok(manifest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

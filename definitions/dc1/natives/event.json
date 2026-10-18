@@ -1,0 +1,2379 @@
+{
+  "table": "event",
+  "source": "ps2/src/editloop3.cpp",
+  "array": "ext_func_info",
+  "natives": [
+    {
+      "no": 0,
+      "name": "_GET_PADON",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 1,
+      "name": "_GET_PADDOWN",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 2,
+      "name": "_GET_PADUP",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 3,
+      "name": "_SET_RETURN_CODE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 4,
+      "name": "_GET_RANDOM",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 5,
+      "name": "_NEXT_EVENT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 6,
+      "name": "_GOTO_INTERIOR",
+      "accessors": [
+        "int",
+        "string",
+        "int"
+      ]
+    },
+    {
+      "no": 7,
+      "name": "_SET_WORLD_COORD",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 8,
+      "name": "_INITIALIZE",
+      "accessors": []
+    },
+    {
+      "no": 9,
+      "name": "_EXIT_CODE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 10,
+      "name": "_DRAW_EXCLAMATION_MARK",
+      "accessors": []
+    },
+    {
+      "no": 11,
+      "name": "_GOTO_USE_ITEM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 12,
+      "name": "_SKIP",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 13,
+      "name": "_GOTO_OUTSIDE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 14,
+      "name": "_FINISH",
+      "accessors": []
+    },
+    {
+      "no": 15,
+      "name": "_MAP_JUMP",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 16,
+      "name": "_GET_OLD_MAPNO",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 17,
+      "name": "_FADEOUT_TO_EVENT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 18,
+      "name": "_NAME_REGISTRY",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 20,
+      "name": "_WORLD_MAP",
+      "accessors": []
+    },
+    {
+      "no": 21,
+      "name": "_SET_DUNGEON_FLOOR",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 22,
+      "name": "_GET_DUNGEON_FLOOR",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 23,
+      "name": "_MAP_JUMP_BGM_STOP",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 24,
+      "name": "_GOTO_FP_CHANGE",
+      "accessors": []
+    },
+    {
+      "no": 25,
+      "name": "_GOTO_CHANGE_ESA",
+      "accessors": []
+    },
+    {
+      "no": 26,
+      "name": "_GOTO_FISH_RANKING",
+      "accessors": []
+    },
+    {
+      "no": 27,
+      "name": "_MAP_JUMP_BGM_PLAY",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 32,
+      "name": "_SET_CURRENT_DIR",
+      "accessors": [
+        "string"
+      ]
+    },
+    {
+      "no": 33,
+      "name": "_LOAD_CHR_FILE",
+      "accessors": [
+        "string"
+      ]
+    },
+    {
+      "no": 34,
+      "name": "_LOAD_SYNC",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 35,
+      "name": "_LOAD_CHARA",
+      "accessors": [
+        "int",
+        "string",
+        "string"
+      ]
+    },
+    {
+      "no": 36,
+      "name": "_LOAD_CHARA_TEXTURE",
+      "accessors": [
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 37,
+      "name": "_LOAD_IN_VILLAGER",
+      "accessors": [
+        "int",
+        "int",
+        "string",
+        "float"
+      ]
+    },
+    {
+      "no": 38,
+      "name": "_CLEAR_VILLAGER_BUFF",
+      "accessors": []
+    },
+    {
+      "no": 39,
+      "name": "_CLEAR_EVENT_BUFF",
+      "accessors": []
+    },
+    {
+      "no": 40,
+      "name": "_CLEAR_EVENT_EXBUFF",
+      "accessors": []
+    },
+    {
+      "no": 41,
+      "name": "_LOAD_SCENE",
+      "accessors": [
+        "int",
+        "string",
+        "float"
+      ]
+    },
+    {
+      "no": 42,
+      "name": "_SYNC_SCENE_CHARA",
+      "accessors": [
+        "int",
+        "string",
+        "int"
+      ]
+    },
+    {
+      "no": 43,
+      "name": "_SYNC_SCENE_CAMERA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 44,
+      "name": "_ACTIVE_FILE_BUFFER",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 45,
+      "name": "_RELEASE_SCENE_CHARA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 46,
+      "name": "_RELEASE_SCENE_CAMERA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 47,
+      "name": "_DELETE_CHARA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 48,
+      "name": "_INIT_CHARA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 49,
+      "name": "_LOAD_ITEM_FILE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 50,
+      "name": "_LOAD_ITEM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 51,
+      "name": "_SYNC_CHARA_ITEM",
+      "accessors": [
+        "int",
+        "string",
+        "int"
+      ]
+    },
+    {
+      "no": 52,
+      "name": "_RELEASE_CHARA_ITEM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 53,
+      "name": "_DELETE_ITEM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 54,
+      "name": "_SYNC_CHARA_CHARA",
+      "accessors": [
+        "int",
+        "string",
+        "int"
+      ]
+    },
+    {
+      "no": 55,
+      "name": "_RELEASE_CHARA_CHARA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 56,
+      "name": "_LOAD_SPRITE_TEXTURE",
+      "accessors": [
+        "string"
+      ]
+    },
+    {
+      "no": 57,
+      "name": "_LOAD_VILLAGER",
+      "accessors": []
+    },
+    {
+      "no": 58,
+      "name": "_CHECK_IN_VILLAGER",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 59,
+      "name": "_APPEAR_VILLAGER_ON",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 60,
+      "name": "_APPEAR_VILLAGER_OFF",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 61,
+      "name": "_APPEAR_VILLAGER_OUT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 62,
+      "name": "_APPEAR_VILLAGER_IN",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 64,
+      "name": "_GET_CHARA_POS",
+      "accessors": []
+    },
+    {
+      "no": 65,
+      "name": "_GET_CHARA_TALK_POS",
+      "accessors": [
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 66,
+      "name": "_TURN_CHARA",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 67,
+      "name": "_SET_CHARA_POS",
+      "accessors": []
+    },
+    {
+      "no": 68,
+      "name": "_SET_CHARA_ROT",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 69,
+      "name": "_GET_CHARA_ROT",
+      "accessors": []
+    },
+    {
+      "no": 70,
+      "name": "_APPEAR_VILLAGER_MOVE",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 71,
+      "name": "_LOAD_OUT_VILLAGER",
+      "accessors": [
+        "int",
+        "int",
+        "string",
+        "float"
+      ]
+    },
+    {
+      "no": 72,
+      "name": "_LOAD_BG_SPRITE_TEXTURE",
+      "accessors": [
+        "string"
+      ]
+    },
+    {
+      "no": 73,
+      "name": "_SET_SCENE_POS",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 74,
+      "name": "_LOAD_TEXTURE",
+      "accessors": [
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 75,
+      "name": "_SET_SCENE_ROT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 130,
+      "name": "_GET_NPC_TALK_POS",
+      "accessors": [
+        "int",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 131,
+      "name": "_GET_NPC_POS",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 132,
+      "name": "_GET_NPC_PARTS_NO",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 133,
+      "name": "_SET_NPC_MOTION",
+      "accessors": [
+        "int",
+        "int",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 134,
+      "name": "_SGET_NPC_TALK_MES",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 135,
+      "name": "_SSET_NPC_TALK_MES",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 136,
+      "name": "_TURN_NPC",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 137,
+      "name": "_SET_NPC_POS",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 138,
+      "name": "_SET_NPC_ROT",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 139,
+      "name": "_GET_NPC_ROT",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 140,
+      "name": "_NPC_DRAW",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 141,
+      "name": "_NPC_STEP",
+      "accessors": null
+    },
+    {
+      "no": 142,
+      "name": "_NPC_COL",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 143,
+      "name": "_INIT_NPC_CLOTH",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 144,
+      "name": "_NPC_DRAW_SHADOW",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 145,
+      "name": "_SET_NPC_ANIME",
+      "accessors": [
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 146,
+      "name": "_SET_NPC_AMBIENT",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 147,
+      "name": "_SET_NPC_SCALE",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 148,
+      "name": "_GET_NPC_SCALE",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 149,
+      "name": "_SET_NPC_FOOT_SOUND",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 150,
+      "name": "_NPC_STOP",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 151,
+      "name": "_NPC_DRAW_BEFORE",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 152,
+      "name": "_SET_NPC_FLOOR_ID",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 153,
+      "name": "_NPC_POS_INIT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 154,
+      "name": "_SET_NPC_BODY_SIZE",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 155,
+      "name": "_GET_NPC_BODY_SIZE",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 156,
+      "name": "_NPC_CLOTH_FLOOR",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 158,
+      "name": "_NPC_PLIGHT_INIT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 159,
+      "name": "_SET_NPC_PLIGHT",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 160,
+      "name": "_NPC_CLOTH_STEP",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 192,
+      "name": "_MES_MAKE",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 193,
+      "name": "_MES_CLOSE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 194,
+      "name": "_MES_NEXTPAGE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 195,
+      "name": "_SET_MES_AUTOSET",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 196,
+      "name": "_SET_MES_SHIPPO",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 197,
+      "name": "_SET_MES_POS",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 198,
+      "name": "_SET_MES_DRAWSPEED",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 199,
+      "name": "_SET_MES_CURSOR",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 200,
+      "name": "_CHECK_MES_COMPLETE",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 201,
+      "name": "_CHECK_MES_WAIT",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 202,
+      "name": "_CHECK_MES",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 203,
+      "name": "_SET_MES_OKURI",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 204,
+      "name": "_SET_MES_FUKIDASHI",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 205,
+      "name": "_SET_MES_WIN_FLAG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 206,
+      "name": "_ITEM_GET_MES",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 207,
+      "name": "_INIT_SYS_MES",
+      "accessors": []
+    },
+    {
+      "no": 208,
+      "name": "_SKILL_GET_MES",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 209,
+      "name": "_ADD_MAXITEM_MES",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 256,
+      "name": "_CHECK_COMPLETE_PARTS",
+      "accessors": [
+        "out",
+        "int"
+      ]
+    },
+    {
+      "no": 257,
+      "name": "_GET_EDIT_PARTS_POS",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 258,
+      "name": "_GET_NOW_TIME",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 259,
+      "name": "_SGET_CMP_EVENT",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 260,
+      "name": "_SSET_CMP_EVENT",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 261,
+      "name": "_SET_CLOCK",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 262,
+      "name": "_GET_CLOCK",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 263,
+      "name": "_CHECK_PLACE",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 264,
+      "name": "_SGET_REQUEST",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 265,
+      "name": "_SGET_ATRA_PARTS_NUM",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 266,
+      "name": "_SGET_DAY",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 267,
+      "name": "_CHECK_VILLAGER",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 268,
+      "name": "_SCHECK_REQUEST",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 269,
+      "name": "_DELETE_ROBO_PARTS",
+      "accessors": []
+    },
+    {
+      "no": 320,
+      "name": "_HOBJ_FIXPARTS",
+      "accessors": [
+        "int",
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 321,
+      "name": "_HOBJ_EDITPARTS",
+      "accessors": [
+        "int",
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 322,
+      "name": "_HOBJ_INTERIORPARTS",
+      "accessors": [
+        "int",
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 323,
+      "name": "_OBJ_DRAW",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 324,
+      "name": "_SET_OBJ_POS",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 325,
+      "name": "_GET_OBJ_POS",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 326,
+      "name": "_SET_OBJ_ROT",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 327,
+      "name": "_GET_OBJ_ROT",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 328,
+      "name": "_SET_OBJ_SCALE",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 329,
+      "name": "_GET_OBJ_SCALE",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 330,
+      "name": "_HOBJ_CHARA",
+      "accessors": [
+        "int",
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 332,
+      "name": "_HOBJ_BT_HOBJ",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 333,
+      "name": "_SYNC_OBJ_OBJ",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 334,
+      "name": "_RELEASE_OBJ_OBJ",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 335,
+      "name": "_SET_OBJ_FOG",
+      "accessors": [
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 336,
+      "name": "_HOBJ_ITEM",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 384,
+      "name": "_GET_TALKNPC_INFO_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 385,
+      "name": "_GET_TALKNPC_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 386,
+      "name": "_SET_TALK_CAMERA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 387,
+      "name": "_SET_TALK_MES",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 388,
+      "name": "_SET_TALK_SELECT_MES",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 389,
+      "name": "_GET_TALKNPC_STATUS",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 390,
+      "name": "_EVERY_TALK_EVENT",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 416,
+      "name": "_SET_CAMERA",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 417,
+      "name": "_SET_FOLLOW_CAMERA",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 418,
+      "name": "_ADD_CAMERA_ANGLE",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 419,
+      "name": "_ADD_CAMERA_HEIGHT",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 420,
+      "name": "_ADD_CAMERA_DIST",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 421,
+      "name": "_CAMERA_STEP",
+      "accessors": []
+    },
+    {
+      "no": 422,
+      "name": "_SET_CAMERA_POS",
+      "accessors": []
+    },
+    {
+      "no": 423,
+      "name": "_GET_CAMERA_POS",
+      "accessors": []
+    },
+    {
+      "no": 424,
+      "name": "_SET_CAMERA_REF",
+      "accessors": []
+    },
+    {
+      "no": 425,
+      "name": "_GET_CAMERA_REF",
+      "accessors": []
+    },
+    {
+      "no": 426,
+      "name": "_SET_CAMERA_SPEED",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 427,
+      "name": "_SET_PROJECTION",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 428,
+      "name": "_ITEM_GET_CAMERA",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 429,
+      "name": "_SET_CAMERA_ANGLE",
+      "accessors": [
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 430,
+      "name": "_GET_CAMERA_ANGLE",
+      "accessors": [
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 431,
+      "name": "_SET_CAMERA_ROTATE",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 432,
+      "name": "_GET_CAMERA_ROTATE",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 433,
+      "name": "_RESET_CAMERA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 434,
+      "name": "_SYNC_CAMERA_REF_CHARA",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 435,
+      "name": "_RELEASE_CAMERA_REF_CHARA",
+      "accessors": []
+    },
+    {
+      "no": 436,
+      "name": "_RESET_CAMERA_ANGLE",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 437,
+      "name": "_SYNC_CAMERA_REF_OBJ",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 438,
+      "name": "_RELEASE_CAMERA_REF_OBJ",
+      "accessors": []
+    },
+    {
+      "no": 439,
+      "name": "_SYNC_CAMERA_POS_OBJ",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 440,
+      "name": "_RELEASE_CAMERA_POS_OBJ",
+      "accessors": []
+    },
+    {
+      "no": 441,
+      "name": "_SET_CAMERA_ROLL",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 442,
+      "name": "_GET_CAMERA_ROLL",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 500,
+      "name": "_FADE_IN",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 501,
+      "name": "_FADE_OUT",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 502,
+      "name": "_CHECK_FADE",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 503,
+      "name": "_INIT_SPRITE",
+      "accessors": []
+    },
+    {
+      "no": 504,
+      "name": "_DRAW_SPRITE",
+      "accessors": [
+        "int",
+        "int",
+        "string",
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 505,
+      "name": "_DRAW_BACK",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 506,
+      "name": "_DRAW_SHADOW",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 507,
+      "name": "_SET_CLIP_POINT",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 508,
+      "name": "_DRAW_EDIT_WATER",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 509,
+      "name": "_DRAW_WATER_SURFACE",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 510,
+      "name": "_SCREEN_FILTER",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 511,
+      "name": "_SET_LIGHT",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 512,
+      "name": "_SET_LIGHT_COLOR",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 513,
+      "name": "_SET_AMBIENT",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 514,
+      "name": "_SAVE_LIGHT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 515,
+      "name": "_LOAD_LIGHT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 516,
+      "name": "_DRAW_BG_SPRITE",
+      "accessors": [
+        "int",
+        "int",
+        "string",
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 517,
+      "name": "_SET_DOF_LEVEL",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 518,
+      "name": "_SP_INIT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 519,
+      "name": "_SP_SET_TEX",
+      "accessors": [
+        "int",
+        "string",
+        "int",
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 520,
+      "name": "_SP_SET_POS",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 521,
+      "name": "_SP_SET_RGBA",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 522,
+      "name": "_SP_SET_ROT",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 523,
+      "name": "_SP_DRAW",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 524,
+      "name": "_INIT_DRAW_DAY",
+      "accessors": []
+    },
+    {
+      "no": 525,
+      "name": "_DRAW_DAY",
+      "accessors": []
+    },
+    {
+      "no": 526,
+      "name": "_SP_SET_MOVE",
+      "accessors": [
+        "int",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 527,
+      "name": "_MAP_TITLE_OFF",
+      "accessors": []
+    },
+    {
+      "no": 528,
+      "name": "_DRAW_THUNDER",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 529,
+      "name": "_SET_WIND",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 600,
+      "name": "_ASQ_INIT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 601,
+      "name": "_ASQ_SYNC_CHARA",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 602,
+      "name": "_ASQ_SET_POS",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 603,
+      "name": "_ASQ_MOVE",
+      "accessors": [
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 604,
+      "name": "_ASQ_MOVE_STEP",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 605,
+      "name": "_ASQ_ROT_REF",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 606,
+      "name": "_ASQ_CLEAR_ROT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 607,
+      "name": "_ASQ_WAIT_ROT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 608,
+      "name": "_ASQ_ROT_MOVE",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 609,
+      "name": "_ASQ_SET_ROT",
+      "accessors": [
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 610,
+      "name": "_ASQ_DELAY_ROT",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 611,
+      "name": "_ASQ_CHECK",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 612,
+      "name": "_ASQ_MOTION_TRG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 613,
+      "name": "_ASQ_MOTION_PLAY",
+      "accessors": []
+    },
+    {
+      "no": 614,
+      "name": "_ASQ_MOTION_STOP",
+      "accessors": []
+    },
+    {
+      "no": 615,
+      "name": "_ASQ_MOTION_NEXT",
+      "accessors": []
+    },
+    {
+      "no": 616,
+      "name": "_ASQ_ANIME_TRG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 617,
+      "name": "_ASQ_ANIME",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 618,
+      "name": "_ASQ_ROT_ANGLE",
+      "accessors": [
+        "int",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 650,
+      "name": "_OBJ_ANIME_INIT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 651,
+      "name": "_OBJ_ANIME",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "int",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 700,
+      "name": "_SSET_GAME_FLAG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 701,
+      "name": "_SGET_GAME_FLAG",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 702,
+      "name": "_SITEM_GET",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 703,
+      "name": "_SSET_MAP_FLAG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 704,
+      "name": "_SGET_MAP_FLAG",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 705,
+      "name": "_SET_WORK_FLAG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 706,
+      "name": "_GET_WORK_FLAG",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 707,
+      "name": "_SITEM_CHECK",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 708,
+      "name": "_SGET_DUNGEON_STATUS",
+      "accessors": [
+        "int",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 709,
+      "name": "_SGET_PARTY_NUM",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 710,
+      "name": "_SSET_PARTY_NUM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 711,
+      "name": "_SSET_GAME_INT_FLAG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 712,
+      "name": "_SGET_GAME_INT_FLAG",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 713,
+      "name": "_SSET_REQUEST_EVENT_FLAG",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 714,
+      "name": "_SADD_VISIT_MAP",
+      "accessors": [
+        "int",
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 715,
+      "name": "_SSKILL_GET",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 716,
+      "name": "_SGET_EQUIP_WEAPON",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 717,
+      "name": "_SADD_MAXITEM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 718,
+      "name": "_SITEM_LOST",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 719,
+      "name": "_SATRA_PARTS_GET",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 720,
+      "name": "_SATRA_CHIP_GET",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 721,
+      "name": "_SSET_TIME",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 722,
+      "name": "_SGET_TIME",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 723,
+      "name": "_SADD_TIME",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 724,
+      "name": "_SITEM_CHECK_ALL",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 725,
+      "name": "_SEQUIP_DEFAULT_WEAPON",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 800,
+      "name": "_LOAD_SND_SYNC",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 801,
+      "name": "_LOAD_BGM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 802,
+      "name": "_PLAY_BGM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 803,
+      "name": "_STOP_BGM",
+      "accessors": []
+    },
+    {
+      "no": 804,
+      "name": "_SET_BGM_VOL",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 805,
+      "name": "_GET_BGM_VOL",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 806,
+      "name": "_GET_BGM_NO",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 807,
+      "name": "_PLAY_SE",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 808,
+      "name": "_STOP_SE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 809,
+      "name": "_SET_SE_VOL",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 810,
+      "name": "_LOAD_SPECIAL_SE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 811,
+      "name": "_PLAY_SPECIAL_SE",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 812,
+      "name": "_STOP_SPECIAL_SE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 813,
+      "name": "_SET_OUT_BGM_NO",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 814,
+      "name": "_GET_OUT_BGM_NO",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 815,
+      "name": "_DELETE_BGM",
+      "accessors": []
+    },
+    {
+      "no": 816,
+      "name": "_LOAD_SOUND_SET",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 817,
+      "name": "_BGM_FADE_IN",
+      "accessors": [
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 818,
+      "name": "_BGM_FADE_OUT",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 819,
+      "name": "_CHECK_BGM_FADE",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 820,
+      "name": "_PLAY_AMB_BGM",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 821,
+      "name": "_STOP_AMB_BGM",
+      "accessors": []
+    },
+    {
+      "no": 822,
+      "name": "_LOAD_VOICE_SET",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 823,
+      "name": "_SET_SPECIAL_SE_VOL",
+      "accessors": [
+        "int",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 824,
+      "name": "_SET_AMB_VOLF",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 825,
+      "name": "_SET_BGM_VOLF",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 826,
+      "name": "_SOUND_OFF_COUNT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 900,
+      "name": "_GET_V_ARG",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 901,
+      "name": "_GET_I_ARG",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 902,
+      "name": "_GET_F_ARG",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 903,
+      "name": "_GET_APAD",
+      "accessors": [
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 950,
+      "name": "_EB_INIT",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 951,
+      "name": "_EB_SET_KEY",
+      "accessors": [
+        "float",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 952,
+      "name": "_EB_LOOP",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 953,
+      "name": "_EB_SET_MOTION",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 954,
+      "name": "_EB_DEBUG",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 955,
+      "name": "_EB_INTRO_START",
+      "accessors": []
+    },
+    {
+      "no": 956,
+      "name": "_EB_INTRO_LOOP",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 957,
+      "name": "_EB_INTRO_END",
+      "accessors": []
+    },
+    {
+      "no": 958,
+      "name": "_EB_FINISH_SOUND",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 994,
+      "name": "_SET_FISHING_ESA",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 995,
+      "name": "_EXIT_FISHING",
+      "accessors": []
+    },
+    {
+      "no": 996,
+      "name": "_INIT_FISH",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 997,
+      "name": "_GOTO_FISHING",
+      "accessors": []
+    },
+    {
+      "no": 998,
+      "name": "_LOAD_FISHING_DATA",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 999,
+      "name": "_LOAD_MAIN_CHARA",
+      "accessors": [
+        "string",
+        "string",
+        "int"
+      ]
+    },
+    {
+      "no": 1000,
+      "name": "_TEST",
+      "accessors": []
+    },
+    {
+      "no": 1001,
+      "name": "_GET_TV_MODE",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 1002,
+      "name": "_GET_LANG_CODE",
+      "accessors": [
+        "out"
+      ]
+    }
+  ]
+}

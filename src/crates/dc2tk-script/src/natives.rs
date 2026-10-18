@@ -102,6 +102,32 @@ pub const SPECS: [Spec; 5] = [
     },
 ];
 
+/// The same tables in a Chronicle (Dark Cloud 1) checkout: monster AI and the Georama/town event
+/// scripts. Their rows give numbers as literals, so the header only has to exist.
+pub const DC1_SPECS: [Spec; 2] = [
+    Spec {
+        table: "event",
+        source: "ps2/src/editloop3.cpp",
+        header: "ps2/include/editloop3.hpp",
+        array: "ext_func_info",
+    },
+    Spec {
+        table: "monster",
+        source: "ps2/src/runscript_opcodes.cpp",
+        header: "ps2/include/runscript_opcodes.hpp",
+        array: "ext_func_info",
+    },
+];
+
+/// The specs for a checkout: Chronicle (DC1) when it has no event_func.cpp but has editloop3.cpp.
+pub fn specs_for(root: &Path) -> &'static [Spec] {
+    if !root.join(SPECS[0].source).exists() && root.join(DC1_SPECS[0].source).exists() {
+        &DC1_SPECS
+    } else {
+        &SPECS
+    }
+}
+
 /// The stack accessors a native's body calls, and what each reads or writes; in the order the
 /// pattern tries them.
 const ACCESSORS: [(&str, &str); 7] = [
@@ -173,7 +199,7 @@ fn parse_enum_values(patterns: &Patterns, text: &str) -> Result<HashMap<String, 
 
 /// The (function, number) rows of an RS_EXTFUNC_INFO array, without the NULL that ends it.
 fn parse_table_rows(patterns: &Patterns, text: &str, array: &str) -> Result<Vec<(String, String)>> {
-    let pattern = format!(r"(?s)static RS_EXTFUNC_INFO {}\[[0-9]*\] = \{{(.*?)\n\}};", regex::escape(array));
+    let pattern = format!(r"(?s)static [A-Za-z_][A-Za-z0-9_]* {}\[[0-9]*\] = \{{(.*?)\n\}};", regex::escape(array));
     let table = regex::Regex::new(&pattern).expect("the table pattern compiles");
     let Some(found) = table.captures(text) else {
         return Err(crate::Error::invalid(format!("table {array} not found")));
@@ -269,7 +295,8 @@ fn build_with(patterns: &Patterns, root: &Path, spec: &Spec) -> Result<Generated
     let values = parse_enum_values(patterns, &read_source(&root.join(spec.header))?)?;
     let mut natives = Vec::new();
     for (func, number) in parse_table_rows(patterns, &source, spec.array)? {
-        let Some(&no) = values.get(&number) else {
+        let literal = crate::index::integer(&number).map(|n| n as i128);
+        let Some(no) = values.get(&number).copied().or(literal) else {
             return Err(crate::Error::invalid(format!("{}: no value for {}", spec.table, number)));
         };
         let calls = function_body(&source, &func).map(|body| accessors(patterns, body));
@@ -295,7 +322,7 @@ pub fn generate(root: &Path, out_dir: &Path) -> Result<Vec<Generated>> {
     files::create_dir_all(out_dir)?;
     let patterns = Patterns::new();
     let mut tables = Vec::new();
-    for spec in &SPECS {
+    for spec in specs_for(root) {
         let path = out_dir.join(format!("{}.json", spec.table));
         let table = build_with(&patterns, root, spec)?;
         dc2tk_disc::textfile::write_text(&path, &dc2tk_disc::textfile::json_text(&table))?;

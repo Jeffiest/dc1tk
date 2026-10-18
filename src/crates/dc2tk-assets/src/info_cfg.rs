@@ -125,6 +125,15 @@ pub struct Statement {
 pub fn statements(data: &[u8]) -> Vec<Statement> {
     let t = strip_comments(&chars_at(data));
     let n = t.len();
+    // Dark Cloud 1's cfgs end no statement with ';' (its interpreter takes as many arguments as the
+    // tag's table says), so a file with none outside quotes ends each statement at its line's end.
+    let mut quoted_scan = false;
+    let line_ends = !t.iter().any(|&(c, _)| {
+        if c == '"' {
+            quoted_scan = !quoted_scan;
+        }
+        c == ';' && !quoted_scan
+    });
     let width = |c: char| text::encode(&c.to_string()).map_or(1, |bytes| bytes.len());
     let mut out = Vec::new();
     let mut i = 0;
@@ -149,7 +158,8 @@ pub fn statements(data: &[u8]) -> Vec<Statement> {
             if c == '"' {
                 quoted = !quoted;
             }
-            if !quoted && (c == ',' || c == ';') {
+            let ends = c == ';' || (line_ends && c == '\n');
+            if !quoted && (c == ',' || ends) {
                 let text: String = current.iter().map(|&(c, _)| c).collect();
                 if !text.trim().is_empty() {
                     let first = current.iter().position(|&(c, _)| !c.is_whitespace()).unwrap_or(0);
@@ -158,7 +168,7 @@ pub fn statements(data: &[u8]) -> Vec<Statement> {
                     args.push((value(&text), current[first].1..offset + width(c)));
                 }
                 current.clear();
-                if c == ';' {
+                if ends {
                     break;
                 }
             } else {

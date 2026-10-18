@@ -1,0 +1,754 @@
+{
+  "table": "monster",
+  "source": "ps2/src/runscript_opcodes.cpp",
+  "array": "ext_func_info",
+  "natives": [
+    {
+      "no": 10,
+      "name": "_GET_DISTANCE",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 11,
+      "name": "_GET_POSITION",
+      "accessors": [
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 12,
+      "name": "_SET_ROTATION",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 13,
+      "name": "_CHK_ROTATION",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 14,
+      "name": "_CHK_MOVE",
+      "accessors": [
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 15,
+      "name": "_CHK_USER_INNER_PRODUCT",
+      "accessors": [
+        "int",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 30,
+      "name": "_GET_VECTOR",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 31,
+      "name": "_GET_DIRECTION",
+      "accessors": [
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 32,
+      "name": "_SET_MOVE",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 33,
+      "name": "_CHK_MOVE_INFO",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 34,
+      "name": "_SET_MOVE_CANSEL",
+      "accessors": []
+    },
+    {
+      "no": 35,
+      "name": "_SET_ROT_CANSEL",
+      "accessors": []
+    },
+    {
+      "no": 36,
+      "name": "_SET_POSITION",
+      "accessors": [
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 100,
+      "name": "_STATUS_SET_FALL",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 101,
+      "name": "_STATUS_SET_MUTEKI",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 102,
+      "name": "_STATUS_SET_ALPHA",
+      "accessors": [
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 103,
+      "name": "_STATUS_CHK_ALPHA",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 104,
+      "name": "_STATUS_SET_DEAD",
+      "accessors": []
+    },
+    {
+      "no": 105,
+      "name": "_STATUS_SET_PALLET",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 106,
+      "name": "_STATUS_SET_CLIPLEVEL",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 107,
+      "name": "_STATUS_SET_EVENT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 108,
+      "name": "_STATUS_SET_COL_OFF",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 109,
+      "name": "_STATUS_GET_LIFE_RATE",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 110,
+      "name": "_STATUS_GET_USER_VECTOR",
+      "accessors": [
+        "int",
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 111,
+      "name": "_RUN_SCRIPT",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 112,
+      "name": "_STATUS_GET_HEIGHT",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 113,
+      "name": "_STATUS_GET_HITDMG_VOL",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 114,
+      "name": "_STATUS_GET_MOTION_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 115,
+      "name": "_STATUS_GET_DMG_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 116,
+      "name": "_STATUS_SET_LOCKON_DIST",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 117,
+      "name": "_STATUS_SET_SHADOW_LEN",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 118,
+      "name": "_STATUS_SET_LOCKON_TRG",
+      "accessors": [
+        "string",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 130,
+      "name": "_SET_BODY_COL",
+      "accessors": [
+        "string",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 131,
+      "name": "_SET_DMG_COL",
+      "accessors": [
+        "string",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 132,
+      "name": "_SET_DMG_PARA",
+      "accessors": [
+        "int",
+        "int",
+        "int",
+        "float"
+      ]
+    },
+    {
+      "no": 133,
+      "name": "_SET_SHOT",
+      "accessors": [
+        "string",
+        "float",
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 134,
+      "name": "_SET_BODY_COL_PARA",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 136,
+      "name": "_SET_MOV_COL",
+      "accessors": [
+        "string",
+        "float"
+      ]
+    },
+    {
+      "no": 140,
+      "name": "_SET_SND_FRM",
+      "accessors": [
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 141,
+      "name": "_SET_SND_NOW",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 142,
+      "name": "_STOP_SND_NOW",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 180,
+      "name": "_GET_RAND",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 181,
+      "name": "_GET_RANDF",
+      "accessors": [
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 182,
+      "name": "_SIN_DEG",
+      "accessors": [
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 183,
+      "name": "_COS_DEG",
+      "accessors": [
+        "float",
+        "out"
+      ]
+    },
+    {
+      "no": 200,
+      "name": "_SET_MOTION",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 201,
+      "name": "_CHK_MOTION_FRM",
+      "accessors": [
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 202,
+      "name": "_GET_MOTION_FRM",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 203,
+      "name": "_SET_MOTION_FRM",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 204,
+      "name": "_SET_STATUS_CHANGE",
+      "accessors": [
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 205,
+      "name": "_SET_TEX_ANIME_SW",
+      "accessors": [
+        "int",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 206,
+      "name": "_SET_COLLISION_WIDTH",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 207,
+      "name": "_GET_NEAR_MONSTER",
+      "accessors": [
+        "out",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 208,
+      "name": "_GET_STATUS_BIN2",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 209,
+      "name": "_SET_BIN2",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 210,
+      "name": "_GET_CHR_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 211,
+      "name": "_GET_COL_HIT_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 212,
+      "name": "_GET_SCRIPT_ID",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 213,
+      "name": "_GET_MONSTOR_POS",
+      "accessors": [
+        "int",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 214,
+      "name": "_GET_MONSTOR_FRM",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 215,
+      "name": "_SET_MONSTOR_POS",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 216,
+      "name": "_SET_MONSTOR_MOVE",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 217,
+      "name": "_SET_MONSTOR_LINK_MOVE",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 218,
+      "name": "_SET_MONSTOR_MOVE_CANSEL",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 219,
+      "name": "_SET_MONSTOR_MOTION",
+      "accessors": [
+        "int",
+        "int",
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 220,
+      "name": "_SET_GLOBAL_INT",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 221,
+      "name": "_GET_GLOBAL_INT",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 222,
+      "name": "_GET_OBJ_POS",
+      "accessors": [
+        "string",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 223,
+      "name": "_SET_ROTATION_X",
+      "accessors": [
+        "float",
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 224,
+      "name": "_SET_MOTION_CHANGE_STEP",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 225,
+      "name": "_GET_MONSTOR_VECTOR",
+      "accessors": [
+        "int",
+        "float",
+        "float",
+        "float",
+        "float",
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 226,
+      "name": "_SET_LOCKON_DIST",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 227,
+      "name": "_SET_LOCKON_SW",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 228,
+      "name": "_STATUS_SET_LIFE",
+      "accessors": [
+        "float"
+      ]
+    },
+    {
+      "no": 229,
+      "name": "_SET_SHOT2",
+      "accessors": [
+        "string",
+        "float",
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 230,
+      "name": "_SET_LOOP_SND",
+      "accessors": [
+        "float",
+        "float",
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 231,
+      "name": "_STOP_LOOP_SND",
+      "accessors": []
+    },
+    {
+      "no": 232,
+      "name": "_DEL_LOOP_SND",
+      "accessors": []
+    },
+    {
+      "no": 240,
+      "name": "_BOSS_FADE_OUT",
+      "accessors": []
+    },
+    {
+      "no": 241,
+      "name": "_CHEKC_FADE_OUT",
+      "accessors": [
+        "out"
+      ]
+    },
+    {
+      "no": 242,
+      "name": "_SET_GRAVITY",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 244,
+      "name": "_SET_GUARD_FRAME",
+      "accessors": [
+        "float",
+        "float"
+      ]
+    },
+    {
+      "no": 245,
+      "name": "_GUARD_SEARCH",
+      "accessors": [
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 246,
+      "name": "_GET_MOVE_VEC",
+      "accessors": [
+        "out",
+        "out",
+        "out"
+      ]
+    },
+    {
+      "no": 247,
+      "name": "_PUSH_IGLOBAL",
+      "accessors": [
+        "int",
+        "int"
+      ]
+    },
+    {
+      "no": 248,
+      "name": "_POP_IGLOBAL",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 249,
+      "name": "_GET_USER_STATUS",
+      "accessors": [
+        "int",
+        "out"
+      ]
+    },
+    {
+      "no": 250,
+      "name": "_SET_REFERENCE",
+      "accessors": [
+        "int",
+        "string"
+      ]
+    },
+    {
+      "no": 251,
+      "name": "_DEL_REFERENCE",
+      "accessors": [
+        "int"
+      ]
+    },
+    {
+      "no": 252,
+      "name": "_LOOKAT",
+      "accessors": [
+        "float",
+        "float",
+        "float",
+        "int"
+      ]
+    },
+    {
+      "no": 253,
+      "name": "_SET_SHADOW_FLAG",
+      "accessors": [
+        "int"
+      ]
+    }
+  ]
+}
