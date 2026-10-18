@@ -125,9 +125,13 @@ enum Command {
         /// The package's display name.
         #[arg(long)]
         name: Option<String>,
-        /// Folder to write the package into (MoonMod's save/mods).
-        #[arg(short, long)]
-        out: PathBuf,
+        /// Folder to write the package into (MoonMod's save/mods). Not needed with --install.
+        #[arg(short, long, required_unless_present = "install")]
+        out: Option<PathBuf>,
+        /// The game's save folder: write the package into its mods/ and turn it on in
+        /// moonmod/profile.json (the old profile is kept as profile.json.before-<id>).
+        #[arg(long)]
+        install: Option<PathBuf>,
         /// Native tables for scripts.
         #[arg(long, default_value = "definitions/dc1/natives")]
         natives: PathBuf,
@@ -581,16 +585,15 @@ fn run(command: &Command) -> Result<ExitCode> {
             println!("written to {}", output.display());
             Ok(ExitCode::SUCCESS)
         }
-        Command::ModPack { work, data, id, name, out, natives, sdk, port } => pack::run(&pack::Options {
-            work,
-            data,
-            id,
-            name: name.as_deref(),
-            out,
-            natives,
-            sdk,
-            port: *port,
-        }),
+        Command::ModPack { work, data, id, name, out, install, natives, sdk, port } => {
+            let mods = install.as_ref().map(|save| save.join("mods"));
+            let out = out.as_ref().or(mods.as_ref()).context("give -o <save>/mods or --install <save>")?;
+            let code = pack::run(&pack::Options { work, data, id, name: name.as_deref(), out, natives, sdk, port: *port })?;
+            if let Some(save) = install {
+                pack::install(save, id)?;
+            }
+            Ok(code)
+        }
         Command::ModelExport { pack, out } => {
             let root = pack::data_root_of(pack).context("the pack is not in a game data folder (one holding dun/ and chara/)")?;
             let paths = pack::data_paths(&root);

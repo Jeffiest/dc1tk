@@ -63,7 +63,20 @@ scripts/<data path>.c           decompile        (dun/monstor/* use the monster 
 sound/<data path of .snd>/      sound-export
 lang/<language>.json            lang-export      (only keys whose text changed matter)
 soundtrack/                     the port's soundtrack folder (copied into the package as is)
+monsters/<stem>/                a new enemy: monster.json, optional model/ (model-export of its base) and script.c
 ```
+
+**New enemies (`monsters/<stem>/`)**: `monster.json` is `{"name", "template_monster_id", "base": "dun/monstor/<x>.chr",
+"base_script": "dun/monstor/<x>.stb", "stats": {"hp", "defense", "reward_exp", "reward_money"}}`. `model/` (an edited
+`model-export` of `base`) and `script.c` (an edited `decompile --table monster`) replace the base's model and AI; without
+them the base's files are used. The package gets `dun/monstor/<stem>.chr` and `.stb` as new files (a stem the game does not
+have, at most 15 characters), and main.lua registers them with `game.models.register` + `game.characters.register`; spawn
+the enemy with `game.characters.spawn`. Tested: `mybat` from `c12a` packs 1,152,032 + 26,816 bytes, and the script
+compiles back byte-identical to `c12a.stb`.
+
+**Install (`--install <save>`)**: writes the package into `<save>/mods` (no `-o` needed) and turns it on in
+`<save>/moonmod/profile.json` (backup `profile.json.before-<id>`). A rebuild replaces the package's `resources/`, and
+a running game picks up rewritten files about once a second (MoonMod hot reload, play-fork from 2026-10-18).
 
 `dc2tk mod-pack <work> <data> --id <author.mod> -o <save>/mods` builds each against the game's file, leaves out what
 comes out unchanged, refuses what is larger than the game's file (MoonMod's limit), and writes `mod.json`, `main.lua`
