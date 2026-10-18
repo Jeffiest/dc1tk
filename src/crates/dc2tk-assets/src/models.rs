@@ -412,7 +412,30 @@ pub fn build_motions(folder: &Path, original: &[u8], skeleton: &[u8], skeleton_n
 
 /// models::export for any character pack on the disc: a pack of motions alone on the model pack
 /// skeleton_for finds, any other as itself (its cfg named after it, as tree::model_pack reads it).
+/// A pack of one model and its pictures and nothing else (gedit/e04/chara/s06.chr: s0602.mds and
+/// s0602.img, no cfg): its model member's name, read as a map piece is.
+fn bare_model(data: &[u8]) -> Option<String> {
+    let found = members(data).ok()?;
+    let lower = |n: &String| n.to_lowercase();
+    if found.iter().any(|(n, _)| lower(n).ends_with(".cfg")) {
+        return None;
+    }
+    let models: Vec<&String> = found.iter().map(|(n, _)| n).filter(|n| lower(n).ends_with(".mds")).collect();
+    (models.len() == 1).then(|| models[0].clone())
+}
+
+fn bare_options(data: &[u8]) -> Result<to_gltf::TextureSearch> {
+    let images: Vec<(String, Vec<u8>)> =
+        members(data)?.into_iter().filter(|(n, _)| n.to_lowercase().ends_with(".img")).collect();
+    to_gltf::TextureSearch::new(&images)
+}
+
 pub fn export_on_disc(data: &[u8], path: &str, disc: &DiscFiles) -> Result<Vec<(String, Vec<u8>)>> {
+    if let Some(model) = bare_model(data) {
+        let textures = bare_options(data)?;
+        let member = members(data)?.into_iter().find(|(n, _)| *n == model).map(|(_, d)| d).unwrap_or_default();
+        return Ok(export_map_model(&member, path_stem(&model), &to_gltf::Options::map(Some(&textures)))?.0);
+    }
     let own_stem = path_stem(path.rsplit('/').next().unwrap_or(path));
     let (renamed, _) = crate::tree::model_pack(data, own_stem);
     let data: &[u8] = &renamed;
@@ -427,6 +450,35 @@ pub fn export_on_disc(data: &[u8], path: &str, disc: &DiscFiles) -> Result<Vec<(
 
 /// models::build for any character pack on the disc, as export_on_disc exports it.
 pub fn build_on_disc(folder: &Path, original: &[u8], path: &str, disc: &DiscFiles) -> Result<Vec<u8>> {
+    if let Some(model) = bare_model(original) {
+        let textures = bare_options(original)?;
+        let options = to_gltf::Options::map(Some(&textures));
+        let member = members(original)?.into_iter().find(|(n, _)| *n == model).map(|(_, d)| d).unwrap_or_default();
+        let stem = path_stem(&model);
+        let gltf = folder.join(format!("{stem}.gltf"));
+        if !gltf.is_file() {
+            return Ok(original.to_vec());
+        }
+        let (exported, _) = export_map_model(&member, stem, &options)?;
+        let untouched = exported
+            .iter()
+            .filter(|(name, _)| !name.starts_with("textures/"))
+            .all(|(name, data)| std::fs::read(folder.join(name)).is_ok_and(|on_disk| on_disk == *data));
+        if untouched {
+            return Ok(original.to_vec());
+        }
+        let given = load_from_disk(&gltf)?;
+        let mut before = Folder::new();
+        for (name, data) in exported {
+            before.write(&name, data);
+        }
+        let exported_gltf = load_from_folder(&before, &format!("{stem}.gltf"))?;
+        let built = match crate::vertex_patch::patch(&member, &exported_gltf, &given)? {
+            Some(patched) => patched,
+            None => build_map_model(&given, &member, &options)?,
+        };
+        return Ok(rebuild::replaced_member(original, &[model], &built)?);
+    }
     let own_stem = path_stem(path.rsplit('/').next().unwrap_or(path));
     let (renamed, old) = crate::tree::model_pack(original, own_stem);
     if motions_only(&renamed) {

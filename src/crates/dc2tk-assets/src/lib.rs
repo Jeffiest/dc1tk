@@ -67,6 +67,7 @@ pub mod lang_dc1;
 pub mod sound_dc1;
 pub mod map_dc1;
 pub mod vertex_patch;
+pub mod fit_dc1;
 pub mod town_data;
 
 // the asset tree, and what the rest share

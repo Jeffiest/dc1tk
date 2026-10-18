@@ -1370,11 +1370,13 @@ struct Corners {
 /// The vertex each glTF vertex of a frame's mesh stands for, per primitive in the export's order
 /// (add_mesh): what vertex_patch writes a moved position back to.
 pub fn corner_vertices(t: &mds::Mdt) -> Vec<Vec<i64>> {
-    corner_groups(t)
-        .into_values()
-        .filter(|corners| !corners.indices.is_empty())
-        .map(|corners| corners.keys.iter().map(|k| k[0]).collect())
-        .collect()
+    corner_keys(t).into_iter().map(|keys| keys.iter().map(|k| k[0]).collect()).collect()
+}
+
+/// The (vertex, normal, UV, colour) indices each glTF vertex of a frame's mesh comes from (-1 for
+/// none), per primitive in the export's order.
+pub fn corner_keys(t: &mds::Mdt) -> Vec<Vec<[i64; 4]>> {
+    corner_groups(t).into_values().filter(|corners| !corners.indices.is_empty()).map(|corners| corners.keys).collect()
 }
 
 /// A mesh's triangles grouped into one primitive per kind of corner, degenerate ones (strip

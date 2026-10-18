@@ -210,8 +210,19 @@ pub fn run(options: &Options) -> Result<ExitCode> {
         }
         if maps::size_check(&file.path, file.data.len(), original.len()) {
             kept.push(file);
-        } else {
-            too_big += 1;
+            continue;
+        }
+        // too big: the slack the game's files carry taken out (fit_dc1), when that is enough
+        match dc2tk_assets::fit_dc1::fit(&file.path, &file.data, original.len())? {
+            (Some(fitted), notes) => {
+                println!("  made to fit, {} bytes now ({})", fitted.len(), notes.join(", "));
+                kept.push(Built { path: file.path, data: fitted });
+            }
+            (None, notes) => {
+                let tried = if notes.is_empty() { "nothing to take out".to_string() } else { notes.join(", ") };
+                println!("  still too big after taking out what the file can spare ({tried}); left out");
+                too_big += 1;
+            }
         }
     }
     for problem in &problems {

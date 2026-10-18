@@ -186,7 +186,7 @@ pub fn run_export(data: &Path, out: &Path, check: bool) -> Result<ExitCode> {
 pub fn size_check(what: &str, built: usize, original: usize) -> bool {
     if built > original {
         println!(
-            "warning: {what} is {built} bytes, {} more than the game's {original}: MoonMod will refuse it              (keep edits to moving vertices or changing values, or remove something to make room)",
+            "warning: {what} is {built} bytes, {} more than the game's {original}: MoonMod will refuse it (keep edits to moving vertices or changing values, or remove something to make room)",
             built - original
         );
         false
