@@ -1,3 +1,25 @@
+# dc1tk: DC2-Toolkit for Dark Cloud 1
+
+This fork of [DC2-Toolkit](https://github.com/fakegenie/DC2-Toolkit) (MIT) adds **Dark Cloud 1** (PAL), as the
+[Chronicle](https://github.com/TheMoonPeople/Chronicle) PC port reads it, and packages edits as
+[MoonMod](https://github.com/Jeffiest/MoonMod) mods. Everything DC2-Toolkit does for Dark Chronicle still works.
+
+For Dark Cloud 1 it extracts, converts and rebuilds, byte for byte when nothing was edited:
+
+- **Scripts**: every monster AI and event script (.stb) to C with the game's native function names, and back.
+- **Models**: characters (with their animations), dungeon floor pieces with their floor/wall and camera collision,
+  Georama town parts, to glTF; textures to PNG.
+- **Maps**: dungeon floor scripts (lights, fog, pieces, torches), Georama scenes and town layouts.
+- **Text**: every message file, in the PC port's `lang/` JSON format.
+- **Sound**: sound banks to WAV and SoundFont, sequences to MIDI.
+- **Mods**: `dc2tk mod-pack` makes a MoonMod package from your edits. It checks every file against the size limit of the
+  game's file and makes room when it can.
+
+Read **[DC1.md](DC1.md)** for the commands. No game files are included: you need your own PAL copy, extracted by the
+Chronicle port.
+
+---
+
 # DC2-Toolkit
 
 <p align="center">
