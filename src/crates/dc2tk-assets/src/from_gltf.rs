@@ -1955,6 +1955,7 @@ pub fn import_gltf(gltf: &Gltf, template: &[u8], options: &ImportOptions) -> Res
         let (mut t, skins) = build_mdt(&prims, materials.materials);
         // a Dark Cloud 1 collision mesh stays one (mds::Dc1Collision)
         t.dc1_collision = import.model.nodes[target].mdt.as_ref().and_then(|old| old.dc1_collision.clone());
+        t.dc1_faces = import.model.nodes[target].mdt.as_ref().and_then(|old| old.dc1_faces.clone());
         import.model.nodes[target].mdt = Some(t);
         replaced.insert(target as i32);
         if skin.is_some() {

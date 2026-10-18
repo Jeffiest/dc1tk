@@ -575,7 +575,17 @@ pub(crate) fn named<'a>(disc: &[DiscFile<'a>]) -> Named<'a> {
                 pictures.extend(found);
             }
             Surveyed::Whole(hash) if files[index].kind == FileKind::Pack => {
-                packs.push((file_name_stem(place), hash, index, None));
+                // a pack of several characters (Dark Cloud 1's event packs: d02eb02.chr's
+                // e07eb1.cfg and e07eb2.cfg) is a model per cfg, each named after its cfg, which
+                // model_pack then reads it with
+                let cfgs = character_cfgs(files[index].data);
+                if cfgs.is_empty() {
+                    packs.push((file_name_stem(place), hash, index, None));
+                } else {
+                    for cfg in cfgs {
+                        packs.push((cfg.clone(), format!("{hash}:{cfg}"), index, None));
+                    }
+                }
             }
             Surveyed::Whole(hash) if files[index].kind == FileKind::Messages => messages.push((index, hash)),
             Surveyed::Whole(hash) => banks.push((file_name_stem(place), hash, index, None)),
@@ -1254,16 +1264,56 @@ pub(crate) fn model_pack<'a>(data: &'a [u8], name: &str) -> (std::borrow::Cow<'a
     let cfgs: Vec<&archive::Member> =
         members.iter().filter(|member| member.name.to_lowercase().ends_with(".cfg")).collect();
     let own = format!("{name}.cfg");
-    let found = cfgs.iter().find(|member| member.name.eq_ignore_ascii_case(&own)).or(match cfgs.as_slice() {
-        [only] => Some(only),
-        _ => None,
-    });
+    // Dark Cloud 1's town and event characters: base.cfg (c04b.chr), else the one cfg naming a
+    // MODEL (d02eb02.chr's e07eb1.cfg)
+    let names_model = |member: &&&archive::Member| {
+        crate::info_cfg::read(member.data(data)).model.as_ref().is_some_and(|model| model.is_set())
+    };
+    let with_model: Vec<&&archive::Member> = cfgs.iter().filter(names_model).collect();
+    // the pack's own cfg first when it names the model (c04bjump.chr's names only motions, and
+    // c04bjcam.cfg the model)
+    let found = with_model
+        .iter()
+        .find(|member| member.name.eq_ignore_ascii_case(&own))
+        .copied()
+        .or_else(|| cfgs.iter().find(|member| member.name.eq_ignore_ascii_case(&own)).filter(|_| with_model.is_empty()))
+        .or_else(|| cfgs.iter().find(|member| member.name.eq_ignore_ascii_case("base.cfg")))
+        .or(match with_model.as_slice() {
+            [only] => Some(*only),
+            _ => None,
+        })
+        .or(match cfgs.as_slice() {
+            [only] => Some(only),
+            _ => None,
+        });
     let Some(cfg) = found else {
         return unchanged;
     };
     let mut renamed = data.to_vec();
     let old = rename_in_place(&mut renamed, cfg, INFO_CFG.as_bytes());
     (std::borrow::Cow::Owned(renamed), Some(old))
+}
+
+/// The stems of a pack's cfgs that each name a MODEL, when the pack holds more than one and
+/// model_pack would not read it whole (no info.cfg or base.cfg); else none.
+fn character_cfgs(data: &[u8]) -> Vec<String> {
+    let Some(members) = archive::parse_pack(data) else {
+        return Vec::new();
+    };
+    let is = |member: &archive::Member, name: &str| member.name.eq_ignore_ascii_case(name);
+    if members.iter().any(|member| is(member, INFO_CFG) || is(member, "base.cfg")) {
+        return Vec::new();
+    }
+    let named: Vec<String> = members
+        .iter()
+        .filter(|member| member.name.to_lowercase().ends_with(".cfg"))
+        .filter(|member| crate::info_cfg::read(member.data(data)).model.as_ref().is_some_and(|model| model.is_set()))
+        .map(|member| member.name[..member.name.len() - 4].to_string())
+        .collect();
+    if named.len() < 2 {
+        return Vec::new();
+    }
+    named
 }
 
 /// Writes a member's name field in place, the rest of the pack as it is, and gives the field's old

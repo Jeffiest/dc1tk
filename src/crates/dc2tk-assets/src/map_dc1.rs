@@ -11,7 +11,7 @@
 //!   PTS_ENTRY) of parts, each an EPARTS_ARCHIVE (editpartsinfo.hpp): its EPARTS_INFO_HEADER (size,
 //!   grid cells, position, rotation, element ids and names, function points) and up to nine models
 //!   (LOD 0-3, collision, shadow, shade, camera, extra). Exported as `scene.json` and
-//!   `<part>/<slot>.gltf` (or `.bin` for a block that is not a model).
+//!   `<part>/<slot>.gltf` (or `.raw` for a block that is not a model).
 //! - **Georama layouts** (`gdata0.edt`, editground.cpp CEditGround::Save/Load): GROUND_SAVE_HEADER
 //!   and SV_GRD_PART records, as `layout.json`.
 //!
@@ -334,7 +334,7 @@ fn info_json(part: &[u8]) -> Result<Value> {
     }))
 }
 
-/// A scene as `scene.json` and each part's models (`<part>/<slot>.gltf`, `.bin` for other blocks).
+/// A scene as `scene.json` and each part's models (`<part>/<slot>.gltf`, `.raw` for other blocks).
 /// `images` are the texture files the scene's parts draw from (the town's .img files).
 pub fn scene_export(data: &[u8], images: &[(String, Vec<u8>)]) -> Result<Files> {
     let textures = textures_of(images)?;
@@ -352,15 +352,15 @@ pub fn scene_export(data: &[u8], images: &[(String, Vec<u8>)]) -> Result<Files> 
             }
             let block = &part[offset..offset + size];
             let prefix = format!("{}/", entry.name);
-            // a model the reader cannot convert is kept as its bytes (<slot>.bin)
+            // a model the reader cannot convert is kept as its bytes (<slot>.raw)
             let file = match export_model(block, &prefix, slot, slot_collision(slot), &textures) {
                 Ok(Some(files)) => {
                     out.extend(files);
                     format!("{prefix}{slot}.gltf")
                 }
                 Ok(None) | Err(_) => {
-                    out.push((format!("{prefix}{slot}.bin"), block.to_vec()));
-                    format!("{prefix}{slot}.bin")
+                    out.push((format!("{prefix}{slot}.raw"), block.to_vec()));
+                    format!("{prefix}{slot}.raw")
                 }
             };
             written.push((offset, file.clone()));
@@ -423,7 +423,7 @@ fn build_part(folder: &Path, name: &str, part: &[u8], info: Option<&Value>, text
         let built = if block.starts_with(b"MDS\0") && dir.join(format!("{slot}.gltf")).is_file() {
             build_model(&dir, slot, block, slot_collision(slot), textures)?
         } else {
-            std::fs::read(dir.join(format!("{slot}.bin"))).unwrap_or_else(|_| block.to_vec())
+            std::fs::read(dir.join(format!("{slot}.raw"))).unwrap_or_else(|_| block.to_vec())
         };
         if built == block {
             continue;

@@ -1417,7 +1417,10 @@ fn corner_attributes(
         let mut normals: Vec<Vec<f64>> = vs
             .iter()
             .map(|k| {
-                Ok(normalize(&at_index(&t.normals, k[1])?[..3].try_into().expect("a normal has 4 numbers"), Z).to_vec())
+                // Dark Cloud 1 has corners naming the normal past its list's end (the game reads
+                // what follows); they get the up vector
+                let normal = t.normals.get(usize::try_from(k[1]).unwrap_or(usize::MAX)).copied().unwrap_or([0.0, 1.0, 0.0, 0.0]);
+                Ok(normalize(&normal[..3].try_into().expect("a normal has 4 numbers"), Z).to_vec())
             })
             .collect::<Result<_>>()?;
         if let Some(bind) = bind {
@@ -1426,14 +1429,21 @@ fn corner_attributes(
         attributes["NORMAL"] = Value::from(g.floats(&normals, AccessorType::Vec3, Some(ARRAY_BUFFER), false)?);
     }
     if kind.uvs {
-        let uvs: Vec<Vec<f64>> = vs.iter().map(|k| Ok(at_index(&t.uvs, k[2])?[..2].to_vec())).collect::<Result<_>>()?;
+        // as normals: a UV past its list's end is (0, 0)
+        let uvs: Vec<Vec<f64>> = vs
+            .iter()
+            .map(|k| t.uvs.get(usize::try_from(k[2]).unwrap_or(usize::MAX)).map_or(vec![0.0, 0.0], |uv| uv[..2].to_vec()))
+            .collect();
         attributes["TEXCOORD_0"] = Value::from(g.floats(&uvs, AccessorType::Vec2, Some(ARRAY_BUFFER), false)?);
     }
     if kind.colours {
         let colours: Vec<Vec<f64>> = vs
             .iter()
-            .map(|k| Ok(at_index(&t.colours, k[3])?.iter().map(|&x| numeric::max(0.0, numeric::min(1.0, x))).collect()))
-            .collect::<Result<_>>()?;
+            .map(|k| {
+                let colour = t.colours.get(usize::try_from(k[3]).unwrap_or(usize::MAX)).copied().unwrap_or([1.0; 4]);
+                colour.iter().map(|&x| numeric::max(0.0, numeric::min(1.0, x))).collect()
+            })
+            .collect();
         attributes["COLOR_0"] = Value::from(g.floats(&colours, AccessorType::Vec4, Some(ARRAY_BUFFER), false)?);
     }
     if let Some(weights) = weights {

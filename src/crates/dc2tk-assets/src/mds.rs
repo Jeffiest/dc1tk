@@ -203,6 +203,18 @@ pub struct Mdt {
     /// lists, the vertex index only) and materials (each attribute record as the collision
     /// material its ground, foot sound, area and ignore mask make) and written back in its form.
     pub dc1_collision: Option<Dc1Collision>,
+    /// Dark Cloud 1's drawn faces (visualvu1.cpp CreateVUdataFromMDT): every corner is vertex,
+    /// normal and UV indices, plus a colour index when the mesh has colours, whatever the prim's
+    /// flags say, and the faces header's last word is not read.
+    pub dc1_faces: Option<Dc1Faces>,
+}
+
+/// What Dark Cloud 1's drawn faces keep that the prims do not: the header's last word and each
+/// prim's kind as the file has it (read as triangles or a strip with the corner tuple above).
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Dc1Faces {
+    pub header_word: u32,
+    pub kinds: Vec<u32>,
 }
 
 /// What a Dark Cloud 1 collision mesh holds besides its triangles and attributes: the set's
@@ -253,6 +265,7 @@ impl Default for Mdt {
             faces_pad: None,
             layout: None,
             dc1_collision: None,
+            dc1_faces: None,
         }
     }
 }
@@ -298,21 +311,52 @@ impl Mdt {
         let f = at(fo) as usize;
         mdt.faces_unk00 = u32_at(b, f)?;
         let (fh, prim_num, f3) = (u32_at(b, f + 4)?, u32_at(b, f + 8)?, u32_at(b, f + 12)?);
-        if fh != 0x10 || f3 != 0 {
+        if fh != 0x10 {
             bail!("bad faces header");
         }
-        let mut q = f + fh as usize;
-        for _ in 0..prim_num {
-            let (kind, count, material) = (u32_at(b, q)?, u32_at(b, q + 4)? as usize, u32_at(b, q + 8)?);
-            let stride = Prim::stride_of(kind);
-            let flat: Vec<i32> = (0..count * stride).map(|i| i32_at(b, q + 12 + 4 * i)).collect::<Result<_>>()?;
-            q += 12 + 4 * count * stride;
-            let verts = if stride == 0 { Vec::new() } else { flat.chunks(stride).map(<[i32]>::to_vec).collect() };
-            mdt.prims.push(Prim { kind, material, verts });
-        }
-        if (q - f) as i64 != fsz as i64 {
-            bail!("faces size mismatch");
-        }
+        // the corner tuple as the prim's flags give it (Dark Chronicle), or as Dark Cloud 1 reads
+        // it: vertex, normal, UV and, when the mesh has colours, colour
+        let read_prims = |dc1: bool| -> Result<(Vec<Prim>, Vec<u32>, usize)> {
+            let mut prims = Vec::new();
+            let mut kinds = Vec::new();
+            let mut q = f + fh as usize;
+            for _ in 0..prim_num {
+                let (kind, count, material) = (u32_at(b, q)?, u32_at(b, q + 4)? as usize, u32_at(b, q + 8)?);
+                let kind_read = if dc1 { (kind & 7) | if co > 0 { F_COLOUR } else { 0 } } else { kind };
+                let stride = Prim::stride_of(kind_read);
+                if count.checked_mul(stride * 4).is_none_or(|bytes| q + 12 + bytes > b.len()) {
+                    bail!("faces size mismatch");
+                }
+                let flat: Vec<i32> = (0..count * stride).map(|i| i32_at(b, q + 12 + 4 * i)).collect::<Result<_>>()?;
+                q += 12 + 4 * count * stride;
+                let verts = if stride == 0 { Vec::new() } else { flat.chunks(stride).map(<[i32]>::to_vec).collect() };
+                prims.push(Prim { kind: kind_read, material, verts });
+                kinds.push(kind);
+            }
+            if (q - f) as i64 != fsz as i64 {
+                bail!("faces size mismatch");
+            }
+            Ok((prims, kinds, q))
+        };
+        let q = match (f3, read_prims(false)) {
+            (0, Ok((prims, _, q))) => {
+                mdt.prims = prims;
+                q
+            }
+            (_, first) => match read_prims(true) {
+                Ok((prims, kinds, q)) => {
+                    mdt.prims = prims;
+                    mdt.dc1_faces = Some(Dc1Faces { header_word: f3, kinds });
+                    q
+                }
+                Err(error) => {
+                    if f3 != 0 {
+                        bail!("bad faces header");
+                    }
+                    return Err(first.err().unwrap_or(error));
+                }
+            },
+        };
         mdt.style = if cn == 0 && co == -1 { 'B' } else { 'A' };
         if no > fo {
             let end = at(no).max(0) as usize;
@@ -445,9 +489,45 @@ impl Mdt {
         Ok((faces, records, count))
     }
 
+    /// Dark Cloud 1's drawn faces from the prims: each corner vertex, normal and UV (0 for a slot
+    /// the prim has not) and, when the mesh has colours, colour; a prim keeps its kind as the
+    /// file had it when the prims are as many and of the same shape.
+    fn dc1_faces_bytes(&self, dc1: &Dc1Faces) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        out.extend(self.faces_unk00.to_le_bytes());
+        out.extend(0x10u32.to_le_bytes());
+        out.extend((self.prims.len() as u32).to_le_bytes());
+        out.extend(dc1.header_word.to_le_bytes());
+        let same = dc1.kinds.len() == self.prims.len();
+        let with_colour = !self.colours.is_empty();
+        for (i, p) in self.prims.iter().enumerate() {
+            let kind = match dc1.kinds.get(i) {
+                Some(&kind) if same && kind & 7 == p.kind & 7 => kind,
+                _ => p.kind & 7,
+            };
+            out.extend(kind.to_le_bytes());
+            out.extend((p.verts.len() as u32).to_le_bytes());
+            out.extend(p.material.to_le_bytes());
+            let slots = [p.slot(Slot::Vertex), p.slot(Slot::Normal), p.slot(Slot::Uv), p.slot(Slot::Colour)];
+            for v in &p.verts {
+                let take = |slot: Option<usize>| slot.and_then(|at| v.get(at).copied()).unwrap_or(0);
+                for value in [take(slots[0]), take(slots[1]), take(slots[2])] {
+                    out.extend(value.to_le_bytes());
+                }
+                if with_colour {
+                    out.extend(take(slots[3]).to_le_bytes());
+                }
+            }
+        }
+        Ok(out)
+    }
+
     fn faces_bytes(&self) -> Result<Vec<u8>> {
         if let Some(dc1) = &self.dc1_collision {
             return Ok(self.dc1_collision_bytes(dc1)?.0);
+        }
+        if let Some(dc1) = &self.dc1_faces {
+            return self.dc1_faces_bytes(dc1);
         }
         let mut out = Vec::new();
         out.extend(self.faces_unk00.to_le_bytes());
