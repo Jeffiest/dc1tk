@@ -1140,8 +1140,8 @@ pub struct Bank {
     pub pack: Pack,
     hd_member: usize,
     bd_member: usize,
-    cfg_member: usize,
-    vol_member: usize,
+    cfg_member: Option<usize>,
+    vol_member: Option<usize>,
     pub hd: Hd,
     pub vag_data: Vec<Vec<u8>>,
     pub cfg: TextFile,
@@ -1167,6 +1167,46 @@ impl Bank {
             Ok(found[0])
         };
         let (hd_member, bd_member, cfg_member, vol_member) = (one("hd")?, one("bd")?, one("cfg")?, one("vol")?);
+        Bank::with_members(pack, hd_member, bd_member, Some(cfg_member), Some(vol_member))
+    }
+
+    /// One of a Dark Cloud 1 pack's banks: its hd and bd named `stem` (o01b_a for o01b_a.hd and
+    /// o01b_a.bd), with the pack's cfg when it has one and no vol (DC1 has none).
+    pub fn from_pair(data: &[u8], stem: &str) -> Result<Bank> {
+        let pack = read_pack(data)?;
+        let named = |ext: &str| -> Result<usize> {
+            let wanted = format!("{stem}.{ext}").to_lowercase();
+            (0..pack.members.len())
+                .find(|&i| pack.members[i].name.to_lowercase() == wanted)
+                .ok_or_else(|| Error::invalid(format!("the pack has no {wanted}")))
+        };
+        let (hd_member, bd_member) = (named("hd")?, named("bd")?);
+        let cfg = find(&pack, "cfg");
+        let cfg_member = (cfg.len() == 1).then(|| cfg[0]);
+        Bank::with_members(pack, hd_member, bd_member, cfg_member, None)
+    }
+
+    /// The stems of a pack's hd and bd pairs, in pack order.
+    pub fn pairs(data: &[u8]) -> Result<Vec<String>> {
+        let pack = read_pack(data)?;
+        let stems = |ext: &str| -> Vec<String> {
+            find(&pack, ext).into_iter().map(|i| pack.members[i].name.rsplit_once('.').unwrap().0.to_string()).collect()
+        };
+        let bds: Vec<String> = stems("bd").iter().map(|s| s.to_lowercase()).collect();
+        let empty = |stem: &str| {
+            pack.members.iter().any(|m| m.name.eq_ignore_ascii_case(&format!("{stem}.hd")) && m.data.is_empty())
+        };
+        // DC1 packs hold empty placeholder pairs (sound/special/sp10.snd's sp10_q)
+        Ok(stems("hd").into_iter().filter(|stem| bds.contains(&stem.to_lowercase()) && !empty(stem)).collect())
+    }
+
+    fn with_members(
+        pack: Pack,
+        hd_member: usize,
+        bd_member: usize,
+        cfg_member: Option<usize>,
+        vol_member: Option<usize>,
+    ) -> Result<Bank> {
         let hd = Hd::parse(&pack.members[hd_member].data)?;
         let bd = &pack.members[bd_member].data;
         if hd.body_size as usize != bd.len() {
@@ -1185,8 +1225,8 @@ impl Bank {
                 clamped(bd, starts[i] as usize, end).to_vec()
             })
             .collect();
-        let cfg = TextFile::parse(&pack.members[cfg_member].data);
-        let vol = TextFile::parse(&pack.members[vol_member].data);
+        let text_of = |member: Option<usize>| TextFile::parse(member.map_or(&[][..], |i| &pack.members[i].data[..]));
+        let (cfg, vol) = (text_of(cfg_member), text_of(vol_member));
         Ok(Bank { pack, hd_member, bd_member, cfg_member, vol_member, hd, vag_data, cfg, vol })
     }
 
@@ -1210,8 +1250,12 @@ impl Bank {
         let bd = self.build_bd()?;
         self.pack.members[self.hd_member].data = self.hd.build(bd.len())?;
         self.pack.members[self.bd_member].data = bd;
-        self.pack.members[self.cfg_member].data = self.cfg.build();
-        self.pack.members[self.vol_member].data = self.vol.build();
+        if let Some(member) = self.cfg_member {
+            self.pack.members[member].data = self.cfg.build();
+        }
+        if let Some(member) = self.vol_member {
+            self.pack.members[member].data = self.vol.build();
+        }
         Ok(self.pack.write()?)
     }
 

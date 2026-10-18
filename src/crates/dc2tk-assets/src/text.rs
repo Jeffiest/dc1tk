@@ -504,6 +504,8 @@ fn tag_at(text: &str) -> Option<(&'static str, u16)> {
 #[derive(Clone, Debug)]
 pub struct Font {
     pub language: Language,
+    /// Dark Cloud 1's codes (text_dc1), not DC2's glyphs.
+    pub dc1: bool,
     /// The character of each glyph.
     glyphs: Vec<Option<char>>,
     /// The code each character is written with.
@@ -560,7 +562,7 @@ impl Font {
             }
         }
         codes.insert(' ', SPACE);
-        Font { language, glyphs, codes, alternates }
+        Font { language, dc1: fonts.dc1, glyphs, codes, alternates }
     }
 
     /// The character whose second code (written `{c}`) a code is.
@@ -633,6 +635,9 @@ fn token(code: u16, font: &Font) -> Token {
 /// read back as something else is escaped as {c}: a brace always, a bracket that starts a tag, an
 /// @ at the start of a line.
 pub fn decode(codes: &[u16], font: &Font) -> String {
+    if font.dc1 {
+        return crate::text_dc1::decode(codes);
+    }
     let tokens: Vec<Token> = codes.iter().map(|&code| token(code, font)).collect();
     let shown: Vec<String> = tokens
         .iter()
@@ -720,6 +725,9 @@ fn braced(inside: &str, font: &Font) -> Result<u16> {
 
 /// A message's text as codes: the reverse of decode.
 pub fn encode(text: &str, font: &Font) -> Result<Vec<u16>> {
+    if font.dc1 {
+        return crate::text_dc1::encode(text);
+    }
     let mut out = Vec::new();
     let mut rest = text;
     while let Some(c) = rest.chars().next() {
@@ -811,8 +819,13 @@ pub fn to_text(mes: &Mes, font: &Font, comment: &str) -> String {
         out.push_str(line);
         out.push('\n');
     }
+    // a file that lists an id twice (Dark Cloud 1's dun00_eng*.mes) shows its first; a build
+    // leaves the other as it is
+    let mut seen = HashSet::new();
     for (id, codes) in mes.messages() {
-        out.push_str(&format!("@{id}\n{}\n", decode(codes, font)));
+        if seen.insert(id) {
+            out.push_str(&format!("@{id}\n{}\n", decode(codes, font)));
+        }
     }
     out
 }
@@ -830,7 +843,12 @@ pub struct Fonts {
     /// The letters a build draws as the English font's glyphs 288 on (font::english_slots); None
     /// for font::ENGLISH_EXTRA, which an exported text reads them as.
     pub english_extra: Option<Vec<char>>,
+    /// Dark Cloud 1's data (it has DC1_GAIJI): messages use text_dc1's codes.
+    pub dc1: bool,
 }
+
+/// The letter picture only Dark Cloud 1's data has; finding it switches the text to text_dc1.
+pub const DC1_GAIJI: &str = "meswin/gaiji.img";
 
 impl Fonts {
     /// The fonts from the disc's files, by path as extract lays them out.
@@ -841,6 +859,8 @@ impl Fonts {
                 fonts.english_table = Some(data.to_vec());
             } else if path.eq_ignore_ascii_case(font::KOREAN_TABLE) {
                 fonts.korean_table = Some(data.to_vec());
+            } else if path.eq_ignore_ascii_case(DC1_GAIJI) {
+                fonts.dc1 = true;
             }
         }
         fonts
@@ -848,7 +868,9 @@ impl Fonts {
 
     /// Whether the fonts read a disc file.
     pub fn reads(path: &str) -> bool {
-        path.eq_ignore_ascii_case(ENGLISH_FONT) || path.eq_ignore_ascii_case(font::KOREAN_TABLE)
+        path.eq_ignore_ascii_case(ENGLISH_FONT)
+            || path.eq_ignore_ascii_case(font::KOREAN_TABLE)
+            || path.eq_ignore_ascii_case(DC1_GAIJI)
     }
 
     pub fn font(&self, language: Language) -> Font {
@@ -1502,6 +1524,7 @@ pub(crate) mod tests {
             english_table: std::fs::read(root.join(ENGLISH_FONT)).ok(),
             korean_table: std::fs::read(root.join(font::KOREAN_TABLE)).ok(),
             english_extra: None,
+            dc1: false,
         };
         let mut pages = Vec::new();
         for page in 0..4 {
@@ -1553,6 +1576,7 @@ pub(crate) mod tests {
             english_table: std::fs::read(root.join(ENGLISH_FONT)).ok(),
             korean_table: std::fs::read(root.join(font::KOREAN_TABLE)).ok(),
             english_extra: None,
+            dc1: false,
         };
         assert!(fonts.english_table.is_some(), "no {ENGLISH_FONT} under {corpus:?}");
         let mut checked = 0;

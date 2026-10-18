@@ -135,6 +135,7 @@ pub fn disc_fonts(disc: &DiscSource) -> Fonts {
         english_table: read(text::ENGLISH_FONT),
         korean_table: read(dc2tk_assets::font::KOREAN_TABLE),
         english_extra: None,
+        dc1: disc.read(text::DC1_GAIJI).is_ok(),
     }
 }
 

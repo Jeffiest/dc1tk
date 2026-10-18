@@ -55,6 +55,7 @@ pub fn item_messages(
         english_table: disc.read(text::ENGLISH_FONT).ok().map(Cow::into_owned),
         korean_table: disc.read(dc2tk_assets::font::KOREAN_TABLE).ok().map(Cow::into_owned),
         english_extra: (!english_extra.is_empty()).then(|| english_extra.to_vec()),
+        dc1: disc.read(text::DC1_GAIJI).is_ok(),
     };
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
     for language in 0..dc2tk_assets::lang::LANGUAGE_NAMES.len() {

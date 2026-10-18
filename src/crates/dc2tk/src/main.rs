@@ -56,6 +56,35 @@ enum Command {
         /// Directory to write the files into, with manifest.json listing them.
         out: PathBuf,
     },
+    /// Dark Cloud 1: write the data folder's text as upstream Chronicle's lang/ files (<language>.json
+    /// and hashes/), what `darkcloud --export-text` writes, without the port's own options strings.
+    LangExport {
+        /// The game's data folder (the PC port's data).
+        data: PathBuf,
+        /// Folder to write the language files into.
+        out: PathBuf,
+    },
+    /// Dark Cloud 1: write every .snd under a folder as WAVs, SoundFonts and MIDIs (one folder per
+    /// pack, named as its path); with --check, build each pack back from what was written and compare.
+    SoundExport {
+        /// The game's data folder, or an extracted one.
+        source: PathBuf,
+        /// Folder to write into.
+        out: PathBuf,
+        /// Build every pack back from its folder and compare it with the original, byte for byte.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Dark Cloud 1: a .snd pack with the edited WAVs and MIDIs of its exported folder put in.
+    SoundBuild {
+        /// The pack's exported folder.
+        folder: PathBuf,
+        /// The original .snd.
+        original: PathBuf,
+        /// The .snd to write.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
     /// Write a map as a glTF scene to edit in Blender (and build back with a mod's map: line).
     MapExport(map_cmd::MapExportArgs),
     /// What changed in the extracted folder since extracting: scripts, assets and disc files.
@@ -222,6 +251,68 @@ enum Command {
     AssetTree(asset_tree::Command),
 }
 
+fn snd_files(root: &Path, folder: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(folder)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            if !path.extension().is_some_and(|ext| ext == "d") {
+                snd_files(root, &path, out)?;
+            }
+        } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("snd")) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn run_sound_export(source: &Path, out: &Path, check: bool) -> Result<ExitCode> {
+    let mut packs = Vec::new();
+    snd_files(source, source, &mut packs)?;
+    packs.sort();
+    let (mut written, mut files, mut failed, mut differ) = (0, 0, 0, 0);
+    for pack in &packs {
+        let relative = pack.strip_prefix(source).unwrap_or(pack);
+        let folder = out.join(relative);
+        let data = std::fs::read(pack)?;
+        match dc2tk_assets::sound_dc1::export(&data) {
+            Ok(items) => {
+                for (path, bytes) in &items {
+                    let target = folder.join(path);
+                    std::fs::create_dir_all(target.parent().expect("in a folder"))?;
+                    std::fs::write(&target, bytes)?;
+                }
+                files += items.len();
+                written += 1;
+                if check {
+                    match dc2tk_assets::sound_dc1::build(&folder, &data) {
+                        Ok(built) if built == data => {}
+                        Ok(_) => {
+                            differ += 1;
+                            eprintln!("{}: builds back to other bytes", relative.display());
+                        }
+                        Err(error) => {
+                            differ += 1;
+                            eprintln!("{}: build: {error}", relative.display());
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                failed += 1;
+                eprintln!("{}: {error}", relative.display());
+            }
+        }
+    }
+    println!("{written} of {} sound packs written as {files} files to {}", packs.len(), out.display());
+    if failed > 0 {
+        println!("{failed} packs not exported");
+    }
+    if check {
+        println!("{} packs build back identical, {differ} do not", written - differ);
+    }
+    Ok(if failed + differ == 0 { ExitCode::SUCCESS } else { ExitCode::FAILURE })
+}
+
 fn run_extract(iso: &Path, out: &Path) -> Result<ExitCode> {
     let manifest = if iso.is_dir() {
         extract::extract_folder(iso, out)?
@@ -377,6 +468,21 @@ fn run(command: &Command) -> Result<ExitCode> {
         Command::Natives(args) => setup::run_natives(args),
         Command::ApiDocs(args) => setup::run_api_docs(args),
         Command::Extract { iso, out } => run_extract(iso, out),
+        Command::SoundExport { source, out, check } => run_sound_export(source, out, *check),
+        Command::SoundBuild { folder, original, output } => {
+            let built = dc2tk_assets::sound_dc1::build(folder, &std::fs::read(original)?)?;
+            std::fs::write(output, built)?;
+            println!("written to {}", output.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::LangExport { data, out } => {
+            let (files, collisions) = dc2tk_assets::lang_dc1::export(data, out)?;
+            for collision in &collisions {
+                eprintln!("lang-export: {collision}");
+            }
+            println!("{files} message files written to {} as {} languages", out.display(), dc2tk_assets::lang_dc1::LANGUAGE_FILES.len());
+            Ok(ExitCode::SUCCESS)
+        }
         Command::MapExport(args) => map_cmd::run_map_export(args),
         Command::Diff { iso, extracted } => {
             println!("{}", dc2tk_script::capture::report(&dc2tk_script::capture::changes(extracted, iso)?));

@@ -62,6 +62,9 @@ pub mod manifest;
 pub mod monster_data;
 pub mod shop_data;
 pub mod text;
+pub mod text_dc1;
+pub mod lang_dc1;
+pub mod sound_dc1;
 pub mod town_data;
 
 // the asset tree, and what the rest share
